@@ -5,6 +5,14 @@
     "model": "deepseek-v3.1:671b-cloud"
   },
   "mcp_servers": {
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/path/to/your/project"
+      ]
+    },
     "context7": {
       "command": "npx",
       "args": ["-y", "@upstash/context-sdk"]

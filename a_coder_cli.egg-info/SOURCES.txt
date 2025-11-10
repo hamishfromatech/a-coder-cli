@@ -1,3 +1,4 @@
+LICENSE
 MANIFEST.in
 README.md
 a_coder_cli.py

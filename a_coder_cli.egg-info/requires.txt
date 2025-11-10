@@ -3,6 +3,7 @@ rich>=13.0.0
 fastmcp>=0.1.0
 python-dotenv>=1.0.0
 httpx>=0.24.0
+prompt-toolkit>=3.0.0
 
 [dev]
 pytest>=7.0.0

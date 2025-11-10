@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: a-coder-cli
-Version: 1.0.0
+Version: 1.0.4
 Summary: Terminal-based coding agent with autonomous tool calling and MCP server support
 Home-page: https://github.com/morph-llm/a-coder-cli
 Author: Morph
@@ -24,11 +24,13 @@ Classifier: Topic :: Software Development :: Code Generators
 Classifier: Topic :: Software Development :: Libraries :: Python Modules
 Requires-Python: >=3.8
 Description-Content-Type: text/markdown
+License-File: LICENSE
 Requires-Dist: openai>=1.0.0
 Requires-Dist: rich>=13.0.0
 Requires-Dist: fastmcp>=0.1.0
 Requires-Dist: python-dotenv>=1.0.0
 Requires-Dist: httpx>=0.24.0
+Requires-Dist: prompt-toolkit>=3.0.0
 Provides-Extra: dev
 Requires-Dist: pytest>=7.0.0; extra == "dev"
 Requires-Dist: black>=23.0.0; extra == "dev"
@@ -36,20 +38,69 @@ Requires-Dist: flake8>=6.0.0; extra == "dev"
 Requires-Dist: mypy>=1.0.0; extra == "dev"
 Dynamic: author
 Dynamic: home-page
+Dynamic: license-file
 Dynamic: requires-python
 
 # A-Coder CLI
 
-A terminal-based coding agent with natural conversation and MCP-powered file operations.
+A terminal-based autonomous coding agent with natural conversation and MCP-powered file operations. Works completely free with Ollama and the standard filesystem MCP server, or use Morph (paid) for faster performance.
 
 ## Features
 
-- **Natural Conversation**: Chat naturally with an AI coding assistant
-- **MCP-Based File Operations**: All file operations delegated to MCP servers (read, write, edit, create, delete)
-- **File Context Management**: Add files to conversation context for analysis and modification
-- **Read-Only References**: Mark files as read-only to prevent accidental modifications
-- **Multi-Server Support**: Connect to multiple MCP servers for extended functionality
-- **OpenAI Integration**: Powered by GPT-4 for intelligent code assistance
+- **🤖 Autonomous Agent**: Multi-step tool calling - AI autonomously explores, gathers information, and completes tasks
+- **💬 Natural Conversation**: Chat naturally with an AI coding assistant
+- **📁 MCP-Based File Operations**: All file operations delegated to MCP servers (read, write, edit, create, delete)
+- **🆓 100% Free Option**: Works with Ollama (free) + standard filesystem MCP server (free, no API keys)
+- **🗂️ Smart Context Management**: Add files to conversation context for analysis and modification
+- **🔒 Read-Only References**: Mark files as read-only to prevent accidental modifications
+- **🔌 Multi-Server Support**: Connect to multiple MCP servers for extended functionality
+- **🦙 Ollama Support**: Works with Ollama cloud models and local models
+- **🔄 OpenAI Compatible**: Works with any OpenAI-compatible API
+- **🔄 Command History**: Navigate previous commands with arrow keys (↑/↓)
+- **🚀 Auto-Configuration**: Automatically detects your project directory
+
+## Quick Start
+
+### 1. Install
+
+```bash
+pip install a-coder-cli
+```
+
+### 2. Create Config
+
+```bash
+cp config.json.example config.json
+# Edit config.json with your API key and model settings
+```
+
+### 3. Run in Your Project
+
+```bash
+# Navigate to your project
+cd /path/to/your/project
+
+# Start A-Coder
+a-coder --config ~/config.json
+
+# Or use the short form:
+a-coder -c ~/config.json
+```
+
+That's it! The filesystem server automatically configures itself to your current directory.
+
+## Interactive Features
+
+### Command History
+
+Use the up/down arrow keys to cycle through your command history. Your command history persists between sessions, making it easy to reuse complex commands.
+
+### File Operations
+
+- **Add files**: `/add path/to/file`
+- **Read-only mode**: `/readonly path/to/file`
+- **List context**: `/context`
+- **Clear context**: `/clear`
 
 ## Installation
 
@@ -84,16 +135,64 @@ Then edit `config.json` with your settings:
     "base_url": "https://api.openai.com/v1",
     "model": "gpt-4"
   },
-  "mcpServers": {
-    "filesystem-with-morph": {
+  "mcp_servers": {
+    "filesystem": {
       "command": "npx",
-      "args": ["@morph-llm/morph-fast-apply"],
-      "env": {
-        "MORPH_API_KEY": "your-morph-api-key",
-        "ALL_TOOLS": "true"
-      }
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/path/to/your/project"
+      ]
     }
   }
+}
+```
+
+### MCP Server Options
+
+**Option 1: Standard Filesystem Server (Free, Recommended)**
+```json
+"filesystem": {
+  "command": "npx",
+  "args": [
+    "-y",
+    "@modelcontextprotocol/server-filesystem",
+    "/path/to/your/project"
+  ]
+}
+```
+
+**Note:** The path `/path/to/your/project` will be automatically replaced with your current working directory when you run `a-coder`. You can also specify absolute paths for multiple directories:
+
+```json
+"filesystem": {
+  "command": "npx",
+  "args": [
+    "-y",
+    "@modelcontextprotocol/server-filesystem",
+    "/Users/username/projects/my-app",
+    "/Users/username/projects/shared-lib"
+  ]
+}
+```
+
+**Option 2: Morph Filesystem Server (Requires API Key)**
+```json
+"filesystem-with-morph": {
+  "command": "npx",
+  "args": ["@morph-llm/morph-fast-apply"],
+  "env": {
+    "MORPH_API_KEY": "your-morph-api-key",
+    "ALL_TOOLS": "true"
+  }
+}
+```
+
+**Option 3: Context7 (Optional, for library documentation)**
+```json
+"context7": {
+  "command": "npx",
+  "args": ["-y", "@upstash/context-sdk"]
 }
 ```
 
@@ -101,14 +200,24 @@ Then edit `config.json` with your settings:
 
 ### Starting the CLI
 
+Navigate to your project directory and run:
+
 ```bash
-python a_coder_cli.py
+cd /path/to/your/project
+a-coder --config config.json
 ```
 
-Or with command-line options:
+The filesystem server will automatically use the current directory. Or with command-line options:
 
 ```bash
-python a_coder_cli.py --openai-key "your-key" --config config.json
+a-coder --openai-key "your-key" --config config.json
+```
+
+**Example:**
+```bash
+cd ~/projects/my-web-app
+a-coder --config ~/config.json
+# Filesystem server will automatically access ~/projects/my-web-app
 ```
 
 ### Commands
@@ -178,9 +287,59 @@ A-Coder> I'll analyze the code and suggest improvements...
 
 The CLI supports any MCP server. Popular options:
 
-- **filesystem-with-morph**: Fast file editing via Morph Apply (10,500+ tokens/sec)
-- **context7**: Documentation and code context
-- Custom servers: Any MCP-compatible server
+### Filesystem Server (Free, Recommended)
+The standard MCP filesystem server provides comprehensive file operations:
+
+**Available Tools:**
+- `read_text_file` - Read file contents with optional head/tail limits
+- `write_file` - Create or overwrite files
+- `edit_file` - Make selective edits with pattern matching
+- `list_directory` - List directory contents
+- `create_directory` - Create new directories
+- `move_file` - Move or rename files/directories
+- `search_files` - Search for files matching patterns
+- `directory_tree` - Get recursive directory structure
+- `get_file_info` - Get file metadata
+- `list_allowed_directories` - List accessible directories
+
+**Setup:**
+```json
+"filesystem": {
+  "command": "npx",
+  "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/project"]
+}
+```
+
+### Morph Filesystem Server (Paid, Optional)
+Fast file editing via Morph Apply (10,500+ tokens/sec). Same tools as above plus additional optimizations.
+
+**Setup:**
+```json
+"filesystem-with-morph": {
+  "command": "npx",
+  "args": ["@morph-llm/morph-fast-apply"],
+  "env": {
+    "MORPH_API_KEY": "your-morph-api-key",
+    "ALL_TOOLS": "true"
+  }
+}
+```
+
+**When to use Morph:**
+- ⚡ Need maximum performance (10,500+ tokens/sec)
+- 🏢 Enterprise/production environments
+- 💼 Professional development workflows
+
+**When to use free filesystem server:**
+- 🆓 Personal projects
+- 🎓 Learning and experimentation
+- 💻 Standard development workflows
+
+### Context7 (Optional)
+Documentation and code context for libraries and frameworks.
+
+### Custom Servers
+Any MCP-compatible server can be added to the configuration.
 
 ## Performance Tips
 

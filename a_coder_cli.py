@@ -23,6 +23,8 @@ from fastmcp import Client as MCPClient
 from config import ACoderConfig
 import json
 from dotenv import load_dotenv
+from prompt_toolkit import PromptSession
+from prompt_toolkit.history import InMemoryHistory
 
 load_dotenv()
 
@@ -39,6 +41,7 @@ class ACoderCLI:
         self.config = config
         self.added_files: Dict[str, str] = {}
         self.read_only_files: set = set()
+        self.prompt_session = PromptSession(history=InMemoryHistory())
 
     def setup_openai(self, api_key: str, base_url: Optional[str] = None):
         """Initialize OpenAI client"""
@@ -628,10 +631,10 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
             raise
 
     async def async_prompt(self, text: str) -> str:
-        """Async version of prompt"""
-        return await asyncio.get_event_loop().run_in_executor(
-            None, lambda: Prompt.ask(text)
-        )
+        """Async version of prompt with history support"""
+        # Use prompt_toolkit for command history with arrow keys
+        result = await self.prompt_session.prompt_async("You>: ")
+        return result
 
     async def run_interactive_mode(self):
         """Run the interactive conversation loop"""
@@ -807,6 +810,29 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
         if self.config and self.config.mcp.servers:
             self.console.print(f"[cyan]Connecting to {len(self.config.mcp.servers)} MCP server(s)...[/cyan]")
             for name, server_config in self.config.mcp.servers.items():
+                # Auto-fill project path for filesystem servers
+                if isinstance(server_config, dict) and 'args' in server_config:
+                    server_args = server_config['args']
+                    # Check if this is a filesystem server and needs path configuration
+                    if any('server-filesystem' in str(arg) for arg in server_args):
+                        # Replace placeholder path with current working directory
+                        new_args = [
+                            os.getcwd() if arg == '/path/to/your/project' else arg
+                            for arg in server_args
+                        ]
+                        
+                        # If no path was provided, append current directory
+                        has_path = any(
+                            arg not in ['-y', '@modelcontextprotocol/server-filesystem'] and not arg.startswith('-')
+                            for arg in new_args
+                        )
+                        if not has_path:
+                            new_args.append(os.getcwd())
+                        
+                        server_config['args'] = new_args
+                        self.console.print(f"[dim]Auto-configured {name} with path: {os.getcwd()}[/dim]")
+                        self.console.print(f"[dim]Final args: {server_config['args']}[/dim]")
+                
                 await self.connect_mcp_server(name, server_config)
         else:
             self.console.print("[yellow]No MCP servers configured[/yellow]")
@@ -843,8 +869,8 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                 self.console.print(f"[yellow]Warning: Failed to disconnect from {name}: {e}[/yellow]")
 
 
-async def main():
-    """Main function"""
+async def async_main():
+    """Async main function"""
     parser = argparse.ArgumentParser(
         description='A-Coder CLI - Terminal-based coding agent with MCP integration'
     )
@@ -882,5 +908,10 @@ async def main():
     await app.run(args)
 
 
+def main():
+    """Synchronous entry point for setuptools"""
+    asyncio.run(async_main())
+
+
 if __name__ == '__main__':
-    asyncio.run(main())
+    main()
