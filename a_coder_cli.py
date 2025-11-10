@@ -469,6 +469,55 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
         
         return system_prompt
 
+    def sanitize_json_schema(self, schema: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Sanitize JSON schema to be compatible with llama.cpp's JSON schema converter.
+        
+        llama.cpp only supports a subset of JSON Schema features. This function removes
+        unsupported fields that cause "Unrecognized schema" errors.
+        
+        Supported fields: type, properties, required, items, enum, minimum, maximum,
+        minLength, maxLength, pattern, additionalProperties, anyOf, oneOf, allOf, $ref
+        
+        Unsupported fields to remove: default, title, description (at property level),
+        examples, const, and other metadata fields
+        """
+        if not isinstance(schema, dict):
+            return schema
+        
+        # Fields that llama.cpp supports
+        supported_fields = {
+            'type', 'properties', 'required', 'items', 'enum',
+            'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum',
+            'minLength', 'maxLength', 'minItems', 'maxItems',
+            'pattern', 'additionalProperties',
+            'anyOf', 'oneOf', 'allOf', '$ref'
+        }
+        
+        # Create a new schema with only supported fields
+        sanitized = {}
+        
+        for key, value in schema.items():
+            if key in supported_fields:
+                # Recursively sanitize nested schemas
+                if key == 'properties' and isinstance(value, dict):
+                    sanitized[key] = {k: self.sanitize_json_schema(v) for k, v in value.items()}
+                elif key == 'items':
+                    sanitized[key] = self.sanitize_json_schema(value)
+                elif key in ('anyOf', 'oneOf', 'allOf') and isinstance(value, list):
+                    sanitized[key] = [self.sanitize_json_schema(item) for item in value]
+                elif key == 'additionalProperties' and isinstance(value, dict):
+                    sanitized[key] = self.sanitize_json_schema(value)
+                else:
+                    sanitized[key] = value
+        
+        # If the sanitized schema is empty (only had unsupported fields),
+        # return a minimal valid schema
+        if not sanitized:
+            return {"type": "object"}
+        
+        return sanitized
+
     async def build_tools_list(self) -> List[Dict[str, Any]]:
         """Build list of available MCP tools for function calling"""
         tools = []
@@ -493,13 +542,17 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                         if not tool_name:
                             continue
                         
+                        # Get and sanitize the input schema for llama.cpp compatibility
+                        input_schema = tool.get('inputSchema', {})
+                        sanitized_schema = self.sanitize_json_schema(input_schema)
+                        
                         # Format tool for OpenAI with server prefix
                         formatted_tool = {
                             "type": "function",
                             "function": {
                                 "name": f"{server_name}--{tool_name}",
                                 "description": tool.get('description', ''),
-                                "parameters": tool.get('inputSchema', {})
+                                "parameters": sanitized_schema
                             }
                         }
                         tools.append(formatted_tool)
