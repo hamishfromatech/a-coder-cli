@@ -1,0 +1,15 @@
+MANIFEST.in
+README.md
+a_coder_cli.py
+config.py
+mcp.md
+pyproject.toml
+requirements.txt
+setup.py
+a_coder_cli.egg-info/PKG-INFO
+a_coder_cli.egg-info/SOURCES.txt
+a_coder_cli.egg-info/dependency_links.txt
+a_coder_cli.egg-info/entry_points.txt
+a_coder_cli.egg-info/not-zip-safe
+a_coder_cli.egg-info/requires.txt
+a_coder_cli.egg-info/top_level.txt

@@ -1,0 +1,3 @@
+[console_scripts]
+a-coder = a_coder_cli:main
+acoder = a_coder_cli:main

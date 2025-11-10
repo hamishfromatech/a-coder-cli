@@ -1,3 +1,43 @@
+Metadata-Version: 2.4
+Name: a-coder-cli
+Version: 1.0.0
+Summary: Terminal-based coding agent with autonomous tool calling and MCP server support
+Home-page: https://github.com/morph-llm/a-coder-cli
+Author: Morph
+Author-email: Morph <support@morphllm.com>
+License-Expression: MIT
+Project-URL: Homepage, https://github.com/morph-llm/a-coder-cli
+Project-URL: Documentation, https://github.com/morph-llm/a-coder-cli#readme
+Project-URL: Repository, https://github.com/morph-llm/a-coder-cli
+Project-URL: Bug Reports, https://github.com/morph-llm/a-coder-cli/issues
+Keywords: ai,coding,assistant,mcp,fastmcp,openai,terminal,cli,agent,autonomous
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Software Development :: Code Generators
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: openai>=1.0.0
+Requires-Dist: rich>=13.0.0
+Requires-Dist: fastmcp>=0.1.0
+Requires-Dist: python-dotenv>=1.0.0
+Requires-Dist: httpx>=0.24.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+Requires-Dist: black>=23.0.0; extra == "dev"
+Requires-Dist: flake8>=6.0.0; extra == "dev"
+Requires-Dist: mypy>=1.0.0; extra == "dev"
+Dynamic: author
+Dynamic: home-page
+Dynamic: requires-python
+
 # A-Coder CLI
 
 A terminal-based coding agent with natural conversation and MCP-powered file operations.

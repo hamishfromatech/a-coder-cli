@@ -10,6 +10,7 @@ import os
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Any
+import mimetypes
 
 from openai import AsyncOpenAI
 from rich.console import Console
@@ -20,6 +21,7 @@ from rich.syntax import Syntax
 from rich.markdown import Markdown
 from fastmcp import Client as MCPClient
 from config import ACoderConfig
+import json
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -44,6 +46,35 @@ class ACoderCLI:
         if base_url:
             client_kwargs["base_url"] = base_url
         self.openai_client = AsyncOpenAI(**client_kwargs)
+    
+    async def get_ollama_models(self) -> List[str]:
+        """Fetch available models from Ollama"""
+        try:
+            if not self.config or not self.config.openai.base_url:
+                return []
+            
+            base_url = self.config.openai.base_url
+            tags_url = base_url.replace('/v1', '') + '/api/tags'
+            
+            import httpx
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(tags_url)
+                if response.status_code == 200:
+                    data = response.json()
+                    models = [m['name'] for m in data.get('models', [])]
+                    return sorted(models)
+        except Exception as e:
+            self.console.print(f"[yellow]Could not fetch Ollama models: {e}[/yellow]")
+        return []
+    
+    async def switch_model(self, model_name: str) -> bool:
+        """Switch to a different model"""
+        if not self.config:
+            self.console.print("[red]No config loaded[/red]")
+            return False
+        
+        self.config.openai.model = model_name
+        return True
 
     async def connect_mcp_server(self, name: str, server_config: Dict[str, Any]) -> bool:
         """Connect to an MCP server"""
@@ -70,10 +101,30 @@ class ACoderCLI:
         client = self.mcp_clients[server_name]
         try:
             tools = await client.list_tools()
+            if tools is None:
+                return []
+            
+            tool_list = []
             if isinstance(tools, list):
-                return tools
-            return []
+                tool_list = tools
+            elif hasattr(tools, 'tools'):
+                tool_list = tools.tools
+            else:
+                return []
+            
+            result = []
+            for tool in tool_list:
+                if hasattr(tool, 'model_dump'):
+                    result.append(tool.model_dump())
+                elif hasattr(tool, '__dict__'):
+                    result.append(tool.__dict__)
+                elif isinstance(tool, dict):
+                    result.append(tool)
+            return result
         except Exception as e:
+            self.console.print(f"[yellow]Error listing tools from {server_name}: {e}[/yellow]")
+            import traceback
+            traceback.print_exc()
             return []
 
     async def call_mcp_tool(self, server_name: str, tool_name: str, arguments: Dict) -> Any:
@@ -87,6 +138,8 @@ class ACoderCLI:
             return result
         except Exception as e:
             self.console.print(f"[red]Error calling tool {tool_name}: {e}[/red]")
+            import traceback
+            traceback.print_exc()
             raise
 
     def display_welcome_screen(self):
@@ -151,6 +204,15 @@ All file operations (read, write, edit, create, delete) are performed through MC
 - `/mcp-list` - List connected MCP servers
 - `/mcp-tools <server>` - List tools from specific server
 - `/mcp-call <server> <tool> [args]` - Call MCP tool directly
+
+## Model Management (Ollama)
+
+- `/models` - List available Ollama models
+- `/switch-model <name>` - Switch to a different model
+
+## Debugging
+
+- `/export-tools` - Export available tools as JSON for debugging
 
 ## Tips
 
@@ -241,14 +303,17 @@ IMPORTANT - Tool Usage:
 - When asked about the codebase, use list_directory, read_file, and search_files tools
 - For file modifications, use edit_file or write_file tools
 - Never ask the user to manually perform file operations
+- CRITICAL: When tools require a 'path' argument, use the current project path shown below
+- NEVER make up or hallucinate information - if a tool fails, say so clearly
 
 When the user asks you to:
-1. Explore/analyze the codebase: Use list_directory and read_file tools
+1. Explore/analyze the codebase: Use list_directory and read_file tools with path="{project_path}"
 2. Modify files: Use edit_file or write_file tools
 3. Search for code: Use search_files tool
-4. Understand project structure: Use list_directory with appropriate paths
+4. Understand project structure: Use list_directory or directory_tree with path="{project_path}"
 
 Current project path: {project_path}
+IMPORTANT: Use this exact path when tools require a 'path' parameter!
 """.format(project_path=self.current_project_path)
         
         if self.added_files:
@@ -260,36 +325,54 @@ Current project path: {project_path}
         
         return system_prompt
 
-    def build_tools_list(self) -> List[Dict[str, Any]]:
+    async def build_tools_list(self) -> List[Dict[str, Any]]:
         """Build list of available MCP tools for function calling"""
         tools = []
         
+        if not self.mcp_clients:
+            return tools
+        
         for server_name, client in self.mcp_clients.items():
             try:
-                import asyncio
-                loop = asyncio.get_event_loop()
-                mcp_tools = loop.run_until_complete(self.list_mcp_tools(server_name))
+                mcp_tools = await self.list_mcp_tools(server_name)
+                
+                if not mcp_tools:
+                    continue
                 
                 for tool in mcp_tools:
-                    params = tool.get('parameters', {})
-                    if isinstance(params, dict) and 'properties' not in params:
-                        params = {"type": "object", "properties": params}
-                    
-                    tool_def = {
-                        "type": "function",
-                        "function": {
-                            "name": f"{server_name}__{tool.get('name', 'unknown')}",
-                            "description": tool.get('description', 'No description'),
-                            "parameters": params if params else {"type": "object", "properties": {}}
+                    try:
+                        if not isinstance(tool, dict):
+                            self.console.print(f"[yellow]Tool is not a dict: {type(tool)}[/yellow]")
+                            continue
+                        
+                        tool_name = tool.get('name', 'unknown')
+                        params = tool.get('parameters', {})
+                        description = tool.get('description', 'No description')
+                        
+                        if isinstance(params, dict) and 'properties' not in params:
+                            params = {"type": "object", "properties": params}
+                        
+                        full_tool_name = f"{server_name}--{tool_name}"
+                        
+                        tool_def = {
+                            "type": "function",
+                            "function": {
+                                "name": full_tool_name,
+                                "description": description,
+                                "parameters": params if params else {"type": "object", "properties": {}}
+                            }
                         }
-                    }
-                    tools.append(tool_def)
+                        tools.append(tool_def)
+                        pass
+                    except Exception as e:
+                        pass
+                        continue
             except Exception as e:
                 pass
-        
+                continue
         return tools
 
-    async def process_tool_calls(self, response) -> Optional[str]:
+    async def process_tool_calls(self, response) -> Optional[List[Dict]]:
         """Process tool calls from AI response"""
         if not hasattr(response, 'choices') or not response.choices:
             return None
@@ -302,39 +385,100 @@ Current project path: {project_path}
         
         for tool_call in choice.message.tool_calls:
             try:
-                # Parse tool name: "server__tool_name"
                 tool_name = tool_call.function.name
-                if '__' not in tool_name:
-                    continue
                 
-                server_name, actual_tool = tool_name.split('__', 1)
+                # Handle tool names without server prefix by searching for them
+                if '--' not in tool_name:
+                    self.console.print(f"[yellow]Tool name missing prefix: {tool_name}, searching...[/yellow]")
+                    # Try to find which server has this tool
+                    found = False
+                    for srv in self.mcp_clients.keys():
+                        srv_tools = await self.list_mcp_tools(srv)
+                        for t in srv_tools:
+                            if t.get('name') == tool_name:
+                                server_name = srv
+                                actual_tool = tool_name
+                                found = True
+                                self.console.print(f"[green]Found tool '{tool_name}' in server '{srv}'[/green]")
+                                break
+                        if found:
+                            break
+                    if not found:
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": tool_call.id,
+                            "content": f"Error: Could not find tool '{tool_name}' in any server"
+                        })
+                        continue
+                else:
+                    # Split on double dash separator
+                    parts = tool_name.split('--', 1)
+                    if len(parts) == 2:
+                        server_name, actual_tool = parts
+                    else:
+                        # Fallback: try first server
+                        server_name = list(self.mcp_clients.keys())[0]
+                        actual_tool = tool_name
                 
-                if server_name not in self.mcp_clients:
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": tool_call.id,
-                        "content": f"Server {server_name} not connected"
-                    })
-                    continue
                 
-                # Parse arguments
-                import json
-                args = json.loads(tool_call.function.arguments)
+                try:
+                    if tool_call.function.arguments:
+                        args = json.loads(tool_call.function.arguments)
+                        # Handle nested JSON strings in arguments
+                        for key, value in args.items():
+                            if isinstance(value, str) and value.startswith('[') or value.startswith('{'):
+                                try:
+                                    args[key] = json.loads(value)
+                                except:
+                                    pass  # Keep as string if not valid JSON
+                    else:
+                        args = {}
+                except (json.JSONDecodeError, TypeError) as e:
+                    args = {}
+                    self.console.print(f"[yellow]Could not parse tool args: {tool_call.function.arguments} - {e}[/yellow]")
                 
-                # Call the tool
-                self.console.print(f"[cyan]Calling {server_name}.{actual_tool}...[/cyan]")
+                if args:
+                    self.console.print(f"[cyan]→ Calling {server_name}.{actual_tool} with args: {args}[/cyan]")
+                else:
+                    self.console.print(f"[cyan]→ Calling {server_name}.{actual_tool}[/cyan]")
                 result = await self.call_mcp_tool(server_name, actual_tool, args)
                 
+                try:
+                    if result is None:
+                        result_str = ""
+                    elif isinstance(result, dict):
+                        result_str = json.dumps(result)
+                    elif isinstance(result, str):
+                        result_str = result
+                    else:
+                        result_str = str(result)
+                except Exception as e:
+                    self.console.print(f"[yellow]Could not serialize result: {e}[/yellow]")
+                    result_str = str(result) if result else ""
+                
+                # Truncate very large results to avoid API errors
+                MAX_RESULT_SIZE = 50000  # 50k chars max
+                if len(result_str) > MAX_RESULT_SIZE:
+                    self.console.print(f"[yellow]Result too large ({len(result_str)} chars), truncating to {MAX_RESULT_SIZE}[/yellow]")
+                    result_str = result_str[:MAX_RESULT_SIZE] + f"\n\n... (truncated {len(result_str) - MAX_RESULT_SIZE} chars)"
+                
+                if result_str:
+                    self.console.print(f"[dim]Result: {len(result_str)} chars[/dim]")
                 tool_results.append({
                     "type": "tool_result",
                     "tool_use_id": tool_call.id,
-                    "content": json.dumps(result) if not isinstance(result, str) else result
+                    "content": result_str if result_str else "(empty result)"
                 })
             except Exception as e:
+                self.console.print(f"[red]✗ Tool error: {str(e)}[/red]")
+                import traceback
+                traceback.print_exc()
+                # Add error as a tool result so AI knows what happened
+                error_msg = f"Tool '{tool_call.function.name}' failed with error: {str(e)}"
                 tool_results.append({
                     "type": "tool_result",
                     "tool_use_id": tool_call.id,
-                    "content": f"Error: {str(e)}"
+                    "content": error_msg
                 })
         
         return tool_results if tool_results else None
@@ -350,10 +494,16 @@ Current project path: {project_path}
         })
         
         try:
-            # Get available tools
-            tools = self.build_tools_list()
+            tools = await self.build_tools_list()
             
-            # First request with tools
+            if tools:
+                tool_names = ', '.join([t['function']['name'] for t in tools[:2]])
+                if len(tools) > 2:
+                    tool_names += f" ... and {len(tools) - 2} more"
+                self.console.print(f"[dim]Using {len(tools)} tools: {tool_names}[/dim]")
+            else:
+                self.console.print(f"[yellow]No tools available for this request[/yellow]")
+            
             response = await self.openai_client.chat.completions.create(
                 model=self.config.openai.model if self.config else "gpt-4",
                 messages=[
@@ -366,8 +516,21 @@ Current project path: {project_path}
                 timeout=30.0
             )
             
-            # Process tool calls if any
-            if response.choices[0].message.tool_calls:
+            # Agentic loop - keep calling tools until AI has enough info to respond
+            MAX_ITERATIONS = 10
+            iteration = 0
+            
+            while iteration < MAX_ITERATIONS:
+                # Check if this response has tool calls
+                if not (hasattr(response.choices[0].message, 'tool_calls') and response.choices[0].message.tool_calls):
+                    # No tool calls, we have a final response
+                    break
+                
+                iteration += 1
+                tool_calls = response.choices[0].message.tool_calls
+                tool_names_str = ', '.join([tc.function.name for tc in tool_calls])
+                self.console.print(f"[cyan]→ Step {iteration}: AI called {len(tool_calls)} tool(s): {tool_names_str}[/cyan]")
+                
                 # Add assistant message with tool calls
                 self.conversation_history.append({
                     "role": "assistant",
@@ -375,20 +538,51 @@ Current project path: {project_path}
                     "tool_calls": response.choices[0].message.tool_calls
                 })
                 
-                # Process the tool calls
+                # Process tool calls
                 tool_results = await self.process_tool_calls(response)
+                self.console.print(f"[dim]Got {len(tool_results) if tool_results else 0} tool results[/dim]")
                 
                 if tool_results:
-                    # Add tool results to history
+                    # Add tool results to history in OpenAI format
                     for result in tool_results:
+                        content = result.get("content", "")
+                        if not content:
+                            content = "(empty result)"
                         self.conversation_history.append({
-                            "role": "user",
-                            "content": result["content"],
-                            "tool_use_id": result.get("tool_use_id")
+                            "role": "tool",
+                            "tool_call_id": result.get("tool_use_id"),
+                            "content": content
                         })
+                
+                # Continue the conversation - let AI decide if it needs more tools or can respond
+                response = await self.openai_client.chat.completions.create(
+                    model=self.config.openai.model if self.config else "gpt-4",
+                    messages=[
+                        {"role": "system", "content": self.build_system_prompt()}
+                    ] + self.conversation_history,
+                    tools=tools if tools else None,
+                    tool_choice="auto" if tools else None,
+                    max_tokens=4000,
+                    temperature=0.7,
+                    timeout=30.0
+                )
+            
+            # After the loop, we have a final response (or hit max iterations)
+            if iteration > 0:
+                self.console.print(f"[green]✓ Completed in {iteration} step(s)[/green]")
+                final_response = response
+                
+                assistant_message = final_response.choices[0].message.content
+                if not assistant_message:
+                    self.console.print("[yellow]AI returned empty response, forcing retry with explicit instruction[/yellow]")
+                    # Force the AI to respond by adding an explicit instruction
+                    self.conversation_history.append({
+                        "role": "user",
+                        "content": "Based on the tool results above, please provide a clear, natural language summary of what you found. Be specific and detailed."
+                    })
                     
-                    # Get final response after tool calls
-                    final_response = await self.openai_client.chat.completions.create(
+                    # Retry the request with explicit instruction
+                    retry_response = await self.openai_client.chat.completions.create(
                         model=self.config.openai.model if self.config else "gpt-4",
                         messages=[
                             {"role": "system", "content": self.build_system_prompt()}
@@ -398,16 +592,28 @@ Current project path: {project_path}
                         timeout=30.0
                     )
                     
-                    assistant_message = final_response.choices[0].message.content
-                    self.conversation_history.append({
-                        "role": "assistant",
-                        "content": assistant_message
-                    })
-                    
-                    return assistant_message
+                    assistant_message = retry_response.choices[0].message.content
+                    if not assistant_message:
+                        # Final fallback - show the actual data
+                        summary = "Here's what I found:\n\n"
+                        for result in tool_results:
+                            content = result.get('content', '')
+                            if len(content) > 1000:
+                                summary += f"{content[:1000]}...\n\n"
+                            else:
+                                summary += f"{content}\n\n"
+                        assistant_message = summary if summary else "(No response generated)"
+                
+                self.console.print(f"[dim]Response: {len(assistant_message)} chars[/dim]")
+                self.conversation_history.append({
+                    "role": "assistant",
+                    "content": assistant_message
+                })
+                
+                return assistant_message
             else:
                 # No tool calls, just return the response
-                assistant_message = response.choices[0].message.content
+                assistant_message = response.choices[0].message.content or "(no response)"
                 self.conversation_history.append({
                     "role": "assistant",
                     "content": assistant_message
@@ -416,6 +622,9 @@ Current project path: {project_path}
                 return assistant_message
         except Exception as e:
             self.console.print(f"[red]Error communicating with AI: {e}[/red]")
+            import traceback
+            traceback.print_exc()
+            self.console.print(f"[dim]History: {len(self.conversation_history)} messages[/dim]")
             raise
 
     async def async_prompt(self, text: str) -> str:
@@ -437,8 +646,8 @@ Current project path: {project_path}
                 
                 # Handle commands
                 if user_input.startswith('/'):
-                    parts = user_input.split(maxsplit=1)
-                    cmd = parts[0].lower()
+                    parts = user_input.strip().split(maxsplit=1)
+                    cmd = parts[0].lower().strip()
                     args = parts[1].split() if len(parts) > 1 else []
                     
                     if cmd in ['/exit', '/quit']:
@@ -472,7 +681,9 @@ Current project path: {project_path}
                             self.console.print("[red]Usage: /mcp-tools <server_name>[/red]")
                             continue
                         server_name = args[0]
+                        self.console.print(f"[cyan]Fetching tools from {server_name}...[/cyan]")
                         tools = await self.list_mcp_tools(server_name)
+                        self.console.print(f"[dim]Got {len(tools)} tools[/dim]")
                         if tools:
                             table = Table(title=f"Tools from {server_name}")
                             table.add_column("Name", style="cyan")
@@ -484,7 +695,7 @@ Current project path: {project_path}
                                 )
                             self.console.print(table)
                         else:
-                            self.console.print(f"[yellow]No tools available[/yellow]")
+                            self.console.print(f"[yellow]No tools available from {server_name}[/yellow]")
                     elif cmd == '/mcp-call':
                         if len(args) < 2:
                             self.console.print("[red]Usage: /mcp-call <server> <tool> [args][/red]")
@@ -506,11 +717,64 @@ Current project path: {project_path}
                             ))
                         except Exception as e:
                             self.console.print(f"[red]Error: {e}[/red]")
+                    elif cmd == '/models':
+                        models = await self.get_ollama_models()
+                        if models:
+                            self.console.print("[cyan]Available Ollama models:[/cyan]")
+                            current_model = self.config.openai.model if self.config else "unknown"
+                            for i, model in enumerate(models, 1):
+                                marker = " [green]✓ current[/green]" if model == current_model else ""
+                                self.console.print(f"  {i}. {model}{marker}")
+                        else:
+                            self.console.print("[yellow]No models available or could not connect to Ollama[/yellow]")
+                    elif cmd == '/switch-model':
+                        if not args:
+                            self.console.print("[red]Usage: /switch-model <model_name>[/red]")
+                            models = await self.get_ollama_models()
+                            if models:
+                                self.console.print("[cyan]Available models:[/cyan]")
+                                for model in models:
+                                    self.console.print(f"  - {model}")
+                            else:
+                                self.console.print("[yellow]Could not fetch models[/yellow]")
+                            continue
+                        model_name = " ".join(args)
+                        success = await self.switch_model(model_name)
+                        if success:
+                            self.console.print(f"[green]Now using: {model_name}[/green]")
+                    elif cmd == '/export-tools':
+                        self.console.print("[cyan]Fetching tools from MCP servers...[/cyan]")
+                        for server_name in self.mcp_clients.keys():
+                            raw_tools = await self.list_mcp_tools(server_name)
+                            self.console.print(f"\n[cyan]{server_name}:[/cyan]")
+                            self.console.print(f"  Raw tools count: {len(raw_tools)}")
+                            if raw_tools:
+                                try:
+                                    sample_json = json.dumps(raw_tools[:1], indent=2)
+                                    self.console.print(Panel(
+                                        Syntax(sample_json, "json", theme="monokai", line_numbers=True),
+                                        title=f"Sample from {server_name}",
+                                        border_style="cyan"
+                                    ))
+                                except Exception as e:
+                                    self.console.print(f"[yellow]Could not serialize tools: {e}[/yellow]")
+                        
+                        tools = await self.build_tools_list()
+                        self.console.print(f"\n[cyan]Formatted tools for OpenAI:[/cyan]")
+                        try:
+                            tools_json = json.dumps(tools, indent=2)
+                            self.console.print(Panel(
+                                Syntax(tools_json, "json", theme="monokai", line_numbers=True),
+                                title="Available Tools (JSON)",
+                                border_style="cyan"
+                            ))
+                        except Exception as e:
+                            self.console.print(f"[red]Error serializing tools: {e}[/red]")
                     else:
                         self.console.print(f"[red]Unknown command: {cmd}[/red]")
-                        self.console.print("Type '/help' for available commands.")
+                        self.console.print("[dim]Available: /help, /add, /add-ro, /remove, /files, /clear-files, /models, /switch-model, /mcp-list, /mcp-tools, /mcp-call, /export-tools, /exit[/dim]")
                 else:
-                    # Natural conversation
+                    # Natural conversation (not a command)
                     self.console.print("[yellow]Thinking...[/yellow]")
                     try:
                         response = await self.chat_with_ai(user_input)
@@ -526,6 +790,8 @@ Current project path: {project_path}
                 self.console.print("\n[yellow]Use '/exit' or '/quit' to leave[/yellow]")
             except Exception as e:
                 self.console.print(f"[red]Error: {e}[/red]")
+                import traceback
+                traceback.print_exc()
 
     async def run(self, args):
         """Main entry point"""

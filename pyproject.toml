@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "a-coder-cli"
+version = "1.0.0"
+description = "Terminal-based coding agent with autonomous tool calling and MCP server support"
+readme = "README.md"
+requires-python = ">=3.8"
+license = "MIT"
+authors = [
+    {name = "Morph", email = "support@morphllm.com"}
+]
+keywords = ["ai", "coding", "assistant", "mcp", "fastmcp", "openai", "terminal", "cli", "agent", "autonomous"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Code Generators",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    "openai>=1.0.0",
+    "rich>=13.0.0",
+    "fastmcp>=0.1.0",
+    "python-dotenv>=1.0.0",
+    "httpx>=0.24.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+]
+
+[project.scripts]
+a-coder = "a_coder_cli:main"
+acoder = "a_coder_cli:main"
+
+[project.urls]
+Homepage = "https://github.com/morph-llm/a-coder-cli"
+Documentation = "https://github.com/morph-llm/a-coder-cli#readme"
+Repository = "https://github.com/morph-llm/a-coder-cli"
+"Bug Reports" = "https://github.com/morph-llm/a-coder-cli/issues"
+
+[tool.setuptools]
+py-modules = ["a_coder_cli", "config"]
