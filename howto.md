@@ -5,4 +5,4 @@ rm -rf dist/*
 python -m build
 
 # Upload to TestPyPI
-python -m twine upload --repository testpypi dist/a_coder_cli-1.0.4*
+python -m twine upload --repository testpypi dist/a_coder_cli-1.0.7*

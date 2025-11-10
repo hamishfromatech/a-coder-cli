@@ -19,6 +19,10 @@ from rich.prompt import Prompt
 from rich.table import Table
 from rich.syntax import Syntax
 from rich.markdown import Markdown
+from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.text import Text
+from rich.box import ROUNDED, DOUBLE, HEAVY
+from rich.align import Align
 from fastmcp import Client as MCPClient
 from config import ACoderConfig
 import json
@@ -42,6 +46,17 @@ class ACoderCLI:
         self.added_files: Dict[str, str] = {}
         self.read_only_files: set = set()
         self.prompt_session = PromptSession(history=InMemoryHistory())
+        self.streaming_enabled = False  # Toggle for streaming responses
+
+    async def async_prompt(self, message: str) -> str:
+        """Async wrapper for prompt_toolkit prompt with Rich formatting"""
+        import asyncio
+        from prompt_toolkit.formatted_text import HTML
+        
+        # Convert Rich markup to plain text for prompt_toolkit
+        # Just use a simple prompt without markup for prompt_toolkit
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, lambda: self.prompt_session.prompt("\nYou › "))
 
     def setup_openai(self, api_key: str, base_url: Optional[str] = None):
         """Initialize OpenAI client"""
@@ -83,17 +98,17 @@ class ACoderCLI:
         """Connect to an MCP server"""
         try:
             if not server_config:
-                self.console.print(f"[red]✗[/red] No configuration for MCP server: {name}")
+                self.console.print(f"[bold red]✗[/bold red] [bright_white]No configuration for MCP server:[/bright_white] [bold]{name}[/bold]")
                 return False
             
             config_dict = {"mcpServers": {name: server_config}}
             client = MCPClient(config_dict)
             await client.__aenter__()
             self.mcp_clients[name] = client
-            self.console.print(f"[green]✓[/green] Connected to MCP server: {name}")
+            self.console.print(f"[bold green]✓[/bold green] [bright_white]Connected to MCP server:[/bright_white] [bold cyan]{name}[/bold cyan]")
             return True
         except Exception as e:
-            self.console.print(f"[red]✗[/red] Failed to connect to MCP server {name}: {e}")
+            self.console.print(f"[bold red]✗[/bold red] [bright_white]Failed to connect to MCP server[/bright_white] [bold]{name}[/bold]: [red]{e}[/red]")
             return False
 
     async def list_mcp_tools(self, server_name: str) -> List[Dict]:
@@ -147,31 +162,53 @@ class ACoderCLI:
 
     def display_welcome_screen(self):
         """Display the welcome screen"""
+        # Create a gradient-style header
+        header = Text()
+        header.append("\n  ╔═══════════════════════════════════════════════════════════╗\n", style="bold cyan")
+        header.append("  ║                                                           ║\n", style="bold cyan")
+        header.append("  ║  ", style="bold cyan")
+        header.append("A-Coder CLI", style="bold white on blue")
+        header.append("  ✨                                     ║\n", style="bold cyan")
+        header.append("  ║  ", style="bold cyan")
+        header.append("Your Premium AI Coding Assistant", style="italic bright_white")
+        header.append("                 ║\n", style="bold cyan")
+        header.append("  ║                                                           ║\n", style="bold cyan")
+        header.append("  ╚═══════════════════════════════════════════════════════════╝\n", style="bold cyan")
+        
+        self.console.print(header)
+        
         welcome_text = """
-# A-Coder CLI
+[bold bright_cyan]🚀 Quick Start[/bold bright_cyan]
 
-**Your AI-powered coding assistant with MCP server integration**
+[dim]Start chatting naturally or use commands to manage your workspace:[/dim]
 
-Start chatting naturally! Use commands to manage files:
+[bold bright_magenta]📁 File Management[/bold bright_magenta]
+  [cyan]•[/cyan] [bold]/add[/bold] [dim]<file>[/dim]        Add file to context (editable)
+  [cyan]•[/cyan] [bold]/add-ro[/bold] [dim]<file>[/dim]     Add as read-only reference
+  [cyan]•[/cyan] [bold]/files[/bold]              Show all added files
+  [cyan]•[/cyan] [bold]/remove[/bold] [dim]<file>[/dim]     Remove from context
+  [cyan]•[/cyan] [bold]/clear-files[/bold]        Clear all files
 
-**File Management** (via MCP):
-- `/add <file>` - Add file to conversation context
-- `/add-ro <file>` - Add file as read-only reference
-- `/files` - Show added files
-- `/remove <file>` - Remove file from context
-- `/clear-files` - Clear all added files
+[bold bright_green]💬 Conversation[/bold bright_green]
+  [green]•[/green] Just type naturally - the AI understands context
+  [green]•[/green] Use [bold]↑/↓[/bold] arrow keys for command history
 
-**Conversation**:
-- Just type naturally to chat with the AI
-- Files are automatically included in context
+[bold bright_yellow]⚡ Quick Commands[/bold bright_yellow]
+  [yellow]•[/yellow] [bold]/help[/bold]     Detailed guide
+  [yellow]•[/yellow] [bold]/clear[/bold]    Clear screen
+  [yellow]•[/yellow] [bold]/exit[/bold]     Quit application
 
-**General**:
-- `/help` - Show detailed help
-- `/clear` - Clear screen
-- `/exit` or `/quit` - Exit application
+[italic dim]Tip: Type /help for advanced features and MCP server commands[/italic dim]
         """
         
-        self.console.print(Panel(Markdown(welcome_text), title="Welcome", border_style="blue"))
+        panel = Panel(
+            welcome_text,
+            border_style="bright_cyan",
+            box=ROUNDED,
+            padding=(1, 2)
+        )
+        self.console.print(panel)
+        self.console.print()
 
     def display_help(self):
         """Display detailed help information"""
@@ -193,14 +230,15 @@ Simply type your request and the AI will respond. All added files are automatica
 - `/remove <filepath>` - Remove file from context
 - `/clear-files` - Clear all added files
 
-## File Operations
+## File Operations via AI
 
-All file operations (read, write, edit, create, delete) are performed through MCP servers:
+All file operations are performed by chatting naturally with the AI, which uses MCP tools:
 
-- **Edit files**: Use `/edit` or ask the AI to modify files
-- **Create files**: Ask the AI to create new files
-- **Search files**: Use `/search <pattern>` to find files
-- **View file tree**: Use `/tree` to see project structure
+- **Edit files**: Ask "Edit file.py to add a new function"
+- **Create files**: Ask "Create a new README.md file"
+- **Search files**: Ask "Search for all TODO comments"
+- **View file tree**: Ask "Show me the project structure"
+- **Read files**: Ask "What's in the main.py file?"
 
 ## MCP Server Commands
 
@@ -212,6 +250,10 @@ All file operations (read, write, edit, create, delete) are performed through MC
 
 - `/models` - List available Ollama models
 - `/switch-model <name>` - Switch to a different model
+
+## Display Options
+
+- `/stream` - Toggle streaming responses (on/off)
 
 ## Debugging
 
@@ -246,14 +288,14 @@ All file operations (read, write, edit, create, delete) are performed through MC
         
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            self.added_files[filepath] = content
+                content = file_path.read_text()
+            self.added_files[str(file_path)] = content
             if read_only:
-                self.read_only_files.add(filepath)
-                self.console.print(f"[green]✓[/green] Added {filepath} (read-only)")
-            else:
-                self.console.print(f"[green]✓[/green] Added {filepath}")
+                self.read_only_files.add(str(file_path))
+            
+            status_icon = "🔒" if read_only else "📝"
+            status_text = "read-only" if read_only else "editable"
+            self.console.print(f"[bold green]✓ Added[/bold green] [dim]│[/dim] {status_icon} [cyan]{filepath}[/cyan] [dim]({len(content):,} bytes, {status_text})[/dim]")
         except Exception as e:
             self.console.print(f"[red]Error reading file: {e}[/red]")
 
@@ -267,27 +309,36 @@ All file operations (read, write, edit, create, delete) are performed through MC
         if filepath in self.added_files:
             del self.added_files[filepath]
             self.read_only_files.discard(filepath)
-            self.console.print(f"[green]✓[/green] Removed {filepath}")
+            self.console.print(f"[bold green]✓ Removed[/bold green] [dim]│[/dim] [cyan]{filepath}[/cyan]")
         else:
-            self.console.print(f"[yellow]File not in context: {filepath}[/yellow]")
+            self.console.print(f"[yellow]⚠ File not in context:[/yellow] [dim]{filepath}[/dim]")
 
-    def display_added_files(self):
-        """Display all added files"""
+    def display_files(self):
+        """Display currently added files"""
         if not self.added_files:
-            self.console.print("[yellow]No files added to context[/yellow]")
+            self.console.print("\n[dim]📂 No files in context[/dim]\n")
             return
         
-        table = Table(title="Added Files")
-        table.add_column("File", style="cyan")
-        table.add_column("Status", style="green")
-        table.add_column("Size", style="yellow")
+        table = Table(
+            title="📂 Files in Context",
+            border_style="bright_cyan",
+            box=ROUNDED,
+            show_header=True,
+            header_style="bold bright_white"
+        )
+        table.add_column("File", style="cyan", no_wrap=False)
+        table.add_column("Status", style="bright_magenta", justify="center")
+        table.add_column("Size", style="bright_yellow", justify="right")
         
-        for filepath, content in self.added_files.items():
-            status = "read-only" if filepath in self.read_only_files else "editable"
-            size = f"{len(content)} bytes"
-            table.add_row(filepath, status, size)
+        for filepath in self.added_files.keys():
+            status_icon = "🔒 read-only" if filepath in self.read_only_files else "📝 editable"
+            size = len(self.added_files[filepath])
+            size_str = f"{size:,} bytes" if size < 1024 else f"{size/1024:.1f} KB"
+            table.add_row(filepath, status_icon, size_str)
         
+        self.console.print("")
         self.console.print(table)
+        self.console.print("")
 
     def build_system_prompt(self) -> str:
         """Build system prompt with file context"""
@@ -309,11 +360,28 @@ IMPORTANT - Tool Usage:
 - CRITICAL: When tools require a 'path' argument, use the current project path shown below
 - NEVER make up or hallucinate information - if a tool fails, say so clearly
 
+CRITICAL - File Exclusions:
+- ALWAYS exclude these patterns when using directory_tree, search_files, or list operations:
+  * config.json (A-Coder CLI configuration file)
+  * .git/** (Git repository data)
+  * node_modules/** (Node dependencies)
+  * venv/** (Python virtual environment)
+  * env/** (Python virtual environment)
+  * .venv/** (Python virtual environment)
+  * __pycache__/** (Python cache)
+  * *.pyc (Python compiled files)
+  * .env (Environment variables)
+  * dist/** (Build artifacts)
+  * build/** (Build artifacts)
+  * *.egg-info/** (Python package metadata)
+- Use the excludePatterns parameter in directory_tree and search_files tools
+- DO NOT read, modify, or reference config.json in any operations
+
 When the user asks you to:
 1. Explore/analyze the codebase: Use list_directory and read_file tools with path="{project_path}"
 2. Modify files: Use edit_file or write_file tools
-3. Search for code: Use search_files tool
-4. Understand project structure: Use list_directory or directory_tree with path="{project_path}"
+3. Search for code: Use search_files tool with excludePatterns=["config.json", ".git/**", "node_modules/**", "venv/**", "env/**", ".venv/**", "__pycache__/**", "*.pyc", ".env", "dist/**", "build/**", "*.egg-info/**"]
+4. Understand project structure: Use directory_tree with path="{project_path}" and excludePatterns=["config.json", ".git/**", "node_modules/**", "venv/**", "env/**", ".venv/**", "__pycache__/**", "*.pyc", ".env", "dist/**", "build/**", "*.egg-info/**"]
 
 Current project path: {project_path}
 IMPORTANT: Use this exact path when tools require a 'path' parameter!
@@ -348,43 +416,36 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                             self.console.print(f"[yellow]Tool is not a dict: {type(tool)}[/yellow]")
                             continue
                         
-                        tool_name = tool.get('name', 'unknown')
-                        params = tool.get('parameters', {})
-                        description = tool.get('description', 'No description')
+                        tool_name = tool.get('name')
+                        if not tool_name:
+                            continue
                         
-                        if isinstance(params, dict) and 'properties' not in params:
-                            params = {"type": "object", "properties": params}
-                        
-                        full_tool_name = f"{server_name}--{tool_name}"
-                        
-                        tool_def = {
+                        # Format tool for OpenAI with server prefix
+                        formatted_tool = {
                             "type": "function",
                             "function": {
-                                "name": full_tool_name,
-                                "description": description,
-                                "parameters": params if params else {"type": "object", "properties": {}}
+                                "name": f"{server_name}--{tool_name}",
+                                "description": tool.get('description', ''),
+                                "parameters": tool.get('inputSchema', {})
                             }
                         }
-                        tools.append(tool_def)
-                        pass
+                        tools.append(formatted_tool)
                     except Exception as e:
-                        pass
+                        self.console.print(f"[yellow]Error formatting tool: {e}[/yellow]")
                         continue
             except Exception as e:
-                pass
+                self.console.print(f"[yellow]Error getting tools from {server_name}: {e}[/yellow]")
                 continue
+        
         return tools
 
-    async def process_tool_calls(self, response) -> Optional[List[Dict]]:
+    async def process_tool_calls(self, response) -> List[Dict]:
         """Process tool calls from AI response"""
-        if not hasattr(response, 'choices') or not response.choices:
-            return None
-        
-        choice = response.choices[0]
-        if not hasattr(choice.message, 'tool_calls') or not choice.message.tool_calls:
-            return None
-        
         tool_results = []
+        choice = response.choices[0]
+        
+        if not hasattr(choice.message, 'tool_calls') or not choice.message.tool_calls:
+            return tool_results
         
         for tool_call in choice.message.tool_calls:
             try:
@@ -440,10 +501,25 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                     args = {}
                     self.console.print(f"[yellow]Could not parse tool args: {tool_call.function.arguments} - {e}[/yellow]")
                 
+                # Block access to sensitive files
+                blocked_files = ['config.json', '.env']
+                path_arg = args.get('path', '')
+                if path_arg:
+                    # Check if path contains any blocked file
+                    if any(blocked in path_arg for blocked in blocked_files):
+                        error_msg = f"Access denied: Cannot read or modify '{path_arg}' - this is a sensitive configuration file"
+                        self.console.print(f"[bold red]✗ Access Denied[/bold red] [dim]│[/dim] [yellow]{path_arg}[/yellow] [dim]is protected[/dim]")
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": tool_call.id,
+                            "content": error_msg
+                        })
+                        continue
+                
                 if args:
-                    self.console.print(f"[cyan]→ Calling {server_name}.{actual_tool} with args: {args}[/cyan]")
+                    self.console.print(f"[dim]  ├─[/dim] [bold cyan]{server_name}[/bold cyan][dim].[/dim][bright_white]{actual_tool}[/bright_white] [dim]{args}[/dim]")
                 else:
-                    self.console.print(f"[cyan]→ Calling {server_name}.{actual_tool}[/cyan]")
+                    self.console.print(f"[dim]  ├─[/dim] [bold cyan]{server_name}[/bold cyan][dim].[/dim][bright_white]{actual_tool}[/bright_white]")
                 result = await self.call_mcp_tool(server_name, actual_tool, args)
                 
                 try:
@@ -466,7 +542,7 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                     result_str = result_str[:MAX_RESULT_SIZE] + f"\n\n... (truncated {len(result_str) - MAX_RESULT_SIZE} chars)"
                 
                 if result_str:
-                    self.console.print(f"[dim]Result: {len(result_str)} chars[/dim]")
+                    self.console.print(f"[dim]  └─ Result: {len(result_str)} chars[/dim]")
                 tool_results.append({
                     "type": "tool_result",
                     "tool_use_id": tool_call.id,
@@ -487,26 +563,69 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
         return tool_results if tool_results else None
 
     async def chat_with_ai(self, user_message: str) -> str:
-        """Send message to AI and get response with tool calling"""
-        if not self.openai_client:
-            raise ValueError("OpenAI client not initialized")
-        
+        """Send a message to the AI and get a response with tool calling support"""
+        # Add user message to history
         self.conversation_history.append({
             "role": "user",
             "content": user_message
         })
         
-        try:
-            tools = await self.build_tools_list()
+        # Build tools list from MCP servers
+        tools = await self.build_tools_list()
+        
+        # Make initial API call
+        response = await self.openai_client.chat.completions.create(
+            model=self.config.openai.model if self.config else "gpt-4",
+            messages=[
+                {"role": "system", "content": self.build_system_prompt()}
+            ] + self.conversation_history,
+            tools=tools if tools else None,
+            tool_choice="auto" if tools else None,
+            max_tokens=4000,
+            temperature=0.7,
+            timeout=30.0,
+            stream=False  # Don't stream during tool calling phase
+        )
+        
+        # Handle tool calling loop
+        MAX_ITERATIONS = 10
+        iteration = 0
+        
+        while iteration < MAX_ITERATIONS:
+            # Check if this response has tool calls
+            if not (hasattr(response.choices[0].message, 'tool_calls') and response.choices[0].message.tool_calls):
+                # No tool calls, we have a final response
+                break
             
-            if tools:
-                tool_names = ', '.join([t['function']['name'] for t in tools[:2]])
-                if len(tools) > 2:
-                    tool_names += f" ... and {len(tools) - 2} more"
-                self.console.print(f"[dim]Using {len(tools)} tools: {tool_names}[/dim]")
-            else:
-                self.console.print(f"[yellow]No tools available for this request[/yellow]")
+            iteration += 1
+            tool_calls = response.choices[0].message.tool_calls
+            tool_names_str = ', '.join([tc.function.name for tc in tool_calls])
+            self.console.print(f"\n[bold bright_blue]→ Step {iteration}[/bold bright_blue] [dim]│[/dim] [bright_white]AI called {len(tool_calls)} tool(s):[/bright_white] [bold cyan]{tool_names_str}[/bold cyan]")
             
+            # Add assistant message with tool calls
+            self.conversation_history.append({
+                "role": "assistant",
+                "content": response.choices[0].message.content or "",
+                "tool_calls": response.choices[0].message.tool_calls
+            })
+            
+            # Process tool calls
+            tool_results = await self.process_tool_calls(response)
+            self.console.print(f"[dim]  └─ Received {len(tool_results) if tool_results else 0} tool results[/dim]")
+            
+            if tool_results:
+                # Add tool results to history in OpenAI format
+                for result in tool_results:
+                    content = result.get("content", "")
+                    if not content:
+                        content = "(empty result)"
+                    self.conversation_history.append({
+                        "role": "tool",
+                        "tool_call_id": result.get("tool_use_id"),
+                        "content": content
+                    })
+            
+            # Continue the conversation - let AI decide if it needs more tools or can respond
             response = await self.openai_client.chat.completions.create(
                 model=self.config.openai.model if self.config else "gpt-4",
                 messages=[
@@ -516,125 +635,91 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                 tool_choice="auto" if tools else None,
                 max_tokens=4000,
                 temperature=0.7,
-                timeout=30.0
+                timeout=30.0,
+                stream=False  # Don't stream during tool calling
+            )
+        
+        # After the loop, we have a final response (or hit max iterations)
+        if iteration > 0:
+            self.console.print(f"\n[bold green]✓ Completed[/bold green] [dim]│[/dim] [bright_white]{iteration} step(s)[/bright_white]\n")
+        
+        # Check if we need to get a final text response
+        # If the last response has tool calls, we need one more call to get the final answer
+        needs_final_response = (iteration > 0 and 
+                               hasattr(response.choices[0].message, 'tool_calls') and 
+                               response.choices[0].message.tool_calls)
+        
+        if needs_final_response:
+            # Make one final call to get the text response after tool execution
+            response = await self.openai_client.chat.completions.create(
+                model=self.config.openai.model if self.config else "gpt-4",
+                messages=[
+                    {"role": "system", "content": self.build_system_prompt()}
+                ] + self.conversation_history,
+                max_tokens=4000,
+                temperature=0.7,
+                timeout=30.0,
+                stream=False
+            )
+        
+        # If streaming is enabled and this is the final response (no tool calls), stream it
+        if self.streaming_enabled and iteration == 0:
+            from rich.live import Live
+            from rich.text import Text
+            
+            # Re-request with streaming for the final response
+            stream = await self.openai_client.chat.completions.create(
+                model=self.config.openai.model if self.config else "gpt-4",
+                messages=[
+                    {"role": "system", "content": self.build_system_prompt()}
+                ] + self.conversation_history,
+                max_tokens=4000,
+                temperature=0.7,
+                timeout=30.0,
+                stream=True
             )
             
-            # Agentic loop - keep calling tools until AI has enough info to respond
-            MAX_ITERATIONS = 10
-            iteration = 0
+            # Stream the response into a live-updating panel
+            assistant_message = ""
+            self.console.print()
             
-            while iteration < MAX_ITERATIONS:
-                # Check if this response has tool calls
-                if not (hasattr(response.choices[0].message, 'tool_calls') and response.choices[0].message.tool_calls):
-                    # No tool calls, we have a final response
-                    break
-                
-                iteration += 1
-                tool_calls = response.choices[0].message.tool_calls
-                tool_names_str = ', '.join([tc.function.name for tc in tool_calls])
-                self.console.print(f"[cyan]→ Step {iteration}: AI called {len(tool_calls)} tool(s): {tool_names_str}[/cyan]")
-                
-                # Add assistant message with tool calls
-                self.conversation_history.append({
-                    "role": "assistant",
-                    "content": response.choices[0].message.content or "",
-                    "tool_calls": response.choices[0].message.tool_calls
-                })
-                
-                # Process tool calls
-                tool_results = await self.process_tool_calls(response)
-                self.console.print(f"[dim]Got {len(tool_results) if tool_results else 0} tool results[/dim]")
-                
-                if tool_results:
-                    # Add tool results to history in OpenAI format
-                    for result in tool_results:
-                        content = result.get("content", "")
-                        if not content:
-                            content = "(empty result)"
-                        self.conversation_history.append({
-                            "role": "tool",
-                            "tool_call_id": result.get("tool_use_id"),
-                            "content": content
-                        })
-                
-                # Continue the conversation - let AI decide if it needs more tools or can respond
-                response = await self.openai_client.chat.completions.create(
-                    model=self.config.openai.model if self.config else "gpt-4",
-                    messages=[
-                        {"role": "system", "content": self.build_system_prompt()}
-                    ] + self.conversation_history,
-                    tools=tools if tools else None,
-                    tool_choice="auto" if tools else None,
-                    max_tokens=4000,
-                    temperature=0.7,
-                    timeout=30.0
-                )
+            with Live(
+                Panel(
+                    Text(""),
+                    title="[bold bright_white]🤖 A-Coder[/bold bright_white]",
+                    border_style="bright_green",
+                    box=ROUNDED,
+                    padding=(1, 2)
+                ),
+                console=self.console,
+                refresh_per_second=10
+            ) as live:
+                async for chunk in stream:
+                    if chunk.choices[0].delta.content:
+                        content = chunk.choices[0].delta.content
+                        assistant_message += content
+                        # Update the live panel with accumulated text
+                        live.update(
+                            Panel(
+                                Markdown(assistant_message),
+                                title="[bold bright_white]🤖 A-Coder[/bold bright_white]",
+                                border_style="bright_green",
+                                box=ROUNDED,
+                                padding=(1, 2)
+                            )
+                        )
             
-            # After the loop, we have a final response (or hit max iterations)
-            if iteration > 0:
-                self.console.print(f"[green]✓ Completed in {iteration} step(s)[/green]")
-                final_response = response
-                
-                assistant_message = final_response.choices[0].message.content
-                if not assistant_message:
-                    self.console.print("[yellow]AI returned empty response, forcing retry with explicit instruction[/yellow]")
-                    # Force the AI to respond by adding an explicit instruction
-                    self.conversation_history.append({
-                        "role": "user",
-                        "content": "Based on the tool results above, please provide a clear, natural language summary of what you found. Be specific and detailed."
-                    })
-                    
-                    # Retry the request with explicit instruction
-                    retry_response = await self.openai_client.chat.completions.create(
-                        model=self.config.openai.model if self.config else "gpt-4",
-                        messages=[
-                            {"role": "system", "content": self.build_system_prompt()}
-                        ] + self.conversation_history,
-                        max_tokens=4000,
-                        temperature=0.7,
-                        timeout=30.0
-                    )
-                    
-                    assistant_message = retry_response.choices[0].message.content
-                    if not assistant_message:
-                        # Final fallback - show the actual data
-                        summary = "Here's what I found:\n\n"
-                        for result in tool_results:
-                            content = result.get('content', '')
-                            if len(content) > 1000:
-                                summary += f"{content[:1000]}...\n\n"
-                            else:
-                                summary += f"{content}\n\n"
-                        assistant_message = summary if summary else "(No response generated)"
-                
-                self.console.print(f"[dim]Response: {len(assistant_message)} chars[/dim]")
-                self.conversation_history.append({
-                    "role": "assistant",
-                    "content": assistant_message
-                })
-                
-                return assistant_message
-            else:
-                # No tool calls, just return the response
-                assistant_message = response.choices[0].message.content or "(no response)"
-                self.conversation_history.append({
-                    "role": "assistant",
-                    "content": assistant_message
-                })
-                
-                return assistant_message
-        except Exception as e:
-            self.console.print(f"[red]Error communicating with AI: {e}[/red]")
-            import traceback
-            traceback.print_exc()
-            self.console.print(f"[dim]History: {len(self.conversation_history)} messages[/dim]")
-            raise
-
-    async def async_prompt(self, text: str) -> str:
-        """Async version of prompt with history support"""
-        # Use prompt_toolkit for command history with arrow keys
-        result = await self.prompt_session.prompt_async("You>: ")
-        return result
+            self.console.print()  # New line after streaming
+        else:
+            # Get final message (non-streaming or after tool calls)
+            assistant_message = response.choices[0].message.content or "(no response)"
+        
+        self.conversation_history.append({
+            "role": "assistant",
+            "content": assistant_message
+        })
+        
+        return assistant_message
 
     async def run_interactive_mode(self):
         """Run the interactive conversation loop"""
@@ -642,7 +727,7 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
         
         while True:
             try:
-                user_input = await self.async_prompt("[bold blue]You>[/bold blue]")
+                user_input = await self.async_prompt("")  # Message is now in the method itself
                 
                 if not user_input.strip():
                     continue
@@ -654,12 +739,14 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                     args = parts[1].split() if len(parts) > 1 else []
                     
                     if cmd in ['/exit', '/quit']:
-                        self.console.print("[yellow]Goodbye![/yellow]")
+                        self.console.print("\n[bold bright_cyan]👋 Thanks for using A-Coder![/bold bright_cyan]\n")
                         break
                     elif cmd == '/help':
+                        self.console.clear()
                         self.display_help()
                     elif cmd == '/clear':
                         self.console.clear()
+                        self.display_welcome_screen()
                     elif cmd == '/add':
                         await self.handle_add_file(args, read_only=False)
                     elif cmd == '/add-ro':
@@ -667,18 +754,21 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                     elif cmd == '/remove':
                         await self.handle_remove_file(args)
                     elif cmd == '/files':
-                        self.display_added_files()
+                        self.console.print()
+                        self.display_files()
                     elif cmd == '/clear-files':
+                        count = len(self.added_files)
                         self.added_files.clear()
                         self.read_only_files.clear()
-                        self.console.print("[green]✓[/green] Cleared all files")
+                        self.console.print(f"[bold green]✓ Cleared[/bold green] [dim]│[/dim] [bright_white]{count} file(s) removed from context[/bright_white]")
                     elif cmd == '/mcp-list':
                         if self.mcp_clients:
-                            self.console.print("[green]Connected MCP servers:[/green]")
-                            for name in self.mcp_clients.keys():
-                                self.console.print(f"  - [cyan]{name}[/cyan]")
+                            self.console.print("\n[bold bright_cyan]🔌 Connected MCP Servers[/bold bright_cyan]")
+                            for i, name in enumerate(self.mcp_clients.keys(), 1):
+                                self.console.print(f"  [dim]{i}.[/dim] [bold cyan]{name}[/bold cyan]")
+                            self.console.print()
                         else:
-                            self.console.print("[yellow]No MCP servers connected[/yellow]")
+                            self.console.print("[yellow]⚠ No MCP servers connected[/yellow]")
                     elif cmd == '/mcp-tools':
                         if not args:
                             self.console.print("[red]Usage: /mcp-tools <server_name>[/red]")
@@ -688,17 +778,25 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                         tools = await self.list_mcp_tools(server_name)
                         self.console.print(f"[dim]Got {len(tools)} tools[/dim]")
                         if tools:
-                            table = Table(title=f"Tools from {server_name}")
-                            table.add_column("Name", style="cyan")
-                            table.add_column("Description", style="green")
+                            table = Table(
+                                title=f"🛠️  Tools from {server_name}",
+                                border_style="bright_cyan",
+                                box=ROUNDED,
+                                show_header=True,
+                                header_style="bold bright_white"
+                            )
+                            table.add_column("Tool Name", style="bold cyan", no_wrap=False)
+                            table.add_column("Description", style="bright_white", no_wrap=False)
                             for tool in tools:
                                 table.add_row(
                                     tool.get('name', 'Unknown'),
                                     tool.get('description', 'No description')
                                 )
+                            self.console.print("")
                             self.console.print(table)
+                            self.console.print()
                         else:
-                            self.console.print(f"[yellow]No tools available from {server_name}[/yellow]")
+                            self.console.print(f"[yellow]⚠ No tools available from {server_name}[/yellow]")
                     elif cmd == '/mcp-call':
                         if len(args) < 2:
                             self.console.print("[red]Usage: /mcp-call <server> <tool> [args][/red]")
@@ -723,13 +821,16 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                     elif cmd == '/models':
                         models = await self.get_ollama_models()
                         if models:
-                            self.console.print("[cyan]Available Ollama models:[/cyan]")
+                            self.console.print("\n[bold bright_cyan]🤖 Available Ollama Models[/bold bright_cyan]\n")
                             current_model = self.config.openai.model if self.config else "unknown"
                             for i, model in enumerate(models, 1):
-                                marker = " [green]✓ current[/green]" if model == current_model else ""
-                                self.console.print(f"  {i}. {model}{marker}")
+                                if model == current_model:
+                                    self.console.print(f"  [bold green]✓[/bold green] [bold cyan]{model}[/bold cyan] [dim](current)[/dim]")
+                                else:
+                                    self.console.print(f"  [dim]{i}.[/dim] [cyan]{model}[/cyan]")
+                            self.console.print()
                         else:
-                            self.console.print("[yellow]No models available or could not connect to Ollama[/yellow]")
+                            self.console.print("[yellow]⚠ No models available or could not connect to Ollama[/yellow]")
                     elif cmd == '/switch-model':
                         if not args:
                             self.console.print("[red]Usage: /switch-model <model_name>[/red]")
@@ -744,7 +845,12 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                         model_name = " ".join(args)
                         success = await self.switch_model(model_name)
                         if success:
-                            self.console.print(f"[green]Now using: {model_name}[/green]")
+                            self.console.print(f"[bold green]✓ Switched[/bold green] [dim]│[/dim] [bright_white]Now using:[/bright_white] [bold cyan]{model_name}[/bold cyan]")
+                    elif cmd == '/stream':
+                        self.streaming_enabled = not self.streaming_enabled
+                        status = "enabled" if self.streaming_enabled else "disabled"
+                        icon = "🌊" if self.streaming_enabled else "📄"
+                        self.console.print(f"[bold green]✓ Streaming {status}[/bold green] [dim]│[/dim] {icon} [bright_white]Responses will be {status}[/bright_white]")
                     elif cmd == '/export-tools':
                         self.console.print("[cyan]Fetching tools from MCP servers...[/cyan]")
                         for server_name in self.mcp_clients.keys():
@@ -774,20 +880,38 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                         except Exception as e:
                             self.console.print(f"[red]Error serializing tools: {e}[/red]")
                     else:
-                        self.console.print(f"[red]Unknown command: {cmd}[/red]")
-                        self.console.print("[dim]Available: /help, /add, /add-ro, /remove, /files, /clear-files, /models, /switch-model, /mcp-list, /mcp-tools, /mcp-call, /export-tools, /exit[/dim]")
+                        self.console.print(f"[bold red]✗ Unknown command:[/bold red] [yellow]{cmd}[/yellow]")
+                        self.console.print("[dim]Type [bold]/help[/bold] to see all available commands[/dim]")
                 else:
                     # Natural conversation (not a command)
-                    self.console.print("[yellow]Thinking...[/yellow]")
-                    try:
-                        response = await self.chat_with_ai(user_input)
-                        self.console.print(Panel(
+                    with Progress(
+                        SpinnerColumn("dots", style="cyan"),
+                        TextColumn("[bold bright_cyan]Thinking...[/bold bright_cyan]"),
+                        console=self.console,
+                        transient=True
+                    ) as progress:
+                        progress.add_task("", total=None)
+                        try:
+                            response = await self.chat_with_ai(user_input)
+                        except Exception as e:
+                            self.console.print(f"[bold red]✗ Error[/bold red] [dim]│[/dim] {e}")
+                            continue
+                    
+                    # Display AI response with premium styling (streaming handles its own panel)
+                    if not self.streaming_enabled:
+                        self.console.print()
+                        response_panel = Panel(
                             Markdown(response),
-                            title="A-Coder",
-                            border_style="green"
-                        ))
-                    except Exception as e:
-                        self.console.print(f"[red]Error: {e}[/red]")
+                            title="[bold bright_white]🤖 A-Coder[/bold bright_white]",
+                            border_style="bright_green",
+                            box=ROUNDED,
+                            padding=(1, 2)
+                        )
+                        self.console.print(response_panel)
+                        self.console.print()
+                    else:
+                        # Streaming already displayed the response in a live panel
+                        pass
             
             except KeyboardInterrupt:
                 self.console.print("\n[yellow]Use '/exit' or '/quit' to leave[/yellow]")
@@ -808,7 +932,7 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
         
         # Connect to MCP servers from config
         if self.config and self.config.mcp.servers:
-            self.console.print(f"[cyan]Connecting to {len(self.config.mcp.servers)} MCP server(s)...[/cyan]")
+            self.console.print(f"\n[bold bright_cyan]🔌 Connecting to {len(self.config.mcp.servers)} MCP server(s)...[/bold bright_cyan]\n")
             for name, server_config in self.config.mcp.servers.items():
                 # Auto-fill project path for filesystem servers
                 if isinstance(server_config, dict) and 'args' in server_config:
@@ -830,8 +954,7 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                             new_args.append(os.getcwd())
                         
                         server_config['args'] = new_args
-                        self.console.print(f"[dim]Auto-configured {name} with path: {os.getcwd()}[/dim]")
-                        self.console.print(f"[dim]Final args: {server_config['args']}[/dim]")
+                        self.console.print(f"[dim]  └─ Auto-configured with path: {os.getcwd()}[/dim]")
                 
                 await self.connect_mcp_server(name, server_config)
         else:
