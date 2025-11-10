@@ -8,6 +8,9 @@ import asyncio
 import json
 import os
 import sys
+import logging
+import platform
+import shutil
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 import mimetypes
@@ -29,6 +32,10 @@ import json
 from dotenv import load_dotenv
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import InMemoryHistory
+
+# Suppress MCP root-related warnings and logs
+logging.getLogger('fastmcp').setLevel(logging.ERROR)
+logging.getLogger('mcp').setLevel(logging.ERROR)
 
 load_dotenv()
 
@@ -94,6 +101,39 @@ class ACoderCLI:
         self.config.openai.model = model_name
         return True
 
+    def _resolve_command_path(self, command: str) -> str:
+        """Resolve command path, handling Windows-specific issues"""
+        # On Windows, check for .cmd/.bat extensions
+        if platform.system() == "Windows":
+            # Try to find the command with common Windows extensions
+            for ext in [".cmd", ".bat", ".exe", ""]:
+                cmd_with_ext = command + ext
+                resolved = shutil.which(cmd_with_ext)
+                if resolved:
+                    return resolved
+            
+            # If not found, try common npm/node paths
+            if command in ["npx", "npm", "node"]:
+                # Check common installation paths
+                common_paths = [
+                    os.path.expandvars(r"%APPDATA%\npm"),
+                    os.path.expandvars(r"%ProgramFiles%\nodejs"),
+                    os.path.expandvars(r"%ProgramFiles(x86)%\nodejs"),
+                ]
+                for base_path in common_paths:
+                    for ext in [".cmd", ".bat", ".exe"]:
+                        full_path = os.path.join(base_path, command + ext)
+                        if os.path.exists(full_path):
+                            return full_path
+        else:
+            # On Unix-like systems, use shutil.which
+            resolved = shutil.which(command)
+            if resolved:
+                return resolved
+        
+        # Return original command if not found
+        return command
+
     async def connect_mcp_server(self, name: str, server_config: Dict[str, Any]) -> bool:
         """Connect to an MCP server"""
         try:
@@ -101,13 +141,36 @@ class ACoderCLI:
                 self.console.print(f"[bold red]✗[/bold red] [bright_white]No configuration for MCP server:[/bright_white] [bold]{name}[/bold]")
                 return False
             
+            # Resolve command path for Windows compatibility
+            if isinstance(server_config, dict) and 'args' in server_config:
+                args = server_config['args']
+                if args and len(args) > 0:
+                    # First arg is usually the command (e.g., 'npx')
+                    original_cmd = args[0]
+                    resolved_cmd = self._resolve_command_path(original_cmd)
+                    if resolved_cmd != original_cmd:
+                        server_config['args'] = [resolved_cmd] + args[1:]
+                        self.console.print(f"[dim]  └─ Resolved {original_cmd} to {resolved_cmd}[/dim]")
+            
             config_dict = {"mcpServers": {name: server_config}}
             client = MCPClient(config_dict)
             await client.__aenter__()
             self.mcp_clients[name] = client
             self.console.print(f"[bold green]✓[/bold green] [bright_white]Connected to MCP server:[/bright_white] [bold cyan]{name}[/bold cyan]")
             return True
+        except FileNotFoundError as e:
+            # Specific handling for command not found errors
+            self.console.print(f"[bold red]✗[/bold red] [bright_white]Failed to connect to MCP server[/bright_white] [bold]{name}[/bold]")
+            self.console.print(f"[yellow]  └─ Command not found: {e}[/yellow]")
+            if platform.system() == "Windows":
+                self.console.print(f"[dim]  └─ Tip: Ensure Node.js and npm are installed and in your PATH[/dim]")
+                self.console.print(f"[dim]  └─ Try running 'npm install -g @modelcontextprotocol/server-filesystem'[/dim]")
+            return False
         except Exception as e:
+            error_msg = str(e)
+            # Suppress non-critical warnings about roots not being supported
+            if "List roots not supported" in error_msg or "-32600" in error_msg:
+                return True
             self.console.print(f"[bold red]✗[/bold red] [bright_white]Failed to connect to MCP server[/bright_white] [bold]{name}[/bold]: [red]{e}[/red]")
             return False
 
@@ -360,6 +423,16 @@ IMPORTANT - Tool Usage:
 - CRITICAL: When tools require a 'path' argument, use the current project path shown below
 - NEVER make up or hallucinate information - if a tool fails, say so clearly
 
+CRITICAL - Autonomous Execution:
+- DO NOT STOP after gathering information - immediately proceed to execute the task
+- When you explore/read files, IMMEDIATELY use that information to complete the user's request
+- NEVER say "Now I'll create..." or "I'll use..." - JUST DO IT by calling the tools
+- If a tool fails, immediately retry with corrected parameters - do not explain, just retry
+- After reading/exploring, you MUST call write_file/edit_file tools to create/modify files
+- Keep working until files are created/modified and the task is 100% complete
+- You have up to 25 tool call iterations - use them all if needed
+- Only provide a final text response AFTER all files have been created/modified
+
 CRITICAL - File Exclusions:
 - ALWAYS exclude these patterns when using directory_tree, search_files, or list operations:
   * config.json (A-Coder CLI configuration file)
@@ -490,7 +563,7 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                         args = json.loads(tool_call.function.arguments)
                         # Handle nested JSON strings in arguments
                         for key, value in args.items():
-                            if isinstance(value, str) and value.startswith('[') or value.startswith('{'):
+                            if isinstance(value, str) and (value.startswith('[') or value.startswith('{')):
                                 try:
                                     args[key] = json.loads(value)
                                 except:
@@ -583,24 +656,107 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
             tool_choice="auto" if tools else None,
             max_tokens=4000,
             temperature=0.7,
-            timeout=30.0,
+            timeout=300.0,
             stream=False  # Don't stream during tool calling phase
         )
         
         # Handle tool calling loop
-        MAX_ITERATIONS = 10
+        MAX_ITERATIONS = 25
         iteration = 0
+        auto_continue_count = 0
+        MAX_AUTO_CONTINUES = 3
         
         while iteration < MAX_ITERATIONS:
             # Check if this response has tool calls
             if not (hasattr(response.choices[0].message, 'tool_calls') and response.choices[0].message.tool_calls):
-                # No tool calls, we have a final response
-                break
+                # No tool calls - check if we should auto-continue
+                response_text = response.choices[0].message.content or ""
+                
+                # Detect if AI is planning to do more work (intent indicators)
+                intent_indicators = [
+                    "now i'll", "i'll now", "let me now", "i will now",
+                    "now let me", "i'll create", "i'll build", "i'll add",
+                    "i'll write", "i'll modify", "i'll update", "i'll use",
+                    "next, i'll", "first, i'll", "i need to", "i should",
+                    "going to create", "going to build", "going to add"
+                ]
+                
+                # Auto-continue if:
+                # 1. Response has intent indicators, OR
+                # 2. Response is empty/null after tool execution (likely incomplete)
+                has_intent = any(indicator in response_text.lower() for indicator in intent_indicators)
+                is_empty_after_tools = (iteration > 0 and len(response_text.strip()) == 0)
+                
+                should_auto_continue = (
+                    auto_continue_count < MAX_AUTO_CONTINUES and
+                    (has_intent or is_empty_after_tools)
+                )
+                
+                if should_auto_continue:
+                    auto_continue_count += 1
+                    reason = "incomplete task" if is_empty_after_tools else "detected intent to act"
+                    self.console.print(f"[dim]  └─ Auto-continuing ({reason})[/dim]")
+                    
+                    # Add the response to history and prompt for action
+                    self.conversation_history.append({
+                        "role": "assistant",
+                        "content": response_text
+                    })
+                    
+                    # Add a system nudge to proceed with the action
+                    self.conversation_history.append({
+                        "role": "user",
+                        "content": "Proceed with the action you just described. Use the appropriate tools now."
+                    })
+                    
+                    # Continue the loop to get next response
+                    if self.streaming_enabled:
+                        with Progress(
+                            SpinnerColumn("dots", style="cyan"),
+                            TextColumn("[bold bright_cyan]Auto-continuing...[/bold bright_cyan]"),
+                            console=self.console,
+                            transient=True
+                        ) as progress:
+                            progress.add_task("", total=None)
+                            response = await self.openai_client.chat.completions.create(
+                                model=self.config.openai.model if self.config else "gpt-4",
+                                messages=[
+                                    {"role": "system", "content": self.build_system_prompt()}
+                                ] + self.conversation_history,
+                                tools=tools if tools else None,
+                                tool_choice="auto" if tools else None,
+                                max_tokens=4000,
+                                temperature=0.7,
+                                timeout=300.0,
+                                stream=False
+                            )
+                    else:
+                        response = await self.openai_client.chat.completions.create(
+                            model=self.config.openai.model if self.config else "gpt-4",
+                            messages=[
+                                {"role": "system", "content": self.build_system_prompt()}
+                            ] + self.conversation_history,
+                            tools=tools if tools else None,
+                            tool_choice="auto" if tools else None,
+                            max_tokens=4000,
+                            temperature=0.7,
+                            timeout=300.0,
+                            stream=False
+                        )
+                    continue
+                else:
+                    # No tool calls and no intent to continue - this is the final response
+                    break
             
             iteration += 1
             tool_calls = response.choices[0].message.tool_calls
             tool_names_str = ', '.join([tc.function.name for tc in tool_calls])
-            self.console.print(f"\n[bold bright_blue]→ Step {iteration}[/bold bright_blue] [dim]│[/dim] [bright_white]AI called {len(tool_calls)} tool(s):[/bright_white] [bold cyan]{tool_names_str}[/bold cyan]")
+            
+            # Display "about to act" message if AI provided reasoning
+            if response.choices[0].message.content:
+                self.console.print(f"\n[bold bright_magenta]🎯 Plan[/bold bright_magenta] [dim]│[/dim] [italic bright_white]{response.choices[0].message.content}[/italic bright_white]")
+            
+            self.console.print(f"[bold bright_blue]→ Step {iteration}[/bold bright_blue] [dim]│[/dim] [bright_white]AI called {len(tool_calls)} tool(s):[/bright_white] [bold cyan]{tool_names_str}[/bold cyan]")
             
             # Add assistant message with tool calls
             self.conversation_history.append({
@@ -626,58 +782,69 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                     })
             
             # Continue the conversation - let AI decide if it needs more tools or can respond
-            response = await self.openai_client.chat.completions.create(
-                model=self.config.openai.model if self.config else "gpt-4",
-                messages=[
-                    {"role": "system", "content": self.build_system_prompt()}
-                ] + self.conversation_history,
-                tools=tools if tools else None,
-                tool_choice="auto" if tools else None,
-                max_tokens=4000,
-                temperature=0.7,
-                timeout=30.0,
-                stream=False  # Don't stream during tool calling
-            )
+            # Show loading indicator while waiting for next response
+            if self.streaming_enabled:
+                with Progress(
+                    SpinnerColumn("dots", style="cyan"),
+                    TextColumn("[bold bright_cyan]Processing...[/bold bright_cyan]"),
+                    console=self.console,
+                    transient=True
+                ) as progress:
+                    progress.add_task("", total=None)
+                    response = await self.openai_client.chat.completions.create(
+                        model=self.config.openai.model if self.config else "gpt-4",
+                        messages=[
+                            {"role": "system", "content": self.build_system_prompt()}
+                        ] + self.conversation_history,
+                        tools=tools if tools else None,
+                        tool_choice="auto" if tools else None,
+                        max_tokens=4000,
+                        temperature=0.7,
+                        timeout=300.0,
+                        stream=False  # Don't stream during tool calling
+                    )
+            else:
+                response = await self.openai_client.chat.completions.create(
+                    model=self.config.openai.model if self.config else "gpt-4",
+                    messages=[
+                        {"role": "system", "content": self.build_system_prompt()}
+                    ] + self.conversation_history,
+                    tools=tools if tools else None,
+                    tool_choice="auto" if tools else None,
+                    max_tokens=4000,
+                    temperature=0.7,
+                    timeout=300.0,
+                    stream=False  # Don't stream during tool calling
+                )
         
         # After the loop, we have a final response (or hit max iterations)
         if iteration > 0:
             self.console.print(f"\n[bold green]✓ Completed[/bold green] [dim]│[/dim] [bright_white]{iteration} step(s)[/bright_white]\n")
         
-        # Check if we need to get a final text response
-        # If the last response has tool calls, we need one more call to get the final answer
-        needs_final_response = (iteration > 0 and 
-                               hasattr(response.choices[0].message, 'tool_calls') and 
-                               response.choices[0].message.tool_calls)
-        
-        if needs_final_response:
-            # Make one final call to get the text response after tool execution
-            response = await self.openai_client.chat.completions.create(
-                model=self.config.openai.model if self.config else "gpt-4",
-                messages=[
-                    {"role": "system", "content": self.build_system_prompt()}
-                ] + self.conversation_history,
-                max_tokens=4000,
-                temperature=0.7,
-                timeout=30.0,
-                stream=False
-            )
-        
-        # If streaming is enabled and this is the final response (no tool calls), stream it
-        if self.streaming_enabled and iteration == 0:
+        # If streaming is enabled, stream the final response
+        if self.streaming_enabled:
             from rich.live import Live
             from rich.text import Text
             
-            # Re-request with streaming for the final response
-            stream = await self.openai_client.chat.completions.create(
-                model=self.config.openai.model if self.config else "gpt-4",
-                messages=[
-                    {"role": "system", "content": self.build_system_prompt()}
-                ] + self.conversation_history,
-                max_tokens=4000,
-                temperature=0.7,
-                timeout=30.0,
-                stream=True
-            )
+            # Show brief loading indicator before streaming starts
+            with Progress(
+                SpinnerColumn("dots", style="cyan"),
+                TextColumn("[bold bright_cyan]Generating response...[/bold bright_cyan]"),
+                console=self.console,
+                transient=True
+            ) as progress:
+                progress.add_task("", total=None)
+                # Re-request with streaming for the final response
+                stream = await self.openai_client.chat.completions.create(
+                    model=self.config.openai.model if self.config else "gpt-4",
+                    messages=[
+                        {"role": "system", "content": self.build_system_prompt()}
+                    ] + self.conversation_history,
+                    max_tokens=4000,
+                    temperature=0.7,
+                    timeout=300.0,
+                    stream=True
+                )
             
             # Stream the response into a live-updating panel
             assistant_message = ""
@@ -685,7 +852,7 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
             
             with Live(
                 Panel(
-                    Text(""),
+                    Text("⋯", style="dim"),
                     title="[bold bright_white]🤖 A-Coder[/bold bright_white]",
                     border_style="bright_green",
                     box=ROUNDED,
@@ -711,7 +878,7 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
             
             self.console.print()  # New line after streaming
         else:
-            # Get final message (non-streaming or after tool calls)
+            # Get final message (non-streaming)
             assistant_message = response.choices[0].message.content or "(no response)"
         
         self.conversation_history.append({
@@ -884,13 +1051,21 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                         self.console.print("[dim]Type [bold]/help[/bold] to see all available commands[/dim]")
                 else:
                     # Natural conversation (not a command)
-                    with Progress(
-                        SpinnerColumn("dots", style="cyan"),
-                        TextColumn("[bold bright_cyan]Thinking...[/bold bright_cyan]"),
-                        console=self.console,
-                        transient=True
-                    ) as progress:
-                        progress.add_task("", total=None)
+                    # Only show spinner if streaming is disabled (streaming has its own live display)
+                    if not self.streaming_enabled:
+                        with Progress(
+                            SpinnerColumn("dots", style="cyan"),
+                            TextColumn("[bold bright_cyan]Thinking...[/bold bright_cyan]"),
+                            console=self.console,
+                            transient=True
+                        ) as progress:
+                            progress.add_task("", total=None)
+                            try:
+                                response = await self.chat_with_ai(user_input)
+                            except Exception as e:
+                                self.console.print(f"[bold red]✗ Error[/bold red] [dim]│[/dim] {e}")
+                                continue
+                    else:
                         try:
                             response = await self.chat_with_ai(user_input)
                         except Exception as e:
@@ -987,7 +1162,7 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
         # Cleanup MCP connections
         for name, client in self.mcp_clients.items():
             try:
-                await client.__aexit__(None, None, None)
+                await client.close()
             except Exception as e:
                 self.console.print(f"[yellow]Warning: Failed to disconnect from {name}: {e}[/yellow]")
 
@@ -1006,8 +1181,24 @@ async def async_main():
     # Load configuration
     config_obj = None
     try:
+        env_config_path = (
+            os.getenv("A_CODER_CONFIG_PATH")
+            or os.getenv("ACODER_CONFIG_PATH")
+            or os.getenv("ACODER_CONFIG")
+        )
+
         if args.config:
             config_obj = ACoderConfig.from_config_file(args.config)
+        elif env_config_path:
+            resolved_path = Path(os.path.expanduser(env_config_path)).resolve()
+            if resolved_path.exists():
+                config_obj = ACoderConfig.from_config_file(str(resolved_path))
+            else:
+                print(
+                    "Warning: configured ACoder config path points to missing file:"
+                    f" {resolved_path}"
+                )
+                config_obj = ACoderConfig.load_default_config()
         else:
             config_path = Path("config.json")
             if config_path.exists():

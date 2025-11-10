@@ -92,7 +92,7 @@ Then edit `config.json` with your settings:
     "base_url": "https://api.openai.com/v1",
     "model": "gpt-4"
   },
-  "mcp_servers": {
+  "mcpServers": {
     "filesystem": {
       "command": "npx",
       "args": [
@@ -104,6 +104,16 @@ Then edit `config.json` with your settings:
   }
 }
 ```
+
+#### Optional: make the config path permanent
+
+Set the `A_CODER_CONFIG_PATH` environment variable to avoid passing `--config` every time:
+
+```bash
+export A_CODER_CONFIG_PATH="$HOME/config.json"
+```
+
+`ACODER_CONFIG_PATH` and `ACODER_CONFIG` remain as legacy aliases for backwards compatibility.
 
 ### MCP Server Options
 

@@ -5,4 +5,18 @@ rm -rf dist/*
 python -m build
 
 # Upload to TestPyPI
-python -m twine upload --repository testpypi dist/a_coder_cli-1.0.7*
+python -m twine upload --repository testpypi dist/a_coder_cli-1.1.6*
+
+# Install from TestPyPI (for testing)
+pip install --index-url https://test.pypi.org/simple/ a-coder-cli
+
+# --- PRODUCTION DEPLOYMENT ---
+
+# Upload to Production PyPI
+python -m twine upload dist/a_coder_cli-1.1.6*
+
+# Install from Production PyPI
+pip install a-coder-cli
+
+# Verify installation
+a-coder --version

@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>A-Coder CLI - Terminal-based AI Coding Assistant</title>
+    <meta name="description" content="A terminal-based autonomous coding agent with natural conversation and MCP-powered file operations. Works completely free with Ollama or use Morph for faster performance.">
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- GSAP CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    
+    <!-- Custom Tailwind Configuration -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'black': '#000000',
+                        'white': '#FFFFFF',
+                        'gray-light': '#F5F5F5',
+                        'gray-medium': '#666666',
+                        'gray-dark': '#333333'
+                    },
+                    fontFamily: {
+                        'mono': ['Courier New', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style>
+        /* Custom animations and transitions */
+        .feature-card {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .feature-card:hover {
+            transform: translateY(-8px);
+        }
+        
+        .cta-button {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .cta-button:hover {
+            transform: translateY(-2px);
+        }
+        
+        .fade-in-up {
+            opacity: 0;
+            transform: translateY(30px);
+        }
+        
+        .slide-in-left {
+            opacity: 0;
+            transform: translateX(-50px);
+        }
+        
+        .slide-in-right {
+            opacity: 0;
+            transform: translateX(50px);
+        }
+    </style>
+</head>
+<body class="bg-white text-black font-sans">
+    <div class="container mx-auto px-4 max-w-7xl">
+        <header class="bg-black text-white text-center py-16 md:py-20 fade-in-up">
+            <h1 class="text-4xl md:text-6xl font-bold mb-4">🤖 A-Coder CLI</h1>
+            <p class="text-lg md:text-xl text-gray-300 mb-8 max-w-3xl mx-auto">
+                Terminal-based AI Coding Assistant with MCP-Powered File Operations
+            </p>
+            <a href="#installation" class="cta-button bg-white text-black px-8 py-4 rounded-full font-semibold text-lg inline-block hover:bg-gray-200 hover:shadow-lg">
+                Get Started Now
+            </a>
+        </header>
+
+        <section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-16">
+            <div class="feature-card bg-white border-2 border-black rounded-xl p-8 shadow-lg">
+                <div class="text-4xl mb-4">🤖</div>
+                <h3 class="text-2xl font-bold mb-3">Autonomous Agent</h3>
+                <p class="text-gray-medium">
+                    Multi-step tool calling with AI that autonomously explores, gathers information, and completes tasks without manual intervention.
+                </p>
+            </div>
+            
+            <div class="feature-card bg-white border-2 border-black rounded-xl p-8 shadow-lg">
+                <div class="text-4xl mb-4">💬</div>
+                <h3 class="text-2xl font-bold mb-3">Natural Conversation</h3>
+                <p class="text-gray-medium">
+                    Chat naturally with an AI coding assistant that understands context and provides intelligent responses to your coding questions.
+                </p>
+            </div>
+            
+            <div class="feature-card bg-white border-2 border-black rounded-xl p-8 shadow-lg">
+                <div class="text-4xl mb-4">📁</div>
+                <h3 class="text-2xl font-bold mb-3">MCP-Based Operations</h3>
+                <p class="text-gray-medium">
+                    All file operations delegated to MCP servers for secure, efficient handling of read, write, edit, create, and delete operations.
+                </p>
+            </div>
+            
+            <div class="feature-card bg-white border-2 border-black rounded-xl p-8 shadow-lg">
+                <div class="text-4xl mb-4">🆓</div>
+                <h3 class="text-2xl font-bold mb-3">100% Free Option</h3>
+                <p class="text-gray-medium">
+                    Works completely free with Ollama and the standard filesystem MCP server. No API keys required for basic functionality.
+                </p>
+            </div>
+            
+            <div class="feature-card bg-white border-2 border-black rounded-xl p-8 shadow-lg">
+                <div class="text-4xl mb-4">🗂️</div>
+                <h3 class="text-2xl font-bold mb-3">Smart Context Management</h3>
+                <p class="text-gray-medium">
+                    Add files to conversation context for analysis and modification. Mark files as read-only to prevent accidental changes.
+                </p>
+            </div>
+            
+            <div class="feature-card bg-white border-2 border-black rounded-xl p-8 shadow-lg">
+                <div class="text-4xl mb-4">🔌</div>
+                <h3 class="text-2xl font-bold mb-3">Multi-Server Support</h3>
+                <p class="text-gray-medium">
+                    Connect to multiple MCP servers for extended functionality including filesystem operations, documentation lookup, and more.
+                </p>
+            </div>
+        </section>
+
+        <section id="installation" class="bg-gray-light border-2 border-black rounded-xl p-8 md:p-12 mb-16">
+            <h2 class="text-3xl md:text-4xl font-bold mb-8 text-center">⚡ Quick Installation</h2>
+            
+            <div class="space-y-8">
+                <div>
+                    <h3 class="text-xl font-bold mb-3">1. Install A-Coder CLI</h3>
+                    <div class="bg-black text-white p-4 rounded-lg font-mono overflow-x-auto">
+                        <code>pip install a-coder-cli</code>
+                    </div>
+                </div>
+                
+                <div>
+                    <h3 class="text-xl font-bold mb-3">2. Create Configuration</h3>
+                    <div class="bg-black text-white p-4 rounded-lg font-mono overflow-x-auto">
+                        <code>cp config.json.example config.json</code><br>
+                        <span class="text-gray-medium"># Edit config.json with your API key and model settings</span>
+                    </div>
+                </div>
+                
+                <div>
+                    <h3 class="text-xl font-bold mb-3">3. Run in Your Project</h3>
+                    <div class="bg-black text-white p-4 rounded-lg font-mono overflow-x-auto">
+                        <code># Navigate to your project</code><br>
+                        <code>cd /path/to/your/project</code><br><br>
+                        <code># Start A-Coder</code><br>
+                        <code>a-coder --config ~/config.json</code><br><br>
+                        <code># Or use the short form:</code><br>
+                        <code>a-coder -c ~/config.json</code>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="mt-8 p-4 bg-white border border-black rounded-lg">
+                <p class="text-gray-medium">
+                    <strong>That's it!</strong> The filesystem server automatically configures itself to your current directory.
+                </p>
+            </div>
+        </section>
+
+        <section class="bg-white border-2 border-black rounded-xl p-8 md:p-12 mb-16">
+            <h2 class="text-3xl md:text-4xl font-bold mb-8 text-center">💡 Key Commands</h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div class="bg-gray-light border-l-4 border-black p-4 rounded">
+                    <div class="font-mono font-bold text-black mb-2">/add &lt;filepath&gt;</div>
+                    <div class="text-gray-medium text-sm">Add file to conversation context (editable)</div>
+                </div>
+                
+                <div class="bg-gray-light border-l-4 border-black p-4 rounded">
+                    <div class="font-mono font-bold text-black mb-2">/add-ro &lt;filepath&gt;</div>
+                    <div class="text-gray-medium text-sm">Add file as read-only reference</div>
+                </div>
+                
+                <div class="bg-gray-light border-l-4 border-black p-4 rounded">
+                    <div class="font-mono font-bold text-black mb-2">/files</div>
+                    <div class="text-gray-medium text-sm">List all added files with status</div>
+                </div>
+                
+                <div class="bg-gray-light border-l-4 border-black p-4 rounded">
+                    <div class="font-mono font-bold text-black mb-2">/clear-files</div>
+                    <div class="text-gray-medium text-sm">Clear all added files from context</div>
+                </div>
+                
+                <div class="bg-gray-light border-l-4 border-black p-4 rounded">
+                    <div class="font-mono font-bold text-black mb-2">/mcp-list</div>
+                    <div class="text-gray-medium text-sm">List connected MCP servers</div>
+                </div>
+                
+                <div class="bg-gray-light border-l-4 border-black p-4 rounded">
+                    <div class="font-mono font-bold text-black mb-2">/help</div>
+                    <div class="text-gray-medium text-sm">Show detailed help information</div>
+                </div>
+            </div>
+            
+            <div class="mt-8">
+                <h3 class="text-xl font-bold mb-4">Natural Language Interaction</h3>
+                <p class="text-gray-medium mb-4">
+                    Simply type your requests naturally and A-Coder will understand and execute them using MCP tools:
+                </p>
+                <div class="bg-gray-light p-4 rounded-lg border border-black">
+                    <p><span class="font-bold">You:</span> Can you refactor the main function to be more modular?</p>
+                    <p class="mt-2"><span class="font-bold">A-Coder:</span> I'll analyze the code and improve the structure...</p>
+                </div>
+            </div>
+        </section>
+
+        <footer class="text-center py-16 border-t-2 border-black">
+            <h2 class="text-3xl font-bold mb-4">🚀 Start Coding Smarter Today</h2>
+            <p class="text-gray-medium mb-8 max-w-2xl mx-auto">
+                Join thousands of developers using A-Coder CLI for intelligent, autonomous coding assistance right in their terminal.
+            </p>
+            <a href="https://github.com/hamishfromatech/a-coder-cli" class="cta-button bg-black text-white px-8 py-4 rounded-full font-semibold text-lg inline-block hover:bg-gray-dark hover:shadow-lg mb-8">
+                View on GitHub
+            </a>
+            
+            <div class="flex justify-center gap-6 mb-8">
+                <a href="https://github.com/hamishfromatech/a-coder-cli" class="text-black hover:underline">GitHub</a>
+                <a href="https://github.com/hamishfromatech/a-coder-cli/issues" class="text-black hover:underline">Issues</a>
+                <a href="https://github.com/hamishfromatech/a-coder-cli/blob/main/README.md" class="text-black hover:underline">Documentation</a>
+                <a href="https://pypi.org/project/a-coder-cli/" class="text-black hover:underline">PyPI</a>
+            </div>
+            
+            <p class="text-gray-medium text-sm">
+                © 2024 A-Tech Corporation. Licensed under MIT License.
+            </p>
+        </footer>
+    </div>
+
+    <script>
+        // GSAP Animations
+        document.addEventListener('DOMContentLoaded', function() {
+            // Animate header
+            gsap.to('.fade-in-up', {
+                opacity: 1,
+                y: 0,
+                duration: 1,
+                ease: 'power3.out'
+            });
+            
+            // Animate feature cards
+            gsap.from('.feature-card', {
+                opacity: 0,
+                y: 50,
+                duration: 0.8,
+                stagger: 0.1,
+                ease: 'power3.out',
+                delay: 0.3
+            });
+            
+            // Animate sections on scroll
+            const sections = document.querySelectorAll('section');
+            sections.forEach(section => {
+                gsap.from(section, {
+                    opacity: 0,
+                    y: 30,
+                    duration: 0.8,
+                    ease: 'power3.out',
+                    scrollTrigger: {
+                        trigger: section,
+                        start: 'top 80%',
+                        once: true
+                    }
+                });
+            });
+            
+            // Smooth scroll for anchor links
+            document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+                anchor.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    const target = document.querySelector(this.getAttribute('href'));
+                    if (target) {
+                        gsap.to(window, {
+                            duration: 1,
+                            scrollTo: target,
+                            ease: 'power2.inOut'
+                        });
+                    }
+                });
+            });
+            
+            // Add hover effects to CTA button
+            const ctaButtons = document.querySelectorAll('.cta-button');
+            ctaButtons.forEach(button => {
+                button.addEventListener('mouseenter', function() {
+                    gsap.to(this, {
+                        scale: 1.05,
+                        duration: 0.3,
+                        ease: 'power2.out'
+                    });
+                });
+                
+                button.addEventListener('mouseleave', function() {
+                    gsap.to(this, {
+                        scale: 1,
+                        duration: 0.3,
+                        ease: 'power2.out'
+                    });
+                });
+            });
+        });
+    </script>
+</body>
+</html>

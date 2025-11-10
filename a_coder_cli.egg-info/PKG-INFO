@@ -1,15 +1,15 @@
 Metadata-Version: 2.4
 Name: a-coder-cli
-Version: 1.0.7
+Version: 1.1.6
 Summary: Terminal-based coding agent with autonomous tool calling and MCP server support
 Home-page: https://github.com/morph-llm/a-coder-cli
 Author: Morph
-Author-email: Morph <support@morphllm.com>
+Author-email: Hamish from The A-Tech Corporation <hamish@atech.industries>
 License-Expression: MIT
-Project-URL: Homepage, https://github.com/morph-llm/a-coder-cli
-Project-URL: Documentation, https://github.com/morph-llm/a-coder-cli#readme
-Project-URL: Repository, https://github.com/morph-llm/a-coder-cli
-Project-URL: Bug Reports, https://github.com/morph-llm/a-coder-cli/issues
+Project-URL: Homepage, https://github.com/hamishfromatech/a-coder-cli
+Project-URL: Documentation, https://github.com/hamishfromatech/a-coder-cli#readme
+Project-URL: Repository, https://github.com/hamishfromatech/a-coder-cli
+Project-URL: Bug Reports, https://github.com/hamishfromatech/a-coder-cli/issues
 Keywords: ai,coding,assistant,mcp,fastmcp,openai,terminal,cli,agent,autonomous
 Classifier: Development Status :: 4 - Beta
 Classifier: Intended Audience :: Developers
@@ -27,9 +27,9 @@ Description-Content-Type: text/markdown
 License-File: LICENSE
 Requires-Dist: openai>=1.0.0
 Requires-Dist: rich>=13.0.0
-Requires-Dist: fastmcp>=0.1.0
+Requires-Dist: fastmcp>=2.0.0
 Requires-Dist: python-dotenv>=1.0.0
-Requires-Dist: httpx>=0.24.0
+Requires-Dist: httpx>=0.25.0
 Requires-Dist: prompt-toolkit>=3.0.0
 Provides-Extra: dev
 Requires-Dist: pytest>=7.0.0; extra == "dev"
@@ -135,7 +135,7 @@ Then edit `config.json` with your settings:
     "base_url": "https://api.openai.com/v1",
     "model": "gpt-4"
   },
-  "mcp_servers": {
+  "mcpServers": {
     "filesystem": {
       "command": "npx",
       "args": [
@@ -147,6 +147,16 @@ Then edit `config.json` with your settings:
   }
 }
 ```
+
+#### Optional: make the config path permanent
+
+Set the `A_CODER_CONFIG_PATH` environment variable to avoid passing `--config` every time:
+
+```bash
+export A_CODER_CONFIG_PATH="$HOME/config.json"
+```
+
+`ACODER_CONFIG_PATH` and `ACODER_CONFIG` remain as legacy aliases for backwards compatibility.
 
 ### MCP Server Options
 
