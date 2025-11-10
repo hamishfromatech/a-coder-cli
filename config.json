@@ -1,0 +1,20 @@
+{
+    "mcpServers": {
+      "context7": {
+        "url": "https://mcp.context7.com/mcp",
+        "headers": {
+          "CONTEXT7_API_KEY": "ctx7sk-6043d8a6-26f2-4dcd-8f13-4acc75223774"
+        }
+      },
+      "filesystem-with-morph": {
+        "command": "npx",
+        "args": [
+          "@morph-llm/morph-fast-apply"
+        ],
+        "env": {
+          "MORPH_API_KEY": "sk-I3irFwJEI1hgamR9Ywlocb5uzF8IfoytbfNxPwJafqt6AOLr",
+          "ALL_TOOLS": "true"
+        }
+      }
+    }
+  }
