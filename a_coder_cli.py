@@ -1842,9 +1842,8 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
             
             except KeyboardInterrupt:
                 self.console.print("\n[yellow]Use '/exit' or '/quit' to leave[/yellow]")
-                # Cleanup on Ctrl+C
-                await self.cleanup_mcp()
-                break
+                # Don't exit on single Ctrl+C at prompt, just show message
+                continue
             except Exception as e:
                 self.console.print(f"[red]Error: {e}[/red]")
                 import traceback
