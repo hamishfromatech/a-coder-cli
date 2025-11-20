@@ -22,6 +22,8 @@ class OpenAIConfig:
         self.model = model
         self.max_tokens = 4000
         self.temperature = 0.7
+        # Context management for tool results
+        self.max_tool_result_size = 8000  # Max chars per tool result (8k for smaller models)
         
     def create_client(self):
         """Create OpenAI client with current configuration"""
@@ -93,6 +95,7 @@ class ACoderConfig:
                 config.openai.api_key = openai_config.get("api_key")
                 config.openai.base_url = openai_config.get("base_url", "http://localhost:11434/v1")
                 config.openai.model = openai_config.get("model", "minimax-m2:cloud")
+                config.openai.max_tool_result_size = openai_config.get("max_tool_result_size", 8000)
             
             # Add MCP servers
             for name, server_config in mcp_servers.items():

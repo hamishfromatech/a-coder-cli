@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: a-coder-cli
-Version: 1.1.6
+Version: 1.2.7
 Summary: Terminal-based coding agent with autonomous tool calling and MCP server support
 Home-page: https://github.com/morph-llm/a-coder-cli
 Author: Morph

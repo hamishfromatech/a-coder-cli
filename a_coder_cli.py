@@ -33,11 +33,284 @@ from dotenv import load_dotenv
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import InMemoryHistory
 
-# Suppress MCP root-related warnings and logs
-logging.getLogger('fastmcp').setLevel(logging.ERROR)
-logging.getLogger('mcp').setLevel(logging.ERROR)
+# Suppress MCP root-related warnings and logs at multiple levels
+import logging
+import warnings
+import sys
+import io
+from contextlib import redirect_stderr, redirect_stdout
+from contextlib import contextmanager
+
+# Set all MCP-related loggers to ERROR level
+mcp_loggers = [
+    'fastmcp', 'mcp', 'MCP', 'MCPClient', 'mcp.client', 
+    'mcp_client', 'client', 'Client', 'server', 'Server'
+]
+for logger_name in mcp_loggers:
+    try:
+        logging.getLogger(logger_name).setLevel(logging.ERROR)
+    except:
+        pass  # Logger might not exist yet
+
+# Suppress MCP-specific warning messages that are non-critical
+warnings.filterwarnings("ignore", message=".*List roots not supported.*")
+warnings.filterwarnings("ignore", message=".*Failed to request initial roots.*")
+warnings.filterwarnings("ignore", message=".*MCP error -32603.*")
+warnings.filterwarnings("ignore", message=".*MCP.*")
+warnings.filterwarnings("ignore", category=UserWarning, module=".*mcp.*")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module=".*mcp.*")
+
+# Enhanced MCP error patterns to suppress
+MCP_SUPPRESS_PATTERNS = [
+    "List roots not supported",
+    "Failed to request initial roots",
+    "MCP error -32603",
+    "MCP",
+    "mcp",
+    "fastmcp"
+]
+
+class EnhancedMCPSuppressor:
+    """Enhanced MCP suppressor that handles all possible output channels"""
+    def __init__(self):
+        self.original_stderr = sys.stderr
+        self.original_stdout = sys.stdout
+        self.original_warnings_showwarning = warnings.showwarning
+        
+        # Store original built-in print function
+        self.original_print = print
+        
+    def _filter_mcp_output(self, text):
+        """Filter out MCP-related messages that should be suppressed"""
+        if not text:
+            return ""
+        
+        # Split into lines and filter out lines containing MCP patterns
+        lines = text.split('\n')
+        filtered_lines = []
+        
+        for line in lines:
+            # Skip lines that contain MCP suppression patterns
+            if not any(pattern in line for pattern in MCP_SUPPRESS_PATTERNS):
+                filtered_lines.append(line)
+        
+        return '\n'.join(filtered_lines).strip()
+    
+    def _showwarning_suppressed(self, message, category, filename, lineno, file=None, line=None):
+        """Custom warning handler that suppresses MCP warnings"""
+        message_str = str(message)
+        if not any(pattern in message_str for pattern in MCP_SUPPRESS_PATTERNS):
+            # Only show non-MCP warnings
+            self.original_warnings_showwarning(message, category, filename, lineno, file, line)
+    
+    def _suppressed_print(self, *args, **kwargs):
+        """Override print to filter out MCP messages"""
+        # Convert args to string and check if any contain MCP patterns
+        text_parts = [str(arg) for arg in args]
+        text = ' '.join(text_parts)
+        
+        # Only print if no MCP patterns found
+        if not any(pattern in text for pattern in MCP_SUPPRESS_PATTERNS):
+            self.original_print(*args, **kwargs)
+    
+    def __enter__(self):
+        # Set up suppressed streams
+        self.stderr_buffer = io.StringIO()
+        self.stdout_buffer = io.StringIO()
+        
+        # Replace stderr/stdout with buffers
+        sys.stderr = self.stderr_buffer
+        sys.stdout = self.stdout_buffer
+        
+        # Replace warnings showwarning function
+        warnings.showwarning = self._showwarning_suppressed
+        
+        # Override built-in print function
+        import builtins
+        builtins.print = self._suppressed_print
+        
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        # Restore original streams
+        sys.stderr = self.original_stderr
+        sys.stdout = self.original_stdout
+        warnings.showwarning = self.original_warnings_showwarning
+        
+        # Restore original print function
+        import builtins
+        builtins.print = self.original_print
+        
+        # Get buffered content and filter out MCP messages
+        stderr_content = self._filter_mcp_output(self.stderr_buffer.getvalue())
+        stdout_content = self._filter_mcp_output(self.stdout_buffer.getvalue())
+        
+        # Print any remaining content that wasn't MCP-related
+        if stderr_content:
+            self.original_print(stderr_content, file=sys.stderr)
+        if stdout_content:
+            self.original_print(stdout_content, file=sys.stdout)
+
+# Keep the original SuppressedOutput for backward compatibility
+SuppressedOutput = EnhancedMCPSuppressor
+
+# Also set up logging filter to suppress MCP messages
+class MCPLogFilter(logging.Filter):
+    def filter(self, record):
+        # Suppress MCP-related log records
+        msg = record.getMessage()
+        return not any(pattern in msg for pattern in MCP_SUPPRESS_PATTERNS)
+
+# Apply the filter to all relevant loggers
+for logger_name in mcp_loggers:
+    try:
+        logger = logging.getLogger(logger_name)
+        logger.addFilter(MCPLogFilter())
+    except:
+        pass
 
 load_dotenv()
+
+
+class MCPErrorHandler:
+    """Enhanced error handler for MCP tool call errors with user-friendly messages"""
+    
+    def __init__(self, console: Console):
+        self.console = console
+    
+    def categorize_error(self, error: Exception, tool_name: str, server_name: str, args: Dict) -> tuple[str, str, str]:
+        """Categorize error and return (severity, title, message)"""
+        error_str = str(error).lower()
+        
+        # Connection issues
+        if any(pattern in error_str for pattern in ['connection', 'network', 'timeout', 'unreachable']):
+            return (
+                "red",
+                "🔌 Connection Error",
+                f"Cannot connect to {server_name} server. The server may be down or unreachable."
+            )
+        
+        # Permission/Access issues
+        elif any(pattern in error_str for pattern in ['permission', 'access denied', 'forbidden', 'unauthorized']):
+            return (
+                "red",
+                "🚫 Permission Denied",
+                f"Access denied for tool '{tool_name}'. Check file permissions or server configuration."
+            )
+        
+        # File not found
+        elif any(pattern in error_str for pattern in ['file not found', 'no such file', 'does not exist']):
+            path_info = ""
+            if 'path' in args:
+                path_info = f"\nFile path: {args['path']}"
+            return (
+                "yellow",
+                "📁 File Not Found",
+                f"The requested file could not be found.{path_info}\n\nTip: Use /files to see available files in context."
+            )
+        
+        # Invalid arguments
+        elif any(pattern in error_str for pattern in ['invalid', 'bad', 'wrong', 'malformed']):
+            return (
+                "yellow",
+                "⚠️ Invalid Arguments",
+                f"The tool '{tool_name}' received invalid or malformed parameters.\n\nTool: {tool_name}\nServer: {server_name}"
+            )
+        
+        # Tool not found
+        elif any(pattern in error_str for pattern in ['tool not found', 'unknown tool', 'no such tool']):
+            return (
+                "yellow",
+                "🔧 Tool Not Found",
+                f"The tool '{tool_name}' is not available on {server_name} server.\n\nTip: Use /mcp-tools {server_name} to see available tools."
+            )
+        
+        # Server-specific errors
+        elif 'server' in error_str and 'error' in error_str:
+            return (
+                "red",
+                "🖥️ Server Error",
+                f"The {server_name} server encountered an internal error while processing the request."
+            )
+        
+        # General errors
+        else:
+            return (
+                "red",
+                "❌ Tool Execution Failed",
+                f"Failed to execute '{tool_name}' on {server_name} server: {str(error)}"
+            )
+    
+    def display_error(self, error: Exception, tool_name: str, server_name: str, args: Dict):
+        """Display a user-friendly error message using Rich formatting"""
+        severity, title, message = self.categorize_error(error, tool_name, server_name, args)
+        
+        # Create a detailed error panel
+        error_details = f"{message}\n\n[dim]Details:[/dim]\n• Tool: {tool_name}\n• Server: {server_name}\n• Error: {str(error)}"
+        
+        # Add context for file operations
+        if 'path' in args:
+            error_details += f"\n• File: {args['path']}"
+        
+        # Add suggestions based on error type
+        suggestions = self._get_suggestions(error, tool_name, server_name)
+        if suggestions:
+            error_details += f"\n\n[dim]💡 Suggestions:[/dim]\n{suggestions}"
+        
+        # Display the error panel
+        self.console.print(Panel(
+            error_details,
+            title=f"[bold {severity}]{title}[/bold {severity}]",
+            border_style=severity,
+            box=ROUNDED,
+            padding=(1, 2)
+        ))
+    
+    def _get_suggestions(self, error: Exception, tool_name: str, server_name: str) -> str:
+        """Get helpful suggestions based on the error type"""
+        error_str = str(error).lower()
+        suggestions = []
+        
+        if 'permission' in error_str or 'access denied' in error_str:
+            suggestions.extend([
+                "• Check file/directory permissions",
+                "• Verify the file is not in a protected location",
+                "• Try running with appropriate user privileges"
+            ])
+        
+        elif 'file not found' in error_str or 'does not exist' in error_str:
+            suggestions.extend([
+                "• Use /files to see files in context",
+                "• Use /add <filepath> to add the file to context",
+                "• Verify the file path is correct"
+            ])
+        
+        elif 'timeout' in error_str or 'connection' in error_str:
+            suggestions.extend([
+                "• Check if the MCP server is running",
+                "• Verify network connectivity",
+                "• Try again in a few moments"
+            ])
+        
+        elif 'invalid' in error_str or 'malformed' in error_str:
+            suggestions.extend([
+                "• Check the tool parameters",
+                "• Use /mcp-tools to see expected parameters",
+                "• Verify the file path format"
+            ])
+        
+        elif 'tool not found' in error_str:
+            suggestions.extend([
+                f"• Use /mcp-tools {server_name} to see available tools",
+                "• Check the tool name spelling",
+                "• Verify the server supports this tool"
+            ])
+        
+        if not suggestions:
+            suggestions.append("• Try rephrasing your request")
+            suggestions.append("• Use /help for available commands")
+        
+        return "\n".join(suggestions)
 
 
 class ACoderCLI:
@@ -46,7 +319,8 @@ class ACoderCLI:
     def __init__(self, config=None):
         self.console = Console()
         self.openai_client = None
-        self.mcp_clients: Dict[str, MCPClient] = {}
+        self.mcp_client: Optional[MCPClient] = None  # Single multi-server client
+        self.mcp_server_names: List[str] = []  # Track connected server names
         self.conversation_history: List[Dict[str, str]] = []
         self.current_project_path = Path.cwd()
         self.config = config
@@ -54,6 +328,7 @@ class ACoderCLI:
         self.read_only_files: set = set()
         self.prompt_session = PromptSession(history=InMemoryHistory())
         self.streaming_enabled = False  # Toggle for streaming responses
+        self.error_handler = MCPErrorHandler(self.console)  # Enhanced error handling
 
     async def async_prompt(self, message: str) -> str:
         """Async wrapper for prompt_toolkit prompt with Rich formatting"""
@@ -125,63 +400,76 @@ class ACoderCLI:
                         full_path = os.path.join(base_path, command + ext)
                         if os.path.exists(full_path):
                             return full_path
-        else:
-            # On Unix-like systems, use shutil.which
-            resolved = shutil.which(command)
-            if resolved:
-                return resolved
+        # On Unix-like systems (macOS, Linux), don't resolve the path
+        # Let the system use PATH naturally to find the correct version
+        # This avoids locking to a specific Node.js version (e.g., node@20 vs node@22)
         
-        # Return original command if not found
+        # Return original command - system will resolve via PATH
         return command
 
-    async def connect_mcp_server(self, name: str, server_config: Dict[str, Any]) -> bool:
-        """Connect to an MCP server"""
+    async def connect_mcp_servers(self, servers_config: Dict[str, Dict[str, Any]]) -> bool:
+        """Connect to multiple MCP servers using a single multi-server client"""
         try:
-            if not server_config:
-                self.console.print(f"[bold red]✗[/bold red] [bright_white]No configuration for MCP server:[/bright_white] [bold]{name}[/bold]")
+            if not servers_config:
+                self.console.print("[yellow]No MCP servers to connect[/yellow]")
                 return False
             
-            # Resolve command path for Windows compatibility
-            if isinstance(server_config, dict) and 'args' in server_config:
-                args = server_config['args']
-                if args and len(args) > 0:
-                    # First arg is usually the command (e.g., 'npx')
-                    original_cmd = args[0]
-                    resolved_cmd = self._resolve_command_path(original_cmd)
-                    if resolved_cmd != original_cmd:
-                        server_config['args'] = [resolved_cmd] + args[1:]
-                        self.console.print(f"[dim]  └─ Resolved {original_cmd} to {resolved_cmd}[/dim]")
-            
-            config_dict = {"mcpServers": {name: server_config}}
-            client = MCPClient(config_dict)
-            await client.__aenter__()
-            self.mcp_clients[name] = client
-            self.console.print(f"[bold green]✓[/bold green] [bright_white]Connected to MCP server:[/bright_white] [bold cyan]{name}[/bold cyan]")
-            return True
+            # Use SuppressedOutput to suppress non-critical MCP error messages
+            with SuppressedOutput():
+                # Resolve command paths and set transport for all servers
+                for name, server_config in servers_config.items():
+                    if isinstance(server_config, dict):
+                        # Resolve command path if present
+                        if 'command' in server_config:
+                            original_cmd = server_config['command']
+                            resolved_cmd = self._resolve_command_path(original_cmd)
+                            if resolved_cmd != original_cmd:
+                                server_config['command'] = resolved_cmd
+                                self.console.print(f"[dim]  └─ Resolved {original_cmd} to {resolved_cmd} for {name}[/dim]")
+                            # Set transport for stdio servers
+                            if 'transport' not in server_config:
+                                server_config['transport'] = 'stdio'
+                        
+                        # Set transport for HTTP servers
+                        elif 'url' in server_config and 'transport' not in server_config:
+                            server_config['transport'] = 'http'
+                
+                # Create single multi-server client
+                config_dict = {"mcpServers": servers_config}
+                self.mcp_client = MCPClient(config_dict)
+                await self.mcp_client.__aenter__()
+                self.mcp_server_names = list(servers_config.keys())
+                
+                for name in self.mcp_server_names:
+                    self.console.print(f"[bold green]✓[/bold green] [bright_white]Connected to MCP server:[/bright_white] [bold cyan]{name}[/bold cyan]")
+                
+                return True
         except FileNotFoundError as e:
-            # Specific handling for command not found errors
-            self.console.print(f"[bold red]✗[/bold red] [bright_white]Failed to connect to MCP server[/bright_white] [bold]{name}[/bold]")
+            self.console.print(f"[bold red]✗[/bold red] [bright_white]Failed to connect to MCP servers[/bright_white]")
             self.console.print(f"[yellow]  └─ Command not found: {e}[/yellow]")
             if platform.system() == "Windows":
                 self.console.print(f"[dim]  └─ Tip: Ensure Node.js and npm are installed and in your PATH[/dim]")
-                self.console.print(f"[dim]  └─ Try running 'npm install -g @modelcontextprotocol/server-filesystem'[/dim]")
+            else:
+                self.console.print(f"[dim]  └─ Tip: Ensure required commands (npx, node) are installed and in your PATH[/dim]")
             return False
         except Exception as e:
             error_msg = str(e)
             # Suppress non-critical warnings about roots not being supported
-            if "List roots not supported" in error_msg or "-32600" in error_msg:
+            if any(pattern in error_msg for pattern in MCP_SUPPRESS_PATTERNS):
+                # Silently continue - these are non-critical MCP server warnings
                 return True
-            self.console.print(f"[bold red]✗[/bold red] [bright_white]Failed to connect to MCP server[/bright_white] [bold]{name}[/bold]: [red]{e}[/red]")
+            self.console.print(f"[bold red]✗[/bold red] [bright_white]Failed to connect to MCP servers:[/bright_white] [red]{e}[/red]")
+            import traceback
+            traceback.print_exc()
             return False
 
-    async def list_mcp_tools(self, server_name: str) -> List[Dict]:
-        """List available tools from an MCP server"""
-        if server_name not in self.mcp_clients:
+    async def list_mcp_tools(self, server_name: str = None) -> List[Dict]:
+        """List available tools from MCP servers"""
+        if not self.mcp_client:
             return []
         
-        client = self.mcp_clients[server_name]
         try:
-            tools = await client.list_tools()
+            tools = await self.mcp_client.list_tools()
             if tools is None:
                 return []
             
@@ -209,18 +497,22 @@ class ACoderCLI:
             return []
 
     async def call_mcp_tool(self, server_name: str, tool_name: str, arguments: Dict) -> Any:
-        """Call a tool on an MCP server"""
-        if server_name not in self.mcp_clients:
+        """Call a tool on an MCP server with enhanced error handling"""
+        if not self.mcp_client:
+            raise ValueError("MCP client not connected")
+        
+        if server_name not in self.mcp_server_names:
             raise ValueError(f"Server {server_name} not connected")
         
-        client = self.mcp_clients[server_name]
         try:
-            result = await client.call_tool(tool_name, arguments)
+            # For multi-server client, tools are prefixed with server name
+            prefixed_tool_name = f"{server_name}_{tool_name}"
+            result = await self.mcp_client.call_tool(prefixed_tool_name, arguments)
             return result
         except Exception as e:
-            self.console.print(f"[red]Error calling tool {tool_name}: {e}[/red]")
-            import traceback
-            traceback.print_exc()
+            # Use the enhanced error handler to display a user-friendly message
+            self.error_handler.display_error(e, tool_name, server_name, arguments)
+            # Re-raise the original exception for proper error propagation
             raise
 
     def display_welcome_screen(self):
@@ -501,7 +793,16 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
             if key in supported_fields:
                 # Recursively sanitize nested schemas
                 if key == 'properties' and isinstance(value, dict):
-                    sanitized[key] = {k: self.sanitize_json_schema(v) for k, v in value.items()}
+                    # Sanitize each property and filter out empty ones
+                    sanitized_props = {}
+                    for k, v in value.items():
+                        sanitized_prop = self.sanitize_json_schema(v)
+                        # Only include properties that have actual constraints
+                        # Skip properties that are just {"type": "object"} or empty
+                        if sanitized_prop and sanitized_prop != {"type": "object"}:
+                            sanitized_props[k] = sanitized_prop
+                    if sanitized_props:  # Only add properties if there are any left
+                        sanitized[key] = sanitized_props
                 elif key == 'items':
                     sanitized[key] = self.sanitize_json_schema(value)
                 elif key in ('anyOf', 'oneOf', 'allOf') and isinstance(value, list):
@@ -518,50 +819,455 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
         
         return sanitized
 
+    async def chat_with_ai(self, user_input: str, show_tool_details: bool = False) -> str:
+        """Main AI interaction with enhanced tool calling display"""
+        if not self.openai_client:
+            return "OpenAI client not initialized. Please check your configuration."
+        
+        # Add user message to conversation history
+        self.conversation_history.append({"role": "user", "content": user_input})
+        
+        try:
+            # Get available tools
+            tools = await self.build_tools_list()
+            
+            # Build messages with system prompt and conversation history
+            messages = [
+                {"role": "system", "content": self.build_system_prompt()}
+            ]
+            
+            # Add conversation history (keep last 10 messages to manage context)
+            recent_history = self.conversation_history[-10:]
+            messages.extend(recent_history)
+            
+            # Make API call with tools if available
+            if tools:
+                response = await self.openai_client.chat.completions.create(
+                    model=self.config.openai.model,
+                    messages=messages,
+                    tools=tools,
+                    tool_choice="auto",
+                    temperature=self.config.openai.temperature,
+                    max_tokens=self.config.openai.max_tokens
+                )
+            else:
+                response = await self.openai_client.chat.completions.create(
+                    model=self.config.openai.model,
+                    messages=messages,
+                    temperature=self.config.openai.temperature,
+                    max_tokens=self.config.openai.max_tokens
+                )
+            
+            # Process tool calls if any
+            if hasattr(response.choices[0].message, 'tool_calls') and response.choices[0].message.tool_calls:
+                # Display tool call information if requested
+                if show_tool_details:
+                    await self._display_tool_calls(response.choices[0].message.tool_calls)
+                
+                # Execute tool calls
+                tool_results = await self.process_tool_calls(response)
+                
+                # If we have tool results, make another call to get the final response
+                if tool_results:
+                    # Add the assistant's message with tool calls to history
+                    self.conversation_history.append({
+                        "role": "assistant", 
+                        "content": response.choices[0].message.content or "",
+                        "tool_calls": [tc.dict() for tc in response.choices[0].message.tool_calls]
+                    })
+                    
+                    # Add tool results to history
+                    for result in tool_results:
+                        self.conversation_history.append({
+                            "role": "tool",
+                            "tool_call_id": result["tool_call_id"],
+                            "name": result["tool_name"],
+                            "content": str(result["result"])
+                        })
+                    
+                    # Get final response from AI
+                    messages = [
+                        {"role": "system", "content": self.build_system_prompt()}
+                    ] + self.conversation_history[-15:]  # Keep recent context
+                    
+                    final_response = await self.openai_client.chat.completions.create(
+                        model=self.config.openai.model,
+                        messages=messages,
+                        temperature=self.config.openai.temperature,
+                        max_tokens=self.config.openai.max_tokens
+                    )
+                    
+                    # Add final response to history
+                    self.conversation_history.append({
+                        "role": "assistant",
+                        "content": final_response.choices[0].message.content
+                    })
+                    
+                    return final_response.choices[0].message.content or "No response generated."
+            
+            # No tool calls, just return the response
+            self.conversation_history.append({
+                "role": "assistant", 
+                "content": response.choices[0].message.content
+            })
+            
+            return response.choices[0].message.content or "No response generated."
+            
+        except Exception as e:
+            error_msg = f"Error communicating with AI: {str(e)}"
+            self.console.print(f"[red]{error_msg}[/red]")
+            return error_msg
+    
+    async def _display_tool_calls(self, tool_calls):
+        """Display tool calls being made by the AI with beautiful formatting"""
+        if not tool_calls:
+            return
+            
+        self.console.print()
+        
+        # Create a beautiful tool call display
+        for i, tool_call in enumerate(tool_calls, 1):
+            tool_name = tool_call.function.name
+            try:
+                args = json.loads(tool_call.function.arguments) if tool_call.function.arguments else {}
+            except:
+                args = {"raw_arguments": tool_call.function.arguments}
+            
+            # Parse tool name to get server and tool
+            if '_' in tool_name:
+                parts = tool_name.split('_', 1)
+                server_name = parts[0]
+                actual_tool = parts[1] if len(parts) > 1 else tool_name
+            else:
+                server_name = "unknown"
+                actual_tool = tool_name
+            
+            # Create tool call info
+            tool_info = f"[bold bright_cyan]Step {i}│[/bold bright_cyan] [bold white]AI called {len(tool_calls)} tool(s):[/bold white] [bold magenta]{tool_name}[/bold magenta]"
+            
+            # Add arguments (formatted nicely)
+            if args:
+                args_str = json.dumps(args, indent=2)
+                tool_info += f"\n[dim]├─ {server_name}.{actual_tool}[/dim] [dim]{args_str}[/dim]"
+            
+            # Create panel for tool call
+            tool_panel = Panel(
+                tool_info,
+                border_style="bright_cyan",
+                box=ROUNDED,
+                padding=(1, 2)
+            )
+            
+            self.console.print(tool_panel)
+        
+        self.console.print()
+    
+    async def _display_tool_result(self, tool_name: str, result: Any, tool_call_id: str):
+        """Display the result of a tool call"""
+        try:
+            # Convert result to string for display
+            if isinstance(result, (dict, list)):
+                result_str = json.dumps(result, indent=2)
+                # Truncate if too long
+                if len(result_str) > 2000:
+                    result_str = result_str[:2000] + "\n\n... (truncated)"
+            else:
+                result_str = str(result)
+                if len(result_str) > 2000:
+                    result_str = result_str[:2000] + "\n\n... (truncated)"
+            
+            # Determine result type for styling
+            if isinstance(result, dict) and 'error' in str(result).lower():
+                border_style = "red"
+                title_style = "red"
+                title = "❌ Tool Error"
+            elif isinstance(result, list) and len(result) == 0:
+                border_style = "yellow" 
+                title_style = "yellow"
+                title = "📋 Empty Result"
+            else:
+                border_style = "green"
+                title_style = "green"
+                title = "✅ Tool Success"
+            
+            # Create result panel
+            result_panel = Panel(
+                result_str,
+                title=f"[bold {title_style}]{title}[/bold {title_style}] [dim]│[/dim] [dim]{tool_name}[/dim]",
+                border_style=border_style,
+                box=ROUNDED,
+                padding=(1, 2)
+            )
+            
+            self.console.print(result_panel)
+            self.console.print()
+            
+        except Exception as e:
+            self.console.print(f"[yellow]Error displaying tool result: {e}[/yellow]")
+
+    def smart_truncate_result(self, result_str: str, tool_name: str, max_size: int = 8000) -> str:
+        """
+        Intelligently truncate tool results based on tool type and content structure.
+        Preserves important information while reducing context window usage.
+        """
+        if len(result_str) <= max_size:
+            return result_str
+    
     async def build_tools_list(self) -> List[Dict[str, Any]]:
         """Build list of available MCP tools for function calling"""
         tools = []
         
-        if not self.mcp_clients:
+        if not self.mcp_client:
             return tools
         
-        for server_name, client in self.mcp_clients.items():
-            try:
-                mcp_tools = await self.list_mcp_tools(server_name)
+        try:
+            mcp_tools = await self.list_mcp_tools()
+            
+            if not mcp_tools:
+                return tools
                 
-                if not mcp_tools:
-                    continue
-                
-                for tool in mcp_tools:
-                    try:
-                        if not isinstance(tool, dict):
-                            self.console.print(f"[yellow]Tool is not a dict: {type(tool)}[/yellow]")
-                            continue
-                        
-                        tool_name = tool.get('name')
-                        if not tool_name:
-                            continue
-                        
-                        # Get and sanitize the input schema for llama.cpp compatibility
-                        input_schema = tool.get('inputSchema', {})
-                        sanitized_schema = self.sanitize_json_schema(input_schema)
-                        
-                        # Format tool for OpenAI with server prefix
-                        formatted_tool = {
-                            "type": "function",
-                            "function": {
-                                "name": f"{server_name}--{tool_name}",
-                                "description": tool.get('description', ''),
-                                "parameters": sanitized_schema
-                            }
-                        }
-                        tools.append(formatted_tool)
-                    except Exception as e:
-                        self.console.print(f"[yellow]Error formatting tool: {e}[/yellow]")
+            for tool in mcp_tools:
+                try:
+                    if not isinstance(tool, dict):
+                        self.console.print(f"[yellow]Tool is not a dict: {type(tool)}[/yellow]")
                         continue
+                    
+                    tool_name = tool.get('name')
+                    if not tool_name:
+                        continue
+                    
+                    # Get and sanitize the input schema for llama.cpp compatibility
+                    input_schema = tool.get('inputSchema', {})
+                    sanitized_schema = self.sanitize_json_schema(input_schema)
+                    
+                    # Format tool for OpenAI - tool names are already prefixed by FastMCP
+                    formatted_tool = {
+                        "type": "function",
+                        "function": {
+                            "name": tool_name,  # Already prefixed like "filesystem_read_file"
+                            "description": tool.get('description', ''),
+                            "parameters": sanitized_schema
+                        }
+                    }
+                    tools.append(formatted_tool)
+                except Exception as e:
+                    self.console.print(f"[yellow]Error formatting tool: {e}[/yellow]")
+                    continue
+        except Exception as e:
+            self.console.print(f"[yellow]Error getting tools: {e}[/yellow]")
+        
+        return tools
+    
+    async def process_tool_calls(self, response) -> List[Dict]:
+        """Process tool calls from AI response"""
+        tool_results = []
+        choice = response.choices[0]
+        
+        if not hasattr(choice.message, 'tool_calls') or not choice.message.tool_calls:
+            return tool_results
+        
+        for tool_call in choice.message.tool_calls:
+            try:
+                tool_name = tool_call.function.name
+                
+                # Parse tool name - FastMCP prefixes with server name using underscore
+                # Format: "servername_toolname" (e.g., "filesystem_read_file")
+                if '_' in tool_name:
+                    parts = tool_name.split('_', 1)
+                    server_name = parts[0]
+                    actual_tool = parts[1] if len(parts) > 1 else tool_name
+                else:
+                    # No prefix - try to use as-is
+                    server_name = self.mcp_server_names[0] if self.mcp_server_names else "unknown"
+                    actual_tool = tool_name
+                
+                try:
+                    if tool_call.function.arguments:
+                        args = json.loads(tool_call.function.arguments)
+                        # Handle nested JSON strings in arguments
+                        for key, value in args.items():
+                            if isinstance(value, str) and (value.startswith('[') or value.startswith('{')):
+                                try:
+                                    args[key] = json.loads(value)
+                                except:
+                                    pass  # Keep as string if not valid JSON
+                    else:
+                        args = {}
+                except (json.JSONDecodeError, TypeError) as e:
+                    args = {}
+                    self.console.print(f"[yellow]Could not parse tool args: {tool_call.function.arguments} - {e}[/yellow]")
+                
+                # Block access to sensitive files
+                blocked_files = ['config.json', '.env']
+                path_arg = args.get('path', '')
+                if path_arg:
+                    # Check if path contains any blocked file
+                    if any(blocked in path_arg for blocked in blocked_files):
+                        # Log but allow - security should be handled by MCP server
+                        self.console.print(f"[yellow]Warning: Attempting to access potentially sensitive file: {path_arg}[/yellow]")
+                
+                # Display the tool call details
+                if hasattr(self, 'show_tool_details') and self.show_tool_details:
+                    tool_call_info = f"[bold cyan]🔧 Calling:[/bold cyan] [bold white]{server_name}[/bold white].[bold magenta]{actual_tool}[/bold magenta]"
+                    if args:
+                        tool_call_info += f"\n[dim]Args:[/dim] [dim]{json.dumps(args, indent=2)}[/dim]"
+                    self.console.print(Panel(tool_call_info, border_style="cyan", box=ROUNDED, padding=(1, 2)))
+                
+                # Execute the tool call
+                result = await self.call_mcp_tool(server_name, actual_tool, args)
+                
+                # Display the tool result
+                if hasattr(self, 'show_tool_details') and self.show_tool_details:
+                    await self._display_tool_result(tool_name, result, tool_call.id)
+                
+                # Store result for AI response
+                tool_results.append({
+                    "tool_call_id": tool_call.id,
+                    "tool_name": tool_name,
+                    "result": result
+                })
+                
             except Exception as e:
-                self.console.print(f"[yellow]Error getting tools from {server_name}: {e}[/yellow]")
-                continue
+                error_msg = f"Error executing tool {tool_name}: {str(e)}"
+                self.console.print(f"[red]{error_msg}[/red]")
+                
+                # Store error result for AI response
+                tool_results.append({
+                    "tool_call_id": tool_call.id,
+                    "tool_name": tool_name,
+                    "result": {"error": error_msg}
+                })
+        
+        return tool_results
+        
+    def smart_truncate_result(self, result_str: str, tool_name: str, max_size: int = 8000) -> str:
+        """
+        Intelligently truncate tool results based on tool type and content structure.
+        Preserves important information while reducing context window usage.
+        """
+        if len(result_str) <= max_size:
+            return result_str
+        
+        # Special handling for directory trees - extract summary info
+        if 'directory_tree' in tool_name or 'list_directory' in tool_name:
+            lines = result_str.split('\n')
+            
+            # Keep first lines (usually the root path) and sample of structure
+            header_lines = 10
+            sample_lines = 50
+            footer_lines = 5
+            
+            if len(lines) > (header_lines + sample_lines + footer_lines):
+                truncated_lines = (
+                    lines[:header_lines] +
+                    ['', '... [directory tree truncated for context efficiency] ...', ''] +
+                    lines[header_lines:header_lines + sample_lines] +
+                    ['', '... [additional entries omitted] ...', ''] +
+                    lines[-footer_lines:]
+                )
+                result_str = '\n'.join(truncated_lines)
+                
+                # Add summary
+                total_lines = len(lines)
+                summary = f"\n\n[TRUNCATED: Showing {header_lines + sample_lines + footer_lines} of {total_lines} total entries. Original size: {original_size} chars]"
+                result_str += summary
+                return result_str
+        
+        # For file content, keep beginning and end
+        if 'read_file' in tool_name or 'get_file' in tool_name:
+            keep_start = max_size // 2
+            keep_end = max_size // 2
+            
+            result_str = (
+                result_str[:keep_start] +
+                f"\n\n... [FILE TRUNCATED: {original_size - max_size} chars omitted] ...\n\n" +
+                result_str[-keep_end:]
+            )
+            return result_str
+        
+        # For JSON results, try to preserve structure
+        if result_str.strip().startswith('{') or result_str.strip().startswith('['):
+            try:
+                data = json.loads(result_str)
+                
+                # If it's a list, sample items
+                if isinstance(data, list) and len(data) > 10:
+                    sampled = data[:5] + data[-5:]
+                    truncated_data = {
+                        "_truncated": True,
+                        "_original_count": len(data),
+                        "_showing": "first 5 and last 5 items",
+                        "items": sampled
+                    }
+                    return json.dumps(truncated_data, indent=2)
+                
+                # If it's a large dict, keep keys but truncate values
+                if isinstance(data, dict) and len(json.dumps(data)) > max_size:
+                    truncated_data = {}
+                    for k, v in list(data.items())[:20]:  # Keep first 20 keys
+                        if isinstance(v, str) and len(v) > 200:
+                            truncated_data[k] = v[:200] + "..."
+                        else:
+                            truncated_data[k] = v
+                    truncated_data["_truncated"] = f"Showing first 20 of {len(data)} keys"
+                    return json.dumps(truncated_data, indent=2)
+            except:
+                pass  # Fall through to simple truncation
+        
+        # Default: simple truncation with context preservation
+        keep_start = int(max_size * 0.7)  # Keep more from the start
+        keep_end = max_size - keep_start
+        
+        result_str = (
+            result_str[:keep_start] +
+            f"\n\n... [TRUNCATED: {original_size - max_size} chars omitted for context efficiency] ...\n\n" +
+            result_str[-keep_end:]
+        )
+        
+        return result_str
+
+    async def build_tools_list(self) -> List[Dict[str, Any]]:
+        """Build list of available MCP tools for function calling"""
+        tools = []
+        
+        if not self.mcp_client:
+            return tools
+        
+        try:
+            mcp_tools = await self.list_mcp_tools()
+            
+            if not mcp_tools:
+                return tools
+                
+            for tool in mcp_tools:
+                try:
+                    if not isinstance(tool, dict):
+                        self.console.print(f"[yellow]Tool is not a dict: {type(tool)}[/yellow]")
+                        continue
+                    
+                    tool_name = tool.get('name')
+                    if not tool_name:
+                        continue
+                    
+                    # Get and sanitize the input schema for llama.cpp compatibility
+                    input_schema = tool.get('inputSchema', {})
+                    sanitized_schema = self.sanitize_json_schema(input_schema)
+                    
+                    # Format tool for OpenAI - tool names are already prefixed by FastMCP
+                    formatted_tool = {
+                        "type": "function",
+                        "function": {
+                            "name": tool_name,  # Already prefixed like "filesystem_read_file"
+                            "description": tool.get('description', ''),
+                            "parameters": sanitized_schema
+                        }
+                    }
+                    tools.append(formatted_tool)
+                except Exception as e:
+                    self.console.print(f"[yellow]Error formatting tool: {e}[/yellow]")
+                    continue
+        except Exception as e:
+            self.console.print(f"[yellow]Error getting tools: {e}[/yellow]")
         
         return tools
 
@@ -577,38 +1283,16 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
             try:
                 tool_name = tool_call.function.name
                 
-                # Handle tool names without server prefix by searching for them
-                if '--' not in tool_name:
-                    self.console.print(f"[yellow]Tool name missing prefix: {tool_name}, searching...[/yellow]")
-                    # Try to find which server has this tool
-                    found = False
-                    for srv in self.mcp_clients.keys():
-                        srv_tools = await self.list_mcp_tools(srv)
-                        for t in srv_tools:
-                            if t.get('name') == tool_name:
-                                server_name = srv
-                                actual_tool = tool_name
-                                found = True
-                                self.console.print(f"[green]Found tool '{tool_name}' in server '{srv}'[/green]")
-                                break
-                        if found:
-                            break
-                    if not found:
-                        tool_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": tool_call.id,
-                            "content": f"Error: Could not find tool '{tool_name}' in any server"
-                        })
-                        continue
+                # Parse tool name - FastMCP prefixes with server name using underscore
+                # Format: "servername_toolname" (e.g., "filesystem_read_file")
+                if '_' in tool_name:
+                    parts = tool_name.split('_', 1)
+                    server_name = parts[0]
+                    actual_tool = parts[1] if len(parts) > 1 else tool_name
                 else:
-                    # Split on double dash separator
-                    parts = tool_name.split('--', 1)
-                    if len(parts) == 2:
-                        server_name, actual_tool = parts
-                    else:
-                        # Fallback: try first server
-                        server_name = list(self.mcp_clients.keys())[0]
-                        actual_tool = tool_name
+                    # No prefix - try to use as-is
+                    server_name = self.mcp_server_names[0] if self.mcp_server_names else "unknown"
+                    actual_tool = tool_name
                 
                 
                 try:
@@ -661,14 +1345,21 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                     self.console.print(f"[yellow]Could not serialize result: {e}[/yellow]")
                     result_str = str(result) if result else ""
                 
-                # Truncate very large results to avoid API errors
-                MAX_RESULT_SIZE = 50000  # 50k chars max
-                if len(result_str) > MAX_RESULT_SIZE:
-                    self.console.print(f"[yellow]Result too large ({len(result_str)} chars), truncating to {MAX_RESULT_SIZE}[/yellow]")
-                    result_str = result_str[:MAX_RESULT_SIZE] + f"\n\n... (truncated {len(result_str) - MAX_RESULT_SIZE} chars)"
+                # Smart truncation based on tool type and model context
+                # Use smaller limits for better performance with local models
+                MAX_RESULT_SIZE = self.config.openai.max_tool_result_size if self.config else 8000
+                original_size = len(result_str)
+                
+                if original_size > MAX_RESULT_SIZE:
+                    self.console.print(f"[yellow]Result large ({original_size} chars), applying smart truncation...[/yellow]")
+                    result_str = self.smart_truncate_result(result_str, actual_tool, MAX_RESULT_SIZE)
+                    self.console.print(f"[green]✓ Truncated to {len(result_str)} chars (saved {original_size - len(result_str)} chars)[/green]")
                 
                 if result_str:
-                    self.console.print(f"[dim]  └─ Result: {len(result_str)} chars[/dim]")
+                    size_info = f"{len(result_str)} chars"
+                    if original_size > len(result_str):
+                        size_info += f" (from {original_size})"
+                    self.console.print(f"[dim]  └─ Result: {size_info}[/dim]")
                 tool_results.append({
                     "type": "tool_result",
                     "tool_use_id": tool_call.id,
@@ -714,7 +1405,7 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
         )
         
         # Handle tool calling loop
-        MAX_ITERATIONS = 25
+        MAX_ITERATIONS = 100
         iteration = 0
         auto_continue_count = 0
         MAX_AUTO_CONTINUES = 3
@@ -982,9 +1673,9 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                         self.read_only_files.clear()
                         self.console.print(f"[bold green]✓ Cleared[/bold green] [dim]│[/dim] [bright_white]{count} file(s) removed from context[/bright_white]")
                     elif cmd == '/mcp-list':
-                        if self.mcp_clients:
+                        if self.mcp_server_names:
                             self.console.print("\n[bold bright_cyan]🔌 Connected MCP Servers[/bold bright_cyan]")
-                            for i, name in enumerate(self.mcp_clients.keys(), 1):
+                            for i, name in enumerate(self.mcp_server_names, 1):
                                 self.console.print(f"  [dim]{i}.[/dim] [bold cyan]{name}[/bold cyan]")
                             self.console.print()
                         else:
@@ -1073,20 +1764,19 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                         self.console.print(f"[bold green]✓ Streaming {status}[/bold green] [dim]│[/dim] {icon} [bright_white]Responses will be {status}[/bright_white]")
                     elif cmd == '/export-tools':
                         self.console.print("[cyan]Fetching tools from MCP servers...[/cyan]")
-                        for server_name in self.mcp_clients.keys():
-                            raw_tools = await self.list_mcp_tools(server_name)
-                            self.console.print(f"\n[cyan]{server_name}:[/cyan]")
-                            self.console.print(f"  Raw tools count: {len(raw_tools)}")
-                            if raw_tools:
-                                try:
-                                    sample_json = json.dumps(raw_tools[:1], indent=2)
-                                    self.console.print(Panel(
-                                        Syntax(sample_json, "json", theme="monokai", line_numbers=True),
-                                        title=f"Sample from {server_name}",
-                                        border_style="cyan"
-                                    ))
-                                except Exception as e:
-                                    self.console.print(f"[yellow]Could not serialize tools: {e}[/yellow]")
+                        raw_tools = await self.list_mcp_tools()
+                        self.console.print(f"\n[cyan]All servers:[/cyan]")
+                        self.console.print(f"  Raw tools count: {len(raw_tools)}")
+                        if raw_tools:
+                            try:
+                                sample_json = json.dumps(raw_tools[:1], indent=2)
+                                self.console.print(Panel(
+                                    Syntax(sample_json, "json", theme="monokai", line_numbers=True),
+                                    title="Sample Tools",
+                                    border_style="cyan"
+                                ))
+                            except Exception as e:
+                                self.console.print(f"[yellow]Could not serialize tools: {e}[/yellow]")
                         
                         tools = await self.build_tools_list()
                         self.console.print(f"\n[cyan]Formatted tools for OpenAI:[/cyan]")
@@ -1114,13 +1804,13 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                         ) as progress:
                             progress.add_task("", total=None)
                             try:
-                                response = await self.chat_with_ai(user_input)
+                                response = await self.chat_with_ai(user_input, show_tool_details=True)
                             except Exception as e:
                                 self.console.print(f"[bold red]✗ Error[/bold red] [dim]│[/dim] {e}")
                                 continue
                     else:
                         try:
-                            response = await self.chat_with_ai(user_input)
+                            response = await self.chat_with_ai(user_input, show_tool_details=True)
                         except Exception as e:
                             self.console.print(f"[bold red]✗ Error[/bold red] [dim]│[/dim] {e}")
                             continue
@@ -1158,7 +1848,10 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
             self.console.print("[red]Error: OpenAI API key not configured[/red]")
             return
         
-        # Connect to MCP servers from config
+        # Collect all MCP servers to connect
+        servers_to_connect = {}
+        
+        # Add servers from config
         if self.config and self.config.mcp.servers:
             self.console.print(f"\n[bold bright_cyan]🔌 Connecting to {len(self.config.mcp.servers)} MCP server(s)...[/bold bright_cyan]\n")
             for name, server_config in self.config.mcp.servers.items():
@@ -1184,11 +1877,9 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                         server_config['args'] = new_args
                         self.console.print(f"[dim]  └─ Auto-configured with path: {os.getcwd()}[/dim]")
                 
-                await self.connect_mcp_server(name, server_config)
-        else:
-            self.console.print("[yellow]No MCP servers configured[/yellow]")
+                servers_to_connect[name] = server_config
         
-        # Connect to any specified MCP servers via command line
+        # Add command line servers
         if args.mcp_servers:
             for server_config in args.mcp_servers:
                 try:
@@ -1197,27 +1888,33 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                         config = json.loads(config_str)
                     except json.JSONDecodeError:
                         config = config_str
-                    await self.connect_mcp_server(name, config)
+                    servers_to_connect[name] = config
                 except ValueError as e:
                     self.console.print(f"[red]Invalid MCP server format {server_config}: {e}[/red]")
                 except Exception as e:
-                    self.console.print(f"[red]Error connecting to MCP server: {e}[/red]")
+                    self.console.print(f"[red]Error parsing MCP server config: {e}[/red]")
+        
+        # Connect to all servers using single multi-server client
+        if servers_to_connect:
+            await self.connect_mcp_servers(servers_to_connect)
+        else:
+            self.console.print("[yellow]No MCP servers configured[/yellow]")
         
         # Show connection summary
-        if self.mcp_clients:
-            self.console.print(f"[green]Ready! Connected to {len(self.mcp_clients)} MCP server(s)[/green]\n")
+        if self.mcp_server_names:
+            self.console.print(f"\n[green]Ready! Connected to {len(self.mcp_server_names)} MCP server(s)[/green]\n")
         else:
             self.console.print("[yellow]Warning: No MCP servers connected. File operations will not be available.\n[/yellow]")
         
         # Run interactive mode
         await self.run_interactive_mode()
         
-        # Cleanup MCP connections
-        for name, client in self.mcp_clients.items():
+        # Cleanup MCP connection
+        if self.mcp_client:
             try:
-                await client.close()
+                await self.mcp_client.__aexit__(None, None, None)
             except Exception as e:
-                self.console.print(f"[yellow]Warning: Failed to disconnect from {name}: {e}[/yellow]")
+                self.console.print(f"[yellow]Warning: Failed to disconnect MCP client: {e}[/yellow]")
 
 
 async def async_main():
