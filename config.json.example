@@ -5,6 +5,7 @@
     "model": "deepseek-v3.1:671b-cloud",
     "max_tool_result_size": 8000
   },
+  "_comment_lm_studio": "For LM Studio: set base_url to 'http://localhost:1234/v1', api_key to 'lm-studio' (or any non-empty string), and model to your loaded model name",
   "mcpServers": {
     "filesystem": {
       "transport": "stdio",

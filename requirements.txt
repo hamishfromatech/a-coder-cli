@@ -6,3 +6,4 @@ pydantic>=2.0.0
 prompt-toolkit>=3.0.0
 pygments>=2.15.0
 python-dotenv>=1.0.0
+python-toon>=0.1.0

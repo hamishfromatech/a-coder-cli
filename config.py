@@ -27,12 +27,18 @@ class OpenAIConfig:
         
     def create_client(self):
         """Create OpenAI client with current configuration"""
-        if not self.api_key:
-            raise ValueError("OpenAI API key not configured")
+        # For local servers (Ollama, LM Studio), use a placeholder if no key provided
+        api_key = self.api_key
+        if not api_key:
+            # Check if this is a local server that doesn't need a real API key
+            if self.base_url and ('localhost' in self.base_url or '127.0.0.1' in self.base_url):
+                api_key = 'local-server'
+            else:
+                raise ValueError("OpenAI API key not configured")
         
-        # Support for custom base URLs (for local models like Ollama)
+        # Support for custom base URLs (for local models like Ollama, LM Studio)
         client_params = {
-            'api_key': self.api_key,
+            'api_key': api_key,
         }
         
         # Add base_url if it's configured

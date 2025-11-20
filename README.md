@@ -15,6 +15,7 @@ A terminal-based autonomous coding agent with natural conversation and MCP-power
 - **🔄 OpenAI Compatible**: Works with any OpenAI-compatible API
 - **🔄 Command History**: Navigate previous commands with arrow keys (↑/↓)
 - **🚀 Auto-Configuration**: Automatically detects your project directory
+- **📦 TOON-Optimized Tool Results**: MCP tool responses are encoded in Token-Oriented Object Notation by default for lower token usage and higher LLM accuracy
 
 ## Quick Start
 
@@ -114,6 +115,55 @@ export A_CODER_CONFIG_PATH="$HOME/config.json"
 ```
 
 `ACODER_CONFIG_PATH` and `ACODER_CONFIG` remain as legacy aliases for backwards compatibility.
+
+### Model Provider Options
+
+#### Ollama (Free, Local)
+
+Default configuration uses Ollama running locally:
+
+```json
+{
+  "openai": {
+    "api_key": "ollama",
+    "base_url": "http://localhost:11434/v1",
+    "model": "deepseek-v3.1:671b-cloud"
+  }
+}
+```
+
+#### LM Studio (Free, Local)
+
+LM Studio provides a local OpenAI-compatible API:
+
+```json
+{
+  "openai": {
+    "api_key": "lm-studio",
+    "base_url": "http://localhost:1234/v1",
+    "model": "your-loaded-model-name"
+  }
+}
+```
+
+**Setup:**
+1. Download and install [LM Studio](https://lmstudio.ai/)
+2. Load a model in LM Studio
+3. Start the local server (default port: 1234)
+4. Set `model` to match the loaded model name exactly
+5. Use any non-empty string for `api_key` (e.g., "lm-studio")
+
+#### OpenAI (Paid)
+
+```json
+{
+  "openai": {
+    "api_key": "sk-...",
+    "base_url": "https://api.openai.com/v1",
+    "model": "gpt-4"
+  }
+}
+```
 
 ### MCP Server Options
 
