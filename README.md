@@ -12,8 +12,11 @@ A terminal-based autonomous coding agent with natural conversation and MCP-power
 - **🔒 Read-Only References**: Mark files as read-only to prevent accidental modifications
 - **🔌 Multi-Server Support**: Connect to multiple MCP servers for extended functionality
 - **🦙 Ollama Support**: Works with Ollama cloud models and local models
+- **🏠 LM Studio Support**: Full compatibility with LM Studio's local OpenAI-compatible API
 - **🔄 OpenAI Compatible**: Works with any OpenAI-compatible API
+- **⚡ Interrupt Control**: Press Ctrl+C to interrupt AI processing and return to prompt (cross-platform)
 - **🔄 Command History**: Navigate previous commands with arrow keys (↑/↓)
+- **🔀 Model Switching**: Switch between models on-the-fly with `/models` and `/switch-model`
 - **🚀 Auto-Configuration**: Automatically detects your project directory
 - **📦 TOON-Optimized Tool Results**: MCP tool responses are encoded in Token-Oriented Object Notation by default for lower token usage and higher LLM accuracy
 
@@ -253,11 +256,17 @@ a-coder --config ~/config.json
 - `/mcp-tools <server>` - List available tools from a server
 - `/mcp-call <server> <tool> [args]` - Call an MCP tool directly
 
+#### Model Management
+
+- `/models` - List available models from your provider (Ollama/LM Studio)
+- `/switch-model <model>` - Switch to a different model
+
 #### General
 
 - `/help` - Show detailed help
 - `/clear` - Clear screen
 - `/exit` or `/quit` - Exit application
+- **Ctrl+C** - Interrupt AI processing and return to prompt
 
 ### Example Workflow
 
@@ -281,6 +290,15 @@ You> /files
 You> Can you refactor the main function to be more modular?
 
 A-Coder> I'll analyze the code and suggest improvements...
+
+# Press Ctrl+C during AI processing to interrupt
+⚠ AI loop interrupted. Ready for new message.
+
+You> /models
+🤖 Available Models
+  ✓ deepseek-v3.1:671b-cloud (current)
+  2. llama3.2:latest
+  3. qwen2.5:14b
 ```
 
 ## Architecture
