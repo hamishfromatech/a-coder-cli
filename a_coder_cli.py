@@ -11,9 +11,14 @@ import sys
 import logging
 import platform
 import shutil
+import warnings
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 import mimetypes
+
+# Suppress Windows-specific asyncio warnings during cleanup
+warnings.filterwarnings("ignore", category=ResourceWarning, message=".*unclosed transport.*")
+warnings.filterwarnings("ignore", category=RuntimeError, message=".*Event loop is closed.*")
 
 from openai import AsyncOpenAI
 from rich.console import Console
@@ -32,6 +37,9 @@ import json
 from dotenv import load_dotenv
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import InMemoryHistory
+from prompt_toolkit.completion import WordCompleter, NestedCompleter
+from prompt_toolkit.styles import Style
+from prompt_toolkit.formatted_text import HTML
 
 try:
     from toon import encode as toon_encode, decode as toon_decode
@@ -39,13 +47,23 @@ except ImportError:  # pragma: no cover - optional dependency
     toon_encode = None
     toon_decode = None
 
+try:
+    import tiktoken
+except ImportError:
+    tiktoken = None
+
 # Suppress MCP root-related warnings and logs at multiple levels
 import logging
 import warnings
 import sys
 import io
+import html
 from contextlib import redirect_stderr, redirect_stdout
 from contextlib import contextmanager
+try:
+    from importlib.metadata import version
+except ImportError:
+    version = None
 
 # Set all MCP-related loggers to ERROR level
 mcp_loggers = [
@@ -334,19 +352,60 @@ class ACoderCLI:
         self.config = config
         self.added_files: Dict[str, str] = {}
         self.read_only_files: set = set()
-        self.prompt_session = PromptSession(history=InMemoryHistory())
+        
+        # specialized commands with descriptions
+        self.commands = {
+            '/help': 'Show detailed help',
+            '/clear': 'Clear screen',
+            '/exit': 'Quit application',
+            '/quit': 'Quit application',
+            '/add': 'Add file to context',
+            '/add-ro': 'Add read-only file',
+            '/remove': 'Remove file',
+            '/files': 'Show added files',
+            '/clear-files': 'Clear context',
+            '/models': 'List available models',
+            '/switch-model': 'Switch model',
+            '/stream': 'Toggle streaming',
+            '/tool-logs': 'Toggle tool call logs',
+            '/mcp-list': 'List connected servers',
+            '/mcp-tools': 'List available tools',
+            '/mcp-call': 'Call tool directly'
+        }
+        
+        # Create autocomplete style with a sleek dark theme
+        self.style = Style.from_dict({
+            'completion-menu.completion': 'bg:#333333 white',
+            'completion-menu.completion.current': 'bg:#00aaaa white bold',
+            'scrollbar.background': 'bg:#222222',
+            'scrollbar.button': 'bg:#444444',
+        })
+        
+        # Setup completer
+        self.completer = WordCompleter(
+            list(self.commands.keys()),
+            meta_dict=self.commands,
+            ignore_case=True,
+            sentence=True  # Allow typing arguments after command
+        )
+        
+        self.prompt_session = PromptSession(
+            history=InMemoryHistory(),
+            completer=self.completer,
+            style=self.style,
+            complete_while_typing=True,
+            bottom_toolbar=self.get_bottom_toolbar
+        )
+        
         self.streaming_enabled = False  # Toggle for streaming responses
         self.error_handler = MCPErrorHandler(self.console)  # Enhanced error handling
         self.use_toon_for_mcp = True if toon_encode else False
         self.show_tool_details: bool = False
+        self.show_tool_logs: bool = False  # Toggle for detailed tool call/result logs
 
     async def async_prompt(self, message: str) -> str:
-        """Async wrapper for prompt_toolkit prompt with Rich formatting"""
-        import asyncio
-        from prompt_toolkit.formatted_text import HTML
-        
-        # Convert Rich markup to plain text for prompt_toolkit
-        # Just use a simple prompt without markup for prompt_toolkit
+        """Async wrapper for prompt_toolkit prompt"""
+        # Use the configured prompt session with autocomplete
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, lambda: self.prompt_session.prompt("\nYou › "))
 
@@ -402,14 +461,25 @@ class ACoderCLI:
     async def cleanup_mcp(self):
         """Cleanup MCP client connections gracefully"""
         if self.mcp_client:
+            # Suppress stderr during cleanup to hide Windows subprocess warnings
+            import contextlib
+            import io
+            
             try:
                 self.console.print("[dim]Closing MCP connections...[/dim]")
-                await self.mcp_client.__aexit__(None, None, None)
+                
+                # Redirect stderr to suppress cleanup warnings
+                with contextlib.redirect_stderr(io.StringIO()):
+                    await self.mcp_client.__aexit__(None, None, None)
+                    # Longer pause to allow subprocess transports to close properly on Windows
+                    await asyncio.sleep(0.5)
+                
                 self.mcp_client = None
                 self.mcp_server_names = []
-            except Exception as e:
-                # Suppress errors during cleanup
-                pass
+            except Exception:
+                # Suppress all errors during cleanup to avoid ugly tracebacks
+                self.mcp_client = None
+                self.mcp_server_names = []
 
     def _resolve_command_path(self, command: str) -> str:
         """Resolve command path, handling Windows-specific issues"""
@@ -543,6 +613,18 @@ class ACoderCLI:
             # For multi-server client, tools are prefixed with server name
             prefixed_tool_name = f"{server_name}_{tool_name}"
             result = await self.mcp_client.call_tool(prefixed_tool_name, arguments)
+            
+            # Extract content from MCP result objects (CallToolResult with TextContent)
+            # This allows TOON encoding to work properly
+            if hasattr(result, 'content') and isinstance(result.content, list):
+                # MCP returns CallToolResult with content array
+                if len(result.content) == 1 and hasattr(result.content[0], 'text'):
+                    # Single TextContent - extract the text
+                    return result.content[0].text
+                elif len(result.content) > 1:
+                    # Multiple content items - return as list of texts
+                    return [item.text if hasattr(item, 'text') else item for item in result.content]
+            
             return result
         except Exception as e:
             # Use the enhanced error handler to display a user-friendly message
@@ -550,54 +632,112 @@ class ACoderCLI:
             # Re-raise the original exception for proper error propagation
             raise
 
+    def get_version(self) -> str:
+        """Get application version from package metadata or pyproject.toml"""
+        # Try to get from installed package
+        if version:
+            try:
+                return f"v{version('a-coder-cli')}"
+            except Exception:
+                pass
+        
+        # Fallback: try to read pyproject.toml if running from source
+        try:
+            pyproject_path = Path(__file__).parent.parent / "pyproject.toml"
+            if pyproject_path.exists():
+                with open(pyproject_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if line.strip().startswith("version ="):
+                            ver = line.split("=")[1].strip().strip('"').strip("'")
+                            return f"v{ver}"
+            # Also try current directory
+            pyproject_path = Path("pyproject.toml")
+            if pyproject_path.exists():
+                with open(pyproject_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if line.strip().startswith("version ="):
+                            ver = line.split("=")[1].strip().strip('"').strip("'")
+                            return f"v{ver}"
+        except Exception:
+            pass
+            
+        return "v1.0.0"  # Fallback
+
     def display_welcome_screen(self):
-        """Display the welcome screen"""
-        # Create a gradient-style header
-        header = Text()
-        header.append("\n  ╔═══════════════════════════════════════════════════════════╗\n", style="bold cyan")
-        header.append("  ║                                                           ║\n", style="bold cyan")
-        header.append("  ║  ", style="bold cyan")
-        header.append("A-Coder CLI", style="bold white on blue")
-        header.append("  ✨                                     ║\n", style="bold cyan")
-        header.append("  ║  ", style="bold cyan")
-        header.append("Your Premium AI Coding Assistant", style="italic bright_white")
-        header.append("                 ║\n", style="bold cyan")
-        header.append("  ║                                                           ║\n", style="bold cyan")
-        header.append("  ╚═══════════════════════════════════════════════════════════╝\n", style="bold cyan")
+        """Display the welcome screen with enhanced UI"""
+        # Clear screen first
+        self.console.clear()
         
-        self.console.print(header)
+        # Create a sleek header
+        title = Text("⚡ A-Coder CLI", style="bold bright_white")
+        subtitle = Text("Your AI Pair Programmer", style="italic cyan")
         
-        welcome_text = """
-[bold bright_cyan]🚀 Quick Start[/bold bright_cyan]
-
-[dim]Start chatting naturally or use commands to manage your workspace:[/dim]
-
-[bold bright_magenta]📁 File Management[/bold bright_magenta]
-  [cyan]•[/cyan] [bold]/add[/bold] [dim]<file>[/dim]        Add file to context (editable)
-  [cyan]•[/cyan] [bold]/add-ro[/bold] [dim]<file>[/dim]     Add as read-only reference
-  [cyan]•[/cyan] [bold]/files[/bold]              Show all added files
-  [cyan]•[/cyan] [bold]/remove[/bold] [dim]<file>[/dim]     Remove from context
-  [cyan]•[/cyan] [bold]/clear-files[/bold]        Clear all files
-
-[bold bright_green]💬 Conversation[/bold bright_green]
-  [green]•[/green] Just type naturally - the AI understands context
-  [green]•[/green] Use [bold]↑/↓[/bold] arrow keys for command history
-
-[bold bright_yellow]⚡ Quick Commands[/bold bright_yellow]
-  [yellow]•[/yellow] [bold]/help[/bold]     Detailed guide
-  [yellow]•[/yellow] [bold]/clear[/bold]    Clear screen
-  [yellow]•[/yellow] [bold]/exit[/bold]     Quit application
-
-[italic dim]Tip: Type /help for advanced features and MCP server commands[/italic dim]
-        """
+        ver = self.get_version()
         
-        panel = Panel(
-            welcome_text,
-            border_style="bright_cyan",
+        header_panel = Panel(
+            Align.center(
+                Text.assemble(
+                    title, "\n",
+                    subtitle, "\n\n",
+                    Text(ver, style="dim")
+                )
+            ),
+            border_style="bright_blue",
             box=ROUNDED,
-            padding=(1, 2)
+            padding=(1, 2),
+            subtitle="[dim]Powered by The A-Tech Corporation[/dim]",
+            subtitle_align="right"
         )
-        self.console.print(panel)
+        
+        self.console.print(header_panel)
+        
+        # Show current configuration status
+        model_name = self.config.openai.model if self.config else "Unknown"
+        server_count = len(self.mcp_server_names)
+        
+        # Create a status table
+        grid = Table.grid(expand=True)
+        grid.add_column(justify="center", ratio=1)
+        grid.add_column(justify="center", ratio=1)
+        grid.add_column(justify="center", ratio=1)
+        grid.add_column(justify="center", ratio=1)
+        
+        # TOON status
+        toon_status = "✓ Enabled" if self.use_toon_for_mcp else "✗ Disabled"
+        toon_color = "green" if self.use_toon_for_mcp else "yellow"
+        
+        grid.add_row(
+            f"[bold cyan]🤖 Model[/bold cyan]\n[dim]{model_name}[/dim]",
+            f"[bold green]🔌 MCP Servers[/bold green]\n[dim]{server_count} Connected[/dim]",
+            f"[bold {toon_color}]📊 TOON[/bold {toon_color}]\n[dim]{toon_status}[/dim]",
+            f"[bold magenta]📂 Context[/bold magenta]\n[dim]{self.current_project_path.name}/[/dim]"
+        )
+        
+        self.console.print(Panel(grid, style="dim", box=ROUNDED))
+        self.console.print()
+
+        # Quick tips in a clean layout
+        tips = [
+            "[bold]💬 Chat[/bold]  Type naturally to write code",
+            "[bold]file.py[/bold]  Use [cyan]/add[/cyan] to give context",
+            "[bold]Ctrl+C[/bold]   Interrupt AI thinking",
+            "[bold]/help[/bold]    Show all commands"
+        ]
+        
+        tips_table = Table.grid(expand=True, padding=(0, 2))
+        tips_table.add_column(ratio=1)
+        tips_table.add_column(ratio=1)
+        tips_table.add_row(tips[0], tips[1])
+        tips_table.add_row(tips[2], tips[3])
+        
+        self.console.print(Panel(
+            tips_table,
+            title="[bold bright_yellow]🚀 Quick Tips[/bold bright_yellow]",
+            title_align="left",
+            border_style="yellow",
+            box=ROUNDED,
+            padding=(0, 1)
+        ))
         self.console.print()
 
     def display_help(self):
@@ -1263,13 +1403,15 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                         })
                         continue
                 
-                if args:
-                    self.console.print(f"[dim]  ├─[/dim] [bold cyan]{server_name}[/bold cyan][dim].[/dim][bright_white]{actual_tool}[/bright_white] [dim]{args}[/dim]")
-                else:
-                    self.console.print(f"[dim]  ├─[/dim] [bold cyan]{server_name}[/bold cyan][dim].[/dim][bright_white]{actual_tool}[/bright_white]")
+                if self.show_tool_details:
+                    if args:
+                        self.console.print(f"[dim]  ├─[/dim] [bold cyan]{server_name}[/bold cyan][dim].[/dim][bright_white]{actual_tool}[/bright_white] [dim]{args}[/dim]")
+                    else:
+                        self.console.print(f"[dim]  ├─[/dim] [bold cyan]{server_name}[/bold cyan][dim].[/dim][bright_white]{actual_tool}[/bright_white]")
+                
                 result = await self.call_mcp_tool(server_name, actual_tool, args)
                 
-                result_str = self.prepare_result_payload(result, actual_tool)
+                result_str, used_toon = self.prepare_result_payload(result, actual_tool)
                 
                 # Smart truncation based on tool type and model context
                 # Use smaller limits for better performance with local models
@@ -1277,54 +1419,77 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                 original_size = len(result_str)
                 
                 if original_size > MAX_RESULT_SIZE:
-                    self.console.print(f"[yellow]Result large ({original_size} chars), applying smart truncation...[/yellow]")
+                    if self.show_tool_details:
+                        self.console.print(f"[yellow]Result large ({original_size} chars), applying smart truncation...[/yellow]")
                     result_str = self.smart_truncate_result(result_str, actual_tool, MAX_RESULT_SIZE)
-                    self.console.print(f"[green]✓ Truncated to {len(result_str)} chars (saved {original_size - len(result_str)} chars)[/green]")
+                    if self.show_tool_details:
+                        self.console.print(f"[green]✓ Truncated to {len(result_str)} chars (saved {original_size - len(result_str)} chars)[/green]")
                 
-                if result_str:
+                if self.show_tool_details:
                     size_info = f"{len(result_str)} chars"
                     if original_size > len(result_str):
                         size_info += f" (from {original_size})"
                     self.console.print(f"[dim]  └─ Result: {size_info}[/dim]")
+                
+                # Show detailed tool logs if enabled
+                if self.show_tool_logs:
+                    # Determine if result is TOON or JSON based on actual encoding used
+                    format_type = "TOON" if used_toon else "JSON"
+                    
+                    self.console.print(Panel(
+                        Syntax(result_str[:2000], "json" if format_type == "JSON" else "text", theme="monokai", line_numbers=False),
+                        title=f"[bold cyan]Tool Result[/bold cyan] [dim]({format_type}, {len(result_str)} chars)[/dim]",
+                        border_style="cyan",
+                        box=ROUNDED,
+                        padding=(0, 1)
+                    ))
+                
                 tool_results.append({
                     "type": "tool_result",
                     "tool_use_id": tool_call.id,
                     "content": result_str if result_str else "(empty result)"
                 })
             except Exception as e:
-                self.console.print(f"[red]✗ Tool error: {str(e)}[/red]")
-                import traceback
-                traceback.print_exc()
-                # Add error as a tool result so AI knows what happened
+                # Error is already displayed by call_mcp_tool's error handler
+                # Just add error as a tool result so AI knows what happened
                 error_msg = f"Tool '{tool_call.function.name}' failed with error: {str(e)}"
                 tool_results.append({
                     "type": "tool_result",
                     "tool_use_id": tool_call.id,
-                    "content": error_msg
+                    "content": error_msg,
+                    "is_error": True
                 })
         
         return tool_results if tool_results else None
 
-    def prepare_result_payload(self, result: Any, tool_name: str) -> str:
-        """Format MCP tool results using TOON when available"""
-        formatted = self.format_tool_result(result)
+    def prepare_result_payload(self, result: Any, tool_name: str) -> tuple[str, bool]:
+        """Format MCP tool results using TOON when available
+        
+        Returns:
+            tuple[str, bool]: (formatted_result, used_toon)
+        """
+        formatted, used_toon = self.format_tool_result(result)
         max_size = self.config.openai.max_tool_result_size if self.config else 8000
         if len(formatted) > max_size:
             formatted = self.smart_truncate_result(formatted, tool_name, max_size)
-        return formatted
+        return formatted, used_toon
 
-    def format_tool_result(self, result: Any) -> str:
-        """Convert arbitrary tool result payloads into strings (prefer TOON)"""
+    def format_tool_result(self, result: Any) -> tuple[str, bool]:
+        """Convert arbitrary tool result payloads into strings (prefer TOON)
+        
+        Returns:
+            tuple[str, bool]: (formatted_result, used_toon)
+        """
         normalized = self._normalize_result(result)
         toon_payload = self._encode_result_to_toon(normalized)
         if toon_payload:
-            return toon_payload
+            return toon_payload, True
         if isinstance(normalized, (dict, list)):
             try:
-                return json.dumps(normalized, indent=2)
+                return json.dumps(normalized, indent=2), False
             except TypeError:
                 pass
-        return "" if normalized is None else str(normalized)
+        return ("" if normalized is None else str(normalized)), False
 
     def _normalize_result(self, result: Any) -> Any:
         if isinstance(result, str):
@@ -1344,7 +1509,10 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
         return result
 
     def _encode_result_to_toon(self, data: Any) -> Optional[str]:
-        if not (self.use_toon_for_mcp and toon_encode):
+        if not self.use_toon_for_mcp:
+            return None
+        if not toon_encode:
+            # TOON library not available
             return None
         serializable = data
         if isinstance(serializable, set):
@@ -1359,14 +1527,110 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                     "lengthMarker": "#",
                 })
             except Exception as exc:
-                logger.debug("Failed to encode MCP result to TOON: %s", exc)
+                logger.warning("Failed to encode MCP result to TOON: %s", exc)
                 return None
         return None
 
+    def get_token_count(self) -> int:
+        """Estimate current context token usage"""
+        # Count tokens in conversation history
+        # Use default=str to handle OpenAI objects (like ToolCall) that aren't JSON serializable
+        history_text = json.dumps(self.conversation_history, default=str)
+        
+        # Count tokens in added files
+        files_text = json.dumps(self.added_files, default=str)
+        
+        # Count tokens in system prompt
+        system_text = self.build_system_prompt()
+        
+        total_text = history_text + files_text + system_text
+        
+        if tiktoken:
+            try:
+                # Use cl100k_base which is used by GPT-4 and GPT-3.5
+                encoding = tiktoken.get_encoding("cl100k_base")
+                return len(encoding.encode(total_text))
+            except Exception:
+                pass
+        
+        # Fallback estimate: ~4 characters per token
+        return len(total_text) // 4
+
+    def get_bottom_toolbar(self):
+        """Generate the bottom toolbar status text"""
+        tokens = self.get_token_count()
+        limit = self.config.openai.context_window if self.config else 128000
+        percent = (tokens / limit) * 100
+        
+        # Determine color based on usage
+        bg_color = "#222222"
+        if percent < 60:
+            fg_color = "#00ff00" # Green
+            bold_tag = ""
+            end_bold = ""
+        elif percent < 80:
+            fg_color = "#ffff00" # Yellow
+            bold_tag = ""
+            end_bold = ""
+        else:
+            fg_color = "#ff0000" # Red
+            bold_tag = "<b>"
+            end_bold = "</b>"
+            
+        status = f"Context: {tokens:,} / {limit:,} tokens ({percent:.1f}%)"
+        
+        # Add model info
+        model = self.config.openai.model if self.config else "unknown"
+        
+        # Escape values to prevent HTML parsing errors
+        safe_status = html.escape(status)
+        safe_model = html.escape(model)
+        
+        return HTML(f'<style bg="{bg_color}" fg="{fg_color}">{bold_tag} {safe_status} {end_bold}</style> <style bg="{bg_color}" fg="#888888">│ Model: {safe_model}</style>')
+
+    def manage_context_window(self):
+        """Manage context window usage by truncating history if needed"""
+        if not self.config:
+            return
+            
+        limit = self.config.openai.context_window
+        current_tokens = self.get_token_count()
+        percent = (current_tokens / limit) * 100
+        
+        if percent >= 80:
+            self.console.print(f"\n[bold yellow]⚠ Context usage high ({percent:.1f}%). Compressing history...[/bold yellow]")
+            
+            # Keep system messages and user's last few messages
+            # Strategy: Remove oldest messages that aren't the system prompt
+            # But keep at least the last 4 messages to maintain immediate context
+            
+            if len(self.conversation_history) > 4:
+                # Remove older messages (index 0 is usually system prompt if we kept it there, 
+                # but we build system prompt dynamically. So history starts with user/assistant)
+                
+                # Remove ~30% of history to get back to safe levels
+                remove_count = max(1, int(len(self.conversation_history) * 0.3))
+                
+                # Don't remove the very last few interactions
+                safe_index = len(self.conversation_history) - 4
+                remove_count = min(remove_count, safe_index)
+                
+                if remove_count > 0:
+                    # Remove from the beginning of the list
+                    del self.conversation_history[:remove_count]
+                    
+                    new_tokens = self.get_token_count()
+                    new_percent = (new_tokens / limit) * 100
+                    self.console.print(f"[green]✓ Compressed context to {new_percent:.1f}% ({remove_count} messages removed)[/green]")
+
     async def chat_with_ai(self, user_message: str, show_tool_details: bool = False) -> str:
         """Send a message to the AI and get a response with tool calling support"""
+        # Check context window usage before processing
+        self.manage_context_window()
+        
         # Persist preference for downstream helpers that check the attribute
         self.show_tool_details = show_tool_details
+        
         # Add user message to history
         self.conversation_history.append({
             "role": "user",
@@ -1377,19 +1641,29 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
             # Build tools list from MCP servers
             tools = await self.build_tools_list()
             
-            # Make initial API call
-            response = await self.openai_client.chat.completions.create(
-                model=self.config.openai.model if self.config else "gpt-4",
-                messages=[
-                    {"role": "system", "content": self.build_system_prompt()}
-                ] + self.conversation_history,
-                tools=tools if tools else None,
-                tool_choice="auto" if tools else None,
-                max_tokens=4000,
-                temperature=0.7,
-                timeout=300.0,
-                stream=False  # Don't stream during tool calling phase
-            )
+            # Initial thinking spinner
+            response = None
+            with Progress(
+                SpinnerColumn("dots", style="cyan"),
+                TextColumn("[bold cyan]Thinking...[/bold cyan]"),
+                console=self.console,
+                transient=True
+            ) as progress:
+                progress.add_task("", total=None)
+                
+                # Make initial API call
+                response = await self.openai_client.chat.completions.create(
+                    model=self.config.openai.model if self.config else "gpt-4",
+                    messages=[
+                        {"role": "system", "content": self.build_system_prompt()}
+                    ] + self.conversation_history,
+                    tools=tools if tools else None,
+                    tool_choice="auto" if tools else None,
+                    max_tokens=4000,
+                    temperature=0.7,
+                    timeout=300.0,
+                    stream=False
+                )
             
             # Handle tool calling loop
             MAX_ITERATIONS = 100
@@ -1403,7 +1677,7 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                     # No tool calls - check if we should auto-continue
                     response_text = response.choices[0].message.content or ""
                     
-                    # Detect if AI is planning to do more work (intent indicators)
+                    # Detect if AI is planning to do more work
                     intent_indicators = [
                         "now i'll", "i'll now", "let me now", "i will now",
                         "now let me", "i'll create", "i'll build", "i'll add",
@@ -1412,9 +1686,6 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                         "going to create", "going to build", "going to add"
                     ]
                     
-                    # Auto-continue if:
-                    # 1. Response has intent indicators, OR
-                    # 2. Response is empty/null after tool execution (likely incomplete)
                     has_intent = any(indicator in response_text.lower() for indicator in intent_indicators)
                     is_empty_after_tools = (iteration > 0 and len(response_text.strip()) == 0)
                     
@@ -1426,42 +1697,27 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                     if should_auto_continue:
                         auto_continue_count += 1
                         reason = "incomplete task" if is_empty_after_tools else "detected intent to act"
-                        self.console.print(f"[dim]  └─ Auto-continuing ({reason})[/dim]")
                         
-                        # Add the response to history and prompt for action
+                        # Add the response to history
                         self.conversation_history.append({
                             "role": "assistant",
                             "content": response_text
                         })
                         
-                        # Add a system nudge to proceed with the action
+                        # Add system nudge
                         self.conversation_history.append({
                             "role": "user",
                             "content": "Proceed with the action you just described. Use the appropriate tools now."
                         })
                         
-                        # Continue the loop to get next response
-                        if self.streaming_enabled:
-                            with Progress(
-                                SpinnerColumn("dots", style="cyan"),
-                                TextColumn("[bold bright_cyan]Auto-continuing...[/bold bright_cyan]"),
-                                console=self.console,
-                                transient=True
-                            ) as progress:
-                                progress.add_task("", total=None)
-                                response = await self.openai_client.chat.completions.create(
-                                    model=self.config.openai.model if self.config else "gpt-4",
-                                    messages=[
-                                        {"role": "system", "content": self.build_system_prompt()}
-                                    ] + self.conversation_history,
-                                    tools=tools if tools else None,
-                                    tool_choice="auto" if tools else None,
-                                    max_tokens=4000,
-                                    temperature=0.7,
-                                    timeout=300.0,
-                                    stream=False
-                                )
-                        else:
+                        # Auto-continue with spinner
+                        with Progress(
+                            SpinnerColumn("dots", style="cyan"),
+                            TextColumn(f"[bold cyan]Auto-continuing ({reason})...[/bold cyan]"),
+                            console=self.console,
+                            transient=True
+                        ) as progress:
+                            progress.add_task("", total=None)
                             response = await self.openai_client.chat.completions.create(
                                 model=self.config.openai.model if self.config else "gpt-4",
                                 messages=[
@@ -1476,20 +1732,27 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                             )
                         continue
                     else:
-                        # No tool calls and no intent to continue - this is the final response
                         break
                 
                 iteration += 1
                 tool_calls = response.choices[0].message.tool_calls
+                
+                # Display plan if present
+                if response.choices[0].message.content:
+                    self.console.print(Panel(
+                        Markdown(response.choices[0].message.content),
+                        title="[bold magenta]🎯 Plan[/bold magenta]",
+                        border_style="magenta",
+                        box=ROUNDED,
+                        padding=(0, 1)
+                    ))
+                
+                # Process tools with nice visualization
+                tool_names = [tc.function.name for tc in tool_calls]
+                tool_desc = ", ".join(tool_names)
+                
                 if show_tool_details:
                     await self._display_tool_calls(tool_calls)
-                tool_names_str = ', '.join([tc.function.name for tc in tool_calls])
-                
-                # Display "about to act" message if AI provided reasoning
-                if response.choices[0].message.content:
-                    self.console.print(f"\n[bold bright_magenta]🎯 Plan[/bold bright_magenta] [dim]│[/dim] [italic bright_white]{response.choices[0].message.content}[/italic bright_white]")
-                
-                self.console.print(f"[bold bright_blue]→ Step {iteration}[/bold bright_blue] [dim]│[/dim] [bright_white]AI called {len(tool_calls)} tool(s):[/bright_white] [bold cyan]{tool_names_str}[/bold cyan]")
                 
                 # Add assistant message with tool calls
                 self.conversation_history.append({
@@ -1498,16 +1761,39 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                     "tool_calls": response.choices[0].message.tool_calls
                 })
                 
-                # Process tool calls
+                # Execute tools with spinner
+                tool_results = []
                 try:
-                    tool_results = await self.process_tool_calls(response)
-                    self.console.print(f"[dim]  └─ Received {len(tool_results) if tool_results else 0} tool results[/dim]")
+                    with Progress(
+                        SpinnerColumn("dots", style="yellow"),
+                        TextColumn(f"[bold yellow]Step {iteration}:[/bold yellow] Executing [cyan]{tool_desc}[/cyan]..."),
+                        console=self.console,
+                        transient=True
+                    ) as progress:
+                        progress.add_task("", total=None)
+                        tool_results = await self.process_tool_calls(response)
+                    
+                    # Show compact success message
+                    if tool_results:
+                        for i, tc in enumerate(tool_calls):
+                            # Check if the corresponding result indicates an error
+                            is_error = False
+                            if i < len(tool_results):
+                                result = tool_results[i]
+                                if result.get("is_error", False) or "failed with error" in result.get("content", ""):
+                                    is_error = True
+                            
+                            if is_error:
+                                self.console.print(f"[bold red]✗[/bold red] [dim]Failed[/dim] [cyan]{tc.function.name}[/cyan]")
+                            else:
+                                self.console.print(f"[bold green]✓[/bold green] [dim]Executed[/dim] [cyan]{tc.function.name}[/cyan]")
+                        
                 except (KeyboardInterrupt, asyncio.CancelledError):
                     self.console.print("\n[yellow]⚠ Interrupted by user (Ctrl+C)[/yellow]")
-                    raise  # Re-raise to break out of the main loop
+                    raise
                 
                 if tool_results:
-                    # Add tool results to history in OpenAI format
+                    # Add results to history
                     for result in tool_results:
                         content = result.get("content", "")
                         if not content:
@@ -1518,17 +1804,17 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                             "content": content
                         })
                 
-                # Continue the conversation - let AI decide if it needs more tools or can respond
-                # Show loading indicator while waiting for next response
-                if self.streaming_enabled:
-                    with Progress(
-                        SpinnerColumn("dots", style="cyan"),
-                        TextColumn("[bold bright_cyan]Processing...[/bold bright_cyan]"),
-                        console=self.console,
-                        transient=True
-                    ) as progress:
-                        progress.add_task("", total=None)
-                        response = await self.openai_client.chat.completions.create(
+                # Get next response with spinner
+                with Progress(
+                    SpinnerColumn("dots", style="cyan"),
+                    TextColumn("[bold cyan]Thinking...[/bold cyan]"),
+                    console=self.console,
+                    transient=True
+                ) as progress:
+                    progress.add_task("", total=None)
+                    
+                    if self.streaming_enabled:
+                         response = await self.openai_client.chat.completions.create(
                             model=self.config.openai.model if self.config else "gpt-4",
                             messages=[
                                 {"role": "system", "content": self.build_system_prompt()}
@@ -1540,38 +1826,36 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                             timeout=300.0,
                             stream=False  # Don't stream during tool calling
                         )
-                else:
-                    response = await self.openai_client.chat.completions.create(
-                        model=self.config.openai.model if self.config else "gpt-4",
-                        messages=[
-                            {"role": "system", "content": self.build_system_prompt()}
-                        ] + self.conversation_history,
-                        tools=tools if tools else None,
-                        tool_choice="auto" if tools else None,
-                        max_tokens=4000,
-                        temperature=0.7,
-                        timeout=300.0,
-                        stream=False  # Don't stream during tool calling
-                    )
+                    else:
+                        response = await self.openai_client.chat.completions.create(
+                            model=self.config.openai.model if self.config else "gpt-4",
+                            messages=[
+                                {"role": "system", "content": self.build_system_prompt()}
+                            ] + self.conversation_history,
+                            tools=tools if tools else None,
+                            tool_choice="auto" if tools else None,
+                            max_tokens=4000,
+                            temperature=0.7,
+                            timeout=300.0,
+                            stream=False
+                        )
             
-            # After the loop, we have a final response (or hit max iterations)
+            # Final response
             if iteration > 0:
-                self.console.print(f"\n[bold green]✓ Completed[/bold green] [dim]│[/dim] [bright_white]{iteration} step(s)[/bright_white]\n")
+                self.console.print(f"\n[bold green]✓ Task Completed[/bold green] [dim]({iteration} steps)[/dim]\n")
             
-            # If streaming is enabled, stream the final response
+            # Stream or print final response
+            assistant_message = ""
             if self.streaming_enabled:
                 from rich.live import Live
-                from rich.text import Text
                 
-                # Show brief loading indicator before streaming starts
                 with Progress(
                     SpinnerColumn("dots", style="cyan"),
-                    TextColumn("[bold bright_cyan]Generating response...[/bold bright_cyan]"),
+                    TextColumn("[bold cyan]Generating response...[/bold cyan]"),
                     console=self.console,
                     transient=True
                 ) as progress:
                     progress.add_task("", total=None)
-                    # Re-request with streaming for the final response
                     stream = await self.openai_client.chat.completions.create(
                         model=self.config.openai.model if self.config else "gpt-4",
                         messages=[
@@ -1583,15 +1867,12 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                         stream=True
                     )
                 
-                # Stream the response into a live-updating panel
-                assistant_message = ""
                 self.console.print()
-                
                 with Live(
                     Panel(
                         Text("⋯", style="dim"),
-                        title="[bold bright_white]🤖 A-Coder[/bold bright_white]",
-                        border_style="bright_green",
+                        title="[bold white]🤖 A-Coder[/bold white]",
+                        border_style="green",
                         box=ROUNDED,
                         padding=(1, 2)
                     ),
@@ -1602,21 +1883,27 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                         if chunk.choices[0].delta.content:
                             content = chunk.choices[0].delta.content
                             assistant_message += content
-                            # Update the live panel with accumulated text
                             live.update(
                                 Panel(
                                     Markdown(assistant_message),
-                                    title="[bold bright_white]🤖 A-Coder[/bold bright_white]",
-                                    border_style="bright_green",
+                                    title="[bold white]🤖 A-Coder[/bold white]",
+                                    border_style="green",
                                     box=ROUNDED,
                                     padding=(1, 2)
                                 )
                             )
-                
-                self.console.print()  # New line after streaming
+                self.console.print()
             else:
                 # Get final message (non-streaming)
                 assistant_message = response.choices[0].message.content or "(no response)"
+                # Always print the final response panel (it contains the answer)
+                self.console.print(Panel(
+                    Markdown(assistant_message),
+                    title="[bold white]🤖 A-Coder[/bold white]",
+                    border_style="green",
+                    box=ROUNDED,
+                    padding=(1, 2)
+                ))
             
             self.conversation_history.append({
                 "role": "assistant",
@@ -1765,6 +2052,12 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                         status = "enabled" if self.streaming_enabled else "disabled"
                         icon = "🌊" if self.streaming_enabled else "📄"
                         self.console.print(f"[bold green]✓ Streaming {status}[/bold green] [dim]│[/dim] {icon} [bright_white]Responses will be {status}[/bright_white]")
+                    elif cmd == '/tool-logs':
+                        self.show_tool_logs = not self.show_tool_logs
+                        status = "enabled" if self.show_tool_logs else "disabled"
+                        icon = "📋" if self.show_tool_logs else "🔇"
+                        format_info = "TOON/JSON" if self.use_toon_for_mcp else "JSON"
+                        self.console.print(f"[bold green]✓ Tool logs {status}[/bold green] [dim]│[/dim] {icon} [bright_white]Will show {format_info} output for tool calls[/bright_white]")
                     elif cmd == '/export-tools':
                         self.console.print("[cyan]Fetching tools from MCP servers...[/cyan]")
                         raw_tools = await self.list_mcp_tools()
@@ -1797,48 +2090,16 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                         self.console.print("[dim]Type [bold]/help[/bold] to see all available commands[/dim]")
                 else:
                     # Natural conversation (not a command)
-                    # Only show spinner if streaming is disabled (streaming has its own live display)
-                    if not self.streaming_enabled:
-                        with Progress(
-                            SpinnerColumn("dots", style="cyan"),
-                            TextColumn("[bold bright_cyan]Thinking...[/bold bright_cyan]"),
-                            console=self.console,
-                            transient=True
-                        ) as progress:
-                            progress.add_task("", total=None)
-                            try:
-                                response = await self.chat_with_ai(user_input, show_tool_details=True)
-                            except (KeyboardInterrupt, asyncio.CancelledError):
-                                # User interrupted the AI loop, continue to next prompt
-                                continue
-                            except Exception as e:
-                                self.console.print(f"[bold red]✗ Error[/bold red] [dim]│[/dim] {e}")
-                                continue
-                    else:
-                        try:
-                            response = await self.chat_with_ai(user_input, show_tool_details=True)
-                        except (KeyboardInterrupt, asyncio.CancelledError):
-                            # User interrupted the AI loop, continue to next prompt
-                            continue
-                        except Exception as e:
-                            self.console.print(f"[bold red]✗ Error[/bold red] [dim]│[/dim] {e}")
-                            continue
-                    
-                    # Display AI response with premium styling (streaming handles its own panel)
-                    if not self.streaming_enabled:
-                        self.console.print()
-                        response_panel = Panel(
-                            Markdown(response),
-                            title="[bold bright_white]🤖 A-Coder[/bold bright_white]",
-                            border_style="bright_green",
-                            box=ROUNDED,
-                            padding=(1, 2)
-                        )
-                        self.console.print(response_panel)
-                        self.console.print()
-                    else:
-                        # Streaming already displayed the response in a live panel
-                        pass
+                    try:
+                        # chat_with_ai handles its own spinners and display
+                        # Disable show_tool_details by default for cleaner UI
+                        await self.chat_with_ai(user_input, show_tool_details=False)
+                    except (KeyboardInterrupt, asyncio.CancelledError):
+                        # User interrupted the AI loop, continue to next prompt
+                        continue
+                    except Exception as e:
+                        self.console.print(f"[bold red]✗ Error[/bold red] [dim]│[/dim] {e}")
+                        continue
             
             except KeyboardInterrupt:
                 self.console.print("\n[yellow]Use '/exit' or '/quit' to leave[/yellow]")
@@ -1981,7 +2242,43 @@ async def async_main():
 
 def main():
     """Synchronous entry point for setuptools"""
-    asyncio.run(async_main())
+    if platform.system() == "Windows":
+        # Use a custom event loop policy to avoid subprocess cleanup errors
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    
+    # Create and manage event loop manually for better cleanup control
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(async_main())
+    finally:
+        # Give pending tasks time to complete
+        try:
+            # Cancel all remaining tasks
+            pending = asyncio.all_tasks(loop)
+            for task in pending:
+                task.cancel()
+            # Wait for cancellations with timeout
+            if pending:
+                loop.run_until_complete(asyncio.wait(pending, timeout=1.0))
+        except Exception:
+            pass
+        
+        # Close the loop gracefully, suppressing Windows subprocess warnings
+        try:
+            if platform.system() == "Windows":
+                # Temporarily replace sys.__stderr__ to suppress subprocess cleanup warnings
+                import io
+                original_stderr = sys.__stderr__
+                sys.__stderr__ = io.StringIO()
+                try:
+                    loop.close()
+                finally:
+                    sys.__stderr__ = original_stderr
+            else:
+                loop.close()
+        except Exception:
+            pass
 
 
 if __name__ == '__main__':

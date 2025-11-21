@@ -22,6 +22,7 @@ class OpenAIConfig:
         self.model = model
         self.max_tokens = 4000
         self.temperature = 0.7
+        self.context_window = 128000  # Default context window size (128k)
         # Context management for tool results
         self.max_tool_result_size = 8000  # Max chars per tool result (8k for smaller models)
         
@@ -101,6 +102,7 @@ class ACoderConfig:
                 config.openai.api_key = openai_config.get("api_key")
                 config.openai.base_url = openai_config.get("base_url", "http://localhost:11434/v1")
                 config.openai.model = openai_config.get("model", "minimax-m2:cloud")
+                config.openai.context_window = openai_config.get("context_window", 128000)
                 config.openai.max_tool_result_size = openai_config.get("max_tool_result_size", 8000)
             
             # Add MCP servers
