@@ -424,6 +424,3 @@ python -m pytest tests/
 
 MIT
 
-## Support
-
-For issues and feature requests, visit the [GitHub repository](https://github.com/morph-llm/a-coder-cli).
