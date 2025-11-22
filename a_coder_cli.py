@@ -11,14 +11,17 @@ import sys
 import logging
 import platform
 import shutil
+import signal
 import warnings
+import threading
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 import mimetypes
+from contextlib import asynccontextmanager
 
 # Suppress Windows-specific asyncio warnings during cleanup
 warnings.filterwarnings("ignore", category=ResourceWarning, message=".*unclosed transport.*")
-warnings.filterwarnings("ignore", category=RuntimeError, message=".*Event loop is closed.*")
+# RuntimeError is not a Warning subclass, so we'll handle it in custom error handling below
 
 from openai import AsyncOpenAI
 from rich.console import Console
@@ -81,6 +84,8 @@ warnings.filterwarnings("ignore", message=".*List roots not supported.*")
 warnings.filterwarnings("ignore", message=".*Failed to request initial roots.*")
 warnings.filterwarnings("ignore", message=".*MCP error -32603.*")
 warnings.filterwarnings("ignore", message=".*MCP.*")
+warnings.filterwarnings("ignore", message=".*Secure MCP Filesystem Server.*")
+warnings.filterwarnings("ignore", message=".*Sequential Thinking MCP Server.*")
 warnings.filterwarnings("ignore", category=UserWarning, module=".*mcp.*")
 warnings.filterwarnings("ignore", category=DeprecationWarning, module=".*mcp.*")
 
@@ -89,6 +94,9 @@ MCP_SUPPRESS_PATTERNS = [
     "List roots not supported",
     "Failed to request initial roots",
     "MCP error -32603",
+    "List roots not supported",
+    "failed to request initial roots",
+    "mcp error -32603",
     "MCP",
     "mcp",
     "fastmcp"
@@ -353,6 +361,11 @@ class ACoderCLI:
         self.added_files: Dict[str, str] = {}
         self.read_only_files: set = set()
         
+        # Enhanced interrupt handling
+        self._interrupt_flag = threading.Event()
+        self._original_sigint_handler = None
+        self._setup_interrupt_handling()
+        
         # specialized commands with descriptions
         self.commands = {
             '/help': 'Show detailed help',
@@ -402,12 +415,90 @@ class ACoderCLI:
         self.use_toon_for_mcp = True if toon_encode else False
         self.show_tool_details: bool = False
         self.show_tool_logs: bool = False  # Toggle for detailed tool call/result logs
+        
+    def _setup_interrupt_handling(self):
+        """Setup comprehensive interrupt handling for better user experience"""
+        def signal_handler(signum, frame):
+            """Handle SIGINT (Ctrl+C) gracefully"""
+            # Set the interrupt flag
+            self._interrupt_flag.set()
+            
+            # Print interrupt message
+            if self.console:
+                self.console.print("\n[yellow]⚠ Interrupt signal received...[/yellow]")
+            
+            # Cancel any pending asyncio tasks
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # Create tasks to cancel pending asyncio operations
+                    for task in asyncio.all_tasks(loop):
+                        if not task.done():
+                            task.cancel()
+            except:
+                pass
+        
+        try:
+            # Store original handler and install our handler
+            # Keep our handler installed for the entire session (don't restore original after each interrupt)
+            self._original_sigint_handler = signal.signal(signal.SIGINT, signal_handler)
+        except (OSError, ValueError):
+            # Signal handling not available on this platform
+            pass
+    
+    def _check_interrupt(self) -> bool:
+        """Check if an interrupt has been requested
+        
+        Returns:
+            True if interrupt requested, False otherwise
+        """
+        return self._interrupt_flag.is_set()
+    
+    def _clear_interrupt(self):
+        """Clear the interrupt flag"""
+        self._interrupt_flag.clear()
+    
+    @asynccontextmanager
+    async def interruptible_operation(self, operation_name: str = "operation"):
+        """Context manager for interruptible operations with user feedback"""
+        try:
+            self.console.print(f"[dim]Starting {operation_name}...[/dim]")
+            yield
+        except asyncio.CancelledError:
+            self.console.print(f"[yellow]⚠ {operation_name} cancelled by user[/yellow]")
+            raise
+        except KeyboardInterrupt:
+            self.console.print(f"[yellow]⚠ {operation_name} interrupted by user[/yellow]")
+            raise
+        finally:
+            if not self._check_interrupt():
+                self.console.print(f"[dim]Completed {operation_name}[/dim]")
 
     async def async_prompt(self, message: str) -> str:
-        """Async wrapper for prompt_toolkit prompt"""
+        """Async wrapper for prompt_toolkit prompt with enhanced interrupt handling"""
+        # Clear any previous interrupt flags
+        self._clear_interrupt()
+        
         # Use the configured prompt session with autocomplete
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, lambda: self.prompt_session.prompt("\nYou › "))
+        try:
+            # Add timeout and interrupt checking for the prompt operation
+            async with asyncio.timeout(300):  # 5 minute timeout
+                return await loop.run_in_executor(None, lambda: self.prompt_session.prompt("\nYou › "))
+        except asyncio.CancelledError:
+            self.console.print("\n[yellow]Prompt cancelled[/yellow]")
+            return ""
+        except asyncio.TimeoutError:
+            self.console.print("\n[yellow]Prompt timed out[/yellow]")
+            return ""
+        except KeyboardInterrupt:
+            self.console.print("\n[yellow]Prompt interrupted[/yellow]")
+            return ""
+        except Exception as e:
+            if self._check_interrupt():
+                self.console.print("\n[yellow]Prompt interrupted[/yellow]")
+                return ""
+            raise
 
     def setup_openai(self, api_key: str, base_url: Optional[str] = None):
         """Initialize OpenAI client"""
@@ -470,13 +561,19 @@ class ACoderCLI:
                 
                 # Redirect stderr to suppress cleanup warnings
                 with contextlib.redirect_stderr(io.StringIO()):
-                    await self.mcp_client.__aexit__(None, None, None)
-                    # Longer pause to allow subprocess transports to close properly on Windows
-                    await asyncio.sleep(0.5)
+                    try:
+                        # Use timeout to prevent hanging during cleanup
+                        async with asyncio.timeout(5):
+                            await self.mcp_client.__aexit__(None, None, None)
+                            # Longer pause to allow subprocess transports to close properly on Windows
+                            await asyncio.sleep(0.5)
+                    except asyncio.TimeoutError:
+                        # If cleanup times out, just force close
+                        pass
                 
                 self.mcp_client = None
                 self.mcp_server_names = []
-            except Exception:
+            except (Exception, asyncio.CancelledError):
                 # Suppress all errors during cleanup to avoid ugly tracebacks
                 self.mcp_client = None
                 self.mcp_server_names = []
@@ -595,24 +692,415 @@ class ACoderCLI:
                 elif isinstance(tool, dict):
                     result.append(tool)
             return result
-        except Exception as e:
-            self.console.print(f"[yellow]Error listing tools from {server_name}: {e}[/yellow]")
-            import traceback
-            traceback.print_exc()
+        except Exception:
             return []
 
+    def get_token_count(self) -> int:
+        """Estimate current context token usage"""
+        # Count tokens in conversation history
+        # Use default=str to handle OpenAI objects (like ToolCall) that aren't JSON serializable
+        history_text = json.dumps(self.conversation_history, default=str)
+        
+        # Count tokens in added files
+        files_text = json.dumps(self.added_files, default=str)
+        
+        # Count tokens in system prompt
+        system_text = self.build_system_prompt()
+        
+        total_text = history_text + files_text + system_text
+        
+        if tiktoken:
+            try:
+                # Use cl100k_base which is used by GPT-4 and GPT-3.5
+                encoding = tiktoken.get_encoding("cl100k_base")
+                return len(encoding.encode(total_text))
+            except Exception:
+                pass
+        
+        # Fallback estimate: ~4 characters per token
+        return len(total_text) // 4
+
+    def manage_context_window(self):
+        """Manage context window usage by truncating history if needed"""
+        if not self.config:
+            return
+            
+        limit = self.config.openai.context_window
+        current_tokens = self.get_token_count()
+        percent = (current_tokens / limit) * 100
+        
+        if percent >= 80:
+            self.console.print(f"\n[bold yellow]⚠ Context usage high ({percent:.1f}%). Compressing history...[/bold yellow]")
+            
+            # Keep system messages and user's last few messages
+            # Strategy: Remove oldest messages that aren't the system prompt
+            # But keep at least the last 4 messages to maintain immediate context
+            
+            if len(self.conversation_history) > 4:
+                # Remove older messages (index 0 is usually system prompt if we kept it there, 
+                # but we build system prompt dynamically. So history starts with user/assistant)
+                
+                # Remove ~30% of history to get back to safe levels
+                remove_count = max(1, int(len(self.conversation_history) * 0.3))
+                
+                # Don't remove the very last few interactions
+                safe_index = len(self.conversation_history) - 4
+                remove_count = min(remove_count, safe_index)
+                
+                if remove_count > 0:
+                    # Remove from the beginning of the list
+                    del self.conversation_history[:remove_count]
+                    
+                    new_tokens = self.get_token_count()
+                    new_percent = (new_tokens / limit) * 100
+                    self.console.print(f"[green]✓ Compressed context to {new_percent:.1f}% ({remove_count} messages removed)[/green]")
+
+    def get_bottom_toolbar(self):
+        """Generate the bottom toolbar status text"""
+        tokens = self.get_token_count()
+        limit = self.config.openai.context_window if self.config else 128000
+        percent = (tokens / limit) * 100
+        
+        # Determine color based on usage
+        bg_color = "#222222"
+        if percent < 60:
+            fg_color = "#00ff00" # Green
+            bold_tag = ""
+            end_bold = ""
+        elif percent < 80:
+            fg_color = "#ffff00" # Yellow
+            bold_tag = ""
+            end_bold = ""
+        else:
+            fg_color = "#ff0000" # Red
+            bold_tag = "<b>"
+            end_bold = "</b>"
+            
+        status = f"Context: {tokens:,} / {limit:,} tokens ({percent:.1f}%)"
+        
+        # Add model info
+        model = self.config.openai.model if self.config else "unknown"
+        
+        # Escape values to prevent HTML parsing errors
+        safe_status = html.escape(status)
+        safe_model = html.escape(model)
+        
+        return HTML(f'<style bg="{bg_color}" fg="{fg_color}">{bold_tag} {safe_status} {end_bold}</style> <style bg="{bg_color}" fg="#888888">│ Model: {safe_model}</style>')
+
+    def prepare_result_payload(self, result: Any, tool_name: str) -> tuple[str, bool]:
+        """Format MCP tool results using TOON when available
+        
+        Returns:
+            tuple[str, bool]: (formatted_result, used_toon)
+        """
+        formatted, used_toon = self.format_tool_result(result)
+        max_size = self.config.openai.max_tool_result_size if self.config else 8000
+        if len(formatted) > max_size:
+            formatted = self.smart_truncate_result(formatted, tool_name, max_size)
+        return formatted, used_toon
+
+    def format_tool_result(self, result: Any) -> tuple[str, bool]:
+        """Convert arbitrary tool result payloads into strings (prefer TOON)
+        
+        Returns:
+            tuple[str, bool]: (formatted_result, used_toon)
+        """
+        normalized = self._normalize_result(result)
+        toon_payload = self._encode_result_to_toon(normalized)
+        if toon_payload:
+            return toon_payload, True
+        if isinstance(normalized, (dict, list)):
+            try:
+                return json.dumps(normalized, indent=2), False
+            except TypeError:
+                pass
+        return ("" if normalized is None else str(normalized)), False
+
+    def _normalize_result(self, result: Any) -> Any:
+        if isinstance(result, str):
+            stripped = result.strip()
+            if stripped.startswith('{') or stripped.startswith('['):
+                try:
+                    return json.loads(stripped)
+                except Exception:
+                    return result
+            return result
+        if isinstance(result, (bytes, bytearray)):
+            try:
+                decoded = result.decode('utf-8')
+                return self._normalize_result(decoded)
+            except Exception:
+                return result
+        return result
+
+    def _encode_result_to_toon(self, data: Any) -> Optional[str]:
+        if not self.use_toon_for_mcp:
+            return None
+        if not toon_encode:
+            # TOON library not available
+            return None
+        serializable = data
+        if isinstance(serializable, set):
+            serializable = list(serializable)
+        if isinstance(serializable, tuple):
+            serializable = list(serializable)
+        if isinstance(serializable, (dict, list)):
+            try:
+                return toon_encode(serializable, {
+                    "indent": 2,
+                    "delimiter": "\t",
+                    "lengthMarker": "#",
+                })
+            except Exception as exc:
+                logger.warning("Failed to encode MCP result to TOON: %s", exc)
+                return None
+        return None
+    
+    async def chat_with_ai(self, user_message: str, show_tool_details: bool = False) -> str:
+        """Send a message to the AI and get a response with comprehensive interrupt handling"""
+        # Check for interrupts before starting
+        if self._check_interrupt():
+            raise asyncio.CancelledError("Chat cancelled by user")
+        
+        # Check context window usage before processing
+        self.manage_context_window()
+        
+        # Persist preference for downstream helpers that check the attribute
+        self.show_tool_details = show_tool_details
+        
+        # Add user message to history
+        self.conversation_history.append({
+            "role": "user",
+            "content": user_message
+        })
+        
+        try:
+            async with self.interruptible_operation("building tools list"):
+                # Build tools list from MCP servers
+                tools = await self.build_tools_list()
+            
+            # Initial thinking with interruptible operation
+            response = None
+            try:
+                async with self.interruptible_operation("AI thinking"):
+                    # Make initial API call with timeout and interrupt checking
+                    api_task = asyncio.create_task(
+                        self.openai_client.chat.completions.create(
+                            model=self.config.openai.model if self.config else "gpt-4",
+                            messages=[
+                                {"role": "system", "content": self.build_system_prompt()}
+                            ] + self.conversation_history,
+                            tools=tools if tools else None,
+                            tool_choice="auto" if tools else None,
+                            max_tokens=4000,
+                            temperature=0.7,
+                            timeout=60.0,  # Reduced timeout for better responsiveness
+                            stream=False
+                        )
+                    )
+                    
+                    # Wait for response with periodic interrupt checks
+                    while not api_task.done():
+                        if self._check_interrupt():
+                            api_task.cancel()
+                            try:
+                                await api_task
+                            except asyncio.CancelledError:
+                                raise asyncio.CancelledError("AI request cancelled by user")
+                        await asyncio.sleep(0.1)
+                    
+                    response = await api_task
+                    
+            except asyncio.TimeoutError:
+                self.console.print("[yellow]⚠ AI request timed out - you can try again[/yellow]")
+                raise asyncio.CancelledError("AI request timed out")
+            
+            # Handle tool calling loop with comprehensive interrupt handling
+            MAX_ITERATIONS = 100
+            iteration = 0
+            auto_continue_count = 0
+            MAX_AUTO_CONTINUES = 3
+            
+            while iteration < MAX_ITERATIONS:
+                # Check for interrupts at the start of each iteration
+                if self._check_interrupt():
+                    raise asyncio.CancelledError("Chat interrupted by user")
+                
+                # Check if this response has tool calls
+                if not (hasattr(response.choices[0].message, 'tool_calls') and response.choices[0].message.tool_calls):
+                    break
+                
+                iteration += 1
+                tool_calls = response.choices[0].message.tool_calls
+                
+                # Process tools with comprehensive interrupt handling
+                tool_results = []
+                try:
+                    # Check for interrupts before tool execution
+                    if self._check_interrupt():
+                        raise asyncio.CancelledError("Tool execution interrupted by user")
+                    
+                    async with self.interruptible_operation(f"executing {len(tool_calls)} tool(s)"):
+                        tool_results = await self.process_tool_calls(response)
+                
+                except asyncio.CancelledError:
+                    self.console.print("\n[yellow]⚠ Tool execution cancelled by user[/yellow]")
+                    # Clean up the last assistant message since it wasn't completed
+                    if self.conversation_history and self.conversation_history[-1]["role"] == "assistant":
+                        self.conversation_history.pop()
+                    raise
+                
+                if tool_results:
+                    # Add results to history
+                    for result in tool_results:
+                        content = result.get("content", "")
+                        if not content:
+                            content = "(empty result)"
+                        self.conversation_history.append({
+                            "role": "tool",
+                            "tool_call_id": result.get("tool_use_id"),
+                            "content": content
+                        })
+                
+                # Get next response with interruptible API call
+                try:
+                    async with self.interruptible_operation("AI thinking"):
+                        api_task = asyncio.create_task(
+                            self.openai_client.chat.completions.create(
+                                model=self.config.openai.model if self.config else "gpt-4",
+                                messages=[
+                                    {"role": "system", "content": self.build_system_prompt()}
+                                ] + self.conversation_history,
+                                tools=tools if tools else None,
+                                tool_choice="auto" if tools else None,
+                                max_tokens=4000,
+                                temperature=0.7,
+                                timeout=60.0,
+                                stream=False
+                            )
+                        )
+                        
+                        # Wait with interrupt checking
+                        while not api_task.done():
+                            if self._check_interrupt():
+                                api_task.cancel()
+                                raise asyncio.CancelledError("Follow-up request cancelled by user")
+                            await asyncio.sleep(0.1)
+                        
+                        response = await api_task
+                        
+                except asyncio.TimeoutError:
+                    self.console.print("[yellow]⚠ Follow-up request timed out[/yellow]")
+                    break
+            
+            # Final response
+            if iteration > 0:
+                self.console.print(f"\n[bold green]✓ Task Completed[/bold green] [dim]({iteration} steps)[/dim]\n")
+            
+            # Get final message with interrupt handling
+            assistant_message = ""
+            try:
+                async with self.interruptible_operation("generating response"):
+                    response = await asyncio.wait_for(
+                        self.openai_client.chat.completions.create(
+                            model=self.config.openai.model if self.config else "gpt-4",
+                            messages=[
+                                {"role": "system", "content": self.build_system_prompt()}
+                            ] + self.conversation_history,
+                            max_tokens=4000,
+                            temperature=0.7,
+                            timeout=60.0,
+                            stream=False
+                        ),
+                        timeout=60.0
+                    )
+                
+                assistant_message = response.choices[0].message.content or "(no response)"
+                # Always print the final response panel (it contains the answer)
+                try:
+                    self.console.print(Panel(
+                        Markdown(assistant_message),
+                        title="[bold white]🤖 A-Coder[/bold white]",
+                        border_style="green",
+                        box=ROUNDED,
+                        padding=(1, 2)
+                    ))
+                except Exception:
+                    # If markdown rendering fails, use plain text
+                    self.console.print(Panel(
+                        Text(assistant_message, style="white"),
+                        title="[bold white]🤖 A-Coder[/bold white]",
+                        border_style="green",
+                        box=ROUNDED,
+                        padding=(1, 2)
+                    ))
+                    
+            except asyncio.TimeoutError:
+                assistant_message = "[Response generation timed out - please try again]"
+                self.console.print(Panel(
+                    Text(assistant_message, style="yellow"),
+                    title="[bold yellow]⚠ Timeout[/bold yellow]",
+                    border_style="yellow",
+                    box=ROUNDED,
+                    padding=(1, 2)
+                ))
+            
+            self.conversation_history.append({
+                "role": "assistant",
+                "content": assistant_message
+            })
+            
+            return assistant_message
+        
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            # User pressed Ctrl+C during AI processing
+            self.console.print("\n[yellow]⚠ AI chat interrupted. Ready for new message.[/yellow]")
+            # Remove the last user message from history since it wasn't completed
+            if self.conversation_history and self.conversation_history[-1]["role"] == "user":
+                self.conversation_history.pop()
+            # Clear any interrupt flags
+            self._clear_interrupt()
+            return "[Interrupted by user]"
+        except Exception as e:
+            self.console.print(f"[red]Error in chat: {e}[/red]")
+            # Clean up conversation history on error
+            if self.conversation_history and self.conversation_history[-1]["role"] == "user":
+                self.conversation_history.pop()
+            self._clear_interrupt()
+            raise
+
     async def call_mcp_tool(self, server_name: str, tool_name: str, arguments: Dict) -> Any:
-        """Call a tool on an MCP server with enhanced error handling"""
+        """Call a tool on an MCP server with enhanced error handling and interrupt support"""
         if not self.mcp_client:
             raise ValueError("MCP client not connected")
         
         if server_name not in self.mcp_server_names:
             raise ValueError(f"Server {server_name} not connected")
         
+        # Check for interrupts before tool execution
+        if self._check_interrupt():
+            raise asyncio.CancelledError("Tool execution cancelled by user")
+        
         try:
             # For multi-server client, tools are prefixed with server name
             prefixed_tool_name = f"{server_name}_{tool_name}"
-            result = await self.mcp_client.call_tool(prefixed_tool_name, arguments)
+            
+            # Create an interruptible task for the tool call
+            tool_task = asyncio.create_task(
+                self.mcp_client.call_tool(prefixed_tool_name, arguments)
+            )
+            
+            # Wait for the tool call with interrupt checking
+            while not tool_task.done():
+                if self._check_interrupt():
+                    tool_task.cancel()
+                    try:
+                        await tool_task
+                    except asyncio.CancelledError:
+                        raise asyncio.CancelledError("Tool execution cancelled by user")
+                await asyncio.sleep(0.1)  # Brief pause to avoid busy waiting
+            
+            result = await tool_task
             
             # Extract content from MCP result objects (CallToolResult with TextContent)
             # This allows TOON encoding to work properly
@@ -626,6 +1114,9 @@ class ACoderCLI:
                     return [item.text if hasattr(item, 'text') else item for item in result.content]
             
             return result
+        except asyncio.CancelledError:
+            # Propagate cancellation
+            raise
         except Exception as e:
             # Use the enhanced error handler to display a user-friendly message
             self.error_handler.display_error(e, tool_name, server_name, arguments)
@@ -1409,7 +1900,9 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                     else:
                         self.console.print(f"[dim]  ├─[/dim] [bold cyan]{server_name}[/bold cyan][dim].[/dim][bright_white]{actual_tool}[/bright_white]")
                 
-                result = await self.call_mcp_tool(server_name, actual_tool, args)
+                # Suppress MCP server stderr messages during tool execution
+                with SuppressedOutput():
+                    result = await self.call_mcp_tool(server_name, actual_tool, args)
                 
                 result_str, used_toon = self.prepare_result_payload(result, actual_tool)
                 
@@ -2057,7 +2550,8 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                         status = "enabled" if self.show_tool_logs else "disabled"
                         icon = "📋" if self.show_tool_logs else "🔇"
                         format_info = "TOON/JSON" if self.use_toon_for_mcp else "JSON"
-                        self.console.print(f"[bold green]✓ Tool logs {status}[/bold green] [dim]│[/dim] {icon} [bright_white]Will show {format_info} output for tool calls[/bright_white]")
+                        action_text = "Will show" if self.show_tool_logs else "Won't show"
+                        self.console.print(f"[bold green]✓ Tool logs {status}[/bold green] [dim]│[/dim] {icon} [bright_white]{action_text} {format_info} output for tool calls[/bright_white]")
                     elif cmd == '/export-tools':
                         self.console.print("[cyan]Fetching tools from MCP servers...[/cyan]")
                         raw_tools = await self.list_mcp_tools()
