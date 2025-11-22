@@ -92,13 +92,75 @@ class TTSMode:
     
     def _clean_text_for_tts(self, text: str) -> str:
         """
-        Clean text for TTS by removing markdown, code blocks, file paths, and other non-speech content
+        Clean text for TTS by removing markdown, code blocks, file paths, emojis, tables, and other non-speech content
         """
         if not text:
             return ""
         
-        # Remove markdown code blocks (```...```)
-        text = re.sub(r'```[\s\S]*?```', '', text)
+        # Remove emojis (Unicode emoji ranges)
+        # This pattern covers most common emoji ranges
+        emoji_pattern = re.compile(
+            "["
+            "\U0001F600-\U0001F64F"  # emoticons
+            "\U0001F300-\U0001F5FF"  # symbols & pictographs
+            "\U0001F680-\U0001F6FF"  # transport & map symbols
+            "\U0001F1E0-\U0001F1FF"  # flags (iOS)
+            "\U00002702-\U000027B0"  # dingbats
+            "\U000024C2-\U0001F251"  # enclosed characters
+            "\U0001F900-\U0001F9FF"  # supplemental symbols and pictographs
+            "\U0001FA00-\U0001FA6F"  # chess symbols
+            "\U0001FA70-\U0001FAFF"  # symbols and pictographs extended-A
+            "\U00002600-\U000026FF"  # miscellaneous symbols
+            "\U00002700-\U000027BF"  # dingbats
+            "]+",
+            flags=re.UNICODE
+        )
+        text = emoji_pattern.sub('', text)
+        
+        # Replace code blocks with spoken placeholders before removing formatting
+        # This helps maintain context in the spoken output
+        text = re.sub(r'```[\s\S]*?```', ' As shown in the code on screen. ', text)
+        
+        # Detect and mark tables before removing box-drawing characters
+        # A table is indicated by multiple lines with box-drawing characters
+        lines = text.split('\n')
+        table_detected = False
+        processed_lines = []
+        
+        for i, line in enumerate(lines):
+            # Check if line contains table characters
+            has_table_chars = any(c in line for c in '│┃║╭╮╯╰┌┐└┘├┤┬┴┼┏┓┗┛┣┫┳┻╋╔╗╚╝╠╣╦╩╬')
+            
+            if has_table_chars:
+                if not table_detected:
+                    # First line of table - add placeholder
+                    processed_lines.append(' As shown in the table on screen. ')
+                    table_detected = True
+                # Skip the actual table line
+            else:
+                table_detected = False
+                processed_lines.append(line)
+        
+        text = '\n'.join(processed_lines)
+        
+        # Remove any remaining box-drawing characters (tables, borders, etc.)
+        box_drawing_pattern = re.compile(
+            "["
+            "\u2500-\u257F"  # Box Drawing
+            "\u2580-\u259F"  # Block Elements
+            "\u25A0-\u25FF"  # Geometric Shapes
+            "\u2600-\u26FF"  # Miscellaneous Symbols
+            "\u2700-\u27BF"  # Dingbats
+            "\u2B00-\u2BFF"  # Miscellaneous Symbols and Arrows
+            "╭╮╯╰│─┌┐└┘├┤┬┴┼"  # Common box drawing chars
+            "┏┓┗┛┃━┣┫┳┻╋"
+            "╔╗╚╝║═╠╣╦╩╬"
+            "╒╕╘╛│═╞╡╤╧╪"
+            "╓╖╙╜║═╟╢╥╨╫"
+            "]+",
+            flags=re.UNICODE
+        )
+        text = box_drawing_pattern.sub('', text)
         
         # Remove inline code (`...`)
         text = re.sub(r'`[^`]*`', '', text)
@@ -123,9 +185,13 @@ class TTSMode:
         # Remove markdown blockquotes (> text)
         text = re.sub(r'^>\s+', '', text, flags=re.MULTILINE)
         
-        # Remove markdown lists (-, *, +, or numbered)
-        text = re.sub(r'^[\-\*\+]\s+', '', text, flags=re.MULTILINE)
+        # Remove markdown lists (-, *, +, •, or numbered)
+        text = re.sub(r'^[\-\*\+•]\s+', '', text, flags=re.MULTILINE)
         text = re.sub(r'^\d+\.\s+', '', text, flags=re.MULTILINE)
+        
+        # Replace en-dash and em-dash with regular dash or space
+        text = text.replace('–', ' - ')
+        text = text.replace('—', ' - ')
         
         # Remove file paths (common patterns like /path/to/file, C:\path\to\file, ./relative/path)
         text = re.sub(r'(?:^|\s)(?:[a-zA-Z]:\\|/|\./)[\w\-./\\]+(?:\.\w+)?(?:\s|$)', ' ', text)
@@ -133,16 +199,29 @@ class TTSMode:
         # Remove URLs
         text = re.sub(r'https?://[^\s]+', '', text)
         
-        # Remove JSON/XML-like structures (lines starting with {, [, <)
+        # Final cleanup: remove any remaining lines that look like code/config
+        # (Most tables should already be replaced with placeholders above)
         lines = text.split('\n')
         cleaned_lines = []
         for line in lines:
             stripped = line.strip()
-            # Skip lines that look like code/config
-            if not (stripped.startswith('{') or stripped.startswith('[') or 
-                    stripped.startswith('<') or stripped.startswith('"') or
-                    stripped.startswith("'") or stripped.startswith('|')):
-                cleaned_lines.append(line)
+            
+            # Skip empty lines
+            if not stripped:
+                continue
+            
+            # Skip lines that look like code/config structures
+            if (stripped.startswith('{') or stripped.startswith('[') or 
+                stripped.startswith('<') or stripped.startswith('"') or
+                stripped.startswith("'")):
+                continue
+            
+            # Skip lines that are mostly special characters (leftover separators)
+            special_char_count = sum(1 for c in stripped if not c.isalnum() and not c.isspace())
+            if len(stripped) > 0 and special_char_count > len(stripped) * 0.7:
+                continue
+            
+            cleaned_lines.append(line)
         
         text = '\n'.join(cleaned_lines)
         

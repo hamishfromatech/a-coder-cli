@@ -19,6 +19,8 @@ A terminal-based autonomous coding agent with natural conversation and MCP-power
 - **🔀 Model Switching**: Switch between models on-the-fly with `/models` and `/switch-model`
 - **🚀 Auto-Configuration**: Automatically detects your project directory
 - **📦 TOON-Optimized Tool Results**: MCP tool responses are encoded in Token-Oriented Object Notation by default for lower token usage and higher LLM accuracy
+- **🎤 Voice Input**: Use `/voice` to activate voice mode and speak your requests (spacebar to record)
+- **🔊 Text-to-Speech**: Toggle TTS with `/tts` to hear AI responses spoken aloud
 
 ## Quick Start
 
@@ -56,12 +58,33 @@ That's it! The filesystem server automatically configures itself to your current
 
 Use the up/down arrow keys to cycle through your command history. Your command history persists between sessions, making it easy to reuse complex commands.
 
+### Voice Input & Text-to-Speech
+
+A-Coder supports hands-free interaction through voice input and audio responses:
+
+#### Voice Input
+- Use `/voice` to activate voice mode
+- Press and hold **spacebar** to record your voice
+- Release **spacebar** to automatically transcribe and send your request
+- Powered by OpenAI Whisper for accurate speech recognition
+
+#### Text-to-Speech (TTS)
+- Use `/tts` to toggle text-to-speech for AI responses
+- AI responses will be spoken aloud using OpenAI's TTS API
+- Great for multitasking or accessibility
+- Toggle on/off as needed
+
+**Requirements:**
+- OpenAI API key (for Whisper and TTS)
+- Microphone access for voice input
+- Audio output for TTS
+
 ### File Operations
 
 - **Add files**: `/add path/to/file`
-- **Read-only mode**: `/readonly path/to/file`
-- **List context**: `/context`
-- **Clear context**: `/clear`
+- **Read-only mode**: `/add-ro path/to/file`
+- **List context**: `/files`
+- **Clear context**: `/clear-files`
 
 ## Installation
 
@@ -261,10 +284,17 @@ a-coder --config ~/config.json
 - `/models` - List available models from your provider (Ollama/LM Studio)
 - `/switch-model <model>` - Switch to a different model
 
+#### Voice & Audio
+
+- `/voice` - Activate voice mode (press spacebar to record, release to send)
+- `/tts` - Toggle text-to-speech for AI responses
+
 #### General
 
 - `/help` - Show detailed help
 - `/clear` - Clear screen
+- `/stream` - Toggle streaming responses
+- `/tool-logs` - Toggle detailed tool call logging
 - `/exit` or `/quit` - Exit application
 - **Ctrl+C** - Interrupt AI processing and return to prompt
 

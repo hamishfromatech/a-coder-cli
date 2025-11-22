@@ -483,12 +483,11 @@ class ACoderCLI:
         # Clear any previous interrupt flags
         self._clear_interrupt()
         
-        # Use the configured prompt session with autocomplete
-        loop = asyncio.get_event_loop()
+        # Use the configured prompt session with autocomplete (async version)
         try:
             # Add timeout and interrupt checking for the prompt operation
             async with asyncio.timeout(300):  # 5 minute timeout
-                return await loop.run_in_executor(None, lambda: self.prompt_session.prompt("\nYou › "))
+                return await self.prompt_session.prompt_async("\nYou › ")
         except asyncio.CancelledError:
             self.console.print("\n[yellow]Prompt cancelled[/yellow]")
             return ""
