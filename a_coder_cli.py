@@ -36,6 +36,8 @@ from rich.box import ROUNDED, DOUBLE, HEAVY
 from rich.align import Align
 from fastmcp import Client as MCPClient
 from config import ACoderConfig
+from voice_mode import VoiceMode
+from tts_mode import TTSMode
 import json
 from dotenv import load_dotenv
 from prompt_toolkit import PromptSession
@@ -94,12 +96,9 @@ MCP_SUPPRESS_PATTERNS = [
     "List roots not supported",
     "Failed to request initial roots",
     "MCP error -32603",
-    "List roots not supported",
     "failed to request initial roots",
     "mcp error -32603",
-    "MCP",
-    "mcp",
-    "fastmcp"
+    "List roots not supported",
 ]
 
 class EnhancedMCPSuppressor:
@@ -383,7 +382,9 @@ class ACoderCLI:
             '/tool-logs': 'Toggle tool call logs',
             '/mcp-list': 'List connected servers',
             '/mcp-tools': 'List available tools',
-            '/mcp-call': 'Call tool directly'
+            '/mcp-call': 'Call tool directly',
+            '/voice': 'Activate voice mode (spacebar to record)',
+            '/tts': 'Toggle TTS for AI responses'
         }
         
         # Create autocomplete style with a sleek dark theme
@@ -415,6 +416,9 @@ class ACoderCLI:
         self.use_toon_for_mcp = True if toon_encode else False
         self.show_tool_details: bool = False
         self.show_tool_logs: bool = False  # Toggle for detailed tool call/result logs
+        
+        # TTS mode instance (initialized lazily when needed)
+        self.tts_mode: Optional[TTSMode] = None
         
     def _setup_interrupt_handling(self):
         """Setup comprehensive interrupt handling for better user experience"""
@@ -1275,6 +1279,21 @@ All file operations are performed by chatting naturally with the AI, which uses 
 ## Display Options
 
 - `/stream` - Toggle streaming responses (on/off)
+- `/tool-logs` - Toggle tool call logs display
+
+## Voice & Audio
+
+### Speech-to-Text
+- `/voice` - Activate voice mode for speech-to-text input
+  - Press SPACEBAR to start recording
+  - Press SPACEBAR again to stop and transcribe
+  - Transcribed text is sent to AI for processing
+
+### Text-to-Speech
+- `/tts` - Toggle TTS for AI responses
+  - Requires Kokoro FastAPI running on `http://localhost:8880/v1`
+  - AI responses will be automatically spoken when enabled
+  - Configure voice, endpoint, and speed in `config.json`
 
 ## Debugging
 
@@ -2231,9 +2250,10 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                 tool_calls = response.choices[0].message.tool_calls
                 
                 # Display plan if present
-                if response.choices[0].message.content:
+                plan_text = response.choices[0].message.content
+                if plan_text:
                     self.console.print(Panel(
-                        Markdown(response.choices[0].message.content),
+                        Markdown(plan_text),
                         title="[bold magenta]🎯 Plan[/bold magenta]",
                         border_style="magenta",
                         box=ROUNDED,
@@ -2254,17 +2274,46 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                     "tool_calls": response.choices[0].message.tool_calls
                 })
                 
+                # Start speaking the plan in background while tools execute
+                tts_task = None
+                if self.config and self.config.tts.enabled and plan_text:
+                    try:
+                        if not self.tts_mode:
+                            # Lazy initialize TTS mode
+                            tts_config = {
+                                'endpoint': self.config.tts.endpoint,
+                                'voice': self.config.tts.voice,
+                                'speed': self.config.tts.speed
+                            }
+                            self.tts_mode = TTSMode(self.console, tts_config)
+                        
+                        # Start TTS in background (don't await, let it run while tools execute)
+                        tts_task = asyncio.create_task(self.tts_mode.speak_response(plan_text))
+                    except Exception as e:
+                        self.console.print(f"[yellow]⚠ TTS error: {e}[/yellow]")
+                
                 # Execute tools with spinner
                 tool_results = []
                 try:
-                    with Progress(
-                        SpinnerColumn("dots", style="yellow"),
-                        TextColumn(f"[bold yellow]Step {iteration}:[/bold yellow] Executing [cyan]{tool_desc}[/cyan]..."),
-                        console=self.console,
-                        transient=True
-                    ) as progress:
-                        progress.add_task("", total=None)
-                        tool_results = await self.process_tool_calls(response)
+                    # Suppress MCP errors during tool execution
+                    with SuppressedOutput():
+                        with Progress(
+                            SpinnerColumn("dots", style="yellow"),
+                            TextColumn(f"[bold yellow]Step {iteration}:[/bold yellow] Executing [cyan]{tool_desc}[/cyan]..."),
+                            console=self.console,
+                            transient=True
+                        ) as progress:
+                            progress.add_task("", total=None)
+                            tool_results = await self.process_tool_calls(response)
+                    
+                    # Wait for TTS to finish if it's still running
+                    if tts_task and not tts_task.done():
+                        try:
+                            await asyncio.wait_for(tts_task, timeout=30.0)
+                        except asyncio.TimeoutError:
+                            tts_task.cancel()
+                        except Exception:
+                            pass  # Ignore TTS errors during tool execution
                     
                     # Show compact success message
                     if tool_results:
@@ -2402,6 +2451,23 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                 "role": "assistant",
                 "content": assistant_message
             })
+            
+            # Play TTS if enabled
+            if self.config and self.config.tts.enabled and self.config.tts.auto_play_responses:
+                try:
+                    if not self.tts_mode:
+                        # Lazy initialize TTS mode
+                        tts_config = {
+                            'endpoint': self.config.tts.endpoint,
+                            'voice': self.config.tts.voice,
+                            'speed': self.config.tts.speed
+                        }
+                        self.tts_mode = TTSMode(self.console, tts_config)
+                    
+                    # Speak the response in background
+                    await self.tts_mode.speak_response(assistant_message)
+                except Exception as e:
+                    self.console.print(f"[yellow]⚠ TTS error: {e}[/yellow]")
             
             return assistant_message
         
@@ -2579,6 +2645,68 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                             ))
                         except Exception as e:
                             self.console.print(f"[red]Error serializing tools: {e}[/red]")
+                    elif cmd == '/voice':
+                        # Activate voice mode
+                        if not self.config or not self.config.voice.enabled:
+                            self.console.print("[yellow]⚠ Voice mode is not enabled in configuration[/yellow]")
+                            continue
+                        
+                        try:
+                            # Create voice mode instance with config
+                            voice_config = {
+                                'model': self.config.voice.model,
+                                'device': self.config.voice.device,
+                                'compute_type': self.config.voice.compute_type
+                            }
+                            voice_mode = VoiceMode(self.console, voice_config)
+                            
+                            # Record and transcribe voice input
+                            transcribed_text = await voice_mode.record_voice_input()
+                            
+                            if transcribed_text:
+                                # Send transcribed text to AI as user input
+                                self.console.print()
+                                await self.chat_with_ai(transcribed_text, show_tool_details=False)
+                        except ImportError as e:
+                            self.console.print(f"[red]Voice mode dependencies not installed: {e}[/red]")
+                            self.console.print("[dim]Install with: pip install faster-whisper pyaudio pynput[/dim]")
+                        except Exception as e:
+                            self.console.print(f"[red]Voice mode error: {e}[/red]")
+                    elif cmd == '/tts':
+                        # Toggle TTS mode
+                        if not self.config:
+                            self.console.print("[yellow]⚠ No configuration loaded[/yellow]")
+                            continue
+                        
+                        self.config.tts.enabled = not self.config.tts.enabled
+                        status = "enabled" if self.config.tts.enabled else "disabled"
+                        icon = "🔊" if self.config.tts.enabled else "🔇"
+                        
+                        if self.config.tts.enabled:
+                            # Check if TTS endpoint is available
+                            try:
+                                if not self.tts_mode:
+                                    tts_config = {
+                                        'endpoint': self.config.tts.endpoint,
+                                        'voice': self.config.tts.voice,
+                                        'speed': self.config.tts.speed
+                                    }
+                                    self.tts_mode = TTSMode(self.console, tts_config)
+                                
+                                # Check endpoint availability
+                                is_available = await self.tts_mode.check_tts_available()
+                                if is_available:
+                                    self.console.print(f"[bold green]✓ TTS {status}[/bold green] [dim]│[/dim] {icon} [bright_white]AI responses will be spoken[/bright_white]")
+                                    self.console.print(f"[dim]Voice: {self.config.tts.voice} | Endpoint: {self.config.tts.endpoint}[/dim]")
+                                else:
+                                    self.config.tts.enabled = False
+                                    self.console.print(f"[yellow]⚠ TTS endpoint not available[/yellow]")
+                                    self.console.print(f"[dim]Make sure Kokoro FastAPI is running on {self.config.tts.endpoint}[/dim]")
+                            except Exception as e:
+                                self.config.tts.enabled = False
+                                self.console.print(f"[yellow]⚠ TTS error: {e}[/yellow]")
+                        else:
+                            self.console.print(f"[bold green]✓ TTS {status}[/bold green] [dim]│[/dim] {icon} [bright_white]AI responses will not be spoken[/bright_white]")
                     else:
                         self.console.print(f"[bold red]✗ Unknown command:[/bold red] [yellow]{cmd}[/yellow]")
                         self.console.print("[dim]Type [bold]/help[/bold] to see all available commands[/dim]")

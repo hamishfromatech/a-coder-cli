@@ -1,0 +1,232 @@
+"""
+Text-to-Speech mode implementation for A-Coder CLI
+Enables speech output for AI responses using Kokoro FastAPI
+"""
+
+import asyncio
+import io
+import re
+import threading
+from typing import Optional
+
+import pyaudio
+from openai import AsyncOpenAI
+from rich.console import Console
+
+
+class TTSPlayer:
+    """Handles audio playback from TTS"""
+    
+    def __init__(self):
+        self.is_playing = False
+        self.player = None
+        self.audio = None
+    
+    def play_audio_stream(self, audio_data: bytes, sample_rate: int = 24000) -> None:
+        """Play audio data using PyAudio"""
+        try:
+            self.audio = pyaudio.PyAudio()
+            self.player = self.audio.open(
+                format=pyaudio.paInt16,
+                channels=1,
+                rate=sample_rate,
+                output=True
+            )
+            self.is_playing = True
+            
+            # Write audio data in chunks
+            chunk_size = 4096
+            for i in range(0, len(audio_data), chunk_size):
+                if not self.is_playing:
+                    break
+                chunk = audio_data[i:i + chunk_size]
+                self.player.write(chunk)
+            
+            self.is_playing = False
+        except Exception as e:
+            raise RuntimeError(f"Failed to play audio: {e}")
+        finally:
+            if self.player:
+                self.player.stop_stream()
+                self.player.close()
+            if self.audio:
+                self.audio.terminate()
+    
+    def stop(self) -> None:
+        """Stop audio playback"""
+        self.is_playing = False
+
+
+class TTSMode:
+    """Main TTS handler for A-Coder CLI"""
+    
+    def __init__(self, console: Console, config: Optional[dict] = None):
+        self.console = console
+        self.config = config or {}
+        self.endpoint = self.config.get("endpoint", "http://localhost:8880/v1")
+        self.voice = self.config.get("voice", "af_bella")
+        self.speed = self.config.get("speed", 1.0)
+        self.player = TTSPlayer()
+        
+        # Create TTS client pointing to Kokoro FastAPI
+        self.tts_client = AsyncOpenAI(
+            base_url=self.endpoint,
+            api_key="not-needed"
+        )
+    
+    async def check_tts_available(self) -> bool:
+        """Check if TTS endpoint is available"""
+        try:
+            # Try to list voices to verify endpoint is running
+            response = await self.tts_client.audio.speech.create(
+                model="kokoro",
+                voice=self.voice,
+                input="test",
+                response_format="pcm"
+            )
+            return True
+        except Exception as e:
+            self.console.print(f"[yellow]⚠ TTS endpoint not available: {e}[/yellow]")
+            self.console.print(f"[dim]Make sure Kokoro FastAPI is running on {self.endpoint}[/dim]")
+            return False
+    
+    def _clean_text_for_tts(self, text: str) -> str:
+        """
+        Clean text for TTS by removing markdown, code blocks, file paths, and other non-speech content
+        """
+        if not text:
+            return ""
+        
+        # Remove markdown code blocks (```...```)
+        text = re.sub(r'```[\s\S]*?```', '', text)
+        
+        # Remove inline code (`...`)
+        text = re.sub(r'`[^`]*`', '', text)
+        
+        # Remove markdown bold (**text** or __text__)
+        text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+        text = re.sub(r'__(.+?)__', r'\1', text)
+        
+        # Remove markdown italic (*text* or _text_)
+        text = re.sub(r'\*(.+?)\*', r'\1', text)
+        text = re.sub(r'_(.+?)_', r'\1', text)
+        
+        # Remove markdown links [text](url)
+        text = re.sub(r'\[(.+?)\]\(.+?\)', r'\1', text)
+        
+        # Remove markdown headings (#, ##, ###, etc.)
+        text = re.sub(r'^#+\s+', '', text, flags=re.MULTILINE)
+        
+        # Remove markdown horizontal rules (---, ***, ___)
+        text = re.sub(r'^[\-\*_]{3,}$', '', text, flags=re.MULTILINE)
+        
+        # Remove markdown blockquotes (> text)
+        text = re.sub(r'^>\s+', '', text, flags=re.MULTILINE)
+        
+        # Remove markdown lists (-, *, +, or numbered)
+        text = re.sub(r'^[\-\*\+]\s+', '', text, flags=re.MULTILINE)
+        text = re.sub(r'^\d+\.\s+', '', text, flags=re.MULTILINE)
+        
+        # Remove file paths (common patterns like /path/to/file, C:\path\to\file, ./relative/path)
+        text = re.sub(r'(?:^|\s)(?:[a-zA-Z]:\\|/|\./)[\w\-./\\]+(?:\.\w+)?(?:\s|$)', ' ', text)
+        
+        # Remove URLs
+        text = re.sub(r'https?://[^\s]+', '', text)
+        
+        # Remove JSON/XML-like structures (lines starting with {, [, <)
+        lines = text.split('\n')
+        cleaned_lines = []
+        for line in lines:
+            stripped = line.strip()
+            # Skip lines that look like code/config
+            if not (stripped.startswith('{') or stripped.startswith('[') or 
+                    stripped.startswith('<') or stripped.startswith('"') or
+                    stripped.startswith("'") or stripped.startswith('|')):
+                cleaned_lines.append(line)
+        
+        text = '\n'.join(cleaned_lines)
+        
+        # Remove multiple spaces and clean up whitespace
+        text = re.sub(r'\s+', ' ', text)
+        text = text.strip()
+        
+        return text
+    
+    async def generate_speech(self, text: str) -> Optional[bytes]:
+        """
+        Generate speech from text using Kokoro FastAPI
+        Returns audio bytes or None if failed
+        """
+        if not text or not text.strip():
+            return None
+        
+        # Clean text before generating speech
+        cleaned_text = self._clean_text_for_tts(text)
+        
+        if not cleaned_text or len(cleaned_text) < 10:
+            # If text is too short after cleaning, skip TTS
+            return None
+        
+        try:
+            self.console.print("[dim]🔊 Generating speech...[/dim]")
+            
+            response = await self.tts_client.audio.speech.create(
+                model="kokoro",
+                voice=self.voice,
+                input=cleaned_text,
+                response_format="pcm"
+            )
+            
+            # Read audio data from response
+            audio_data = response.read()
+            return audio_data
+        
+        except Exception as e:
+            self.console.print(f"[yellow]⚠ TTS generation failed: {e}[/yellow]")
+            return None
+    
+    async def speak_response(self, text: str) -> None:
+        """
+        Generate and play speech for AI response
+        Runs in background thread to avoid blocking
+        """
+        try:
+            audio_data = await self.generate_speech(text)
+            
+            if audio_data:
+                # Play audio in background thread
+                def play_in_thread():
+                    try:
+                        self.player.play_audio_stream(audio_data)
+                    except Exception as e:
+                        self.console.print(f"[yellow]⚠ Audio playback failed: {e}[/yellow]")
+                
+                thread = threading.Thread(target=play_in_thread, daemon=True)
+                thread.start()
+        
+        except Exception as e:
+            self.console.print(f"[red]TTS error: {e}[/red]")
+    
+    async def list_available_voices(self) -> list:
+        """List available voices from Kokoro FastAPI"""
+        try:
+            # Make a direct request to get voices
+            import httpx
+            async with httpx.AsyncClient() as client:
+                response = await client.get(f"{self.endpoint}/audio/voices")
+                if response.status_code == 200:
+                    data = response.json()
+                    return data.get("voices", [])
+        except Exception as e:
+            self.console.print(f"[yellow]Could not fetch voices: {e}[/yellow]")
+        
+        # Return default voices if endpoint unavailable
+        return [
+            "af_bella", "af_sky", "af_heart", "af_sarah", "af_nicole",
+            "am_adam", "am_michael", "bm_george", "bm_lewis"
+        ]
+    
+    def set_voice(self, voice: str) -> None:
+        """Change the current voice"""
+        self.voice = voice
+        self.config["voice"] = voice

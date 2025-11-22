@@ -70,12 +70,38 @@ class MCPConfig:
             del self.servers[name]
 
 
+class VoiceConfig:
+    """Voice mode configuration"""
+    
+    def __init__(self):
+        self.enabled = True
+        self.model = "base"  # tiny, base, small, medium, large-v3
+        self.device = "cpu"  # cpu or cuda
+        self.compute_type = "int8"  # int8, float16, float32
+        self.language = "en"
+        self.beam_size = 5
+        self.vad_filter = True
+
+
+class TTSConfig:
+    """Text-to-Speech configuration"""
+    
+    def __init__(self):
+        self.enabled = False  # Disabled by default (requires Kokoro FastAPI running)
+        self.endpoint = "http://localhost:8880/v1"
+        self.voice = "af_bella"  # Default voice
+        self.speed = 1.0
+        self.auto_play_responses = True  # Automatically play AI responses
+
+
 class ACoderConfig:
     """Main configuration class for A-Coder CLI"""
     
     def __init__(self):
         self.openai = OpenAIConfig()
         self.mcp = MCPConfig()
+        self.voice = VoiceConfig()
+        self.tts = TTSConfig()
         self.theme = "monokai"
         self.show_line_numbers = True
         self.auto_save_history = True
@@ -109,6 +135,26 @@ class ACoderConfig:
             for name, server_config in mcp_servers.items():
                 config.mcp.add_server(name, server_config)
                     
+            # Voice settings
+            if "voice" in data:
+                voice_config = data["voice"]
+                config.voice.enabled = voice_config.get("enabled", True)
+                config.voice.model = voice_config.get("model", "base")
+                config.voice.device = voice_config.get("device", "cpu")
+                config.voice.compute_type = voice_config.get("compute_type", "int8")
+                config.voice.language = voice_config.get("language", "en")
+                config.voice.beam_size = voice_config.get("beam_size", 5)
+                config.voice.vad_filter = voice_config.get("vad_filter", True)
+            
+            # TTS settings
+            if "tts" in data:
+                tts_config = data["tts"]
+                config.tts.enabled = tts_config.get("enabled", False)
+                config.tts.endpoint = tts_config.get("endpoint", "http://localhost:8880/v1")
+                config.tts.voice = tts_config.get("voice", "af_bella")
+                config.tts.speed = tts_config.get("speed", 1.0)
+                config.tts.auto_play_responses = tts_config.get("auto_play_responses", True)
+            
             # Other settings
             config.theme = data.get("theme", "monokai")
             config.show_line_numbers = data.get("show_line_numbers", True)

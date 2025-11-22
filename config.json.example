@@ -6,6 +6,29 @@
     "max_tool_result_size": 8000
   },
   "_comment_lm_studio": "For LM Studio: set base_url to 'http://localhost:1234/v1', api_key to 'lm-studio' (or any non-empty string), and model to your loaded model name",
+  "voice": {
+    "_comment": "Speech-to-text configuration using faster-whisper",
+    "enabled": true,
+    "model": "base",
+    "_model_options": "tiny, base, small, medium, large-v3",
+    "device": "cpu",
+    "_device_options": "cpu, cuda",
+    "compute_type": "int8",
+    "_compute_type_options": "int8, float16, float32",
+    "language": "en",
+    "beam_size": 5,
+    "vad_filter": true
+  },
+  "tts": {
+    "_comment": "Text-to-speech configuration using Kokoro FastAPI",
+    "_setup": "docker run -p 8880:8880 ghcr.io/remsky/kokoro-fastapi-cpu:latest",
+    "enabled": false,
+    "endpoint": "http://localhost:8880/v1",
+    "voice": "af_bella",
+    "_voice_options": "af_bella, af_sky, af_heart, af_sarah, af_nicole, am_adam, am_michael, bm_george, bm_lewis",
+    "speed": 1.0,
+    "auto_play_responses": true
+  },
   "mcpServers": {
     "filesystem": {
       "transport": "stdio",
