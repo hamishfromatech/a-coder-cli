@@ -35,9 +35,9 @@ from rich.text import Text
 from rich.box import ROUNDED, DOUBLE, HEAVY
 from rich.align import Align
 from fastmcp import Client as MCPClient
-from config import ACoderConfig
-from voice_mode import VoiceMode
-from tts_mode import TTSMode
+from .config import ACoderConfig
+from .voice_mode import VoiceMode
+from .tts_mode import TTSMode
 import json
 from dotenv import load_dotenv
 from prompt_toolkit import PromptSession

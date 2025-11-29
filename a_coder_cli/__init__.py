@@ -17,6 +17,6 @@ __version__ = "1.0.0"
 __author__ = "The A-Tech Corporation"
 __description__ = "Terminal-based coding agent with OpenAI and MCP server support"
 
-from .a_coder_cli import ACoderCLI
+from .a_coder_cli import main
 
-__all__ = ['ACoderCLI']
+__all__ = ['main']

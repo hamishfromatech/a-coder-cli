@@ -23,12 +23,12 @@ def read_requirements():
 setup(
     name="a-coder-cli",
     version="1.0.0",
-    author="Morph",
-    author_email="support@morphllm.com",
+    author="The A-Tech Corporation",
+    author_email="hamish@atech.industries",
     description="Terminal-based coding agent with OpenAI and MCP server support",
     long_description=read_readme(),
     long_description_content_type="text/markdown",
-    url="https://github.com/morph-llm/a-coder-cli",
+    url="https://github.com/hamishfromatech/a-coder-cli",
     packages=find_packages(),
     classifiers=[
         "Development Status :: 4 - Beta",
@@ -53,6 +53,7 @@ setup(
             "acoder=a_coder_cli:main",
         ],
     },
+    py_modules=['a_coder_cli', 'config', 'voice_mode', 'tts_mode'],
     include_package_data=True,
     zip_safe=False,
     keywords="ai coding assistant mcp fastmcp openai terminal cli",
