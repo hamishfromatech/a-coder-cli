@@ -384,7 +384,8 @@ class ACoderCLI:
             '/mcp-tools': 'List available tools',
             '/mcp-call': 'Call tool directly',
             '/voice': 'Activate voice mode (spacebar to record)',
-            '/tts': 'Toggle TTS for AI responses'
+            '/tts': 'Toggle TTS for AI responses',
+            '/tts-clear': 'Clear TTS audio queue'
         }
         
         # Create autocomplete style with a sleek dark theme
@@ -553,7 +554,14 @@ class ACoderCLI:
         return True
     
     async def cleanup_mcp(self):
-        """Cleanup MCP client connections gracefully"""
+        """Cleanup MCP client connections and TTS gracefully"""
+        # Cleanup TTS mode if active
+        if self.tts_mode:
+            try:
+                self.tts_mode.cleanup()
+            except Exception:
+                pass  # Suppress TTS cleanup errors
+        
         if self.mcp_client:
             # Suppress stderr during cleanup to hide Windows subprocess warnings
             import contextlib
@@ -1293,6 +1301,9 @@ All file operations are performed by chatting naturally with the AI, which uses 
   - Requires Kokoro FastAPI running on `http://localhost:8880/v1`
   - AI responses will be automatically spoken when enabled
   - Configure voice, endpoint, and speed in `config.json`
+  - Audio is queued to prevent overlap
+- `/tts-clear` - Clear TTS audio queue
+  - Stops current playback and clears all pending audio
 
 ## Debugging
 
@@ -2706,6 +2717,14 @@ IMPORTANT: Use this exact path when tools require a 'path' parameter!
                                 self.console.print(f"[yellow]⚠ TTS error: {e}[/yellow]")
                         else:
                             self.console.print(f"[bold green]✓ TTS {status}[/bold green] [dim]│[/dim] {icon} [bright_white]AI responses will not be spoken[/bright_white]")
+                    elif cmd == '/tts-clear':
+                        # Clear TTS audio queue
+                        if self.tts_mode:
+                            queue_size = self.tts_mode.get_queue_size()
+                            self.tts_mode.clear_queue()
+                            self.console.print(f"[bold green]✓ Audio queue cleared[/bold green] [dim]│[/dim] 🔇 [bright_white]{queue_size} item(s) removed[/bright_white]")
+                        else:
+                            self.console.print("[yellow]⚠ TTS is not active[/yellow]")
                     else:
                         self.console.print(f"[bold red]✗ Unknown command:[/bold red] [yellow]{cmd}[/yellow]")
                         self.console.print("[dim]Type [bold]/help[/bold] to see all available commands[/dim]")

@@ -8,6 +8,7 @@ import io
 import re
 import threading
 from typing import Optional
+from queue import Queue
 
 import pyaudio
 from openai import AsyncOpenAI
@@ -58,7 +59,7 @@ class TTSPlayer:
 
 
 class TTSMode:
-    """Main TTS handler for A-Coder CLI"""
+    """Main TTS handler for A-Coder CLI with queued playback"""
     
     def __init__(self, console: Console, config: Optional[dict] = None):
         self.console = console
@@ -73,6 +74,49 @@ class TTSMode:
             base_url=self.endpoint,
             api_key="not-needed"
         )
+        
+        # Queue system for managing audio playback
+        self.audio_queue = Queue()
+        self.playback_thread = None
+        self.is_processing_queue = False
+        self._start_playback_worker()
+    
+    def _start_playback_worker(self):
+        """Start the background worker thread that processes the audio queue"""
+        def playback_worker():
+            self.is_processing_queue = True
+            while self.is_processing_queue:
+                try:
+                    # Get audio from queue (blocks until available)
+                    audio_data = self.audio_queue.get(timeout=1.0)
+                    
+                    if audio_data is None:
+                        # None is the signal to stop
+                        break
+                    
+                    # Play the audio (this blocks until playback completes)
+                    try:
+                        self.player.play_audio_stream(audio_data)
+                    except Exception as e:
+                        self.console.print(f"[yellow]⚠ Audio playback failed: {e}[/yellow]")
+                    
+                    # Mark task as done
+                    self.audio_queue.task_done()
+                    
+                except Exception:
+                    # Timeout or other error - continue waiting
+                    continue
+        
+        self.playback_thread = threading.Thread(target=playback_worker, daemon=True)
+        self.playback_thread.start()
+    
+    def _stop_playback_worker(self):
+        """Stop the playback worker thread"""
+        self.is_processing_queue = False
+        # Send None to unblock the queue
+        self.audio_queue.put(None)
+        if self.playback_thread:
+            self.playback_thread.join(timeout=2.0)
     
     async def check_tts_available(self) -> bool:
         """Check if TTS endpoint is available"""
@@ -266,25 +310,44 @@ class TTSMode:
     
     async def speak_response(self, text: str) -> None:
         """
-        Generate and play speech for AI response
-        Runs in background thread to avoid blocking
+        Generate and queue speech for AI response
+        Audio is added to queue and played sequentially to prevent overlap
         """
         try:
             audio_data = await self.generate_speech(text)
             
             if audio_data:
-                # Play audio in background thread
-                def play_in_thread():
-                    try:
-                        self.player.play_audio_stream(audio_data)
-                    except Exception as e:
-                        self.console.print(f"[yellow]⚠ Audio playback failed: {e}[/yellow]")
-                
-                thread = threading.Thread(target=play_in_thread, daemon=True)
-                thread.start()
+                # Add audio to queue for sequential playback
+                queue_size = self.audio_queue.qsize()
+                if queue_size > 0:
+                    self.console.print(f"[dim]🔊 Audio queued ({queue_size} in queue)[/dim]")
+                self.audio_queue.put(audio_data)
         
         except Exception as e:
             self.console.print(f"[red]TTS error: {e}[/red]")
+    
+    def clear_queue(self) -> None:
+        """Clear all pending audio from the queue"""
+        # Clear the queue
+        while not self.audio_queue.empty():
+            try:
+                self.audio_queue.get_nowait()
+                self.audio_queue.task_done()
+            except:
+                break
+        
+        # Stop current playback
+        self.player.stop()
+        self.console.print("[yellow]🔇 Audio queue cleared[/yellow]")
+    
+    def get_queue_size(self) -> int:
+        """Get the number of items in the audio queue"""
+        return self.audio_queue.qsize()
+    
+    def cleanup(self) -> None:
+        """Cleanup resources when shutting down"""
+        self.clear_queue()
+        self._stop_playback_worker()
     
     async def list_available_voices(self) -> list:
         """List available voices from Kokoro FastAPI"""
