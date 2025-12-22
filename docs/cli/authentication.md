@@ -76,15 +76,15 @@ The Qwen Code CLI supports multiple authentication methods. On initial startup y
 
 ### Persisting Environment Variables with `.env` Files
 
-You can create a **`.ollama/.env`** file in your project directory or in your home directory. Creating a plain **`.env`** file also works, but `.ollama/.env` is recommended to keep Gemini variables isolated from other tools.
+You can create a **`.a-coder/.env`** file in your project directory or in your home directory. Creating a plain **`.env`** file also works, but `.a-coder/.env` is recommended to keep Gemini variables isolated from other tools.
 
 Gemini CLI automatically loads environment variables from the **first** `.env` file it finds, using the following search order:
 
 1. Starting in the **current directory** and moving upward toward `/`, for each directory it checks:
-   1. `.ollama/.env`
+   1. `.a-coder/.env`
    2. `.env`
 2. If no file is found, it falls back to your **home directory**:
-   - `~/.ollama/.env`
+   - `~/.a-coder/.env`
    - `~/.env`
 
 > **Important:** The search stops at the **first** file encountered—variables are **not merged** across multiple files.
@@ -95,14 +95,14 @@ Gemini CLI automatically loads environment variables from the **first** `.env` f
 
 ```bash
 mkdir -p .gemini
-echo 'GOOGLE_CLOUD_PROJECT="your-project-id"' >> .ollama/.env
+echo 'GOOGLE_CLOUD_PROJECT="your-project-id"' >> .a-coder/.env
 ```
 
 **User-wide settings** (available in every directory):
 
 ```bash
 mkdir -p ~/.gemini
-cat >> ~/.ollama/.env <<'EOF'
+cat >> ~/.a-coder/.env <<'EOF'
 GOOGLE_CLOUD_PROJECT="your-project-id"
 GEMINI_API_KEY="your-gemini-api-key"
 EOF

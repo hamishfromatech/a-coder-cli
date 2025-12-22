@@ -158,7 +158,7 @@ describe('oauth2', () => {
     // Verify Google Account was cached
     const googleAccountPath = path.join(
       tempHomeDir,
-      '.ollama',
+      '.aCoder',
       'google_accounts.json',
     );
     expect(fs.existsSync(googleAccountPath)).toBe(true);
@@ -283,7 +283,7 @@ describe('oauth2', () => {
       await getOauthClient(AuthType.LOGIN_WITH_GOOGLE, mockConfig);
 
       expect(fs.promises.readFile).toHaveBeenCalledWith(
-        '/user/home/.ollama/oauth_creds.json',
+        '/user/home/.aCoder/oauth_creds.json',
         'utf-8',
       );
       expect(mockClient.setCredentials).toHaveBeenCalledWith(cachedCreds);

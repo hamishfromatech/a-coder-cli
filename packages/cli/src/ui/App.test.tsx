@@ -15,7 +15,7 @@ import {
   AccessibilitySettings,
   SandboxConfig,
   GeminiClient,
-} from '@tcsenpai/ollama-code';
+} from '@a-coder/core';
 import { LoadedSettings, SettingsFile, Settings } from '../config/settings.js';
 import process from 'node:process';
 import { useGeminiStream } from './hooks/useGeminiStream.js';
@@ -74,10 +74,10 @@ interface MockServerConfig {
   getUserTier: Mock<() => Promise<string | undefined>>;
 }
 
-// Mock @tcsenpai/ollama-code and its Config class
-vi.mock('@tcsenpai/ollama-code', async (importOriginal) => {
+// Mock @a-coder/core and its Config class
+vi.mock('@a-coder/core', async (importOriginal) => {
   const actualCore =
-    await importOriginal<typeof import('@tcsenpai/ollama-code')>();
+    await importOriginal<typeof import('@a-coder/core')>();
   const ConfigClassMock = vi
     .fn()
     .mockImplementation((optionsPassedToConstructor) => {
@@ -213,7 +213,7 @@ describe('App UI', () => {
       settings: settings.user || {},
     };
     const workspaceSettingsFile: SettingsFile = {
-      path: '/workspace/.ollama/settings.json',
+      path: '/workspace/.aCoder/settings.json',
       settings: settings.workspace || {},
     };
     return new LoadedSettings(

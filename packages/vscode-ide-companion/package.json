@@ -1,6 +1,6 @@
 {
-  "name": "@tcsenpai/ollama-code-vscode-ide-companion",
-  "displayName": "Ollama Code VSCode IDE Companion",
+  "name": "@a-coder/vscode-ide-companion",
+  "displayName": "A-Coder VSCode IDE Companion",
   "description": "",
   "version": "0.0.1-alpha.8",
   "engines": {

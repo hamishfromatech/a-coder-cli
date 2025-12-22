@@ -15,7 +15,7 @@ import {
   getErrorMessage,
   Config,
   FileDiscoveryService,
-} from '@tcsenpai/ollama-code';
+} from '@a-coder/core';
 import {
   MAX_SUGGESTIONS_TO_SHOW,
   Suggestion,

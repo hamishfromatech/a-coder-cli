@@ -24,7 +24,7 @@ export interface LogEntry {
 }
 
 export class Logger {
-  private ollamaDir: string | undefined;
+  private aCoderDir: string | undefined;
   private logFilePath: string | undefined;
   private sessionId: string | undefined;
   private messageId = 0; // Instance-specific counter for the next messageId
@@ -94,11 +94,11 @@ export class Logger {
       return;
     }
 
-    this.ollamaDir = getProjectTempDir(process.cwd());
-    this.logFilePath = path.join(this.ollamaDir, LOG_FILE_NAME);
+    this.aCoderDir = getProjectTempDir(process.cwd());
+    this.logFilePath = path.join(this.aCoderDir, LOG_FILE_NAME);
 
     try {
-      await fs.mkdir(this.ollamaDir, { recursive: true });
+      await fs.mkdir(this.aCoderDir, { recursive: true });
       let fileExisted = true;
       try {
         await fs.access(this.logFilePath);
@@ -235,10 +235,10 @@ export class Logger {
     if (!tag.length) {
       throw new Error('No checkpoint tag specified.');
     }
-    if (!this.ollamaDir) {
+    if (!this.aCoderDir) {
       throw new Error('Checkpoint file path not set.');
     }
-    return path.join(this.ollamaDir, `checkpoint-${tag}.json`);
+    return path.join(this.aCoderDir, `checkpoint-${tag}.json`);
   }
 
   async saveCheckpoint(conversation: Content[], tag: string): Promise<void> {

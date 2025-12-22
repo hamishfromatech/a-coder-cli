@@ -1,12 +1,12 @@
-# Ollama Code
+# A-Coder CLI
 
-![Ollama Code Screenshot](./docs/assets/ollama-screenshot.png)
+![A-Coder CLI Screenshot](./docs/assets/ollama-screenshot.png)
 
-Ollama Code is a privacy-focused command-line AI workflow tool forked from [**Qwen Code**](https://github.com/QwenLM/qwen-code), designed to work with locally-hosted [Ollama](https://ollama.com) models for enhanced privacy and data sovereignty. This tool gives you the power of AI-assisted development while keeping your code and data completely under your control.
+A-Coder CLI is a privacy-focused command-line AI workflow tool forked from [**Qwen Code**](https://github.com/QwenLM/qwen-code), designed to work with locally-hosted [Ollama](https://ollama.com) models for enhanced privacy and data sovereignty. This tool gives you the power of AI-assisted development while keeping your code and data completely under your control.
 
 ## 🔒 Privacy & Data Sovereignty First
 
-**Your code never leaves your environment.** Unlike cloud-based AI tools, Ollama Code processes everything locally through your own Ollama server, ensuring:
+**Your code never leaves your environment.** Unlike cloud-based AI tools, A-Coder CLI processes everything locally through your own Ollama server, ensuring:
 
 - **Complete Privacy**: No data transmission to external services
 - **Data Sovereignty**: Full control over your models and processing
@@ -39,21 +39,21 @@ Ollama Code is a privacy-focused command-line AI workflow tool forked from [**Qw
 ### Installation
 
 ```bash
-npm install -g @tcsenpai/ollama-code
-ollama-code --version
+npm install -g @hamishfromatech/a-coder-cli
+a-coder-cli --version
 ```
 
 Then run from anywhere:
 
 ```bash
-ollama-code
+a-coder-cli
 ```
 
 Or install from source:
 
 ```bash
-git clone https://github.com/tcsenpai/ollama-code.git
-cd ollama-code
+git clone https://github.com/hamishfromatech/a-coder-cli.git
+cd a-coder-cli
 npm install
 npm install -g .
 ```
@@ -88,7 +88,7 @@ Configure your Ollama connection (the tool auto-detects local Ollama by default)
 export OLLAMA_BASE_URL="http://localhost:11434/v1"
 export OLLAMA_MODEL="qwen2.5-coder:14b"
 
-# Or create ~/.config/ollama-code/config.json:
+# Or create ~/.config/a-coder-cli/config.json:
 {
   "baseUrl": "http://localhost:11434/v1",
   "model": "qwen2.5-coder:14b"
@@ -101,7 +101,7 @@ export OLLAMA_MODEL="qwen2.5-coder:14b"
 
 ```sh
 cd your-project/
-ollama-code
+a-coder-cli
 > Describe the main pieces of this system's architecture
 ```
 
@@ -161,7 +161,7 @@ For optimal results with coding tasks:
 ## Project Structure
 
 ```
-ollama-code/
+a-coder-cli/
 ├── packages/           # Core packages
 ├── docs/              # Documentation
 ├── examples/          # Example code

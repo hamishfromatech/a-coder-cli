@@ -11,7 +11,7 @@ import {
   Config,
   clearCachedCredentialFile,
   getErrorMessage,
-} from '@tcsenpai/ollama-code';
+} from '@a-coder/core';
 import { runExitCleanup } from '../../utils/cleanup.js';
 
 export const useAuthCommand = (

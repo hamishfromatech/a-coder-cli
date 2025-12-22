@@ -11,7 +11,7 @@ import { useCompletion } from './useCompletion.js';
 import * as fs from 'fs/promises';
 import { glob } from 'glob';
 import { CommandContext, SlashCommand } from '../commands/types.js';
-import { Config, FileDiscoveryService } from '@tcsenpai/ollama-code';
+import { Config, FileDiscoveryService } from '@a-coder/core';
 
 interface MockConfig {
   getFileFilteringRespectGitIgnore: () => boolean;
@@ -21,8 +21,8 @@ interface MockConfig {
 
 // Mock dependencies
 vi.mock('fs/promises');
-vi.mock('@tcsenpai/ollama-code', async () => {
-  const actual = await vi.importActual('@tcsenpai/ollama-code');
+vi.mock('@a-coder/core', async () => {
+  const actual = await vi.importActual('@a-coder/core');
   return {
     ...actual,
     FileDiscoveryService: vi.fn(),

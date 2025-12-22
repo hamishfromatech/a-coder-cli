@@ -17,7 +17,7 @@ import {
   uiTelemetryService,
   SessionMetrics,
   ModelMetrics,
-} from '@tcsenpai/ollama-code';
+} from '@a-coder/core';
 
 // --- Interface Definitions ---
 

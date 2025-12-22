@@ -12,7 +12,7 @@ import {
   shutdownTelemetry,
   isTelemetrySdkInitialized,
   ToolResultDisplay,
-} from '@tcsenpai/ollama-code';
+} from '@a-coder/core';
 import {
   Content,
   Part,

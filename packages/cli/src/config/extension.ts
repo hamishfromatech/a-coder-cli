@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { MCPServerConfig } from '@tcsenpai/ollama-code';
+import { MCPServerConfig } from '@a-coder/core';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
-export const EXTENSIONS_DIRECTORY_NAME = path.join('.ollama', 'extensions');
+export const EXTENSIONS_DIRECTORY_NAME = path.join('.aCoder', 'extensions');
 export const EXTENSIONS_CONFIG_FILENAME = 'gemini-extension.json';
 
 export interface Extension {
@@ -104,7 +104,7 @@ function loadExtension(extensionDir: string): Extension | null {
 
 function getContextFileNames(config: ExtensionConfig): string[] {
   if (!config.contextFileName) {
-    return ['OLLAMA.md'];
+    return ['A-CODER.md'];
   } else if (!Array.isArray(config.contextFileName)) {
     return [config.contextFileName];
   }

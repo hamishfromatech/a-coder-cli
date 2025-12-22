@@ -14,7 +14,7 @@ import {
   ToolExecuteConfirmationDetails,
   ToolMcpConfirmationDetails,
   Config,
-} from '@tcsenpai/ollama-code';
+} from '@a-coder/core';
 import {
   RadioButtonSelect,
   RadioSelectItem,

@@ -6,7 +6,7 @@
 
 import { promises as fs } from 'fs';
 import { join } from 'path';
-import { getProjectTempDir } from '@tcsenpai/ollama-code';
+import { getProjectTempDir } from '@a-coder/core';
 
 const cleanupFunctions: Array<() => void> = [];
 

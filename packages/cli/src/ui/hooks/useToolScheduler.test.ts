@@ -24,7 +24,7 @@ import {
   ToolCall, // Import from core
   Status as ToolCallStatusType,
   ApprovalMode, // Import from core
-} from '@tcsenpai/ollama-code';
+} from '@a-coder/core';
 import {
   HistoryItemWithoutId,
   ToolCallStatus,
@@ -32,8 +32,8 @@ import {
 } from '../types.js';
 
 // Mocks
-vi.mock('@tcsenpai/ollama-code', async () => {
-  const actual = await vi.importActual('@tcsenpai/ollama-code');
+vi.mock('@a-coder/core', async () => {
+  const actual = await vi.importActual('@a-coder/core');
   return {
     ...actual,
     ToolRegistry: vi.fn(),

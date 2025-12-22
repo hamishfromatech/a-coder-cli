@@ -48,9 +48,9 @@ vi.mock('../tools/read-many-files');
 vi.mock('../tools/memoryTool', () => ({
   MemoryTool: vi.fn(),
   setGeminiMdFilename: vi.fn(),
-  getCurrentGeminiMdFilename: vi.fn(() => 'OLLAMA.md'), // Mock the original filename
-  DEFAULT_CONTEXT_FILENAME: 'OLLAMA.md',
-  GEMINI_CONFIG_DIR: '.ollama',
+  getCurrentGeminiMdFilename: vi.fn(() => 'A-CODER.md'), // Mock the original filename
+  DEFAULT_CONTEXT_FILENAME: 'A-CODER.md',
+  GEMINI_CONFIG_DIR: '.aCoder',
 }));
 
 vi.mock('../core/contentGenerator.js', async (importOriginal) => {

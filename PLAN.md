@@ -1,13 +1,13 @@
-# Ollama Code Fork Implementation Plan
+# A-Coder CLI Fork Implementation Plan
 
 ## Overview
 
-This plan outlines the transformation of Qwen Code into Ollama Code, maintaining the exact same user experience while rebranding and configuring it to work with Ollama's OpenAI-compatible API.
+This plan outlines the transformation of Qwen Code into A-Coder CLI, maintaining the exact same user experience while rebranding and configuring it to work with Ollama's OpenAI-compatible API.
 
 ## Project Goals
 
 - ✅ **Same Experience**: Preserve all existing functionality and user workflows
-- ✅ **Ollama Integration**: Configure for Ollama server at `https://ollama.tcsenpai.com`
+- ✅ **Ollama Integration**: Configure for Ollama server at `https://ollama.hamishfromatech.com`
 - ✅ **Model Configuration**: Default to `qwen3:14b` with full configurability
 - ✅ **Complete Rebranding**: Transform all references from Qwen to Ollama
 - ✅ **Maintain Architecture**: Keep the monorepo structure and tool ecosystem
@@ -24,14 +24,14 @@ This plan outlines the transformation of Qwen Code into Ollama Code, maintaining
 
 **Changes:**
 - Update `DEFAULT_GEMINI_MODEL` to `qwen3:14b`
-- Set default `OPENAI_BASE_URL` to `https://ollama.tcsenpai.com`
+- Set default `OPENAI_BASE_URL` to `https://ollama.hamishfromatech.com`
 - Ensure OpenAI auth type is the primary method
 - Remove Gemini-specific model fallbacks
 
 #### 1.2 Environment Variable Defaults
 **New environment variables:**
 ```bash
-OLLAMA_API_BASE_URL=https://ollama.tcsenpai.com
+OLLAMA_API_BASE_URL=https://ollama.hamishfromatech.com
 OLLAMA_MODEL=qwen3:14b
 OLLAMA_API_KEY=ollama  # Default for local/basic setups
 ```
@@ -50,7 +50,7 @@ OLLAMA_API_KEY=ollama  # Default for local/basic setups
 - `packages/vscode-ide-companion/package.json`
 
 **Changes:**
-- Package name: `@qwen-code/qwen-code` → `@ollama-code/ollama-code`
+- Package name: `@qwen-code/qwen-code` → `@a-coder-cli/a-coder-cli`
 - Binary name: `qwen` → `ollama`
 - Repository URLs and metadata
 - Description and keywords
@@ -73,8 +73,8 @@ OLLAMA_API_KEY=ollama  # Default for local/basic setups
 **Key areas:**
 - Class names: `GeminiClient` → `OllamaClient`
 - File names: `gemini*.ts` → `ollama*.ts`
-- Configuration directories: `.gemini/` → `.ollama/`
-- Memory files: `GEMINI.md` → `OLLAMA.md`
+- Configuration directories: `.gemini/` → `.a-coder/`
+- Memory files: `GEMINI.md` → `A-CODER.md`
 
 #### 3.2 User-Facing Text Updates
 **Files to modify:**
@@ -109,7 +109,7 @@ OLLAMA_API_KEY=ollama  # Default for local/basic setups
 #### 5.1 Config File Support
 **New configuration files:**
 ```
-.ollama/
+.a-coder/
 ├── config.json          # Main configuration
 ├── models.json          # Available models configuration
 └── servers.json         # Multiple Ollama server configs
@@ -119,7 +119,7 @@ OLLAMA_API_KEY=ollama  # Default for local/basic setups
 ```json
 {
   "api": {
-    "baseUrl": "https://ollama.tcsenpai.com",
+    "baseUrl": "https://ollama.hamishfromatech.com",
     "defaultModel": "qwen3:14b",
     "timeout": 30000,
     "maxRetries": 3
@@ -132,7 +132,7 @@ OLLAMA_API_KEY=ollama  # Default for local/basic setups
   "servers": [
     {
       "name": "primary",
-      "url": "https://ollama.tcsenpai.com",
+      "url": "https://ollama.hamishfromatech.com",
       "models": ["qwen3:14b", "llama3:8b"]
     }
   ]
@@ -176,12 +176,12 @@ OLLAMA_API_KEY=ollama  # Default for local/basic setups
 
 ## Migration Guide for Users
 
-### From Qwen Code to Ollama Code
+### From Qwen Code to A-Coder CLI
 
 1. **Installation:**
    ```bash
    npm uninstall -g @qwen-code/qwen-code
-   npm install -g @ollama-code/ollama-code
+   npm install -g @a-coder-cli/a-coder-cli
    ```
 
 2. **Command Change:**
@@ -194,7 +194,7 @@ OLLAMA_API_KEY=ollama  # Default for local/basic setups
    ```
 
 3. **Configuration Migration:**
-   - Existing `.gemini/` directories will be automatically migrated to `.ollama/`
+   - Existing `.gemini/` directories will be automatically migrated to `.a-coder/`
    - Environment variables will be detected and migrated
 
 ## Technical Considerations
@@ -205,7 +205,7 @@ OLLAMA_API_KEY=ollama  # Default for local/basic setups
 - Test thoroughly with streaming responses and tool calls
 
 ### Memory Management
-- Update memory file references from `GEMINI.md` to `OLLAMA.md`
+- Update memory file references from `GEMINI.md` to `A-CODER.md`
 - Ensure memory discovery and import systems work with new paths
 - Migrate existing memory files during upgrade
 

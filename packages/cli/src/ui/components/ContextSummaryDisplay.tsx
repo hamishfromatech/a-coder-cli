@@ -7,7 +7,7 @@
 import React from 'react';
 import { Text } from 'ink';
 import { Colors } from '../colors.js';
-import { type MCPServerConfig } from '@tcsenpai/ollama-code';
+import { type MCPServerConfig } from '@a-coder/core';
 
 interface ContextSummaryDisplayProps {
   geminiMdFileCount: number;

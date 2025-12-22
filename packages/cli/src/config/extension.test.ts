@@ -57,7 +57,7 @@ describe('loadExtensions', () => {
     const ext1 = extensions.find((e) => e.config.name === 'ext1');
     const ext2 = extensions.find((e) => e.config.name === 'ext2');
     expect(ext1?.contextFiles).toEqual([
-      path.join(workspaceExtensionsDir, 'ext1', 'OLLAMA.md'),
+      path.join(workspaceExtensionsDir, 'ext1', 'A-CODER.md'),
     ]);
     expect(ext2?.contextFiles).toEqual([]);
   });
@@ -142,7 +142,7 @@ function createExtension(
   );
 
   if (addContextFile) {
-    fs.writeFileSync(path.join(extDir, 'OLLAMA.md'), 'context');
+    fs.writeFileSync(path.join(extDir, 'A-CODER.md'), 'context');
   }
 
   if (contextFileName) {

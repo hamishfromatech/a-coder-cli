@@ -60,7 +60,7 @@ class ThemeManager {
    */
   getAvailableThemes(): ThemeDisplay[] {
     // Separate Ollama themes
-    const ollamaThemes = this.availableThemes.filter(
+    const aCoderThemes = this.availableThemes.filter(
       (theme) => theme.name === OllamaLight.name || theme.name === OllamaDark.name,
     );
     const otherThemes = this.availableThemes.filter(
@@ -88,7 +88,7 @@ class ThemeManager {
     });
 
     // Combine Ollama themes first, then sorted others
-    const sortedThemes = [...ollamaThemes, ...sortedOtherThemes];
+    const sortedThemes = [...aCoderThemes, ...sortedOtherThemes];
 
     return sortedThemes.map((theme) => ({
       name: theme.name,

@@ -12,7 +12,7 @@ import {
   getErrorMessage,
   isNodeError,
   unescapePath,
-} from '@tcsenpai/ollama-code';
+} from '@a-coder/core';
 import {
   HistoryItem,
   IndividualToolCallDisplay,

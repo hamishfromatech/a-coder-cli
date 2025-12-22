@@ -65,7 +65,7 @@ import {
   getMCPDiscoveryState,
   getMCPServerStatus,
   GeminiClient,
-} from '@tcsenpai/ollama-code';
+} from '@a-coder/core';
 import { useSessionStats } from '../contexts/SessionContext.js';
 import { LoadedSettings } from '../../config/settings.js';
 import * as ShowMemoryCommandModule from './useShowMemoryCommand.js';
@@ -88,9 +88,9 @@ vi.mock('open', () => ({
   default: vi.fn(),
 }));
 
-vi.mock('@tcsenpai/ollama-code', async (importOriginal) => {
+vi.mock('@a-coder/core', async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import('@tcsenpai/ollama-code')>();
+    await importOriginal<typeof import('@a-coder/core')>();
   return {
     ...actual,
     getMCPServerStatus: vi.fn(),
@@ -179,7 +179,7 @@ describe('useSlashCommandProcessor', () => {
   const getProcessorHook = (showToolDescriptions: boolean = false) => {
     const settings = {
       merged: {
-        contextFileName: 'OLLAMA.md',
+        contextFileName: 'A-CODER.md',
       },
     } as unknown as LoadedSettings;
     return renderHook(() =>

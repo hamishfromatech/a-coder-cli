@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { sessionId, Logger } from '@tcsenpai/ollama-code';
+import { sessionId, Logger } from '@a-coder/core';
 
 /**
  * Hook to manage the logger instance.

@@ -25,7 +25,7 @@ import {
   UnauthorizedError,
   UserPromptEvent,
   DEFAULT_GEMINI_FLASH_MODEL,
-} from '@tcsenpai/ollama-code';
+} from '@a-coder/core';
 import { type Part, type PartListUnion } from '@google/genai';
 import {
   StreamingState,

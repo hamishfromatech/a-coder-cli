@@ -1,5 +1,5 @@
 {
-  "name": "@tcsenpai/ollama-code",
+  "name": "a-coder-cli",
   "version": "0.0.3",
   "engines": {
     "node": ">=20"
@@ -10,7 +10,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/tcsenpai/ollama-code.git"
+    "url": "git+https://github.com/hamishfromatech/ollama-code.git"
   },
   "scripts": {
     "start": "node scripts/start.js",
@@ -42,7 +42,7 @@
     "clean": "node scripts/clean.js"
   },
   "bin": {
-    "ollama-code": "bundle/ollama.js"
+    "a-coder": "bundle/a-coder.js"
   },
   "files": [
     "bundle/",

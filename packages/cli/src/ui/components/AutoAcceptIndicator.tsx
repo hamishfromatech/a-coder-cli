@@ -7,7 +7,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { Colors } from '../colors.js';
-import { ApprovalMode } from '@tcsenpai/ollama-code';
+import { ApprovalMode } from '@a-coder/core';
 
 interface AutoAcceptIndicatorProps {
   approvalMode: ApprovalMode;

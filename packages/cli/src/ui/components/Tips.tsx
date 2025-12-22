@@ -7,7 +7,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { Colors } from '../colors.js';
-import { type Config } from '@tcsenpai/ollama-code';
+import { type Config } from '@a-coder/core';
 
 interface TipsProps {
   config: Config;
@@ -28,9 +28,9 @@ export const Tips: React.FC<TipsProps> = ({ config }) => {
         <Text color={Colors.Foreground}>
           3. Create{' '}
           <Text bold color={Colors.AccentPurple}>
-            OLLAMA.md
+            A-CODER.md
           </Text>{' '}
-          files to customize your interactions with Ollama Code.
+          files to customize your interactions with A-Coder CLI.
         </Text>
       )}
       <Text color={Colors.Foreground}>

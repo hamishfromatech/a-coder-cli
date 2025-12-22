@@ -18,7 +18,7 @@ import {
   FileDiscoveryService,
   TelemetryTarget,
   MCPServerConfig,
-} from '@tcsenpai/ollama-code';
+} from '@a-coder/core';
 import { Settings } from './settings.js';
 
 import { Extension, filterActiveExtensions } from './extension.js';
@@ -63,16 +63,16 @@ export interface CliArgs {
 
 export async function parseArguments(): Promise<CliArgs> {
   const yargsInstance = yargs(hideBin(process.argv))
-    .scriptName('ollama')
+    .scriptName('a-coder')
     .usage(
       '$0 [options]',
-      'Ollama Code - Launch an interactive CLI, use -p/--prompt for non-interactive mode',
+      'A-Coder CLI - Launch an interactive CLI, use -p/--prompt for non-interactive mode',
     )
     .option('model', {
       alias: 'm',
       type: 'string',
       description: `Model`,
-      default: process.env.OLLAMA_MODEL || process.env.OPENAI_MODEL || DEFAULT_GEMINI_MODEL,
+      default: process.env.A_CODER_MODEL || process.env.OLLAMA_MODEL || process.env.OPENAI_MODEL || DEFAULT_GEMINI_MODEL,
     })
     .option('prompt', {
       alias: 'p',

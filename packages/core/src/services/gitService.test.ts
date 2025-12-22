@@ -177,7 +177,7 @@ describe('GitService', () => {
   });
 
   describe('setupShadowGitRepository', () => {
-    const repoDir = path.join(mockHomedir, '.ollama', 'history', mockHash);
+    const repoDir = path.join(mockHomedir, '.aCoder', 'history', mockHash);
     const hiddenGitIgnorePath = path.join(repoDir, '.gitignore');
     const visibleGitIgnorePath = path.join(mockProjectRoot, '.gitignore');
     const gitConfigPath = path.join(repoDir, '.gitconfig');

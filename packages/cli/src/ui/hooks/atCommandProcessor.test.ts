@@ -7,7 +7,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach, Mock } from 'vitest';
 import type { Mocked } from 'vitest';
 import { handleAtCommand } from './atCommandProcessor.js';
-import { Config, FileDiscoveryService } from '@tcsenpai/ollama-code';
+import { Config, FileDiscoveryService } from '@a-coder/core';
 import { ToolCallStatus } from '../types.js';
 import { UseHistoryManagerReturn } from './useHistoryManager.js';
 import * as fsPromises from 'fs/promises';
@@ -52,8 +52,8 @@ vi.mock('fs/promises', async () => {
   };
 });
 
-vi.mock('@tcsenpai/ollama-code', async () => {
-  const actual = await vi.importActual('@tcsenpai/ollama-code');
+vi.mock('@a-coder/core', async () => {
+  const actual = await vi.importActual('@a-coder/core');
   return {
     ...actual,
     FileDiscoveryService: vi.fn(),

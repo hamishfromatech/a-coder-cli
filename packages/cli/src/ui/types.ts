@@ -7,7 +7,7 @@
 import {
   ToolCallConfirmationDetails,
   ToolResultDisplay,
-} from '@tcsenpai/ollama-code';
+} from '@a-coder/core';
 
 // Only defining the state enum needed by the UI
 export enum StreamingState {

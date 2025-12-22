@@ -109,7 +109,7 @@ describe('gemini.tsx main function', () => {
       settings: {},
     };
     const workspaceSettingsFile: SettingsFile = {
-      path: '/workspace/.ollama/settings.json',
+      path: '/workspace/.aCoder/settings.json',
       settings: {},
     };
     const systemSettingsFile: SettingsFile = {

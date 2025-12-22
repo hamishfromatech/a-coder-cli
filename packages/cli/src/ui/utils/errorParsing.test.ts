@@ -11,7 +11,7 @@ import {
   UserTierId,
   DEFAULT_GEMINI_FLASH_MODEL,
   isProQuotaExceededError,
-} from '@tcsenpai/ollama-code';
+} from '@a-coder/core';
 
 describe('parseAndFormatApiError', () => {
   const _enterpriseMessage =

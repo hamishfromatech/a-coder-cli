@@ -18,7 +18,7 @@ import {
   MCPServerStatus,
   getMCPDiscoveryState,
   getMCPServerStatus,
-} from '@tcsenpai/ollama-code';
+} from '@a-coder/core';
 import { setOllamaBaseUrl, setOllamaModel } from '../../config/auth.js';
 import { useSessionStats } from '../contexts/SessionContext.js';
 import {
@@ -224,7 +224,7 @@ export const useSlashCommandProcessor = (
       // `/help` and `/clear` have been migrated and REMOVED from this list.
       {
         name: 'docs',
-        description: 'open full Ollama Code documentation in your browser',
+        description: 'open full A-Coder CLI documentation in your browser',
         action: async (_mainCommand, _subCommand, _args) => {
           const docsUrl =
             'https://github.com/QwenLM/Qwen3-Coder/blob/main/README.md';
@@ -508,7 +508,7 @@ export const useSlashCommandProcessor = (
       },
       {
         name: 'tools',
-        description: 'list available Ollama Code tools',
+        description: 'list available A-Coder CLI tools',
         action: async (_mainCommand, _subCommand, _args) => {
           // Check if the _subCommand includes a specific flag to control description visibility
           let useShowDescriptions = showToolDescriptions;
@@ -848,10 +848,10 @@ export const useSlashCommandProcessor = (
           try {
             const userSettingsFile = settings.user;
             if (userSettingsFile) {
-              if (!userSettingsFile.settings.ollama) {
-                userSettingsFile.settings.ollama = {};
+              if (!userSettingsFile.settings.aCoder) {
+                userSettingsFile.settings.aCoder = {};
               }
-              userSettingsFile.settings.ollama.model = modelName;
+              userSettingsFile.settings.aCoder.model = modelName;
               const { saveSettings } = await import('../../config/settings.js');
               saveSettings(userSettingsFile);
             }
@@ -905,10 +905,10 @@ export const useSlashCommandProcessor = (
           try {
             const userSettingsFile = settings.user;
             if (userSettingsFile) {
-              if (!userSettingsFile.settings.ollama) {
-                userSettingsFile.settings.ollama = {};
+              if (!userSettingsFile.settings.aCoder) {
+                userSettingsFile.settings.aCoder = {};
               }
-              userSettingsFile.settings.ollama.baseUrl = providerUrl;
+              userSettingsFile.settings.aCoder.baseUrl = providerUrl;
               const { saveSettings } = await import('../../config/settings.js');
               saveSettings(userSettingsFile);
             }

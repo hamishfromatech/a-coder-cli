@@ -15,26 +15,26 @@ import {
   BugCommandSettings,
   TelemetrySettings,
   AuthType,
-} from '@tcsenpai/ollama-code';
+} from '@a-coder/core';
 import stripJsonComments from 'strip-json-comments';
 import { DefaultLight } from '../ui/themes/default-light.js';
 import { DefaultDark } from '../ui/themes/default.js';
 
-export const SETTINGS_DIRECTORY_NAME = '.ollama';
+export const SETTINGS_DIRECTORY_NAME = '.aCoder';
 export const USER_SETTINGS_DIR = path.join(homedir(), SETTINGS_DIRECTORY_NAME);
 export const USER_SETTINGS_PATH = path.join(USER_SETTINGS_DIR, 'settings.json');
 
-// Ollama-specific config paths
-export const OLLAMA_CONFIG_DIR = path.join(homedir(), '.config', 'ollama-code');
-export const OLLAMA_CONFIG_PATH = path.join(OLLAMA_CONFIG_DIR, 'config.json');
+// A-Coder-specific config paths
+export const A_CODER_CONFIG_DIR = path.join(homedir(), '.config', 'a-coder-cli');
+export const A_CODER_CONFIG_PATH = path.join(A_CODER_CONFIG_DIR, 'config.json');
 
 function getSystemSettingsPath(): string {
   if (platform() === 'darwin') {
-    return '/Library/Application Support/OllamaCode/settings.json';
+    return '/Library/Application Support/A-CoderCLI/settings.json';
   } else if (platform() === 'win32') {
-    return 'C:\\ProgramData\\ollama-code\\settings.json';
+    return 'C:\\ProgramData\\a-coder-cli\\settings.json';
   } else {
-    return '/etc/ollama-code/settings.json';
+    return '/etc/a-coder-cli/settings.json';
   }
 }
 
@@ -64,7 +64,7 @@ export interface Settings {
   theme?: string;
   selectedAuthType?: AuthType;
   sandbox?: boolean | string;
-  ollama?: OllamaConfig;
+  aCoder?: OllamaConfig;
   coreTools?: string[];
   excludeTools?: string[];
   toolDiscoveryCommand?: string;
@@ -283,8 +283,8 @@ export function setUpCloudShellEnvironment(envFilePath: string | null): void {
 
 export function loadOllamaConfig(): OllamaConfig {
   try {
-    if (fs.existsSync(OLLAMA_CONFIG_PATH)) {
-      const configContent = fs.readFileSync(OLLAMA_CONFIG_PATH, 'utf8');
+    if (fs.existsSync(A_CODER_CONFIG_PATH)) {
+      const configContent = fs.readFileSync(A_CODER_CONFIG_PATH, 'utf8');
       const config = JSON.parse(stripJsonComments(configContent)) as OllamaConfig;
       
       // Set environment variables from config if not already set
@@ -364,13 +364,13 @@ export function loadSettings(workspaceDir: string): LoadedSettings {
       }
       
       // Apply Ollama settings to environment if not already set
-      if (userSettings.ollama) {
-        if (userSettings.ollama.baseUrl && !process.env.OLLAMA_BASE_URL && !process.env.OPENAI_BASE_URL) {
-          process.env.OLLAMA_BASE_URL = userSettings.ollama.baseUrl;
-          process.env.OPENAI_BASE_URL = userSettings.ollama.baseUrl;
+      if (userSettings.aCoder) {
+        if (userSettings.aCoder.baseUrl && !process.env.OLLAMA_BASE_URL && !process.env.OPENAI_BASE_URL) {
+          process.env.OLLAMA_BASE_URL = userSettings.aCoder.baseUrl;
+          process.env.OPENAI_BASE_URL = userSettings.aCoder.baseUrl;
         }
-        if (userSettings.ollama.model && !process.env.OLLAMA_MODEL) {
-          process.env.OLLAMA_MODEL = userSettings.ollama.model;
+        if (userSettings.aCoder.model && !process.env.OLLAMA_MODEL) {
+          process.env.OLLAMA_MODEL = userSettings.aCoder.model;
         }
       }
     }

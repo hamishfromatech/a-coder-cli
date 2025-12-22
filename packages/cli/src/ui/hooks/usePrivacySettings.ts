@@ -10,7 +10,7 @@ import {
   Config,
   CodeAssistServer,
   UserTierId,
-} from '@tcsenpai/ollama-code';
+} from '@a-coder/core';
 
 export interface PrivacyState {
   isLoading: boolean;

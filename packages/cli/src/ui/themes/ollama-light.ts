@@ -23,7 +23,7 @@ const ollamaLightColors: ColorsTheme = {
 };
 
 export const OllamaLight: Theme = new Theme(
-  'Ollama Light',
+  'A-Coder Light',
   'light',
   {
     hljs: {

@@ -1,15 +1,15 @@
 {
-  "name": "@tcsenpai/ollama-code-cli",
+  "name": "@a-coder/cli",
   "version": "0.0.1-alpha.8",
-  "description": "Ollama Code CLI",
+  "description": "A-Coder CLI",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/tcsenpai/ollama-code.git"
+    "url": "git+https://github.com/hamishfromatech/ollama-code.git"
   },
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "ollama": "dist/index.js"
+    "a-coder": "dist/index.js"
   },
   "scripts": {
     "build": "node ../../scripts/build_package.js",
@@ -28,7 +28,7 @@
     "sandboxImageUri": "us-docker.pkg.dev/gemini-code-dev/gemini-cli/sandbox:0.0.1-alpha.8"
   },
   "dependencies": {
-    "@tcsenpai/ollama-code": "file:../core",
+    "@a-coder/core": "file:../core",
     "@types/update-notifier": "^6.0.8",
     "command-exists": "^1.2.9",
     "diff": "^7.0.0",

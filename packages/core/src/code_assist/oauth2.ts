@@ -53,7 +53,7 @@ const SIGN_IN_SUCCESS_URL =
 const SIGN_IN_FAILURE_URL =
   'https://developers.google.com/gemini-code-assist/auth_failure_gemini';
 
-const GEMINI_DIR = '.ollama';
+const GEMINI_DIR = '.aCoder';
 const CREDENTIAL_FILENAME = 'oauth_creds.json';
 
 /**

@@ -11,7 +11,7 @@ import {
   allowEditorTypeInSandbox,
   checkHasEditorType,
   EditorType,
-} from '@tcsenpai/ollama-code';
+} from '@a-coder/core';
 
 interface UseEditorSettingsReturn {
   isEditorDialogOpen: boolean;
