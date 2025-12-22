@@ -99,6 +99,9 @@ export const useGeminiStream = (
   const turnCancelledRef = useRef(false);
   const [isResponding, setIsResponding] = useState<boolean>(false);
   const [thought, setThought] = useState<ThoughtSummary | null>(null);
+  const [queryQueue, setQueryQueue] = useState<
+    { query: PartListUnion; prompt_id?: string }[]
+  >([]);
   const [pendingHistoryItemRef, setPendingHistoryItem] =
     useStateAndRef<HistoryItemWithoutId | null>(null);
   const processedMemoryToolsRef = useRef<Set<string>>(new Set());
@@ -208,6 +211,7 @@ export const useGeminiStream = (
       userMessageTimestamp: number,
       abortSignal: AbortSignal,
       prompt_id: string,
+      alreadyAddedToHistory?: boolean,
     ): Promise<{
       queryToSend: PartListUnion | null;
       shouldProceed: boolean;
@@ -274,10 +278,12 @@ export const useGeminiStream = (
           localQueryToSendToGemini = atCommandResult.processedQuery;
         } else {
           // Normal query for Gemini
-          addItem(
-            { type: MessageType.USER, text: trimmedQuery },
-            userMessageTimestamp,
-          );
+          if (!alreadyAddedToHistory) {
+            addItem(
+              { type: MessageType.USER, text: trimmedQuery },
+              userMessageTimestamp,
+            );
+          }
           localQueryToSendToGemini = trimmedQuery;
         }
       } else {
@@ -531,15 +537,23 @@ export const useGeminiStream = (
   const submitQuery = useCallback(
     async (
       query: PartListUnion,
-      options?: { isContinuation: boolean },
+      options?: { isContinuation?: boolean; alreadyAddedToHistory?: boolean },
       prompt_id?: string,
     ) => {
-      if (
-        (streamingState === StreamingState.Responding ||
-          streamingState === StreamingState.WaitingForConfirmation) &&
-        !options?.isContinuation
-      )
+      const isBusy =
+        streamingState === StreamingState.Responding ||
+        streamingState === StreamingState.WaitingForConfirmation;
+
+      if (isBusy && !options?.isContinuation) {
+        if (typeof query === 'string') {
+          addItem(
+            { type: MessageType.INFO, text: `Queued: ${query}` },
+            Date.now(),
+          );
+        }
+        setQueryQueue((prev) => [...prev, { query, prompt_id }]);
         return;
+      }
 
       const userMessageTimestamp = Date.now();
       setShowHelp(false);
@@ -563,6 +577,7 @@ export const useGeminiStream = (
         userMessageTimestamp,
         abortSignal,
         prompt_id!,
+        options?.alreadyAddedToHistory,
       );
 
       if (!shouldProceed || queryToSend === null) {
@@ -640,6 +655,18 @@ export const useGeminiStream = (
       handleLoopDetectedEvent,
     ],
   );
+
+  useEffect(() => {
+    if (streamingState === StreamingState.Idle && queryQueue.length > 0) {
+      const next = queryQueue[0];
+      setQueryQueue((prev) => prev.slice(1));
+      void submitQuery(
+        next.query,
+        { alreadyAddedToHistory: false },
+        next.prompt_id,
+      );
+    }
+  }, [streamingState, queryQueue, submitQuery]);
 
   const handleCompletedTools = useCallback(
     async (completedToolCallsFromScheduler: TrackedToolCall[]) => {

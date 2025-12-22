@@ -18,6 +18,7 @@ import {
   MCPServerStatus,
   getMCPDiscoveryState,
   getMCPServerStatus,
+  getErrorMessage,
 } from '@a-coder/core';
 import { setOllamaBaseUrl, setOllamaModel } from '../../config/auth.js';
 import { useSessionStats } from '../contexts/SessionContext.js';
@@ -73,6 +74,7 @@ export const useSlashCommandProcessor = (
   onDebugMessage: (message: string) => void,
   openThemeDialog: () => void,
   openAuthDialog: () => void,
+  openModelDialog: () => void,
   openEditorDialog: () => void,
   toggleCorgiMode: () => void,
   showToolDescriptions: boolean = false,
@@ -813,16 +815,11 @@ export const useSlashCommandProcessor = (
       },
       {
         name: 'model',
-        description: 'set the AI model to use. Usage: /model <model-name>',
+        description: 'set the AI model to use. Usage: /model [model-name]',
         action: async (_mainCommand, _subCommand, args) => {
           const modelName = (_subCommand || args || '').trim();
           if (!modelName) {
-            const currentModel = config?.getModel() || process.env.OLLAMA_MODEL || 'Not set';
-            addMessage({
-              type: MessageType.INFO,
-              content: `Current model: ${currentModel}\nUsage: /model <model-name>`,
-              timestamp: new Date(),
-            });
+            openModelDialog();
             return;
           }
 
@@ -864,6 +861,13 @@ export const useSlashCommandProcessor = (
             content: `Model set to: ${modelName}`,
             timestamp: new Date(),
           });
+        },
+      },
+      {
+        name: 'models',
+        description: 'list available models from the provider',
+        action: async () => {
+          openModelDialog();
         },
       },
       {
@@ -1246,7 +1250,13 @@ export const useSlashCommandProcessor = (
       const legacyArgs = parts.slice(2).join(' ');
 
       for (const cmd of legacyCommands) {
+        if (config?.getDebugMode()) {
+          process.stderr.write(`[DEBUG] checking legacy cmd: ${cmd.name}\n`);
+        }
         if (mainCommand === cmd.name || mainCommand === cmd.altName) {
+          if (config?.getDebugMode()) {
+            process.stderr.write(`[DEBUG] found legacy match: ${cmd.name}\n`);
+          }
           const actionResult = await cmd.action(
             mainCommand,
             subCommand,

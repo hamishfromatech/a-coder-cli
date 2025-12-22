@@ -36,82 +36,82 @@ export const AboutBox: React.FC<AboutBoxProps> = ({
   >
     <Box marginBottom={1}>
       <Text bold color={Colors.AccentPurple}>
-        About Gemini CLI
+        About A-Coder CLI
       </Text>
     </Box>
     <Box flexDirection="row">
-      <Box width="35%">
+      <Box width={15}>
         <Text bold color={Colors.LightBlue}>
           CLI Version
         </Text>
       </Box>
-      <Box>
-        <Text>{cliVersion}</Text>
+      <Box flexGrow={1}>
+        <Text wrap="wrap">{cliVersion}</Text>
       </Box>
     </Box>
     {GIT_COMMIT_INFO && !['N/A'].includes(GIT_COMMIT_INFO) && (
       <Box flexDirection="row">
-        <Box width="35%">
+        <Box width={15}>
           <Text bold color={Colors.LightBlue}>
             Git Commit
           </Text>
         </Box>
-        <Box>
-          <Text>{GIT_COMMIT_INFO}</Text>
+        <Box flexGrow={1}>
+          <Text wrap="wrap">{GIT_COMMIT_INFO}</Text>
         </Box>
       </Box>
     )}
     <Box flexDirection="row">
-      <Box width="35%">
+      <Box width={15}>
         <Text bold color={Colors.LightBlue}>
           Model
         </Text>
       </Box>
-      <Box>
-        <Text>{modelVersion}</Text>
+      <Box flexGrow={1}>
+        <Text wrap="wrap">{modelVersion}</Text>
       </Box>
     </Box>
     <Box flexDirection="row">
-      <Box width="35%">
+      <Box width={15}>
         <Text bold color={Colors.LightBlue}>
           Sandbox
         </Text>
       </Box>
-      <Box>
-        <Text>{sandboxEnv}</Text>
+      <Box flexGrow={1}>
+        <Text wrap="wrap">{sandboxEnv}</Text>
       </Box>
     </Box>
     <Box flexDirection="row">
-      <Box width="35%">
+      <Box width={15}>
         <Text bold color={Colors.LightBlue}>
           OS
         </Text>
       </Box>
-      <Box>
-        <Text>{osVersion}</Text>
+      <Box flexGrow={1}>
+        <Text wrap="wrap">{osVersion}</Text>
       </Box>
     </Box>
     <Box flexDirection="row">
-      <Box width="35%">
+      <Box width={15}>
         <Text bold color={Colors.LightBlue}>
           Auth Method
         </Text>
       </Box>
-      <Box>
-        <Text>
+      <Box flexGrow={1}>
+        <Text wrap="wrap">
           {selectedAuthType.startsWith('oauth') ? 'OAuth' : selectedAuthType}
         </Text>
       </Box>
     </Box>
     {gcpProject && (
       <Box flexDirection="row">
-        <Box width="35%">
+        <Box width={15}>
           <Text bold color={Colors.LightBlue}>
             GCP Project
           </Text>
         </Box>
-        <Box>
-          <Text>{gcpProject}</Text>
+        <Box flexGrow={1}>
+          <Text wrap="wrap">{gcpProject}</Text>
         </Box>
       </Box>
     )}

@@ -145,7 +145,7 @@ describe('useSlashCommandProcessor', () => {
       tryCompressChat: mockTryCompressChat,
     } as unknown as GeminiClient;
     mockConfig = {
-      getDebugMode: vi.fn(() => false),
+      getDebugMode: vi.fn(() => true),
       getGeminiClient: () => mockGeminiClient,
       getSandbox: vi.fn(() => 'test-sandbox'),
       getModel: vi.fn(() => 'test-model'),

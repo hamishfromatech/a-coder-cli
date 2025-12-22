@@ -20,11 +20,16 @@ export const useAuthCommand = (
   config: Config,
 ) => {
   const [isAuthDialogOpen, setIsAuthDialogOpen] = useState(
-    settings.merged.selectedAuthType === undefined,
+    settings.merged.selectedAuthType === undefined ||
+      config.getQuestion() === '/auth',
+  );
+  const [isManualTrigger, setIsManualTrigger] = useState(
+    config.getQuestion() === '/auth',
   );
 
   const openAuthDialog = useCallback(() => {
     setIsAuthDialogOpen(true);
+    setIsManualTrigger(true);
   }, []);
 
   const [isAuthenticating, setIsAuthenticating] = useState(false);
@@ -69,6 +74,7 @@ Logging in with Google... Please restart Gemini CLI to continue.
         }
       }
       setIsAuthDialogOpen(false);
+      setIsManualTrigger(false);
       setAuthError(null);
     },
     [settings, setAuthError, config],
@@ -84,5 +90,6 @@ Logging in with Google... Please restart Gemini CLI to continue.
     handleAuthSelect,
     isAuthenticating,
     cancelAuthentication,
+    isManualTrigger,
   };
 };

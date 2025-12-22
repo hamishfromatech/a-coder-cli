@@ -179,39 +179,78 @@ export class Turn {
         this.prompt_id,
       );
 
+      let inThinkingBlock = false;
+      let thinkingBuffer = '';
+      let streamBuffer = '';
+
       for await (const resp of responseStream) {
         if (signal?.aborted) {
           yield { type: GeminiEventType.UserCancelled };
-          // Do not add resp to debugResponses if aborted before processing
           return;
         }
         this.debugResponses.push(resp);
 
-        const thoughtPart = resp.candidates?.[0]?.content?.parts?.[0];
-        if (thoughtPart?.thought) {
-          // Thought always has a bold "subject" part enclosed in double asterisks
-          // (e.g., **Subject**). The rest of the string is considered the description.
-          const rawText = thoughtPart.text ?? '';
-          const subjectStringMatches = rawText.match(/\*\*(.*?)\*\*/s);
-          const subject = subjectStringMatches
-            ? subjectStringMatches[1].trim()
-            : '';
-          const description = rawText.replace(/\*\*(.*?)\*\*/s, '').trim();
-          const thought: ThoughtSummary = {
-            subject,
-            description,
-          };
-
-          yield {
-            type: GeminiEventType.Thought,
-            value: thought,
-          };
-          continue;
-        }
-
         const text = getResponseText(resp);
         if (text) {
-          yield { type: GeminiEventType.Content, value: text };
+          streamBuffer += text;
+
+          while (streamBuffer.length > 0) {
+            if (!inThinkingBlock) {
+              const thinkStartIdx = streamBuffer.indexOf('<think>');
+              if (thinkStartIdx === -1) {
+                // No <think> tag in buffer. 
+                // But wait, what if the buffer ends with a partial "<thin"?
+                const lastLessThan = streamBuffer.lastIndexOf('<');
+                if (lastLessThan !== -1 && '<think>'.startsWith(streamBuffer.substring(lastLessThan))) {
+                  // Potential tag start at the end of buffer, send everything before it
+                  const content = streamBuffer.substring(0, lastLessThan);
+                  if (content) yield { type: GeminiEventType.Content, value: content };
+                  streamBuffer = streamBuffer.substring(lastLessThan);
+                  break; 
+                } else {
+                  // No partial tag, send everything
+                  yield { type: GeminiEventType.Content, value: streamBuffer };
+                  streamBuffer = '';
+                }
+              } else {
+                // Found <think>
+                const contentBefore = streamBuffer.substring(0, thinkStartIdx);
+                if (contentBefore) yield { type: GeminiEventType.Content, value: contentBefore };
+                inThinkingBlock = true;
+                streamBuffer = streamBuffer.substring(thinkStartIdx + 7);
+              }
+            } else {
+              const thinkEndIdx = streamBuffer.indexOf('</think>');
+              if (thinkEndIdx === -1) {
+                // Still thinking...
+                const lastLessThan = streamBuffer.lastIndexOf('<');
+                if (lastLessThan !== -1 && '</think>'.startsWith(streamBuffer.substring(lastLessThan))) {
+                  const content = streamBuffer.substring(0, lastLessThan);
+                  thinkingBuffer += content;
+                  streamBuffer = streamBuffer.substring(lastLessThan);
+                } else {
+                  thinkingBuffer += streamBuffer;
+                  streamBuffer = '';
+                }
+                
+                yield {
+                  type: GeminiEventType.Thought,
+                  value: { subject: 'Reasoning', description: thinkingBuffer.trim() + '...' },
+                };
+                break;
+              } else {
+                // End of thinking
+                thinkingBuffer += streamBuffer.substring(0, thinkEndIdx);
+                yield {
+                  type: GeminiEventType.Thought,
+                  value: { subject: 'Reasoning', description: thinkingBuffer.trim() },
+                };
+                thinkingBuffer = '';
+                inThinkingBlock = false;
+                streamBuffer = streamBuffer.substring(thinkEndIdx + 8);
+              }
+            }
+          }
         }
 
         // Handle function calls (requesting tool execution)

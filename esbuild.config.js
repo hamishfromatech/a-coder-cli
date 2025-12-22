@@ -18,7 +18,7 @@ esbuild
   .build({
     entryPoints: ['packages/cli/index.ts'],
     bundle: true,
-    outfile: 'bundle/aCoder.js',
+    outfile: 'bundle/a-coder.js',
     platform: 'node',
     format: 'esm',
     define: {

@@ -63,5 +63,5 @@ export const ContextSummaryDisplay: React.FC<ContextSummaryDisplayProps> = ({
     }
   }
 
-  return <Text color={Colors.Gray}>{summaryText}</Text>;
+  return <Text color={Colors.Gray} wrap="wrap">{summaryText}</Text>;
 };

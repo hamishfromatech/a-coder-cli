@@ -7,22 +7,32 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { Colors } from '../colors.js';
+import { useTerminalSize } from '../hooks/useTerminalSize.js';
 
 interface OpenAIKeyPromptProps {
   onSubmit: (apiKey: string, baseUrl: string, model: string) => void;
   onCancel: () => void;
+  initialApiKey?: string;
+  initialBaseUrl?: string;
+  initialModel?: string;
 }
 
 export function OpenAIKeyPrompt({
   onSubmit,
   onCancel,
+  initialApiKey = '',
+  initialBaseUrl = '',
+  initialModel = '',
 }: OpenAIKeyPromptProps): React.JSX.Element {
-  const [apiKey, setApiKey] = useState('');
-  const [baseUrl, setBaseUrl] = useState('');
-  const [model, setModel] = useState('');
+  const [apiKey, setApiKey] = useState(initialApiKey);
+  const [baseUrl, setBaseUrl] = useState(initialBaseUrl);
+  const [model, setModel] = useState(initialModel);
   const [currentField, setCurrentField] = useState<
     'apiKey' | 'baseUrl' | 'model'
   >('apiKey');
+
+  const { columns: terminalWidth } = useTerminalSize();
+  const isNarrow = terminalWidth < 60;
 
   useInput((input, key) => {
     // 过滤粘贴相关的控制序列
@@ -123,6 +133,38 @@ export function OpenAIKeyPrompt({
     }
   });
 
+  const renderInputField = (
+    label: string,
+    value: string,
+    field: 'apiKey' | 'baseUrl' | 'model',
+  ) => {
+    const isSelected = currentField === field;
+    const labelWidth = 12;
+    const availableWidth = Math.max(10, terminalWidth - labelWidth - 10);
+    
+    // Truncate from the beginning if value is too long
+    let displayValue = value;
+    if (value.length > availableWidth) {
+      displayValue = '...' + value.slice(-(availableWidth - 3));
+    }
+
+    return (
+      <Box marginTop={1} flexDirection={isNarrow ? 'column' : 'row'}>
+        <Box width={isNarrow ? undefined : labelWidth}>
+          <Text color={isSelected ? Colors.AccentBlue : Colors.Gray}>
+            {label}:
+          </Text>
+        </Box>
+        <Box flexGrow={1} marginLeft={isNarrow ? 2 : 0}>
+          <Text>
+            {isSelected ? '> ' : '  '}
+            {displayValue || ' '}
+          </Text>
+        </Box>
+      </Box>
+    );
+  };
+
   return (
     <Box
       borderStyle="round"
@@ -135,60 +177,20 @@ export function OpenAIKeyPrompt({
         OpenAI Configuration Required
       </Text>
       <Box marginTop={1}>
-        <Text>
+        <Text wrap="wrap">
           Please enter your OpenAI configuration. You can get an API key from{' '}
           <Text color={Colors.AccentBlue}>
             https://platform.openai.com/api-keys
           </Text>
         </Text>
       </Box>
-      <Box marginTop={1} flexDirection="row">
-        <Box width={12}>
-          <Text
-            color={currentField === 'apiKey' ? Colors.AccentBlue : Colors.Gray}
-          >
-            API Key:
-          </Text>
-        </Box>
-        <Box flexGrow={1}>
-          <Text>
-            {currentField === 'apiKey' ? '> ' : '  '}
-            {apiKey || ' '}
-          </Text>
-        </Box>
-      </Box>
-      <Box marginTop={1} flexDirection="row">
-        <Box width={12}>
-          <Text
-            color={currentField === 'baseUrl' ? Colors.AccentBlue : Colors.Gray}
-          >
-            Base URL:
-          </Text>
-        </Box>
-        <Box flexGrow={1}>
-          <Text>
-            {currentField === 'baseUrl' ? '> ' : '  '}
-            {baseUrl}
-          </Text>
-        </Box>
-      </Box>
-      <Box marginTop={1} flexDirection="row">
-        <Box width={12}>
-          <Text
-            color={currentField === 'model' ? Colors.AccentBlue : Colors.Gray}
-          >
-            Model:
-          </Text>
-        </Box>
-        <Box flexGrow={1}>
-          <Text>
-            {currentField === 'model' ? '> ' : '  '}
-            {model}
-          </Text>
-        </Box>
-      </Box>
+      
+      {renderInputField('API Key', apiKey, 'apiKey')}
+      {renderInputField('Base URL', baseUrl, 'baseUrl')}
+      {renderInputField('Model', model, 'model')}
+
       <Box marginTop={1}>
-        <Text color={Colors.Gray}>
+        <Text color={Colors.Gray} wrap="wrap">
           Press Enter to continue, Tab/↑↓ to navigate, Esc to cancel
         </Text>
       </Box>

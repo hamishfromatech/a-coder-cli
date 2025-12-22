@@ -20,7 +20,7 @@ import stripJsonComments from 'strip-json-comments';
 import { DefaultLight } from '../ui/themes/default-light.js';
 import { DefaultDark } from '../ui/themes/default.js';
 
-export const SETTINGS_DIRECTORY_NAME = '.aCoder';
+export const SETTINGS_DIRECTORY_NAME = '.a-coder';
 export const USER_SETTINGS_DIR = path.join(homedir(), SETTINGS_DIRECTORY_NAME);
 export const USER_SETTINGS_PATH = path.join(USER_SETTINGS_DIR, 'settings.json');
 
@@ -34,7 +34,7 @@ function getSystemSettingsPath(): string {
   } else if (platform() === 'win32') {
     return 'C:\\ProgramData\\a-coder-cli\\settings.json';
   } else {
-    return '/etc/a-coder-cli/settings.json';
+    return '/etc/a-coder-cli\\settings.json';
   }
 }
 
@@ -146,11 +146,37 @@ export class LoadedSettings {
   }
 
   private computeMergedSettings(): Settings {
-    const merged = {
-      ...this.user.settings,
-      ...this.workspace.settings,
-      ...this.system.settings,
+    // Original precedence: User < Workspace < System
+    const merged: Settings = {
+      ...(this.user?.settings || {}),
+      ...(this.workspace?.settings || {}),
+      ...(this.system?.settings || {}),
     };
+
+    // Deep merge for complex objects to avoid complete overwrites
+    // Precedence: System overrides Workspace, Workspace overrides User
+    const deepMerge = (key: keyof Settings) => {
+      const u = this.user?.settings?.[key];
+      const w = this.workspace?.settings?.[key];
+      const s = this.system?.settings?.[key];
+      
+      const isObject = (val: any) => val && typeof val === 'object' && !Array.isArray(val);
+
+      if (isObject(u) || isObject(w) || isObject(s)) {
+        merged[key] = {
+          ...(isObject(u) ? (u as object) : {}),
+          ...(isObject(w) ? (w as object) : {}),
+          ...(isObject(s) ? (s as object) : {}),
+        } as any;
+      }
+    };
+
+    deepMerge('aCoder');
+    deepMerge('mcpServers');
+    deepMerge('sampling_params');
+    deepMerge('fileFiltering');
+    deepMerge('accessibility');
+    deepMerge('telemetry');
     
     // Auto-detect auth type if not explicitly set
     if (!merged.selectedAuthType) {
@@ -178,11 +204,10 @@ export class LoadedSettings {
   setValue(
     scope: SettingScope,
     key: keyof Settings,
-    value: string | Record<string, MCPServerConfig> | undefined,
+    value: string | Record<string, MCPServerConfig> | OllamaConfig | undefined,
   ): void {
     const settingsFile = this.forScope(scope);
-    // @ts-expect-error - value can be string | Record<string, MCPServerConfig>
-    settingsFile.settings[key] = value;
+    settingsFile.settings[key] = value as any;
     this._merged = this.computeMergedSettings();
     saveSettings(settingsFile);
   }
@@ -369,8 +394,13 @@ export function loadSettings(workspaceDir: string): LoadedSettings {
           process.env.OLLAMA_BASE_URL = userSettings.aCoder.baseUrl;
           process.env.OPENAI_BASE_URL = userSettings.aCoder.baseUrl;
         }
-        if (userSettings.aCoder.model && !process.env.OLLAMA_MODEL) {
+        if (userSettings.aCoder.model && !process.env.OLLAMA_MODEL && !process.env.OPENAI_MODEL) {
           process.env.OLLAMA_MODEL = userSettings.aCoder.model;
+          process.env.OPENAI_MODEL = userSettings.aCoder.model;
+        }
+        if (userSettings.aCoder.apiKey && !process.env.OLLAMA_API_KEY && !process.env.OPENAI_API_KEY) {
+          process.env.OLLAMA_API_KEY = userSettings.aCoder.apiKey;
+          process.env.OPENAI_API_KEY = userSettings.aCoder.apiKey;
         }
       }
     }

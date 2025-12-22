@@ -21,7 +21,7 @@ import { Content } from '@google/genai';
 import crypto from 'node:crypto';
 import os from 'node:os';
 
-const GEMINI_DIR_NAME = '.aCoder';
+const GEMINI_DIR_NAME = '.a-coder';
 const TMP_DIR_NAME = 'tmp';
 const LOG_FILE_NAME = 'logs.json';
 const CHECKPOINT_FILE_NAME = 'checkpoint.json';

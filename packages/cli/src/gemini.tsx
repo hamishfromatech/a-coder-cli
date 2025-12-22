@@ -196,7 +196,8 @@ export async function main() {
   ];
 
   const shouldBeInteractive =
-    !!argv.promptInteractive || (process.stdin.isTTY && input?.length === 0);
+    !!argv.promptInteractive ||
+    (process.stdin.isTTY && (input?.length === 0 || input?.startsWith('/')));
 
   // Render UI, passing necessary config values. Check that there is no command line question.
   if (shouldBeInteractive) {

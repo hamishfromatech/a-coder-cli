@@ -56,6 +56,13 @@ export const LoadingIndicator: React.FC<LoadingIndicatorProps> = ({
         <Box flexGrow={1}>{/* Spacer */}</Box>
         {rightContent && <Box>{rightContent}</Box>}
       </Box>
+      {thought?.description && (
+        <Box paddingLeft={3} marginTop={0}>
+          <Text italic color={Colors.Gray} wrap="wrap">
+            {thought.description}
+          </Text>
+        </Box>
+      )}
     </Box>
   );
 };

@@ -15,6 +15,9 @@ import {
   setOpenAIApiKey,
   setOpenAIBaseUrl,
   setOpenAIModel,
+  setOllamaApiKey,
+  setOllamaBaseUrl,
+  setOllamaModel,
 } from '../../config/auth.js';
 import { OpenAIKeyPrompt } from './OpenAIKeyPrompt.js';
 
@@ -22,6 +25,7 @@ interface AuthDialogProps {
   onSelect: (authMethod: AuthType | undefined, scope: SettingScope) => void;
   settings: LoadedSettings;
   initialErrorMessage?: string | null;
+  isManualTrigger?: boolean;
 }
 
 function parseDefaultAuthType(
@@ -40,6 +44,7 @@ export function AuthDialog({
   onSelect,
   settings,
   initialErrorMessage,
+  isManualTrigger,
 }: AuthDialogProps): React.JSX.Element {
   const [errorMessage, setErrorMessage] = useState<string | null>(
     initialErrorMessage || null,
@@ -71,8 +76,8 @@ export function AuthDialog({
 
   const handleAuthSelect = (authMethod: AuthType) => {
     const error = validateAuthMethod(authMethod);
-    if (error) {
-      if (authMethod === AuthType.USE_OPENAI && !process.env.OPENAI_API_KEY) {
+    if (error || (authMethod === AuthType.USE_OPENAI && isManualTrigger)) {
+      if (authMethod === AuthType.USE_OPENAI) {
         setShowOpenAIKeyPrompt(true);
         setErrorMessage(null);
       } else {
@@ -89,9 +94,27 @@ export function AuthDialog({
     baseUrl: string,
     model: string,
   ) => {
+    // Set environment variables for immediate use
     setOpenAIApiKey(apiKey);
-    setOpenAIBaseUrl(baseUrl);
-    setOpenAIModel(model);
+    setOllamaApiKey(apiKey);
+    if (baseUrl) {
+      setOpenAIBaseUrl(baseUrl);
+      setOllamaBaseUrl(baseUrl);
+    }
+    if (model) {
+      setOpenAIModel(model);
+      setOllamaModel(model);
+    }
+    
+    // Persist to settings file
+    const currentACoderConfig = settings.forScope(SettingScope.User).settings.aCoder || {};
+    settings.setValue(SettingScope.User, 'aCoder', {
+      ...currentACoderConfig,
+      apiKey,
+      baseUrl: baseUrl || currentACoderConfig.baseUrl,
+      model: model || currentACoderConfig.model,
+    });
+
     setShowOpenAIKeyPrompt(false);
     onSelect(AuthType.USE_OPENAI, SettingScope.User);
   };
@@ -129,6 +152,9 @@ export function AuthDialog({
       <OpenAIKeyPrompt
         onSubmit={handleOpenAIKeySubmit}
         onCancel={handleOpenAIKeyCancel}
+        initialApiKey={settings.merged.aCoder?.apiKey || process.env.OPENAI_API_KEY || process.env.OLLAMA_API_KEY}
+        initialBaseUrl={settings.merged.aCoder?.baseUrl || process.env.OPENAI_BASE_URL || process.env.OLLAMA_BASE_URL}
+        initialModel={settings.merged.aCoder?.model || process.env.OPENAI_MODEL || process.env.OLLAMA_MODEL}
       />
     );
   }
@@ -143,7 +169,7 @@ export function AuthDialog({
     >
       <Text bold>Get started</Text>
       <Box marginTop={1}>
-        <Text>How would you like to authenticate for this project?</Text>
+        <Text wrap="wrap">How would you like to authenticate for this project?</Text>
       </Box>
       <Box marginTop={1}>
         <RadioButtonSelect
@@ -155,17 +181,17 @@ export function AuthDialog({
       </Box>
       {errorMessage && (
         <Box marginTop={1}>
-          <Text color={Colors.AccentRed}>{errorMessage}</Text>
+          <Text color={Colors.AccentRed} wrap="wrap">{errorMessage}</Text>
         </Box>
       )}
       <Box marginTop={1}>
         <Text color={Colors.AccentPurple}>(Use Enter to Set Auth)</Text>
       </Box>
       <Box marginTop={1}>
-        <Text>Terms of Services and Privacy Notice for A-Coder CLI</Text>
+        <Text wrap="wrap">Terms of Services and Privacy Notice for A-Coder CLI</Text>
       </Box>
       <Box marginTop={1}>
-        <Text color={Colors.AccentBlue}>
+        <Text color={Colors.AccentBlue} wrap="wrap">
           {'https://github.com/QwenLM/Qwen3-Coder/blob/main/README.md'}
         </Text>
       </Box>

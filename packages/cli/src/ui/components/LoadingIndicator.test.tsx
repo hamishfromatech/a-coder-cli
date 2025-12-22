@@ -202,7 +202,7 @@ describe('<LoadingIndicator />', () => {
     expect(output).toBeDefined();
     if (output) {
       expect(output).toContain('Thinking about something...');
-      expect(output).not.toContain('and other stuff.');
+      expect(output).toContain('and other stuff.');
     }
   });
 

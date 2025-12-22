@@ -19,7 +19,7 @@ const ollamaDarkColors: ColorsTheme = {
   AccentRed: '#F26D78',
   Comment: '#646A71',
   Gray: '#3D4149',
-  GradientColors: ['#FFD700', '#da7959'],
+  GradientColors: ['#2c3e50', '#bdc3c7', '#ffffff', '#bdc3c7', '#2c3e50'],
 };
 
 export const OllamaDark: Theme = new Theme(

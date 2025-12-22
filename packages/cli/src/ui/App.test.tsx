@@ -213,7 +213,7 @@ describe('App UI', () => {
       settings: settings.user || {},
     };
     const workspaceSettingsFile: SettingsFile = {
-      path: '/workspace/.aCoder/settings.json',
+      path: '/workspace/.a-coder/settings.json',
       settings: settings.workspace || {},
     };
     return new LoadedSettings(

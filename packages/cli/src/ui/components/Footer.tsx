@@ -29,6 +29,7 @@ interface FooterProps {
   showMemoryUsage?: boolean;
   promptTokenCount: number;
   nightly: boolean;
+  terminalWidth: number;
 }
 
 export const Footer: React.FC<FooterProps> = ({
@@ -43,23 +44,25 @@ export const Footer: React.FC<FooterProps> = ({
   showMemoryUsage,
   promptTokenCount,
   nightly,
+  terminalWidth,
 }) => {
   const limit = tokenLimit(model);
   const percentage = promptTokenCount / limit;
+  const pathLimit = Math.max(10, Math.floor(terminalWidth * 0.4));
 
   return (
     <Box marginTop={1} justifyContent="space-between" width="100%">
-      <Box>
+      <Box flexShrink={1}>
         {nightly ? (
           <Gradient colors={Colors.GradientColors}>
-            <Text>
-              {shortenPath(tildeifyPath(targetDir), 70)}
+            <Text wrap="truncate">
+              {shortenPath(tildeifyPath(targetDir), pathLimit)}
               {branchName && <Text> ({branchName}*)</Text>}
             </Text>
           </Gradient>
         ) : (
-          <Text color={Colors.LightBlue}>
-            {shortenPath(tildeifyPath(targetDir), 70)}
+          <Text color={Colors.LightBlue} wrap="truncate">
+            {shortenPath(tildeifyPath(targetDir), pathLimit)}
             {branchName && <Text color={Colors.Gray}> ({branchName}*)</Text>}
           </Text>
         )}
@@ -94,8 +97,8 @@ export const Footer: React.FC<FooterProps> = ({
       </Box>
 
       {/* Right Section: Gemini Label and Console Summary */}
-      <Box alignItems="center">
-        <Text color={Colors.AccentBlue}>
+      <Box alignItems="center" flexShrink={1}>
+        <Text color={Colors.AccentBlue} wrap="truncate">
           {' '}
           {model}{' '}
           <Text color={Colors.Gray}>

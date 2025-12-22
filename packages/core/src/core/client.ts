@@ -129,6 +129,14 @@ export class GeminiClient {
     return this.contentGenerator;
   }
 
+  async listModels(): Promise<string[]> {
+    const generator = this.getContentGenerator();
+    if (generator.listModels) {
+      return generator.listModels();
+    }
+    return [];
+  }
+
   async addHistory(content: Content) {
     this.getChat().addHistory(content);
   }

@@ -35,6 +35,8 @@ export interface ContentGenerator {
 
   embedContent(request: EmbedContentParameters): Promise<EmbedContentResponse>;
 
+  listModels?(): Promise<string[]>;
+
   getTier?(): Promise<UserTierId | undefined>;
 }
 

@@ -321,7 +321,7 @@ const RenderCodeBlockInternal: React.FC<RenderCodeBlockProps> = ({
         truncatedContent.join('\n'),
         lang,
         availableTerminalHeight,
-        terminalWidth - CODE_BLOCK_PREFIX_PADDING,
+        Math.max(10, terminalWidth - CODE_BLOCK_PREFIX_PADDING),
       );
       return (
         <Box paddingLeft={CODE_BLOCK_PREFIX_PADDING} flexDirection="column">
@@ -337,7 +337,7 @@ const RenderCodeBlockInternal: React.FC<RenderCodeBlockProps> = ({
     fullContent,
     lang,
     availableTerminalHeight,
-    terminalWidth - CODE_BLOCK_PREFIX_PADDING,
+    Math.max(10, terminalWidth - CODE_BLOCK_PREFIX_PADDING),
   );
 
   return (

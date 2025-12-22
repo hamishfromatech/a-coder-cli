@@ -36,6 +36,7 @@ export interface InputPromptProps {
   commandContext: CommandContext;
   placeholder?: string;
   focus?: boolean;
+  disabled?: boolean;
   inputWidth: number;
   suggestionsWidth: number;
   shellModeActive: boolean;
@@ -52,16 +53,21 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
   commandContext,
   placeholder = '  Type your message or @path/to/file',
   focus = true,
+  disabled = false,
   inputWidth,
   suggestionsWidth,
   shellModeActive,
   setShellModeActive,
 }) => {
   const [justNavigatedHistory, setJustNavigatedHistory] = useState(false);
+  
+  const effectivePlaceholder = disabled ? '  A-Coder is thinking...' : placeholder;
+  const effectiveFocus = focus && !disabled;
+
   const completion = useCompletion(
     buffer.text,
     config.getTargetDir(),
-    isAtCommand(buffer.text) || isSlashCommand(buffer.text),
+    !disabled && (isAtCommand(buffer.text) || isSlashCommand(buffer.text)),
     slashCommands,
     commandContext,
     config,
@@ -386,7 +392,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
       buffer.handleInput(key);
     },
     [
-      focus,
+      effectiveFocus,
       buffer,
       completion,
       shellModeActive,
@@ -400,7 +406,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
     ],
   );
 
-  useKeypress(handleInput, { isActive: focus });
+  useKeypress(handleInput, { isActive: effectiveFocus });
 
   const linesToRender = buffer.viewportVisualLines;
   const [cursorVisualRowAbsolute, cursorVisualColAbsolute] =
@@ -411,23 +417,23 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
     <>
       <Box
         borderStyle="round"
-        borderColor={shellModeActive ? Colors.AccentYellow : Colors.AccentBlue}
+        borderColor={disabled ? Colors.Gray : (shellModeActive ? Colors.AccentYellow : Colors.AccentBlue)}
         paddingX={1}
       >
         <Text
-          color={shellModeActive ? Colors.AccentYellow : Colors.AccentPurple}
+          color={disabled ? Colors.Gray : (shellModeActive ? Colors.AccentYellow : Colors.AccentPurple)}
         >
           {shellModeActive ? '! ' : '> '}
         </Text>
         <Box flexGrow={1} flexDirection="column">
-          {buffer.text.length === 0 && placeholder ? (
-            focus ? (
+          {buffer.text.length === 0 && effectivePlaceholder ? (
+            effectiveFocus ? (
               <Text>
-                {chalk.inverse(placeholder.slice(0, 1))}
-                <Text color={Colors.Gray}>{placeholder.slice(1)}</Text>
+                {chalk.inverse(effectivePlaceholder.slice(0, 1))}
+                <Text color={Colors.Gray}>{effectivePlaceholder.slice(1)}</Text>
               </Text>
             ) : (
-              <Text color={Colors.Gray}>{placeholder}</Text>
+              <Text color={Colors.Gray}>{effectivePlaceholder}</Text>
             )
           ) : (
             linesToRender.map((lineText, visualIdxInRenderedSet) => {

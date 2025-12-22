@@ -153,6 +153,19 @@ export class OpenAIContentGenerator implements ContentGenerator {
   }
 
   /**
+   * List available models from the provider
+   */
+  async listModels(): Promise<string[]> {
+    try {
+      const response = await this.client.models.list();
+      return response.data.map((model) => model.id);
+    } catch (error) {
+      console.error('Error listing models:', error);
+      throw new Error(`Failed to list models: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
    * Strip thinking tags from content
    */
   private stripThinkingTags(content: string): string {
@@ -542,6 +555,7 @@ export class OpenAIContentGenerator implements ContentGenerator {
     this.streamingToolCalls.clear();
 
     for await (const chunk of stream) {
+      // Don't strip thinking tags here, let the Turn handler handle it
       yield this.convertStreamChunkToGeminiFormat(chunk);
     }
   }

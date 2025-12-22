@@ -36,6 +36,7 @@ import { ThemeDialog } from './components/ThemeDialog.js';
 import { AuthDialog } from './components/AuthDialog.js';
 import { AuthInProgress } from './components/AuthInProgress.js';
 import { EditorSettingsDialog } from './components/EditorSettingsDialog.js';
+import { ModelDialog } from './components/ModelDialog.js';
 import { Colors } from './colors.js';
 import { Help } from './components/Help.js';
 import { loadHierarchicalGeminiMemory } from '../config/config.js';
@@ -60,6 +61,7 @@ import {
 } from '@a-coder/core';
 import { validateAuthMethod } from '../config/auth.js';
 import { useLogger } from './hooks/useLogger.js';
+import { useModelCommand } from './hooks/useModelCommand.js';
 import { StreamingContext } from './contexts/StreamingContext.js';
 import {
   SessionStatsProvider,
@@ -179,7 +181,11 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
     handleAuthSelect,
     isAuthenticating,
     cancelAuthentication,
+    isManualTrigger,
   } = useAuthCommand(settings, setAuthError, config);
+
+  const { isModelDialogOpen, openModelDialog, handleModelSelect, availableModels } =
+    useModelCommand(config, settings, addItem);
 
   useEffect(() => {
     if (settings.merged.selectedAuthType) {
@@ -381,6 +387,7 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
     setDebugMessage,
     openThemeDialog,
     openAuthDialog,
+    openModelDialog,
     openEditorDialog,
     toggleCorgiMode,
     showToolDescriptions,
@@ -401,11 +408,8 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
   }, []);
 
   const widthFraction = 0.9;
-  const inputWidth = Math.max(
-    20,
-    Math.floor(terminalWidth * widthFraction) - 3,
-  );
-  const suggestionsWidth = Math.max(60, Math.floor(terminalWidth * 0.8));
+  const inputWidth = Math.max(20, terminalWidth - 8);
+  const suggestionsWidth = Math.max(20, terminalWidth - 10);
 
   const buffer = useTextBuffer({
     initialText: '',
@@ -577,7 +581,10 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
     fetchUserMessages();
   }, [history, logger]);
 
-  const isInputActive = streamingState === StreamingState.Idle && !initError;
+  const isInputActive = !initError;
+  const isInputFocused =
+    streamingState === StreamingState.Idle ||
+    streamingState === StreamingState.Responding;
 
   const handleClearScreen = useCallback(() => {
     clearItems();
@@ -690,14 +697,14 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
       </Box>
     );
   }
-  const mainAreaWidth = Math.floor(terminalWidth * 0.9);
+  const mainAreaWidth = Math.max(20, terminalWidth - 4);
   const debugConsoleMaxHeight = Math.floor(Math.max(terminalHeight * 0.2, 5));
   // Arbitrary threshold to ensure that items in the static area are large
   // enough but not too large to make the terminal hard to use.
   const staticAreaMaxItemHeight = Math.max(terminalHeight * 4, 100);
   return (
     <StreamingContext.Provider value={streamingState}>
-      <Box flexDirection="column" marginBottom={1} width="90%">
+      <Box flexDirection="column" marginBottom={1} width={terminalWidth} paddingX={2}>
         {/* Move UpdateNotification outside Static so it can re-render when updateMessage changes */}
         {updateMessage && <UpdateNotification message={updateMessage} />}
 
@@ -828,6 +835,17 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
                 onSelect={handleAuthSelect}
                 settings={settings}
                 initialErrorMessage={authError}
+                isManualTrigger={isManualTrigger}
+              />
+            </Box>
+          ) : isModelDialogOpen ? (
+            <Box flexDirection="column">
+              <ModelDialog
+                onSelect={handleModelSelect}
+                currentModel={currentModel}
+                availableModels={availableModels}
+                settings={settings}
+                availableTerminalHeight={availableTerminalHeight}
               />
             </Box>
           ) : isEditorDialogOpen ? (
@@ -917,21 +935,21 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
                 </OverflowProvider>
               )}
 
-              {isInputActive && (
-                <InputPrompt
-                  buffer={buffer}
-                  inputWidth={inputWidth}
-                  suggestionsWidth={suggestionsWidth}
-                  onSubmit={handleFinalSubmit}
-                  userMessages={userMessages}
-                  onClearScreen={handleClearScreen}
-                  config={config}
-                  slashCommands={slashCommands}
-                  commandContext={commandContext}
-                  shellModeActive={shellModeActive}
-                  setShellModeActive={setShellModeActive}
-                />
-              )}
+              <InputPrompt
+                buffer={buffer}
+                inputWidth={inputWidth}
+                suggestionsWidth={suggestionsWidth}
+                onSubmit={handleFinalSubmit}
+                userMessages={userMessages}
+                onClearScreen={handleClearScreen}
+                config={config}
+                slashCommands={slashCommands}
+                commandContext={commandContext}
+                shellModeActive={shellModeActive}
+                setShellModeActive={setShellModeActive}
+                disabled={!isInputActive}
+                focus={isInputFocused}
+              />
             </>
           )}
 
@@ -981,6 +999,7 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
             }
             promptTokenCount={sessionStats.lastPromptTokenCount}
             nightly={nightly}
+            terminalWidth={terminalWidth}
           />
         </Box>
       </Box>

@@ -36,9 +36,9 @@ export const TableRenderer: React.FC<TableRendererProps> = ({
   // Ensure table fits within terminal width
   const totalWidth = columnWidths.reduce((sum, width) => sum + width + 1, 1);
   const scaleFactor =
-    totalWidth > terminalWidth ? terminalWidth / totalWidth : 1;
+    totalWidth > terminalWidth ? (terminalWidth - 5) / totalWidth : 1;
   const adjustedWidths = columnWidths.map((width) =>
-    Math.floor(width * scaleFactor),
+    Math.max(3, Math.floor(width * scaleFactor)),
   );
 
   // Helper function to render a cell with proper width
@@ -109,7 +109,7 @@ export const TableRenderer: React.FC<TableRendererProps> = ({
     };
 
     const char = chars[type];
-    const borderParts = adjustedWidths.map((w) => char.horizontal.repeat(w));
+    const borderParts = adjustedWidths.map((w) => char.horizontal.repeat(Math.max(0, w)));
     const border = char.left + borderParts.join(char.middle) + char.right;
 
     return <Text>{border}</Text>;
