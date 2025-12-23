@@ -67,6 +67,7 @@ export interface ToolCallRequestInfo {
   args: Record<string, unknown>;
   isClientInitiated: boolean;
   prompt_id: string;
+  thought_signature?: string;
 }
 
 export interface ToolCallResponseInfo {
@@ -304,6 +305,7 @@ export class Turn {
       `${fnCall.name}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const name = fnCall.name || 'undefined_tool_name';
     const args = (fnCall.args || {}) as Record<string, unknown>;
+    const thought_signature = (fnCall as any).thought_signature;
 
     const toolCallRequest: ToolCallRequestInfo = {
       callId,
@@ -311,6 +313,7 @@ export class Turn {
       args,
       isClientInitiated: false,
       prompt_id: this.prompt_id,
+      thought_signature,
     };
 
     this.pendingToolCalls.push(toolCallRequest);

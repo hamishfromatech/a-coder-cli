@@ -8,7 +8,7 @@ import { useState, useCallback } from 'react';
 import { LoadedSettings, SettingScope } from '../../config/settings.js';
 import { type HistoryItem, MessageType } from '../types.js';
 import { Config } from '@a-coder/core';
-import { setOllamaModel, setOpenAIModel } from '../../config/auth.js';
+import { setOpenAIModel } from '../../config/auth.js';
 
 interface UseModelCommandReturn {
   isModelDialogOpen: boolean;
@@ -83,7 +83,6 @@ export const useModelCommand = (
       try {
         // Update runtime config
         config?.setModel(modelName);
-        setOllamaModel(modelName);
         setOpenAIModel(modelName);
 
         // Update OpenAI client if possible

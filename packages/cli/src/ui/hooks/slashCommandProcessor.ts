@@ -20,7 +20,7 @@ import {
   getMCPServerStatus,
   getErrorMessage,
 } from '@a-coder/core';
-import { setOllamaBaseUrl, setOllamaModel } from '../../config/auth.js';
+import { setOpenAIModel, setOpenAIBaseUrl } from '../../config/auth.js';
 import { useSessionStats } from '../contexts/SessionContext.js';
 import {
   Message,
@@ -825,7 +825,7 @@ export const useSlashCommandProcessor = (
 
           // Set the model both in config and environment
           config?.setModel(modelName);
-          setOllamaModel(modelName);
+          setOpenAIModel(modelName);
           
           // Update the OpenAI client to use the new model
           try {
@@ -877,7 +877,7 @@ export const useSlashCommandProcessor = (
         action: async (_mainCommand, _subCommand, args) => {
           const providerUrl = (_subCommand || args || '').trim();
           if (!providerUrl) {
-            const currentUrl = process.env.OLLAMA_BASE_URL || process.env.OPENAI_BASE_URL || 'http://localhost:11434/v1';
+            const currentUrl = process.env.OPENAI_BASE_URL || 'http://localhost:11434/v1';
             addMessage({
               type: MessageType.INFO,
               content: `Current provider URL: ${currentUrl}\nUsage: /provider <url> or /url <url>`,
@@ -886,9 +886,8 @@ export const useSlashCommandProcessor = (
             return;
           }
 
-          // Set the base URL in both environment variables
-          setOllamaBaseUrl(providerUrl);
-          process.env.OPENAI_BASE_URL = providerUrl;
+          // Set the base URL in environment variables
+          setOpenAIBaseUrl(providerUrl);
           
           // Update the OpenAI client to use the new URL
           try {

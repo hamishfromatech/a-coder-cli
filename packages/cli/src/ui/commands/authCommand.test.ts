@@ -17,18 +17,14 @@ describe('authCommand', () => {
     mockContext = createMockCommandContext();
   });
 
-  it('should clear selectedAuthType and return a dialog action', () => {
+  it('should return a dialog action', () => {
     if (!authCommand.action) {
       throw new Error('The auth command must have an action.');
     }
 
     const result = authCommand.action(mockContext, '');
 
-    expect(mockContext.services.settings.setValue).toHaveBeenCalledWith(
-      SettingScope.User,
-      'selectedAuthType',
-      undefined,
-    );
+    expect(mockContext.services.settings.setValue).not.toHaveBeenCalled();
     expect(result).toEqual({
       type: 'dialog',
       dialog: 'auth',

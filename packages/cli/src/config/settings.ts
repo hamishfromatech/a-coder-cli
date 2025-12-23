@@ -180,7 +180,7 @@ export class LoadedSettings {
     
     // Auto-detect auth type if not explicitly set
     if (!merged.selectedAuthType) {
-      if (process.env.OLLAMA_API_KEY !== undefined || process.env.OLLAMA_BASE_URL || process.env.OPENAI_API_KEY || process.env.OPENAI_BASE_URL) {
+      if (process.env.OPENAI_API_KEY || process.env.OPENAI_BASE_URL) {
         merged.selectedAuthType = AuthType.USE_OPENAI;
       }
     }
@@ -313,14 +313,14 @@ export function loadOllamaConfig(): OllamaConfig {
       const config = JSON.parse(stripJsonComments(configContent)) as OllamaConfig;
       
       // Set environment variables from config if not already set
-      if (config.baseUrl && !process.env.OLLAMA_BASE_URL && !process.env.OPENAI_BASE_URL) {
-        process.env.OLLAMA_BASE_URL = config.baseUrl;
+      if (config.baseUrl && !process.env.OPENAI_BASE_URL) {
+        process.env.OPENAI_BASE_URL = config.baseUrl;
       }
-      if (config.model && !process.env.OLLAMA_MODEL && !process.env.OPENAI_MODEL) {
-        process.env.OLLAMA_MODEL = config.model;
+      if (config.model && !process.env.OPENAI_MODEL) {
+        process.env.OPENAI_MODEL = config.model;
       }
-      if (config.apiKey && !process.env.OLLAMA_API_KEY && !process.env.OPENAI_API_KEY) {
-        process.env.OLLAMA_API_KEY = config.apiKey;
+      if (config.apiKey && !process.env.OPENAI_API_KEY) {
+        process.env.OPENAI_API_KEY = config.apiKey;
       }
       
       return config;
@@ -388,18 +388,15 @@ export function loadSettings(workspaceDir: string): LoadedSettings {
         userSettings.theme = DefaultDark.name;
       }
       
-      // Apply Ollama settings to environment if not already set
+      // Apply OpenAI settings to environment if not already set
       if (userSettings.aCoder) {
-        if (userSettings.aCoder.baseUrl && !process.env.OLLAMA_BASE_URL && !process.env.OPENAI_BASE_URL) {
-          process.env.OLLAMA_BASE_URL = userSettings.aCoder.baseUrl;
+        if (userSettings.aCoder.baseUrl && !process.env.OPENAI_BASE_URL) {
           process.env.OPENAI_BASE_URL = userSettings.aCoder.baseUrl;
         }
-        if (userSettings.aCoder.model && !process.env.OLLAMA_MODEL && !process.env.OPENAI_MODEL) {
-          process.env.OLLAMA_MODEL = userSettings.aCoder.model;
+        if (userSettings.aCoder.model && !process.env.OPENAI_MODEL) {
           process.env.OPENAI_MODEL = userSettings.aCoder.model;
         }
-        if (userSettings.aCoder.apiKey && !process.env.OLLAMA_API_KEY && !process.env.OPENAI_API_KEY) {
-          process.env.OLLAMA_API_KEY = userSettings.aCoder.apiKey;
+        if (userSettings.aCoder.apiKey && !process.env.OPENAI_API_KEY) {
           process.env.OPENAI_API_KEY = userSettings.aCoder.apiKey;
         }
       }

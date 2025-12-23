@@ -126,13 +126,16 @@ function createFunctionResponsePart(
   callId: string,
   toolName: string,
   output: string,
+  thought_signature?: string,
 ): Part {
   return {
     functionResponse: {
       id: callId,
       name: toolName,
       response: { output },
-    },
+      // Attach thought_signature to the function response
+      thought_signature,
+    } as any,
   };
 }
 
@@ -140,6 +143,7 @@ export function convertToFunctionResponse(
   toolName: string,
   callId: string,
   llmContent: PartListUnion,
+  thought_signature?: string,
 ): PartListUnion {
   const contentToProcess =
     Array.isArray(llmContent) && llmContent.length === 1
@@ -147,7 +151,7 @@ export function convertToFunctionResponse(
       : llmContent;
 
   if (typeof contentToProcess === 'string') {
-    return createFunctionResponsePart(callId, toolName, contentToProcess);
+    return createFunctionResponsePart(callId, toolName, contentToProcess, thought_signature);
   }
 
   if (Array.isArray(contentToProcess)) {
@@ -155,6 +159,7 @@ export function convertToFunctionResponse(
       callId,
       toolName,
       'Tool execution succeeded.',
+      thought_signature,
     );
     return [functionResponse, ...contentToProcess];
   }
@@ -166,9 +171,12 @@ export function convertToFunctionResponse(
         getResponseTextFromParts(
           contentToProcess.functionResponse.response.content as Part[],
         ) || '';
-      return createFunctionResponsePart(callId, toolName, stringifiedOutput);
+      return createFunctionResponsePart(callId, toolName, stringifiedOutput, thought_signature);
     }
     // It's a functionResponse that we should pass through as is.
+    if (thought_signature) {
+      (contentToProcess.functionResponse as any).thought_signature = thought_signature;
+    }
     return contentToProcess;
   }
 
@@ -181,12 +189,13 @@ export function convertToFunctionResponse(
       callId,
       toolName,
       `Binary content of type ${mimeType} was processed.`,
+      thought_signature,
     );
     return [functionResponse, contentToProcess];
   }
 
   if (contentToProcess.text !== undefined) {
-    return createFunctionResponsePart(callId, toolName, contentToProcess.text);
+    return createFunctionResponsePart(callId, toolName, contentToProcess.text, thought_signature);
   }
 
   // Default case for other kinds of parts.
@@ -194,6 +203,7 @@ export function convertToFunctionResponse(
     callId,
     toolName,
     'Tool execution succeeded.',
+    thought_signature,
   );
 }
 
@@ -208,7 +218,8 @@ const createErrorResponse = (
       id: request.callId,
       name: request.name,
       response: { error: error.message },
-    },
+      thought_signature: request.thought_signature,
+    } as any,
   },
   resultDisplay: error.message,
 });
@@ -348,8 +359,9 @@ export class CoreToolScheduler {
                   response: {
                     error: `[Operation Cancelled] Reason: ${auxiliaryData}`,
                   },
+                  thought_signature: currentCall.request.thought_signature,
                 },
-              },
+              } as any,
               resultDisplay: undefined,
               error: undefined,
             },
@@ -660,6 +672,7 @@ export class CoreToolScheduler {
               toolName,
               callId,
               toolResult.llmContent,
+              scheduledCall.request.thought_signature,
             );
             const successResponse: ToolCallResponseInfo = {
               callId,

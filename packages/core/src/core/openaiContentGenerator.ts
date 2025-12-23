@@ -39,6 +39,7 @@ interface OpenAIToolCall {
     name: string;
     arguments: string;
   };
+  thought_signature?: string;
 }
 
 interface OpenAIMessage {
@@ -46,6 +47,7 @@ interface OpenAIMessage {
   content: string | null;
   tool_calls?: OpenAIToolCall[];
   tool_call_id?: string;
+  thought_signature?: string;
 }
 
 interface OpenAIUsage {
@@ -58,6 +60,7 @@ interface OpenAIChoice {
   index: number;
   message: OpenAIMessage;
   finish_reason: string;
+  thought_signature?: string;
 }
 
 interface OpenAIRequestFormat {
@@ -76,6 +79,7 @@ interface OpenAIResponseFormat {
   model: string;
   choices: OpenAIChoice[];
   usage?: OpenAIUsage;
+  thought_signature?: string;
 }
 
 export class OpenAIContentGenerator implements ContentGenerator {
@@ -88,6 +92,7 @@ export class OpenAIContentGenerator implements ContentGenerator {
       id?: string;
       name?: string;
       arguments: string;
+      thought_signature?: string;
     }
   > = new Map();
 
@@ -101,13 +106,12 @@ export class OpenAIContentGenerator implements ContentGenerator {
   }
 
   private initializeClient(): void {
-    const baseURL = process.env.OLLAMA_BASE_URL || process.env.OPENAI_BASE_URL || 'http://localhost:11434/v1';
+    const baseURL = process.env.OPENAI_BASE_URL || 'http://localhost:11434/v1';
     
     // Debug logging
     console.log('[DEBUG] OpenAI Content Generator initialized with:');
     console.log('[DEBUG] - baseURL:', baseURL);
     console.log('[DEBUG] - model:', this.model);
-    console.log('[DEBUG] - OLLAMA_BASE_URL:', process.env.OLLAMA_BASE_URL);
     console.log('[DEBUG] - OPENAI_BASE_URL:', process.env.OPENAI_BASE_URL);
 
     // Configure timeout settings - using progressive timeouts
@@ -134,6 +138,12 @@ export class OpenAIContentGenerator implements ContentGenerator {
       baseURL,
       timeout: timeoutConfig.timeout,
       maxRetries: timeoutConfig.maxRetries,
+      defaultHeaders: baseURL.includes('openrouter.ai')
+        ? {
+            'HTTP-Referer': 'https://github.com/hamishfromatech/ollama-code',
+            'X-Title': 'A-Coder CLI',
+          }
+        : undefined,
     });
   }
 
@@ -156,11 +166,18 @@ export class OpenAIContentGenerator implements ContentGenerator {
    * List available models from the provider
    */
   async listModels(): Promise<string[]> {
+    const baseURL = this.client.baseURL;
     try {
       const response = await this.client.models.list();
       return response.data.map((model) => model.id);
     } catch (error) {
-      console.error('Error listing models:', error);
+      console.error(`Error listing models from ${baseURL}:`, error);
+      if (error instanceof Error) {
+        // Provide specific advice for common providers
+        if (baseURL.includes('openrouter.ai') && !baseURL.includes('/api/v1')) {
+          throw new Error(`Failed to list models: It looks like you're using OpenRouter. Try setting the provider URL to "https://openrouter.ai/api/v1" (notice the "/api" part).\nOriginal error: ${error.message}`);
+        }
+      }
       throw new Error(`Failed to list models: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -219,22 +236,33 @@ export class OpenAIContentGenerator implements ContentGenerator {
       // 3. Default values (lowest priority)
       const samplingParams = this.buildSamplingParameters(request);
 
-      const createParams: Parameters<
-        typeof this.client.chat.completions.create
-      >[0] = {
+      const createParams: any = {
         model: this.model,
         messages,
         ...samplingParams,
       };
+
+      if (this.client.baseURL.includes('openrouter.ai')) {
+        createParams.include_reasoning = true;
+      }
 
       if (request.config?.tools) {
         createParams.tools = await this.convertGeminiToolsToOpenAI(
           request.config.tools,
         );
       }
+
+      if (this.config.getDebugMode()) {
+        console.log('[DEBUG] OpenAI Request Params:', JSON.stringify(createParams, null, 2));
+      }
+
       const completion = (await this.client.chat.completions.create(
         createParams,
       )) as ChatCompletion;
+
+      if (this.config.getDebugMode()) {
+        console.log('[DEBUG] OpenAI Response:', JSON.stringify(completion, null, 2));
+      }
 
       const response = this.convertToGeminiFormat(completion);
       const durationMs = Date.now() - startTime;
@@ -260,6 +288,13 @@ export class OpenAIContentGenerator implements ContentGenerator {
       return response;
     } catch (error) {
       const durationMs = Date.now() - startTime;
+
+      if (this.config.getDebugMode()) {
+        console.log('[DEBUG] OpenAI API Error:', error);
+        if (error && typeof error === 'object' && 'response' in error) {
+          console.log('[DEBUG] OpenAI Error Response:', JSON.stringify((error as any).response?.data || (error as any).response || {}, null, 2));
+        }
+      }
 
       // Debug logging for connection errors
       console.log('[DEBUG] OpenAI API call failed:');
@@ -349,14 +384,16 @@ export class OpenAIContentGenerator implements ContentGenerator {
       // Build sampling parameters with clear priority
       const samplingParams = this.buildSamplingParameters(request);
 
-      const createParams: Parameters<
-        typeof this.client.chat.completions.create
-      >[0] = {
+      const createParams: any = {
         model: this.model,
         messages,
         ...samplingParams,
         stream: true,
       };
+
+      if (this.client.baseURL.includes('openrouter.ai')) {
+        createParams.include_reasoning = true;
+      }
 
       if (request.config?.tools) {
         createParams.tools = await this.convertGeminiToolsToOpenAI(
@@ -364,10 +401,13 @@ export class OpenAIContentGenerator implements ContentGenerator {
         );
       }
 
+      if (this.config.getDebugMode()) {
+        console.log('[DEBUG] OpenAI Stream Request Params:', JSON.stringify(createParams, null, 2));
+      }
 
       const stream = (await this.client.chat.completions.create(
         createParams,
-      )) as AsyncIterable<ChatCompletionChunk>;
+      )) as any as AsyncIterable<ChatCompletionChunk>;
 
       const originalStream = this.streamGenerator(stream);
 
@@ -414,6 +454,13 @@ export class OpenAIContentGenerator implements ContentGenerator {
           }
         } catch (error) {
           const durationMs = Date.now() - startTime;
+
+          if (this.config.getDebugMode()) {
+            console.log('[DEBUG] OpenAI Stream Error:', error);
+            if (error && typeof error === 'object' && 'response' in error) {
+              console.log('[DEBUG] OpenAI Error Response:', JSON.stringify((error as any).response?.data || (error as any).response || {}, null, 2));
+            }
+          }
 
           // Identify timeout errors specifically for streaming
           const isTimeoutError = this.isTimeoutError(error);
@@ -872,32 +919,56 @@ export class OpenAIContentGenerator implements ContentGenerator {
           // Handle function responses (tool results)
           if (functionResponses.length > 0) {
             for (const funcResponse of functionResponses) {
-              messages.push({
+              const openAIToolMessage: OpenAIMessage = {
                 role: 'tool' as const,
                 tool_call_id: funcResponse.id || '',
                 content:
                   typeof funcResponse.response === 'string'
                     ? funcResponse.response
                     : JSON.stringify(funcResponse.response),
-              });
+              };
+              
+              // Include thought_signature if available in the Gemini part or content
+              const thoughtSignature = (funcResponse as any).thought_signature || (content as any).thought_signature;
+              if (thoughtSignature) {
+                openAIToolMessage.thought_signature = thoughtSignature;
+              }
+              
+              messages.push(openAIToolMessage as any);
             }
           }
           // Handle model messages with function calls
           else if (content.role === 'model' && functionCalls.length > 0) {
-            const toolCalls = functionCalls.map((fc, index) => ({
-              id: fc.id || `call_${index}`,
-              type: 'function' as const,
-              function: {
-                name: fc.name || '',
-                arguments: JSON.stringify(fc.args || {}),
-              },
-            }));
+            const toolCalls = functionCalls.map((fc, index) => {
+              const toolCall: OpenAIToolCall = {
+                id: fc.id || `call_${index}`,
+                type: 'function' as const,
+                function: {
+                  name: fc.name || '',
+                  arguments: JSON.stringify(fc.args || {}),
+                },
+              };
+              
+              // Include thought_signature in the tool call if available
+              if ((fc as any).thought_signature) {
+                toolCall.thought_signature = (fc as any).thought_signature;
+              }
+              
+              return toolCall;
+            });
 
-            messages.push({
+            const assistantMessage: OpenAIMessage = {
               role: 'assistant' as const,
               content: textParts.join('\n') || null,
               tool_calls: toolCalls,
-            });
+            };
+            
+            // Also include at message level if available
+            if ((content as any).thought_signature) {
+              assistantMessage.thought_signature = (content as any).thought_signature;
+            }
+
+            messages.push(assistantMessage as any);
           }
           // Handle regular text messages
           else {
@@ -907,7 +978,11 @@ export class OpenAIContentGenerator implements ContentGenerator {
                 : ('user' as const);
             const text = textParts.join('\n');
             if (text) {
-              messages.push({ role, content: text });
+              const message: OpenAIMessage = { role, content: text };
+              if ((content as any).thought_signature) {
+                message.thought_signature = (content as any).thought_signature;
+              }
+              messages.push(message as any);
             }
           }
         }
@@ -925,7 +1000,11 @@ export class OpenAIContentGenerator implements ContentGenerator {
               typeof p === 'string' ? p : 'text' in p ? p.text : '',
             )
             .join('\n') || '';
-        messages.push({ role, content: text });
+        const message: OpenAIMessage = { role, content: text };
+        if ((content as any).thought_signature) {
+          message.thought_signature = (content as any).thought_signature;
+        }
+        messages.push(message as any);
       }
     }
 
@@ -1148,6 +1227,8 @@ export class OpenAIContentGenerator implements ContentGenerator {
     const response = new GenerateContentResponse();
 
     const parts: Part[] = [];
+    const message = choice.message as OpenAIMessage;
+    const thoughtSignature = message.thought_signature || (choice as any).thought_signature || (openaiResponse as any).thought_signature;
 
     // Handle text content
     if (choice.message.content) {
@@ -1177,7 +1258,9 @@ export class OpenAIContentGenerator implements ContentGenerator {
               id: toolCall.id,
               name: toolCall.function.name,
               args,
-            },
+              // Attach thought_signature to the function call
+              thought_signature: (toolCall as any).thought_signature || thoughtSignature,
+            } as any,
           });
         }
       }
@@ -1188,7 +1271,9 @@ export class OpenAIContentGenerator implements ContentGenerator {
         content: {
           parts,
           role: 'model' as const,
-        },
+          // Also attach to the content object for good measure
+          thought_signature: thoughtSignature,
+        } as any,
         finishReason: this.mapFinishReason(choice.finish_reason || 'stop'),
         index: 0,
         safetyRatings: [],
@@ -1236,6 +1321,7 @@ export class OpenAIContentGenerator implements ContentGenerator {
   ): GenerateContentResponse {
     const choice = chunk.choices?.[0];
     const response = new GenerateContentResponse();
+    const thoughtSignature = (choice as any)?.thought_signature || (chunk as any).thought_signature || (choice?.delta as any)?.thought_signature;
 
     if (choice) {
       const parts: Part[] = [];
@@ -1269,6 +1355,9 @@ export class OpenAIContentGenerator implements ContentGenerator {
           if (toolCall.function?.arguments) {
             accumulatedCall.arguments += toolCall.function.arguments;
           }
+          if ((toolCall as any).thought_signature) {
+            accumulatedCall.thought_signature = (toolCall as any).thought_signature;
+          }
         }
       }
 
@@ -1295,7 +1384,9 @@ export class OpenAIContentGenerator implements ContentGenerator {
                 id: accumulatedCall.id,
                 name: accumulatedCall.name,
                 args,
-              },
+                // Include thought_signature if available
+                thought_signature: accumulatedCall.thought_signature || thoughtSignature,
+              } as any,
             });
           }
         }
@@ -1308,7 +1399,8 @@ export class OpenAIContentGenerator implements ContentGenerator {
           content: {
             parts,
             role: 'model' as const,
-          },
+            thought_signature: thoughtSignature,
+          } as any,
           finishReason: choice.finish_reason
             ? this.mapFinishReason(choice.finish_reason)
             : FinishReason.FINISH_REASON_UNSPECIFIED,

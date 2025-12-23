@@ -15,9 +15,6 @@ import {
   setOpenAIApiKey,
   setOpenAIBaseUrl,
   setOpenAIModel,
-  setOllamaApiKey,
-  setOllamaBaseUrl,
-  setOllamaModel,
 } from '../../config/auth.js';
 import { OpenAIKeyPrompt } from './OpenAIKeyPrompt.js';
 
@@ -50,7 +47,7 @@ export function AuthDialog({
     initialErrorMessage || null,
   );
   const [showOpenAIKeyPrompt, setShowOpenAIKeyPrompt] = useState(false);
-  const items = [{ label: 'OpenAI', value: AuthType.USE_OPENAI }];
+  const items = [{ label: 'OpenAI (Compatible)', value: AuthType.USE_OPENAI }];
 
   const initialAuthIndex = Math.max(
     0,
@@ -94,16 +91,22 @@ export function AuthDialog({
     baseUrl: string,
     model: string,
   ) => {
+    // Auto-correct OpenRouter URL if common mistake is made
+    if (baseUrl && baseUrl.includes('openrouter.ai') && !baseUrl.includes('/api/v1')) {
+      if (baseUrl.endsWith('/v1')) {
+        baseUrl = baseUrl.replace('/v1', '/api/v1');
+      } else if (!baseUrl.includes('/api')) {
+        baseUrl = baseUrl.endsWith('/') ? baseUrl + 'api/v1' : baseUrl + '/api/v1';
+      }
+    }
+
     // Set environment variables for immediate use
     setOpenAIApiKey(apiKey);
-    setOllamaApiKey(apiKey);
     if (baseUrl) {
       setOpenAIBaseUrl(baseUrl);
-      setOllamaBaseUrl(baseUrl);
     }
     if (model) {
       setOpenAIModel(model);
-      setOllamaModel(model);
     }
     
     // Persist to settings file
@@ -152,9 +155,9 @@ export function AuthDialog({
       <OpenAIKeyPrompt
         onSubmit={handleOpenAIKeySubmit}
         onCancel={handleOpenAIKeyCancel}
-        initialApiKey={settings.merged.aCoder?.apiKey || process.env.OPENAI_API_KEY || process.env.OLLAMA_API_KEY}
-        initialBaseUrl={settings.merged.aCoder?.baseUrl || process.env.OPENAI_BASE_URL || process.env.OLLAMA_BASE_URL}
-        initialModel={settings.merged.aCoder?.model || process.env.OPENAI_MODEL || process.env.OLLAMA_MODEL}
+        initialApiKey={settings.merged.aCoder?.apiKey || process.env.OPENAI_API_KEY}
+        initialBaseUrl={settings.merged.aCoder?.baseUrl || process.env.OPENAI_BASE_URL}
+        initialModel={settings.merged.aCoder?.model || process.env.OPENAI_MODEL}
       />
     );
   }

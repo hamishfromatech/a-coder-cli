@@ -11,11 +11,6 @@ export const authCommand: SlashCommand = {
   name: 'auth',
   description: 'change the auth method',
   action: (context, _args): OpenDialogActionReturn => {
-    context.services.settings.setValue(
-      SettingScope.User,
-      'selectedAuthType',
-      undefined,
-    );
     return {
       type: 'dialog',
       dialog: 'auth',

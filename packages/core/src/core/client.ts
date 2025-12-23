@@ -42,11 +42,6 @@ import { ProxyAgent, setGlobalDispatcher } from 'undici';
 import { DEFAULT_GEMINI_FLASH_MODEL } from '../config/models.js';
 import { LoopDetectionService } from '../services/loopDetectionService.js';
 
-function isThinkingSupported(model: string) {
-  if (model.startsWith('gemini-2.5')) return true;
-  return false;
-}
-
 /**
  * Returns the index of the content after the fraction of the total characters in the history.
  *
@@ -247,16 +242,14 @@ export class GeminiClient {
     try {
       const userMemory = this.config.getUserMemory();
       const systemInstruction = getCoreSystemPrompt(userMemory);
-      const generateContentConfigWithThinking = isThinkingSupported(
-        this.config.getModel(),
-      )
-        ? {
-            ...this.generateContentConfig,
-            thinkingConfig: {
-              includeThoughts: true,
-            },
-          }
-        : this.generateContentConfig;
+      // Always enable thinking config - API will ignore it for unsupported models,
+      // and Turn.run() will parse any <thinking> tags from the stream
+      const generateContentConfigWithThinking = {
+        ...this.generateContentConfig,
+        thinkingConfig: {
+          includeThoughts: true,
+        },
+      };
       return new GeminiChat(
         this.config,
         this.getContentGenerator(),
