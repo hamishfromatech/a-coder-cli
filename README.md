@@ -1,6 +1,5 @@
 # A-Coder CLI
 
-![A-Coder CLI Screenshot](./docs/assets/ollama-screenshot.png)
 
 A-Coder CLI is a privacy-focused command-line AI workflow tool forked from [**Qwen Code**](https://github.com/QwenLM/qwen-code), designed to work with locally-hosted [Ollama](https://ollama.com) models for enhanced privacy and data sovereignty. This tool gives you the power of AI-assisted development while keeping your code and data completely under your control.
 
