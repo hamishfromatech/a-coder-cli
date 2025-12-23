@@ -37,18 +37,7 @@ A-Coder CLI is a privacy-focused command-line AI workflow tool forked from [**Qw
 
 ### Installation
 
-```bash
-npm install -g @hamishfromatech/a-coder-cli
-a-coder-cli --version
-```
-
-Then run from anywhere:
-
-```bash
-a-coder-cli
-```
-
-Or install from source:
+install from source:
 
 ```bash
 git clone https://github.com/hamishfromatech/a-coder-cli.git
@@ -194,3 +183,5 @@ This project is forked from [**Qwen Code**](https://github.com/QwenLM/qwen-code)
 ## License
 
 [LICENSE](./LICENSE)
+
+This Codebase is managed by **The A-Tech Corporation PTY LTD.**
