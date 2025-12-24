@@ -388,36 +388,54 @@ export class GeminiClient {
         await reportError(
           error,
           'Error in generateJson: API returned an empty response.',
-          contents,
+          {
+            originalRequestContents: contents,
+            rawApiResult: result,
+          },
           'generateJson-empty-response',
         );
         throw error;
       }
       try {
-        // Try to extract JSON from various formats
+        // 1. First, try to strip thinking tags to avoid confusion during JSON extraction
+        const textWithoutThoughts = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+        
+        // 2. Try to extract JSON from various formats, starting with the cleanest text
+        const extractionCandidates = [textWithoutThoughts, text];
         const extractors = [
           // Match ```json ... ``` or ``` ... ``` blocks
           /```(?:json)?\s*\n?([\s\S]*?)\n?```/,
           // Match inline code blocks `{...}`
           /`(\{[\s\S]*?\})`/,
-          // Match raw JSON objects or arrays
+          // Match raw JSON objects or arrays - try to find the largest/outermost one
           /(\{[\s\S]*\}|\[[\s\S]*\])/,
         ];
 
-        for (const regex of extractors) {
-          const match = text.match(regex);
-          if (match && match[1]) {
-            try {
-              return JSON.parse(match[1].trim());
-            } catch {
-              // Continue to next pattern if parsing fails
-              continue;
+        for (const candidate of extractionCandidates) {
+          if (!candidate) continue;
+          
+          for (const regex of extractors) {
+            const match = candidate.match(regex);
+            if (match && match[1]) {
+              try {
+                return JSON.parse(match[1].trim());
+              } catch {
+                // Continue to next pattern if parsing fails
+                continue;
+              }
             }
+          }
+
+          // If no patterns matched for this candidate, try parsing the entire candidate
+          try {
+            return JSON.parse(candidate.trim());
+          } catch {
+            // Continue to next candidate
           }
         }
 
-        // If no patterns matched, try parsing the entire text
-        return JSON.parse(text.trim());
+        // If we reached here, we couldn't parse anything as JSON
+        throw new Error('No valid JSON found in response');
       } catch (parseError) {
         await reportError(
           parseError,

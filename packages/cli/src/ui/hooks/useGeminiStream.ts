@@ -25,6 +25,7 @@ import {
   UnauthorizedError,
   UserPromptEvent,
   DEFAULT_GEMINI_FLASH_MODEL,
+  ToDoItem,
 } from '@a-coder/core';
 import { type Part, type PartListUnion } from '@google/genai';
 import {
@@ -32,6 +33,7 @@ import {
   HistoryItem,
   HistoryItemWithoutId,
   HistoryItemToolGroup,
+  HistoryItemGeminiThought,
   MessageType,
   SlashCommandProcessorResult,
   ToolCallStatus,
@@ -99,12 +101,15 @@ export const useGeminiStream = (
   const turnCancelledRef = useRef(false);
   const [isResponding, setIsResponding] = useState<boolean>(false);
   const [thought, setThought] = useState<ThoughtSummary | null>(null);
+  const [todos, setTodos] = useState<ToDoItem[]>([]);
   const [queryQueue, setQueryQueue] = useState<
     { query: PartListUnion; prompt_id?: string }[]
   >([]);
   const [pendingHistoryItemRef, setPendingHistoryItem] =
     useStateAndRef<HistoryItemWithoutId | null>(null);
   const processedMemoryToolsRef = useRef<Set<string>>(new Set());
+  const [pendingThoughtRef, setPendingThought] =
+    useStateAndRef<HistoryItemGeminiThought | null>(null);
   const { startNewPrompt, getPromptCount } = useSessionStats();
   const logger = useLogger();
   const gitService = useMemo(() => {
@@ -183,13 +188,28 @@ export const useGeminiStream = (
     return StreamingState.Idle;
   }, [isResponding, toolCalls]);
 
-  useInput((_input, key) => {
-    if (streamingState === StreamingState.Responding && key.escape) {
-      if (turnCancelledRef.current) {
-        return;
-      }
+  const handleEscapeKey = useCallback(() => {
+    if (streamingState === StreamingState.Responding) {
       turnCancelledRef.current = true;
       abortControllerRef.current?.abort();
+      // Add pending thought to history if exists
+      try {
+        if (pendingThoughtRef.current) {
+          const thought = pendingThoughtRef.current;
+          const finalThought = {
+            ...thought,
+            isComplete: thought.isComplete || thought.text.endsWith('...'),
+          };
+          if (finalThought.text.endsWith('...')) {
+            finalThought.text = finalThought.text.slice(0, -3);
+            finalThought.isComplete = true;
+          }
+          addItem(finalThought, Date.now());
+        }
+      } catch (error) {
+        console.error('Error finalizing thought on cancel:', error);
+      }
+      
       if (pendingHistoryItemRef.current) {
         addItem(pendingHistoryItemRef.current, Date.now());
       }
@@ -201,7 +221,22 @@ export const useGeminiStream = (
         Date.now(),
       );
       setPendingHistoryItem(null);
+      setPendingThought(null);
       setIsResponding(false);
+    }
+  }, [
+    streamingState,
+    pendingHistoryItemRef,
+    pendingThoughtRef,
+    addItem,
+    setPendingHistoryItem,
+    setPendingThought,
+    setIsResponding,
+  ]);
+
+  useInput((_input, key) => {
+    if (key.escape) {
+      handleEscapeKey();
     }
   });
 
@@ -376,6 +411,20 @@ export const useGeminiStream = (
       if (turnCancelledRef.current) {
         return;
       }
+      // Add any pending thought to history before cancelling
+      if (pendingThoughtRef.current) {
+        const finalThought = {
+          ...pendingThoughtRef.current,
+          isComplete: pendingThoughtRef.current.isComplete,
+        };
+        // Remove trailing ... if present on incomplete thought
+        if (!finalThought.isComplete && finalThought.text.endsWith('...')) {
+          finalThought.text = finalThought.text.slice(0, -3);
+          finalThought.isComplete = true;
+        }
+        addItem(finalThought, userMessageTimestamp);
+        setPendingThought(null);
+      }
       if (pendingHistoryItemRef.current) {
         if (pendingHistoryItemRef.current.type === 'tool_group') {
           const updatedTools = pendingHistoryItemRef.current.tools.map(
@@ -402,11 +451,29 @@ export const useGeminiStream = (
       );
       setIsResponding(false);
     },
-    [addItem, pendingHistoryItemRef, setPendingHistoryItem],
+    [addItem, pendingHistoryItemRef, setPendingHistoryItem, pendingThoughtRef, setPendingThought],
   );
 
   const handleErrorEvent = useCallback(
     (eventValue: ErrorEvent['value'], userMessageTimestamp: number) => {
+      // Add any pending thought to history before error
+      try {
+        if (pendingThoughtRef.current) {
+          const finalThought = {
+            ...pendingThoughtRef.current,
+            isComplete: pendingThoughtRef.current.isComplete,
+          };
+          // Remove trailing ... if present on incomplete thought
+          if (!finalThought.isComplete && finalThought.text.endsWith('...')) {
+            finalThought.text = finalThought.text.slice(0, -3);
+            finalThought.isComplete = true;
+          }
+          addItem(finalThought, userMessageTimestamp);
+          setPendingThought(null);
+        }
+      } catch (error) {
+        console.error('Error finalizing thought on error:', error);
+      }
       if (pendingHistoryItemRef.current) {
         addItem(pendingHistoryItemRef.current, userMessageTimestamp);
         setPendingHistoryItem(null);
@@ -425,7 +492,7 @@ export const useGeminiStream = (
         userMessageTimestamp,
       );
     },
-    [addItem, pendingHistoryItemRef, setPendingHistoryItem, config],
+    [addItem, pendingHistoryItemRef, setPendingHistoryItem, pendingThoughtRef, setPendingThought, config],
   );
 
   const handleChatCompressionEvent = useCallback(
@@ -468,6 +535,50 @@ export const useGeminiStream = (
     );
   }, [addItem]);
 
+  const handleThoughtEvent = useCallback(
+    (eventValue: ThoughtSummary, _userMessageTimestamp: number) => {
+      // Safe-guard: only process thought event if we have valid data
+      try {
+        if (!eventValue || typeof eventValue !== 'object') {
+          return;
+        }
+        
+        const description = eventValue.description || '';
+        if (typeof description !== 'string' || description.trim().length === 0) {
+          return;
+        }
+
+        const thoughtText = String(description).trim();
+        const isComplete = !thoughtText.endsWith('...');
+        const currentThought = pendingThoughtRef.current;
+
+        // Only update if something actually changed
+        const needsUpdate = 
+          !currentThought ||
+          currentThought.text !== thoughtText ||
+          currentThought.isComplete !== isComplete;
+
+        if (needsUpdate && thoughtText) {
+          const newThought: HistoryItemGeminiThought = {
+            type: 'gemini_thought',
+            text: thoughtText,
+            isComplete,
+          };
+          setPendingThought(newThought);
+        }
+      } catch (error) {
+        console.error('Failed to process thought event:', error);
+        // Silently fail and reset to null
+        try {
+          setPendingThought(null);
+        } catch (resetError) {
+          // Ignore reset errors too
+        }
+      }
+    },
+    [setPendingThought, pendingThoughtRef],
+  );
+
   const processGeminiStreamEvents = useCallback(
     async (
       stream: AsyncIterable<GeminiEvent>,
@@ -479,7 +590,21 @@ export const useGeminiStream = (
       for await (const event of stream) {
         switch (event.type) {
           case ServerGeminiEventType.Thought:
-            setThought(event.value);
+            // Safely handle thought events without failing the stream
+            try {
+              setThought(event.value);
+              handleThoughtEvent(event.value, userMessageTimestamp);
+            } catch (e) {
+              // Silently fail on thought events to not interrupt the stream
+              console.error('Error in thought event:', e);
+              // Also set the thought to null to reset display
+              try {
+                setThought(null);
+                setPendingThought(null);
+              } catch (resetError) {
+                // If resetting fails, just ignore
+              }
+            }
             break;
           case ServerGeminiEventType.Content:
             geminiMessageBuffer = handleContentEvent(
@@ -489,6 +614,12 @@ export const useGeminiStream = (
             );
             break;
           case ServerGeminiEventType.ToolCallRequest:
+            if (event.value.name === 'write_todos') {
+              const newTodos = (event.value.args as any).todos as ToDoItem[];
+              if (Array.isArray(newTodos)) {
+                setTodos(newTodos);
+              }
+            }
             toolCallRequests.push(event.value);
             break;
           case ServerGeminiEventType.UserCancelled:
@@ -531,6 +662,7 @@ export const useGeminiStream = (
       scheduleToolCalls,
       handleChatCompressionEvent,
       handleMaxSessionTurnsEvent,
+      handleThoughtEvent,
     ],
   );
 
@@ -562,6 +694,7 @@ export const useGeminiStream = (
       if (!options?.isContinuation) {
         setModelSwitchedFromQuotaError(false);
         config.setQuotaErrorOccurred(false);
+        setTodos([]);
       }
 
       abortControllerRef.current = new AbortController();
@@ -607,6 +740,25 @@ export const useGeminiStream = (
           return;
         }
 
+        // Finalize any pending thought before completing stream
+        try {
+          if (pendingThoughtRef.current && pendingThoughtRef.current.text) {
+            const finalThought = {
+              ...pendingThoughtRef.current,
+              isComplete: pendingThoughtRef.current.isComplete,
+            };
+            // Remove trailing ... if present on incomplete thought
+            if (!finalThought.isComplete && finalThought.text.endsWith('...')) {
+              finalThought.text = finalThought.text.slice(0, -3);
+              finalThought.isComplete = true;
+            }
+            addItem(finalThought, userMessageTimestamp);
+          }
+        } catch (e) {
+          console.error('Error finalizing thought:', e);
+        } finally {
+          setPendingThought(null);
+        }
         if (pendingHistoryItemRef.current) {
           addItem(pendingHistoryItemRef.current, userMessageTimestamp);
           setPendingHistoryItem(null);
@@ -646,6 +798,8 @@ export const useGeminiStream = (
       pendingHistoryItemRef,
       addItem,
       setPendingHistoryItem,
+      pendingThoughtRef,
+      setPendingThought,
       setInitError,
       geminiClient,
       onAuthError,
@@ -803,6 +957,7 @@ export const useGeminiStream = (
   const pendingHistoryItems = [
     pendingHistoryItemRef.current,
     pendingToolCallGroupDisplay,
+    pendingThoughtRef.current,
   ].filter((i) => i !== undefined && i !== null);
 
   useEffect(() => {
@@ -911,5 +1066,6 @@ export const useGeminiStream = (
     initError,
     pendingHistoryItems,
     thought,
+    todos,
   };
 };

@@ -170,6 +170,9 @@ export async function runNonInteractive(
       );
 
       for await (const resp of responseStream) {
+        if (config.getDebugMode()) {
+          console.log('[DEBUG] Non-interactive received stream response chunk');
+        }
         if (abortController.signal.aborted) {
           console.error('Operation cancelled.');
           return;
@@ -179,8 +182,15 @@ export async function runNonInteractive(
           process.stdout.write(textPart);
         }
         if (resp.functionCalls) {
+          if (config.getDebugMode()) {
+            console.log(`[DEBUG] Found ${resp.functionCalls.length} function calls`);
+          }
           functionCalls.push(...resp.functionCalls);
         }
+      }
+
+      if (config.getDebugMode()) {
+        console.log(`[DEBUG] Stream finished. Total function calls: ${functionCalls.length}`);
       }
 
       if (functionCalls.length > 0) {

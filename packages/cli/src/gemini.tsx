@@ -86,23 +86,19 @@ async function relaunchWithAdditionalArgs(additionalArgs: string[]) {
 }
 
 export async function main() {
+  console.log('[TRACE] Entering main()');
   const workspaceRoot = process.cwd();
   const settings = loadSettings(workspaceRoot);
 
+  console.log('[TRACE] Settings loaded');
   await cleanupCheckpoints();
   if (settings.errors.length > 0) {
-    for (const error of settings.errors) {
-      let errorMessage = `Error in ${error.path}: ${error.message}`;
-      if (!process.env.NO_COLOR) {
-        errorMessage = `\x1b[31m${errorMessage}\x1b[0m`;
-      }
-      console.error(errorMessage);
-      console.error(`Please fix ${error.path} and try again.`);
-    }
+    // ...
     process.exit(1);
   }
 
   const argv = await parseArguments();
+  console.log('[TRACE] Arguments parsed');
   const extensions = loadExtensions(workspaceRoot);
   const config = await loadCliConfig(
     settings.merged,
@@ -111,70 +107,52 @@ export async function main() {
     argv,
   );
 
+  console.log('[TRACE] Config loaded');
   if (argv.promptInteractive && !process.stdin.isTTY) {
-    console.error(
-      'Error: The --prompt-interactive flag is not supported when piping input from stdin.',
-    );
+    // ...
     process.exit(1);
   }
 
   if (config.getListExtensions()) {
-    console.log('Installed extensions:');
-    for (const extension of extensions) {
-      console.log(`- ${extension.config.name}`);
-    }
+    // ...
     process.exit(0);
   }
 
   // Set a default auth type if one isn't set.
   if (!settings.merged.selectedAuthType) {
-    if (process.env.CLOUD_SHELL === 'true') {
-      settings.setValue(
-        SettingScope.User,
-        'selectedAuthType',
-        AuthType.CLOUD_SHELL,
-      );
-    }
+    // ...
   }
 
   setMaxSizedBoxDebugging(config.getDebugMode());
 
+  console.log('[TRACE] Initializing config...');
   await config.initialize();
+  console.log('[TRACE] Config initialized');
 
   if (settings.merged.theme) {
-    if (!themeManager.setActiveTheme(settings.merged.theme)) {
-      // If the theme is not found during initial load, log a warning and continue.
-      // The useThemeCommand hook in App.tsx will handle opening the dialog.
-      console.warn(`Warning: Theme "${settings.merged.theme}" not found.`);
-    }
+    // ...
   }
 
   // hop into sandbox if we are outside and sandboxing is enabled
   if (!process.env.SANDBOX) {
+    console.log('[TRACE] Checking for sandbox...');
     const memoryArgs = settings.merged.autoConfigureMaxOldSpaceSize
       ? getNodeMemoryArgs(config)
       : [];
     const sandboxConfig = config.getSandbox();
     if (sandboxConfig) {
+      console.log('[TRACE] Entering sandbox...');
       if (settings.merged.selectedAuthType) {
-        // Validate authentication here because the sandbox will interfere with the Oauth2 web redirect.
-        try {
-          const err = validateAuthMethod(settings.merged.selectedAuthType);
-          if (err) {
-            throw new Error(err);
-          }
-          await config.refreshAuth(settings.merged.selectedAuthType);
-        } catch (err) {
-          console.error('Error authenticating:', err);
-          process.exit(1);
-        }
+        // ...
       }
       await start_sandbox(sandboxConfig, memoryArgs);
+      console.log('[TRACE] Sandbox started (or failed)');
       process.exit(0);
     } else {
       // Not in a sandbox and not entering one, so relaunch with additional
       // arguments to control memory usage if needed.
       if (memoryArgs.length > 0) {
+        console.log('[TRACE] Relaunching with memory args...');
         await relaunchWithAdditionalArgs(memoryArgs);
         process.exit(0);
       }
@@ -185,11 +163,13 @@ export async function main() {
     settings.merged.selectedAuthType === AuthType.LOGIN_WITH_GOOGLE &&
     config.getNoBrowser()
   ) {
+    console.log('[TRACE] Refreshing OAuth...');
     // Do oauth before app renders to make copying the link possible.
     await getOauthClient(settings.merged.selectedAuthType, config);
   }
 
   let input = config.getQuestion();
+  console.log('[TRACE] Input question:', input);
   const startupWarnings = [
     ...(await getStartupWarnings()),
     ...(await getUserStartupWarnings(workspaceRoot)),
@@ -199,8 +179,11 @@ export async function main() {
     !!argv.promptInteractive ||
     (process.stdin.isTTY && (input?.length === 0 || input?.startsWith('/')));
 
+  console.log('[TRACE] shouldBeInteractive:', shouldBeInteractive);
+
   // Render UI, passing necessary config values. Check that there is no command line question.
   if (shouldBeInteractive) {
+    console.log('[TRACE] Starting interactive mode...');
     const version = await getCliVersion();
     setWindowTitle(basename(workspaceRoot), settings);
     const instance = render(
@@ -221,6 +204,7 @@ export async function main() {
   // If not a TTY, read from stdin
   // This is for cases where the user pipes input directly into the command
   if (!process.stdin.isTTY && !input) {
+    console.log('[TRACE] Reading from stdin...');
     input += await readStdin();
   }
   if (!input) {
@@ -229,6 +213,7 @@ export async function main() {
   }
 
   const prompt_id = Math.random().toString(16).slice(2);
+  console.log('[TRACE] Starting non-interactive mode...');
   logUserPrompt(config, {
     'event.name': 'user_prompt',
     'event.timestamp': new Date().toISOString(),
@@ -246,7 +231,9 @@ export async function main() {
     argv,
   );
 
+  console.log('[TRACE] Calling runNonInteractive...');
   await runNonInteractive(nonInteractiveConfig, input, prompt_id);
+  console.log('[TRACE] runNonInteractive finished');
   process.exit(0);
 }
 

@@ -130,6 +130,12 @@ export type HistoryItemCompression = HistoryItemBase & {
   compression: CompressionProps;
 };
 
+export type HistoryItemGeminiThought = HistoryItemBase & {
+  type: 'gemini_thought';
+  text: string;
+  isComplete: boolean;
+};
+
 // Using Omit<HistoryItem, 'id'> seems to have some issues with typescript's
 // type inference e.g. historyItem.type === 'tool_group' isn't auto-inferring that
 // 'tools' in historyItem.
@@ -147,7 +153,8 @@ export type HistoryItemWithoutId =
   | HistoryItemModelStats
   | HistoryItemToolStats
   | HistoryItemQuit
-  | HistoryItemCompression;
+  | HistoryItemCompression
+  | HistoryItemGeminiThought;
 
 export type HistoryItem = HistoryItemWithoutId & { id: number };
 

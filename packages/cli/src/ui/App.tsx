@@ -46,6 +46,7 @@ import { ConsolePatcher } from './utils/ConsolePatcher.js';
 import { registerCleanup } from '../utils/cleanup.js';
 import { DetailedMessagesDisplay } from './components/DetailedMessagesDisplay.js';
 import { HistoryItemDisplay } from './components/HistoryItemDisplay.js';
+import { ToDoList } from './components/ToDoList.js';
 import { ContextSummaryDisplay } from './components/ContextSummaryDisplay.js';
 import { useHistory } from './hooks/useHistoryManager.js';
 import process from 'node:process';
@@ -512,6 +513,7 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
     initError,
     pendingHistoryItems: pendingGeminiHistoryItems,
     thought,
+    todos,
   } = useGeminiStream(
     config.getGeminiClient(),
     history,
@@ -868,6 +870,7 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
             />
           ) : (
             <>
+              <ToDoList todos={todos} />
               <LoadingIndicator
                 thought={
                   streamingState === StreamingState.WaitingForConfirmation ||

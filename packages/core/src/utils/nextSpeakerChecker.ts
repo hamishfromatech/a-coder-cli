@@ -142,12 +142,18 @@ export async function checkNextSpeaker(
     ) {
       return parsedResponse;
     }
-    return null;
+    return {
+      reasoning: 'API returned an empty or invalid response, defaulting to user.',
+      next_speaker: 'user',
+    };
   } catch (error) {
     console.warn(
       'Failed to talk to Gemini endpoint when seeing if conversation should continue.',
       error,
     );
-    return null;
+    return {
+      reasoning: 'Error during next speaker check, defaulting to user.',
+      next_speaker: 'user',
+    };
   }
 }

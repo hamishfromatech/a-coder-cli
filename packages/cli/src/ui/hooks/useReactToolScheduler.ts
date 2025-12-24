@@ -210,7 +210,9 @@ function mapCoreStatusToDisplayStatus(coreStatus: CoreStatus): ToolCallStatus {
 export function mapToDisplay(
   toolOrTools: TrackedToolCall[] | TrackedToolCall,
 ): HistoryItemToolGroup {
-  const toolCalls = Array.isArray(toolOrTools) ? toolOrTools : [toolOrTools];
+  const allToolCalls = Array.isArray(toolOrTools) ? toolOrTools : [toolOrTools];
+  // Filter out write_todos as it has its own dedicated UI component
+  const toolCalls = allToolCalls.filter(tc => tc.request.name !== 'write_todos');
 
   const toolDisplays = toolCalls.map(
     (trackedCall): IndividualToolCallDisplay => {

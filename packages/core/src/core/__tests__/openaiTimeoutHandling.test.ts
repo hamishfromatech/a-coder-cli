@@ -41,10 +41,12 @@ describe('OpenAIContentGenerator Timeout Handling', () => {
         timeout: 120000,
         maxRetries: 3,
       }),
+      getDebugMode: vi.fn().mockReturnValue(false),
     } as unknown as Config;
 
     // Mock OpenAI client
     mockOpenAIClient = {
+      baseURL: '',
       chat: {
         completions: {
           create: vi.fn(),

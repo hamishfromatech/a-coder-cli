@@ -20,6 +20,7 @@ import type {
   ChatCompletion,
   ChatCompletionChunk,
 } from 'openai/resources/chat/index.js';
+import { robustParseToolArguments } from './jsonUtils.js';
 
 // OpenAI API type definitions for conversions
 export interface OpenAIToolCall {
@@ -34,6 +35,7 @@ export interface OpenAIToolCall {
 export interface OpenAIMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string | null;
+  reasoning_content?: string | null;
   tool_calls?: OpenAIToolCall[];
   tool_call_id?: string;
 }
@@ -198,6 +200,13 @@ export class OpenAIFormatConverter {
 
     const parts: Part[] = [];
 
+    // Handle reasoning content if present (DeepSeek style)
+    if ((choice.message as any).reasoning_content) {
+      parts.push({
+        text: `<think>${(choice.message as any).reasoning_content}</think>`,
+      });
+    }
+
     // Handle text content
     if (choice.message.content) {
       parts.push({ text: choice.message.content });
@@ -210,7 +219,7 @@ export class OpenAIFormatConverter {
           parts.push({
             functionCall: {
               name: toolCall.function.name,
-              args: JSON.parse(toolCall.function.arguments || '{}'),
+              args: robustParseToolArguments(toolCall.function.arguments || '{}'),
             },
           });
         }
@@ -252,6 +261,12 @@ export class OpenAIFormatConverter {
 
     const parts: Part[] = [];
 
+    // Handle reasoning content delta (Ollama/DeepSeek style)
+    const reasoningContent = (choice.delta as any)?.reasoning_content;
+    if (reasoningContent) {
+      parts.push({ text: `<think>${reasoningContent}</think>` });
+    }
+
     // Handle text delta
     if (choice.delta.content) {
       parts.push({ text: choice.delta.content });
@@ -265,7 +280,7 @@ export class OpenAIFormatConverter {
             functionCall: {
               name: toolCall.function.name || '',
               args: toolCall.function.arguments
-                ? JSON.parse(toolCall.function.arguments)
+                ? robustParseToolArguments(toolCall.function.arguments)
                 : {},
             },
           });

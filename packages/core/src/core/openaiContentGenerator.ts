@@ -30,6 +30,7 @@ import { logApiResponse } from '../telemetry/loggers.js';
 import { ApiResponseEvent } from '../telemetry/types.js';
 import { Config } from '../config/config.js';
 import { openaiLogger } from '../utils/openaiLogger.js';
+import { robustParseToolArguments } from '../utils/jsonUtils.js';
 
 // OpenAI API type definitions for logging
 interface OpenAIToolCall {
@@ -45,6 +46,7 @@ interface OpenAIToolCall {
 interface OpenAIMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string | null;
+  reasoning_content?: string | null;
   tool_calls?: OpenAIToolCall[];
   tool_call_id?: string;
   thought_signature?: string;
@@ -86,6 +88,7 @@ export class OpenAIContentGenerator implements ContentGenerator {
   private client!: OpenAI;
   private model: string;
   private config: Config;
+  private inReasoningBlock: boolean = false;
   private streamingToolCalls: Map<
     number,
     {
@@ -246,6 +249,11 @@ export class OpenAIContentGenerator implements ContentGenerator {
         createParams.include_reasoning = true;
       }
 
+      // Handle JSON mode
+      if (request.config?.responseMimeType === 'application/json') {
+        createParams.response_format = { type: 'json_object' };
+      }
+
       if (request.config?.tools) {
         createParams.tools = await this.convertGeminiToolsToOpenAI(
           request.config.tools,
@@ -393,6 +401,11 @@ export class OpenAIContentGenerator implements ContentGenerator {
 
       if (this.client.baseURL.includes('openrouter.ai')) {
         createParams.include_reasoning = true;
+      }
+
+      // Handle JSON mode
+      if (request.config?.responseMimeType === 'application/json') {
+        createParams.response_format = { type: 'json_object' };
       }
 
       if (request.config?.tools) {
@@ -600,10 +613,32 @@ export class OpenAIContentGenerator implements ContentGenerator {
   ): AsyncGenerator<GenerateContentResponse> {
     // Reset the accumulator for each new stream
     this.streamingToolCalls.clear();
+    this.inReasoningBlock = false;
 
     for await (const chunk of stream) {
+      if (this.config.getDebugMode()) {
+        console.log('[DEBUG] OpenAI Stream Chunk:', JSON.stringify(chunk));
+      }
       // Don't strip thinking tags here, let the Turn handler handle it
       yield this.convertStreamChunkToGeminiFormat(chunk);
+    }
+
+    // If we're still in a reasoning block at the end of the stream, close it
+    if (this.inReasoningBlock) {
+      const response = new GenerateContentResponse();
+      response.candidates = [
+        {
+          content: {
+            parts: [{ text: '</think>' }],
+            role: 'model' as const,
+          } as any,
+          finishReason: FinishReason.STOP,
+          index: 0,
+          safetyRatings: [],
+        },
+      ];
+      yield response;
+      this.inReasoningBlock = false;
     }
   }
 
@@ -1230,6 +1265,15 @@ export class OpenAIContentGenerator implements ContentGenerator {
     const message = choice.message as OpenAIMessage;
     const thoughtSignature = message.thought_signature || (choice as any).thought_signature || (openaiResponse as any).thought_signature;
 
+    // Handle reasoning content if present (DeepSeek/Ollama style)
+    const reasoning =
+      message.reasoning_content ||
+      (message as any).reasoning ||
+      (message as any).thought;
+    if (reasoning) {
+      parts.push({ text: `<think>${reasoning}</think>` });
+    }
+
     // Handle text content
     if (choice.message.content) {
       // Filter out thinking tags
@@ -1245,12 +1289,7 @@ export class OpenAIContentGenerator implements ContentGenerator {
         if (toolCall.function) {
           let args: Record<string, unknown> = {};
           if (toolCall.function.arguments) {
-            try {
-              args = JSON.parse(toolCall.function.arguments);
-            } catch (error) {
-              console.error('Failed to parse function arguments:', error);
-              args = {};
-            }
+            args = robustParseToolArguments(toolCall.function.arguments);
           }
 
           parts.push({
@@ -1328,9 +1367,29 @@ export class OpenAIContentGenerator implements ContentGenerator {
 
       // Handle text content
       if (choice.delta?.content) {
-        // For streaming, we can't filter thinking tags until we have the complete content
-        // So we'll pass it through and let the client handle it
-        parts.push({ text: choice.delta.content });
+        // If we were in a reasoning block, close it before adding regular content
+        if (this.inReasoningBlock) {
+          parts.push({ text: '</think>' + choice.delta.content });
+          this.inReasoningBlock = false;
+        } else {
+          // For streaming, we can't filter thinking tags until we have the complete content
+          // So we'll pass it through and let the client handle it
+          parts.push({ text: choice.delta.content });
+        }
+      }
+
+      // Handle reasoning content (Ollama/DeepSeek style)
+      const reasoningContent =
+        (choice.delta as any)?.reasoning_content ||
+        (choice.delta as any)?.reasoning ||
+        (choice.delta as any)?.thought;
+      if (reasoningContent) {
+        if (!this.inReasoningBlock) {
+          parts.push({ text: '<think>' + reasoningContent });
+          this.inReasoningBlock = true;
+        } else {
+          parts.push({ text: reasoningContent });
+        }
       }
 
       // Handle tool calls - only accumulate during streaming, emit when complete
@@ -1367,17 +1426,9 @@ export class OpenAIContentGenerator implements ContentGenerator {
           // TODO: Add back id once we have a way to generate tool_call_id from the VLLM parser.
           // if (accumulatedCall.id && accumulatedCall.name) {
           if (accumulatedCall.name) {
-            let args: Record<string, unknown> = {};
-            if (accumulatedCall.arguments) {
-              try {
-                args = JSON.parse(accumulatedCall.arguments);
-              } catch (error) {
-                console.error(
-                  'Failed to parse final tool call arguments:',
-                  error,
-                );
-              }
-            }
+            const args = accumulatedCall.arguments
+              ? robustParseToolArguments(accumulatedCall.arguments)
+              : {};
 
             parts.push({
               functionCall: {

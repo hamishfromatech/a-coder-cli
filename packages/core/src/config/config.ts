@@ -22,6 +22,7 @@ import { ShellTool } from '../tools/shell.js';
 import { WriteFileTool } from '../tools/write-file.js';
 import { WebFetchTool } from '../tools/web-fetch.js';
 import { ReadManyFilesTool } from '../tools/read-many-files.js';
+import { WriteToDosTool } from '../tools/write-todos.js';
 import {
   MemoryTool,
   setGeminiMdFilename,
@@ -598,6 +599,7 @@ export class Config {
     registerCoreTool(WriteFileTool, this);
     registerCoreTool(WebFetchTool, this);
     registerCoreTool(ReadManyFilesTool, this);
+    registerCoreTool(WriteToDosTool);
     registerCoreTool(ShellTool, this);
     registerCoreTool(MemoryTool);
     // registerCoreTool(WebSearchTool, this); // Temporarily disabled
