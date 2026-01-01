@@ -39,12 +39,12 @@ ENV PATH=$PATH:/usr/local/share/npm-global/bin
 # switch to non-root user node
 USER node
 
-# install gemini-cli and clean up
-COPY packages/cli/dist/google-gemini-cli-*.tgz /usr/local/share/npm-global/gemini-cli.tgz
-COPY packages/core/dist/google-gemini-cli-core-*.tgz /usr/local/share/npm-global/gemini-core.tgz
-RUN npm install -g /usr/local/share/npm-global/gemini-cli.tgz /usr/local/share/npm-global/gemini-core.tgz \
+# install a-coder-cli and clean up
+COPY packages/cli/dist/a-coder-cli-*.tgz /usr/local/share/npm-global/a-coder-cli.tgz
+COPY packages/core/dist/a-coder-core-*.tgz /usr/local/share/npm-global/a-coder-core.tgz
+RUN npm install -g /usr/local/share/npm-global/a-coder-cli.tgz /usr/local/share/npm-global/a-coder-core.tgz \
   && npm cache clean --force \
-  && rm -f /usr/local/share/npm-global/gemini-{cli,core}.tgz
+  && rm -f /usr/local/share/npm-global/a-coder-{cli,core}.tgz
 
 # default entrypoint when none specified
-CMD ["gemini"]
+CMD ["a-coder"]
