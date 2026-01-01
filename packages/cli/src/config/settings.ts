@@ -96,6 +96,9 @@ export interface Settings {
   // Setting for setting maximum number of user/model/tool turns in a session.
   maxSessionTurns?: number;
 
+  // Maximum tokens for the rolling context window.
+  maxTokens?: number;
+
   // Sampling parameters for content generation
   sampling_params?: {
     top_p?: number;

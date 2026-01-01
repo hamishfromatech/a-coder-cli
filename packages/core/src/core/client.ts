@@ -577,6 +577,9 @@ export class GeminiClient {
     }
 
     const model = this.config.getModel();
+    const configMaxTokens = this.config.getMaxTokens();
+    const effectiveTokenLimit =
+      configMaxTokens > 0 ? configMaxTokens : tokenLimit(model);
 
     const { totalTokens: originalTokenCount } =
       await this.getContentGenerator().countTokens({
@@ -589,10 +592,7 @@ export class GeminiClient {
     }
 
     // Don't compress if not forced and we are under the limit.
-    if (
-      !force &&
-      originalTokenCount < this.COMPRESSION_TOKEN_THRESHOLD * tokenLimit(model)
-    ) {
+    if (!force && originalTokenCount < this.COMPRESSION_TOKEN_THRESHOLD * effectiveTokenLimit) {
       return null;
     }
 
