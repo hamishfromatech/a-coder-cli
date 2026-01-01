@@ -506,6 +506,8 @@ export const useGeminiStream = (
             }
             break;
           case ServerGeminiEventType.Content:
+            // Hide thoughts as soon as content starts arriving
+            setThought(null);
             geminiMessageBuffer = handleContentEvent(
               event.value,
               geminiMessageBuffer,
