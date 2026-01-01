@@ -815,10 +815,11 @@ export const useSlashCommandProcessor = (
       },
       {
         name: 'model',
-        description: 'set the AI model to use. Usage: /model [model-name]',
+        altName: 'models',
+        description: 'set or list AI models. Usage: /model [model-name|list]',
         action: async (_mainCommand, _subCommand, args) => {
           const modelName = (_subCommand || args || '').trim();
-          if (!modelName) {
+          if (!modelName || modelName === 'list') {
             openModelDialog();
             return;
           }
@@ -861,13 +862,6 @@ export const useSlashCommandProcessor = (
             content: `Model set to: ${modelName}`,
             timestamp: new Date(),
           });
-        },
-      },
-      {
-        name: 'models',
-        description: 'list available models from the provider',
-        action: async () => {
-          openModelDialog();
         },
       },
       {
