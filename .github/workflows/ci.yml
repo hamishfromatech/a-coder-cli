@@ -51,7 +51,8 @@ jobs:
           name: build-artifacts-${{ matrix.node-version }}
           path: |
             packages/*/dist
-            package-lock.json # Only upload dist and lockfile
+            bundle/
+            package-lock.json # Only upload dist, bundle and lockfile
   test:
     name: Test
     runs-on: ubuntu-latest

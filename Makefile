@@ -1,9 +1,9 @@
-# Makefile for gemini-cli
+# Makefile for a-coder-cli
 
 .PHONY: help install build build-sandbox build-all test lint format preflight clean start debug release run-npx create-alias
 
 help:
-	@echo "Makefile for gemini-cli"
+	@echo "Makefile for a-coder-cli"
 	@echo ""
 	@echo "Usage:"
 	@echo "  make install          - Install npm dependencies"
@@ -53,7 +53,7 @@ debug:
 
 
 run-npx:
-	npx https://github.com/google-gemini/gemini-cli
+	npx https://github.com/hamishfromatech/a-coder-cli
 
 create-alias:
 	scripts/create_alias.sh

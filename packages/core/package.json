@@ -4,7 +4,7 @@
   "description": "A-Coder Core",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hamishfromatech/ollama-code.git"
+    "url": "git+https://github.com/hamishfromatech/a-coder-cli.git"
   },
   "type": "module",
   "main": "dist/index.js",

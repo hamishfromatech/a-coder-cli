@@ -41,11 +41,11 @@ export const WORKSPACE_SETTINGS_FILE = path.join(
 export function getJson(url) {
   const tmpFile = path.join(
     os.tmpdir(),
-    `gemini-cli-releases-${Date.now()}.json`,
+    `a-coder-cli-releases-${Date.now()}.json`,
   );
   try {
     execSync(
-      `curl -sL -H "User-Agent: gemini-cli-dev-script" -o "${tmpFile}" "${url}"`,
+      `curl -sL -H "User-Agent: a-coder-cli-dev-script" -o "${tmpFile}" "${url}"`,
       { stdio: 'pipe' },
     );
     const content = fs.readFileSync(tmpFile, 'utf-8');
@@ -217,7 +217,7 @@ export async function ensureBinary(
 
   const downloadUrl = asset.browser_download_url;
   const tmpDir = fs.mkdtempSync(
-    path.join(os.tmpdir(), 'gemini-cli-telemetry-'),
+    path.join(os.tmpdir(), 'a-coder-cli-telemetry-'),
   );
   const archivePath = path.join(tmpDir, asset.name);
 

@@ -319,7 +319,7 @@ export const useSlashCommandProcessor = (
           const serverNames = Object.keys(mcpServers);
 
           if (serverNames.length === 0) {
-            const docsUrl = 'https://goo.gle/gemini-cli-docs-mcp';
+            const docsUrl = 'https://goo.gle/a-coder-cli-docs-mcp';
             if (process.env.SANDBOX && process.env.SANDBOX !== 'sandbox-exec') {
               addMessage({
                 type: MessageType.INFO,
@@ -621,7 +621,7 @@ export const useSlashCommandProcessor = (
 `;
 
           let bugReportUrl =
-            'https://github.com/google-gemini/gemini-cli/issues/new?template=bug_report.yml&title={title}&info={info}';
+            'https://github.com/hamishfromatech/a-coder-cli/issues/new?template=bug_report.yml&title={title}&info={info}';
           const bugCommand = config?.getBugCommand();
           if (bugCommand?.urlTemplate) {
             bugReportUrl = bugCommand.urlTemplate;

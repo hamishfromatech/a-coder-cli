@@ -32,7 +32,7 @@ import {
   CorrectedEditResult,
 } from '../utils/editCorrector.js';
 
-const rootDir = path.resolve(os.tmpdir(), 'gemini-cli-test-root');
+const rootDir = path.resolve(os.tmpdir(), 'a-coder-cli-test-root');
 
 // --- MOCKS ---
 vi.mock('../core/client.js');

@@ -20,9 +20,7 @@ import {
   LoadedSettings,
   loadSettings,
   USER_SETTINGS_PATH,
-  SettingScope,
 } from './config/settings.js';
-import { themeManager } from './ui/themes/theme-manager.js';
 import { getStartupWarnings } from './utils/startupWarnings.js';
 import { getUserStartupWarnings } from './utils/userStartupWarnings.js';
 import { runNonInteractive } from './nonInteractiveCli.js';
@@ -132,7 +130,6 @@ async function handleUpgrade() {
       return;
     }
 
-    // @ts-ignore - __dirname is defined in the bundle banner
     const targetPath = join(__dirname, 'a-coder.js');
     fs.writeFileSync(targetPath, Buffer.from(downloadResponse.data));
 

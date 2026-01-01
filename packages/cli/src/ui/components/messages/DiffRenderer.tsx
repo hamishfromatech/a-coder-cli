@@ -104,11 +104,20 @@ export const DiffRenderer: React.FC<DiffRendererProps> = ({
   availableTerminalHeight,
   terminalWidth,
 }) => {
+  const parsedLines = React.useMemo(() => {
+    if (!diffContent || typeof diffContent !== 'string') return [];
+    return parseDiffWithLineNumbers(diffContent);
+  }, [diffContent]);
+
+  const key = React.useMemo(() => {
+    return filename
+      ? `diff-box-${filename}`
+      : `diff-box-${crypto.createHash('sha1').update(JSON.stringify(parsedLines)).digest('hex')}`;
+  }, [filename, parsedLines]);
+
   if (!diffContent || typeof diffContent !== 'string') {
     return <Text color={Colors.AccentYellow}>No diff content.</Text>;
   }
-
-  const parsedLines = React.useMemo(() => parseDiffWithLineNumbers(diffContent), [diffContent]);
 
   if (parsedLines.length === 0) {
     return (
@@ -128,8 +137,6 @@ export const DiffRenderer: React.FC<DiffRendererProps> = ({
       line.content.startsWith('new file mode'),
   );
 
-  let renderedOutput;
-
   if (isNewFile) {
     // Extract only the added lines' content
     const addedContent = parsedLines
@@ -141,32 +148,14 @@ export const DiffRenderer: React.FC<DiffRendererProps> = ({
     const language = fileExtension
       ? getLanguageFromExtension(fileExtension)
       : null;
-    renderedOutput = colorizeCode(
+    return colorizeCode(
       addedContent,
       language,
       availableTerminalHeight,
       terminalWidth,
     );
-  } else {
-    renderedOutput = renderDiffContent(
-      parsedLines,
-      filename,
-      tabWidth,
-      availableTerminalHeight,
-      terminalWidth,
-    );
   }
 
-  return renderedOutput;
-};
-
-const renderDiffContent = (
-  parsedLines: DiffLine[],
-  filename: string | undefined,
-  tabWidth = DEFAULT_TAB_WIDTH,
-  availableTerminalHeight: number | undefined,
-  terminalWidth: number,
-) => {
   // 1. Normalize whitespace (replace tabs with spaces) *before* further processing
   const normalizedLines = parsedLines.map((line) => ({
     ...line,
@@ -200,12 +189,6 @@ const renderDiffContent = (
   if (!isFinite(baseIndentation)) {
     baseIndentation = 0;
   }
-
-  const key = React.useMemo(() => {
-    return filename
-      ? `diff-box-${filename}`
-      : `diff-box-${crypto.createHash('sha1').update(JSON.stringify(parsedLines)).digest('hex')}`;
-  }, [filename, parsedLines]);
 
   let lastLineNumber: number | null = null;
   const MAX_CONTEXT_LINES_WITHOUT_GAP = 5;

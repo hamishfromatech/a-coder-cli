@@ -68,7 +68,7 @@ const customDockerfile = argv.f;
 
 if (!baseImage?.length) {
   console.warn(
-    'No default image tag specified in gemini-cli/packages/cli/package.json',
+    'No default image tag specified in a-coder-cli/packages/cli/package.json',
   );
 }
 

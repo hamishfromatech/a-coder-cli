@@ -211,7 +211,7 @@ export class Config {
   private readonly _activeExtensions: ActiveExtension[];
   flashFallbackHandler?: FlashFallbackHandler;
   private quotaErrorOccurred: boolean = false;
-  private modelChangeListeners: ((newModel: string) => void)[] = [];
+  private modelChangeListeners: Array<(newModel: string) => void> = [];
 
   constructor(params: ConfigParameters) {
     this.sessionId = params.sessionId;

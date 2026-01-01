@@ -178,7 +178,7 @@ Common issues:
 
 ## Acknowledgments
 
-This project is forked from [**Qwen Code**](https://github.com/QwenLM/qwen-code), which was originally based on [Google Gemini CLI](https://github.com/google-gemini/gemini-cli). We acknowledge and appreciate the excellent work of both teams. Our contribution focuses on privacy-first local model integration through Ollama.
+This project is forked from [**Qwen Code**](https://github.com/QwenLM/qwen-code), which was originally based on [Google Gemini CLI](https://github.com/hamishfromatech/a-coder-cli). We acknowledge and appreciate the excellent work of both teams. Our contribution focuses on privacy-first local model integration through Ollama.
 
 ## License
 

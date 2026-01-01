@@ -301,7 +301,7 @@ export async function connectToMcpServer(
   debugMode: boolean,
 ): Promise<Client> {
   const mcpClient = new Client({
-    name: 'gemini-cli-mcp-client',
+    name: 'a-coder-cli-mcp-client',
     version: '0.0.1',
   });
 

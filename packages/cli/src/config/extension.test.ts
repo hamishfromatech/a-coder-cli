@@ -29,10 +29,10 @@ describe('loadExtensions', () => {
 
   beforeEach(() => {
     tempWorkspaceDir = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'gemini-cli-test-workspace-'),
+      path.join(os.tmpdir(), 'a-coder-cli-test-workspace-'),
     );
     tempHomeDir = fs.mkdtempSync(
-      path.join(os.tmpdir(), 'gemini-cli-test-home-'),
+      path.join(os.tmpdir(), 'a-coder-cli-test-home-'),
     );
     vi.mocked(os.homedir).mockReturnValue(tempHomeDir);
   });

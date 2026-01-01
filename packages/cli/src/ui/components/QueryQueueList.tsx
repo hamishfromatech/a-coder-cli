@@ -9,7 +9,7 @@ import { Colors } from '../colors.js';
 import { type PartListUnion } from '@google/genai';
 
 interface QueryQueueListProps {
-  queue: { query: PartListUnion; prompt_id?: string }[];
+  queue: Array<{ query: PartListUnion; prompt_id?: string }>;
 }
 
 export const QueryQueueList = ({ queue }: QueryQueueListProps) => {

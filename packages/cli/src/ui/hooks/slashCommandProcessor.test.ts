@@ -554,7 +554,7 @@ describe('useSlashCommandProcessor', () => {
 *   **Memory Usage:** ${memoryUsage}
 `;
       let url =
-        'https://github.com/google-gemini/gemini-cli/issues/new?template=bug_report.yml';
+        'https://github.com/hamishfromatech/a-coder-cli/issues/new?template=bug_report.yml';
       if (description) {
         url += `&title=${encodeURIComponent(description)}`;
       }
@@ -865,7 +865,7 @@ describe('useSlashCommandProcessor', () => {
         2,
         expect.objectContaining({
           type: MessageType.INFO,
-          text: `No MCP servers configured. Please open the following URL in your browser to view documentation:\nhttps://goo.gle/gemini-cli-docs-mcp`,
+          text: `No MCP servers configured. Please open the following URL in your browser to view documentation:\nhttps://goo.gle/a-coder-cli-docs-mcp`,
         }),
         expect.any(Number),
       );
@@ -892,11 +892,11 @@ describe('useSlashCommandProcessor', () => {
         2,
         expect.objectContaining({
           type: MessageType.INFO,
-          text: 'No MCP servers configured. Opening documentation in your browser: https://goo.gle/gemini-cli-docs-mcp',
+          text: 'No MCP servers configured. Opening documentation in your browser: https://goo.gle/a-coder-cli-docs-mcp',
         }),
         expect.any(Number),
       );
-      expect(open).toHaveBeenCalledWith('https://goo.gle/gemini-cli-docs-mcp');
+      expect(open).toHaveBeenCalledWith('https://goo.gle/a-coder-cli-docs-mcp');
       expect(commandResult).toEqual({ type: 'handled' });
     });
 
