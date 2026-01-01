@@ -147,6 +147,7 @@ export const useGeminiStream = (
   );
 
   const loopDetectedRef = useRef(false);
+  const isProcessingQueueRef = useRef(false);
 
   const onExec = useCallback(async (done: Promise<void>) => {
     setIsResponding(true);
@@ -688,16 +689,32 @@ export const useGeminiStream = (
   );
 
   useEffect(() => {
-    if (streamingState === StreamingState.Idle && queryQueue.length > 0) {
-      const next = queryQueue[0];
-      setQueryQueue((prev) => prev.slice(1));
-      void submitQuery(
-        next.query,
-        { alreadyAddedToHistory: false },
-        next.prompt_id,
-      );
-    }
-  }, [streamingState, queryQueue, submitQuery]);
+    const processQueue = async () => {
+      if (
+        streamingState === StreamingState.Idle &&
+        queryQueue.length > 0 &&
+        !isProcessingQueueRef.current
+      ) {
+        isProcessingQueueRef.current = true;
+        const next = queryQueue[0];
+        
+        // Remove from queue first to update UI
+        setQueryQueue((prev) => prev.slice(1));
+
+        try {
+          await submitQuery(
+            next.query,
+            { alreadyAddedToHistory: false },
+            next.prompt_id,
+          );
+        } finally {
+          isProcessingQueueRef.current = false;
+        }
+      }
+    };
+
+    processQueue();
+  }, [streamingState, queryQueue.length, submitQuery]);
 
   const handleCompletedTools = useCallback(
     async (completedToolCallsFromScheduler: TrackedToolCall[]) => {
