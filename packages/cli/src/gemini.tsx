@@ -9,9 +9,11 @@ import { render } from 'ink';
 import { AppWrapper } from './ui/App.js';
 import { loadCliConfig, parseArguments, CliArgs } from './config/config.js';
 import { readStdin } from './utils/readStdin.js';
-import { basename } from 'node:path';
+import { basename, join } from 'node:path';
 import v8 from 'node:v8';
 import os from 'node:os';
+import fs from 'node:fs';
+import { request } from 'gaxios';
 import { spawn } from 'node:child_process';
 import { start_sandbox } from './utils/sandbox.js';
 import {
@@ -85,6 +87,61 @@ async function relaunchWithAdditionalArgs(additionalArgs: string[]) {
   process.exit(0);
 }
 
+async function handleUpgrade() {
+  console.log('Checking for updates...');
+  const repo = 'hamishfromatech/a-coder-cli';
+  try {
+    const response = await request<any>({
+      url: `https://api.github.com/repos/${repo}/releases/latest`,
+      method: 'GET',
+      headers: {
+        'User-Agent': 'a-coder-cli',
+      },
+    });
+
+    if (response.status !== 200 || !response.data.tag_name) {
+      console.error('Failed to fetch latest release info.');
+      return;
+    }
+
+    const latestVersion = response.data.tag_name;
+    const currentVersion = `v${(await import('./utils/version.js')).getCliVersion()}`;
+
+    if (latestVersion === currentVersion) {
+      console.log(`You are already on the latest version (${currentVersion}).`);
+      return;
+    }
+
+    console.log(`Upgrading from ${currentVersion} to ${latestVersion}...`);
+
+    const asset = response.data.assets.find((a: any) => a.name === 'a-coder.js');
+    if (!asset) {
+      console.error('Latest release does not contain a-coder.js asset.');
+      return;
+    }
+
+    const downloadUrl = asset.browser_download_url;
+    const downloadResponse = await request<Buffer>({
+      url: downloadUrl,
+      method: 'GET',
+      responseType: 'arraybuffer',
+    });
+
+    if (downloadResponse.status !== 200) {
+      console.error('Failed to download update.');
+      return;
+    }
+
+    // @ts-ignore - __dirname is defined in the bundle banner
+    const targetPath = join(__dirname, 'a-coder.js');
+    fs.writeFileSync(targetPath, Buffer.from(downloadResponse.data));
+
+    console.log(`Successfully upgraded to ${latestVersion}!`);
+  } catch (error) {
+    console.error('Error during upgrade:', error);
+  }
+}
+
 export async function main() {
   console.log('[TRACE] Entering main()');
   const workspaceRoot = process.cwd();
@@ -99,6 +156,12 @@ export async function main() {
 
   const argv = await parseArguments();
   console.log('[TRACE] Arguments parsed');
+
+  if (argv.upgrade) {
+    await handleUpgrade();
+    process.exit(0);
+  }
+
   const extensions = loadExtensions(workspaceRoot);
   const config = await loadCliConfig(
     settings.merged,

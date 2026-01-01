@@ -32,7 +32,7 @@ export const LoadingIndicator: React.FC<LoadingIndicatorProps> = ({
     return null;
   }
 
-  const primaryText = thought?.subject || currentLoadingPhrase;
+  const primaryText = currentLoadingPhrase || thought?.subject;
 
   return (
     <Box marginTop={1} paddingLeft={0} flexDirection="column">

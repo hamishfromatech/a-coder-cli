@@ -59,6 +59,7 @@ export interface CliArgs {
   openaiLogging: boolean | undefined;
   openaiApiKey: string | undefined;
   openaiBaseUrl: string | undefined;
+  upgrade: boolean | undefined;
 }
 
 export async function parseArguments(): Promise<CliArgs> {
@@ -196,6 +197,11 @@ export async function parseArguments(): Promise<CliArgs> {
     .option('openai-base-url', {
       type: 'string',
       description: 'OpenAI base URL (for custom endpoints)',
+    })
+    .option('upgrade', {
+      alias: 'u',
+      type: 'boolean',
+      description: 'Upgrade the CLI to the latest version from GitHub',
     })
 
     .version(await getCliVersion()) // This will enable the --version flag based on package.json

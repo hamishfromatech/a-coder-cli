@@ -149,9 +149,10 @@ export const MaxSizedBox: React.FC<MaxSizedBoxProps> = ({
       ? Math.max(0, laidOutStyledText.length - visibleContentHeight)
       : 0;
   const totalHiddenLines = hiddenLinesCount + additionalHiddenLinesCount;
+  const hasOverflow = totalHiddenLines > 0;
 
   useEffect(() => {
-    if (totalHiddenLines > 0) {
+    if (hasOverflow) {
       addOverflowingId?.(id);
     } else {
       removeOverflowingId?.(id);
@@ -160,7 +161,7 @@ export const MaxSizedBox: React.FC<MaxSizedBoxProps> = ({
     return () => {
       removeOverflowingId?.(id);
     };
-  }, [id, totalHiddenLines, addOverflowingId, removeOverflowingId]);
+  }, [id, hasOverflow, addOverflowingId, removeOverflowingId]);
 
   const visibleStyledText =
     hiddenLinesCount > 0

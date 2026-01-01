@@ -278,18 +278,20 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
 
   // Watch for model changes (e.g., from Flash fallback)
   useEffect(() => {
-    const checkModelChange = () => {
-      const configModel = config.getModel();
-      if (configModel !== currentModel) {
-        setCurrentModel(configModel);
-      }
+    // Subscribe to model changes from config
+    const unsubscribe = config.onModelChange((newModel) => {
+      setCurrentModel(newModel);
+    });
+
+    // Initial check (in case it changed before subscription)
+    const configModel = config.getModel();
+    if (configModel !== currentModel) {
+      setCurrentModel(configModel);
+    }
+
+    return () => {
+      unsubscribe();
     };
-
-    // Check immediately and then periodically
-    checkModelChange();
-    const interval = setInterval(checkModelChange, 1000); // Check every second
-
-    return () => clearInterval(interval);
   }, [config, currentModel]);
 
   // Set up Flash fallback handler
@@ -870,23 +872,26 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
             />
           ) : (
             <>
-              <ToDoList todos={todos} />
-              <LoadingIndicator
-                thought={
-                  streamingState === StreamingState.WaitingForConfirmation ||
-                  config.getAccessibility()?.disableLoadingPhrases
-                    ? undefined
-                    : thought
-                }
-                currentLoadingPhrase={
-                  config.getAccessibility()?.disableLoadingPhrases
-                    ? undefined
-                    : currentLoadingPhrase
-                }
-                elapsedTime={elapsedTime}
-              />
+              {/* Container for status area to prevent overlap */}
+              <Box flexDirection="column" marginBottom={1}>
+                <ToDoList todos={todos} />
+                <LoadingIndicator
+                  thought={
+                    streamingState === StreamingState.WaitingForConfirmation ||
+                    config.getAccessibility()?.disableLoadingPhrases
+                      ? undefined
+                      : thought
+                  }
+                  currentLoadingPhrase={
+                    config.getAccessibility()?.disableLoadingPhrases
+                      ? undefined
+                      : currentLoadingPhrase
+                  }
+                  elapsedTime={elapsedTime}
+                />
+              </Box>
               <Box
-                marginTop={1}
+                marginTop={0}
                 display="flex"
                 justifyContent="space-between"
                 width="100%"

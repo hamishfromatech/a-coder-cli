@@ -4,37 +4,41 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import updateNotifier from 'update-notifier';
 import semver from 'semver';
 import { getPackageJson } from '../../utils/package.js';
+import { request } from 'gaxios';
 
 export async function checkForUpdates(): Promise<string | null> {
   try {
     const packageJson = await getPackageJson();
-    if (!packageJson || !packageJson.name || !packageJson.version) {
+    if (!packageJson || !packageJson.version) {
       return null;
     }
-    const notifier = updateNotifier({
-      pkg: {
-        name: packageJson.name,
-        version: packageJson.version,
+
+    const currentVersion = packageJson.version;
+    const repo = 'hamishfromatech/a-coder-cli';
+    
+    // Fetch latest release from GitHub
+    const response = await request<{ tag_name: string }>({
+      url: `https://api.github.com/repos/${repo}/releases/latest`,
+      method: 'GET',
+      headers: {
+        'User-Agent': 'a-coder-cli',
       },
-      // check every time
-      updateCheckInterval: 0,
-      // allow notifier to run in scripts
-      shouldNotifyInNpmScript: true,
+      timeout: 2000, // Short timeout to not delay startup
     });
 
-    if (
-      notifier.update &&
-      semver.gt(notifier.update.latest, notifier.update.current)
-    ) {
-      return `Gemini CLI update available! ${notifier.update.current} → ${notifier.update.latest}\nRun npm install -g ${packageJson.name} to update`;
+    if (response.status === 200 && response.data.tag_name) {
+      const latestVersion = response.data.tag_name.replace(/^v/, '');
+      
+      if (semver.gt(latestVersion, currentVersion)) {
+        return `A-Coder CLI update available! ${currentVersion} → ${latestVersion}\nRun 'a-coder --upgrade' to update automatically.`;
+      }
     }
 
     return null;
   } catch (e) {
-    console.warn('Failed to check for updates: ' + e);
+    // Silently fail to not disturb the user if there's no internet or GitHub is down
     return null;
   }
 }

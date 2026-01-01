@@ -211,6 +211,7 @@ export class Config {
   private readonly _activeExtensions: ActiveExtension[];
   flashFallbackHandler?: FlashFallbackHandler;
   private quotaErrorOccurred: boolean = false;
+  private modelChangeListeners: ((newModel: string) => void)[] = [];
 
   constructor(params: ConfigParameters) {
     this.sessionId = params.sessionId;
@@ -313,6 +314,15 @@ export class Config {
     return this.contentGeneratorConfig;
   }
 
+  onModelChange(listener: (newModel: string) => void): () => void {
+    this.modelChangeListeners.push(listener);
+    return () => {
+      this.modelChangeListeners = this.modelChangeListeners.filter(
+        (l) => l !== listener,
+      );
+    };
+  }
+
   getModel(): string {
     return this.contentGeneratorConfig?.model || this.model;
   }
@@ -321,6 +331,7 @@ export class Config {
     if (this.contentGeneratorConfig) {
       this.contentGeneratorConfig.model = newModel;
       this.modelSwitchedDuringSession = true;
+      this.modelChangeListeners.forEach((listener) => listener(newModel));
     }
   }
 
@@ -332,6 +343,7 @@ export class Config {
     if (this.contentGeneratorConfig) {
       this.contentGeneratorConfig.model = this.model; // Reset to the original default model
       this.modelSwitchedDuringSession = false;
+      this.modelChangeListeners.forEach((listener) => listener(this.model));
     }
   }
 

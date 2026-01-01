@@ -10,7 +10,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hamishfromatech/ollama-code.git"
+    "url": "git+https://github.com/hamishfromatech/a-coder-cli.git"
   },
   "scripts": {
     "start": "node scripts/start.js",

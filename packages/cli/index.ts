@@ -9,6 +9,12 @@
 import './src/gemini.js';
 import { main } from './src/gemini.js';
 
+process.on('uncaughtException', (error) => {
+  console.error('An unhandled exception occurred:');
+  console.error(error);
+  process.exit(1);
+});
+
 // --- Global Entry Point ---
 main().catch((error) => {
   console.error('An unexpected critical error occurred:');

@@ -639,6 +639,9 @@ export const useGeminiStream = (
         }
 
 
+        // Clear thought state after stream completes
+        setThought(null);
+
         if (pendingHistoryItemRef.current) {
           addItem(pendingHistoryItemRef.current, userMessageTimestamp);
           setPendingHistoryItem(null);

@@ -8,7 +8,7 @@ on:
 jobs:
   triage-issues:
     timeout-minutes: 10
-    if: ${{ github.repository == 'google-gemini/gemini-cli' }}
+    if: ${{ github.repository == 'hamishfromatech/a-coder-cli' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read

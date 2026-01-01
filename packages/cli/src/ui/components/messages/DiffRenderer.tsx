@@ -108,7 +108,7 @@ export const DiffRenderer: React.FC<DiffRendererProps> = ({
     return <Text color={Colors.AccentYellow}>No diff content.</Text>;
   }
 
-  const parsedLines = parseDiffWithLineNumbers(diffContent);
+  const parsedLines = React.useMemo(() => parseDiffWithLineNumbers(diffContent), [diffContent]);
 
   if (parsedLines.length === 0) {
     return (
@@ -201,9 +201,11 @@ const renderDiffContent = (
     baseIndentation = 0;
   }
 
-  const key = filename
-    ? `diff-box-${filename}`
-    : `diff-box-${crypto.createHash('sha1').update(JSON.stringify(parsedLines)).digest('hex')}`;
+  const key = React.useMemo(() => {
+    return filename
+      ? `diff-box-${filename}`
+      : `diff-box-${crypto.createHash('sha1').update(JSON.stringify(parsedLines)).digest('hex')}`;
+  }, [filename, parsedLines]);
 
   let lastLineNumber: number | null = null;
   const MAX_CONTEXT_LINES_WITHOUT_GAP = 5;
