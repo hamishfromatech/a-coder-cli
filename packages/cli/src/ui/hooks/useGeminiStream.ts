@@ -577,12 +577,6 @@ export const useGeminiStream = (
         streamingState === StreamingState.WaitingForConfirmation;
 
       if (isBusy && !options?.isContinuation) {
-        if (typeof query === 'string') {
-          addItem(
-            { type: MessageType.INFO, text: `Queued: ${query}` },
-            Date.now(),
-          );
-        }
         setQueryQueue((prev) => [...prev, { query, prompt_id }]);
         return;
       }
@@ -949,5 +943,6 @@ export const useGeminiStream = (
     pendingHistoryItems,
     thought,
     todos,
+    queryQueue,
   };
 };

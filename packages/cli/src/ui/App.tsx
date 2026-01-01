@@ -47,6 +47,7 @@ import { registerCleanup } from '../utils/cleanup.js';
 import { DetailedMessagesDisplay } from './components/DetailedMessagesDisplay.js';
 import { HistoryItemDisplay } from './components/HistoryItemDisplay.js';
 import { ToDoList } from './components/ToDoList.js';
+import { QueryQueueList } from './components/QueryQueueList.js';
 import { ContextSummaryDisplay } from './components/ContextSummaryDisplay.js';
 import { useHistory } from './hooks/useHistoryManager.js';
 import process from 'node:process';
@@ -516,6 +517,7 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
     pendingHistoryItems: pendingGeminiHistoryItems,
     thought,
     todos,
+    queryQueue,
   } = useGeminiStream(
     config.getGeminiClient(),
     history,
@@ -875,6 +877,7 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
               {/* Container for status area to prevent overlap */}
               <Box flexDirection="column" marginBottom={1}>
                 <ToDoList todos={todos} />
+                <QueryQueueList queue={queryQueue} />
                 <LoadingIndicator
                   thought={
                     streamingState === StreamingState.WaitingForConfirmation ||
