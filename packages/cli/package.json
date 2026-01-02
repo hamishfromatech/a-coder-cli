@@ -9,7 +9,7 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "a-coder": "dist/index.js"
+    "a-coder-cli": "dist/index.js"
   },
   "scripts": {
     "build": "node ../../scripts/build_package.js",
