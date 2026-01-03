@@ -3,6 +3,7 @@ name: Gemini Automated Issue Triage
 on:
   issues:
     types: [opened, reopened]
+  workflow_dispatch:
 
 jobs:
   triage-issue:
