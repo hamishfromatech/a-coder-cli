@@ -42,7 +42,7 @@
     "clean": "node scripts/clean.js"
   },
   "bin": {
-    "a-coder": "bundle/a-coder.js"
+    "a-coder-cli": "bundle/a-coder.js"
   },
   "files": [
     "bundle/",

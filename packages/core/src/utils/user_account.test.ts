@@ -26,7 +26,7 @@ vi.mock('os', async (importOriginal) => {
 describe('user_account', () => {
   let tempHomeDir: string;
   const accountsFile = () =>
-    path.join(tempHomeDir, '.a-coder', 'google_accounts.json');
+    path.join(tempHomeDir, '.a-coder-cli', 'google_accounts.json');
   beforeEach(() => {
     tempHomeDir = fs.mkdtempSync(
       path.join(os.tmpdir(), 'a-coder-cli-test-home-'),

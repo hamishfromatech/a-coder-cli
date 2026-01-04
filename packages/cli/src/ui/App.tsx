@@ -159,7 +159,6 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
   const [modelSwitchedFromQuotaError, setModelSwitchedFromQuotaError] =
     useState<boolean>(false);
   const [userTier, setUserTier] = useState<UserTierId | undefined>(undefined);
-  const [showToDoList, setShowToDoList] = useState<boolean>(true);
 
   const openPrivacyNotice = useCallback(() => {
     setShowPrivacyNotice(true);
@@ -476,8 +475,6 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
       if (Object.keys(mcpServers || {}).length > 0) {
         handleSlashCommand(newValue ? '/mcp desc' : '/mcp nodesc');
       }
-    } else if (key.ctrl && input === 'j') {
-      setShowToDoList((prev) => !prev);
     } else if (key.ctrl && (input === 'c' || input === 'C')) {
       handleExit(ctrlCPressedOnce, setCtrlCPressedOnce, ctrlCTimerRef);
     } else if (key.ctrl && (input === 'd' || input === 'D')) {
@@ -878,7 +875,7 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
             <>
               {/* Container for status area to prevent overlap */}
               <Box flexDirection="column" marginBottom={1}>
-                {showToDoList && <ToDoList todos={todos} />}
+                <ToDoList todos={todos} />
                 <QueryQueueList queue={queryQueue} />
                 <LoadingIndicator
                   thought={
