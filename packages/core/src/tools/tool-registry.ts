@@ -143,6 +143,9 @@ export class ToolRegistry {
       );
     }
     this.tools.set(tool.name, tool);
+    if (this.config.getDebugMode()) {
+      console.log(`[ToolRegistry Debug] Registered tool: "${tool.name}" (displayName: "${tool.displayName}")`);
+    }
   }
 
   /**
@@ -328,7 +331,16 @@ export class ToolRegistry {
    * Get the definition of a specific tool.
    */
   getTool(name: string): Tool | undefined {
-    return this.tools.get(name);
+    const tool = this.tools.get(name);
+    if (this.config.getDebugMode()) {
+      if (tool) {
+        console.log(`[ToolRegistry Debug] Found tool: "${name}" (displayName: "${tool.displayName}")`);
+      } else {
+        console.log(`[ToolRegistry Debug] Tool NOT found: "${name}"`);
+        console.log(`[ToolRegistry Debug] Available tools:`, Array.from(this.tools.keys()).sort());
+      }
+    }
+    return tool;
   }
 }
 

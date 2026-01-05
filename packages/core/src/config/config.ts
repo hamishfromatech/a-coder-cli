@@ -606,8 +606,26 @@ export class Config {
         isEnabled = false;
       }
 
+      // Debug logging
+      if (this.debugMode) {
+        console.log(`[Tool Registration Debug] ${className}:`);
+        console.log(`  - Static Name: ${ToolClass.Name}`);
+        console.log(`  - Computed toolName: ${toolName}`);
+        console.log(`  - isEnabled: ${isEnabled}`);
+        console.log(`  - coreTools: ${coreTools}`);
+        console.log(`  - excludeTools: ${excludeTools}`);
+      }
+
       if (isEnabled) {
-        registry.registerTool(new ToolClass(...args));
+        try {
+          const tool = new ToolClass(...args);
+          if (this.debugMode) {
+            console.log(`  - Tool created successfully, name: ${tool.name}`);
+          }
+          registry.registerTool(tool);
+        } catch (error) {
+          console.error(`[Tool Registration Error] Failed to register ${className}:`, error);
+        }
       }
     };
 

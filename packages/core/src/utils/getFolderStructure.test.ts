@@ -313,10 +313,10 @@ describe('getFolderStructure gitignore', () => {
     (fs.readFileSync as Mock).mockImplementation((p) => {
       const path = p.toString();
       if (path === '/test/project/.gitignore') {
-        return 'ignored.txt
+        return `ignored.txt
 node_modules/
 .a-coder-cli/
-!/.a-coder-cli/config.yaml';
+!/.a-coder-cli/config.yaml`;
       }
       return '';
     });
