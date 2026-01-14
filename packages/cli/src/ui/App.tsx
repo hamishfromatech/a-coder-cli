@@ -23,6 +23,7 @@ import { useLoadingIndicator } from './hooks/useLoadingIndicator.js';
 import { useThemeCommand } from './hooks/useThemeCommand.js';
 import { useAuthCommand } from './hooks/useAuthCommand.js';
 import { useEditorSettings } from './hooks/useEditorSettings.js';
+import { useSkillsCommand } from './hooks/useSkillsCommand.js';
 import { useSlashCommandProcessor } from './hooks/slashCommandProcessor.js';
 import { useAutoAcceptIndicator } from './hooks/useAutoAcceptIndicator.js';
 import { useConsoleMessages } from './hooks/useConsoleMessages.js';
@@ -36,6 +37,7 @@ import { ThemeDialog } from './components/ThemeDialog.js';
 import { AuthDialog } from './components/AuthDialog.js';
 import { AuthInProgress } from './components/AuthInProgress.js';
 import { EditorSettingsDialog } from './components/EditorSettingsDialog.js';
+import { SkillsDialog } from './components/SkillsDialog.js';
 import { ModelDialog } from './components/ModelDialog.js';
 import { Colors } from './colors.js';
 import { Help } from './components/Help.js';
@@ -229,6 +231,13 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
     exitEditorDialog,
   } = useEditorSettings(settings, setEditorError, addItem);
 
+  const {
+    isSkillsDialogOpen,
+    openSkillsDialog,
+    handleSkillSelect,
+    availableSkills,
+  } = useSkillsCommand(addItem, (query) => submitQuery(query));
+
   const toggleCorgiMode = useCallback(() => {
     setCorgiMode((prev) => !prev);
   }, []);
@@ -393,6 +402,7 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
     openAuthDialog,
     openModelDialog,
     openEditorDialog,
+    openSkillsDialog,
     toggleCorgiMode,
     showToolDescriptions,
     setQuittingMessages,
@@ -864,6 +874,13 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
                 onSelect={handleEditorSelect}
                 settings={settings}
                 onExit={exitEditorDialog}
+              />
+            </Box>
+          ) : isSkillsDialogOpen ? (
+            <Box flexDirection="column">
+              <SkillsDialog
+                onSelect={handleSkillSelect}
+                availableSkills={availableSkills}
               />
             </Box>
           ) : showPrivacyNotice ? (

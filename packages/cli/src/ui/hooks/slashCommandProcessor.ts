@@ -76,6 +76,7 @@ export const useSlashCommandProcessor = (
   openAuthDialog: () => void,
   openModelDialog: () => void,
   openEditorDialog: () => void,
+  openSkillsDialog: () => void,
   toggleCorgiMode: () => void,
   showToolDescriptions: boolean = false,
   setQuittingMessages: (message: HistoryItem[]) => void,
@@ -1206,6 +1207,9 @@ export const useSlashCommandProcessor = (
                   case 'editor':
                     openEditorDialog();
                     return { type: 'handled' };
+                  case 'skills':
+                    openSkillsDialog();
+                    return { type: 'handled' };
                   default: {
                     const unhandled: never = result.dialog;
                     throw new Error(
@@ -1291,6 +1295,7 @@ export const useSlashCommandProcessor = (
       setShowHelp,
       openAuthDialog,
       openEditorDialog,
+      openSkillsDialog,
       commands,
       legacyCommands,
       commandContext,

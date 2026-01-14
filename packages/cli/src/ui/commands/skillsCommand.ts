@@ -10,6 +10,14 @@ import { SlashCommand, SlashCommandActionReturn } from './types.js';
 export const skillsCommand: SlashCommand = {
   name: 'skills',
   description: 'List and load available skills.',
+  action: (context, args): SlashCommandActionReturn | void => {
+    if (!args || args.trim() === '') {
+      return {
+        type: 'dialog',
+        dialog: 'skills',
+      };
+    }
+  },
   subCommands: [
     {
       name: 'list',
