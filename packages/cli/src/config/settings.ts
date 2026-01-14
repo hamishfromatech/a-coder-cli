@@ -81,6 +81,7 @@ export interface Settings {
   checkpointing?: CheckpointingSettings;
   autoConfigureMaxOldSpaceSize?: boolean;
   enableOpenAILogging?: boolean;
+  hideThinking?: boolean;
 
   // Git-aware file filtering settings
   fileFiltering?: {

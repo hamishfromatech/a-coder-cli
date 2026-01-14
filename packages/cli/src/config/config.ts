@@ -57,6 +57,7 @@ export interface CliArgs {
   listExtensions: boolean | undefined;
   ideMode: boolean | undefined;
   openaiLogging: boolean | undefined;
+  hideThinking: boolean | undefined;
   openaiApiKey: string | undefined;
   openaiBaseUrl: string | undefined;
   upgrade: boolean | undefined;
@@ -189,6 +190,11 @@ export async function parseArguments(): Promise<CliArgs> {
       type: 'boolean',
       description:
         'Enable logging of OpenAI API calls for debugging and analysis',
+    })
+    .option('hide-thinking', {
+      type: 'boolean',
+      description: 'Hide the thinking/reasoning process from the output',
+      default: false,
     })
     .option('openai-api-key', {
       type: 'string',
@@ -400,6 +406,10 @@ export async function loadCliConfig(
       (typeof argv.openaiLogging === 'undefined'
         ? settings.enableOpenAILogging
         : argv.openaiLogging) ?? false,
+    hideThinking:
+      (typeof argv.hideThinking === 'undefined'
+        ? settings.hideThinking
+        : argv.hideThinking) ?? false,
     sampling_params: settings.sampling_params,
   });
 }

@@ -494,7 +494,9 @@ export const useGeminiStream = (
           case ServerGeminiEventType.Thought:
             // Safely handle thought events without failing the stream
             try {
-              setThought(event.value);
+              if (!config.getHideThinking()) {
+                setThought(event.value);
+              }
             } catch (e) {
               // Silently fail on thought events to not interrupt the stream
               console.error('Error in thought event:', e);

@@ -148,6 +148,7 @@ export interface ConfigParameters {
   noBrowser?: boolean;
   ideMode?: boolean;
   enableOpenAILogging?: boolean;
+  hideThinking?: boolean;
   sampling_params?: {
     top_p?: number;
     top_k?: number;
@@ -198,6 +199,7 @@ export class Config {
   private readonly noBrowser: boolean;
   private readonly ideMode: boolean;
   private readonly enableOpenAILogging: boolean;
+  private readonly hideThinking: boolean;
   private readonly sampling_params?: {
     top_p?: number;
     top_k?: number;
@@ -263,6 +265,7 @@ export class Config {
     this.noBrowser = params.noBrowser ?? false;
     this.ideMode = params.ideMode ?? false;
     this.enableOpenAILogging = params.enableOpenAILogging ?? false;
+    this.hideThinking = params.hideThinking ?? false;
     this.sampling_params = params.sampling_params;
 
     if (params.contextFileName) {
@@ -297,6 +300,7 @@ export class Config {
       authMethod,
     );
     this.contentGeneratorConfig.enableOpenAILogging = this.enableOpenAILogging;
+    this.contentGeneratorConfig.hideThinking = this.hideThinking;
 
     // Set sampling parameters from config if available
     if (this.sampling_params) {
@@ -559,6 +563,10 @@ export class Config {
 
   getEnableOpenAILogging(): boolean {
     return this.enableOpenAILogging;
+  }
+
+  getHideThinking(): boolean {
+    return this.hideThinking;
   }
 
   async refreshMemory(): Promise<{ memoryContent: string; fileCount: number }> {

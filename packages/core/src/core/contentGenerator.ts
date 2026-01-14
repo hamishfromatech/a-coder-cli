@@ -54,6 +54,7 @@ export type ContentGeneratorConfig = {
   vertexai?: boolean;
   authType?: AuthType | undefined;
   enableOpenAILogging?: boolean;
+  hideThinking?: boolean;
   // Timeout configuration in milliseconds
   timeout?: number;
   // Maximum retries for failed requests

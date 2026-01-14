@@ -245,7 +245,11 @@ export class OpenAIContentGenerator implements ContentGenerator {
         ...samplingParams,
       };
 
-      if (this.client.baseURL.includes('openrouter.ai')) {
+      if (
+        this.client.baseURL.includes('openrouter.ai') ||
+        this.model.includes('gemini-3') ||
+        this.model.includes('flash-thinking')
+      ) {
         createParams.include_reasoning = true;
       }
 
@@ -399,7 +403,11 @@ export class OpenAIContentGenerator implements ContentGenerator {
         stream: true,
       };
 
-      if (this.client.baseURL.includes('openrouter.ai')) {
+      if (
+        this.client.baseURL.includes('openrouter.ai') ||
+        this.model.includes('gemini-3') ||
+        this.model.includes('flash-thinking')
+      ) {
         createParams.include_reasoning = true;
       }
 
@@ -1228,11 +1236,17 @@ export class OpenAIContentGenerator implements ContentGenerator {
             'tool_calls' in message ? message.tool_calls || [] : [];
           const combinedToolCalls = [...lastToolCalls, ...currentToolCalls];
 
+          // Combine thought_signature
+          const lastThoughtSignature = (lastMessage as any).thought_signature;
+          const currentThoughtSignature = (message as any).thought_signature;
+          const combinedThoughtSignature = currentThoughtSignature || lastThoughtSignature;
+
           // Update the last message with combined data
           (
             lastMessage as OpenAI.Chat.ChatCompletionMessageParam & {
               content: string | null;
               tool_calls?: OpenAI.Chat.ChatCompletionMessageToolCall[];
+              thought_signature?: string;
             }
           ).content = combinedContent || null;
           if (combinedToolCalls.length > 0) {
@@ -1240,8 +1254,12 @@ export class OpenAIContentGenerator implements ContentGenerator {
               lastMessage as OpenAI.Chat.ChatCompletionMessageParam & {
                 content: string | null;
                 tool_calls?: OpenAI.Chat.ChatCompletionMessageToolCall[];
+                thought_signature?: string;
               }
             ).tool_calls = combinedToolCalls;
+          }
+          if (combinedThoughtSignature) {
+            (lastMessage as any).thought_signature = combinedThoughtSignature;
           }
 
           continue; // Skip adding the current message since it's been merged
@@ -1861,10 +1879,16 @@ export class OpenAIContentGenerator implements ContentGenerator {
             ...(message.tool_calls || []),
           ];
 
+          // Combine thought_signature
+          const combinedThoughtSignature = message.thought_signature || lastMessage.thought_signature;
+
           // Update the last message with combined data
           lastMessage.content = combinedContent || null;
           if (combinedToolCalls.length > 0) {
             lastMessage.tool_calls = combinedToolCalls;
+          }
+          if (combinedThoughtSignature) {
+            lastMessage.thought_signature = combinedThoughtSignature;
           }
 
           continue; // Skip adding the current message since it's been merged
@@ -1897,14 +1921,18 @@ export class OpenAIContentGenerator implements ContentGenerator {
         if ('text' in part && part.text) {
           textParts.push(part.text);
         } else if ('functionCall' in part && part.functionCall) {
-          toolCalls.push({
+          const toolCall: OpenAIToolCall = {
             id: part.functionCall.id || `call_${toolCalls.length}`,
             type: 'function' as const,
             function: {
               name: part.functionCall.name || '',
               arguments: JSON.stringify(part.functionCall.args || {}),
             },
-          });
+          };
+          if ((part.functionCall as any).thought_signature) {
+            toolCall.thought_signature = (part.functionCall as any).thought_signature;
+          }
+          toolCalls.push(toolCall);
         }
       }
 
@@ -1921,6 +1949,10 @@ export class OpenAIContentGenerator implements ContentGenerator {
         candidate?.finishReason,
       ),
     };
+
+    if ((content as any)?.thought_signature) {
+      choice.message.thought_signature = (content as any).thought_signature;
+    }
 
     if (toolCalls.length > 0) {
       choice.message.tool_calls = toolCalls;

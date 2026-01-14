@@ -50,17 +50,11 @@ export function useKeypress(
     setRawMode(true);
 
     const keypressStream = new PassThrough();
-    let usePassthrough = false;
+    // Prior to node 20, node's built-in readline does not support bracketed
+    // paste mode. We hack by detecting it with our own handler.
+    // We force this to true to ensure consistent paste handling across all node versions.
+    let usePassthrough = true;
     const nodeMajorVersion = parseInt(process.versions.node.split('.')[0], 10);
-    if (
-      nodeMajorVersion < 20 ||
-      process.env['PASTE_WORKAROUND'] === '1' ||
-      process.env['PASTE_WORKAROUND'] === 'true'
-    ) {
-      // Prior to node 20, node's built-in readline does not support bracketed
-      // paste mode. We hack by detecting it with our own handler.
-      usePassthrough = true;
-    }
 
     let isPaste = false;
     let pasteBuffer = Buffer.alloc(0);

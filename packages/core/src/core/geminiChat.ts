@@ -569,12 +569,22 @@ export class GeminiChat {
       (content) => !this.isThoughtContent(content),
     );
 
+    // Capture thought_signature from the first model output that has it
+    const thoughtSignature = (modelOutput.find(c => (c as any).thought_signature) as any)?.thought_signature;
+
     let outputContents: Content[] = [];
     if (
       nonThoughtModelOutput.length > 0 &&
       nonThoughtModelOutput.every((content) => content.role !== undefined)
     ) {
       outputContents = nonThoughtModelOutput;
+      if (thoughtSignature) {
+        outputContents.forEach(c => {
+          if (!(c as any).thought_signature) {
+            (c as any).thought_signature = thoughtSignature;
+          }
+        });
+      }
     } else if (nonThoughtModelOutput.length === 0 && modelOutput.length > 0) {
       // This case handles when the model returns only a thought.
       // We don't want to add an empty model response in this case.
