@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { getSkillsDir } from '@a-coder/core';
+import open from 'open';
 import { MessageType } from '../types.js';
 import { SlashCommand, SlashCommandActionReturn } from './types.js';
 
@@ -19,6 +21,22 @@ export const skillsCommand: SlashCommand = {
     }
   },
   subCommands: [
+    {
+      name: 'open',
+      description: 'Open the skills directory in the default file explorer.',
+      action: (context): SlashCommandActionReturn | void => {
+        const skillsDir = getSkillsDir();
+        context.ui.addItem(
+          {
+            type: MessageType.INFO,
+            text: `Opening skills directory: ${skillsDir}`,
+          },
+          Date.now(),
+        );
+
+        open(skillsDir);
+      },
+    },
     {
       name: 'list',
       description: 'List all available skills.',
