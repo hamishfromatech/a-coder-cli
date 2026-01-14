@@ -60,30 +60,11 @@ export function useKeypress(
     let pasteBuffer = Buffer.alloc(0);
 
     const handleKeypress = (_: unknown, key: Key) => {
-      if (key.name === 'paste-start') {
-        isPaste = true;
-      } else if (key.name === 'paste-end') {
-        isPaste = false;
-        onKeypressRef.current({
-          name: '',
-          ctrl: false,
-          meta: false,
-          shift: false,
-          paste: true,
-          sequence: pasteBuffer.toString(),
-        });
-        pasteBuffer = Buffer.alloc(0);
-      } else {
-        if (isPaste) {
-          pasteBuffer = Buffer.concat([pasteBuffer, Buffer.from(key.sequence)]);
-        } else {
-          // Handle special keys
-          if (key.name === 'return' && key.sequence === '\x1B\r') {
-            key.meta = true;
-          }
-          onKeypressRef.current({ ...key, paste: isPaste });
-        }
+      // Handle special keys
+      if (key.name === 'return' && key.sequence === '\x1B\r') {
+        key.meta = true;
       }
+      onKeypressRef.current({ ...key, paste: false });
     };
 
     const handleRawKeypress = (data: Buffer) => {
@@ -102,40 +83,46 @@ export function useKeypress(
           suffixPos !== -1 && (prefixPos === -1 || suffixPos < prefixPos);
 
         let nextMarkerPos = -1;
-        let markerLength = 0;
-
         if (isPrefixNext) {
           nextMarkerPos = prefixPos;
         } else if (isSuffixNext) {
           nextMarkerPos = suffixPos;
         }
-        markerLength = PASTE_MODE_SUFFIX.length;
 
         if (nextMarkerPos === -1) {
-          keypressStream.write(data.slice(pos));
+          const remainingData = data.slice(pos);
+          if (isPaste) {
+            pasteBuffer = Buffer.concat([pasteBuffer, remainingData]);
+          } else {
+            keypressStream.write(remainingData);
+          }
           return;
         }
 
         const nextData = data.slice(pos, nextMarkerPos);
         if (nextData.length > 0) {
-          keypressStream.write(nextData);
+          if (isPaste) {
+            pasteBuffer = Buffer.concat([pasteBuffer, nextData]);
+          } else {
+            keypressStream.write(nextData);
+          }
         }
-        const createPasteKeyEvent = (
-          name: 'paste-start' | 'paste-end',
-        ): Key => ({
-          name,
-          ctrl: false,
-          meta: false,
-          shift: false,
-          paste: false,
-          sequence: '',
-        });
+
         if (isPrefixNext) {
-          handleKeypress(undefined, createPasteKeyEvent('paste-start'));
+          isPaste = true;
         } else if (isSuffixNext) {
-          handleKeypress(undefined, createPasteKeyEvent('paste-end'));
+          isPaste = false;
+          onKeypressRef.current({
+            name: '',
+            ctrl: false,
+            meta: false,
+            shift: false,
+            paste: true,
+            sequence: pasteBuffer.toString(),
+          });
+          pasteBuffer = Buffer.alloc(0);
         }
-        pos = nextMarkerPos + markerLength;
+        pos = nextMarkerPos + PASTE_MODE_PREFIX.length; // Both markers have the same length
       }
     };
 
