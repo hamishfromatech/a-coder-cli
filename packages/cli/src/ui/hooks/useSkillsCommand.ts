@@ -42,9 +42,12 @@ export const useSkillsCommand = (
     (skillName: string | undefined) => {
       setIsSkillsDialogOpen(false);
       if (skillName) {
-        // We want this to be a tool call, so we submit the slash command.
-        // The slash command will return a tool action.
-        submitQuery(`/skills load ${skillName}`);
+        // We want the LLM to be aware that a skill is being loaded and to "learn" it.
+        // By sending this message, the LLM is encouraged to use the skills tool
+        // to load the instructions and then proceed.
+        submitQuery(
+          `I want to use the "${skillName}" skill. Please load it and proceed with the task.`,
+        );
       }
     },
     [submitQuery],
