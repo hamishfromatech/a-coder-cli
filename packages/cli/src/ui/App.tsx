@@ -73,6 +73,7 @@ import {
 } from './contexts/SessionContext.js';
 import { useGitBranchName } from './hooks/useGitBranchName.js';
 import { useBracketedPaste } from './hooks/useBracketedPaste.js';
+import { isPasting } from './hooks/useKeypress.js';
 import { useTextBuffer } from './components/shared/text-buffer.js';
 import * as fs from 'fs';
 import { UpdateNotification } from './components/UpdateNotification.js';
@@ -465,6 +466,10 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
   );
 
   useInput((input: string, key: InkKeyType) => {
+    if (isPasting()) {
+      return;
+    }
+
     let enteringConstrainHeightMode = false;
     if (!constrainHeight) {
       // Automatically re-enter constrain height mode if the user types

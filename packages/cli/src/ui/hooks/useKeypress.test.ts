@@ -5,7 +5,7 @@
  */
 
 import { renderHook, act } from '@testing-library/react';
-import { useKeypress, Key } from './useKeypress.js';
+import { useKeypress, Key, resetKeypressSingleton } from './useKeypress.js';
 import { useStdin } from 'ink';
 import { EventEmitter } from 'events';
 import { PassThrough } from 'stream';
@@ -103,6 +103,7 @@ describe('useKeypress', () => {
   let originalNodeVersion: string;
 
   beforeEach(() => {
+    resetKeypressSingleton();
     vi.clearAllMocks();
     stdin = new MockStdin();
     (useStdin as vi.Mock).mockReturnValue({
