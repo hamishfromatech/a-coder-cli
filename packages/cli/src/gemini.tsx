@@ -140,21 +140,28 @@ async function handleUpgrade() {
 }
 
 export async function main() {
-  console.log('[TRACE] Entering main()');
+  const debugLogPath = join(os.homedir(), 'gemini-debug.log');
+  const debugLog = (msg: string) => {
+    try {
+      fs.appendFileSync(debugLogPath, `${new Date().toISOString()} [MAIN] ${msg}\n`);
+    } catch (e) {}
+  };
+  debugLog('Entering main()');
   const workspaceRoot = process.cwd();
   const settings = loadSettings(workspaceRoot);
 
-  console.log('[TRACE] Settings loaded');
+  debugLog('Settings loaded');
   await cleanupCheckpoints();
   if (settings.errors.length > 0) {
-    // ...
+    debugLog(`Settings errors: ${JSON.stringify(settings.errors)}`);
     process.exit(1);
   }
 
   const argv = await parseArguments();
-  console.log('[TRACE] Arguments parsed');
+  debugLog(`Arguments parsed: ${JSON.stringify(argv)}`);
 
   if (argv.upgrade) {
+    debugLog('Handling upgrade');
     await handleUpgrade();
     process.exit(0);
   }
@@ -167,52 +174,38 @@ export async function main() {
     argv,
   );
 
-  console.log('[TRACE] Config loaded');
+  debugLog('Config loaded');
   if (argv.promptInteractive && !process.stdin.isTTY) {
-    // ...
+    debugLog('promptInteractive and not TTY, exiting');
     process.exit(1);
   }
 
   if (config.getListExtensions()) {
-    // ...
+    debugLog('List extensions, exiting');
     process.exit(0);
-  }
-
-  // Set a default auth type if one isn't set.
-  if (!settings.merged.selectedAuthType) {
-    // ...
   }
 
   setMaxSizedBoxDebugging(config.getDebugMode());
 
-  console.log('[TRACE] Initializing config...');
+  debugLog('Initializing config...');
   await config.initialize();
-  console.log('[TRACE] Config initialized');
-
-  if (settings.merged.theme) {
-    // ...
-  }
+  debugLog('Config initialized');
 
   // hop into sandbox if we are outside and sandboxing is enabled
   if (!process.env.SANDBOX) {
-    console.log('[TRACE] Checking for sandbox...');
+    debugLog('Checking for sandbox...');
     const memoryArgs = settings.merged.autoConfigureMaxOldSpaceSize
       ? getNodeMemoryArgs(config)
       : [];
     const sandboxConfig = config.getSandbox();
     if (sandboxConfig) {
-      console.log('[TRACE] Entering sandbox...');
-      if (settings.merged.selectedAuthType) {
-        // ...
-      }
+      debugLog('Entering sandbox...');
       await start_sandbox(sandboxConfig, memoryArgs);
-      console.log('[TRACE] Sandbox started (or failed)');
+      debugLog('Sandbox started (or failed)');
       process.exit(0);
     } else {
-      // Not in a sandbox and not entering one, so relaunch with additional
-      // arguments to control memory usage if needed.
       if (memoryArgs.length > 0) {
-        console.log('[TRACE] Relaunching with memory args...');
+        debugLog('Relaunching with memory args...');
         await relaunchWithAdditionalArgs(memoryArgs);
         process.exit(0);
       }
@@ -223,13 +216,12 @@ export async function main() {
     settings.merged.selectedAuthType === AuthType.LOGIN_WITH_GOOGLE &&
     config.getNoBrowser()
   ) {
-    console.log('[TRACE] Refreshing OAuth...');
-    // Do oauth before app renders to make copying the link possible.
+    debugLog('Refreshing OAuth...');
     await getOauthClient(settings.merged.selectedAuthType, config);
   }
 
   let input = config.getQuestion();
-  console.log('[TRACE] Input question:', input);
+  debugLog(`Input question length: ${input?.length || 0}`);
   const startupWarnings = [
     ...(await getStartupWarnings()),
     ...(await getUserStartupWarnings(workspaceRoot)),
@@ -239,11 +231,8 @@ export async function main() {
     !!argv.promptInteractive ||
     (process.stdin.isTTY && (input?.length === 0 || input?.startsWith('/')));
 
-  console.log('[TRACE] shouldBeInteractive:', shouldBeInteractive);
-
   // Render UI, passing necessary config values. Check that there is no command line question.
   if (shouldBeInteractive) {
-    console.log('[TRACE] Starting interactive mode...');
     const version = await getCliVersion();
     setWindowTitle(basename(workspaceRoot), settings);
     const instance = render(

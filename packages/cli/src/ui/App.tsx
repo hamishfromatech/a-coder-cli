@@ -151,11 +151,13 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
   const [showToolDescriptions, setShowToolDescriptions] =
     useState<boolean>(false);
   const [ctrlCPressedOnce, setCtrlCPressedOnce] = useState(false);
+  const ctrlCPressedOnceRef = useRef(false);
   const [quittingMessages, setQuittingMessages] = useState<
     HistoryItem[] | null
   >(null);
   const ctrlCTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [ctrlDPressedOnce, setCtrlDPressedOnce] = useState(false);
+  const ctrlDPressedOnceRef = useRef(false);
   const ctrlDTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [constrainHeight, setConstrainHeight] = useState<boolean>(true);
   const [showPrivacyNotice, setShowPrivacyNotice] = useState<boolean>(false);
@@ -436,11 +438,15 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
 
   const handleExit = useCallback(
     (
-      pressedOnce: boolean,
-      setPressedOnce: (value: boolean) => void,
+      pressedOnceRef: React.MutableRefObject<boolean>,
+      setPressedOnceState: (value: boolean) => void,
       timerRef: React.MutableRefObject<NodeJS.Timeout | null>,
     ) => {
-      if (pressedOnce) {
+      if (isPasting()) {
+        return;
+      }
+
+      if (pressedOnceRef.current) {
         if (timerRef.current) {
           clearTimeout(timerRef.current);
         }
@@ -450,19 +456,22 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
         if (quitCommand && quitCommand.action) {
           quitCommand.action(commandContext, '');
         } else {
-          // This is unlikely to be needed but added for an additional fallback.
+          if (config.getDebugMode()) {
+            console.error('[DEBUG] process.exit(0) called from handleExit fallback');
+          }
           process.exit(0);
         }
       } else {
-        setPressedOnce(true);
+        pressedOnceRef.current = true;
+        setPressedOnceState(true);
         timerRef.current = setTimeout(() => {
-          setPressedOnce(false);
+          pressedOnceRef.current = false;
+          setPressedOnceState(false);
           timerRef.current = null;
         }, CTRL_EXIT_PROMPT_DURATION_MS);
       }
     },
-    // Add commandContext to the dependency array here!
-    [slashCommands, commandContext],
+    [slashCommands, commandContext, config],
   );
 
   useInput((input: string, key: InkKeyType) => {
@@ -491,13 +500,13 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
         handleSlashCommand(newValue ? '/mcp desc' : '/mcp nodesc');
       }
     } else if (key.ctrl && (input === 'c' || input === 'C')) {
-      handleExit(ctrlCPressedOnce, setCtrlCPressedOnce, ctrlCTimerRef);
+      handleExit(ctrlCPressedOnceRef, setCtrlCPressedOnce, ctrlCTimerRef);
     } else if (key.ctrl && (input === 'd' || input === 'D')) {
       if (buffer.text.length > 0) {
         // Do nothing if there is text in the input.
         return;
       }
-      handleExit(ctrlDPressedOnce, setCtrlDPressedOnce, ctrlDTimerRef);
+      handleExit(ctrlDPressedOnceRef, setCtrlDPressedOnce, ctrlDTimerRef);
     } else if (key.ctrl && input === 's' && !enteringConstrainHeightMode) {
       setConstrainHeight(false);
     }

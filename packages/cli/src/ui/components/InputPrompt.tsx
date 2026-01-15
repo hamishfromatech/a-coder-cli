@@ -340,17 +340,13 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
             const charBefore = col > 0 ? cpSlice(line, col - 1, col) : '';
 
             // If we have multiple lines and we are NOT on a line ending with \, 
-            // treat enter as newline unless we are at the very end of the buffer and it's not empty.
-            // This helps with pastes that aren't caught by bracketed paste.
+            // treat enter as newline.
             const isMultiLine = buffer.lines.length > 1;
 
             if (charBefore === '\\') {
               buffer.backspace();
               buffer.newline();
             } else if (isMultiLine) {
-              // In multi-line mode, Enter inserts a newline.
-              // To submit, the user can use Ctrl+Enter or we could decide on another shortcut.
-              // For now, let's make it insert a newline to stop the auto-submit loop.
               buffer.newline();
             } else {
               handleSubmitAndClear(buffer.text);
@@ -358,10 +354,18 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
           }
           return;
         }
+
+        // Ctrl+Enter or Meta+Enter to submit (matches placeholder)
+        if (key.name === 'return' && (key.ctrl || key.meta)) {
+          if (buffer.text.trim()) {
+            handleSubmitAndClear(buffer.text);
+          }
+          return;
+        }
       }
 
-      // Newline insertion
-      if (key.name === 'return' && (key.ctrl || key.meta || key.paste)) {
+      // Newline insertion for paste or other cases
+      if (key.name === 'return' && key.paste) {
         buffer.newline();
         return;
       }
