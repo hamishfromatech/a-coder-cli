@@ -253,9 +253,10 @@ export class OpenAIContentGenerator implements ContentGenerator {
         createParams.include_reasoning = true;
       }
 
-      // Handle JSON mode
+      // Handle JSON mode - use 'text' as some providers don't support 'json_object'
+      // JSON response is requested in the system prompt instead
       if (request.config?.responseMimeType === 'application/json') {
-        createParams.response_format = { type: 'json_object' };
+        createParams.response_format = { type: 'text' };
       }
 
       if (request.config?.tools) {
@@ -411,9 +412,10 @@ export class OpenAIContentGenerator implements ContentGenerator {
         createParams.include_reasoning = true;
       }
 
-      // Handle JSON mode
+      // Handle JSON mode - use 'text' as some providers don't support 'json_object'
+      // JSON response is requested in the system prompt instead
       if (request.config?.responseMimeType === 'application/json') {
-        createParams.response_format = { type: 'json_object' };
+        createParams.response_format = { type: 'text' };
       }
 
       if (request.config?.tools) {

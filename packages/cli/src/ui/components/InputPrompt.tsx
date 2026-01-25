@@ -333,7 +333,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
           }
         }
 
-        if (key.name === 'return' && !key.ctrl && !key.meta && !key.paste) {
+        if (key.name === 'return' && !key.ctrl && !key.meta) {
           if (buffer.text.trim()) {
             const [row, col] = buffer.cursor;
             const line = buffer.lines[row];
