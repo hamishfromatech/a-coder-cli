@@ -10,7 +10,7 @@ export * from './config/config.js';
 // Export Core Logic
 export * from './core/client.js';
 export * from './core/contentGenerator.js';
-export * from './core/geminiChat.js';
+export * from './core/GeminiChat.js';
 export * from './core/logger.js';
 export * from './core/prompts.js';
 export * from './core/tokenLimits.js';
@@ -18,6 +18,7 @@ export * from './core/turn.js';
 export * from './core/geminiRequest.js';
 export * from './core/coreToolScheduler.js';
 export * from './core/nonInteractiveToolExecutor.js';
+export * from './core/contextMonitor.js';
 
 export * from './code_assist/codeAssist.js';
 export * from './code_assist/oauth2.js';
@@ -56,6 +57,7 @@ export * from './tools/web-search.js';
 export * from './tools/read-many-files.js';
 export * from './tools/write-todos.js';
 export * from './tools/mcp-client.js';
+export * from './tools/tasks.js';
 export * from './tools/mcp-tool.js';
 export * from './tools/skills.js';
 

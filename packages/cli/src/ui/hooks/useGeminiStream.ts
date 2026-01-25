@@ -14,6 +14,7 @@ import {
   ServerGeminiContentEvent as ContentEvent,
   ServerGeminiErrorEvent as ErrorEvent,
   ServerGeminiChatCompressedEvent,
+  ServerGeminiContextWarningEvent,
   getErrorMessage,
   isNodeError,
   MessageSenderType,
@@ -94,6 +95,7 @@ export const useGeminiStream = (
   performMemoryRefresh: () => Promise<void>,
   modelSwitchedFromQuotaError: boolean,
   setModelSwitchedFromQuotaError: React.Dispatch<React.SetStateAction<boolean>>,
+  onContextWarning?: (tokens: number, limit: number) => void,
 ) => {
   const [initError, setInitError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -481,6 +483,38 @@ export const useGeminiStream = (
     );
   }, [addItem]);
 
+  const handleContextWarningEvent = useCallback(
+    (event: ServerGeminiContextWarningEvent) => {
+      const { event: eventType, currentTokens, tokenLimit } = event.value;
+      const percentage = (event.value.percentage * 100).toFixed(0);
+
+      // Call the callback to update contextUsage in App.tsx
+      if (onContextWarning) {
+        onContextWarning(currentTokens, tokenLimit);
+      }
+
+      let message = '';
+      if (eventType === 'warning') {
+        message = `Context usage is at ${percentage}% (${currentTokens}/${tokenLimit} tokens). Consider using /compress to free up space.`;
+      } else if (eventType === 'critical') {
+        message = `⚠️ Context usage is at ${percentage}% (${currentTokens}/${tokenLimit} tokens). Approaching token limit.`;
+      } else if (eventType === 'auto_compress') {
+        message = `⚡ Auto-compressing chat history (${percentage}% of ${tokenLimit} tokens)...`;
+      }
+
+      if (message) {
+        addItem(
+          {
+            type: eventType === 'auto_compress' ? 'info' : 'error',
+            text: message,
+          },
+          Date.now(),
+        );
+      }
+    },
+    [addItem, onContextWarning],
+  );
+
   const processGeminiStreamEvents = useCallback(
     async (
       stream: AsyncIterable<GeminiEvent>,
@@ -547,6 +581,9 @@ export const useGeminiStream = (
             // before we add loop detected message to history
             loopDetectedRef.current = true;
             break;
+          case ServerGeminiEventType.ContextWarning:
+            handleContextWarningEvent(event);
+            break;
           default: {
             // enforces exhaustive switch-case
             const unreachable: never = event;
@@ -566,6 +603,7 @@ export const useGeminiStream = (
       scheduleToolCalls,
       handleChatCompressionEvent,
       handleMaxSessionTurnsEvent,
+      handleContextWarningEvent,
     ],
   );
 

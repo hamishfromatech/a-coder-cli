@@ -22,7 +22,8 @@ import {
   UnauthorizedError,
   toFriendlyError,
 } from '../utils/errors.js';
-import { GeminiChat } from './geminiChat.js';
+import { GeminiChat } from './GeminiChat.js';
+import { ContextEvent } from './contextMonitor.js';
 
 // Define a structure for tools passed to the server
 export interface ServerTool {
@@ -50,6 +51,7 @@ export enum GeminiEventType {
   Thought = 'thought',
   MaxSessionTurns = 'max_session_turns',
   LoopDetected = 'loop_detected',
+  ContextWarning = 'context_warning',
 }
 
 export interface StructuredError {
@@ -126,9 +128,21 @@ export interface ChatCompressionInfo {
   newTokenCount: number;
 }
 
+export interface ContextWarningInfo {
+  event: ContextEvent;
+  currentTokens: number;
+  tokenLimit: number;
+  percentage: number;
+}
+
 export type ServerGeminiChatCompressedEvent = {
   type: GeminiEventType.ChatCompressed;
   value: ChatCompressionInfo | null;
+};
+
+export type ServerGeminiContextWarningEvent = {
+  type: GeminiEventType.ContextWarning;
+  value: ContextWarningInfo;
 };
 
 export type ServerGeminiMaxSessionTurnsEvent = {
@@ -150,7 +164,8 @@ export type ServerGeminiStreamEvent =
   | ServerGeminiChatCompressedEvent
   | ServerGeminiThoughtEvent
   | ServerGeminiMaxSessionTurnsEvent
-  | ServerGeminiLoopDetectedEvent;
+  | ServerGeminiLoopDetectedEvent
+  | ServerGeminiContextWarningEvent;
 
 // A turn manages the agentic loop turn within the server context.
 export class Turn {

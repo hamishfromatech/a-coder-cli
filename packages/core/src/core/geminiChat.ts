@@ -130,6 +130,10 @@ export class GeminiChat {
   // A promise to represent the current state of the message being sent to the
   // model.
   private sendPromise: Promise<void> = Promise.resolve();
+  // Cached token count of the current curated history
+  private currentHistoryTokenCount: number = 0;
+  // Flag to invalidate the cached token count when history is modified
+  private tokenCacheValid: boolean = false;
 
   constructor(
     private readonly config: Config,
@@ -138,6 +142,50 @@ export class GeminiChat {
     private history: Content[] = [],
   ) {
     validateHistory(history);
+    // Initialize token count for initial history
+    this.currentHistoryTokenCount = 0;
+  }
+
+  /**
+   * Gets the current token count of the curated history.
+   * Returns cached value if valid, otherwise returns 0 (cache will be updated async).
+   * To get accurate count, call updateHistoryTokenCount() first.
+   */
+  getHistoryTokenCount(): number {
+    return this.currentHistoryTokenCount;
+  }
+
+  /**
+   * Invalidates the cached token count. Call this when history is modified
+   * to ensure the next updateHistoryTokenCount() call recalculates.
+   */
+  private invalidateTokenCache(): void {
+    this.tokenCacheValid = false;
+  }
+
+  /**
+   * Updates the cached history token count by counting tokens in the current curated history.
+   * This is an async operation as it requires calling the ContentGenerator's countTokens method.
+   */
+  async updateHistoryTokenCount(): Promise<number> {
+    const curatedHistory = this.getHistory(true);
+    try {
+      const result = await this.contentGenerator.countTokens({
+        model: this.config.getModel(),
+        contents: curatedHistory,
+      });
+      this.currentHistoryTokenCount = result.totalTokens ?? 0;
+      this.tokenCacheValid = true;
+      return this.currentHistoryTokenCount;
+    } catch (error) {
+      // If counting fails, keep the cached value or default to 0
+      if (!this.tokenCacheValid) {
+        this.currentHistoryTokenCount = 0;
+      }
+      // Log the error but don't throw - token counting should not break the flow
+      console.warn('Failed to update history token count:', error);
+      return this.currentHistoryTokenCount;
+    }
   }
 
   private _getRequestTextFromContents(contents: Content[]): string {
@@ -484,6 +532,8 @@ export class GeminiChat {
    */
   clearHistory(): void {
     this.history = [];
+    this.currentHistoryTokenCount = 0;
+    this.tokenCacheValid = true;
   }
 
   /**
@@ -493,9 +543,11 @@ export class GeminiChat {
    */
   addHistory(content: Content): void {
     this.history.push(content);
+    this.invalidateTokenCache();
   }
   setHistory(history: Content[]): void {
     this.history = history;
+    this.invalidateTokenCache();
   }
 
   getFinalUsageMetadata(
@@ -565,6 +617,8 @@ export class GeminiChat {
     modelOutput: Content[],
     automaticFunctionCallingHistory?: Content[],
   ) {
+    // Invalidate token cache since history is being modified
+    this.invalidateTokenCache();
     const nonThoughtModelOutput = modelOutput.filter(
       (content) => !this.isThoughtContent(content),
     );

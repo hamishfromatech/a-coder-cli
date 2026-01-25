@@ -27,7 +27,6 @@ import { ReadManyFilesTool } from '../tools/read-many-files.js';
 import { getResponseText } from '../utils/generateContentResponseUtilities.js';
 import { checkNextSpeaker } from '../utils/nextSpeakerChecker.js';
 import { reportError } from '../utils/errorReporting.js';
-import { GeminiChat } from './geminiChat.js';
 import { retryWithBackoff } from '../utils/retry.js';
 import { getErrorMessage } from '../utils/errors.js';
 import { isFunctionResponse } from '../utils/messageInspectors.js';
@@ -41,6 +40,12 @@ import {
 import { ProxyAgent, setGlobalDispatcher } from 'undici';
 import { DEFAULT_GEMINI_FLASH_MODEL } from '../config/models.js';
 import { LoopDetectionService } from '../services/loopDetectionService.js';
+import {
+  ContextMonitor,
+  ContextEvent,
+  type ContextMonitorConfig,
+} from './contextMonitor.js';
+import { GeminiChat } from './GeminiChat.js';
 
 /**
  * Returns the index of the content after the fraction of the total characters in the history.
@@ -97,6 +102,7 @@ export class GeminiClient {
   private readonly COMPRESSION_PRESERVE_THRESHOLD = 0.3;
 
   private readonly loopDetector: LoopDetectionService;
+  private readonly contextMonitor: ContextMonitor;
   private lastPromptId?: string;
 
   constructor(private config: Config) {
@@ -106,6 +112,14 @@ export class GeminiClient {
 
     this.embeddingModel = config.getEmbeddingModel();
     this.loopDetector = new LoopDetectionService(config);
+
+    // Initialize context monitor with config
+    const contextConfig = config.getContextManagementConfig();
+    this.contextMonitor = new ContextMonitor({
+      warningThreshold: contextConfig.warningThreshold,
+      criticalThreshold: contextConfig.criticalThreshold,
+      autoCompressThreshold: contextConfig.autoCompressThreshold,
+    });
   }
 
   async initialize(contentGeneratorConfig: ContentGeneratorConfig) {
@@ -141,6 +155,13 @@ export class GeminiClient {
       throw new Error('Chat not initialized');
     }
     return this.chat;
+  }
+
+  /**
+   * Gets the current chat history token count
+   */
+  getChatHistoryTokenCount(): number {
+    return this.getChat().getHistoryTokenCount();
   }
 
   isInitialized(): boolean {
@@ -298,6 +319,35 @@ export class GeminiClient {
 
     // Track the original model from the first call to detect model switching
     const initialModel = originalModel || this.config.getModel();
+
+    // Update the cached history token count before checking context
+    await this.getChat().updateHistoryTokenCount();
+
+    // Check context usage and emit warnings/compression trigger
+    const contextConfig = this.config.getContextManagementConfig();
+    if (contextConfig.enabled) {
+      const currentTokens = this.getChatHistoryTokenCount();
+      const model = this.config.getModel();
+      const modelTokenLimit = tokenLimit(model);
+      const contextUsage = this.contextMonitor.checkUsage(currentTokens, modelTokenLimit);
+
+      if (contextUsage) {
+        yield {
+          type: GeminiEventType.ContextWarning,
+          value: contextUsage,
+        };
+
+        // Auto-compress if at threshold
+        if (contextUsage.event === ContextEvent.AUTO_COMPRESS) {
+          const compressed = await this.tryCompressChat(prompt_id, true);
+          if (compressed) {
+            yield { type: GeminiEventType.ChatCompressed, value: compressed };
+            // Update token count after compression
+            await this.getChat().updateHistoryTokenCount();
+          }
+        }
+      }
+    }
 
     const compressed = await this.tryCompressChat(prompt_id);
 

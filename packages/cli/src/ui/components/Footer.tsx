@@ -17,6 +17,12 @@ import process from 'node:process';
 import Gradient from 'ink-gradient';
 import { MemoryUsageDisplay } from './MemoryUsageDisplay.js';
 
+interface ContextUsageInfo {
+  tokens: number;
+  limit: number;
+  percentage: number;
+}
+
 interface FooterProps {
   model: string;
   targetDir: string;
@@ -28,6 +34,7 @@ interface FooterProps {
   showErrorDetails: boolean;
   showMemoryUsage?: boolean;
   promptTokenCount: number;
+  contextUsage?: ContextUsageInfo | null;
   nightly: boolean;
   terminalWidth: number;
 }
@@ -43,12 +50,22 @@ export const Footer: React.FC<FooterProps> = ({
   showErrorDetails,
   showMemoryUsage,
   promptTokenCount,
+  contextUsage,
   nightly,
   terminalWidth,
 }) => {
   const limit = tokenLimit(model);
-  const percentage = promptTokenCount / limit;
+  // Use contextUsage if available, otherwise fall back to promptTokenCount
+  const currentTokens = contextUsage?.tokens ?? promptTokenCount;
+  const percentage = currentTokens / limit;
   const pathLimit = Math.max(10, Math.floor(terminalWidth * 0.4));
+
+  // Show warning color if approaching limit
+  const getColorForPercentage = (p: number) => {
+    if (p >= 0.9) return Colors.AccentRed;
+    if (p >= 0.7) return Colors.AccentYellow;
+    return Colors.AccentBlue;
+  };
 
   return (
     <Box marginTop={1} justifyContent="space-between" width="100%">
@@ -98,7 +115,7 @@ export const Footer: React.FC<FooterProps> = ({
 
       {/* Right Section: Gemini Label and Console Summary */}
       <Box alignItems="center" flexShrink={1}>
-        <Text color={Colors.AccentBlue} wrap="truncate">
+        <Text color={getColorForPercentage(percentage)} wrap="truncate">
           {' '}
           {model}{' '}
           <Text color={Colors.Gray}>

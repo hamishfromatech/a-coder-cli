@@ -18,6 +18,7 @@ interface LoadingIndicatorProps {
   elapsedTime: number;
   rightContent?: React.ReactNode;
   thought?: ThoughtSummary | null;
+  showThinking?: boolean;
 }
 
 export const LoadingIndicator: React.FC<LoadingIndicatorProps> = ({
@@ -25,6 +26,7 @@ export const LoadingIndicator: React.FC<LoadingIndicatorProps> = ({
   elapsedTime,
   rightContent,
   thought,
+  showThinking = false,
 }) => {
   const streamingState = useStreamingContext();
 
@@ -33,6 +35,7 @@ export const LoadingIndicator: React.FC<LoadingIndicatorProps> = ({
   }
 
   const primaryText = currentLoadingPhrase || thought?.subject;
+  const hasThought = thought?.description;
 
   return (
     <Box marginTop={1} paddingLeft={0} flexDirection="column">
@@ -54,9 +57,12 @@ export const LoadingIndicator: React.FC<LoadingIndicatorProps> = ({
             : ` (esc to cancel, ${elapsedTime < 60 ? `${elapsedTime}s` : formatDuration(elapsedTime * 1000)})`}
         </Text>
         <Box flexGrow={1}>{/* Spacer */}</Box>
+        {hasThought && !showThinking && (
+          <Text color={Colors.Gray} dimColor>(ctrl+o for reasoning)</Text>
+        )}
         {rightContent && <Box>{rightContent}</Box>}
       </Box>
-      {thought?.description && (
+      {showThinking && hasThought && (
         <Box paddingLeft={3} marginTop={0}>
           <Text italic color={Colors.Gray} wrap="wrap">
             {thought.description}

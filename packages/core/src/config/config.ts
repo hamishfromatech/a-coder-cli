@@ -24,6 +24,10 @@ import { WebFetchTool } from '../tools/web-fetch.js';
 import { ReadManyFilesTool } from '../tools/read-many-files.js';
 import { WriteToDosTool } from '../tools/write-todos.js';
 import { SkillsTool } from '../tools/skills.js';
+import { TaskCreateTool } from '../tools/task-create.js';
+import { TaskGetTool } from '../tools/task-get.js';
+import { TaskUpdateTool } from '../tools/task-update.js';
+import { TaskListTool } from '../tools/task-list.js';
 import {
   MemoryTool,
   setGeminiMdFilename,
@@ -59,6 +63,13 @@ export interface AccessibilitySettings {
 
 export interface BugCommandSettings {
   urlTemplate: string;
+}
+
+export interface ContextManagementConfig {
+  warningThreshold: number;      // Default: 0.7 (70%)
+  criticalThreshold: number;     // Default: 0.85 (85%)
+  autoCompressThreshold: number;  // Default: 0.9 (90%)
+  enabled: boolean;
 }
 
 export interface TelemetrySettings {
@@ -217,6 +228,12 @@ export class Config {
   flashFallbackHandler?: FlashFallbackHandler;
   private quotaErrorOccurred: boolean = false;
   private modelChangeListeners: Array<(newModel: string) => void> = [];
+  private contextManagementConfig: ContextManagementConfig = {
+    warningThreshold: 0.7,
+    criticalThreshold: 0.85,
+    autoCompressThreshold: 0.9,
+    enabled: true,
+  };
 
   constructor(params: ConfigParameters) {
     this.sessionId = params.sessionId;
@@ -569,6 +586,17 @@ export class Config {
     return this.hideThinking;
   }
 
+  getContextManagementConfig(): ContextManagementConfig {
+    return this.contextManagementConfig;
+  }
+
+  setContextManagementConfig(config: Partial<ContextManagementConfig>): void {
+    this.contextManagementConfig = {
+      ...this.contextManagementConfig,
+      ...config,
+    };
+  }
+
   async refreshMemory(): Promise<{ memoryContent: string; fileCount: number }> {
     const { memoryContent, fileCount } = await loadServerHierarchicalMemory(
       this.getWorkingDir(),
@@ -647,6 +675,10 @@ export class Config {
     registerCoreTool(ReadManyFilesTool, this);
     registerCoreTool(WriteToDosTool);
     registerCoreTool(SkillsTool);
+    registerCoreTool(TaskCreateTool);
+    registerCoreTool(TaskGetTool);
+    registerCoreTool(TaskUpdateTool);
+    registerCoreTool(TaskListTool);
     registerCoreTool(ShellTool, this);
     registerCoreTool(MemoryTool);
     // registerCoreTool(WebSearchTool, this); // Temporarily disabled

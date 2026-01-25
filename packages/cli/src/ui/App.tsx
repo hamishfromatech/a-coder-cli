@@ -148,6 +148,7 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
   const [currentModel, setCurrentModel] = useState(config.getModel());
   const [shellModeActive, setShellModeActive] = useState(false);
   const [showErrorDetails, setShowErrorDetails] = useState<boolean>(false);
+  const [showThinking, setShowThinking] = useState<boolean>(false);
   const [showToolDescriptions, setShowToolDescriptions] =
     useState<boolean>(false);
   const [ctrlCPressedOnce, setCtrlCPressedOnce] = useState(false);
@@ -164,6 +165,11 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
   const [modelSwitchedFromQuotaError, setModelSwitchedFromQuotaError] =
     useState<boolean>(false);
   const [userTier, setUserTier] = useState<UserTierId | undefined>(undefined);
+  const [contextUsage, setContextUsage] = useState<{
+    tokens: number;
+    limit: number;
+    percentage: number;
+  } | null>(null);
 
   const openPrivacyNotice = useCallback(() => {
     setShowPrivacyNotice(true);
@@ -490,6 +496,8 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
     }
 
     if (key.ctrl && input === 'o') {
+      setShowThinking((prev) => !prev);
+    } else if (key.ctrl && input === 'e') {
       setShowErrorDetails((prev) => !prev);
     } else if (key.ctrl && input === 't') {
       const newValue = !showToolDescriptions;
@@ -555,6 +563,13 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
     performMemoryRefresh,
     modelSwitchedFromQuotaError,
     setModelSwitchedFromQuotaError,
+    (tokens: number, limit: number) => {
+      setContextUsage({
+        tokens,
+        limit,
+        percentage: tokens / limit,
+      });
+    },
   );
   pendingHistoryItems.push(...pendingGeminiHistoryItems);
   const { elapsedTime, currentLoadingPhrase } =
@@ -915,6 +930,7 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
                       ? undefined
                       : thought
                   }
+                  showThinking={showThinking}
                   currentLoadingPhrase={
                     config.getAccessibility()?.disableLoadingPhrases
                       ? undefined
@@ -1039,6 +1055,7 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
               config.getDebugMode() || config.getShowMemoryUsage()
             }
             promptTokenCount={sessionStats.lastPromptTokenCount}
+            contextUsage={contextUsage}
             nightly={nightly}
             terminalWidth={terminalWidth}
           />

@@ -28,6 +28,14 @@ export interface SessionStatsState {
   metrics: SessionMetrics;
   lastPromptTokenCount: number;
   promptCount: number;
+  historyTokenCount: number;
+  tokenLimit: number;
+}
+
+export interface ContextUsageInfo {
+  tokens: number;
+  limit: number;
+  percentage: number;
 }
 
 export interface ComputedSessionStats {
@@ -50,6 +58,7 @@ interface SessionStatsContextValue {
   stats: SessionStatsState;
   startNewPrompt: () => void;
   getPromptCount: () => number;
+  updateHistoryTokenCount: (tokens: number, limit: number) => void;
 }
 
 // --- Context Definition ---
@@ -68,6 +77,8 @@ export const SessionStatsProvider: React.FC<{ children: React.ReactNode }> = ({
     metrics: uiTelemetryService.getMetrics(),
     lastPromptTokenCount: 0,
     promptCount: 0,
+    historyTokenCount: 0,
+    tokenLimit: 1_000_000,
   });
 
   useEffect(() => {
@@ -109,13 +120,22 @@ export const SessionStatsProvider: React.FC<{ children: React.ReactNode }> = ({
     [stats.promptCount],
   );
 
+  const updateHistoryTokenCount = useCallback((tokens: number, limit: number) => {
+    setStats((prevState) => ({
+      ...prevState,
+      historyTokenCount: tokens,
+      tokenLimit: limit,
+    }));
+  }, []);
+
   const value = useMemo(
     () => ({
       stats,
       startNewPrompt,
       getPromptCount,
+      updateHistoryTokenCount,
     }),
-    [stats, startNewPrompt, getPromptCount],
+    [stats, startNewPrompt, getPromptCount, updateHistoryTokenCount],
   );
 
   return (
