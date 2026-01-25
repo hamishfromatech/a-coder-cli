@@ -10,7 +10,7 @@ import { DEFAULT_GEMINI_FLASH_MODEL } from '../config/models.js';
 import { GeminiClient } from '../core/client.js';
 import { Config } from '../config/config.js';
 import { checkNextSpeaker, NextSpeakerResponse } from './nextSpeakerChecker.js';
-import { GeminiChat } from '../core/GeminiChat.js';
+import { GeminiChat } from '../core/geminiChat.js';
 
 // Mock GeminiClient and Config constructor
 vi.mock('../core/client.js');

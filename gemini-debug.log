@@ -1,0 +1,14 @@
+2026-01-15T11:09:46.740Z --- KEYPRESS HOOK LOADED ---
+2026-01-15T11:09:47.105Z [MAIN] Entering main()
+2026-01-15T11:09:47.153Z process.exit called with code 0. Stack:
+Error
+    at process.exit (file:///C:/Users/hamis/Downloads/code/a-coder/a-coder-cli/bundle/a-coder.js:268698:17)
+    at Object.exit (file:///C:/Users/hamis/Downloads/code/a-coder/a-coder-cli/bundle/a-coder.js:286667:15)
+    at YargsInstance.exit (file:///C:/Users/hamis/Downloads/code/a-coder/a-coder-cli/bundle/a-coder.js:288929:71)
+    at file:///C:/Users/hamis/Downloads/code/a-coder/a-coder-cli/bundle/a-coder.js:289921:18
+    at self2.showHelp (file:///C:/Users/hamis/Downloads/code/a-coder/a-coder-cli/bundle/a-coder.js:287751:5)
+    at YargsInstance.showHelp (file:///C:/Users/hamis/Downloads/code/a-coder/a-coder-cli/bundle/a-coder.js:289349:62)
+    at [runYargsParserAndExecuteCommands] (file:///C:/Users/hamis/Downloads/code/a-coder/a-coder-cli/bundle/a-coder.js:289919:16)
+    at YargsInstance.parse (file:///C:/Users/hamis/Downloads/code/a-coder/a-coder-cli/bundle/a-coder.js:289210:59)
+    at YargsInstance.get [as argv] (file:///C:/Users/hamis/Downloads/code/a-coder/a-coder-cli/bundle/a-coder.js:288549:22)
+    at parseArguments (file:///C:/Users/hamis/Downloads/code/a-coder/a-coder-cli/bundle/a-coder.js:290301:24)

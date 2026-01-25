@@ -45,7 +45,7 @@ import {
   ContextEvent,
   type ContextMonitorConfig,
 } from './contextMonitor.js';
-import { GeminiChat } from './GeminiChat.js';
+import { GeminiChat } from './geminiChat.js';
 
 /**
  * Returns the index of the content after the fraction of the total characters in the history.

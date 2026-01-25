@@ -22,7 +22,7 @@ import {
   UnauthorizedError,
   toFriendlyError,
 } from '../utils/errors.js';
-import { GeminiChat } from './GeminiChat.js';
+import { GeminiChat } from './geminiChat.js';
 import { ContextEvent } from './contextMonitor.js';
 
 // Define a structure for tools passed to the server

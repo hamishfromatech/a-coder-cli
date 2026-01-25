@@ -1,0 +1,104 @@
+Overview
+────────────────────
+Claude Code Tasks is a new feature that upgrades the existing "Todos" functionality, transforming it from a memory-bound system to a persistent, file-based task management system designed for complex, multi-session AI coding workflows.
+
+Key Changes from Todos to Tasks
+────────────────────
+
+│  Aspect  │ Old Todos │  New Tasks  │
+
+│  Storage  │ In-memory only │  File system (~/.claude/tasks/)  │
+│  Persistence  │ Vanishes when session closes │  Survives session exits  │
+│  Dependencies  │ Flat list only │  Supports task dependencies  │
+│  Collaboration  │ Single session only │  Multi-session coordination  │
+│  Visibility to sub-agents  │ None │  Full visibility  │
+
+Technical Implementation
+────────────────────
+1. File-Based Storage
+• Tasks are stored as individual JSON files in ~/.claude/tasks/
+• Each task list gets a unique folder (e.g., a97e3eb7-205e-4ad3-9d42-f59e6efa1025/)
+• Each task is a separate JSON file (e.g., 1.json, 2.json)
+2. Task Structure
+    {
+      "id": "1",
+      "subject": "Initialize project and install dependencies",
+      "description": "Set up project structure, package.json, and install core dependencies...",
+      "activeForm": "Initializing project",
+      "status": "pending",  // pending, in_progress, or completed
+      "blocks": ["2"],      // Tasks waiting on this one
+      "blockedBy": []       // Tasks this one depends on
+    }
+3. Dependency Management
+• blockedBy: Array of task IDs that must complete before this task can start
+• blocks: Array of task IDs that are waiting on this task to complete
+• Enables parallel execution (tasks not dependent on each other can run simultaneously)
+• Supports complex dependency chains and branching
+4. Multi-Session Synchronization
+• Environment variable: CLAUDECODETASKLISTID=my-project
+• All sessions with the same ID share the same task list
+• Changes broadcast across sessions in real-time
+• Prevents duplicate work and agent conflicts
+• Works with CLI mode: CLAUDECODETASKLISTID=my-project claude -p "..."
+• Compatible with Agent SDK for automation
+
+How It Works in Practice
+────────────────────
+
+Creating Tasks
+    # Prompt example
+    Break down building a REST API with user authentication into tasks with dependencies
+
+Claude automatically:
+1. Creates tasks with logical dependencies
+2. Sets up blockedBy relationships
+3. Displays cascading outline view
+4. Shows status indicators (pending, in-progress, completed, blocked)
+
+Example Task Dependency Tree
+    #1 Initialize project
+    └─► #2 Configure database
+        └─► #3 Create User model
+            └─► #4 Auth utilities (bcrypt/JWT)
+                ├─► #5 Auth routes (register/login/logout)
+                │   └────────────────────┐
+                └─► #6 Auth middleware
+                    └─► #7 Protected routes
+                        └─► #8 Tests ◄──┘
+
+When to Use Tasks
+────────────────────
+
+✅ Use Tasks For:
+• Multi-file features spanning several components
+• Large refactors touching many codebase parts
+• Projects stretching across multiple sessions
+• Work involving sub-agents needing coordination
+• Anything you might close and come back to later
+
+❌ Don't Use Tasks For:
+• Quick bug fixes
+• Single-file refactors
+• Simple questions or explanations
+• Anything Claude can handle in one shot
+
+Why This Update Happened Now
+────────────────────
+• Opus 4.5 runs longer autonomous workflows
+• The old TodoWrite tool became unnecessary for small tasks
+• For multi-session or sub-agent workflows, Todos were completely useless
+• Tasks fill the gap for persistent, coordinated project management
+
+Practical Workflow
+────────────────────
+1. Define project requirements
+2. Ask Claude to break down into tasks with dependencies
+3. Spin up sub-agents to work on independent task branches
+4. Each sub-agent works in its own context but sees the same task list
+5. When one finishes a task, others see the update and can start blocked tasks
+
+This orchestration previously required external tools or plugins, but is now built into Claude Code.
+
+────────────────────
+Source:
+• Claude Code Tasks Are Here (New Update Turns Claude Code ToDos to Tasks) - Joe Njenga (https://medium.com/@joe.njenga/claude-code-tasks-are-here-new-update-turns-claude-code-todos-to-tasks-a0be00e70847)
