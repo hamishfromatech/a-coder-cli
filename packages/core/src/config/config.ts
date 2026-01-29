@@ -674,7 +674,7 @@ export class Config {
     registerCoreTool(WebFetchTool, this);
     registerCoreTool(ReadManyFilesTool, this);
     registerCoreTool(WriteToDosTool);
-    registerCoreTool(SkillsTool);
+    registerCoreTool(SkillsTool, this);
     registerCoreTool(TaskCreateTool);
     registerCoreTool(TaskGetTool);
     registerCoreTool(TaskUpdateTool);

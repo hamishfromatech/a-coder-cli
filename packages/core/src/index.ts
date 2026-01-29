@@ -61,6 +61,9 @@ export * from './tools/tasks.js';
 export * from './tools/mcp-tool.js';
 export * from './tools/skills.js';
 
+// Export skills system
+export * from './skills/index.js';
+
 // Export telemetry functions
 export * from './telemetry/index.js';
 export { sessionId } from './utils/session.js';
