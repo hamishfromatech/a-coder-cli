@@ -89,8 +89,9 @@ export function useKeypress(
 
       stdin.on('data', (data: Buffer | string) => {
         const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data, 'utf8');
-        
-        // Heuristic: Large chunks are pastes
+        const str = buffer.toString('utf8');
+
+        // Heuristic: Large chunks are pastes (used as fallback)
         if (buffer.length > 10 && !isPasteActive) {
           isPasteJustFinished = true;
           if (pasteTimer) clearTimeout(pasteTimer);
@@ -100,11 +101,20 @@ export function useKeypress(
           }, 200);
         }
 
-        // Bracketed paste detection
-        if (buffer.includes('\x1B[200~')) {
+        // Bracketed paste detection - process BEFORE forwarding to keypress stream
+        // We need to set isPasteActive BEFORE the content is parsed into keypress events
+        if (str.includes('\x1B[200~')) {
           isPasteActive = true;
         }
-        if (buffer.includes('\x1B[201~')) {
+
+        // Strip bracketed paste markers from the buffer before forwarding
+        // This prevents the escape sequences from interfering with key parsing
+        let contentToProcess = str;
+        if (contentToProcess.includes('\x1B[200~')) {
+          contentToProcess = contentToProcess.replace(/\x1B\[200~/g, '');
+        }
+        if (contentToProcess.includes('\x1B[201~')) {
+          contentToProcess = contentToProcess.replace(/\x1B\[201~/g, '');
           isPasteActive = false;
           isPasteJustFinished = true;
           if (pasteTimer) clearTimeout(pasteTimer);
@@ -114,8 +124,8 @@ export function useKeypress(
           }, 200);
         }
 
-        // Forward to keypress parser
-        keypressStream.write(buffer);
+        // Forward to keypress parser (without bracketed paste markers)
+        keypressStream.write(Buffer.from(contentToProcess, 'utf8'));
       });
     }
 
