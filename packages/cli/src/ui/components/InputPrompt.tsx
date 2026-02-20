@@ -333,7 +333,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
           }
         }
 
-        if (key.name === 'return' && !key.ctrl && !key.meta) {
+        if (key.name === 'return' && !key.ctrl && !key.meta && !key.paste) {
           if (buffer.text.trim()) {
             const [row, col] = buffer.cursor;
             const line = buffer.lines[row];
@@ -343,7 +343,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
             // treat enter as newline.
             const isMultiLine = buffer.lines.length > 1;
 
-            if (charBefore === '\\') {
+            if (charBefore === '') {
               buffer.backspace();
               buffer.newline();
             } else if (isMultiLine) {
