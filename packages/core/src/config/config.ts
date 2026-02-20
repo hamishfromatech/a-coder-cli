@@ -28,6 +28,9 @@ import { TaskCreateTool } from '../tools/task-create.js';
 import { TaskGetTool } from '../tools/task-get.js';
 import { TaskUpdateTool } from '../tools/task-update.js';
 import { TaskListTool } from '../tools/task-list.js';
+import { SubagentTool } from '../tools/subagent.js';
+import { SubagentSystemConfig, DEFAULT_SUBAGENT_CONFIG } from '../tools/subagent-types.js';
+import type { SubagentConfig as SubagentSettingsConfig } from '../tools/subagent-types.js';
 import {
   MemoryTool,
   setGeminiMdFilename,
@@ -169,6 +172,7 @@ export interface ConfigParameters {
     temperature?: number;
     max_tokens?: number;
   };
+  subagent?: Partial<SubagentSystemConfig>;
 }
 
 export class Config {
@@ -234,6 +238,7 @@ export class Config {
     autoCompressThreshold: 0.9,
     enabled: true,
   };
+  private readonly subagentConfig: SubagentSystemConfig;
 
   constructor(params: ConfigParameters) {
     this.sessionId = params.sessionId;
@@ -284,6 +289,10 @@ export class Config {
     this.enableOpenAILogging = params.enableOpenAILogging ?? false;
     this.hideThinking = params.hideThinking ?? false;
     this.sampling_params = params.sampling_params;
+    this.subagentConfig = {
+      ...DEFAULT_SUBAGENT_CONFIG,
+      ...params.subagent,
+    };
 
     if (params.contextFileName) {
       setGeminiMdFilename(params.contextFileName);
@@ -597,6 +606,10 @@ export class Config {
     };
   }
 
+  getSubagentConfig(): SubagentSystemConfig {
+    return this.subagentConfig;
+  }
+
   async refreshMemory(): Promise<{ memoryContent: string; fileCount: number }> {
     const { memoryContent, fileCount } = await loadServerHierarchicalMemory(
       this.getWorkingDir(),
@@ -682,6 +695,11 @@ export class Config {
     registerCoreTool(ShellTool, this);
     registerCoreTool(MemoryTool);
     // registerCoreTool(WebSearchTool, this); // Temporarily disabled
+
+    // Register SubagentTool if subagent system is enabled
+    if (this.subagentConfig.enabled) {
+      registerCoreTool(SubagentTool, this.sessionId);
+    }
 
     await registry.discoverTools();
     return registry;

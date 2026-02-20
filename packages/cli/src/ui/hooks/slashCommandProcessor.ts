@@ -320,21 +320,52 @@ export const useSlashCommandProcessor = (
           const serverNames = Object.keys(mcpServers);
 
           if (serverNames.length === 0) {
-            const docsUrl = 'https://goo.gle/a-coder-cli-docs-mcp';
-            if (process.env.SANDBOX && process.env.SANDBOX !== 'sandbox-exec') {
-              addMessage({
-                type: MessageType.INFO,
-                content: `No MCP servers configured. Please open the following URL in your browser to view documentation:\n${docsUrl}`,
-                timestamp: new Date(),
-              });
-            } else {
-              addMessage({
-                type: MessageType.INFO,
-                content: `No MCP servers configured. Opening documentation in your browser: ${docsUrl}`,
-                timestamp: new Date(),
-              });
-              await open(docsUrl);
-            }
+            const helpMessage = `No MCP servers configured.
+
+\u001b[1mWhat is an MCP server?\u001b[0m
+An MCP (Model Context Protocol) server extends A-Coder-CLI's capabilities by providing
+additional tools and resources. MCP servers can connect to databases, APIs, custom
+scripts, or any external system.
+
+\u001b[1mHow to configure an MCP server:\u001b[0m
+Add an \u001b[36mmcpServers\u001b[0m configuration to your settings file:
+
+  \u001b[90m~/.a-coder/settings.json\u001b[0m (global) or \u001b[90m.a-coder/settings.json\u001b[0m (project)
+
+\u001b[1mExample configuration:\u001b[0m
+\u001b[32m{
+  "mcpServers": {
+    "myServer": {
+      "command": "node",
+      "args": ["path/to/server.js"],
+      "env": {
+        "API_KEY": "$MY_API_KEY"
+      }
+    }
+  }
+}\u001b[0m
+
+\u001b[1mConfiguration options:\u001b[0m
+  \u001b[36mcommand\u001b[0m     Path to executable (for stdio transport)
+  \u001b[36margs\u001b[0m        Command-line arguments
+  \u001b[36menv\u001b[0m         Environment variables (use $VAR_NAME for expansion)
+  \u001b[36murl\u001b[0m         SSE endpoint URL (e.g., "http://localhost:8080/sse")
+  \u001b[36mhttpUrl\u001b[0m     HTTP streaming endpoint URL
+  \u001b[36mtimeout\u001b[0m    Request timeout in ms (default: 600000)
+  \u001b[36mtrust\u001b[0m      Set true to bypass tool confirmation dialogs
+
+\u001b[1mUseful commands:\u001b[0m
+  \u001b[33m/mcp\u001b[0m          List MCP servers and their tools
+  \u001b[33m/mcp desc\u001b[0m     Show tool descriptions
+  \u001b[33m/mcp schema\u001b[0m   Show tool parameter schemas
+  \u001b[33m/tools\u001b[0m        List all available tools
+
+For more information, see: \u001b[36mhttps://goo.gle/a-coder-cli-docs-mcp\u001b[0m`;
+            addMessage({
+              type: MessageType.INFO,
+              content: helpMessage,
+              timestamp: new Date(),
+            });
             return;
           }
 

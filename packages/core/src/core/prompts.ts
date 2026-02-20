@@ -60,6 +60,24 @@ The system supports specialized "skills" that provide additional instructions an
 - **Loading**: Use the '${SkillsTool.Name}' tool with action='load' and a skill_name to load the instructions for a specific skill. When a skill is loaded, its instructions will be provided in the tool output. You must then adhere to these instructions for the remainder of the task.
 - **Proactive Use**: If you encounter a task that seems to match a specialized domain, check for available skills and load them if appropriate to enhance your performance.
 
+# Subagent System
+The system supports spawning subagents to handle specialized tasks in parallel or with isolated context.
+- **Purpose**: Subagents are child processes that can work on focused tasks independently, useful for parallel execution, context isolation, and breaking down complex tasks.
+- **Spawning**: Use the 'subagent' tool to spawn a subagent with a specific task description and optional context.
+- **Context Isolation**: Each subagent receives only the context you provide, not the full conversation history. This helps avoid token limits for focused tasks.
+- **Tool Access**: By default, subagents have read-only access (read_file, glob, grep, list_directory, web_fetch, web_search). Set allowDestructive=true for write operations.
+- **Use Cases**:
+  - Parallel analysis of multiple files or directories
+  - Research tasks that need focused context
+  - Breaking down complex multi-step tasks
+  - Tasks that benefit from a fresh context window
+- **Best Practices**:
+  - Provide clear, specific task descriptions
+  - Include relevant context files when needed
+  - Set appropriate timeouts (default: 5 minutes, max: 10 minutes)
+  - Use allowDestructive sparingly and only when necessary
+  - Review subagent results before taking further action
+
 # Primary Workflows
 
 ## Software Engineering Tasks

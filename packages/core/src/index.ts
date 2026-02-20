@@ -60,6 +60,13 @@ export * from './tools/mcp-client.js';
 export * from './tools/tasks.js';
 export * from './tools/mcp-tool.js';
 export * from './tools/skills.js';
+export * from './tools/subagent.js';
+export * from './tools/subagent-types.js';
+
+// Export services
+export * from './services/fileDiscoveryService.js';
+export * from './services/gitService.js';
+export * from './services/subagentManager.js';
 
 // Export skills system
 export * from './skills/index.js';

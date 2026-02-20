@@ -338,16 +338,22 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
             const [row, col] = buffer.cursor;
             const line = buffer.lines[row];
             const charBefore = col > 0 ? cpSlice(line, col - 1, col) : '';
-
-            // If we have multiple lines and we are NOT on a line ending with \, 
-            // treat enter as newline.
             const isMultiLine = buffer.lines.length > 1;
 
+            // At the start of a line (after a newline or at position 0)
             if (charBefore === '') {
               buffer.backspace();
               buffer.newline();
+            // At the end of the buffer - submit (even for multiline)
+            } else if (
+              row === buffer.lines.length - 1 &&
+              col === cpLen(line)
+            ) {
+              handleSubmitAndClear(buffer.text);
+            // In the middle of multiline content - add newline
             } else if (isMultiLine) {
               buffer.newline();
+            // Single line - submit
             } else {
               handleSubmitAndClear(buffer.text);
             }
