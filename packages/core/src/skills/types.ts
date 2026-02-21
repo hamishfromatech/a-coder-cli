@@ -6,36 +6,104 @@
 
 /**
  * Skill metadata from YAML frontmatter
+ *
+ * Follows the Agent Skills Specification from https://agentskills.io/specification
+ * with additional extensions for A-Coder CLI specific features.
  */
 export interface SkillFrontmatter {
-  /** Display name for the skill */
-  name?: string;
+  // === Agent Skills Spec Required Fields ===
 
-  /** Human-readable description of what the skill does */
-  description?: string;
+  /**
+   * Display name for the skill (required by spec)
+   * Must be 1-64 characters, lowercase alphanumeric with hyphens
+   * Must match the parent directory name
+   */
+  name: string;
 
-  /** Hint for command-line arguments (e.g., "<file>") */
+  /**
+   * Human-readable description of what the skill does (required by spec)
+   * Must be 1-1024 characters
+   * Should describe what the skill does and when to use it
+   */
+  description: string;
+
+  // === Agent Skills Spec Optional Fields ===
+
+  /**
+   * License information for the skill
+   * Max 500 characters
+   */
+  license?: string;
+
+  /**
+   * Environment compatibility requirements
+   * Max 500 characters
+   * Describes required tools, versions, or environment setup
+   */
+  compatibility?: string;
+
+  /**
+   * Arbitrary key-value metadata
+   * Useful for storing additional skill configuration
+   */
+  metadata?: Record<string, unknown>;
+
+  /**
+   * Space-delimited list of pre-approved tools (spec format)
+   * Tools that the skill can use without explicit user confirmation
+   * @experimental
+   */
+  'allowed-tools'?: string;
+
+  // === A-Coder CLI Extensions ===
+
+  /**
+   * Hint for command-line arguments (e.g., "<file>")
+   * @extension
+   */
   argumentHint?: string;
 
-  /** When true, model should not invoke the skill directly */
+  /**
+   * When true, model should not invoke the skill directly
+   * @extension
+   */
   disableModelInvocation?: boolean;
 
-  /** When true, users can invoke via slash commands (default: true) */
+  /**
+   * When true, users can invoke via slash commands (default: true)
+   * @extension
+   */
   userInvocable?: boolean;
 
-  /** List of tools this skill requires */
+  /**
+   * Array of tools this skill requires (legacy format, prefer allowed-tools)
+   * @extension
+   * @deprecated Use allowed-tools instead for spec compliance
+   */
   allowedTools?: string[];
 
-  /** Model to use for this skill (optional override) */
+  /**
+   * Model to use for this skill (optional override)
+   * @extension
+   */
   model?: string;
 
-  /** Context handling mode: 'inline' or 'fork' (fork is validated but not executed) */
+  /**
+   * Context handling mode: 'inline' or 'fork' (fork is validated but not executed)
+   * @extension
+   */
   context?: 'inline' | 'fork';
 
-  /** Agent to use for this skill (optional) */
+  /**
+   * Agent to use for this skill (optional)
+   * @extension
+   */
   agent?: string;
 
-  /** Hook scripts to run at lifecycle events */
+  /**
+   * Hook scripts to run at lifecycle events
+   * @extension
+   */
   hooks?: SkillHooks;
 }
 

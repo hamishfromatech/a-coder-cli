@@ -182,16 +182,13 @@ export function ThemeDialog({
       borderStyle="round"
       borderColor={Colors.Gray}
       flexDirection="column"
-      paddingTop={includePadding ? 1 : 0}
-      paddingBottom={includePadding ? 1 : 0}
-      paddingLeft={1}
-      paddingRight={1}
+      padding={1}
       width="100%"
     >
       <Box flexDirection="row">
         {/* Left Column: Selection */}
         <Box flexDirection="column" width="45%" paddingRight={2}>
-          <Text bold={currenFocusedSection === 'theme'} wrap="truncate">
+          <Text bold={currenFocusedSection === 'theme'} color={Colors.AccentBlue} wrap="truncate">
             {currenFocusedSection === 'theme' ? '> ' : '  '}Select Theme{' '}
             <Text color={Colors.Gray}>{otherScopeModifiedMessage}</Text>
           </Text>
@@ -209,7 +206,7 @@ export function ThemeDialog({
           {/* Scope Selection */}
           {showScopeSelection && (
             <Box marginTop={1} flexDirection="column">
-              <Text bold={currenFocusedSection === 'scope'} wrap="truncate">
+              <Text bold={currenFocusedSection === 'scope'} color={Colors.AccentBlue} wrap="truncate">
                 {currenFocusedSection === 'scope' ? '> ' : '  '}Apply To
               </Text>
               <RadioButtonSelect
@@ -225,14 +222,11 @@ export function ThemeDialog({
 
         {/* Right Column: Preview */}
         <Box flexDirection="column" width="55%" paddingLeft={2}>
-          <Text bold>Preview</Text>
+          <Text bold color={Colors.AccentBlue}>Preview</Text>
           <Box
             borderStyle="single"
             borderColor={Colors.Gray}
-            paddingTop={includePadding ? 1 : 0}
-            paddingBottom={includePadding ? 1 : 0}
-            paddingLeft={1}
-            paddingRight={1}
+            padding={1}
             flexDirection="column"
           >
             {colorizeCode(

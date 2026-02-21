@@ -14,6 +14,7 @@ import { SchemaValidator } from '../utils/schemaValidator.js';
 import {
   parseFrontmatter,
   extractDescriptionFromContent,
+  SkillFrontmatterError,
 } from '../skills/frontmatter.js';
 import {
   substituteArguments,
@@ -27,6 +28,7 @@ import {
   getPersonalSkillsDir,
   getProjectSkillsDir,
   getLegacySkillsDir,
+  getACoderCliProjectSkillsDir,
 } from '../skills/discovery.js';
 
 /**
@@ -98,6 +100,8 @@ export function findSkillFile(
     path.join(getPersonalSkillsDir(), skillName, 'SKILL.md'),
     // Project skills: .claude/skills/
     path.join(getProjectSkillsDir(projectRoot), skillName, 'SKILL.md'),
+    // a-coder-cli project skills: .a-coder-cli/skills/
+    path.join(getACoderCliProjectSkillsDir(projectRoot), skillName, 'SKILL.md'),
     // Legacy skills: ~/.a-coder-cli/skills/
     path.join(getLegacySkillsDir(), skillName, 'SKILL.md'),
   ];
@@ -136,8 +140,11 @@ export function readSkillFile(skillPath: string): {
 
   try {
     const content = fs.readFileSync(skillPath, 'utf-8');
-    const { frontmatter, content: markdown } = parseFrontmatter(content);
     const skillDir = path.dirname(skillPath);
+    const dirName = path.basename(skillDir);
+
+    // Parse frontmatter with directory name for spec validation
+    const { frontmatter, content: markdown } = parseFrontmatter(content, dirName);
 
     return {
       content,
@@ -146,7 +153,11 @@ export function readSkillFile(skillPath: string): {
       skillDir,
     };
   } catch (error) {
-    console.error('Error reading skill file:', error);
+    if (error instanceof SkillFrontmatterError) {
+      console.error(`Invalid skill frontmatter: ${error.message}`);
+    } else {
+      console.error('Error reading skill file:', error);
+    }
     return null;
   }
 }
@@ -289,11 +300,12 @@ export class SkillsTool extends BaseTool<SkillsToolParams, ToolResult> {
       // Add skills from personal, project, and legacy locations
       addSkillsFromDir(getPersonalSkillsDir(), 'Personal');
       addSkillsFromDir(getProjectSkillsDir(this.projectRoot), 'Project');
+      addSkillsFromDir(getACoderCliProjectSkillsDir(this.projectRoot), 'Project');
       addSkillsFromDir(getLegacySkillsDir(), 'Legacy');
 
       if (skills.size === 0) {
         return {
-          llmContent: 'No skills found. Create skills in ~/.claude/skills/ or .claude/skills/ directories.',
+          llmContent: 'No skills found. Create skills in ~/.claude/skills/, .claude/skills/, or .a-coder-cli/skills/ directories.',
           returnDisplay: 'No skills found.',
         };
       }

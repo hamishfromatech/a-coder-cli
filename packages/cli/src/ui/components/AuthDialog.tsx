@@ -170,7 +170,7 @@ export function AuthDialog({
       padding={1}
       width="100%"
     >
-      <Text bold>Get started</Text>
+      <Text bold color={Colors.AccentBlue}>Get started</Text>
       <Box marginTop={1}>
         <Text wrap="wrap">How would you like to authenticate for this project?</Text>
       </Box>

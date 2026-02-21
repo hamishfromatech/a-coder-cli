@@ -26,7 +26,13 @@ export const GeminiMessage: React.FC<GeminiMessageProps> = ({
   const prefixWidth = prefix.length;
 
   return (
-    <Box flexDirection="row">
+    <Box
+      borderStyle="round"
+      borderColor={Colors.AccentPurple}
+      flexDirection="row"
+      paddingX={1}
+      marginY={1}
+    >
       <Box width={prefixWidth}>
         <Text color={Colors.AccentPurple}>{prefix}</Text>
       </Box>

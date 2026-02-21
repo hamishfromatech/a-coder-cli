@@ -1,6 +1,6 @@
 {
   "name": "a-coder-cli",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "engines": {
     "node": ">=20"
   },
@@ -76,5 +76,7 @@
     "vitest": "^3.2.4",
     "yargs": "^18.0.0"
   },
-  "dependencies": {}
+  "dependencies": {
+    "g": "^2.0.1"
+  }
 }

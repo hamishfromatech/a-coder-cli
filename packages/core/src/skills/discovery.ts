@@ -10,7 +10,7 @@ import os from 'os';
 import { Config } from '../config/config.js';
 import { GEMINI_DIR } from '../utils/paths.js';
 import { Skill, SkillSource, SkillDiscoveryOptions, SkillFileTracking } from './types.js';
-import { parseFrontmatter, extractDescriptionFromContent } from './frontmatter.js';
+import { parseFrontmatter, extractDescriptionFromContent, SkillFrontmatterError } from './frontmatter.js';
 
 /**
  * Skill discovery with multi-location support and priority resolution
@@ -49,6 +49,11 @@ export class SkillDiscovery {
     const projectSkillsDir = path.join(this.config.getTargetDir(), GEMINI_DIR, 'skills');
     const projectSkills = await this.discoverFromLocation(projectSkillsDir, SkillSource.Project);
     skills.push(...projectSkills);
+
+    // 3.5. a-coder-cli project skills: .a-coder-cli/skills/<skill-name>/SKILL.md
+    const aCoderCliProjectSkillsDir = path.join(this.config.getTargetDir(), '.a-coder-cli', 'skills');
+    const aCoderCliProjectSkills = await this.discoverFromLocation(aCoderCliProjectSkillsDir, SkillSource.Project);
+    skills.push(...aCoderCliProjectSkills);
 
     // 4. Plugin skills (not implemented in this initial version)
     // Would be discovered from plugin directories
@@ -131,11 +136,16 @@ export class SkillDiscovery {
 
     try {
       const content = fs.readFileSync(skillPath, 'utf-8');
-      const { frontmatter, content: markdownContent } = parseFrontmatter(content);
-
-      // Extract skill name from directory or frontmatter
       const dirName = path.basename(skillDir);
-      const displayName = frontmatter.name || dirName;
+
+      // Parse frontmatter with directory name for validation
+      const { frontmatter, content: markdownContent } = parseFrontmatter(
+        content,
+        dirName,
+      );
+
+      // Use frontmatter name (required by spec, validated in parseFrontmatter)
+      const displayName = frontmatter.name;
 
       // Build skill name with namespace for plugins
       const name = pluginName ? `${pluginName}:${displayName}` : displayName;
@@ -145,8 +155,9 @@ export class SkillDiscovery {
         ? `${source}:${pluginName}:${displayName}`
         : `${source}:${displayName}`;
 
-      // Extract description from frontmatter or content
-      const description = frontmatter.description ||
+      // Description is required by spec, but fallback to content extraction
+      const description =
+        frontmatter.description ||
         extractDescriptionFromContent(markdownContent);
 
       // Track supporting file paths for lazy loading
@@ -165,7 +176,13 @@ export class SkillDiscovery {
 
       return skill;
     } catch (error) {
-      console.warn(`Warning: Could not load skill from ${skillDir}: ${error}`);
+      if (error instanceof SkillFrontmatterError) {
+        console.warn(
+          `Warning: Invalid skill frontmatter in ${skillDir}: ${error.message}`,
+        );
+      } else {
+        console.warn(`Warning: Could not load skill from ${skillDir}: ${error}`);
+      }
       return null;
     }
   }
@@ -309,6 +326,16 @@ export function getPersonalSkillsDir(): string {
  */
 export function getProjectSkillsDir(projectRoot: string): string {
   return path.join(projectRoot, GEMINI_DIR, 'skills');
+}
+
+/**
+ * Get the a-coder-cli project skills directory path
+ *
+ * @param projectRoot - The project root directory
+ * @returns Absolute path to a-coder-cli project skills directory
+ */
+export function getACoderCliProjectSkillsDir(projectRoot: string): string {
+  return path.join(projectRoot, '.a-coder-cli', 'skills');
 }
 
 /**
