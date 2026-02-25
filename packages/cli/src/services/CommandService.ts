@@ -11,6 +11,7 @@ import { clearCommand } from '../ui/commands/clearCommand.js';
 import { helpCommand } from '../ui/commands/helpCommand.js';
 import { memoryCommand } from '../ui/commands/memoryCommand.js';
 import { privacyCommand } from '../ui/commands/privacyCommand.js';
+import { sessionCommand } from '../ui/commands/sessionCommand.js';
 import { skillsCommand } from '../ui/commands/skillsCommand.js';
 import { themeCommand } from '../ui/commands/themeCommand.js';
 import { SlashCommand } from '../ui/commands/types.js';
@@ -22,6 +23,7 @@ const loadBuiltInCommands = async (): Promise<SlashCommand[]> => [
   helpCommand,
   memoryCommand,
   privacyCommand,
+  sessionCommand,
   skillsCommand,
   themeCommand,
 ];

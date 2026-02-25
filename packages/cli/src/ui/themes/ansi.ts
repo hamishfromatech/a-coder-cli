@@ -20,6 +20,15 @@ const ansiColors: ColorsTheme = {
   Comment: 'gray',
   Gray: 'gray',
   GradientColors: ['cyan', 'green'],
+  semantic: {
+    Success: 'green',
+    Warning: 'yellow',
+    Error: 'red',
+    Info: 'cyan',
+    Primary: 'magenta',
+    Secondary: 'gray',
+    Muted: 'gray',
+  },
 };
 
 export const ANSI: Theme = new Theme(

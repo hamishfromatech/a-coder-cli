@@ -6,7 +6,7 @@
 
 import { Box, Text } from 'ink';
 import { ToDoItem } from '@a-coder/core';
-import { Colors } from '../colors.js';
+import { Colors, Semantic } from '../colors.js';
 
 interface ToDoListProps {
   todos: ToDoItem[];
@@ -19,7 +19,7 @@ export const ToDoList = ({ todos }: ToDoListProps) => {
 
   return (
     <Box flexDirection="column" paddingX={1} marginBottom={1}>
-      <Text bold color={Colors.LightBlue}>
+      <Text bold color={Semantic.Info}>
         Plan:
       </Text>
       {todos.map((todo, index) => (
@@ -50,13 +50,13 @@ function getStatusIcon(status: ToDoItem['status']): string {
 function getStatusColor(status: ToDoItem['status']): string {
   switch (status) {
     case 'completed':
-      return Colors.AccentGreen;
+      return Semantic.Success;
     case 'in_progress':
-      return Colors.AccentYellow;
+      return Semantic.Warning;
     case 'cancelled':
-      return Colors.Gray;
+      return Semantic.Muted;
     case 'pending':
     default:
-      return Colors.LightBlue;
+      return Semantic.Info;
   }
 }

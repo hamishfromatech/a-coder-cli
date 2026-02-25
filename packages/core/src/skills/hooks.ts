@@ -7,6 +7,7 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
+import fs from 'fs';
 import { Skill, SkillHooks } from './types.js';
 
 const execAsync = promisify(exec);
@@ -61,7 +62,7 @@ export class SkillHookExecutor {
     }
 
     // Check if script file exists
-    if (!scriptPath.exists) {
+    if (!fs.existsSync(scriptPath.path)) {
       return {
         success: true,
         output: '',
@@ -77,8 +78,11 @@ export class SkillHookExecutor {
         CLAUDE_SESSION_ID: this.getSessionId(skill),
       };
 
+      // Determine how to execute the script based on its extension and shebang
+      const command = this.buildScriptCommand(scriptPath.path);
+
       // Execute the hook script
-      const { stdout, stderr } = await execAsync(scriptPath.path, {
+      const { stdout, stderr } = await execAsync(command, {
         cwd,
         env,
         timeout: 30000, // 30 second timeout
@@ -140,12 +144,12 @@ export class SkillHookExecutor {
    *
    * @param skill - The skill
    * @param hookName - The name of the hook
-   * @returns Object with path and exists flag, or null if hook not defined
+   * @returns Object with path, or null if hook not defined
    */
   private getScriptPath(
     skill: Skill,
     hookName: keyof SkillHooks,
-  ): { path: string; exists: boolean } | null {
+  ): { path: string } | null {
     const scriptName = skill.frontmatter.hooks?.[hookName];
 
     if (!scriptName) {
@@ -156,8 +160,60 @@ export class SkillHookExecutor {
 
     return {
       path: scriptPath,
-      exists: true, // We'll check existence at execution time
     };
+  }
+
+  /**
+   * Build the command to execute a script, handling interpreters
+   *
+   * @param scriptPath - Absolute path to the script
+   * @returns The command string to execute
+   */
+  private buildScriptCommand(scriptPath: string): string {
+    const ext = path.extname(scriptPath).toLowerCase();
+
+    // Check file extension for known interpreters
+    switch (ext) {
+      case '.py':
+        return `python3 "${scriptPath}"`;
+      case '.js':
+        return `node "${scriptPath}"`;
+      case '.ts':
+        return `npx tsx "${scriptPath}"`;
+      case '.sh':
+        return `bash "${scriptPath}"`;
+      case '.bash':
+        return `bash "${scriptPath}"`;
+      case '.zsh':
+        return `zsh "${scriptPath}"`;
+      case '.rb':
+        return `ruby "${scriptPath}"`;
+      case '.php':
+        return `php "${scriptPath}"`;
+      default:
+        // For other files, try to execute directly (might have shebang)
+        // Also handle files without extension by checking shebang
+        try {
+          const content = fs.readFileSync(scriptPath, 'utf-8');
+          const firstLine = content.split('\n')[0];
+
+          if (firstLine.startsWith('#!')) {
+            // Extract interpreter from shebang
+            const shebang = firstLine.slice(2).trim();
+            // Handle '#!/usr/bin/env python' style
+            if (shebang.startsWith('/usr/bin/env ')) {
+              const interpreter = shebang.slice('/usr/bin/env '.length).split(' ')[0];
+              return `${interpreter} "${scriptPath}"`;
+            }
+            // Handle direct interpreter path like '#!/usr/bin/python3'
+            return `${shebang} "${scriptPath}"`;
+          }
+        } catch {
+          // If we can't read the file, fall through to direct execution
+        }
+        // Fallback: try direct execution
+        return `"${scriptPath}"`;
+    }
   }
 
   /**
@@ -189,9 +245,7 @@ export class SkillHookExecutor {
     }
 
     const scriptPath = path.join(skill.skillDir, 'scripts', scriptName);
-    // We can't check file existence without fs module
-    // This is a simplified check
-    return true;
+    return fs.existsSync(scriptPath);
   }
 
   /**

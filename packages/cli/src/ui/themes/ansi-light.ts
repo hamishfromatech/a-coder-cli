@@ -20,6 +20,15 @@ const ansiLightColors: ColorsTheme = {
   Comment: 'gray',
   Gray: 'gray',
   GradientColors: ['blue', 'green'],
+  semantic: {
+    Success: 'green',
+    Warning: 'orange',
+    Error: 'red',
+    Info: 'blue',
+    Primary: 'purple',
+    Secondary: 'gray',
+    Muted: 'gray',
+  },
 };
 
 export const ANSILight: Theme = new Theme(

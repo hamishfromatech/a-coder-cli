@@ -25,6 +25,15 @@ const shadesOfPurpleColors: ColorsTheme = {
   Comment: '#B362FF', // Comment color (same as AccentPurple)
   Gray: '#726c86', // Gray color
   GradientColors: ['#4d21fc', '#847ace', '#ff628c'],
+  semantic: {
+    Success: '#A5FF90',
+    Warning: '#fad000',
+    Error: '#ff628c',
+    Info: '#a599e9',
+    Primary: '#ac65ff',
+    Secondary: '#b8b3d0',
+    Muted: '#726c86',
+  },
 };
 
 // Additional colors from CSS that don't fit in the ColorsTheme interface

@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { Text, Box } from 'ink';
-import { Colors } from '../../colors.js';
+import { Colors, Semantic } from '../../colors.js';
 
 interface ErrorMessageProps {
   text: string;
@@ -19,16 +19,16 @@ export const ErrorMessage: React.FC<ErrorMessageProps> = ({ text }) => {
   return (
     <Box
       borderStyle="round"
-      borderColor={Colors.AccentRed}
+      borderColor={Semantic.Error}
       flexDirection="row"
       paddingX={1}
       marginY={1}
     >
       <Box width={prefixWidth}>
-        <Text color={Colors.AccentRed}>{prefix}</Text>
+        <Text color={Semantic.Error} bold>{prefix}</Text>
       </Box>
       <Box flexGrow={1}>
-        <Text wrap="wrap" color={Colors.AccentRed}>
+        <Text wrap="wrap" color={Semantic.Error}>
           {text}
         </Text>
       </Box>

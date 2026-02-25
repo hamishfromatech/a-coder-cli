@@ -5,6 +5,7 @@
  */
 
 import { execSync, spawn } from 'child_process';
+import * as fs from 'fs';
 
 export type EditorType =
   | 'vscode'
@@ -13,7 +14,8 @@ export type EditorType =
   | 'cursor'
   | 'vim'
   | 'neovim'
-  | 'zed';
+  | 'zed'
+  | 'a-coder';
 
 function isValidEditorType(editor: string): editor is EditorType {
   return [
@@ -24,6 +26,7 @@ function isValidEditorType(editor: string): editor is EditorType {
     'vim',
     'neovim',
     'zed',
+    'a-coder',
   ].includes(editor);
 }
 
@@ -34,36 +37,52 @@ interface DiffCommand {
 
 function commandExists(cmd: string): boolean {
   try {
-    execSync(
-      process.platform === 'win32' ? `where.exe ${cmd}` : `command -v ${cmd}`,
-      { stdio: 'ignore' },
-    );
+    if (process.platform === 'win32') {
+      execSync(`where.exe ${cmd}`, { stdio: 'ignore' });
+    } else if (process.platform === 'darwin' && cmd.startsWith('/')) {
+      // For absolute paths on macOS (app bundles), check if the file exists
+      return fs.existsSync(cmd) && fs.statSync(cmd).isFile();
+    } else {
+      execSync(`command -v ${cmd}`, { stdio: 'ignore' });
+    }
     return true;
   } catch {
     return false;
   }
 }
 
-const editorCommands: Record<EditorType, { win32: string; default: string }> = {
-  vscode: { win32: 'code.cmd', default: 'code' },
-  vscodium: { win32: 'codium.cmd', default: 'codium' },
-  windsurf: { win32: 'windsurf', default: 'windsurf' },
-  cursor: { win32: 'cursor', default: 'cursor' },
-  vim: { win32: 'vim', default: 'vim' },
-  neovim: { win32: 'nvim', default: 'nvim' },
-  zed: { win32: 'zed', default: 'zed' },
+const editorCommands: Record<
+  EditorType,
+  { win32: string; default: string; darwin: string }
+> = {
+  vscode: { win32: 'code.cmd', default: 'code', darwin: 'code' },
+  vscodium: { win32: 'codium.cmd', default: 'codium', darwin: 'codium' },
+  windsurf: { win32: 'windsurf', default: 'windsurf', darwin: 'windsurf' },
+  cursor: { win32: 'cursor', default: 'cursor', darwin: 'cursor' },
+  vim: { win32: 'vim', default: 'vim', darwin: 'vim' },
+  neovim: { win32: 'nvim', default: 'nvim', darwin: 'nvim' },
+  zed: { win32: 'zed', default: 'zed', darwin: 'zed' },
+  'a-coder': {
+    win32: 'a-coder',
+    default: 'a-coder',
+    darwin: 'a-coder',
+  },
 };
 
 export function checkHasEditorType(editor: EditorType): boolean {
   const commandConfig = editorCommands[editor];
   const command =
-    process.platform === 'win32' ? commandConfig.win32 : commandConfig.default;
+    process.platform === 'win32'
+      ? commandConfig.win32
+      : process.platform === 'darwin'
+        ? commandConfig.darwin
+        : commandConfig.default;
   return commandExists(command);
 }
 
 export function allowEditorTypeInSandbox(editor: EditorType): boolean {
   const notUsingSandbox = !process.env.SANDBOX;
-  if (['vscode', 'vscodium', 'windsurf', 'cursor', 'zed'].includes(editor)) {
+  if (['vscode', 'vscodium', 'windsurf', 'cursor', 'zed', 'a-coder'].includes(editor)) {
     return notUsingSandbox;
   }
   return true;
@@ -93,13 +112,18 @@ export function getDiffCommand(
   }
   const commandConfig = editorCommands[editor];
   const command =
-    process.platform === 'win32' ? commandConfig.win32 : commandConfig.default;
+    process.platform === 'win32'
+      ? commandConfig.win32
+      : process.platform === 'darwin'
+        ? commandConfig.darwin
+        : commandConfig.default;
   switch (editor) {
     case 'vscode':
     case 'vscodium':
     case 'windsurf':
     case 'cursor':
     case 'zed':
+    case 'a-coder':
       return { command, args: ['--wait', '--diff', oldPath, newPath] };
     case 'vim':
     case 'neovim':
@@ -158,6 +182,7 @@ export async function openDiff(
       case 'windsurf':
       case 'cursor':
       case 'zed':
+      case 'a-coder':
         // Use spawn for GUI-based editors to avoid blocking the entire process
         return new Promise((resolve, reject) => {
           const childProcess = spawn(diffCommand.command, diffCommand.args, {

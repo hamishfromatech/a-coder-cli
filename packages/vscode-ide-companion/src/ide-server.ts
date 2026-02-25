@@ -9,11 +9,25 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import express, { Request, Response } from 'express';
 
+function getServerName(): string {
+  const appHost = vscode.env.appHost;
+  const appName = vscode.env.appName;
+
+  // A-Coder is the user's custom VS Code-based coding agent
+  if (appHost === 'a-coder' || appName.includes('A-Coder')) {
+    return 'a-coder-ide-server';
+  }
+
+  // Default to vscode-ide-server for VS Code and other VS Code-based editors
+  return 'vscode-ide-server';
+}
+
 export async function startIDEServer(_context: vscode.ExtensionContext) {
+  const serverName = getServerName();
   const app = express();
   app.use(express.json());
 
-  const mcpServer = createMcpServer();
+  const mcpServer = createMcpServer(serverName);
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,
@@ -55,20 +69,20 @@ export async function startIDEServer(_context: vscode.ExtensionContext) {
         `Companion server failed to start on port ${PORT}: ${error.message}`,
       );
     }
-    console.log(`MCP Streamable HTTP Server listening on port ${PORT}`);
+    console.log(`MCP Streamable HTTP Server (${serverName}) listening on port ${PORT}`);
   });
 }
 
-const createMcpServer = () => {
+const createMcpServer = (serverName: string) => {
   const server = new McpServer({
-    name: 'vscode-ide-server',
+    name: serverName,
     version: '1.0.0',
   });
   server.registerTool(
     'getActiveFile',
     {
       description:
-        '(IDE Tool) Get the path of the file currently active in VS Code.',
+        '(IDE Tool) Get the path of the file currently active in the editor (VS Code, A-Coder, etc.).',
       inputSchema: {},
     },
     async () => {

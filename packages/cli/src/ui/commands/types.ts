@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Config, GitService, Logger } from '@a-coder/core';
+import { Config, GitService, Logger, SessionManager } from '@a-coder/core';
 import { LoadedSettings } from '../../config/settings.js';
 import { UseHistoryManagerReturn } from '../hooks/useHistoryManager.js';
 import { SessionStatsState } from '../contexts/SessionContext.js';
@@ -39,6 +39,8 @@ export interface CommandContext {
   session: {
     stats: SessionStatsState;
   };
+  // Session manager for persistent sessions
+  sessionManager?: SessionManager;
 }
 
 /**

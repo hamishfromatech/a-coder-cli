@@ -8,6 +8,27 @@ import type { CSSProperties } from 'react';
 
 export type ThemeType = 'light' | 'dark' | 'ansi';
 
+/**
+ * Semantic color aliases for consistent UI styling.
+ * These provide meaningful names for colors used throughout the application.
+ */
+export interface SemanticColors {
+  /** Success states, confirmations, positive actions */
+  Success: string;
+  /** Warning states, cautions, attention-needed */
+  Warning: string;
+  /** Error states, failures, destructive actions */
+  Error: string;
+  /** Informational messages, neutral highlights */
+  Info: string;
+  /** Primary actions, main focus elements */
+  Primary: string;
+  /** Secondary actions, supporting elements */
+  Secondary: string;
+  /** Disabled states, less important text */
+  Muted: string;
+}
+
 export interface ColorsTheme {
   type: ThemeType;
   Background: string;
@@ -22,6 +43,8 @@ export interface ColorsTheme {
   Comment: string;
   Gray: string;
   GradientColors?: string[];
+  /** Semantic color aliases for consistent UI styling */
+  semantic: SemanticColors;
 }
 
 export const lightTheme: ColorsTheme = {
@@ -38,6 +61,15 @@ export const lightTheme: ColorsTheme = {
   Comment: '#008000',
   Gray: '#B7BECC',
   GradientColors: ['#4796E4', '#847ACE', '#C3677F'],
+  semantic: {
+    Success: '#3CA84B',
+    Warning: '#D5A40A',
+    Error: '#DD4C4C',
+    Info: '#3B82F6',
+    Primary: '#8B5CF6',
+    Secondary: '#6B7280',
+    Muted: '#9CA3AF',
+  },
 };
 
 export const darkTheme: ColorsTheme = {
@@ -54,6 +86,15 @@ export const darkTheme: ColorsTheme = {
   Comment: '#6C7086',
   Gray: '#6C7086',
   GradientColors: ['#4796E4', '#847ACE', '#C3677F'],
+  semantic: {
+    Success: '#A6E3A1',
+    Warning: '#F9E2AF',
+    Error: '#F38BA8',
+    Info: '#89B4FA',
+    Primary: '#CBA6F7',
+    Secondary: '#A6ADC8',
+    Muted: '#6C7086',
+  },
 };
 
 export const ansiTheme: ColorsTheme = {
@@ -69,6 +110,15 @@ export const ansiTheme: ColorsTheme = {
   AccentRed: 'red',
   Comment: 'gray',
   Gray: 'gray',
+  semantic: {
+    Success: 'green',
+    Warning: 'yellow',
+    Error: 'red',
+    Info: 'blue',
+    Primary: 'magenta',
+    Secondary: 'gray',
+    Muted: 'gray',
+  },
 };
 
 export class Theme {

@@ -7,7 +7,7 @@
 import { ThoughtSummary } from '@a-coder/core';
 import React from 'react';
 import { Box, Text } from 'ink';
-import { Colors } from '../colors.js';
+import { Colors, Semantic } from '../colors.js';
 import { useStreamingContext } from '../contexts/StreamingContext.js';
 import { StreamingState } from '../types.js';
 import { GeminiRespondingSpinner } from './GeminiRespondingSpinner.js';
@@ -50,21 +50,21 @@ export const LoadingIndicator: React.FC<LoadingIndicatorProps> = ({
             }
           />
         </Box>
-        {primaryText && <Text color={Colors.AccentPurple}>{primaryText}</Text>}
-        <Text color={Colors.Gray}>
+        {primaryText && <Text color={Semantic.Primary}>{primaryText}</Text>}
+        <Text color={Semantic.Muted}>
           {streamingState === StreamingState.WaitingForConfirmation
             ? ''
             : ` (esc to cancel, ${elapsedTime < 60 ? `${elapsedTime}s` : formatDuration(elapsedTime * 1000)})`}
         </Text>
         <Box flexGrow={1}>{/* Spacer */}</Box>
         {hasThought && !showThinking && (
-          <Text color={Colors.Gray} dimColor>(ctrl+o for reasoning)</Text>
+          <Text color={Semantic.Muted} dimColor>(ctrl+o for reasoning)</Text>
         )}
         {rightContent && <Box>{rightContent}</Box>}
       </Box>
       {showThinking && hasThought && (
         <Box paddingLeft={3} marginTop={0}>
-          <Text italic color={Colors.Gray} wrap="wrap">
+          <Text italic color={Semantic.Muted} wrap="wrap">
             {thought.description}
           </Text>
         </Box>

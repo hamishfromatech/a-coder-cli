@@ -5,7 +5,35 @@
  */
 
 import { themeManager } from './themes/theme-manager.js';
-import { ColorsTheme } from './themes/theme.js';
+import { ColorsTheme, SemanticColors } from './themes/theme.js';
+
+/**
+ * Semantic color aliases for consistent UI styling.
+ * Use these instead of direct accent colors for better theme support.
+ */
+export const Semantic: SemanticColors = {
+  get Success() {
+    return themeManager.getActiveTheme().colors.semantic.Success;
+  },
+  get Warning() {
+    return themeManager.getActiveTheme().colors.semantic.Warning;
+  },
+  get Error() {
+    return themeManager.getActiveTheme().colors.semantic.Error;
+  },
+  get Info() {
+    return themeManager.getActiveTheme().colors.semantic.Info;
+  },
+  get Primary() {
+    return themeManager.getActiveTheme().colors.semantic.Primary;
+  },
+  get Secondary() {
+    return themeManager.getActiveTheme().colors.semantic.Secondary;
+  },
+  get Muted() {
+    return themeManager.getActiveTheme().colors.semantic.Muted;
+  },
+};
 
 export const Colors: ColorsTheme = {
   get type() {
@@ -46,5 +74,8 @@ export const Colors: ColorsTheme = {
   },
   get GradientColors() {
     return themeManager.getActiveTheme().colors.GradientColors;
+  },
+  get semantic() {
+    return themeManager.getActiveTheme().colors.semantic;
   },
 };

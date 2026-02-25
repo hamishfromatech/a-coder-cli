@@ -6,31 +6,28 @@
 
 import React from 'react';
 import { Text, Box } from 'ink';
-import { Colors } from '../../colors.js';
+import { Colors, Semantic } from '../../colors.js';
 
 interface UserMessageProps {
   text: string;
 }
 
 export const UserMessage: React.FC<UserMessageProps> = ({ text }) => {
-  const prefix = '> ';
+  const prefix = '❯ ';
   const prefixWidth = prefix.length;
 
   return (
     <Box
-      borderStyle="round"
-      borderColor={Colors.Gray}
       flexDirection="row"
-      paddingX={2}
-      paddingY={0}
+      paddingX={1}
       marginY={1}
       alignSelf="flex-start"
     >
       <Box width={prefixWidth}>
-        <Text color={Colors.Gray}>{prefix}</Text>
+        <Text color={Semantic.Primary} bold>{prefix}</Text>
       </Box>
       <Box flexGrow={1}>
-        <Text wrap="wrap" color={Colors.Gray}>
+        <Text wrap="wrap" color={Colors.Foreground}>
           {text}
         </Text>
       </Box>

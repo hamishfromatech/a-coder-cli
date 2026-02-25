@@ -20,6 +20,15 @@ const xcodeColors: ColorsTheme = {
   Comment: '#007400',
   Gray: '#c0c0c0',
   GradientColors: ['#1c00cf', '#007400'],
+  semantic: {
+    Success: '#007400',
+    Warning: '#836C28',
+    Error: '#c41a16',
+    Info: '#1c00cf',
+    Primary: '#aa0d91',
+    Secondary: '#5f6368',
+    Muted: '#80868b',
+  },
 };
 
 export const XCode: Theme = new Theme(

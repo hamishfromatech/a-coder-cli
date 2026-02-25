@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { Box, Text } from 'ink';
-import { Colors } from '../colors.js';
+import { Colors, Semantic } from '../colors.js';
 import {
   shortenPath,
   tildeifyPath,
@@ -60,11 +60,11 @@ export const Footer: React.FC<FooterProps> = ({
   const percentage = currentTokens / limit;
   const pathLimit = Math.max(10, Math.floor(terminalWidth * 0.4));
 
-  // Show warning color if approaching limit
+  // Show warning color if approaching limit using semantic colors
   const getColorForPercentage = (p: number) => {
-    if (p >= 0.9) return Colors.AccentRed;
-    if (p >= 0.7) return Colors.AccentYellow;
-    return Colors.AccentBlue;
+    if (p >= 0.9) return Semantic.Error;
+    if (p >= 0.7) return Semantic.Warning;
+    return Semantic.Info;
   };
 
   return (
@@ -78,13 +78,13 @@ export const Footer: React.FC<FooterProps> = ({
             </Text>
           </Gradient>
         ) : (
-          <Text color={Colors.LightBlue} wrap="truncate">
+          <Text color={Semantic.Info} wrap="truncate">
             {shortenPath(tildeifyPath(targetDir), pathLimit)}
-            {branchName && <Text color={Colors.Gray}> ({branchName}*)</Text>}
+            {branchName && <Text color={Semantic.Muted}> ({branchName}*)</Text>}
           </Text>
         )}
         {debugMode && (
-          <Text color={Colors.AccentRed}>
+          <Text color={Semantic.Error}>
             {' ' + (debugMessage || '--debug')}
           </Text>
         )}
@@ -98,17 +98,17 @@ export const Footer: React.FC<FooterProps> = ({
         display="flex"
       >
         {process.env.SANDBOX && process.env.SANDBOX !== 'sandbox-exec' ? (
-          <Text color={Colors.AccentGreen}>
+          <Text color={Semantic.Success}>
             {process.env.SANDBOX.replace(/^gemini-(?:cli-)?/, '')}
           </Text>
         ) : process.env.SANDBOX === 'sandbox-exec' ? (
-          <Text color={Colors.AccentYellow}>
+          <Text color={Semantic.Warning}>
             MacOS Seatbelt{' '}
-            <Text color={Colors.Gray}>({process.env.SEATBELT_PROFILE})</Text>
+            <Text color={Semantic.Muted}>({process.env.SEATBELT_PROFILE})</Text>
           </Text>
         ) : (
-          <Text color={Colors.AccentRed}>
-            no sandbox <Text color={Colors.Gray}>(see /docs)</Text>
+          <Text color={Semantic.Error}>
+            no sandbox <Text color={Semantic.Muted}>(see /docs)</Text>
           </Text>
         )}
       </Box>
@@ -118,23 +118,23 @@ export const Footer: React.FC<FooterProps> = ({
         <Text color={getColorForPercentage(percentage)} wrap="truncate">
           {' '}
           {model}{' '}
-          <Text color={Colors.Gray}>
+          <Text color={Semantic.Muted}>
             ({((1 - percentage) * 100).toFixed(0)}% context left)
           </Text>
         </Text>
         {corgiMode && (
           <Text>
-            <Text color={Colors.Gray}>| </Text>
-            <Text color={Colors.AccentRed}>▼</Text>
+            <Text color={Semantic.Muted}>| </Text>
+            <Text color={Semantic.Error}>▼</Text>
             <Text color={Colors.Foreground}>(´</Text>
-            <Text color={Colors.AccentRed}>ᴥ</Text>
+            <Text color={Semantic.Error}>ᴥ</Text>
             <Text color={Colors.Foreground}>`)</Text>
-            <Text color={Colors.AccentRed}>▼ </Text>
+            <Text color={Semantic.Error}>▼ </Text>
           </Text>
         )}
         {!showErrorDetails && errorCount > 0 && (
           <Box>
-            <Text color={Colors.Gray}>| </Text>
+            <Text color={Semantic.Muted}>| </Text>
             <ConsoleSummaryDisplay errorCount={errorCount} />
           </Box>
         )}

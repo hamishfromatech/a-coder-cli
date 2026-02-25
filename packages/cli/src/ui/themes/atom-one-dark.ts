@@ -20,6 +20,15 @@ const atomOneDarkColors: ColorsTheme = {
   Comment: '#5c6370',
   Gray: '#5c6370',
   GradientColors: ['#61aeee', '#98c379'],
+  semantic: {
+    Success: '#98c379',
+    Warning: '#e6c07b',
+    Error: '#e06c75',
+    Info: '#61aeee',
+    Primary: '#c678dd',
+    Secondary: '#abb2bf',
+    Muted: '#5c6370',
+  },
 };
 
 export const AtomOneDark: Theme = new Theme(

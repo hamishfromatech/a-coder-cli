@@ -75,6 +75,9 @@ export * from './skills/index.js';
 export * from './telemetry/index.js';
 export { sessionId } from './utils/session.js';
 
+// Export session management
+export * from './session/index.js';
+
 // OpenAI Logging Utilities
 export { OpenAILogger, openaiLogger } from './utils/openaiLogger.js';
 export { default as OpenAILogViewer } from './utils/openaiLogViewer.js';

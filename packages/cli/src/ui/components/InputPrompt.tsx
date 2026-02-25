@@ -6,7 +6,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { Box, Text } from 'ink';
-import { Colors } from '../colors.js';
+import { Colors, Semantic } from '../colors.js';
 import { SuggestionsDisplay } from './SuggestionsDisplay.js';
 import { useInputHistory } from '../hooks/useInputHistory.js';
 import { TextBuffer } from './shared/text-buffer.js';
@@ -438,23 +438,24 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
     <>
       <Box
         borderStyle="round"
-        borderColor={disabled ? Colors.Gray : (shellModeActive ? Colors.AccentYellow : Colors.AccentBlue)}
+        borderColor={disabled ? Semantic.Muted : (shellModeActive ? Semantic.Warning : Semantic.Info)}
         paddingX={1}
       >
         <Text
-          color={disabled ? Colors.Gray : (shellModeActive ? Colors.AccentYellow : Colors.AccentPurple)}
+          color={disabled ? Semantic.Muted : (shellModeActive ? Semantic.Warning : Semantic.Primary)}
+          bold
         >
-          {shellModeActive ? '! ' : '> '}
+          {shellModeActive ? '! ' : '❯ '}
         </Text>
         <Box flexGrow={1} flexDirection="column">
           {buffer.text.length === 0 && effectivePlaceholder ? (
             effectiveFocus ? (
               <Text>
                 {chalk.inverse(effectivePlaceholder.slice(0, 1))}
-                <Text color={Colors.Gray}>{effectivePlaceholder.slice(1)}</Text>
+                <Text color={Semantic.Muted}>{effectivePlaceholder.slice(1)}</Text>
               </Text>
             ) : (
-              <Text color={Colors.Gray}>{effectivePlaceholder}</Text>
+              <Text color={Semantic.Muted}>{effectivePlaceholder}</Text>
             )
           ) : (
             linesToRender.map((lineText, visualIdxInRenderedSet) => {

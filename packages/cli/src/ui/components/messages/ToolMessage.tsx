@@ -8,7 +8,7 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import { IndividualToolCallDisplay, ToolCallStatus } from '../../types.js';
 import { DiffRenderer } from './DiffRenderer.js';
-import { Colors } from '../../colors.js';
+import { Colors, Semantic } from '../../colors.js';
 import { MarkdownDisplay } from '../../utils/MarkdownDisplay.js';
 import { GeminiRespondingSpinner } from '../GeminiRespondingSpinner.js';
 import { MaxSizedBox } from '../shared/MaxSizedBox.js';
@@ -19,7 +19,7 @@ const STATUS_INDICATOR_WIDTH = 3;
 const MIN_LINES_SHOWN = 2; // show at least this many lines
 
 // Large threshold to ensure we don't cause performance issues for very large
-// outputs that will get truncated further MaxSizedBox anyway.
+// outputs that will get truncated further by MaxSizedBox anyway.
 const MAXIMUM_RESULT_DISPLAY_CHARACTERS = 1000000;
 export type TextEmphasis = 'high' | 'medium' | 'low';
 
@@ -118,7 +118,7 @@ const ToolStatusIndicator: React.FC<ToolStatusIndicatorProps> = ({
 }) => (
   <Box minWidth={STATUS_INDICATOR_WIDTH}>
     {status === ToolCallStatus.Pending && (
-      <Text color={Colors.AccentGreen}>o</Text>
+      <Text color={Semantic.Warning}>○</Text>
     )}
     {status === ToolCallStatus.Executing && (
       <GeminiRespondingSpinner
@@ -127,19 +127,19 @@ const ToolStatusIndicator: React.FC<ToolStatusIndicatorProps> = ({
       />
     )}
     {status === ToolCallStatus.Success && (
-      <Text color={Colors.AccentGreen}>✔</Text>
+      <Text color={Semantic.Success}>✓</Text>
     )}
     {status === ToolCallStatus.Confirming && (
-      <Text color={Colors.AccentYellow}>?</Text>
+      <Text color={Semantic.Warning}>?</Text>
     )}
     {status === ToolCallStatus.Canceled && (
-      <Text color={Colors.AccentYellow} bold>
-        -
+      <Text color={Semantic.Muted} bold>
+        ○
       </Text>
     )}
     {status === ToolCallStatus.Error && (
-      <Text color={Colors.AccentRed} bold>
-        x
+      <Text color={Semantic.Error} bold>
+        ✕
       </Text>
     )}
   </Box>
@@ -164,7 +164,7 @@ const ToolInfo: React.FC<ToolInfo> = ({
       case 'medium':
         return Colors.Foreground;
       case 'low':
-        return Colors.Gray;
+        return Semantic.Muted;
       default: {
         const exhaustiveCheck: never = emphasis;
         return exhaustiveCheck;
@@ -180,7 +180,7 @@ const ToolInfo: React.FC<ToolInfo> = ({
         <Text color={nameColor} bold>
           {name}
         </Text>{' '}
-        <Text color={Colors.Gray}>{description}</Text>
+        <Text color={Semantic.Muted}>{description}</Text>
       </Text>
     </Box>
   );

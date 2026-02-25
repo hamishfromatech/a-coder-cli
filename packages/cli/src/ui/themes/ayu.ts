@@ -20,6 +20,15 @@ const ayuDarkColors: ColorsTheme = {
   Comment: '#646A71',
   Gray: '##3D4149',
   GradientColors: ['#FFB454', '#F26D78'],
+  semantic: {
+    Success: '#AAD94C',
+    Warning: '#FFB454',
+    Error: '#F26D78',
+    Info: '#39BAE6',
+    Primary: '#D2A6FF',
+    Secondary: '#626a73',
+    Muted: '#3D4149',
+  },
 };
 
 export const AyuDark: Theme = new Theme(

@@ -266,7 +266,7 @@ export async function loadCliConfig(
 
   const ideMode =
     (argv.ideMode ?? settings.ideMode ?? false) &&
-    process.env.TERM_PROGRAM === 'vscode' &&
+    (process.env.TERM_PROGRAM === 'vscode' || process.env.TERM_PROGRAM === 'a-coder') &&
     !process.env.SANDBOX;
 
   const activeExtensions = filterActiveExtensions(

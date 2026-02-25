@@ -30,6 +30,8 @@ import {
   getLegacySkillsDir,
   getACoderCliProjectSkillsDir,
 } from '../skills/discovery.js';
+import { SkillHookExecutor } from '../skills/hooks.js';
+import { Skill, SkillSource } from '../skills/types.js';
 
 /**
  * Parameters for the skills tool
@@ -166,6 +168,7 @@ export class SkillsTool extends BaseTool<SkillsToolParams, ToolResult> {
   static readonly Name: string = 'skills';
   private readonly skillsDir: string;
   private readonly projectRoot: string;
+  private readonly hookExecutor: SkillHookExecutor;
 
   constructor(private config?: any) {
     super(
@@ -207,6 +210,7 @@ export class SkillsTool extends BaseTool<SkillsToolParams, ToolResult> {
     );
     this.skillsDir = getSkillsDir();
     this.projectRoot = config?.getTargetDir?.() || process.cwd();
+    this.hookExecutor = new SkillHookExecutor();
   }
 
   validateToolParams(params: SkillsToolParams): string | null {
@@ -381,8 +385,27 @@ export class SkillsTool extends BaseTool<SkillsToolParams, ToolResult> {
         content = await processDynamicCommands(content, cwd, signal);
       }
 
+      // Build skill object for hook execution
+      const skill = this.buildSkillFromData(skillName, skillData);
+
+      // Execute onLoad hook if defined
+      const hookOutput: string[] = [];
+      if (skill && skill.frontmatter.hooks?.onLoad) {
+        const loadResult = await this.hookExecutor.executeHook(skill, 'onLoad', cwd, signal);
+        if (!loadResult.success) {
+          console.warn(`Warning: onLoad hook failed for skill "${skillName}": ${loadResult.error}`);
+        } else if (loadResult.output) {
+          hookOutput.push(loadResult.output);
+        }
+      }
+
       const displayName = skillData.frontmatter.name || skillName;
-      const message = `Loaded Skill: ${displayName}\n\nInstructions:\n${content}`;
+      let message = `Loaded Skill: ${displayName}\n\nInstructions:\n${content}`;
+
+      // Append hook output if any
+      if (hookOutput.length > 0) {
+        message += `\n\n--- Hook Output ---\n${hookOutput.join('\n')}`;
+      }
 
       return {
         llmContent: message,
@@ -464,11 +487,31 @@ export class SkillsTool extends BaseTool<SkillsToolParams, ToolResult> {
         content = await processDynamicCommands(content, cwd, signal);
       }
 
+      // Build skill object for hook execution
+      const skill = this.buildSkillFromData(skillName, skillData);
+
+      // Execute onActivate hook if defined
+      const hookOutput: string[] = [];
+      if (skill && skill.frontmatter.hooks?.onActivate) {
+        const activateResult = await this.hookExecutor.executeHook(skill, 'onActivate', cwd, signal);
+        if (!activateResult.success) {
+          console.warn(`Warning: onActivate hook failed for skill "${skillName}": ${activateResult.error}`);
+        } else if (activateResult.output) {
+          hookOutput.push(activateResult.output);
+        }
+      }
+
       // Return the processed content
       const displayName = skillData.frontmatter.name || skillName;
+      let resultContent = content;
+
+      // Append hook output if any
+      if (hookOutput.length > 0) {
+        resultContent += `\n\n--- Hook Output ---\n${hookOutput.join('\n')}`;
+      }
 
       return {
-        llmContent: content,
+        llmContent: resultContent,
         returnDisplay: `Executed skill: ${displayName}`,
       };
     } catch (error) {
@@ -504,5 +547,28 @@ export class SkillsTool extends BaseTool<SkillsToolParams, ToolResult> {
       valid: missingIndices.length === 0,
       missingIndices,
     };
+  }
+
+  /**
+   * Build a Skill object from skill data for hook execution
+   */
+  private buildSkillFromData(
+    skillName: string,
+    skillData: { content: string; frontmatter: any; markdown: string; skillDir: string },
+  ): Skill | null {
+    try {
+      return {
+        id: `loaded:${skillName}`,
+        name: skillData.frontmatter.name || skillName,
+        description: skillData.frontmatter.description || '',
+        source: SkillSource.Personal, // Default to personal for loaded skills
+        frontmatter: skillData.frontmatter,
+        content: skillData.markdown,
+        supportingFiles: new Map(),
+        skillDir: skillData.skillDir,
+      };
+    } catch {
+      return null;
+    }
   }
 }

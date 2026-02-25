@@ -54,6 +54,12 @@ export interface AccessibilitySettings {
   disableLoadingPhrases?: boolean;
 }
 
+export interface SessionSettings {
+  autoSave?: boolean;
+  autoSaveInterval?: number;
+  maxSessions?: number;
+}
+
 export interface OllamaConfig {
   baseUrl?: string;
   model?: string;
@@ -82,6 +88,7 @@ export interface Settings {
   autoConfigureMaxOldSpaceSize?: boolean;
   enableOpenAILogging?: boolean;
   hideThinking?: boolean;
+  session?: SessionSettings;
 
   // Git-aware file filtering settings
   fileFiltering?: {
@@ -181,7 +188,8 @@ export class LoadedSettings {
     deepMerge('fileFiltering');
     deepMerge('accessibility');
     deepMerge('telemetry');
-    
+    deepMerge('session');
+
     // Auto-detect auth type if not explicitly set
     if (!merged.selectedAuthType) {
       if (process.env.OPENAI_API_KEY || process.env.OPENAI_BASE_URL) {

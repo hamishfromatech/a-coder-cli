@@ -19,6 +19,7 @@ import {
   getMCPDiscoveryState,
   getMCPServerStatus,
   getErrorMessage,
+  SessionManager,
 } from '@a-coder/core';
 import { setOpenAIModel, setOpenAIBaseUrl } from '../../config/auth.js';
 import { useSessionStats } from '../contexts/SessionContext.js';
@@ -157,6 +158,28 @@ export const useSlashCommandProcessor = (
     [addItem],
   );
 
+  // Create the session manager with settings
+  const sessionManager = useMemo(() => {
+    const sessionSettings = settings.merged.session || {};
+    return new SessionManager(sessionSettings);
+  }, [settings.merged.session]);
+
+  // Initialize session manager on mount
+  useEffect(() => {
+    const init = async () => {
+      try {
+        await sessionManager.initialize();
+      } catch (error) {
+        console.error('Failed to initialize session manager:', error);
+      }
+    };
+    init();
+
+    return () => {
+      sessionManager.dispose();
+    };
+  }, [sessionManager]);
+
   const commandContext = useMemo(
     (): CommandContext => ({
       services: {
@@ -177,6 +200,7 @@ export const useSlashCommandProcessor = (
       session: {
         stats: session.stats,
       },
+      sessionManager,
     }),
     [
       config,
@@ -188,6 +212,7 @@ export const useSlashCommandProcessor = (
       refreshStatic,
       session.stats,
       onDebugMessage,
+      sessionManager,
     ],
   );
 

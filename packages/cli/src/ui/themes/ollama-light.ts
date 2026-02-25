@@ -20,6 +20,15 @@ const ollamaLightColors: ColorsTheme = {
   Comment: '#ABADB1',
   Gray: '#CCCFD3',
   GradientColors: ['#2c3e50', '#bdc3c7', '#ffffff', '#bdc3c7', '#2c3e50'],
+  semantic: {
+    Success: '#86b300',
+    Warning: '#f2ae49',
+    Error: '#f07171',
+    Info: '#399ee6',
+    Primary: '#a37acc',
+    Secondary: '#787b80',
+    Muted: '#ABADB1',
+  },
 };
 
 export const OllamaLight: Theme = new Theme(

@@ -22,11 +22,21 @@ import {
   type EditorType,
 } from './editor.js';
 import { execSync, spawn } from 'child_process';
+import * as fs from 'fs';
 
 vi.mock('child_process', () => ({
   execSync: vi.fn(),
   spawn: vi.fn(),
 }));
+
+vi.mock('fs', async () => {
+  const actualFs = await vi.importActual('fs');
+  return {
+    ...actualFs,
+    existsSync: vi.fn(),
+    statSync: vi.fn(),
+  };
+});
 
 const originalPlatform = process.platform;
 
@@ -54,6 +64,7 @@ describe('editor utils', () => {
       editor: EditorType;
       command: string;
       win32Command: string;
+      darwinCommand?: string;
     }> = [
       { editor: 'vscode', command: 'code', win32Command: 'code.cmd' },
       { editor: 'vscodium', command: 'codium', win32Command: 'codium.cmd' },
@@ -62,9 +73,10 @@ describe('editor utils', () => {
       { editor: 'vim', command: 'vim', win32Command: 'vim' },
       { editor: 'neovim', command: 'nvim', win32Command: 'nvim' },
       { editor: 'zed', command: 'zed', win32Command: 'zed' },
+      { editor: 'a-coder', command: 'a-coder-cli', win32Command: 'a-coder-cli', darwinCommand: '/Applications/A-Coder.app/Contents/MacOS/A-Coder' },
     ];
 
-    for (const { editor, command, win32Command } of testCases) {
+    for (const { editor, command, win32Command, darwinCommand } of testCases) {
       describe(`${editor}`, () => {
         it(`should return true if "${command}" command exists on non-windows`, () => {
           Object.defineProperty(process, 'platform', { value: 'linux' });
@@ -84,6 +96,22 @@ describe('editor utils', () => {
           });
           expect(checkHasEditorType(editor)).toBe(false);
         });
+
+        if (darwinCommand) {
+          it(`should return true if darwin command exists on macOS`, () => {
+            Object.defineProperty(process, 'platform', { value: 'darwin' });
+            vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+            vi.spyOn(fs, 'statSync').mockReturnValue({ isFile: () => true } as any);
+            expect(checkHasEditorType(editor)).toBe(true);
+            expect(fs.existsSync).toHaveBeenCalledWith(darwinCommand);
+          });
+
+          it(`should return false if darwin command does not exist on macOS`, () => {
+            Object.defineProperty(process, 'platform', { value: 'darwin' });
+            vi.spyOn(fs, 'existsSync').mockReturnValue(false);
+            expect(checkHasEditorType(editor)).toBe(false);
+          });
+        }
 
         it(`should return true if "${win32Command}" command exists on windows`, () => {
           Object.defineProperty(process, 'platform', { value: 'win32' });
@@ -112,15 +140,17 @@ describe('editor utils', () => {
       editor: EditorType;
       command: string;
       win32Command: string;
+      darwinCommand?: string;
     }> = [
       { editor: 'vscode', command: 'code', win32Command: 'code.cmd' },
       { editor: 'vscodium', command: 'codium', win32Command: 'codium.cmd' },
       { editor: 'windsurf', command: 'windsurf', win32Command: 'windsurf' },
       { editor: 'cursor', command: 'cursor', win32Command: 'cursor' },
       { editor: 'zed', command: 'zed', win32Command: 'zed' },
+      { editor: 'a-coder', command: 'a-coder-cli', win32Command: 'a-coder-cli', darwinCommand: '/Applications/A-Coder.app/Contents/MacOS/A-Coder' },
     ];
 
-    for (const { editor, command, win32Command } of guiEditors) {
+    for (const { editor, command, win32Command, darwinCommand } of guiEditors) {
       it(`should return the correct command for ${editor} on non-windows`, () => {
         Object.defineProperty(process, 'platform', { value: 'linux' });
         const diffCommand = getDiffCommand('old.txt', 'new.txt', editor);
@@ -138,6 +168,17 @@ describe('editor utils', () => {
           args: ['--wait', '--diff', 'old.txt', 'new.txt'],
         });
       });
+
+      if (darwinCommand) {
+        it(`should return the correct command for ${editor} on macOS`, () => {
+          Object.defineProperty(process, 'platform', { value: 'darwin' });
+          const diffCommand = getDiffCommand('old.txt', 'new.txt', editor);
+          expect(diffCommand).toEqual({
+            command: darwinCommand,
+            args: ['--wait', '--diff', 'old.txt', 'new.txt'],
+          });
+        });
+      }
     }
 
     const terminalEditors: Array<{
@@ -190,6 +231,7 @@ describe('editor utils', () => {
       'windsurf',
       'cursor',
       'zed',
+      'a-coder',
     ];
     for (const editor of spawnEditors) {
       it(`should call spawn for ${editor}`, async () => {
@@ -319,6 +361,7 @@ describe('editor utils', () => {
       'windsurf',
       'cursor',
       'zed',
+      'a-coder',
     ];
     for (const editor of guiEditors) {
       it(`should not allow ${editor} in sandbox mode`, () => {

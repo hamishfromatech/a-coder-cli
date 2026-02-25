@@ -9,7 +9,7 @@ import { Box } from 'ink';
 import { IndividualToolCallDisplay, ToolCallStatus } from '../../types.js';
 import { ToolMessage } from './ToolMessage.js';
 import { ToolConfirmationMessage } from './ToolConfirmationMessage.js';
-import { Colors } from '../../colors.js';
+import { Colors, Semantic } from '../../colors.js';
 import { Config } from '@a-coder/core';
 
 interface ToolGroupMessageProps {
@@ -19,6 +19,35 @@ interface ToolGroupMessageProps {
   terminalWidth: number;
   config?: Config;
   isFocused?: boolean;
+}
+
+/**
+ * Determines the border color based on tool call statuses.
+ * Uses semantic colors for better visual feedback.
+ */
+function getBorderColor(toolCalls: IndividualToolCallDisplay[]): string {
+  const hasError = toolCalls.some((t) => t.status === ToolCallStatus.Error);
+  const hasConfirming = toolCalls.some(
+    (t) => t.status === ToolCallStatus.Confirming,
+  );
+  const hasPending = toolCalls.some((t) => t.status === ToolCallStatus.Pending);
+  const hasExecuting = toolCalls.some(
+    (t) => t.status === ToolCallStatus.Executing,
+  );
+  const allSuccess = toolCalls.every(
+    (t) => t.status === ToolCallStatus.Success,
+  );
+  const hasCanceled = toolCalls.some(
+    (t) => t.status === ToolCallStatus.Canceled,
+  );
+
+  if (hasError) return Semantic.Error;
+  if (hasConfirming) return Semantic.Warning;
+  if (hasExecuting) return Semantic.Info;
+  if (hasPending) return Semantic.Warning;
+  if (allSuccess) return Semantic.Success;
+  if (hasCanceled) return Semantic.Muted;
+  return Semantic.Secondary;
 }
 
 // Main component renders the border and maps the tools using ToolMessage
@@ -32,11 +61,9 @@ export const ToolGroupMessage: React.FC<ToolGroupMessageProps> = ({
   const hasPending = !toolCalls.every(
     (t) => t.status === ToolCallStatus.Success,
   );
-  const borderColor = hasPending ? Colors.AccentYellow : Colors.Gray;
 
-  const staticHeight = /* border */ 2 + /* marginBottom */ 1;
-  // This is a bit of a magic number, but it accounts for the border and
-  // marginLeft.
+  const staticHeight = /* marginBottom */ 1;
+  // This is a bit of a magic number, but it accounts for the marginLeft.
   const innerWidth = terminalWidth - 4;
 
   // only prompt for tool approval on the first 'confirming' tool in the list
@@ -66,17 +93,14 @@ export const ToolGroupMessage: React.FC<ToolGroupMessageProps> = ({
   return (
     <Box
       flexDirection="column"
-      borderStyle="round"
       /*
         This width constraint is highly important and protects us from an Ink rendering bug.
         Since the ToolGroup can typically change rendering states frequently, it can cause
-        Ink to render the border of the box incorrectly and span multiple lines and even
+        Ink to render the box incorrectly and span multiple lines and even
         cause tearing.
       */
       width="100%"
       marginLeft={1}
-      borderDimColor={hasPending}
-      borderColor={borderColor}
     >
       {toolCalls.map((tool) => {
         const isConfirming = toolAwaitingApproval?.callId === tool.callId;

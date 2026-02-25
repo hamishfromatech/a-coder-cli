@@ -19,6 +19,15 @@ const noColorColorsTheme: ColorsTheme = {
   AccentRed: '',
   Comment: '',
   Gray: '',
+  semantic: {
+    Success: '',
+    Warning: '',
+    Error: '',
+    Info: '',
+    Primary: '',
+    Secondary: '',
+    Muted: '',
+  },
 };
 
 export const NoColorTheme: Theme = new Theme(

@@ -20,6 +20,15 @@ const googleCodeColors: ColorsTheme = {
   Comment: '#5f6368',
   Gray: lightTheme.Gray,
   GradientColors: ['#066', '#606'],
+  semantic: {
+    Success: '#080',
+    Warning: '#660',
+    Error: '#800',
+    Info: '#008',
+    Primary: '#606',
+    Secondary: '#5f6368',
+    Muted: '#80868b',
+  },
 };
 
 export const GoogleCode: Theme = new Theme(

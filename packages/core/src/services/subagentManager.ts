@@ -291,23 +291,15 @@ export class SubagentManager {
    * Get the path to the subagent entry point
    */
   private getSubagentEntryPath(): string {
-    // In development, use the TypeScript source
     // In production, use the compiled JavaScript
-    const possiblePaths = [
-      // Production path (compiled)
-      path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'cli', 'dist', 'subagent.js'),
-      // Development path (would need to be compiled separately)
-      path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'cli', 'src', 'subagent.ts'),
-    ];
-
-    // For now, return a path that will be created
-    // The actual entry point will be in packages/cli/src/subagent.ts
+    // The build outputs to dist/src/ not just dist/
     return path.join(
       path.dirname(fileURLToPath(import.meta.url)),
       '..',
       '..',
       'cli',
       'dist',
+      'src',
       'subagent.js',
     );
   }

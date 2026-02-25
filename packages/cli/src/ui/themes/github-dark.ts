@@ -20,6 +20,15 @@ const githubDarkColors: ColorsTheme = {
   Comment: '#6A737D',
   Gray: '#6A737D',
   GradientColors: ['#79B8FF', '#85E89D'],
+  semantic: {
+    Success: '#85E89D',
+    Warning: '#FFAB70',
+    Error: '#F97583',
+    Info: '#79B8FF',
+    Primary: '#B392F0',
+    Secondary: '#959da5',
+    Muted: '#6A737D',
+  },
 };
 
 export const GitHubDark: Theme = new Theme(
