@@ -37,6 +37,7 @@ import {
   logUserPrompt,
   AuthType,
   getOauthClient,
+  getHookExecutor,
 } from '@a-coder/core';
 import { validateAuthMethod } from './config/auth.js';
 import { setMaxSizedBoxDebugging } from './ui/components/shared/MaxSizedBox.js';
@@ -191,6 +192,24 @@ export async function main() {
   await config.initialize();
   debugLog('Config initialized');
 
+  let input = config.getQuestion();
+
+  // Execute SessionStart hooks for Dash integration
+  try {
+    const hookExecutor = getHookExecutor(sessionId, workspaceRoot);
+    const taskContext = hookExecutor.getTaskContext();
+    if (taskContext?.additionalContext) {
+      // Task context exists, inject it as initial prompt
+      if (!input && taskContext.additionalContext) {
+        input = taskContext.additionalContext;
+      }
+    }
+    await hookExecutor.executeSessionStartHooks();
+  } catch (hookError) {
+    // Don't let hook errors prevent startup
+    console.error('[HookExecutor] SessionStart hook error:', hookError);
+  }
+
   // hop into sandbox if we are outside and sandboxing is enabled
   if (!process.env.SANDBOX) {
     debugLog('Checking for sandbox...');
@@ -220,7 +239,6 @@ export async function main() {
     await getOauthClient(settings.merged.selectedAuthType, config);
   }
 
-  let input = config.getQuestion();
   debugLog(`Input question length: ${input?.length || 0}`);
   const startupWarnings = [
     ...(await getStartupWarnings()),

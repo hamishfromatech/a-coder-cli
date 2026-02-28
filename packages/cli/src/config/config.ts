@@ -61,6 +61,9 @@ export interface CliArgs {
   openaiApiKey: string | undefined;
   openaiBaseUrl: string | undefined;
   upgrade: boolean | undefined;
+  // Dash integration options
+  resume: boolean | undefined;
+  sessionId: string | undefined;
 }
 
 export async function parseArguments(): Promise<CliArgs> {
@@ -208,6 +211,17 @@ export async function parseArguments(): Promise<CliArgs> {
       alias: 'u',
       type: 'boolean',
       description: 'Upgrade the CLI to the latest version from GitHub',
+    })
+    // Dash integration options
+    .option('resume', {
+      alias: 'r',
+      type: 'boolean',
+      description: 'Resume the last session (for Dash integration)',
+      default: false,
+    })
+    .option('session-id', {
+      type: 'string',
+      description: 'Specific session ID to resume (for Dash integration)',
     })
 
     .version(await getCliVersion()) // This will enable the --version flag based on package.json

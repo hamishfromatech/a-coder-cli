@@ -78,6 +78,29 @@ export { sessionId } from './utils/session.js';
 // Export session management
 export * from './session/index.js';
 
+// Export hooks system (for Dash integration)
+export {
+  type HookEventName,
+  type NotificationType,
+  type HookCommand,
+  type HookConfig,
+  type HooksSettings,
+  type StopHookContext,
+  type UserPromptSubmitHookContext,
+  type NotificationHookContext,
+  type SessionStartHookContext,
+  type HookContext,
+  type AttributionSettings,
+  HookExecutor,
+  getHookExecutor,
+  DashHookExecutor,
+  initDashHookExecutor,
+  getDashHookExecutor,
+} from './hooks/index.js';
+// Import and re-export HookResult from hooks with a different name to avoid conflict
+import { HookResult as HooksHookResult } from './hooks/types.js';
+export { HooksHookResult as HookExecutorResult };
+
 // OpenAI Logging Utilities
 export { OpenAILogger, openaiLogger } from './utils/openaiLogger.js';
 export { default as OpenAILogViewer } from './utils/openaiLogViewer.js';

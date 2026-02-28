@@ -15,6 +15,8 @@ import {
   BugCommandSettings,
   TelemetrySettings,
   AuthType,
+  HooksSettings,
+  AttributionSettings,
 } from '@a-coder/core';
 import stripJsonComments from 'strip-json-comments';
 import { DefaultLight } from '../ui/themes/default-light.js';
@@ -120,6 +122,12 @@ export interface Settings {
 
   // Add other settings here.
   ideMode?: boolean;
+
+  // Hooks for Dash integration (compatible with Claude Code hooks)
+  hooks?: HooksSettings;
+
+  // Attribution settings for commits
+  attribution?: AttributionSettings;
 }
 
 export interface SettingsError {

@@ -27,6 +27,7 @@ import {
   UserPromptEvent,
   DEFAULT_GEMINI_FLASH_MODEL,
   ToDoItem,
+  getHookExecutor,
 } from '@a-coder/core';
 import { type Part, type PartListUnion } from '@google/genai';
 import {
@@ -659,6 +660,16 @@ export const useGeminiStream = (
       setIsResponding(true);
       setInitError(null);
 
+      // Execute UserPromptSubmit hooks for Dash integration
+      try {
+        const hookExecutor = getHookExecutor(config.getSessionId(), config.getTargetDir());
+        const promptText = typeof query === 'string' ? query : '';
+        await hookExecutor.executeUserPromptSubmitHooks(promptText);
+      } catch (hookError) {
+        // Don't let hook errors affect the main flow
+        console.error('[HookExecutor] UserPromptSubmit hook error:', hookError);
+      }
+
       try {
         const stream = geminiClient.sendMessageStream(
           queryToSend,
@@ -707,6 +718,15 @@ export const useGeminiStream = (
         }
       } finally {
         setIsResponding(false);
+
+        // Execute Stop hooks for Dash integration
+        try {
+          const hookExecutor = getHookExecutor(config.getSessionId(), config.getTargetDir());
+          await hookExecutor.executeStopHooks();
+        } catch (hookError) {
+          // Don't let hook errors affect the main flow
+          console.error('[HookExecutor] Stop hook error:', hookError);
+        }
       }
     },
     [
