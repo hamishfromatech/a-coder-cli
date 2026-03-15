@@ -41,7 +41,7 @@ export const SkillsDialog = ({
   );
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor={Colors.AccentBlue} paddingX={1}>
+    <Box flexDirection="column" borderStyle="single" borderColor={Colors.AccentBlue} paddingX={1}>
       <Box marginBottom={1}>
         <Text bold color={Colors.AccentBlue}>
           Select Skill to Load

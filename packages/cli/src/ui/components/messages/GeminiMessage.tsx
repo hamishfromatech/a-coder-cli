@@ -22,17 +22,14 @@ export const GeminiMessage: React.FC<GeminiMessageProps> = ({
   availableTerminalHeight,
   terminalWidth,
 }) => {
-  const prefix = '👑 ';
-  const prefixWidth = prefix.length;
-
   return (
     <Box
       flexDirection="row"
       paddingX={1}
       marginY={1}
     >
-      <Box width={prefixWidth}>
-        <Text color={Semantic.Primary} bold>{prefix}</Text>
+      <Box paddingRight={1}>
+        <Text bold color={Semantic.Primary}>[AI]</Text>
       </Box>
       <Box flexGrow={1} flexDirection="column">
         <MarkdownDisplay

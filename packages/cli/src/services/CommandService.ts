@@ -12,6 +12,7 @@ import { helpCommand } from '../ui/commands/helpCommand.js';
 import { memoryCommand } from '../ui/commands/memoryCommand.js';
 import { privacyCommand } from '../ui/commands/privacyCommand.js';
 import { sessionCommand } from '../ui/commands/sessionCommand.js';
+import { reloadSkillsCommand } from '../ui/commands/reloadSkillsCommand.js';
 import { skillsCommand } from '../ui/commands/skillsCommand.js';
 import { themeCommand } from '../ui/commands/themeCommand.js';
 import { SlashCommand } from '../ui/commands/types.js';
@@ -23,6 +24,7 @@ const loadBuiltInCommands = async (): Promise<SlashCommand[]> => [
   helpCommand,
   memoryCommand,
   privacyCommand,
+  reloadSkillsCommand,
   sessionCommand,
   skillsCommand,
   themeCommand,
@@ -39,13 +41,14 @@ export class CommandService {
     // The constructor can be used for dependency injection in the future.
   }
 
-  async loadCommands(config?: Config): Promise<void> {
+  async loadCommands(config?: Config, currentPath?: string): Promise<void> {
     // Load built-in commands
     this.commands = await this.commandLoader();
 
-    // Load skill-based commands if not loaded yet and config is provided
-    if (!this.skillsLoaded && config) {
-      await this.loadSkillCommands(config);
+    // Load skill-based commands if config is provided
+    // Always reload skills if config is provided to support dynamic discovery
+    if (config) {
+      await this.loadSkillCommands(config, currentPath);
       this.skillsLoaded = true;
     }
   }
@@ -54,15 +57,26 @@ export class CommandService {
    * Load skill-based commands from discovery
    *
    * @param config - The Config instance for skill discovery
+   * @param currentPath - Optional current working path for nested skill discovery
    */
-  private async loadSkillCommands(config: Config): Promise<void> {
+  private async loadSkillCommands(config: Config, currentPath?: string): Promise<void> {
     try {
       // Import skills modules lazily to avoid circular dependencies
       const { SkillDiscovery } = await import('@a-coder/core');
       const { generateSlashCommands } = await import('@a-coder/core');
 
       const discovery = new SkillDiscovery(config);
-      const skills = await discovery.discoverAll();
+
+      // Discover skills with nested skills support based on current path
+      const discoveryOptions: { currentPath?: string; includeNested?: boolean } = {};
+
+      // Include current path for nested skills discovery
+      if (currentPath) {
+        discoveryOptions.currentPath = currentPath;
+        discoveryOptions.includeNested = true;
+      }
+
+      const skills = await discovery.discoverAll(discoveryOptions);
 
       if (skills.length === 0) {
         return;
@@ -100,5 +114,24 @@ export class CommandService {
    */
   getCommand(name: string): SlashCommand | undefined {
     return this.commands.find((cmd) => cmd.name === name);
+  }
+
+  /**
+   * Reload skill-based commands with optional new current path
+   * This can be called when the working directory changes or skills are added/modified
+   *
+   * @param config - The Config instance for skill discovery
+   * @param currentPath - Optional new current working path for nested skill discovery
+   */
+  async reloadSkills(config: Config, currentPath?: string): Promise<void> {
+    try {
+      // Reload built-in commands + skills
+      await this.loadCommands(config, currentPath);
+
+      // Note: Any component using this service should call getCommands() again
+      // after reload to get the updated list
+    } catch (error) {
+      console.warn('Warning: Could not reload skill commands:', error);
+    }
   }
 }

@@ -36,39 +36,46 @@ export const LoadingIndicator: React.FC<LoadingIndicatorProps> = ({
 
   const primaryText = currentLoadingPhrase || thought?.subject;
   const hasThought = thought?.description;
+  const isWaiting = streamingState === StreamingState.WaitingForConfirmation;
 
   return (
-    <Box marginTop={1} paddingLeft={0} flexDirection="column">
-      {/* Main loading line */}
+    <Box marginTop={1} flexDirection="column">
+      {/* Main loading line - simplified */}
       <Box>
         <Box marginRight={1}>
           <GeminiRespondingSpinner
-            nonRespondingDisplay={
-              streamingState === StreamingState.WaitingForConfirmation
-                ? '⠏'
-                : ''
-            }
+            nonRespondingDisplay={isWaiting ? '⠏' : ''}
           />
         </Box>
-        {primaryText && <Text color={Semantic.Primary}>{primaryText}</Text>}
-        <Text color={Semantic.Muted}>
-          {streamingState === StreamingState.WaitingForConfirmation
-            ? ''
-            : ` (esc to cancel, ${elapsedTime < 60 ? `${elapsedTime}s` : formatDuration(elapsedTime * 1000)})`}
-        </Text>
-        <Box flexGrow={1}>{/* Spacer */}</Box>
-        {hasThought && !showThinking && (
-          <Text color={Semantic.Muted} dimColor>(ctrl+o for reasoning)</Text>
+        {primaryText && (
+          <Text color={isWaiting ? Semantic.Warning : Semantic.Primary}>
+            {primaryText}
+          </Text>
         )}
-        {rightContent && <Box>{rightContent}</Box>}
       </Box>
+
+      {/* Secondary info on separate line - only show relevant info */}
+      {!isWaiting && (
+        <Box marginLeft={3} marginTop={0} flexDirection="row">
+          <Text color={Semantic.Muted}>
+            {elapsedTime >= 5 && `${elapsedTime}s elapsed `}
+            {hasThought && !showThinking && '| ctrl+o for reasoning '}
+            | esc to cancel
+          </Text>
+        </Box>
+      )}
+
+      {/* Thought description - show only when explicitly requested */}
       {showThinking && hasThought && (
-        <Box paddingLeft={3} marginTop={0}>
+        <Box marginLeft={3} marginTop={0}>
           <Text italic color={Semantic.Muted} wrap="wrap">
             {thought.description}
           </Text>
         </Box>
       )}
+
+      {/* Right content if needed */}
+      {rightContent && <Box>{rightContent}</Box>}
     </Box>
   );
 };

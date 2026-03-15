@@ -13,9 +13,6 @@ interface UserMessageProps {
 }
 
 export const UserMessage: React.FC<UserMessageProps> = ({ text }) => {
-  const prefix = '❯ ';
-  const prefixWidth = prefix.length;
-
   return (
     <Box
       flexDirection="row"
@@ -23,8 +20,8 @@ export const UserMessage: React.FC<UserMessageProps> = ({ text }) => {
       marginY={1}
       alignSelf="flex-start"
     >
-      <Box width={prefixWidth}>
-        <Text color={Semantic.Primary} bold>{prefix}</Text>
+      <Box paddingRight={1}>
+        <Text bold>[YOU]</Text>
       </Box>
       <Box flexGrow={1}>
         <Text wrap="wrap" color={Colors.Foreground}>

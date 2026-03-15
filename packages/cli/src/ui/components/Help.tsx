@@ -18,7 +18,7 @@ export const Help: React.FC<Help> = ({ commands }) => (
     flexDirection="column"
     marginBottom={1}
     borderColor={Colors.Gray}
-    borderStyle="round"
+    borderStyle="single"
     padding={1}
   >
     {/* Basics */}
@@ -147,9 +147,39 @@ export const Help: React.FC<Help> = ({ commands }) => (
     </Text>
     <Text color={Colors.Foreground}>
       <Text bold color={Colors.AccentPurple}>
+        Ctrl+L
+      </Text>{' '}
+      - Clear screen
+    </Text>
+    <Text color={Colors.Foreground}>
+      <Text bold color={Colors.AccentPurple}>
+        Ctrl+O
+      </Text>{' '}
+      - Toggle AI thinking display
+    </Text>
+    <Text color={Colors.Foreground}>
+      <Text bold color={Colors.AccentPurple}>
+        Ctrl+E
+      </Text>{' '}
+      - Toggle error details
+    </Text>
+    <Text color={Colors.Foreground}>
+      <Text bold color={Colors.AccentPurple}>
+        Ctrl+T
+      </Text>{' '}
+      - Toggle tool descriptions
+    </Text>
+    <Text color={Colors.Foreground}>
+      <Text bold color={Colors.AccentPurple}>
         Ctrl+C
       </Text>{' '}
       - Quit application
+    </Text>
+    <Text color={Colors.Foreground}>
+      <Text bold color={Colors.AccentPurple}>
+        ?
+      </Text>{' '}
+      - Show/hide this help
     </Text>
   </Box>
 );

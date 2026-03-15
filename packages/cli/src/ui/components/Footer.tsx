@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { Box, Text } from 'ink';
-import { Colors, Semantic } from '../colors.js';
+import { Semantic } from '../colors.js';
 import {
   shortenPath,
   tildeifyPath,
@@ -14,7 +14,6 @@ import {
 } from '@a-coder/core';
 import { ConsoleSummaryDisplay } from './ConsoleSummaryDisplay.js';
 import process from 'node:process';
-import Gradient from 'ink-gradient';
 import { MemoryUsageDisplay } from './MemoryUsageDisplay.js';
 
 interface ContextUsageInfo {
@@ -70,19 +69,10 @@ export const Footer: React.FC<FooterProps> = ({
   return (
     <Box marginTop={1} justifyContent="space-between" width="100%">
       <Box flexShrink={1}>
-        {nightly ? (
-          <Gradient colors={Colors.GradientColors}>
-            <Text wrap="truncate">
-              {shortenPath(tildeifyPath(targetDir), pathLimit)}
-              {branchName && <Text> ({branchName}*)</Text>}
-            </Text>
-          </Gradient>
-        ) : (
-          <Text color={Semantic.Info} wrap="truncate">
-            {shortenPath(tildeifyPath(targetDir), pathLimit)}
-            {branchName && <Text color={Semantic.Muted}> ({branchName}*)</Text>}
-          </Text>
-        )}
+        <Text color={Semantic.Info} wrap="truncate" bold={nightly}>
+          {shortenPath(tildeifyPath(targetDir), pathLimit)}
+          {branchName && <Text color={Semantic.Muted}> ({branchName}*)</Text>}
+        </Text>
         {debugMode && (
           <Text color={Semantic.Error}>
             {' ' + (debugMessage || '--debug')}
@@ -113,27 +103,16 @@ export const Footer: React.FC<FooterProps> = ({
         )}
       </Box>
 
-      {/* Right Section: Gemini Label and Console Summary */}
+      {/* Right Section: Model info and status */}
       <Box alignItems="center" flexShrink={1}>
         <Text color={getColorForPercentage(percentage)} wrap="truncate">
-          {' '}
           {model}{' '}
           <Text color={Semantic.Muted}>
-            ({((1 - percentage) * 100).toFixed(0)}% context left)
+            ({(percentage * 100).toFixed(0)}% used)
           </Text>
         </Text>
-        {corgiMode && (
-          <Text>
-            <Text color={Semantic.Muted}>| </Text>
-            <Text color={Semantic.Error}>▼</Text>
-            <Text color={Colors.Foreground}>(´</Text>
-            <Text color={Semantic.Error}>ᴥ</Text>
-            <Text color={Colors.Foreground}>`)</Text>
-            <Text color={Semantic.Error}>▼ </Text>
-          </Text>
-        )}
         {!showErrorDetails && errorCount > 0 && (
-          <Box>
+          <Box marginLeft={1}>
             <Text color={Semantic.Muted}>| </Text>
             <ConsoleSummaryDisplay errorCount={errorCount} />
           </Box>

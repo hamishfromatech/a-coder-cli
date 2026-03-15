@@ -8,26 +8,26 @@ import { type ColorsTheme, Theme } from './theme.js';
 
 const ollamaDarkColors: ColorsTheme = {
   type: 'dark',
-  Background: '#0b0e14',
-  Foreground: '#bfbdb6',
-  LightBlue: '#59C2FF',
-  AccentBlue: '#39BAE6',
-  AccentPurple: '#D2A6FF',
-  AccentCyan: '#95E6CB',
-  AccentGreen: '#AAD94C',
-  AccentYellow: '#FFD700',
-  AccentRed: '#F26D78',
-  Comment: '#646A71',
-  Gray: '#3D4149',
-  GradientColors: ['#2c3e50', '#bdc3c7', '#ffffff', '#bdc3c7', '#2c3e50'],
+  Background: '#0A0A0A',
+  Foreground: '#E8E8E8',
+  LightBlue: '#B0B0B0',
+  AccentBlue: '#A0A0A0',
+  AccentPurple: '#909090',
+  AccentCyan: '#C0C0C0',
+  AccentGreen: '#D0D0D0',
+  AccentYellow: '#999999',
+  AccentRed: '#808080',
+  Comment: '#666666',
+  Gray: '#3D3D3D',
+  GradientColors: ['#1A1A1A', '#2A2A2A', '#3A3A3A', '#4A4A4A', '#5A5A5A'],
   semantic: {
-    Success: '#AAD94C',
-    Warning: '#FFD700',
-    Error: '#F26D78',
-    Info: '#39BAE6',
-    Primary: '#D2A6FF',
-    Secondary: '#626a73',
-    Muted: '#3D4149',
+    Success: '#B8B8B8',
+    Warning: '#A0A0A0',
+    Error: '#888888',
+    Info: '#C8C8C8',
+    Primary: '#D0D0D0',
+    Secondary: '#606060',
+    Muted: '#505050',
   },
 };
 
@@ -43,22 +43,22 @@ export const OllamaDark: Theme = new Theme(
       color: ollamaDarkColors.Foreground,
     },
     'hljs-keyword': {
-      color: ollamaDarkColors.AccentYellow,
+      color: ollamaDarkColors.AccentCyan,
     },
     'hljs-literal': {
-      color: ollamaDarkColors.AccentPurple,
+      color: ollamaDarkColors.LightBlue,
     },
     'hljs-symbol': {
       color: ollamaDarkColors.AccentCyan,
     },
     'hljs-name': {
-      color: ollamaDarkColors.LightBlue,
+      color: ollamaDarkColors.AccentGreen,
     },
     'hljs-link': {
       color: ollamaDarkColors.AccentBlue,
     },
     'hljs-function .hljs-keyword': {
-      color: ollamaDarkColors.AccentYellow,
+      color: ollamaDarkColors.AccentCyan,
     },
     'hljs-subst': {
       color: ollamaDarkColors.Foreground,
@@ -67,28 +67,28 @@ export const OllamaDark: Theme = new Theme(
       color: ollamaDarkColors.AccentGreen,
     },
     'hljs-title': {
-      color: ollamaDarkColors.AccentYellow,
+      color: ollamaDarkColors.AccentCyan,
     },
     'hljs-type': {
       color: ollamaDarkColors.AccentBlue,
     },
     'hljs-attribute': {
-      color: ollamaDarkColors.AccentYellow,
+      color: ollamaDarkColors.LightBlue,
     },
     'hljs-bullet': {
-      color: ollamaDarkColors.AccentYellow,
+      color: ollamaDarkColors.AccentCyan,
     },
     'hljs-addition': {
-      color: ollamaDarkColors.AccentGreen,
+      color: ollamaDarkColors.semantic.Info,
     },
     'hljs-variable': {
       color: ollamaDarkColors.Foreground,
     },
     'hljs-template-tag': {
-      color: ollamaDarkColors.AccentYellow,
+      color: ollamaDarkColors.LightBlue,
     },
     'hljs-template-variable': {
-      color: ollamaDarkColors.AccentYellow,
+      color: ollamaDarkColors.LightBlue,
     },
     'hljs-comment': {
       color: ollamaDarkColors.Comment,
@@ -99,10 +99,10 @@ export const OllamaDark: Theme = new Theme(
       fontStyle: 'italic',
     },
     'hljs-deletion': {
-      color: ollamaDarkColors.AccentRed,
+      color: ollamaDarkColors.AccentBlue,
     },
     'hljs-meta': {
-      color: ollamaDarkColors.AccentYellow,
+      color: ollamaDarkColors.LightBlue,
     },
     'hljs-doctag': {
       fontWeight: 'bold',

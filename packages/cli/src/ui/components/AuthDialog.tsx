@@ -164,7 +164,7 @@ export function AuthDialog({
 
   return (
     <Box
-      borderStyle="round"
+      borderStyle="single"
       borderColor={Colors.Gray}
       flexDirection="column"
       padding={1}

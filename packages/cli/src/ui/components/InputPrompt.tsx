@@ -51,7 +51,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
   config,
   slashCommands,
   commandContext,
-  placeholder = '  Type your message (Ctrl+Enter to send) or @path/to/file',
+  placeholder = '  Type a message (? for help) or @path/to/file',
   focus = true,
   disabled = false,
   inputWidth,
@@ -437,7 +437,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
   return (
     <>
       <Box
-        borderStyle="round"
+        borderStyle="single"
         borderColor={disabled ? Semantic.Muted : (shellModeActive ? Semantic.Warning : Semantic.Info)}
         paddingX={1}
       >
@@ -445,7 +445,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
           color={disabled ? Semantic.Muted : (shellModeActive ? Semantic.Warning : Semantic.Primary)}
           bold
         >
-          {shellModeActive ? '! ' : '❯ '}
+          {shellModeActive ? '! ' : '> '}
         </Text>
         <Box flexGrow={1} flexDirection="column">
           {buffer.text.length === 0 && effectivePlaceholder ? (

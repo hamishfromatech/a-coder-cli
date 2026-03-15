@@ -83,7 +83,7 @@ export function ModelDialog({
 
   return (
     <Box
-      borderStyle="round"
+      borderStyle="single"
       borderColor={Colors.AccentBlue}
       flexDirection="column"
       padding={1}
@@ -91,7 +91,7 @@ export function ModelDialog({
     >
       <Box flexDirection="column">
         <Text bold color={Colors.AccentBlue}>
-          {focusedSection === 'model' ? '> ' : '  '}Select AI Model
+          {focusedSection === 'model' ? '▶ ' : '  '}Select AI Model
         </Text>
         <Box marginTop={1}>
           <RadioButtonSelect
@@ -107,7 +107,7 @@ export function ModelDialog({
         {showScopeSelection && (
           <Box marginTop={1} flexDirection="column">
             <Text bold color={Colors.AccentBlue}>
-              {focusedSection === 'scope' ? '> ' : '  '}Save Preference To
+              {focusedSection === 'scope' ? '▶ ' : '  '}Save Preference To
             </Text>
             <Box marginTop={1}>
               <RadioButtonSelect

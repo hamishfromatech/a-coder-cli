@@ -13,19 +13,16 @@ interface ErrorMessageProps {
 }
 
 export const ErrorMessage: React.FC<ErrorMessageProps> = ({ text }) => {
-  const prefix = '✕ ';
-  const prefixWidth = prefix.length;
-
   return (
     <Box
-      borderStyle="round"
+      borderStyle="single"
       borderColor={Semantic.Error}
       flexDirection="row"
       paddingX={1}
       marginY={1}
     >
-      <Box width={prefixWidth}>
-        <Text color={Semantic.Error} bold>{prefix}</Text>
+      <Box paddingRight={1}>
+        <Text bold color={Semantic.Error}>[ERROR]</Text>
       </Box>
       <Box flexGrow={1}>
         <Text wrap="wrap" color={Semantic.Error}>

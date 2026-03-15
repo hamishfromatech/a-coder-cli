@@ -220,12 +220,14 @@ export const useSlashCommandProcessor = (
 
   useEffect(() => {
     const load = async () => {
-      await commandService.loadCommands();
+      // Get current working directory for nested skills discovery
+      const currentPath = config?.getProjectRoot() || process.cwd();
+      await commandService.loadCommands(config || undefined, currentPath);
       setCommands(commandService.getCommands());
     };
 
     load();
-  }, [commandService]);
+  }, [commandService, config]);
 
   const savedChatTags = useCallback(async () => {
     const geminiDir = config?.getProjectTempDir();

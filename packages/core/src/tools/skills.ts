@@ -409,7 +409,7 @@ export class SkillsTool extends BaseTool<SkillsToolParams, ToolResult> {
 
       return {
         llmContent: message,
-        returnDisplay: `Loaded skill: ${skillName}`,
+        returnDisplay: `✓ Loaded skill: ${displayName}`,
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -512,7 +512,7 @@ export class SkillsTool extends BaseTool<SkillsToolParams, ToolResult> {
 
       return {
         llmContent: resultContent,
-        returnDisplay: `Executed skill: ${displayName}`,
+        returnDisplay: `✓ Executed skill: ${displayName}`,
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);

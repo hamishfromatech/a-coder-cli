@@ -13,19 +13,16 @@ interface InfoMessageProps {
 }
 
 export const InfoMessage: React.FC<InfoMessageProps> = ({ text }) => {
-  const prefix = 'ℹ ';
-  const prefixWidth = prefix.length;
-
   return (
     <Box
       flexDirection="row"
       marginY={1}
-      borderStyle="round"
+      borderStyle="single"
       borderColor={Semantic.Info}
       paddingX={1}
     >
-      <Box width={prefixWidth}>
-        <Text color={Semantic.Info} bold>{prefix}</Text>
+      <Box paddingRight={1}>
+        <Text bold color={Semantic.Info}>[INFO]</Text>
       </Box>
       <Box flexGrow={1}>
         <Text wrap="wrap" color={Colors.Foreground}>

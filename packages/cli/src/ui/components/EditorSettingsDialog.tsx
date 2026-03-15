@@ -98,7 +98,7 @@ export function EditorSettingsDialog({
 
   return (
     <Box
-      borderStyle="round"
+      borderStyle="single"
       borderColor={Colors.Gray}
       flexDirection="row"
       padding={1}
@@ -106,7 +106,7 @@ export function EditorSettingsDialog({
     >
       <Box flexDirection="column" width="45%" paddingRight={2}>
         <Text bold={focusedSection === 'editor'}>
-          {focusedSection === 'editor' ? '> ' : '  '}Select Editor{' '}
+          {focusedSection === 'editor' ? '▶ ' : '  '}Select Editor{' '}
           <Text color={Colors.Gray}>{otherScopeModifiedMessage}</Text>
         </Text>
         <RadioButtonSelect
@@ -123,7 +123,7 @@ export function EditorSettingsDialog({
 
         <Box marginTop={1} flexDirection="column">
           <Text bold={focusedSection === 'scope'}>
-            {focusedSection === 'scope' ? '> ' : '  '}Apply To
+            {focusedSection === 'scope' ? '▶ ' : '  '}Apply To
           </Text>
           <RadioButtonSelect
             items={scopeItems}

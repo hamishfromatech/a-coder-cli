@@ -498,9 +498,9 @@ export const useGeminiStream = (
       if (eventType === 'warning') {
         message = `Context usage is at ${percentage}% (${currentTokens}/${tokenLimit} tokens). Consider using /compress to free up space.`;
       } else if (eventType === 'critical') {
-        message = `⚠️ Context usage is at ${percentage}% (${currentTokens}/${tokenLimit} tokens). Approaching token limit.`;
+        message = `Context usage is at ${percentage}% (${currentTokens}/${tokenLimit} tokens). Approaching token limit.`;
       } else if (eventType === 'auto_compress') {
-        message = `⚡ Auto-compressing chat history (${percentage}% of ${tokenLimit} tokens)...`;
+        message = `Auto-compressing chat history (${percentage}% of ${tokenLimit} tokens)...`;
       }
 
       if (message) {

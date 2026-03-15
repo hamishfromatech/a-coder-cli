@@ -329,41 +329,41 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
       // Check if this is a Pro quota exceeded error
       if (error && isProQuotaExceededError(error)) {
         if (isPaidTier) {
-          message = `⚡ You have reached your daily ${currentModel} quota limit.
-⚡ Automatically switching from ${currentModel} to ${fallbackModel} for the remainder of this session.
-⚡ To continue accessing the ${currentModel} model today, consider using /auth to switch to using a paid API key from AI Studio at https://aistudio.google.com/apikey`;
+          message = `You have reached your daily ${currentModel} quota limit.
+Automatically switching from ${currentModel} to ${fallbackModel} for the remainder of this session.
+To continue accessing the ${currentModel} model today, consider using /auth to switch to a paid API key from AI Studio at https://aistudio.google.com/apikey`;
         } else {
-          message = `⚡ You have reached your daily ${currentModel} quota limit.
-⚡ Automatically switching from ${currentModel} to ${fallbackModel} for the remainder of this session.
-⚡ To increase your limits, upgrade to a Gemini Code Assist Standard or Enterprise plan with higher limits at https://goo.gle/set-up-gemini-code-assist
-⚡ Or you can utilize a Gemini API Key. See: https://goo.gle/a-coder-cli-docs-auth#gemini-api-key
-⚡ You can switch authentication methods by typing /auth`;
+          message = `You have reached your daily ${currentModel} quota limit.
+Automatically switching from ${currentModel} to ${fallbackModel} for the remainder of this session.
+To increase your limits, upgrade to a Gemini Code Assist Standard or Enterprise plan with higher limits at https://goo.gle/set-up-gemini-code-assist
+Or you can utilize a Gemini API Key. See: https://goo.gle/a-coder-cli-docs-auth#gemini-api-key
+You can switch authentication methods by typing /auth`;
         }
       } else if (error && isGenericQuotaExceededError(error)) {
         if (isPaidTier) {
-          message = `⚡ You have reached your daily quota limit.
-⚡ Automatically switching from ${currentModel} to ${fallbackModel} for the remainder of this session.
-⚡ To continue accessing the ${currentModel} model today, consider using /auth to switch to using a paid API key from AI Studio at https://aistudio.google.com/apikey`;
+          message = `You have reached your daily quota limit.
+Automatically switching from ${currentModel} to ${fallbackModel} for the remainder of this session.
+To continue accessing the ${currentModel} model today, consider using /auth to switch to a paid API key from AI Studio at https://aistudio.google.com/apikey`;
         } else {
-          message = `⚡ You have reached your daily quota limit.
-⚡ Automatically switching from ${currentModel} to ${fallbackModel} for the remainder of this session.
-⚡ To increase your limits, upgrade to a Gemini Code Assist Standard or Enterprise plan with higher limits at https://goo.gle/set-up-gemini-code-assist
-⚡ Or you can utilize a Gemini API Key. See: https://goo.gle/a-coder-cli-docs-auth#gemini-api-key
-⚡ You can switch authentication methods by typing /auth`;
+          message = `You have reached your daily quota limit.
+Automatically switching from ${currentModel} to ${fallbackModel} for the remainder of this session.
+To increase your limits, upgrade to a Gemini Code Assist Standard or Enterprise plan with higher limits at https://goo.gle/set-up-gemini-code-assist
+Or you can utilize a Gemini API Key. See: https://goo.gle/a-coder-cli-docs-auth#gemini-api-key
+You can switch authentication methods by typing /auth`;
         }
       } else {
         if (isPaidTier) {
           // Default fallback message for other cases (like consecutive 429s)
-          message = `⚡ Automatically switching from ${currentModel} to ${fallbackModel} for faster responses for the remainder of this session.
-⚡ Possible reasons for this are that you have received multiple consecutive capacity errors or you have reached your daily ${currentModel} quota limit
-⚡ To continue accessing the ${currentModel} model today, consider using /auth to switch to using a paid API key from AI Studio at https://aistudio.google.com/apikey`;
+          message = `Automatically switching from ${currentModel} to ${fallbackModel} for faster responses for the remainder of this session.
+Possible reasons: multiple consecutive capacity errors or daily ${currentModel} quota limit
+To continue with ${currentModel} today, consider using /auth to switch to a paid API key from AI Studio at https://aistudio.google.com/apikey`;
         } else {
           // Default fallback message for other cases (like consecutive 429s)
-          message = `⚡ Automatically switching from ${currentModel} to ${fallbackModel} for faster responses for the remainder of this session.
-⚡ Possible reasons for this are that you have received multiple consecutive capacity errors or you have reached your daily ${currentModel} quota limit
-⚡ To increase your limits, upgrade to a Gemini Code Assist Standard or Enterprise plan with higher limits at https://goo.gle/set-up-gemini-code-assist
-⚡ Or you can utilize a Gemini API Key. See: https://goo.gle/a-coder-cli-docs-auth#gemini-api-key
-⚡ You can switch authentication methods by typing /auth`;
+          message = `Automatically switching from ${currentModel} to ${fallbackModel} for faster responses for the remainder of this session.
+Possible reasons: multiple consecutive capacity errors or daily ${currentModel} quota limit
+To increase your limits, upgrade to a Gemini Code Assist Standard or Enterprise plan with higher limits at https://goo.gle/set-up-gemini-code-assist
+Or utilize a Gemini API Key. See: https://goo.gle/a-coder-cli-docs-auth#gemini-api-key
+You can switch authentication methods by typing /auth`;
         }
       }
 
@@ -493,6 +493,12 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
       // the user starts interacting with the app.
       enteringConstrainHeightMode = true;
       setConstrainHeight(true);
+    }
+
+    // Show help when '?' is pressed
+    if (input === '?') {
+      setShowHelp((prev) => !prev);
+      return;
     }
 
     if (key.ctrl && input === 'o') {
