@@ -22,13 +22,24 @@ import {
   SUBAGENT_MODE_ENV_VAR,
   SUBAGENT_CONFIG_ENV_VAR,
   SUBAGENT_DEPTH_ENV_VAR,
+  BUILTIN_AGENTS,
+  BuiltinAgentType,
 } from '../tools/subagent-types.js';
+import { getHookExecutor } from '../hooks/hookExecutor.js';
+import {
+  createWorktree,
+  removeWorktree,
+  generateWorktreeBranchName,
+  WorktreeInfo,
+} from '../utils/worktree.js';
+import { findGitRoot } from '../utils/gitUtils.js';
 
 /**
  * Manages subagent processes - spawning, communication, and lifecycle
  */
 export class SubagentManager {
   private activeAgents: Map<string, ActiveSubagent> = new Map();
+  private backgroundAgents: Map<string, Promise<SubagentResult>> = new Map();
   private config: typeof DEFAULT_SUBAGENT_CONFIG;
 
   constructor(config?: Partial<typeof DEFAULT_SUBAGENT_CONFIG>) {
@@ -58,6 +69,53 @@ export class SubagentManager {
     const agentId = config.id || randomUUID();
     const timeout = config.timeout || this.config.defaultTimeout;
 
+    // Execute SubagentStart hooks
+    let additionalContext = '';
+    try {
+      const hookExecutor = getHookExecutor(
+        config.parentSessionId || 'unknown',
+        config.workingDir || process.cwd(),
+      );
+      const hookResults = await hookExecutor.executeSubagentStartHooks(
+        agentId,
+        config.agentType || 'general-purpose',
+        config.task,
+        config.allowDestructive,
+        config.isolation,
+      );
+      // Collect additional context from hooks
+      additionalContext = hookResults
+        .map((r) => r.additionalContext)
+        .filter((c): c is string => !!c)
+        .join('\n');
+    } catch (error) {
+      // Hooks are optional, continue without them
+      console.warn('SubagentStart hooks failed:', error);
+    }
+
+    // Add hook context to task
+    if (additionalContext) {
+      config = {
+        ...config,
+        context: (config.context || '') + '\n\n' + additionalContext,
+      };
+    }
+
+    // Handle worktree isolation
+    let worktreeInfo: WorktreeInfo | undefined;
+    if (config.isolation === 'worktree') {
+      const repoRoot = findGitRoot(config.workingDir || process.cwd());
+      if (repoRoot) {
+        try {
+          const branchName = generateWorktreeBranchName('subagent');
+          worktreeInfo = await createWorktree(repoRoot, branchName);
+          config = { ...config, workingDir: worktreeInfo.path };
+        } catch (error) {
+          console.warn('Failed to create worktree, using original directory:', error);
+        }
+      }
+    }
+
     // Create the subagent process
     const childProcess = this.createSubagentProcess(config, currentDepth);
 
@@ -69,6 +127,7 @@ export class SubagentManager {
       status: SubagentStatus.STARTING,
       startTime: new Date(),
       progress: 'Initializing...',
+      worktreeInfo,
     };
     this.activeAgents.set(agentId, activeAgent);
 
@@ -122,12 +181,20 @@ export class SubagentManager {
             ? SubagentStatus.COMPLETED
             : SubagentStatus.FAILED;
           this.cleanup(agentId);
+          // Clean up worktree if used
+          if (worktreeInfo) {
+            this.cleanupWorktree(worktreeInfo).catch(() => {});
+          }
           resolve(result);
         } else if (message.type === SubagentMessageType.ERROR) {
           const errorMsg = (message as SubagentErrorMessage).payload;
           if (timeoutId) clearTimeout(timeoutId);
           activeAgent.status = SubagentStatus.FAILED;
           this.cleanup(agentId);
+          // Clean up worktree if used
+          if (worktreeInfo) {
+            this.cleanupWorktree(worktreeInfo).catch(() => {});
+          }
           resolve({
             success: false,
             summary: 'Subagent encountered an error',
@@ -142,6 +209,11 @@ export class SubagentManager {
       childProcess.on('exit', (code, signal) => {
         if (timeoutId) clearTimeout(timeoutId);
         this.activeAgents.delete(agentId);
+
+        // Clean up worktree if used
+        if (worktreeInfo) {
+          this.cleanupWorktree(worktreeInfo).catch(() => {});
+        }
 
         if (!result) {
           // Process exited without sending result
@@ -178,6 +250,10 @@ export class SubagentManager {
         if (timeoutId) clearTimeout(timeoutId);
         activeAgent.status = SubagentStatus.FAILED;
         this.cleanup(agentId);
+        // Clean up worktree if used
+        if (worktreeInfo) {
+          this.cleanupWorktree(worktreeInfo).catch(() => {});
+        }
         resolve({
           success: false,
           summary: 'Failed to start subagent',
@@ -189,6 +265,47 @@ export class SubagentManager {
 
       setupTimeout();
     });
+  }
+
+  /**
+   * Spawn a subagent in the background and return its task ID
+   */
+  spawnSubagentBackground(config: SubagentConfig): string {
+    // Check background limit
+    if (this.backgroundAgents.size >= (this.config.maxBackground || 10)) {
+      throw new Error(
+        `Maximum background subagents (${this.config.maxBackground || 10}) reached.`,
+      );
+    }
+
+    const agentId = config.id || randomUUID();
+
+    // Create the promise but don't await it
+    const promise = this.spawnSubagent(config);
+
+    // Track for later retrieval
+    this.backgroundAgents.set(agentId, promise);
+
+    // Clean up when done
+    promise.finally(() => {
+      this.backgroundAgents.delete(agentId);
+    });
+
+    return agentId;
+  }
+
+  /**
+   * Get the result of a background subagent
+   */
+  getBackgroundResult(agentId: string): Promise<SubagentResult> | undefined {
+    return this.backgroundAgents.get(agentId);
+  }
+
+  /**
+   * Check if a background subagent is still running
+   */
+  isBackgroundRunning(agentId: string): boolean {
+    return this.backgroundAgents.has(agentId);
   }
 
   /**
@@ -218,11 +335,17 @@ export class SubagentManager {
   listActive(): SubagentInfo[] {
     return Array.from(this.activeAgents.values()).map((agent) => ({
       id: agent.id,
+      agentType: agent.config.agentType,
+      agentName: agent.agentName,
       status: agent.status,
       task: agent.config.task,
+      description: agent.config.description,
       startTime: agent.startTime,
       pid: agent.process.pid,
       progress: agent.progress,
+      color: agent.color,
+      isBackground: agent.isBackground,
+      workingDir: agent.config.workingDir,
     }));
   }
 
@@ -231,6 +354,25 @@ export class SubagentManager {
    */
   getActiveCount(): number {
     return this.activeAgents.size;
+  }
+
+  /**
+   * Get the number of background subagents
+   */
+  getBackgroundCount(): number {
+    return this.backgroundAgents.size;
+  }
+
+  /**
+   * Clean up a worktree after subagent completion
+   */
+  private async cleanupWorktree(worktreeInfo: WorktreeInfo): Promise<void> {
+    try {
+      await removeWorktree(worktreeInfo.repoRoot, worktreeInfo.path);
+    } catch (error) {
+      // Log but don't throw - worktree cleanup is best-effort
+      console.warn(`Failed to cleanup worktree ${worktreeInfo.path}:`, error);
+    }
   }
 
   /**
@@ -370,6 +512,14 @@ interface ActiveSubagent {
   status: SubagentStatus;
   startTime: Date;
   progress?: string;
+  /** Agent display name */
+  agentName?: string;
+  /** Agent color for UI */
+  color?: string;
+  /** Whether running in background mode */
+  isBackground?: boolean;
+  /** Worktree info if using worktree isolation */
+  worktreeInfo?: WorktreeInfo;
 }
 
 // Singleton instance for convenience

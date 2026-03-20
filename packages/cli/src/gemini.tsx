@@ -299,7 +299,7 @@ export async function main() {
   );
 
   console.log('[TRACE] Calling runNonInteractive...');
-  await runNonInteractive(nonInteractiveConfig, input, prompt_id);
+  await runNonInteractive(nonInteractiveConfig, input, prompt_id, argv.print ?? false);
   console.log('[TRACE] runNonInteractive finished');
   process.exit(0);
 }
@@ -342,21 +342,15 @@ async function loadNonInteractiveConfig(
 ) {
   let finalConfig = config;
   if (config.getApprovalMode() !== ApprovalMode.YOLO) {
-    // Everything is not allowed, ensure that only read-only tools are configured.
+    // Non-interactive mode: allow file operations and limited shell commands
+    // Shell commands are validated at runtime against a safe command list
+    // Only truly dangerous operations should be excluded here
     const existingExcludeTools = settings.merged.excludeTools || [];
-    const interactiveTools = [
-      ShellTool.Name,
-      EditTool.Name,
-      WriteFileTool.Name,
-    ];
 
-    const newExcludeTools = [
-      ...new Set([...existingExcludeTools, ...interactiveTools]),
-    ];
-
+    // Merge existing exclude tools with any defaults
     const nonInteractiveSettings = {
       ...settings.merged,
-      excludeTools: newExcludeTools,
+      excludeTools: existingExcludeTools.length > 0 ? existingExcludeTools : undefined,
     };
     finalConfig = await loadCliConfig(
       nonInteractiveSettings,

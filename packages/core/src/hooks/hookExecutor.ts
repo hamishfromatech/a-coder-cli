@@ -15,9 +15,17 @@ import {
   type HookContext,
   type HookResult,
   type HookEventName,
+  type PreToolUseHookContext,
+  type PreToolUseHookResult,
+  type PromptHook,
 } from './types.js';
 
 const execAsync = promisify(exec);
+
+/**
+ * Type for LLM call function used by prompt hooks
+ */
+export type LLMCallFunction = (prompt: string) => Promise<string>;
 
 /**
  * Manages loading and executing hooks compatible with Claude Code's hook system.
@@ -29,11 +37,19 @@ export class HookExecutor {
   private projectSettingsPath: string | null = null;
   private sessionId: string;
   private cwd: string;
+  private llmCallFunction: LLMCallFunction | null = null;
 
   constructor(sessionId: string, cwd: string = process.cwd()) {
     this.sessionId = sessionId;
     this.cwd = cwd;
     this.settingsPath = path.join(os.homedir(), '.a-coder-cli', 'settings.json');
+  }
+
+  /**
+   * Set the LLM call function for prompt hooks
+   */
+  setLLMCallFunction(fn: LLMCallFunction | null): void {
+    this.llmCallFunction = fn;
   }
 
   /**
@@ -115,12 +131,25 @@ export class HookExecutor {
         maxBuffer: 10 * 1024 * 1024, // 10MB buffer
       });
 
-      // Try to parse output as JSON for additional context
+      // Try to parse output as JSON for additional context and structured results
       let additionalContext: string | undefined;
+      let permissionDecision: 'allow' | 'deny' | 'ask' | undefined;
+      let updatedInput: Record<string, unknown> | undefined;
+      let systemMessage: string | undefined;
+
       try {
         const parsed = JSON.parse(stdout.trim());
         if (parsed.additionalContext && typeof parsed.additionalContext === 'string') {
           additionalContext = parsed.additionalContext;
+        }
+        if (parsed.permissionDecision && ['allow', 'deny', 'ask'].includes(parsed.permissionDecision)) {
+          permissionDecision = parsed.permissionDecision;
+        }
+        if (parsed.updatedInput && typeof parsed.updatedInput === 'object') {
+          updatedInput = parsed.updatedInput;
+        }
+        if (parsed.systemMessage && typeof parsed.systemMessage === 'string') {
+          systemMessage = parsed.systemMessage;
         }
       } catch {
         // Not JSON, treat as plain output
@@ -130,6 +159,9 @@ export class HookExecutor {
         success: true,
         output: stdout || stderr,
         additionalContext,
+        permissionDecision,
+        updatedInput,
+        systemMessage,
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -137,6 +169,99 @@ export class HookExecutor {
         success: false,
         error: errorMessage,
         output: '',
+      };
+    }
+  }
+
+  /**
+   * Execute a prompt-based hook using LLM
+   */
+  private async executePromptHook(
+    hook: PromptHook,
+    context: HookContext,
+  ): Promise<HookResult> {
+    if (!this.llmCallFunction) {
+      return {
+        success: false,
+        error: 'LLM call function not configured for prompt hooks',
+        permissionDecision: 'ask', // Default to ask on error
+      };
+    }
+
+    try {
+      // Build the prompt with context
+      let contextStr = '';
+      if (context.hook_event_name === 'PreToolUse') {
+        const preToolContext = context as PreToolUseHookContext;
+        contextStr = `- Tool: ${preToolContext.tool_name}
+- Arguments: ${JSON.stringify(preToolContext.tool_input, null, 2)}
+- Working Directory: ${preToolContext.cwd}`;
+      } else {
+        contextStr = `- Event: ${context.hook_event_name}
+- Working Directory: ${(context as any).cwd}`;
+      }
+
+      const fullPrompt = `${hook.prompt}
+
+Context:
+${contextStr}
+
+Return JSON with your decision:
+{
+  "decision": "allow" | "deny" | "ask",
+  "reason": "explanation for the decision",
+  "updatedInput": { ... } // optional, only for PreToolUse to modify tool arguments
+}`;
+
+      const timeout = hook.timeout ?? 30000;
+      const responsePromise = this.llmCallFunction(fullPrompt);
+
+      // Apply timeout
+      const response = await Promise.race([
+        responsePromise,
+        new Promise<string>((_, reject) =>
+          setTimeout(() => reject(new Error('Prompt hook timed out')), timeout),
+        ),
+      ]);
+
+      // Parse response
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          const parsed = JSON.parse(jsonMatch[0]);
+          const decision = ['allow', 'deny', 'ask'].includes(parsed.decision)
+            ? parsed.decision
+            : 'ask';
+          return {
+            success: true,
+            output: response,
+            permissionDecision: decision,
+            systemMessage: parsed.reason,
+            updatedInput: parsed.updatedInput,
+          };
+        } catch {
+          // JSON parse failed, default to ask
+          return {
+            success: true,
+            output: response,
+            permissionDecision: 'ask',
+            systemMessage: 'Could not parse LLM response as JSON',
+          };
+        }
+      }
+
+      // No JSON found, default to allow
+      return {
+        success: true,
+        output: response,
+        permissionDecision: 'allow',
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      return {
+        success: false,
+        error: errorMessage,
+        permissionDecision: 'ask', // Default to ask on error
       };
     }
   }
@@ -186,15 +311,115 @@ export class HookExecutor {
         }
       }
 
+      // Check matcher for PreToolUse hooks - matches tool name
+      if (eventName === 'PreToolUse' && config.matcher) {
+        const toolContext = fullContext as PreToolUseHookContext;
+        if (!this.matchesToolPattern(toolContext.tool_name, toolContext.tool_input, config.matcher)) {
+          continue;
+        }
+      }
+
       for (const hook of config.hooks) {
         if (hook.type === 'command') {
           const result = await this.executeCommand(hook.command, fullContext);
+          results.push(result);
+        } else if (hook.type === 'prompt') {
+          // LLM-based prompt hook
+          const result = await this.executePromptHook(hook, fullContext);
           results.push(result);
         }
       }
     }
 
     return results;
+  }
+
+  /**
+   * Check if a tool name and input match a pattern
+   * Supports patterns like: ToolName, ToolName(arg1), ToolName(arg1, arg2), ToolName(*)
+   */
+  private matchesToolPattern(
+    toolName: string,
+    toolInput: Record<string, unknown>,
+    pattern: string,
+  ): boolean {
+    // Exact tool name match
+    if (pattern === toolName) {
+      return true;
+    }
+
+    // Pattern with arguments: ToolName(arg1) or ToolName(*)
+    const patternMatch = pattern.match(/^(\w+)\((.*)\)$/);
+    if (patternMatch) {
+      const [, patternToolName, patternArgs] = patternMatch;
+      if (patternToolName !== toolName) {
+        return false;
+      }
+
+      // Wildcard matches all args
+      if (patternArgs === '*') {
+        return true;
+      }
+
+      // Parse and match arguments
+      const patternArgList = this.parsePatternArgs(patternArgs);
+      const toolArgValues = this.extractToolArgValues(toolInput);
+
+      // Check if all pattern args are present in tool args
+      return patternArgList.every((pa) =>
+        toolArgValues.some((ta) => ta.includes(pa) || ta === pa),
+      );
+    }
+
+    // Regex pattern for advanced matching
+    try {
+      const regex = new RegExp(pattern);
+      return regex.test(toolName);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Parse pattern arguments string into array
+   */
+  private parsePatternArgs(argsString: string): string[] {
+    const args: string[] = [];
+    let current = '';
+    let inQuotes = false;
+
+    for (const char of argsString) {
+      if (char === '"' || char === "'") {
+        inQuotes = !inQuotes;
+      } else if (char === ',' && !inQuotes) {
+        if (current.trim()) {
+          args.push(current.trim());
+        }
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    if (current.trim()) {
+      args.push(current.trim());
+    }
+
+    return args;
+  }
+
+  /**
+   * Extract string values from tool input for pattern matching
+   */
+  private extractToolArgValues(args: Record<string, unknown>): string[] {
+    const values: string[] = [];
+    for (const value of Object.values(args)) {
+      if (typeof value === 'string') {
+        values.push(value);
+      } else if (Array.isArray(value)) {
+        values.push(...value.filter((v): v is string => typeof v === 'string'));
+      }
+    }
+    return values;
   }
 
   /**
@@ -231,6 +456,47 @@ export class HookExecutor {
    */
   async executeSessionStartHooks(): Promise<HookResult[]> {
     return this.executeHooks('SessionStart', {});
+  }
+
+  /**
+   * Execute SubagentStart hooks (called when a subagent is spawned)
+   */
+  async executeSubagentStartHooks(
+    agentId: string,
+    agentType: string,
+    task: string,
+    allowDestructive?: boolean,
+    isolation?: string,
+  ): Promise<HookResult[]> {
+    return this.executeHooks('SubagentStart', {
+      agent_id: agentId,
+      agent_type: agentType,
+      task,
+      allow_destructive: allowDestructive,
+      isolation,
+    });
+  }
+
+  /**
+   * Execute PreToolUse hooks (called before a tool is executed)
+   * These hooks can allow, deny, or ask for user confirmation
+   * They can also modify the tool input
+   */
+  async executePreToolUseHooks(
+    toolName: string,
+    toolInput: Record<string, unknown>,
+  ): Promise<PreToolUseHookResult[]> {
+    const results = await this.executeHooks('PreToolUse', {
+      tool_name: toolName,
+      tool_input: toolInput,
+    } as PreToolUseHookContext);
+
+    return results.map((result) => ({
+      ...result,
+      permissionDecision: result.permissionDecision,
+      updatedInput: result.updatedInput,
+      systemMessage: result.systemMessage,
+    }));
   }
 
   /**

@@ -47,6 +47,7 @@ export interface CliArgs {
   showMemoryUsage: boolean | undefined;
   show_memory_usage: boolean | undefined;
   yolo: boolean | undefined;
+  subagent: boolean | undefined;
   telemetry: boolean | undefined;
   checkpointing: boolean | undefined;
   telemetryTarget: string | undefined;
@@ -61,6 +62,7 @@ export interface CliArgs {
   openaiApiKey: string | undefined;
   openaiBaseUrl: string | undefined;
   upgrade: boolean | undefined;
+  print: boolean | undefined;
   // Dash integration options
   resume: boolean | undefined;
   sessionId: string | undefined;
@@ -141,6 +143,12 @@ export async function parseArguments(): Promise<CliArgs> {
         'Automatically accept all actions (aka YOLO mode, see https://www.youtube.com/watch?v=xvFZjo5PgG0 for more details)?',
       default: false,
     })
+    .option('subagent', {
+      type: 'boolean',
+      description:
+        'Enable subagent system (spawning child agent processes). Use --no-subagent to disable.',
+      default: true,
+    })
     .option('telemetry', {
       type: 'boolean',
       description:
@@ -211,6 +219,12 @@ export async function parseArguments(): Promise<CliArgs> {
       alias: 'u',
       type: 'boolean',
       description: 'Upgrade the CLI to the latest version from GitHub',
+    })
+    // Structured output for CI/CD
+    .option('print', {
+      type: 'boolean',
+      description: 'Output results in structured JSON format (useful for CI/CD)',
+      default: false,
     })
     // Dash integration options
     .option('resume', {
@@ -425,6 +439,11 @@ export async function loadCliConfig(
         ? settings.hideThinking
         : argv.hideThinking) ?? false,
     sampling_params: settings.sampling_params,
+    // --no-subagent sets argv.subagent to false
+    // If subagent is explicitly false, disable it; otherwise use settings (or default: enabled)
+    subagent: argv.subagent === false
+      ? { enabled: false }
+      : settings.subagent,
   });
 }
 

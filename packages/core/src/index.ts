@@ -34,6 +34,7 @@ export * from './utils/memoryDiscovery.js';
 export * from './utils/gitIgnoreParser.js';
 export * from './utils/editor.js';
 export * from './utils/quotaErrorDetection.js';
+export * from './utils/toolPermissionMatcher.js';
 
 // Export services
 export * from './services/fileDiscoveryService.js';
@@ -71,6 +72,9 @@ export * from './services/subagentManager.js';
 // Export skills system
 export * from './skills/index.js';
 
+// Export agents system
+export * from './agents/index.js';
+
 // Export telemetry functions
 export * from './telemetry/index.js';
 export { sessionId } from './utils/session.js';
@@ -83,16 +87,22 @@ export {
   type HookEventName,
   type NotificationType,
   type HookCommand,
+  type PromptHook,
   type HookConfig,
   type HooksSettings,
   type StopHookContext,
   type UserPromptSubmitHookContext,
   type NotificationHookContext,
   type SessionStartHookContext,
+  type SubagentStartHookContext,
+  type PreToolUseHookContext,
+  type PreToolUseHookResult,
   type HookContext,
+  type HookResult,
   type AttributionSettings,
   HookExecutor,
   getHookExecutor,
+  type LLMCallFunction,
   DashHookExecutor,
   initDashHookExecutor,
   getDashHookExecutor,
@@ -100,6 +110,11 @@ export {
 // Import and re-export HookResult from hooks with a different name to avoid conflict
 import { HookResult as HooksHookResult } from './hooks/types.js';
 export { HooksHookResult as HookExecutorResult };
+// Import and re-export ToolAskConfirmationDetails from tools
+import { ToolAskConfirmationDetails } from './tools/tools.js';
+export { ToolAskConfirmationDetails };
+// Import and re-export shell validator for non-interactive mode
+export { validateShellCommand, getAllowedCommandCategories } from './utils/shellValidator.js';
 
 // OpenAI Logging Utilities
 export { OpenAILogger, openaiLogger } from './utils/openaiLogger.js';

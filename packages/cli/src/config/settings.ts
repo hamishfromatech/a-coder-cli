@@ -17,6 +17,7 @@ import {
   AuthType,
   HooksSettings,
   AttributionSettings,
+  SubagentSystemConfig,
 } from '@a-coder/core';
 import stripJsonComments from 'strip-json-comments';
 import { DefaultLight } from '../ui/themes/default-light.js';
@@ -128,6 +129,9 @@ export interface Settings {
 
   // Attribution settings for commits
   attribution?: AttributionSettings;
+
+  // Subagent system configuration
+  subagent?: Partial<SubagentSystemConfig>;
 }
 
 export interface SettingsError {
@@ -197,6 +201,8 @@ export class LoadedSettings {
     deepMerge('accessibility');
     deepMerge('telemetry');
     deepMerge('session');
+    deepMerge('subagent');
+    deepMerge('subagent');
 
     // Auto-detect auth type if not explicitly set
     if (!merged.selectedAuthType) {

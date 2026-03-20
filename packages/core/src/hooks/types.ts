@@ -15,7 +15,9 @@ export type HookEventName =
   | 'Stop'
   | 'UserPromptSubmit'
   | 'Notification'
-  | 'SessionStart';
+  | 'SessionStart'
+  | 'SubagentStart'
+  | 'PreToolUse';
 
 /**
  * Notification types for the Notification hook
@@ -35,13 +37,23 @@ export interface HookCommand {
 }
 
 /**
+ * LLM-based prompt hook configuration
+ * Allows AI validation of tool calls
+ */
+export interface PromptHook {
+  type: 'prompt';
+  prompt: string;
+  timeout?: number;
+}
+
+/**
  * Hook configuration with optional matcher
  */
 export interface HookConfig {
   /** Optional matcher to filter when this hook runs */
   matcher?: string;
   /** The hooks to execute */
-  hooks: HookCommand[];
+  hooks: Array<HookCommand | PromptHook>;
 }
 
 /**
@@ -52,6 +64,8 @@ export interface HooksSettings {
   UserPromptSubmit?: HookConfig[];
   Notification?: HookConfig[];
   SessionStart?: HookConfig[];
+  SubagentStart?: HookConfig[];
+  PreToolUse?: HookConfig[];
 }
 
 /**
@@ -100,13 +114,49 @@ export interface SessionStartHookContext {
 }
 
 /**
+ * Context provided to SubagentStart hooks
+ */
+export interface SubagentStartHookContext {
+  session_id: string;
+  transcript_path: string;
+  cwd: string;
+  hook_event_name: 'SubagentStart';
+  /** Unique identifier for the subagent */
+  agent_id: string;
+  /** Type of agent (e.g., 'Explore', 'Plan', 'general-purpose', or custom) */
+  agent_type: string;
+  /** The task description for the subagent */
+  task: string;
+  /** Whether the subagent has destructive tools enabled */
+  allow_destructive?: boolean;
+  /** Isolation mode (e.g., 'worktree') */
+  isolation?: string;
+}
+
+/**
+ * Context provided to PreToolUse hooks
+ */
+export interface PreToolUseHookContext {
+  session_id: string;
+  transcript_path: string;
+  cwd: string;
+  hook_event_name: 'PreToolUse';
+  /** Name of the tool being called */
+  tool_name: string;
+  /** Arguments passed to the tool */
+  tool_input: Record<string, unknown>;
+}
+
+/**
  * Union of all hook contexts
  */
 export type HookContext =
   | StopHookContext
   | UserPromptSubmitHookContext
   | NotificationHookContext
-  | SessionStartHookContext;
+  | SessionStartHookContext
+  | SubagentStartHookContext
+  | PreToolUseHookContext;
 
 /**
  * Result from executing a hook
@@ -116,6 +166,24 @@ export interface HookResult {
   output?: string;
   error?: string;
   additionalContext?: string;
+  /** For PreToolUse hooks: permission decision */
+  permissionDecision?: 'allow' | 'deny' | 'ask';
+  /** For PreToolUse hooks: modified tool input */
+  updatedInput?: Record<string, unknown>;
+  /** For PreToolUse hooks: explanation for user when decision is 'ask' */
+  systemMessage?: string;
+}
+
+/**
+ * Result from PreToolUse hooks with additional context
+ */
+export interface PreToolUseHookResult extends HookResult {
+  /** Permission decision from the hook */
+  permissionDecision?: 'allow' | 'deny' | 'ask';
+  /** Modified tool input if hook wants to change arguments */
+  updatedInput?: Record<string, unknown>;
+  /** Explanation for user when asking for confirmation */
+  systemMessage?: string;
 }
 
 /**

@@ -5,6 +5,95 @@
  */
 
 /**
+ * Built-in agent types that come pre-configured
+ */
+export type BuiltinAgentType = 'general-purpose' | 'Explore' | 'Plan';
+
+/**
+ * Configuration for a specific agent type
+ */
+export interface AgentTypeConfig {
+  /** Display name for the agent */
+  name: string;
+
+  /** Human-readable description */
+  description: string;
+
+  /** Model to use: 'haiku' | 'sonnet' | 'opus' | 'inherit' */
+  model: string;
+
+  /** Tools this agent is allowed to use (use ['*'] for all tools) */
+  allowedTools: string[];
+
+  /** Tools this agent is blocked from using */
+  disallowedTools: string[];
+
+  /** Color for UI display */
+  color?: string;
+
+  /** System prompt to use for this agent */
+  systemPrompt?: string;
+}
+
+/**
+ * Built-in agent configurations
+ */
+export const BUILTIN_AGENTS: Record<BuiltinAgentType, AgentTypeConfig> = {
+  'general-purpose': {
+    name: 'General Purpose',
+    description:
+      'Complex multi-step operations requiring exploration and modification',
+    model: 'inherit',
+    allowedTools: ['*'], // All tools
+    disallowedTools: [],
+    color: 'blue',
+  },
+  Explore: {
+    name: 'Explore',
+    description:
+      'Fast, read-only codebase exploration. Uses a lighter model to keep results out of main context.',
+    model: 'haiku',
+    allowedTools: [
+      'Read',
+      'Glob',
+      'Grep',
+      'WebFetch',
+      'WebSearch',
+      'list_directory',
+    ],
+    disallowedTools: ['Write', 'Edit', 'Bash', 'shell'],
+    color: 'cyan',
+  },
+  Plan: {
+    name: 'Plan',
+    description:
+      'Research and gather context for implementation planning. Read-only operations.',
+    model: 'inherit',
+    allowedTools: [
+      'Read',
+      'Glob',
+      'Grep',
+      'WebFetch',
+      'WebSearch',
+      'list_directory',
+      'Agent',
+    ],
+    disallowedTools: ['Write', 'Edit', 'Bash', 'shell'],
+    color: 'purple',
+  },
+};
+
+/**
+ * Source type for an agent definition
+ */
+export type AgentSourceType = 'builtin' | 'user' | 'project' | 'plugin';
+
+/**
+ * Isolation mode for subagents
+ */
+export type IsolationMode = 'worktree' | undefined;
+
+/**
  * Configuration for spawning a subagent
  */
 export interface SubagentConfig {
@@ -13,6 +102,12 @@ export interface SubagentConfig {
 
   /** The task description for the subagent to accomplish */
   task: string;
+
+  /** Agent type to use (built-in or custom) */
+  agentType?: BuiltinAgentType | string;
+
+  /** Short description (3-5 words) for display */
+  description?: string;
 
   /** Working directory for the subagent (defaults to project root) */
   workingDir?: string;
@@ -26,6 +121,9 @@ export interface SubagentConfig {
   /** Subset of tool names to allow (default: all non-destructive tools) */
   allowedTools?: string[];
 
+  /** Tools to explicitly block for this subagent */
+  disallowedTools?: string[];
+
   /** Maximum execution time in milliseconds (default: 300000 = 5 min) */
   timeout?: number;
 
@@ -34,6 +132,12 @@ export interface SubagentConfig {
 
   /** Whether to allow destructive tools (edit, write_file, shell) */
   allowDestructive?: boolean;
+
+  /** Run in background mode (returns task ID immediately) */
+  runInBackground?: boolean;
+
+  /** Isolation mode for the subagent */
+  isolation?: IsolationMode;
 
   /** Environment variables to pass to the subagent */
   env?: Record<string, string>;
@@ -104,11 +208,20 @@ export interface SubagentInfo {
   /** Unique identifier */
   id: string;
 
+  /** Agent type (built-in or custom) */
+  agentType?: string;
+
+  /** Display name for the agent */
+  agentName?: string;
+
   /** Current status */
   status: SubagentStatus;
 
   /** Task description */
   task: string;
+
+  /** Short description for display */
+  description?: string;
 
   /** When the subagent was spawned */
   startTime: Date;
@@ -118,6 +231,15 @@ export interface SubagentInfo {
 
   /** Current progress message */
   progress?: string;
+
+  /** Color for UI display */
+  color?: string;
+
+  /** Whether running in background mode */
+  isBackground?: boolean;
+
+  /** Working directory (for worktree isolation) */
+  workingDir?: string;
 }
 
 /**
@@ -204,14 +326,20 @@ export interface SubagentSystemConfig {
   /** Tools that are always allowed for subagents */
   allowedTools: string[];
 
+  /** Tools that are always blocked for subagents (alias for disallowedTools) */
+  blockedTools?: string[];
+
   /** Tools that are always blocked for subagents */
-  blockedTools: string[];
+  disallowedTools?: string[];
 
   /** Allow subagents to spawn more subagents */
   allowNestedSubagents: boolean;
 
   /** Maximum depth of nested subagents */
   maxNestedDepth: number;
+
+  /** Maximum number of background subagents */
+  maxBackground?: number;
 }
 
 /**
@@ -232,9 +360,35 @@ export const DEFAULT_SUBAGENT_CONFIG: SubagentSystemConfig = {
     'save_memory',
   ],
   blockedTools: [],
+  disallowedTools: [],
   allowNestedSubagents: false,
   maxNestedDepth: 1,
+  maxBackground: 10,
 };
+
+/**
+ * Destructive tools that require explicit permission
+ */
+export const DESTRUCTIVE_TOOLS = ['Write', 'Edit', 'Bash', 'shell', 'write_file', 'edit'];
+
+/**
+ * Read-only tools safe for exploration
+ */
+export const READ_ONLY_TOOLS = [
+  'Read',
+  'read_file',
+  'read_many_files',
+  'Glob',
+  'glob',
+  'Grep',
+  'grep',
+  'list_directory',
+  'WebFetch',
+  'web_fetch',
+  'WebSearch',
+  'web_search',
+  'save_memory',
+];
 
 /**
  * Environment variable to detect subagent mode

@@ -244,11 +244,23 @@ export interface ToolInfoConfirmationDetails {
   urls?: string[];
 }
 
+/**
+ * Confirmation details for tools that need user approval via 'ask' decision
+ */
+export interface ToolAskConfirmationDetails {
+  type: 'ask';
+  title: string;
+  /** Explanation for why user confirmation is needed */
+  message: string;
+  onConfirm: (outcome: ToolConfirmationOutcome) => Promise<void>;
+}
+
 export type ToolCallConfirmationDetails =
   | ToolEditConfirmationDetails
   | ToolExecuteConfirmationDetails
   | ToolMcpConfirmationDetails
-  | ToolInfoConfirmationDetails;
+  | ToolInfoConfirmationDetails
+  | ToolAskConfirmationDetails;
 
 export enum ToolConfirmationOutcome {
   ProceedOnce = 'proceed_once',

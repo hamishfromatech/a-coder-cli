@@ -215,6 +215,21 @@ In addition to a project settings file, a project's `.gemini` directory can cont
     "enableOpenAILogging": true
     ```
 
+- **`subagent`** (object):
+  - **Description:** Configures the subagent system that spawns child agent processes to handle complex tasks. Subagents are useful for parallel task execution but may not be fully implemented in some environments.
+  - **Default:** `{ "enabled": true }`
+  - **Properties:**
+    - **`enabled`** (boolean): When `true`, the subagent tool is available for the model to use. Set to `false` to disable subagent spawning.
+    - **`maxConcurrent`** (number): Maximum number of concurrent subagents (default: 3).
+    - **`defaultTimeout`** (number): Default timeout for subagent tasks in milliseconds (default: 300000 = 5 minutes).
+  - **Example:**
+    ```json
+    "subagent": {
+      "enabled": false
+    }
+    ```
+  - **CLI Flag:** Use `--no-subagent` to disable subagents for a single session without modifying settings.
+
 ### Example `settings.json`:
 
 ```json
@@ -334,6 +349,8 @@ Arguments passed directly when running the CLI can override other configurations
   - Displays the current memory usage.
 - **`--yolo`**:
   - Enables YOLO mode, which automatically approves all tool calls.
+- **`--no-subagent`**:
+  - Disables the subagent system. Use this flag to prevent a-coder-cli from spawning child agent processes. This is useful when subagents are not fully implemented or causing issues in your environment.
 - **`--telemetry`**:
   - Enables [telemetry](../telemetry.md).
 - **`--telemetry-target`**:

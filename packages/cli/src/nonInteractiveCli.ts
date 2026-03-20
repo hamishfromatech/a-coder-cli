@@ -12,6 +12,7 @@ import {
   shutdownTelemetry,
   isTelemetrySdkInitialized,
   ToolResultDisplay,
+  validateShellCommand,
 } from '@a-coder/core';
 import {
   Content,
@@ -21,6 +22,21 @@ import {
 } from '@google/genai';
 
 import { parseAndFormatApiError } from './ui/utils/errorParsing.js';
+
+/**
+ * Structured output format for --print mode
+ */
+interface PrintOutput {
+  type: 'text' | 'tool_call' | 'tool_result' | 'error';
+  timestamp: string;
+  data: {
+    text?: string;
+    tool_name?: string;
+    tool_args?: Record<string, unknown>;
+    result?: unknown;
+    error?: string;
+  };
+}
 
 function getResponseText(response: GenerateContentResponse): string | null {
   if (response.candidates && response.candidates.length > 0) {
@@ -64,6 +80,28 @@ function formatToolArgs(args: Record<string, unknown>): string {
 
   return `(${formattedArgs})`;
 }
+
+/**
+ * Output in structured JSON format for --print mode
+ */
+function printStructuredOutput(output: PrintOutput): void {
+  console.log(JSON.stringify(output));
+}
+
+/**
+ * Create a print output object
+ */
+function createPrintOutput(
+  type: PrintOutput['type'],
+  data: PrintOutput['data'],
+): PrintOutput {
+  return {
+    type,
+    timestamp: new Date().toISOString(),
+    data,
+  };
+}
+
 // Helper function to display tool call information
 function displayToolCallInfo(
   toolName: string,
@@ -71,7 +109,38 @@ function displayToolCallInfo(
   status: 'start' | 'success' | 'error',
   resultDisplay?: ToolResultDisplay,
   errorMessage?: string,
+  printMode?: boolean,
 ): void {
+  // In print mode, output structured JSON
+  if (printMode) {
+    if (status === 'start') {
+      printStructuredOutput(
+        createPrintOutput('tool_call', {
+          tool_name: toolName,
+          tool_args: args,
+        }),
+      );
+    } else if (status === 'success') {
+      printStructuredOutput(
+        createPrintOutput('tool_result', {
+          tool_name: toolName,
+          result: typeof resultDisplay === 'string'
+            ? resultDisplay
+            : resultDisplay,
+        }),
+      );
+    } else if (status === 'error') {
+      printStructuredOutput(
+        createPrintOutput('error', {
+          tool_name: toolName,
+          error: errorMessage,
+        }),
+      );
+    }
+    return;
+  }
+
+  // Human-readable output
   const timestamp = new Date().toLocaleTimeString();
   const argsStr = formatToolArgs(args);
 
@@ -125,6 +194,7 @@ export async function runNonInteractive(
   config: Config,
   input: string,
   prompt_id: string,
+  printMode: boolean = false,
 ): Promise<void> {
   await config.initialize();
   // Handle EPIPE errors when the output is piped to a command that closes early.
@@ -149,9 +219,17 @@ export async function runNonInteractive(
         config.getMaxSessionTurns() > 0 &&
         turnCount > config.getMaxSessionTurns()
       ) {
-        console.error(
-          '\n Reached max session turns for this session. Increase the number of turns by specifying maxSessionTurns in settings.json.',
-        );
+        if (printMode) {
+          printStructuredOutput(
+            createPrintOutput('error', {
+              error: 'Max session turns reached',
+            }),
+          );
+        } else {
+          console.error(
+            '\n Reached max session turns for this session. Increase the number of turns by specifying maxSessionTurns in settings.json.',
+          );
+        }
         return;
       }
       const functionCalls: FunctionCall[] = [];
@@ -174,12 +252,28 @@ export async function runNonInteractive(
           console.log('[DEBUG] Non-interactive received stream response chunk');
         }
         if (abortController.signal.aborted) {
-          console.error('Operation cancelled.');
+          if (printMode) {
+            printStructuredOutput(
+              createPrintOutput('error', {
+                error: 'Operation cancelled',
+              }),
+            );
+          } else {
+            console.error('Operation cancelled.');
+          }
           return;
         }
         const textPart = getResponseText(resp);
         if (textPart) {
-          process.stdout.write(textPart);
+          if (printMode) {
+            printStructuredOutput(
+              createPrintOutput('text', {
+                text: textPart,
+              }),
+            );
+          } else {
+            process.stdout.write(textPart);
+          }
         }
         if (resp.functionCalls) {
           if (config.getDebugMode()) {
@@ -206,8 +300,33 @@ export async function runNonInteractive(
             prompt_id,
           };
 
+          // Validate Shell commands in non-interactive mode (unless YOLO)
+          if (fc.name === 'Shell' && config.getApprovalMode() !== 'yolo' as any) {
+            const command = (fc.args as any)?.command || '';
+            const validation = validateShellCommand(command);
+            if (!validation.allowed) {
+              const errorMsg = `Shell command blocked in non-interactive mode: ${validation.reason}`;
+              if (printMode) {
+                printStructuredOutput(
+                  createPrintOutput('error', {
+                    tool_name: 'Shell',
+                    error: errorMsg,
+                  }),
+                );
+              } else {
+                console.error(`[blocked] Shell: ${command}`);
+                console.error(`  Reason: ${validation.reason}`);
+              }
+              // Skip this tool call and continue with others
+              toolResponseParts.push({
+                text: `Error: ${errorMsg}`,
+              });
+              continue;
+            }
+          }
+
           //Display tool call start information
-          displayToolCallInfo(fc.name as string, fc.args ?? {}, 'start');
+          displayToolCallInfo(fc.name as string, fc.args ?? {}, 'start', undefined, undefined, printMode);
 
           const toolResponse = await executeToolCall(
             config,
@@ -229,14 +348,24 @@ export async function runNonInteractive(
               'error',
               undefined,
               errorMessage,
+              printMode,
             );
 
             const isToolNotFound = toolResponse.error.message.includes(
               'not found in registry',
             );
-            console.error(
-              `Error executing tool ${fc.name}: ${toolResponse.resultDisplay || toolResponse.error.message}`,
-            );
+            if (printMode) {
+              printStructuredOutput(
+                createPrintOutput('error', {
+                  tool_name: fc.name as string,
+                  error: `Error executing tool ${fc.name}: ${toolResponse.resultDisplay || toolResponse.error.message}`,
+                }),
+              );
+            } else {
+              console.error(
+                `Error executing tool ${fc.name}: ${toolResponse.resultDisplay || toolResponse.error.message}`,
+              );
+            }
             if (!isToolNotFound) {
               process.exit(1);
             }
@@ -247,6 +376,8 @@ export async function runNonInteractive(
               fc.args ?? {},
               'success',
               toolResponse.resultDisplay,
+              undefined,
+              printMode,
             );
           }
 
@@ -265,17 +396,30 @@ export async function runNonInteractive(
         }
         currentMessages = [{ role: 'user', parts: toolResponseParts }];
       } else {
-        process.stdout.write('\n'); // Ensure a final newline
+        if (!printMode) {
+          process.stdout.write('\n'); // Ensure a final newline
+        }
         return;
       }
     }
   } catch (error) {
-    console.error(
-      parseAndFormatApiError(
-        error,
-        config.getContentGeneratorConfig()?.authType,
-      ),
-    );
+    if (printMode) {
+      printStructuredOutput(
+        createPrintOutput('error', {
+          error: parseAndFormatApiError(
+            error,
+            config.getContentGeneratorConfig()?.authType,
+          ),
+        }),
+      );
+    } else {
+      console.error(
+        parseAndFormatApiError(
+          error,
+          config.getContentGeneratorConfig()?.authType,
+        ),
+      );
+    }
     process.exit(1);
   } finally {
     if (isTelemetrySdkInitialized()) {

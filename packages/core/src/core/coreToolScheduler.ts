@@ -26,6 +26,10 @@ import {
   ModifyContext,
   modifyWithEditor,
 } from '../tools/modifiable-tool.js';
+import {
+  getHookExecutor,
+  HookExecutor,
+} from '../hooks/hookExecutor.js';
 import * as Diff from 'diff';
 
 export type ValidatingToolCall = {
@@ -243,6 +247,7 @@ export class CoreToolScheduler {
   private approvalMode: ApprovalMode;
   private getPreferredEditor: () => EditorType | undefined;
   private config: Config;
+  private hookExecutor: HookExecutor | null = null;
 
   constructor(options: CoreToolSchedulerOptions) {
     this.config = options.config;
@@ -252,6 +257,13 @@ export class CoreToolScheduler {
     this.onToolCallsUpdate = options.onToolCallsUpdate;
     this.approvalMode = options.approvalMode ?? ApprovalMode.DEFAULT;
     this.getPreferredEditor = options.getPreferredEditor;
+  }
+
+  /**
+   * Set the hook executor for PreToolUse hooks
+   */
+  setHookExecutor(executor: HookExecutor): void {
+    this.hookExecutor = executor;
   }
 
   private setStatusInternal(
@@ -457,6 +469,64 @@ export class CoreToolScheduler {
 
       const { request: reqInfo, tool: toolInstance } = toolCall;
       try {
+        // Execute PreToolUse hooks if available
+        if (this.hookExecutor) {
+          const hookResults = await this.hookExecutor.executePreToolUseHooks(
+            reqInfo.name,
+            reqInfo.args as Record<string, unknown>,
+          );
+
+          // Process hook results
+          for (const result of hookResults) {
+            // If any hook denies, block the tool
+            if (result.permissionDecision === 'deny') {
+              this.setStatusInternal(
+                reqInfo.callId,
+                'error',
+                createErrorResponse(
+                  reqInfo,
+                  new Error(result.error || `Tool ${reqInfo.name} denied by PreToolUse hook`),
+                ),
+              );
+              continue;
+            }
+
+            // If any hook asks for confirmation, defer to user
+            if (result.permissionDecision === 'ask') {
+              const askConfirmationDetails: ToolCallConfirmationDetails = {
+                type: 'ask',
+                title: `Confirm: ${reqInfo.name}`,
+                message: result.systemMessage || `The tool ${reqInfo.name} requires your confirmation.`,
+                onConfirm: async (outcome: ToolConfirmationOutcome) => {
+                  if (outcome === ToolConfirmationOutcome.Cancel) {
+                    this.setStatusInternal(
+                      reqInfo.callId,
+                      'cancelled',
+                      'User denied the tool call',
+                    );
+                  } else {
+                    this.setStatusInternal(reqInfo.callId, 'scheduled');
+                    this.attemptExecutionOfScheduledCalls(signal);
+                  }
+                },
+              };
+              this.setStatusInternal(reqInfo.callId, 'awaiting_approval', askConfirmationDetails);
+              continue;
+            }
+
+            // Apply updated input from hooks
+            if (result.updatedInput) {
+              reqInfo.args = { ...reqInfo.args, ...result.updatedInput } as Record<string, unknown>;
+            }
+          }
+        }
+
+        // Check if tool was already handled by hooks (denied or awaiting_approval)
+        const currentStatus = this.toolCalls.find(c => c.request.callId === reqInfo.callId)?.status;
+        if (currentStatus === 'error' || currentStatus === 'awaiting_approval') {
+          continue;
+        }
+
         if (this.approvalMode === ApprovalMode.YOLO) {
           this.setStatusInternal(reqInfo.callId, 'scheduled');
         } else {

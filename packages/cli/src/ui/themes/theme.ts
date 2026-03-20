@@ -45,6 +45,24 @@ export interface ColorsTheme {
   GradientColors?: string[];
   /** Semantic color aliases for consistent UI styling */
   semantic: SemanticColors;
+  /** Agent-specific colors for UI display */
+  agentColors?: AgentColors;
+}
+
+/**
+ * Agent-specific colors for UI display
+ */
+export interface AgentColors {
+  /** General purpose agent color */
+  GeneralPurpose: string;
+  /** Explore agent color (fast, read-only) */
+  Explore: string;
+  /** Plan agent color (architect) */
+  Plan: string;
+  /** Default fallback color for custom agents */
+  Default: string;
+  /** Map for custom agent colors by name */
+  [key: string]: string;
 }
 
 export const lightTheme: ColorsTheme = {
@@ -69,6 +87,12 @@ export const lightTheme: ColorsTheme = {
     Primary: '#8B5CF6',
     Secondary: '#6B7280',
     Muted: '#9CA3AF',
+  },
+  agentColors: {
+    GeneralPurpose: '#3B82F6',
+    Explore: '#06B6D4',
+    Plan: '#8B5CF6',
+    Default: '#6B7280',
   },
 };
 
@@ -95,6 +119,12 @@ export const darkTheme: ColorsTheme = {
     Secondary: '#A6ADC8',
     Muted: '#6C7086',
   },
+  agentColors: {
+    GeneralPurpose: '#89B4FA',
+    Explore: '#89DCEB',
+    Plan: '#CBA6F7',
+    Default: '#A6ADC8',
+  },
 };
 
 export const ansiTheme: ColorsTheme = {
@@ -118,6 +148,12 @@ export const ansiTheme: ColorsTheme = {
     Primary: 'magenta',
     Secondary: 'gray',
     Muted: 'gray',
+  },
+  agentColors: {
+    GeneralPurpose: 'blue',
+    Explore: 'cyan',
+    Plan: 'magenta',
+    Default: 'gray',
   },
 };
 
@@ -388,4 +424,51 @@ export class Theme {
     }
     return inkTheme;
   }
+}
+
+/**
+ * Default agent colors used when a theme doesn't specify agentColors
+ */
+export const defaultAgentColors: AgentColors = {
+  GeneralPurpose: '#3B82F6', // Blue
+  Explore: '#06B6D4', // Cyan
+  Plan: '#8B5CF6', // Purple
+  Default: '#6B7280', // Gray
+};
+
+/**
+ * Get the color for an agent type
+ * @param agentType The agent type (e.g., 'general-purpose', 'Explore', 'Plan', or custom)
+ * @param colors The theme colors
+ * @returns The color string for the agent
+ */
+export function getAgentColor(
+  agentType: string | undefined,
+  colors: ColorsTheme,
+): string {
+  if (!agentType) {
+    return colors.agentColors?.Default ?? defaultAgentColors.Default;
+  }
+
+  // Map built-in types to their color keys
+  const typeToKey: Record<string, string> = {
+    'general-purpose': 'GeneralPurpose',
+    Explore: 'Explore',
+    Plan: 'Plan',
+  };
+
+  const key = typeToKey[agentType] || agentType;
+
+  // Check if we have a color for this agent type
+  if (colors.agentColors && colors.agentColors[key]) {
+    return colors.agentColors[key];
+  }
+
+  // Fallback to default agent colors
+  if (defaultAgentColors[key]) {
+    return defaultAgentColors[key];
+  }
+
+  // Default fallback
+  return colors.agentColors?.Default ?? defaultAgentColors.Default;
 }
