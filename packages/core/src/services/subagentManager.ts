@@ -434,16 +434,25 @@ export class SubagentManager {
    */
   private getSubagentEntryPath(): string {
     // In production, use the compiled JavaScript
-    // The build outputs to dist/src/ not just dist/
-    return path.join(
-      path.dirname(fileURLToPath(import.meta.url)),
-      '..',
-      '..',
-      'cli',
-      'dist',
-      'src',
-      'subagent.js',
-    );
+    // When bundled, import.meta.url points to bundle/a-coder.js
+    // When running from source, it's in packages/core/dist/src/services/
+    // We need to find the cli package's dist/src/subagent.js
+
+    // Try to find the subagent relative to the current module location
+    const currentDir = path.dirname(fileURLToPath(import.meta.url));
+
+    // When bundled (bundle/a-coder.js), go up one level to root, then into packages/cli
+    const bundledPath = path.join(currentDir, '..', 'packages', 'cli', 'dist', 'src', 'subagent.js');
+
+    // When running from compiled core (packages/core/dist/src/services/), go up 4 levels
+    const compiledPath = path.join(currentDir, '..', '..', '..', '..', 'cli', 'dist', 'src', 'subagent.js');
+
+    // Return whichever path exists (prefer bundled path)
+    const fs = require('fs');
+    if (fs.existsSync(bundledPath)) {
+      return bundledPath;
+    }
+    return compiledPath;
   }
 
   /**

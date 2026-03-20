@@ -20,10 +20,17 @@ import {
   SubagentResult,
   Config,
   sessionId,
+  AuthType,
+  ToolCallRequestInfo,
+  ToolRegistry,
+  GeminiEventType,
+  convertToFunctionResponse,
 } from '@a-coder/core';
-import { loadSettings, LoadedSettings } from './config/settings.js';
-import { loadExtensions, Extension } from './config/extension.js';
+import { Part, PartListUnion } from '@google/genai';
+import { loadSettings } from './config/settings.js';
+import { loadExtensions } from './config/extension.js';
 import { parseArguments, loadCliConfig } from './config/config.js';
+import { validateAuthMethod } from './config/auth.js';
 
 // Verify we're in subagent mode
 if (process.env[SUBAGENT_MODE_ENV_VAR] !== 'true') {
@@ -85,15 +92,64 @@ function sendError(message: string, stack?: string): void {
 }
 
 /**
+ * Execute a tool call
+ */
+async function executeTool(
+  toolRegistry: ToolRegistry,
+  toolCall: ToolCallRequestInfo,
+  signal: AbortSignal,
+): Promise<{ response: PartListUnion; error?: Error }> {
+  const tool = toolRegistry.getTool(toolCall.name);
+
+  if (!tool) {
+    const error = new Error(`Tool "${toolCall.name}" not found in registry.`);
+    return {
+      response: [
+        {
+          functionResponse: {
+            id: toolCall.callId,
+            name: toolCall.name,
+            response: { error: error.message },
+          },
+        },
+      ],
+      error,
+    };
+  }
+
+  try {
+    const result = await tool.execute(toolCall.args, signal);
+    const response = convertToFunctionResponse(
+      toolCall.name,
+      toolCall.callId,
+      result.llmContent,
+    );
+    return { response };
+  } catch (e) {
+    const error = e instanceof Error ? e : new Error(String(e));
+    return {
+      response: [
+        {
+          functionResponse: {
+            id: toolCall.callId,
+            name: toolCall.name,
+            response: { error: error.message },
+          },
+        },
+      ],
+      error,
+    };
+  }
+}
+
+/**
  * Main subagent execution
  */
 async function runSubagent(): Promise<void> {
   const startTime = Date.now();
   let config: Config | null = null;
-  const filesRead: string[] = [];
-  const filesModified: string[] = [];
-  const commandsExecuted: string[] = [];
   const errors: string[] = [];
+  const contextFilesRead: string[] = [];
 
   try {
     sendProgress('Initializing subagent...', 0);
@@ -131,6 +187,25 @@ async function runSubagent(): Promise<void> {
     // Initialize the config
     await config.initialize();
 
+    // Initialize authentication
+    let selectedAuthType = settings.merged.selectedAuthType;
+    if (!selectedAuthType) {
+      // Auto-detect auth type: prefer OpenAI if configured, otherwise use Gemini
+      if (process.env.OPENAI_API_KEY || process.env.OPENAI_BASE_URL) {
+        selectedAuthType = AuthType.USE_OPENAI;
+      } else {
+        selectedAuthType = AuthType.USE_GEMINI;
+      }
+    }
+
+    const authError = validateAuthMethod(selectedAuthType);
+    if (authError) {
+      sendError(`Authentication error: ${authError}`);
+      return;
+    }
+
+    await config.refreshAuth(selectedAuthType);
+
     sendProgress('Preparing task context...', 20);
 
     // Build the task prompt with context
@@ -149,7 +224,7 @@ async function runSubagent(): Promise<void> {
         try {
           const content = await fs.readFile(filePath, 'utf-8');
           fileContents.push(`--- ${filePath} ---\n${content}\n`);
-          filesRead.push(filePath);
+          contextFilesRead.push(filePath);
         } catch (e) {
           errors.push(`Could not read context file ${filePath}: ${e}`);
         }
@@ -172,67 +247,140 @@ async function runSubagent(): Promise<void> {
       return;
     }
 
-    // Execute the task
-    let responseText = '';
+    // Get the tool registry
+    const toolRegistry = await config.getToolRegistry();
+
+    // Filter tools if allowedTools is specified
+    if (subagentConfig.allowedTools && subagentConfig.allowedTools.length > 0) {
+      // Tool filtering could be implemented here if needed
+    }
+
+    // Execute the agentic loop
+    let accumulatedResponse = ''; // Accumulate all response text across turns
     const abortController = new AbortController();
-    
+    const MAX_TURNS = 50;
+    let turnCount = 0;
+
     // Set up timeout
     const timeout = subagentConfig.timeout || 300000;
     const timeoutId = setTimeout(() => {
       abortController.abort();
     }, timeout);
 
-    try {
-      const stream = client.sendMessageStream(
-        [{ text: taskPrompt }],
-        abortController.signal,
-        sessionId,
-      );
+    // Track pending tool calls
+    let pendingToolCalls: ToolCallRequestInfo[] = [];
 
-      for await (const event of stream) {
-        if (abortController.signal.aborted) {
+    // Use Sets to deduplicate tracking
+    const filesReadSet = new Set<string>();
+    const filesModifiedSet = new Set<string>();
+    const commandsExecutedSet = new Set<string>();
+
+    try {
+      // Start the conversation with the initial prompt
+      let currentMessage: PartListUnion = [{ text: taskPrompt }];
+
+      while (!abortController.signal.aborted && turnCount < MAX_TURNS) {
+        turnCount++;
+
+        const stream = client.sendMessageStream(
+          currentMessage,
+          abortController.signal,
+          sessionId,
+        );
+
+        pendingToolCalls = [];
+        let turnResponse = '';
+
+        for await (const event of stream) {
+          if (abortController.signal.aborted) {
+            break;
+          }
+
+          if (event.type === GeminiEventType.Content) {
+            turnResponse += event.value;
+          } else if (event.type === GeminiEventType.ToolCallRequest) {
+            // Collect tool call requests
+            pendingToolCalls.push(event.value as ToolCallRequestInfo);
+          } else if (event.type === GeminiEventType.Error) {
+            errors.push(event.value.error.message);
+          }
+        }
+
+        // Accumulate response from this turn
+        if (turnResponse) {
+          if (accumulatedResponse) {
+            accumulatedResponse += '\n\n';
+          }
+          accumulatedResponse += turnResponse;
+        }
+
+        // If no tool calls, we're done
+        if (pendingToolCalls.length === 0) {
           break;
         }
 
-        if (event.type === 'content') {
-          responseText += event.value;
-        } else if (event.type === 'tool_call_request') {
-          // Track tool usage for reporting
-          const toolName = event.value.name;
-          const toolArgs = event.value.args as Record<string, unknown>;
-          sendProgress(`Executing tool: ${toolName}`, undefined);
+        // Execute all pending tool calls
+        sendProgress(`Executing ${pendingToolCalls.length} tool(s)...`, undefined);
 
-          // Track file operations
+        const toolResponses: PartListUnion = [];
+
+        for (const toolCall of pendingToolCalls) {
+          const toolName = toolCall.name;
+          const toolArgs = toolCall.args as Record<string, unknown>;
+
+          // Track file operations for reporting (using Set to deduplicate)
           if (toolName === 'read_file' && toolArgs?.absolute_path) {
-            filesRead.push(toolArgs.absolute_path as string);
+            filesReadSet.add(toolArgs.absolute_path as string);
           } else if (toolName === 'read_many_files' && toolArgs?.paths) {
-            filesRead.push(...(toolArgs.paths as string[]));
+            for (const p of toolArgs.paths as string[]) {
+              filesReadSet.add(p);
+            }
           } else if (toolName === 'write_file' && toolArgs?.file_path) {
-            filesModified.push(toolArgs.file_path as string);
+            filesModifiedSet.add(toolArgs.file_path as string);
           } else if (toolName === 'edit' && toolArgs?.file_path) {
-            filesModified.push(toolArgs.file_path as string);
+            filesModifiedSet.add(toolArgs.file_path as string);
           } else if (toolName === 'shell' && toolArgs?.command) {
-            commandsExecuted.push(toolArgs.command as string);
+            commandsExecutedSet.add(toolArgs.command as string);
           }
-        } else if (event.type === 'error') {
-          errors.push(event.value.error.message);
+
+          // Execute the tool
+          const result = await executeTool(toolRegistry, toolCall, abortController.signal);
+
+          if (result.error) {
+            errors.push(`Tool ${toolName} error: ${result.error.message}`);
+          }
+
+          // Convert PartListUnion to array for spreading
+          const responseParts = Array.isArray(result.response)
+            ? result.response
+            : [{ text: String(result.response) }];
+          toolResponses.push(...responseParts);
         }
+
+        // Send tool responses as the next message
+        currentMessage = toolResponses;
       }
+
     } finally {
       clearTimeout(timeoutId);
     }
 
     sendProgress('Finalizing...', 90);
 
+    // Merge context files with files read during execution
+    for (const f of contextFilesRead) {
+      filesReadSet.add(f);
+    }
+
     // Build the result
     const duration = Date.now() - startTime;
     const result: SubagentResult = {
       success: errors.length === 0,
-      summary: extractSummary(responseText) || 'Task completed',
-      details: responseText,
-      filesRead: filesRead.length > 0 ? filesRead : undefined,
-      filesModified: filesModified.length > 0 ? filesModified : undefined,
-      commandsExecuted: commandsExecuted.length > 0 ? commandsExecuted : undefined,
+      summary: extractSummary(accumulatedResponse) || 'Task completed',
+      details: accumulatedResponse,
+      filesRead: filesReadSet.size > 0 ? Array.from(filesReadSet) : undefined,
+      filesModified: filesModifiedSet.size > 0 ? Array.from(filesModifiedSet) : undefined,
+      commandsExecuted: commandsExecutedSet.size > 0 ? Array.from(commandsExecutedSet) : undefined,
       errors: errors.length > 0 ? errors : undefined,
       duration,
     };
@@ -250,9 +398,7 @@ async function runSubagent(): Promise<void> {
       summary: 'Subagent failed with an error',
       details: errorMessage,
       errors: [errorMessage],
-      filesRead: filesRead.length > 0 ? filesRead : undefined,
-      filesModified: filesModified.length > 0 ? filesModified : undefined,
-      commandsExecuted: commandsExecuted.length > 0 ? commandsExecuted : undefined,
+      filesRead: contextFilesRead.length > 0 ? contextFilesRead : undefined,
       duration,
     });
   }
