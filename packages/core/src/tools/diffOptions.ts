@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { PatchOptions } from 'diff';
+import type { CreatePatchOptionsNonabortable } from 'diff';
 
-export const DEFAULT_DIFF_OPTIONS: PatchOptions = {
+export const DEFAULT_DIFF_OPTIONS: CreatePatchOptionsNonabortable = {
   context: 3,
   ignoreWhitespace: true,
 };

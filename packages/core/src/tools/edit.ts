@@ -300,7 +300,7 @@ Expectation for required parameters:
       'Current',
       'Proposed',
       DEFAULT_DIFF_OPTIONS,
-    );
+    ) as string;
     const confirmationDetails: ToolEditConfirmationDetails = {
       type: 'edit',
       title: `Confirm Edit: ${shortenPath(makeRelative(params.file_path, this.config.getTargetDir()))}`,
@@ -393,7 +393,7 @@ Expectation for required parameters:
           'Current',
           'Proposed',
           DEFAULT_DIFF_OPTIONS,
-        );
+        ) as string;
         displayResult = { fileDiff, fileName };
       }
 

@@ -110,7 +110,7 @@ function getUpdatedParams<ToolParams>(
     'Current',
     'Proposed',
     DEFAULT_DIFF_OPTIONS,
-  );
+  ) as string;
 
   return { updatedParams, updatedDiff };
 }
