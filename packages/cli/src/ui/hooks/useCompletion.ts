@@ -22,6 +22,60 @@ import {
 } from '../components/SuggestionsDisplay.js';
 import { CommandContext, SlashCommand } from '../commands/types.js';
 
+/**
+ * Fuzzy match a query against a string
+ * Returns true if all characters in the query appear in order (but not necessarily consecutively) in the target
+ */
+function fuzzyMatch(query: string, target: string): boolean {
+  const lowerQuery = query.toLowerCase();
+  const lowerTarget = target.toLowerCase();
+  let queryIndex = 0;
+
+  for (let i = 0; i < lowerTarget.length && queryIndex < lowerQuery.length; i++) {
+    if (lowerTarget[i] === lowerQuery[queryIndex]) {
+      queryIndex++;
+    }
+  }
+
+  return queryIndex === lowerQuery.length;
+}
+
+/**
+ * Calculate a match score for sorting fuzzy matches
+ * Lower score = better match
+ */
+function fuzzyMatchScore(query: string, target: string): number {
+  const lowerQuery = query.toLowerCase();
+  const lowerTarget = target.toLowerCase();
+
+  // Exact match at start is best
+  if (lowerTarget.startsWith(lowerQuery)) {
+    return 0;
+  }
+
+  // Exact match anywhere is good
+  if (lowerTarget.includes(lowerQuery)) {
+    return lowerTarget.indexOf(lowerQuery);
+  }
+
+  // Fuzzy match score based on how spread out the match is
+  let queryIndex = 0;
+  let lastMatchIndex = -1;
+  let totalSpread = 0;
+
+  for (let i = 0; i < lowerTarget.length && queryIndex < lowerQuery.length; i++) {
+    if (lowerTarget[i] === lowerQuery[queryIndex]) {
+      if (lastMatchIndex !== -1) {
+        totalSpread += i - lastMatchIndex;
+      }
+      lastMatchIndex = i;
+      queryIndex++;
+    }
+  }
+
+  return 100 + totalSpread;
+}
+
 export interface UseCompletionReturn {
   suggestions: Suggestion[];
   activeSuggestionIndex: number;
@@ -208,31 +262,75 @@ export function useCompletion(
         return;
       }
 
-      // Command/Sub-command Completion
+      // Command/Sub-command Completion with Fuzzy Matching
       const commandsToSearch = currentLevel || [];
       if (commandsToSearch.length > 0) {
-        let potentialSuggestions = commandsToSearch.filter(
-          (cmd) =>
-            cmd.description &&
-            (cmd.name.startsWith(partial) || cmd.altName?.startsWith(partial)),
-        );
+        // Use fuzzy matching to find potential suggestions
+        let potentialSuggestions = commandsToSearch
+          .filter((cmd) => cmd.description) // Only show commands with descriptions
+          .filter((cmd) => {
+            // Match by name, altName, or keywords
+            const nameMatch = cmd.name.startsWith(partial) ||
+                             fuzzyMatch(partial, cmd.name) ||
+                             (cmd.altName && (cmd.altName.startsWith(partial) || fuzzyMatch(partial, cmd.altName)));
+
+            // Also search in keywords if available
+            const keywordMatch = cmd.keywords?.some(kw =>
+              kw.toLowerCase().includes(partial.toLowerCase()) ||
+              fuzzyMatch(partial, kw)
+            ) ?? false;
+
+            // Also match in description for better discoverability
+            const descMatch = cmd.description?.toLowerCase().includes(partial.toLowerCase()) ?? false;
+
+            return nameMatch || keywordMatch || descMatch;
+          })
+          .map((cmd) => ({
+            cmd,
+            score: Math.min(
+              fuzzyMatchScore(partial, cmd.name),
+              cmd.altName ? fuzzyMatchScore(partial, cmd.altName) : Infinity
+            ),
+          }))
+          .sort((a, b) => a.score - b.score)
+          .map((item) => item.cmd);
 
         // If a user's input is an exact match and it is a leaf command,
         // enter should submit immediately.
         if (potentialSuggestions.length > 0 && !hasTrailingSpace) {
           const perfectMatch = potentialSuggestions.find(
-            (s) => s.name === partial,
+            (s) => s.name === partial || s.altName === partial,
           );
           if (perfectMatch && !perfectMatch.subCommands) {
             potentialSuggestions = [];
           }
         }
 
-        const finalSuggestions = potentialSuggestions.map((cmd) => ({
-          label: cmd.name,
-          value: cmd.name,
-          description: cmd.description,
-        }));
+        const finalSuggestions = potentialSuggestions.map((cmd) => {
+          // Format argument hint if available
+          let argumentHint: string | undefined;
+          if (cmd.argumentHint) {
+            if (typeof cmd.argumentHint === 'string') {
+              argumentHint = cmd.argumentHint;
+            } else if (Array.isArray(cmd.argumentHint)) {
+              argumentHint = cmd.argumentHint
+                .map((arg) => arg.required ? `<${arg.name}>` : `[${arg.name}]`)
+                .join(' ');
+            }
+          }
+
+          // Get example if available
+          const example = cmd.examples?.[0];
+
+          return {
+            label: cmd.name,
+            value: cmd.name,
+            description: cmd.description,
+            category: cmd.category,
+            argumentHint,
+            example,
+          };
+        });
 
         setSuggestions(finalSuggestions);
         setShowSuggestions(finalSuggestions.length > 0);

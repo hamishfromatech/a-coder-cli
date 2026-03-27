@@ -8,6 +8,7 @@ import {
   CommandContext,
   SlashCommand,
   SlashCommandActionReturn,
+  CommandCategory,
 } from './types.js';
 import { MessageType } from '../types.js';
 import { SessionManager, SessionSummary } from '@a-coder/core';
@@ -426,6 +427,10 @@ async function sessionCompletion(
 export const sessionCommand: SlashCommand = {
   name: 'session',
   description: 'Manage conversation sessions',
+  category: 'session' as CommandCategory,
+  keywords: ['session', 'save', 'resume', 'history', 'conversation'],
+  argumentHint: '<subcommand> [args]',
+  examples: ['/session save my-work', '/session list', '/session resume my-work'],
   subCommands: [
     {
       name: 'save',

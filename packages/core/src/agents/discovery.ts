@@ -126,6 +126,15 @@ export async function discoverAgents(
     }
   }
 
+  // Discover plugin agents
+  const pluginAgents = await discoverPluginAgents({ currentPath: cwd });
+  for (const agent of pluginAgents) {
+    if (!seenIds.has(agent.id)) {
+      seenIds.add(agent.id);
+      agents.push(agent);
+    }
+  }
+
   return agents;
 }
 
@@ -248,4 +257,87 @@ export function getAgentPath(
 export function isValidAgentDirectory(dirPath: string): boolean {
   const agentFile = path.join(dirPath, AGENT_FILE_NAME);
   return fs.existsSync(agentFile);
+}
+
+/**
+ * Discover agents from installed plugins
+ *
+ * @param pluginDiscoveryOptions - Options for plugin discovery
+ * @returns Array of plugin agent definitions
+ */
+export async function discoverPluginAgents(
+  pluginDiscoveryOptions?: { currentPath?: string },
+): Promise<AgentDefinition[]> {
+  const agents: AgentDefinition[] = [];
+
+  try {
+    const { PluginDiscovery } = await import('../plugins/discovery.js');
+    const pluginDiscovery = new PluginDiscovery();
+    const plugins = await pluginDiscovery.discoverAll(pluginDiscoveryOptions);
+
+    for (const plugin of plugins) {
+      if (plugin.state !== 'enabled') {
+        continue;
+      }
+
+      // Check if plugin has agents component
+      if (plugin.manifest.components?.agents === false) {
+        continue;
+      }
+
+      const pluginAgents = await discoverAgentsFromPlugin(plugin);
+      agents.push(...pluginAgents);
+    }
+  } catch (error) {
+    // Plugin discovery may not be available in all contexts
+    console.warn('Warning: Could not discover plugin agents:', error);
+  }
+
+  return agents;
+}
+
+/**
+ * Discover agents from a specific plugin
+ *
+ * @param plugin - The installed plugin to discover agents from
+ * @returns Array of agent definitions from the plugin
+ */
+export async function discoverAgentsFromPlugin(plugin: {
+  name: string;
+  pluginDir: string;
+}): Promise<AgentDefinition[]> {
+  const agents: AgentDefinition[] = [];
+  const agentsDir = path.join(plugin.pluginDir, 'agents');
+
+  if (!fs.existsSync(agentsDir)) {
+    return agents;
+  }
+
+  try {
+    const entries = await fs.promises.readdir(agentsDir, { withFileTypes: true });
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+
+      const agentDir = path.join(agentsDir, entry.name);
+      const agentFile = path.join(agentDir, AGENT_FILE_NAME);
+
+      if (!fs.existsSync(agentFile)) continue;
+
+      try {
+        const agent = await loadAgentFromFile(agentFile, AGENT_SOURCE.PLUGIN);
+        if (agent) {
+          // Namespace the agent with plugin name
+          agent.id = `plugin:${plugin.name}:${agent.name}`;
+          agents.push(agent);
+        }
+      } catch (error) {
+        console.error(`Error loading plugin agent from ${agentFile}:`, error);
+      }
+    }
+  } catch (error) {
+    console.error(`Error reading plugin agents directory ${agentsDir}:`, error);
+  }
+
+  return agents;
 }

@@ -39,7 +39,7 @@ export class ShellTool extends BaseTool<ShellToolParams, ToolResult> {
     super(
       ShellTool.Name,
       'Shell',
-      `This tool executes a given shell command as \`bash -c <command>\`. Command can start background processes using \`&\`. Command is executed as a subprocess that leads its own process group. Command process group can be terminated as \`kill -- -PGID\` or signaled as \`kill -s SIGNAL -- -PGID\`.
+      `This tool executes a given shell command. On Windows, runs as \`cmd.exe /c <command>\`. On Unix/Linux/macOS, runs as \`bash -c <command>\`. Command can start background processes using \`&\`. Command is executed as a subprocess that leads its own process group. On Unix systems, the process group can be terminated as \`kill -- -PGID\` or signaled as \`kill -s SIGNAL -- -PGID\`.
 
 The following information is returned:
 
@@ -57,7 +57,7 @@ Process Group PGID: Process group started or \`(none)\``,
         properties: {
           command: {
             type: Type.STRING,
-            description: 'Exact bash command to execute as `bash -c <command>`',
+            description: 'Exact command to execute. On Windows, runs as `cmd.exe /c <command>`. On Unix/Linux/macOS, runs as `bash -c <command>`',
           },
           description: {
             type: Type.STRING,

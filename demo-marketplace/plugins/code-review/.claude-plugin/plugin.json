@@ -1,0 +1,12 @@
+{
+  "name": "code-review",
+  "description": "Code review best practices and checklist skills",
+  "version": "1.0.0",
+  "author": {
+    "name": "A-Coder Team"
+  },
+  "keywords": ["code-review", "quality", "best-practices"],
+  "components": {
+    "skills": true
+  }
+}

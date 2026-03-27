@@ -120,3 +120,6 @@ export { validateShellCommand, getAllowedCommandCategories } from './utils/shell
 export { OpenAILogger, openaiLogger } from './utils/openaiLogger.js';
 export { default as OpenAILogViewer } from './utils/openaiLogViewer.js';
 export { default as OpenAIAnalytics } from './utils/openaiAnalytics.js';
+
+// Export plugins system
+export * from './plugins/index.js';

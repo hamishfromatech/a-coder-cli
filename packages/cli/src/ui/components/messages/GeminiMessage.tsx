@@ -16,7 +16,7 @@ interface GeminiMessageProps {
   terminalWidth: number;
 }
 
-export const GeminiMessage: React.FC<GeminiMessageProps> = ({
+const GeminiMessageInternal: React.FC<GeminiMessageProps> = ({
   text,
   isPending,
   availableTerminalHeight,
@@ -42,3 +42,17 @@ export const GeminiMessage: React.FC<GeminiMessageProps> = ({
     </Box>
   );
 };
+
+/**
+ * Memoized Gemini message component to prevent unnecessary re-renders
+ * during streaming. Only re-renders when text content or props change.
+ */
+export const GeminiMessage = React.memo(GeminiMessageInternal, (prevProps, nextProps) => {
+  // Only re-render if text changed or relevant props changed
+  return (
+    prevProps.text === nextProps.text &&
+    prevProps.isPending === nextProps.isPending &&
+    prevProps.terminalWidth === nextProps.terminalWidth &&
+    prevProps.availableTerminalHeight === nextProps.availableTerminalHeight
+  );
+});

@@ -1,0 +1,12 @@
+{
+  "name": "greeting-plugin",
+  "description": "Provides greeting and welcome skills",
+  "version": "1.0.0",
+  "author": {
+    "name": "A-Coder Team"
+  },
+  "keywords": ["greeting", "demo", "welcome"],
+  "components": {
+    "skills": true
+  }
+}

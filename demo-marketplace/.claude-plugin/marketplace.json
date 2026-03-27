@@ -1,0 +1,43 @@
+{
+  "name": "a-coder-demo-plugins",
+  "description": "Demo plugins for a-coder CLI - example implementations",
+  "version": "1.0.0",
+  "plugins": [
+    {
+      "name": "greeting-plugin",
+      "description": "Provides greeting and welcome skills",
+      "version": "1.0.0",
+      "source": {
+        "type": "local",
+        "path": "./plugins/greeting-plugin"
+      },
+      "keywords": ["greeting", "demo"],
+      "categories": ["utilities"],
+      "codeSnippets": 2
+    },
+    {
+      "name": "code-review",
+      "description": "Code review best practices and checklist skills",
+      "version": "1.0.0",
+      "source": {
+        "type": "local",
+        "path": "./plugins/code-review"
+      },
+      "keywords": ["code-review", "quality"],
+      "categories": ["development"],
+      "codeSnippets": 5
+    },
+    {
+      "name": "commit-helper",
+      "description": "Git commit message generation and best practices",
+      "version": "1.0.0",
+      "source": {
+        "type": "local",
+        "path": "./plugins/commit-helper"
+      },
+      "keywords": ["git", "commit"],
+      "categories": ["version-control"],
+      "codeSnippets": 3
+    }
+  ]
+}

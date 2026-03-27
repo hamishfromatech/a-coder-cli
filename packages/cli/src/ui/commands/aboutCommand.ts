@@ -5,13 +5,15 @@
  */
 
 import { getCliVersion } from '../../utils/version.js';
-import { SlashCommand } from './types.js';
+import { SlashCommand, CommandCategory } from './types.js';
 import process from 'node:process';
 import { MessageType, type HistoryItemAbout } from '../types.js';
 
 export const aboutCommand: SlashCommand = {
   name: 'about',
-  description: 'show version info',
+  description: 'Show version and system info',
+  category: 'general' as CommandCategory,
+  keywords: ['version', 'info', 'about', 'system'],
   action: async (context) => {
     const osVersion = process.platform;
     let sandboxEnv = 'no sandbox';

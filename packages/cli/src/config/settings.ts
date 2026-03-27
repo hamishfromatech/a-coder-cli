@@ -47,6 +47,7 @@ export enum SettingScope {
   User = 'User',
   Workspace = 'Workspace',
   System = 'System',
+  Plugin = 'Plugin',
 }
 
 export interface CheckpointingSettings {
@@ -149,10 +150,12 @@ export class LoadedSettings {
     user: SettingsFile,
     workspace: SettingsFile,
     errors: SettingsError[],
+    plugins?: SettingsFile,
   ) {
     this.system = system;
     this.user = user;
     this.workspace = workspace;
+    this.plugins = plugins || { path: '', settings: {} };
     this.errors = errors;
     this._merged = this.computeMergedSettings();
   }
@@ -160,6 +163,7 @@ export class LoadedSettings {
   readonly system: SettingsFile;
   readonly user: SettingsFile;
   readonly workspace: SettingsFile;
+  readonly plugins: SettingsFile;
   readonly errors: SettingsError[];
 
   private _merged: Settings;
@@ -169,11 +173,12 @@ export class LoadedSettings {
   }
 
   private computeMergedSettings(): Settings {
-    // Original precedence: User < Workspace < System
+    // Precedence: User < Workspace < System < Plugin
     const merged: Settings = {
       ...(this.user?.settings || {}),
       ...(this.workspace?.settings || {}),
       ...(this.system?.settings || {}),
+      ...(this.plugins?.settings || {}),
     };
 
     // Deep merge for complex objects to avoid complete overwrites
@@ -194,15 +199,33 @@ export class LoadedSettings {
       }
     };
 
-    deepMerge('aCoder');
-    deepMerge('mcpServers');
-    deepMerge('sampling_params');
-    deepMerge('fileFiltering');
-    deepMerge('accessibility');
-    deepMerge('telemetry');
-    deepMerge('session');
-    deepMerge('subagent');
-    deepMerge('subagent');
+    // Include plugin settings in deep merge
+    const deepMergeWithPlugin = (key: keyof Settings) => {
+      const u = this.user?.settings?.[key];
+      const w = this.workspace?.settings?.[key];
+      const s = this.system?.settings?.[key];
+      const p = this.plugins?.settings?.[key];
+
+      const isObject = (val: any) => val && typeof val === 'object' && !Array.isArray(val);
+
+      if (isObject(u) || isObject(w) || isObject(s) || isObject(p)) {
+        merged[key] = {
+          ...(isObject(u) ? (u as object) : {}),
+          ...(isObject(w) ? (w as object) : {}),
+          ...(isObject(s) ? (s as object) : {}),
+          ...(isObject(p) ? (p as object) : {}),
+        } as any;
+      }
+    };
+
+    deepMergeWithPlugin('aCoder');
+    deepMergeWithPlugin('mcpServers');
+    deepMergeWithPlugin('sampling_params');
+    deepMergeWithPlugin('fileFiltering');
+    deepMergeWithPlugin('accessibility');
+    deepMergeWithPlugin('telemetry');
+    deepMergeWithPlugin('session');
+    deepMergeWithPlugin('subagent');
 
     // Auto-detect auth type if not explicitly set
     if (!merged.selectedAuthType) {
@@ -222,6 +245,8 @@ export class LoadedSettings {
         return this.workspace;
       case SettingScope.System:
         return this.system;
+      case SettingScope.Plugin:
+        return this.plugins;
       default:
         throw new Error(`Invalid scope: ${scope}`);
     }
@@ -375,12 +400,14 @@ export function loadEnvironment(): void {
 /**
  * Loads settings from user and workspace directories.
  * Project settings override user settings.
+ * Plugin settings (from enabled plugins) have highest priority.
  */
-export function loadSettings(workspaceDir: string): LoadedSettings {
+export function loadSettings(workspaceDir: string, pluginSettings?: Settings): LoadedSettings {
   loadEnvironment();
   let systemSettings: Settings = {};
   let userSettings: Settings = {};
   let workspaceSettings: Settings = {};
+  let pluginSettingsData: Settings = pluginSettings || {};
   const settingsErrors: SettingsError[] = [];
 
   // Load system settings
@@ -478,6 +505,10 @@ export function loadSettings(workspaceDir: string): LoadedSettings {
       settings: workspaceSettings,
     },
     settingsErrors,
+    {
+      path: '',
+      settings: pluginSettingsData,
+    },
   );
 }
 

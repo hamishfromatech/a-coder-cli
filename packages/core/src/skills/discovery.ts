@@ -55,8 +55,9 @@ export class SkillDiscovery {
     const aCoderCliProjectSkills = await this.discoverFromLocation(aCoderCliProjectSkillsDir, SkillSource.Project);
     skills.push(...aCoderCliProjectSkills);
 
-    // 4. Plugin skills (not implemented in this initial version)
-    // Would be discovered from plugin directories
+    // 4. Plugin skills: discover from installed plugins
+    const pluginSkills = await this.discoverPluginSkills();
+    skills.push(...pluginSkills);
 
     // 5. Nested skills: <current-path>/.claude/skills/<skill-name>/SKILL.md
     if (options?.includeNested && options.currentPath) {
@@ -306,6 +307,34 @@ export class SkillDiscovery {
       return [];
     }
     return Array.from(tracking.supportingFilePaths.keys());
+  }
+
+  /**
+   * Discover skills from installed plugins
+   *
+   * @returns Array of plugin skills
+   */
+  private async discoverPluginSkills(): Promise<Skill[]> {
+    const skills: Skill[] = [];
+
+    try {
+      const { PluginDiscovery } = await import('../plugins/discovery.js');
+      const pluginDiscovery = new PluginDiscovery();
+      const plugins = await pluginDiscovery.discoverAll();
+
+      for (const plugin of plugins) {
+        if (plugin.state !== 'enabled') {
+          continue;
+        }
+
+        const pluginSkills = await pluginDiscovery.discoverPluginSkills(plugin);
+        skills.push(...pluginSkills);
+      }
+    } catch (error) {
+      console.warn(`Warning: Could not discover plugin skills: ${error}`);
+    }
+
+    return skills;
   }
 }
 

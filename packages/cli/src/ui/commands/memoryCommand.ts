@@ -6,11 +6,15 @@
 
 import { getErrorMessage } from '@a-coder/core';
 import { MessageType } from '../types.js';
-import { SlashCommand, SlashCommandActionReturn } from './types.js';
+import { SlashCommand, SlashCommandActionReturn, CommandCategory } from './types.js';
 
 export const memoryCommand: SlashCommand = {
   name: 'memory',
-  description: 'Commands for interacting with memory.',
+  description: 'Manage persistent memory',
+  category: 'memory' as CommandCategory,
+  keywords: ['memory', 'remember', 'persist', 'context'],
+  argumentHint: '<subcommand>',
+  examples: ['/memory show', '/memory add <text>', '/memory clear'],
   subCommands: [
     {
       name: 'show',

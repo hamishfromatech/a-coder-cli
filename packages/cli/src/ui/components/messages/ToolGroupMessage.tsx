@@ -51,7 +51,7 @@ function getBorderColor(toolCalls: IndividualToolCallDisplay[]): string {
 }
 
 // Main component renders the border and maps the tools using ToolMessage
-export const ToolGroupMessage: React.FC<ToolGroupMessageProps> = ({
+const ToolGroupMessageInternal: React.FC<ToolGroupMessageProps> = ({
   toolCalls,
   availableTerminalHeight,
   terminalWidth,
@@ -145,3 +145,45 @@ export const ToolGroupMessage: React.FC<ToolGroupMessageProps> = ({
     </Box>
   );
 };
+
+/**
+ * Memoized ToolGroupMessage to prevent unnecessary re-renders.
+ * Only re-renders when tool calls or relevant props change.
+ */
+export const ToolGroupMessage = React.memo(ToolGroupMessageInternal, (prevProps, nextProps) => {
+  // Compare tool calls by reference first (most common case - no change)
+  if (prevProps.toolCalls === nextProps.toolCalls) {
+    return (
+      prevProps.isFocused === nextProps.isFocused &&
+      prevProps.terminalWidth === nextProps.terminalWidth &&
+      prevProps.availableTerminalHeight === nextProps.availableTerminalHeight &&
+      prevProps.config === nextProps.config
+    );
+  }
+
+  // If references differ, do a shallow comparison of the tool calls array
+  if (prevProps.toolCalls.length !== nextProps.toolCalls.length) {
+    return false;
+  }
+
+  // Check if any tool call has changed
+  for (let i = 0; i < prevProps.toolCalls.length; i++) {
+    const prevTool = prevProps.toolCalls[i];
+    const nextTool = nextProps.toolCalls[i];
+    if (
+      prevTool.callId !== nextTool.callId ||
+      prevTool.status !== nextTool.status ||
+      prevTool.resultDisplay !== nextTool.resultDisplay
+    ) {
+      return false;
+    }
+  }
+
+  // All checks passed, props are effectively the same
+  return (
+    prevProps.isFocused === nextProps.isFocused &&
+    prevProps.terminalWidth === nextProps.terminalWidth &&
+    prevProps.availableTerminalHeight === nextProps.availableTerminalHeight &&
+    prevProps.config === nextProps.config
+  );
+});

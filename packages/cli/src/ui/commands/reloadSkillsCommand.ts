@@ -5,11 +5,14 @@
  */
 
 import { Config } from '@a-coder/core';
-import { SlashCommand, SlashCommandActionReturn, type CommandContext } from './types.js';
+import { SlashCommand, SlashCommandActionReturn, type CommandContext, CommandCategory } from './types.js';
 
 export const reloadSkillsCommand: SlashCommand = {
   name: 'reload-skills',
-  description: 'Reload skills from all skill directories (useful after adding/modifying skills)',
+  description: 'Reload skills and plugins from disk',
+  category: 'advanced' as CommandCategory,
+  keywords: ['reload', 'refresh', 'skills', 'plugins', 'update'],
+  examples: ['/reload-skills'],
   action: async (context: CommandContext, _args: string): Promise<SlashCommandActionReturn> => {
     const { config } = context.services;
 
@@ -34,14 +37,14 @@ export const reloadSkillsCommand: SlashCommand = {
       return {
         type: 'message',
         messageType: 'info',
-        content: 'Skills reloaded successfully from all skill directories.',
+        content: 'Skills and plugins reloaded successfully from all directories.',
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       return {
         type: 'message',
         messageType: 'error',
-        content: `Failed to reload skills: ${errorMessage}`,
+        content: `Failed to reload skills and plugins: ${errorMessage}`,
       };
     }
   },

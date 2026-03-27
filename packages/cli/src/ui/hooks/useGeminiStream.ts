@@ -149,6 +149,18 @@ export const useGeminiStream = (
     [toolCalls],
   );
 
+  // Create pending history items array
+  // Note: This is computed on every render since pendingHistoryItemRef is a ref
+  const pendingHistoryItems: HistoryItemWithoutId[] = [];
+
+  if (pendingHistoryItemRef.current) {
+    pendingHistoryItems.push(pendingHistoryItemRef.current);
+  }
+
+  if (pendingToolCallGroupDisplay) {
+    pendingHistoryItems.push(pendingToolCallGroupDisplay);
+  }
+
   const loopDetectedRef = useRef(false);
   const isProcessingQueueRef = useRef(false);
 
@@ -261,11 +273,31 @@ export const useGeminiStream = (
         if (slashCommandResult) {
           if (slashCommandResult.type === 'schedule_tool') {
             const { toolName, toolArgs } = slashCommandResult;
+
+            // Determine if this should be client-initiated:
+            // 1. If isClientInitiated is explicitly set, use that value
+            // 2. For skills with 'execute' action, default to false (LLM should process result)
+            // 3. Otherwise default to true (client-initiated, LLM doesn't process)
+            let isClientInitiated = true;
+
+            if ('isClientInitiated' in slashCommandResult) {
+              isClientInitiated = slashCommandResult.isClientInitiated ?? true;
+            } else {
+              // Skills with 'execute' action should NOT be client-initiated
+              // so the LLM processes the skill content and acts on it
+              const isSkillExecute =
+                toolName === 'skills' &&
+                typeof toolArgs === 'object' &&
+                (toolArgs as any).action === 'execute';
+
+              isClientInitiated = !isSkillExecute;
+            }
+
             const toolCallRequest: ToolCallRequestInfo = {
               callId: `${toolName}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
               name: toolName,
               args: toolArgs,
-              isClientInitiated: true,
+              isClientInitiated,
               prompt_id,
             };
             scheduleToolCalls([toolCallRequest], abortSignal);
@@ -907,11 +939,6 @@ export const useGeminiStream = (
       modelSwitchedFromQuotaError,
     ],
   );
-
-  const pendingHistoryItems = [
-    pendingHistoryItemRef.current,
-    pendingToolCallGroupDisplay,
-  ].filter((i) => i !== undefined && i !== null);
 
   useEffect(() => {
     const saveRestorableToolCalls = async () => {

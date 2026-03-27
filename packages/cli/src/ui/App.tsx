@@ -798,21 +798,26 @@ You can switch authentication methods by typing /auth`;
         </Static>
         <OverflowProvider>
           <Box ref={pendingHistoryItemRef} flexDirection="column">
-            {pendingHistoryItems.map((item, i) => (
-              <HistoryItemDisplay
-                key={i}
-                availableTerminalHeight={
-                  constrainHeight ? availableTerminalHeight : undefined
-                }
-                terminalWidth={mainAreaWidth}
-                // TODO(taehykim): It seems like references to ids aren't necessary in
-                // HistoryItemDisplay. Refactor later. Use a fake id for now.
-                item={{ ...item, id: 0 }}
-                isPending={true}
-                config={config}
-                isFocused={!isEditorDialogOpen}
-              />
-            ))}
+            {pendingHistoryItems.map((item) => {
+              // Generate stable key based on item type and content
+              const key = item.type === 'tool_group'
+                ? `tool-group-${(item as { tools?: { callId: string }[] }).tools?.map(t => t.callId).join('-') || 'empty'}`
+                : `pending-${item.type}-${item.type === 'gemini' || item.type === 'gemini_content' ? (item as { text?: string }).text?.length || 0 : 0}`;
+
+              return (
+                <HistoryItemDisplay
+                  key={key}
+                  availableTerminalHeight={
+                    constrainHeight ? availableTerminalHeight : undefined
+                  }
+                  terminalWidth={mainAreaWidth}
+                  item={{ ...item, id: 0 }}
+                  isPending={true}
+                  config={config}
+                  isFocused={!isEditorDialogOpen}
+                />
+              );
+            })}
             <ShowMoreLines constrainHeight={constrainHeight} />
           </Box>
         </OverflowProvider>

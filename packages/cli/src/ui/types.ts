@@ -225,6 +225,12 @@ export type SlashCommandProcessorResult =
       type: 'schedule_tool';
       toolName: string;
       toolArgs: Record<string, unknown>;
+      /**
+       * Whether this is a client-initiated tool call.
+       * - true (default): The tool result is NOT sent to the LLM.
+       * - false: The tool result IS sent to the LLM for processing.
+       */
+      isClientInitiated?: boolean;
     }
   | {
       type: 'handled'; // Indicates the command was processed and no further action is needed.

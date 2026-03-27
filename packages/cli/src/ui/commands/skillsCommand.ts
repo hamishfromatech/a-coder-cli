@@ -7,11 +7,15 @@
 import { getSkillsDir } from '@a-coder/core';
 import open from 'open';
 import { MessageType } from '../types.js';
-import { SlashCommand, SlashCommandActionReturn } from './types.js';
+import { SlashCommand, SlashCommandActionReturn, CommandCategory } from './types.js';
 
 export const skillsCommand: SlashCommand = {
   name: 'skills',
-  description: 'List and load available skills.',
+  description: 'List and load available skills',
+  category: 'skill' as CommandCategory,
+  keywords: ['skill', 'load', 'commands', 'custom'],
+  argumentHint: '[list|load|open]',
+  examples: ['/skills list', '/skills load my-skill', '/skills open'],
   action: (context, args): SlashCommandActionReturn | void => {
     if (!args || args.trim() === '') {
       return {

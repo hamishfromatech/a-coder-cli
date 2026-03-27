@@ -21,7 +21,7 @@ interface GeminiMessageContentProps {
  * are split into multiple GeminiMessageContent's to enable the root <Static> component in
  * App.tsx to be as performant as humanly possible.
  */
-export const GeminiMessageContent: React.FC<GeminiMessageContentProps> = ({
+const GeminiMessageContentInternal: React.FC<GeminiMessageContentProps> = ({
   text,
   isPending,
   availableTerminalHeight,
@@ -41,3 +41,17 @@ export const GeminiMessageContent: React.FC<GeminiMessageContentProps> = ({
     </Box>
   );
 };
+
+/**
+ * Memoized Gemini message content component to prevent unnecessary re-renders
+ * during streaming. Only re-renders when text content or props change.
+ */
+export const GeminiMessageContent = React.memo(GeminiMessageContentInternal, (prevProps, nextProps) => {
+  // Only re-render if text changed or relevant props changed
+  return (
+    prevProps.text === nextProps.text &&
+    prevProps.isPending === nextProps.isPending &&
+    prevProps.terminalWidth === nextProps.terminalWidth &&
+    prevProps.availableTerminalHeight === nextProps.availableTerminalHeight
+  );
+});

@@ -1235,6 +1235,7 @@ For more information, see: \u001b[36mhttps://goo.gle/a-coder-cli-docs-mcp\u001b[
                   type: 'schedule_tool',
                   toolName: result.toolName,
                   toolArgs: result.toolArgs,
+                  isClientInitiated: result.isClientInitiated,
                 };
               case 'message':
                 addItem(
