@@ -12,6 +12,7 @@ import { Colors, Semantic } from '../../colors.js';
 import { MarkdownDisplay } from '../../utils/MarkdownDisplay.js';
 import { GeminiRespondingSpinner } from '../GeminiRespondingSpinner.js';
 import { MaxSizedBox } from '../shared/MaxSizedBox.js';
+import { getStatusIcon, getIcon } from '../../utils/icons.js';
 
 const STATIC_HEIGHT = 1;
 const RESERVED_LINE_COUNT = 5; // for tool name, status, padding etc.
@@ -118,28 +119,26 @@ const ToolStatusIndicator: React.FC<ToolStatusIndicatorProps> = ({
 }) => (
   <Box minWidth={STATUS_INDICATOR_WIDTH}>
     {status === ToolCallStatus.Pending && (
-      <Text color={Semantic.Warning}>○</Text>
+      <Text color={Semantic.Warning}>{getIcon('Pending')}</Text>
     )}
     {status === ToolCallStatus.Executing && (
       <GeminiRespondingSpinner
         spinnerType="toggle"
-        nonRespondingDisplay={'⊷'}
+        nonRespondingDisplay={getIcon('Running')}
       />
     )}
     {status === ToolCallStatus.Success && (
-      <Text color={Semantic.Success}>✓</Text>
+      <Text color={Semantic.Success}>{getIcon('Success')}</Text>
     )}
     {status === ToolCallStatus.Confirming && (
       <Text color={Semantic.Warning}>?</Text>
     )}
     {status === ToolCallStatus.Canceled && (
-      <Text color={Semantic.Muted} bold>
-        ○
-      </Text>
+      <Text color={Semantic.Muted}>{getIcon('Cancelled')}</Text>
     )}
     {status === ToolCallStatus.Error && (
       <Text color={Semantic.Error} bold>
-        ✕
+        {getIcon('Error')}
       </Text>
     )}
   </Box>

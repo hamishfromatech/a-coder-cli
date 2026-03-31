@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { Box, Text } from 'ink';
-import { Colors } from '../colors.js';
+import { Semantic } from '../colors.js';
 import { ApprovalMode } from '@a-coder/core';
 
 interface AutoAcceptIndicatorProps {
@@ -22,12 +22,12 @@ export const AutoAcceptIndicator: React.FC<AutoAcceptIndicatorProps> = ({
 
   switch (approvalMode) {
     case ApprovalMode.AUTO_EDIT:
-      textColor = Colors.AccentGreen;
+      textColor = Semantic.Success;
       textContent = 'accepting edits';
       subText = ' (shift + tab to toggle)';
       break;
     case ApprovalMode.YOLO:
-      textColor = Colors.AccentRed;
+      textColor = Semantic.Error;
       textContent = 'YOLO mode';
       subText = ' (ctrl + y to toggle)';
       break;
@@ -40,7 +40,7 @@ export const AutoAcceptIndicator: React.FC<AutoAcceptIndicatorProps> = ({
     <Box>
       <Text color={textColor}>
         {textContent}
-        {subText && <Text color={Colors.Gray}>{subText}</Text>}
+        {subText && <Text color={Semantic.Muted}>{subText}</Text>}
       </Text>
     </Box>
   );

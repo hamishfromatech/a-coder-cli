@@ -51,6 +51,7 @@ export type ScheduledToolCall = {
 export type ErroredToolCall = {
   status: 'error';
   request: ToolCallRequestInfo;
+  tool?: Tool;
   response: ToolCallResponseInfo;
   durationMs?: number;
   outcome?: ToolConfirmationOutcome;
@@ -331,11 +332,12 @@ export class CoreToolScheduler {
             : undefined;
           return {
             request: currentCall.request,
+            tool: toolInstance,
             status: 'error',
             response: auxiliaryData as ToolCallResponseInfo,
             durationMs,
             outcome,
-          } as ErroredToolCall;
+          };
         }
         case 'awaiting_approval':
           return {

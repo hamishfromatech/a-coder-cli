@@ -7,7 +7,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import Gradient from 'ink-gradient';
-import { Colors } from '../colors.js';
+import { Colors, Semantic } from '../colors.js';
 import { formatDuration } from '../utils/formatters.js';
 import { useSessionStats, ModelMetrics } from '../contexts/SessionContext.js';
 import {
@@ -202,8 +202,8 @@ export const StatsDisplay: React.FC<StatsDisplayProps> = ({
           <StatRow title="Tool Calls:">
             <Text>
               {tools.totalCalls} ({' '}
-              <Text color={Colors.AccentGreen}>✔ {tools.totalSuccess}</Text>{' '}
-              <Text color={Colors.AccentRed}>✖ {tools.totalFail}</Text> )
+              <Text color={Semantic.Success}>✔ {tools.totalSuccess}</Text>{' '}
+              <Text color={Semantic.Error}>✖ {tools.totalFail}</Text> )
             </Text>
           </StatRow>
           <StatRow title="Success Rate:">
@@ -213,7 +213,7 @@ export const StatsDisplay: React.FC<StatsDisplayProps> = ({
             <StatRow title="User Agreement:">
               <Text color={agreementColor}>
                 {computed.agreementRate.toFixed(1)}%{' '}
-                <Text color={Colors.Gray}>
+                <Text color={Semantic.Muted}>
                   ({computed.totalDecisions} reviewed)
                 </Text>
               </Text>
@@ -232,7 +232,7 @@ export const StatsDisplay: React.FC<StatsDisplayProps> = ({
         <SubStatRow title="API Time:">
           <Text>
             {formatDuration(computed.totalApiTime)}{' '}
-            <Text color={Colors.Gray}>
+            <Text color={Semantic.Muted}>
               ({computed.apiTimePercent.toFixed(1)}%)
             </Text>
           </Text>
@@ -240,7 +240,7 @@ export const StatsDisplay: React.FC<StatsDisplayProps> = ({
         <SubStatRow title="Tool Time:">
           <Text>
             {formatDuration(computed.totalToolTime)}{' '}
-            <Text color={Colors.Gray}>
+            <Text color={Semantic.Muted}>
               ({computed.toolTimePercent.toFixed(1)}%)
             </Text>
           </Text>

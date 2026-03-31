@@ -7,6 +7,7 @@
 import React from 'react';
 import { Text, Box } from 'ink';
 import { Colors, Semantic } from '../../colors.js';
+import { Icons } from '../../utils/icons.js';
 
 interface InfoMessageProps {
   text: string;
@@ -22,7 +23,7 @@ export const InfoMessage: React.FC<InfoMessageProps> = ({ text }) => {
       paddingX={1}
     >
       <Box paddingRight={1}>
-        <Text bold color={Semantic.Info}>[INFO]</Text>
+        <Text bold color={Semantic.Info}>{Icons.InfoLabel}</Text>
       </Box>
       <Box flexGrow={1}>
         <Text wrap="wrap" color={Colors.Foreground}>

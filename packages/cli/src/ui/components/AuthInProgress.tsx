@@ -7,7 +7,7 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import Spinner from 'ink-spinner';
-import { Colors } from '../colors.js';
+import { Colors, Semantic } from '../colors.js';
 
 interface AuthInProgressProps {
   onTimeout: () => void;
@@ -36,13 +36,13 @@ export function AuthInProgress({
   return (
     <Box
       borderStyle="round"
-      borderColor={Colors.Gray}
+      borderColor={Semantic.Muted}
       flexDirection="column"
       padding={1}
       width="100%"
     >
       {timedOut ? (
-        <Text color={Colors.AccentRed}>
+        <Text color={Semantic.Error}>
           Authentication timed out. Please try again.
         </Text>
       ) : (

@@ -6,7 +6,7 @@
 
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { Colors } from '../colors.js';
+import { Colors, Semantic } from '../colors.js';
 import {
   EDITOR_DISPLAY_NAMES,
   editorSettingsManager,
@@ -147,12 +147,12 @@ export function EditorSettingsDialog({
             These editors are currently supported. Please note that some editors
             cannot be used in sandbox mode.
           </Text>
-          <Text color={Colors.Gray}>
+          <Text color={Semantic.Muted}>
             Your preferred editor is:{' '}
             <Text
               color={
                 mergedEditorName === 'None'
-                  ? Colors.AccentRed
+                  ? Semantic.Warning
                   : Colors.AccentCyan
               }
               bold

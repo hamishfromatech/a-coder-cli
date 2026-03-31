@@ -27,6 +27,7 @@ import { useSkillsCommand } from './hooks/useSkillsCommand.js';
 import { useSlashCommandProcessor } from './hooks/slashCommandProcessor.js';
 import { useAutoAcceptIndicator } from './hooks/useAutoAcceptIndicator.js';
 import { useConsoleMessages } from './hooks/useConsoleMessages.js';
+import { useWebBridge } from './hooks/useWebBridge.js';
 import { Header } from './components/Header.js';
 import { LoadingIndicator } from './components/LoadingIndicator.js';
 import { AutoAcceptIndicator } from './components/AutoAcceptIndicator.js';
@@ -485,6 +486,15 @@ You can switch authentication methods by typing /auth`;
       return;
     }
 
+    // When help is showing, allow Escape or 'q' to close it
+    // Skip all other key handling to prevent UI flickering
+    if (showHelp) {
+      if (key.escape || input === 'q') {
+        setShowHelp(false);
+      }
+      return;
+    }
+
     let enteringConstrainHeightMode = false;
     if (!constrainHeight) {
       // Automatically re-enter constrain height mode if the user types
@@ -493,12 +503,6 @@ You can switch authentication methods by typing /auth`;
       // the user starts interacting with the app.
       enteringConstrainHeightMode = true;
       setConstrainHeight(true);
-    }
-
-    // Show help when '?' is pressed
-    if (input === '?') {
-      setShowHelp((prev) => !prev);
-      return;
     }
 
     if (key.ctrl && input === 'o') {
@@ -582,9 +586,24 @@ You can switch authentication methods by typing /auth`;
     useLoadingIndicator(streamingState);
   const showAutoAcceptIndicator = useAutoAcceptIndicator({ config });
 
+  // Integrate with web interface
+  useWebBridge({
+    submitQuery: (query: string) => {
+      submitQuery(query);
+    },
+    addItem,
+    history,
+    streamingState,
+  });
+
   const handleFinalSubmit = useCallback(
     (submittedValue: string) => {
       const trimmedValue = submittedValue.trim();
+      // Show help when user sends "?" by itself
+      if (trimmedValue === '?') {
+        setShowHelp((prev) => !prev);
+        return;
+      }
       if (trimmedValue.length > 0) {
         submitQuery(trimmedValue);
       }
@@ -631,10 +650,11 @@ You can switch authentication methods by typing /auth`;
     fetchUserMessages();
   }, [history, logger]);
 
-  const isInputActive = !initError;
+  const isInputActive = !initError && !showHelp;
   const isInputFocused =
-    streamingState === StreamingState.Idle ||
-    streamingState === StreamingState.Responding;
+    !showHelp &&
+    (streamingState === StreamingState.Idle ||
+      streamingState === StreamingState.Responding);
 
   const handleClearScreen = useCallback(() => {
     clearItems();

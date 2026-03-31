@@ -205,6 +205,51 @@ function mapCoreStatusToDisplayStatus(coreStatus: CoreStatus): ToolCallStatus {
 }
 
 /**
+ * Generates a human-readable description from tool name and args
+ * when the tool instance is not available.
+ * This provides better UX than raw JSON.
+ */
+function generateFallbackDescription(
+  toolName: string,
+  args: Record<string, unknown>,
+): string {
+  // Special handling for common tools
+  if (toolName === 'skills') {
+    const action = args.action as string | undefined;
+    const skillName = args.skill_name as string | undefined;
+    const skillArgs = args.arguments as string | undefined;
+
+    switch (action) {
+      case 'list':
+        return 'List available skills';
+      case 'load':
+        return skillName ? `Load skill "${skillName}"` : 'Load skill';
+      case 'execute': {
+        const argsStr = skillArgs ? ` ${skillArgs}` : '';
+        return skillName ? `Execute skill "${skillName}"${argsStr}` : 'Execute skill';
+      }
+      default:
+        return `Skills: ${action || 'unknown'}`;
+    }
+  }
+
+  // Generic fallback: format key-value pairs nicely
+  const parts: string[] = [];
+  for (const [key, value] of Object.entries(args)) {
+    if (value === undefined || value === null) continue;
+    if (typeof value === 'string') {
+      parts.push(`${key}: "${value}"`);
+    } else if (typeof value === 'object') {
+      parts.push(`${key}: ${JSON.stringify(value)}`);
+    } else {
+      parts.push(`${key}: ${value}`);
+    }
+  }
+
+  return parts.length > 0 ? `${toolName}(${parts.join(', ')})` : toolName;
+}
+
+/**
  * Transforms `TrackedToolCall` objects into `HistoryItemToolGroup` objects for UI display.
  */
 export function mapToDisplay(
@@ -232,7 +277,11 @@ export function mapToDisplay(
         );
         renderOutputAsMarkdown = currentToolInstance.isOutputMarkdown;
       } else if ('request' in trackedCall && 'args' in trackedCall.request) {
-        description = JSON.stringify(trackedCall.request.args);
+        // Fallback: Generate a human-readable description from tool name and args
+        description = generateFallbackDescription(
+          trackedCall.request.name,
+          trackedCall.request.args,
+        );
       }
 
       const baseDisplayProperties: Omit<

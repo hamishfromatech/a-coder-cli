@@ -11,6 +11,8 @@ import { SlashCommand, CommandCategory } from '../commands/types.js';
 
 interface Help {
   commands: SlashCommand[];
+  scrollOffset?: number;
+  maxVisibleLines?: number;
 }
 
 /**
@@ -96,7 +98,9 @@ function renderCommand(command: SlashCommand, indent = 0): React.ReactNode {
   );
 }
 
-export const Help: React.FC<Help> = ({ commands }) => {
+export const Help: React.FC<Help> = ({
+  commands,
+}) => {
   // Group commands by category
   const groupedCommands = groupCommandsByCategory(
     commands.filter((cmd) => cmd.description),
@@ -283,6 +287,11 @@ export const Help: React.FC<Help> = ({ commands }) => {
       {/* Tips */}
       <Text color={Colors.Gray} dimColor>
         Tip: Use fuzzy matching! Type partial command names like "ag" to match "agent"
+      </Text>
+
+      <Box height={1} />
+      <Text color={Colors.Gray}>
+        Press Esc or q to close
       </Text>
     </Box>
   );

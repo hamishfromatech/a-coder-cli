@@ -6,7 +6,8 @@
 
 import React from 'react';
 import { Text, Box } from 'ink';
-import { Colors, Semantic } from '../../colors.js';
+import { Semantic } from '../../colors.js';
+import { Icons } from '../../utils/icons.js';
 
 interface ErrorMessageProps {
   text: string;
@@ -22,7 +23,7 @@ export const ErrorMessage: React.FC<ErrorMessageProps> = ({ text }) => {
       marginY={1}
     >
       <Box paddingRight={1}>
-        <Text bold color={Semantic.Error}>[ERROR]</Text>
+        <Text bold color={Semantic.Error}>{Icons.ErrorLabel}</Text>
       </Box>
       <Box flexGrow={1}>
         <Text wrap="wrap" color={Semantic.Error}>

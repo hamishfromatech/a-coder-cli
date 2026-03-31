@@ -32,11 +32,14 @@ export const SkillsDialog = ({
   );
 
   const skillItems: Array<RadioSelectItem<string>> = useMemo(
-    () =>
-      availableSkills.map((skill) => ({
+    () => {
+      // Deduplicate skills by name to prevent duplicate key warnings
+      const uniqueSkills = [...new Set(availableSkills)];
+      return uniqueSkills.map((skill) => ({
         label: skill,
         value: skill,
-      })),
+      }));
+    },
     [availableSkills],
   );
 

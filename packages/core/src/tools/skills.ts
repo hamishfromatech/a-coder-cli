@@ -31,7 +31,7 @@ import {
   getACoderCliProjectSkillsDir,
 } from '../skills/discovery.js';
 import { SkillHookExecutor } from '../skills/hooks.js';
-import { Skill, SkillSource } from '../skills/types.js';
+import { Skill, SkillSource, SkillScriptInfo, SCRIPT_INTERPRETERS, getAutoAllowedTools } from '../skills/types.js';
 
 /**
  * Parameters for the skills tool
@@ -164,6 +164,117 @@ export function readSkillFile(skillPath: string): {
   }
 }
 
+/**
+ * Detect scripts in a skill directory
+ *
+ * @param skillDir - The skill directory path
+ * @param hooks - Optional hook definitions from frontmatter
+ * @returns Array of detected script information
+ */
+export function detectSkillScripts(skillDir: string, hooks?: any): SkillScriptInfo[] {
+  const scripts: SkillScriptInfo[] = [];
+  const scriptsDir = path.join(skillDir, 'scripts');
+
+  // Map hook names to script paths
+  const hookScripts: Map<string, string> = new Map();
+  if (hooks) {
+    if (hooks.onLoad) hookScripts.set(hooks.onLoad, 'onLoad');
+    if (hooks.onActivate) hookScripts.set(hooks.onActivate, 'onActivate');
+    if (hooks.onDeactivate) hookScripts.set(hooks.onDeactivate, 'onDeactivate');
+    if (hooks.onUnload) hookScripts.set(hooks.onUnload, 'onUnload');
+  }
+
+  // Scan scripts directory if it exists
+  if (fs.existsSync(scriptsDir)) {
+    try {
+      const scanScriptsDir = (dir: string, relativePath = ''): void => {
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+        for (const entry of entries) {
+          const entryPath = path.join(dir, entry.name);
+          const relativeEntryPath = path.join(relativePath, entry.name);
+
+          if (entry.isDirectory()) {
+            // Recursively scan subdirectories
+            scanScriptsDir(entryPath, relativeEntryPath);
+          } else if (entry.isFile()) {
+            // Check if it's a script file
+            const ext = path.extname(entry.name).toLowerCase();
+            const interpreter = SCRIPT_INTERPRETERS[ext];
+
+            // Get interpreter - from extension or from shebang
+            let detectedInterpreter = interpreter;
+            if (!detectedInterpreter) {
+              // Try to detect from shebang
+              try {
+                const content = fs.readFileSync(entryPath, 'utf-8');
+                const firstLine = content.split('\n')[0];
+                if (firstLine.startsWith('#!')) {
+                  const shebang = firstLine.slice(2).trim();
+                  // Handle '#!/usr/bin/env python' style
+                  if (shebang.startsWith('/usr/bin/env ')) {
+                    detectedInterpreter = shebang.slice('/usr/bin/env '.length).split(' ')[0];
+                  } else if (shebang.startsWith('/')) {
+                    // Extract interpreter name from path
+                    detectedInterpreter = path.basename(shebang.split(' ')[0]);
+                  }
+                }
+              } catch {
+                // Ignore read errors
+              }
+            }
+
+            // Only include if it's a recognized script or referenced by hooks
+            if (detectedInterpreter || ext === '' || hookScripts.has(relativeEntryPath)) {
+              scripts.push({
+                path: path.join('scripts', relativeEntryPath),
+                absolutePath: entryPath,
+                interpreter: detectedInterpreter || 'unknown',
+                hook: hookScripts.get(relativeEntryPath) as any,
+              });
+            }
+          }
+        }
+      };
+
+      scanScriptsDir(scriptsDir);
+    } catch (error) {
+      console.warn(`Warning: Could not scan scripts directory ${scriptsDir}: ${error}`);
+    }
+  }
+
+  return scripts;
+}
+
+/**
+ * Format scripts information for display
+ *
+ * @param scripts - Array of detected scripts
+ * @param skillDir - The skill directory path
+ * @returns Formatted string for display
+ */
+export function formatScriptsInfo(scripts: SkillScriptInfo[], skillDir: string): string {
+  if (scripts.length === 0) {
+    return '';
+  }
+
+  const lines: string[] = ['\n\n--- Skill Scripts ---'];
+  lines.push('This skill contains executable scripts that can be run:');
+
+  for (const script of scripts) {
+    const hookInfo = script.hook ? ` (hook: ${script.hook})` : '';
+    lines.push(`\n- \`${script.absolutePath}\``);
+    lines.push(`  Interpreter: ${script.interpreter}${hookInfo}`);
+  }
+
+  const autoAllowed = getAutoAllowedTools(scripts);
+  if (autoAllowed.length > 0) {
+    lines.push(`\nAuto-allowed tools: ${autoAllowed.join(', ')}`);
+  }
+
+  return lines.join('\n');
+}
+
 export class SkillsTool extends BaseTool<SkillsToolParams, ToolResult> {
   static readonly Name: string = 'skills';
   private readonly skillsDir: string;
@@ -224,6 +335,26 @@ export class SkillsTool extends BaseTool<SkillsToolParams, ToolResult> {
     return null;
   }
 
+  /**
+   * Gets a human-readable description of the skills tool operation
+   * @param params Parameters for the tool execution
+   * @returns A markdown string describing what the tool will do
+   */
+  getDescription(params: SkillsToolParams): string {
+    switch (params.action) {
+      case 'list':
+        return 'List available skills';
+      case 'load':
+        return `Load skill "${params.skill_name}"`;
+      case 'execute': {
+        const args = params.arguments ? ` ${params.arguments}` : '';
+        return `Execute skill "${params.skill_name}"${args}`;
+      }
+      default:
+        return `Skills ${params.action}`;
+    }
+  }
+
   async execute(
     params: SkillsToolParams,
     signal: AbortSignal,
@@ -268,7 +399,7 @@ export class SkillsTool extends BaseTool<SkillsToolParams, ToolResult> {
   private executeList(): ToolResult {
     try {
       // Collect skills from all locations
-      const skills: Map<string, { name: string; description: string; source: string }> = new Map();
+      const skills: Map<string, { name: string; description: string; source: string; hasScripts: boolean; scriptsInfo?: string }> = new Map();
 
       // Helper to add skills from a directory
       const addSkillsFromDir = (dirPath: string, source: string): void => {
@@ -289,10 +420,17 @@ export class SkillsTool extends BaseTool<SkillsToolParams, ToolResult> {
             if (skillData) {
               const description = skillData.frontmatter.description ||
                 extractDescriptionFromContent(skillData.markdown);
+
+              // Detect scripts
+              const scripts = detectSkillScripts(skillData.skillDir, skillData.frontmatter.hooks);
+              const hasScripts = scripts.length > 0;
+
               skills.set(entry.name, {
                 name: entry.name,
                 description,
                 source,
+                hasScripts,
+                scriptsInfo: hasScripts ? scripts.map(s => s.path).join(', ') : undefined,
               });
             }
           }
@@ -319,7 +457,8 @@ export class SkillsTool extends BaseTool<SkillsToolParams, ToolResult> {
         .map((skill) => {
           const sourceTag = skill.source === 'Project' ? '[Project]' :
                           skill.source === 'Legacy' ? '[Legacy]' : '[Personal]';
-          return `- ${skill.name} ${sourceTag}: ${skill.description}`;
+          const scriptsTag = skill.hasScripts ? ' [has scripts]' : '';
+          return `- ${skill.name} ${sourceTag}${scriptsTag}: ${skill.description}`;
         })
         .join('\n');
 
@@ -405,6 +544,12 @@ export class SkillsTool extends BaseTool<SkillsToolParams, ToolResult> {
       // Append hook output if any
       if (hookOutput.length > 0) {
         message += `\n\n--- Hook Output ---\n${hookOutput.join('\n')}`;
+      }
+
+      // Detect and append scripts information
+      const scripts = detectSkillScripts(skillData.skillDir, skillData.frontmatter.hooks);
+      if (scripts.length > 0) {
+        message += formatScriptsInfo(scripts, skillData.skillDir);
       }
 
       return {
@@ -508,6 +653,12 @@ export class SkillsTool extends BaseTool<SkillsToolParams, ToolResult> {
       // Append hook output if any
       if (hookOutput.length > 0) {
         resultContent += `\n\n--- Hook Output ---\n${hookOutput.join('\n')}`;
+      }
+
+      // Detect and append scripts information
+      const scripts = detectSkillScripts(skillData.skillDir, skillData.frontmatter.hooks);
+      if (scripts.length > 0) {
+        resultContent += formatScriptsInfo(scripts, skillData.skillDir);
       }
 
       return {

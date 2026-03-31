@@ -125,6 +125,66 @@ export interface SkillHooks {
 }
 
 /**
+ * Information about a script file in a skill
+ */
+export interface SkillScriptInfo {
+  /** Relative path from skill directory */
+  path: string;
+  /** Absolute path to the script */
+  absolutePath: string;
+  /** Detected interpreter based on file extension */
+  interpreter: string;
+  /** Hook this script is associated with (if any) */
+  hook?: keyof SkillHooks;
+}
+
+/**
+ * Maps file extensions to interpreters
+ */
+export const SCRIPT_INTERPRETERS: Record<string, string> = {
+  '.py': 'python3',
+  '.js': 'node',
+  '.ts': 'npx tsx',
+  '.sh': 'bash',
+  '.bash': 'bash',
+  '.zsh': 'zsh',
+  '.rb': 'ruby',
+  '.php': 'php',
+};
+
+/**
+ * Get the tools that should be auto-allowed for a skill with scripts
+ *
+ * @param scripts - Array of detected scripts
+ * @returns Array of tool names that should be pre-approved
+ */
+export function getAutoAllowedTools(scripts: SkillScriptInfo[]): string[] {
+  const tools = new Set<string>();
+
+  for (const script of scripts) {
+    const interpreter = script.interpreter.toLowerCase();
+
+    // Map interpreters to required tools
+    if (interpreter === 'python3' || interpreter === 'python') {
+      tools.add('Bash'); // Python scripts need Bash to run
+    } else if (interpreter === 'node' || interpreter === 'npx') {
+      tools.add('Bash'); // Node scripts need Bash to run
+    } else if (interpreter === 'bash' || interpreter === 'sh' || interpreter === 'zsh') {
+      tools.add('Bash');
+    } else if (interpreter === 'ruby') {
+      tools.add('Bash');
+    } else if (interpreter === 'php') {
+      tools.add('Bash');
+    } else if (interpreter !== 'unknown') {
+      // For other interpreters, assume Bash is needed
+      tools.add('Bash');
+    }
+  }
+
+  return Array.from(tools);
+}
+
+/**
  * Source type of a skill, affects priority
  */
 export enum SkillSource {
@@ -171,6 +231,9 @@ export interface Skill {
 
   /** Absolute path to the skill directory */
   skillDir: string;
+
+  /** Detected scripts in the skill (from scripts/ directory or hooks) */
+  scripts?: SkillScriptInfo[];
 }
 
 /**

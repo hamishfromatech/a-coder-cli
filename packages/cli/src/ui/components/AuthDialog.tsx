@@ -6,7 +6,7 @@
 
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { Colors } from '../colors.js';
+import { Colors, Semantic } from '../colors.js';
 import { RadioButtonSelect } from './shared/RadioButtonSelect.js';
 import { LoadedSettings, SettingScope } from '../../config/settings.js';
 import { AuthType } from '@a-coder/core';
@@ -165,7 +165,7 @@ export function AuthDialog({
   return (
     <Box
       borderStyle="single"
-      borderColor={Colors.Gray}
+      borderColor={Semantic.Muted}
       flexDirection="column"
       padding={1}
       width="100%"
@@ -184,17 +184,17 @@ export function AuthDialog({
       </Box>
       {errorMessage && (
         <Box marginTop={1}>
-          <Text color={Colors.AccentRed} wrap="wrap">{errorMessage}</Text>
+          <Text color={Semantic.Error} wrap="wrap">{errorMessage}</Text>
         </Box>
       )}
       <Box marginTop={1}>
-        <Text color={Colors.AccentPurple}>(Use Enter to Set Auth)</Text>
+        <Text color={Semantic.Muted}>(Use Enter to Set Auth)</Text>
       </Box>
       <Box marginTop={1}>
         <Text wrap="wrap">Terms of Services and Privacy Notice for A-Coder CLI</Text>
       </Box>
       <Box marginTop={1}>
-        <Text color={Colors.AccentBlue} wrap="wrap">
+        <Text color={Semantic.Info} wrap="wrap">
           {'https://github.com/QwenLM/Qwen3-Coder/blob/main/README.md'}
         </Text>
       </Box>

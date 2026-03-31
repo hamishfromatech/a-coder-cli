@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { Box, Text } from 'ink';
-import { Colors } from '../colors.js';
+import { Colors, Semantic } from '../colors.js';
 import { formatDuration } from '../utils/formatters.js';
 import {
   calculateAverageLatency,
@@ -126,7 +126,7 @@ export const ModelStatsDisplay: React.FC = () => {
           return (
             <Text
               color={
-                m.api.totalErrors > 0 ? Colors.AccentRed : Colors.Foreground
+                m.api.totalErrors > 0 ? Semantic.Error : Colors.Foreground
               }
             >
               {m.api.totalErrors.toLocaleString()} ({errorRate.toFixed(1)}%)

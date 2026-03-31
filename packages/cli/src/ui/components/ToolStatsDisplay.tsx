@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { Box, Text } from 'ink';
-import { Colors } from '../colors.js';
+import { Colors, Semantic } from '../colors.js';
 import { formatDuration } from '../utils/formatters.js';
 import {
   getStatusColor,
@@ -157,7 +157,7 @@ export const ToolStatsDisplay: React.FC = () => {
           <Text> » Accepted:</Text>
         </Box>
         <Box width={AVG_DURATION_COL_WIDTH} justifyContent="flex-end">
-          <Text color={Colors.AccentGreen}>{totalDecisions.accept}</Text>
+          <Text color={Semantic.Success}>{totalDecisions.accept}</Text>
         </Box>
       </Box>
       <Box>
@@ -167,7 +167,7 @@ export const ToolStatsDisplay: React.FC = () => {
           <Text> » Rejected:</Text>
         </Box>
         <Box width={AVG_DURATION_COL_WIDTH} justifyContent="flex-end">
-          <Text color={Colors.AccentRed}>{totalDecisions.reject}</Text>
+          <Text color={Semantic.Error}>{totalDecisions.reject}</Text>
         </Box>
       </Box>
       <Box>
@@ -177,7 +177,7 @@ export const ToolStatsDisplay: React.FC = () => {
           <Text> » Modified:</Text>
         </Box>
         <Box width={AVG_DURATION_COL_WIDTH} justifyContent="flex-end">
-          <Text color={Colors.AccentYellow}>{totalDecisions.modify}</Text>
+          <Text color={Semantic.Warning}>{totalDecisions.modify}</Text>
         </Box>
       </Box>
 

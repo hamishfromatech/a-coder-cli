@@ -6,7 +6,8 @@
 
 import React from 'react';
 import { Box, Text } from 'ink';
-import { Colors } from '../colors.js';
+import { Semantic } from '../colors.js';
+import { getMessageIcon } from '../utils/icons.js';
 
 interface ConsoleSummaryDisplayProps {
   errorCount: number;
@@ -16,14 +17,12 @@ interface ConsoleSummaryDisplayProps {
 export const ConsoleSummaryDisplay: React.FC<ConsoleSummaryDisplayProps> = ({
   errorCount,
 }) => {
-  const errorIcon = '\u2716'; // Heavy multiplication x (✖)
-
   return (
     <Box>
       {errorCount > 0 && (
-        <Text color={Colors.AccentRed}>
-          {errorIcon} {errorCount} error{errorCount > 1 ? 's' : ''}{' '}
-          <Text color={Colors.Gray}>(ctrl+e for details)</Text>
+        <Text color={Semantic.Error}>
+          {getMessageIcon('error')} {errorCount} error{errorCount > 1 ? 's' : ''}{' '}
+          <Text color={Semantic.Muted}>(ctrl+e for details)</Text>
         </Text>
       )}
     </Box>

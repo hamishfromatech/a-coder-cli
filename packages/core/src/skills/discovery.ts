@@ -9,7 +9,7 @@ import path from 'path';
 import os from 'os';
 import { Config } from '../config/config.js';
 import { GEMINI_DIR } from '../utils/paths.js';
-import { Skill, SkillSource, SkillDiscoveryOptions, SkillFileTracking } from './types.js';
+import { Skill, SkillSource, SkillDiscoveryOptions, SkillFileTracking, SkillScriptInfo, SCRIPT_INTERPRETERS, SkillHooks } from './types.js';
 import { parseFrontmatter, extractDescriptionFromContent, SkillFrontmatterError } from './frontmatter.js';
 
 /**
@@ -71,7 +71,24 @@ export class SkillDiscovery {
     const legacySkills = await this.discoverFromLocation(legacySkillsDir, SkillSource.Personal);
     skills.push(...legacySkills);
 
-    return skills;
+    // Deduplicate skills by name (keep highest priority skill for each name)
+    // Priority: Enterprise > Personal > Project > Plugin > Nested
+    const deduplicatedSkills = new Map<string, Skill>();
+    for (const skill of skills) {
+      const existingSkill = deduplicatedSkills.get(skill.name);
+      if (!existingSkill) {
+        deduplicatedSkills.set(skill.name, skill);
+      } else {
+        // Keep the skill with higher priority
+        const existingPriority = this.getSkillPriority(existingSkill.source);
+        const currentPriority = this.getSkillPriority(skill.source);
+        if (currentPriority > existingPriority) {
+          deduplicatedSkills.set(skill.name, skill);
+        }
+      }
+    }
+
+    return Array.from(deduplicatedSkills.values());
   }
 
   /**
@@ -164,6 +181,9 @@ export class SkillDiscovery {
       // Track supporting file paths for lazy loading
       this.trackSupportingFiles(id, skillDir);
 
+      // Detect scripts in the skill directory
+      const scripts = this.detectScripts(skillDir, frontmatter.hooks);
+
       const skill: Skill = {
         id,
         name,
@@ -173,6 +193,7 @@ export class SkillDiscovery {
         content: markdownContent,
         supportingFiles: new Map(),
         skillDir,
+        scripts,
       };
 
       return skill;
@@ -307,6 +328,90 @@ export class SkillDiscovery {
       return [];
     }
     return Array.from(tracking.supportingFilePaths.keys());
+  }
+
+  /**
+   * Detect scripts in a skill directory
+   *
+   * Scans the scripts/ subdirectory and maps hook-defined scripts.
+   *
+   * @param skillDir - The skill directory
+   * @param hooks - Optional hook definitions from frontmatter
+   * @returns Array of detected script information
+   */
+  detectScripts(skillDir: string, hooks?: SkillHooks): SkillScriptInfo[] {
+    const scripts: SkillScriptInfo[] = [];
+    const scriptsDir = path.join(skillDir, 'scripts');
+
+    // Map hook names to script paths
+    const hookScripts: Map<string, keyof SkillHooks> = new Map();
+    if (hooks) {
+      if (hooks.onLoad) hookScripts.set(hooks.onLoad, 'onLoad');
+      if (hooks.onActivate) hookScripts.set(hooks.onActivate, 'onActivate');
+      if (hooks.onDeactivate) hookScripts.set(hooks.onDeactivate, 'onDeactivate');
+      if (hooks.onUnload) hookScripts.set(hooks.onUnload, 'onUnload');
+    }
+
+    // Scan scripts directory if it exists
+    if (fs.existsSync(scriptsDir)) {
+      try {
+        const scanScriptsDir = (dir: string, relativePath = ''): void => {
+          const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+          for (const entry of entries) {
+            const entryPath = path.join(dir, entry.name);
+            const relativeEntryPath = path.join(relativePath, entry.name);
+
+            if (entry.isDirectory()) {
+              // Recursively scan subdirectories
+              scanScriptsDir(entryPath, relativeEntryPath);
+            } else if (entry.isFile()) {
+              // Check if it's a script file
+              const ext = path.extname(entry.name).toLowerCase();
+              const interpreter = SCRIPT_INTERPRETERS[ext];
+
+              // Get interpreter - from extension or from shebang
+              let detectedInterpreter = interpreter;
+              if (!detectedInterpreter) {
+                // Try to detect from shebang
+                try {
+                  const content = fs.readFileSync(entryPath, 'utf-8');
+                  const firstLine = content.split('\n')[0];
+                  if (firstLine.startsWith('#!')) {
+                    const shebang = firstLine.slice(2).trim();
+                    // Handle '#!/usr/bin/env python' style
+                    if (shebang.startsWith('/usr/bin/env ')) {
+                      detectedInterpreter = shebang.slice('/usr/bin/env '.length).split(' ')[0];
+                    } else if (shebang.startsWith('/')) {
+                      // Extract interpreter name from path
+                      detectedInterpreter = path.basename(shebang.split(' ')[0]);
+                    }
+                  }
+                } catch {
+                  // Ignore read errors
+                }
+              }
+
+              if (detectedInterpreter || ext === '' || hookScripts.has(relativeEntryPath)) {
+                // It's a script or is referenced by hooks
+                scripts.push({
+                  path: path.join('scripts', relativeEntryPath),
+                  absolutePath: entryPath,
+                  interpreter: detectedInterpreter || 'unknown',
+                  hook: hookScripts.get(relativeEntryPath),
+                });
+              }
+            }
+          }
+        };
+
+        scanScriptsDir(scriptsDir);
+      } catch (error) {
+        console.warn(`Warning: Could not scan scripts directory ${scriptsDir}: ${error}`);
+      }
+    }
+
+    return scripts;
   }
 
   /**

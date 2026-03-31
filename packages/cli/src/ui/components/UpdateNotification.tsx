@@ -5,7 +5,8 @@
  */
 
 import { Box, Text } from 'ink';
-import { Colors } from '../colors.js';
+import { Colors, Semantic } from '../colors.js';
+import { Icons } from '../utils/icons.js';
 
 interface UpdateNotificationProps {
   message: string;
@@ -13,11 +14,17 @@ interface UpdateNotificationProps {
 
 export const UpdateNotification = ({ message }: UpdateNotificationProps) => (
   <Box
-    borderStyle="round"
-    borderColor={Colors.AccentYellow}
+    borderStyle="single"
+    borderColor={Semantic.Warning}
     paddingX={1}
     marginY={1}
+    flexDirection="row"
   >
-    <Text color={Colors.AccentYellow}>{message}</Text>
+    <Box paddingRight={1}>
+      <Text bold color={Semantic.Warning}>{Icons.UpdateLabel}</Text>
+    </Box>
+    <Box flexGrow={1}>
+      <Text wrap="wrap" color={Colors.Foreground}>{message}</Text>
+    </Box>
   </Box>
 );

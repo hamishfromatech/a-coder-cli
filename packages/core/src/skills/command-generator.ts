@@ -30,12 +30,19 @@ export interface SlashCommand {
  */
 export function generateSlashCommands(skills: Skill[]): SlashCommand[] {
   const commands: SlashCommand[] = [];
+  const seenNames = new Set<string>();
 
   for (const skill of skills) {
     // Skip skills that are not user-invocable
     if (skill.frontmatter.userInvocable === false) {
       continue;
     }
+
+    // Skip duplicate skill names (keep first occurrence)
+    if (seenNames.has(skill.name)) {
+      continue;
+    }
+    seenNames.add(skill.name);
 
     const command = createSkillCommand(skill);
     commands.push(command);

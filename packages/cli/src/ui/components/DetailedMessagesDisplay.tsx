@@ -6,9 +6,10 @@
 
 import React from 'react';
 import { Box, Text } from 'ink';
-import { Colors } from '../colors.js';
+import { Colors, Semantic } from '../colors.js';
 import { ConsoleMessageItem } from '../types.js';
 import { MaxSizedBox } from './shared/MaxSizedBox.js';
+import { getMessageIcon } from '../utils/icons.js';
 
 interface DetailedMessagesDisplayProps {
   messages: ConsoleMessageItem[];
@@ -30,33 +31,33 @@ export const DetailedMessagesDisplay: React.FC<
     <Box
       flexDirection="column"
       marginTop={1}
-      borderStyle="round"
-      borderColor={Colors.Gray}
+      borderStyle="single"
+      borderColor={Semantic.Muted}
       paddingX={1}
       width={width}
     >
       <Box marginBottom={1}>
         <Text bold color={Colors.Foreground}>
-          Debug Console <Text color={Colors.Gray}>(ctrl+e to close)</Text>
+          Debug Console <Text color={Semantic.Muted}>(ctrl+e to close)</Text>
         </Text>
       </Box>
       <MaxSizedBox maxHeight={maxHeight} maxWidth={width - borderAndPadding}>
         {messages.map((msg, index) => {
           let textColor = Colors.Foreground;
-          let icon = '\u2139'; // Information source (ℹ)
+          let icon = getMessageIcon('log');
 
           switch (msg.type) {
             case 'warn':
-              textColor = Colors.AccentYellow;
-              icon = '\u26A0'; // Warning sign (⚠)
+              textColor = Semantic.Warning;
+              icon = getMessageIcon('warn');
               break;
             case 'error':
-              textColor = Colors.AccentRed;
-              icon = '\u2716'; // Heavy multiplication x (✖)
+              textColor = Semantic.Error;
+              icon = getMessageIcon('error');
               break;
             case 'debug':
-              textColor = Colors.Gray; // Or Colors.Gray
-              icon = '\u1F50D'; // Left-pointing magnifying glass (????)
+              textColor = Semantic.Muted;
+              icon = getMessageIcon('debug');
               break;
             case 'log':
             default:
@@ -70,7 +71,7 @@ export const DetailedMessagesDisplay: React.FC<
               <Text color={textColor} wrap="wrap">
                 {msg.content}
                 {msg.count && msg.count > 1 && (
-                  <Text color={Colors.Gray}> (x{msg.count})</Text>
+                  <Text color={Semantic.Muted}> (x{msg.count})</Text>
                 )}
               </Text>
             </Box>
