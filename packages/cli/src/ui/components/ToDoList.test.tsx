@@ -22,6 +22,15 @@ vi.mock('../colors.js', () => ({
     Gray: 'gray',
     LightBlue: 'blue',
   },
+  Semantic: {
+    Info: 'blue',
+    Success: 'green',
+    Warning: 'yellow',
+    Error: 'red',
+    Primary: 'white',
+    Secondary: 'gray',
+    Muted: 'gray',
+  },
 }));
 
 describe('ToDoList', () => {

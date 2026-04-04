@@ -48,8 +48,8 @@ export const Header: React.FC<HeaderProps> = ({
       </Text>
       {nightly && (
         <Box width="100%" flexDirection="row" justifyContent="flex-end">
-          <Text bold color={Semantic.Muted}>
-            v{version}
+          <Text color={Semantic.Muted}>
+            nightly · v{version}
           </Text>
         </Box>
       )}

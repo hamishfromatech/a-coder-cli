@@ -311,9 +311,10 @@ export const useGeminiStream = (
         }
 
         // Handle @-commands (which might involve tool calls)
+        // Pass the original query (not trimmedQuery) to preserve pastedInfo
         if (isAtCommand(trimmedQuery)) {
           const atCommandResult = await handleAtCommand({
-            query: trimmedQuery,
+            query: query as string,
             config,
             addItem,
             onDebugMessage,
@@ -327,8 +328,14 @@ export const useGeminiStream = (
         } else {
           // Normal query for Gemini
           if (!alreadyAddedToHistory) {
+            // Check for paste info from InputPrompt
+            const pasteInfo = (query as unknown as { pastedInfo?: { pasteId: number; lineCount: number } }).pastedInfo;
             addItem(
-              { type: MessageType.USER, text: trimmedQuery },
+              {
+                type: MessageType.USER,
+                text: trimmedQuery,
+                ...(pasteInfo && { pastedInfo: pasteInfo }),
+              },
               userMessageTimestamp,
             );
           }

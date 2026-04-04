@@ -100,7 +100,7 @@ const ToolGroupMessageInternal: React.FC<ToolGroupMessageProps> = ({
         cause tearing.
       */
       width="100%"
-      marginLeft={1}
+      marginLeft={0}
     >
       {toolCalls.map((tool) => {
         const isConfirming = toolAwaitingApproval?.callId === tool.callId;

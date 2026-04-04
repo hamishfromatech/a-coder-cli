@@ -6,7 +6,7 @@
 
 import { useState, useCallback } from 'react';
 import { type HistoryItem, MessageType } from '../types.js';
-import { getAvailableSkills } from '@a-coder/core';
+import { Config, getAvailableSkills } from '@a-coder/core';
 
 interface UseSkillsCommandReturn {
   isSkillsDialogOpen: boolean;
@@ -18,13 +18,15 @@ interface UseSkillsCommandReturn {
 export const useSkillsCommand = (
   addItem: (item: Omit<HistoryItem, 'id'>, timestamp: number) => void,
   submitQuery: (query: string) => void,
+  config: Config | null,
 ): UseSkillsCommandReturn => {
   const [isSkillsDialogOpen, setIsSkillsDialogOpen] = useState(false);
   const [availableSkills, setAvailableSkills] = useState<string[]>([]);
 
-  const openSkillsDialog = useCallback(() => {
+  const openSkillsDialog = useCallback(async () => {
     try {
-      const skills = getAvailableSkills();
+      const currentPath = config?.getProjectRoot?.() || process.cwd();
+      const skills = await getAvailableSkills(config || undefined, currentPath);
       setAvailableSkills(skills);
       setIsSkillsDialogOpen(true);
     } catch (error) {
@@ -36,7 +38,7 @@ export const useSkillsCommand = (
         Date.now(),
       );
     }
-  }, [addItem]);
+  }, [addItem, config]);
 
   const handleSkillSelect = useCallback(
     (skillName: string | undefined) => {
@@ -46,7 +48,7 @@ export const useSkillsCommand = (
         // By sending this message, the LLM is encouraged to use the skills tool
         // to load the instructions and then proceed.
         submitQuery(
-          `I want to use the "${skillName}" skill. Please load it and proceed with the task.`,
+          `I want to use the "${skillName}" skill. Use the skills tool with action="load" and skill_name="${skillName}" to load the skill instructions, then proceed with the task.`,
         );
       }
     },

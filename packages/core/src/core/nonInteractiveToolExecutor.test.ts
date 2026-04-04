@@ -15,11 +15,13 @@ import {
   Config,
 } from '../index.js';
 import { Part, Type } from '@google/genai';
+import { resetHookExecutor } from '../hooks/hookExecutor.js';
 
 const mockConfig = {
   getSessionId: () => 'test-session-id',
   getUsageStatisticsEnabled: () => true,
   getDebugMode: () => false,
+  getTargetDir: () => process.cwd(),
 } as unknown as Config;
 
 describe('executeToolCall', () => {
@@ -28,6 +30,7 @@ describe('executeToolCall', () => {
   let abortController: AbortController;
 
   beforeEach(() => {
+    resetHookExecutor();
     mockTool = {
       name: 'testTool',
       displayName: 'Test Tool',
@@ -251,5 +254,36 @@ describe('executeToolCall', () => {
       },
       imageDataPart,
     ]);
+  });
+
+  it('should proceed when no hooks are configured', async () => {
+    const request: ToolCallRequestInfo = {
+      callId: 'call6',
+      name: 'testTool',
+      args: { param1: 'value1' },
+      isClientInitiated: false,
+      prompt_id: 'prompt-id-6',
+    };
+    const toolResult: ToolResult = {
+      llmContent: 'No hooks configured',
+      returnDisplay: 'No hooks result',
+    };
+    vi.mocked(mockToolRegistry.getTool).mockReturnValue(mockTool);
+    vi.mocked(mockTool.execute).mockResolvedValue(toolResult);
+
+    const response = await executeToolCall(
+      mockConfig,
+      request,
+      mockToolRegistry,
+      abortController.signal,
+    );
+
+    expect(response.callId).toBe('call6');
+    expect(response.error).toBeUndefined();
+    expect(response.resultDisplay).toBe('No hooks result');
+    expect(mockTool.execute).toHaveBeenCalledWith(
+      request.args,
+      abortController.signal,
+    );
   });
 });

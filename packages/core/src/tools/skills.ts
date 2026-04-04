@@ -56,24 +56,55 @@ export interface SkillsToolParams {
 export const getSkillsDir = () => path.join(os.homedir(), GEMINI_DIR, 'skills');
 
 /**
- * Get available skill names from the legacy skills directory
- * @deprecated Use SkillDiscovery instead
+ * Get available skill names from all locations using SkillDiscovery
+ *
+ * Discovers skills from all locations:
+ * - Personal: ~/.claude/skills/
+ * - Project: .claude/skills/ and .a-coder-cli/skills/
+ * - Nested: <current-path>/.claude/skills/
+ * - Legacy: ~/.a-coder-cli/skills/
+ *
+ * @param config - Optional Config instance for skill discovery
+ * @param currentPath - Optional current working path for nested skill discovery
+ * @returns Array of available skill names (deduplicated by name, highest priority wins)
  */
-export const getAvailableSkills = (): string[] => {
-  const skillsDir = getSkillsDir();
-  if (!fs.existsSync(skillsDir)) {
-    return [];
-  }
+export const getAvailableSkills = async (
+  config?: any,
+  currentPath?: string,
+): Promise<string[]> => {
   try {
-    const entries = fs.readdirSync(skillsDir, { withFileTypes: true });
-    return entries
-      .filter((dirent) => dirent.isDirectory())
-      .filter((dirent) =>
-        fs.existsSync(path.join(skillsDir, dirent.name, 'SKILL.md')),
-      )
-      .map((dirent) => dirent.name);
+    // Use SkillDiscovery if config is provided
+    if (config) {
+      const { SkillDiscovery } = await import('../skills/discovery.js');
+      const discovery = new SkillDiscovery(config);
+      const skills = await discovery.discoverAll({
+        currentPath,
+        includeNested: true,
+      });
+      // Return unique skill names (SkillDiscovery already handles deduplication by priority)
+      return [...new Set(skills.map((s) => s.name))];
+    }
+
+    // Fallback to legacy behavior if no config provided
+    // This maintains backward compatibility for callers that don't have config
+    const skillsDir = getLegacySkillsDir();
+    if (!fs.existsSync(skillsDir)) {
+      return [];
+    }
+    try {
+      const entries = fs.readdirSync(skillsDir, { withFileTypes: true });
+      return entries
+        .filter((dirent) => dirent.isDirectory())
+        .filter((dirent) =>
+          fs.existsSync(path.join(skillsDir, dirent.name, 'SKILL.md')),
+        )
+        .map((dirent) => dirent.name);
+    } catch (error) {
+      console.error('Error listing skills:', error);
+      return [];
+    }
   } catch (error) {
-    console.error('Error listing skills:', error);
+    console.warn('Warning: Could not discover skills:', error);
     return [];
   }
 };
@@ -285,7 +316,7 @@ export class SkillsTool extends BaseTool<SkillsToolParams, ToolResult> {
     super(
       SkillsTool.Name,
       'Skills',
-      'Manage and load specialized skills to enhance capabilities. Use "list" to see available skills, "load" to load a skill into context, and "execute" to run a skill as a standalone command.',
+      'Manage and load specialized skills (custom slash commands) to enhance capabilities. Use action="list" to see available skills, action="load" to load a skill\'s instructions into context, and action="execute" to run a skill as a standalone command. Skills are defined in SKILL.md files with YAML frontmatter.',
       {
         properties: {
           action: {

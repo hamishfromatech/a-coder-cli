@@ -254,6 +254,7 @@ function generateFallbackDescription(
  */
 export function mapToDisplay(
   toolOrTools: TrackedToolCall[] | TrackedToolCall,
+  collapsible?: boolean,
 ): HistoryItemToolGroup {
   const allToolCalls = Array.isArray(toolOrTools) ? toolOrTools : [toolOrTools];
   // Filter out write_todos as it has its own dedicated UI component
@@ -359,5 +360,6 @@ export function mapToDisplay(
   return {
     type: 'tool_group',
     tools: toolDisplays,
+    collapsible,
   };
 }

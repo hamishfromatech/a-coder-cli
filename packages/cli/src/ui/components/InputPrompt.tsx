@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
 import { Box, Text } from 'ink';
 import { Colors, Semantic } from '../colors.js';
 import { SuggestionsDisplay } from './SuggestionsDisplay.js';
@@ -60,9 +60,13 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
   setShellModeActive,
 }) => {
   const [justNavigatedHistory, setJustNavigatedHistory] = useState(false);
-  
+
   const effectivePlaceholder = disabled ? '  A-Coder is thinking...' : placeholder;
   const effectiveFocus = focus && !disabled;
+
+  // Track paste events using the key.paste flag from useKeypress
+  const pasteCounterRef = useRef(0);
+  const wasPastedRef = useRef(false);
 
   const completion = useCompletion(
     buffer.text,
@@ -81,10 +85,30 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
       if (shellModeActive) {
         shellHistory.addCommandToHistory(submittedValue);
       }
+      // Check if this was pasted content
+      const lineCount = submittedValue.split('\n').length;
+      const wasPasted = wasPastedRef.current && lineCount > 1;
+
+      // Create the submit value with paste info if applicable
+      let valueToSubmit: string;
+      if (wasPasted) {
+        // Attach paste info to the string object
+        (submittedValue as unknown as { pastedInfo?: { pasteId: number; lineCount: number } }).pastedInfo = {
+          pasteId: pasteCounterRef.current,
+          lineCount,
+        };
+        valueToSubmit = submittedValue;
+      } else {
+        valueToSubmit = submittedValue;
+      }
+
+      // Reset paste tracking
+      wasPastedRef.current = false;
+
       // Clear the buffer *before* calling onSubmit to prevent potential re-submission
       // if onSubmit triggers a re-render while the buffer still holds the old value.
       buffer.setText('');
-      onSubmit(submittedValue);
+      onSubmit(valueToSubmit);
       resetCompletionState();
     },
     [onSubmit, buffer, resetCompletionState, shellModeActive, shellHistory],
@@ -241,6 +265,12 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
     (key: Key) => {
       if (!focus) {
         return;
+      }
+
+      // Track paste events - key.paste is set by useKeypress hook
+      if (key.paste) {
+        wasPastedRef.current = true;
+        pasteCounterRef.current += 1;
       }
 
       if (
@@ -436,11 +466,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
 
   return (
     <>
-      <Box
-        borderStyle="single"
-        borderColor={disabled ? Semantic.Muted : (shellModeActive ? Semantic.Warning : Semantic.Info)}
-        paddingX={1}
-      >
+      <Box paddingX={0} paddingY={1}>
         <Text
           color={disabled ? Semantic.Muted : (shellModeActive ? Semantic.Warning : Semantic.Primary)}
           bold
@@ -452,10 +478,10 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
             effectiveFocus ? (
               <Text>
                 {chalk.inverse(effectivePlaceholder.slice(0, 1))}
-                <Text color={Semantic.Muted}>{effectivePlaceholder.slice(1)}</Text>
+                <Text color={Semantic.Primary} dimColor>{effectivePlaceholder.slice(1)}</Text>
               </Text>
             ) : (
-              <Text color={Semantic.Muted}>{effectivePlaceholder}</Text>
+              <Text color={Semantic.Primary} dimColor>{effectivePlaceholder}</Text>
             )
           ) : (
             linesToRender.map((lineText, visualIdxInRenderedSet) => {
@@ -477,7 +503,8 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
                         relativeVisualColForHighlight,
                         relativeVisualColForHighlight + 1,
                       ) || ' ';
-                    const highlighted = chalk.inverse(charToHighlight);
+                    // Use softer highlight for less visual noise
+                    const highlighted = chalk.bgBlackBright(charToHighlight);
                     display =
                       cpSlice(display, 0, relativeVisualColForHighlight) +
                       highlighted +
@@ -486,7 +513,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
                     relativeVisualColForHighlight === cpLen(display) &&
                     cpLen(display) === inputWidth
                   ) {
-                    display = display + chalk.inverse(' ');
+                    display = display + chalk.bgBlackBright(' ');
                   }
                 }
               }

@@ -40,42 +40,53 @@ export const LoadingIndicator: React.FC<LoadingIndicatorProps> = ({
 
   return (
     <Box marginTop={1} flexDirection="column">
-      {/* Main loading line - simplified */}
+      {/* Main loading line with spinner */}
       <Box>
-        <Box marginRight={1}>
+        <Box marginRight={2}>
           <GeminiRespondingSpinner
-            nonRespondingDisplay={isWaiting ? '⠏' : ''}
+            nonRespondingDisplay={isWaiting ? '⠏' : undefined}
           />
         </Box>
         {primaryText && (
-          <Text color={isWaiting ? Semantic.Warning : Semantic.Primary}>
+          <Text
+            color={isWaiting ? Semantic.Warning : Semantic.Primary}
+            bold={!isWaiting}
+          >
             {primaryText}
           </Text>
         )}
+        {/* Right-aligned content (e.g., model switch notification) */}
+        {rightContent && <Box marginLeft={2}>{rightContent}</Box>}
       </Box>
 
-      {/* Secondary info on separate line - only show relevant info */}
-      {!isWaiting && (
-        <Box marginLeft={3} marginTop={0} flexDirection="row">
-          <Text color={Semantic.Muted}>
-            {elapsedTime >= 5 && `${elapsedTime}s elapsed `}
-            {hasThought && !showThinking && '| ctrl+o for reasoning '}
-            | esc to cancel
+      {/* Secondary info: elapsed time, cancel hint, thought indicator */}
+      {!isWaiting && (elapsedTime >= 3 || hasThought) && (
+        <Box marginLeft={4} marginTop={0} flexDirection="row">
+          <Text color={Semantic.Primary} dimColor>
+            {elapsedTime >= 3 && `${elapsedTime.toFixed(1)}s`}
+            {elapsedTime >= 3 && hasThought && ' · '}
+            {hasThought && !showThinking && 'Reasoning hidden (ctrl+o)'}
+            {hasThought && showThinking && 'Showing reasoning'}
+            {!hasThought && elapsedTime >= 3 && 'esc to cancel'}
           </Text>
         </Box>
       )}
 
       {/* Thought description - show only when explicitly requested */}
       {showThinking && hasThought && (
-        <Box marginLeft={3} marginTop={0}>
-          <Text italic color={Semantic.Muted} wrap="wrap">
+        <Box
+          marginLeft={4}
+          marginTop={0}
+          paddingY={1}
+          paddingX={2}
+          borderStyle="round"
+          borderColor={Semantic.Secondary}
+        >
+          <Text color={Semantic.Secondary} wrap="wrap">
             {thought.description}
           </Text>
         </Box>
       )}
-
-      {/* Right content if needed */}
-      {rightContent && <Box>{rightContent}</Box>}
     </Box>
   );
 };

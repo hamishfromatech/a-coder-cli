@@ -10,9 +10,38 @@ import { Colors, Semantic } from '../../colors.js';
 
 interface UserMessageProps {
   text: string;
+  pastedInfo?: {
+    pasteId: number;
+    lineCount: number;
+  };
 }
 
-export const UserMessage: React.FC<UserMessageProps> = ({ text }) => {
+export const UserMessage: React.FC<UserMessageProps> = ({ text, pastedInfo }) => {
+  // If this was pasted content, show a collapsed view
+  if (pastedInfo) {
+    const { pasteId, lineCount } = pastedInfo;
+    const extraLines = lineCount > 1 ? ` +${lineCount - 1} lines` : '';
+
+    return (
+      <Box
+        flexDirection="row"
+        paddingX={1}
+        marginY={1}
+        alignSelf="flex-start"
+      >
+        <Box paddingRight={1}>
+          <Text bold>[YOU]</Text>
+        </Box>
+        <Box flexGrow={1}>
+          <Text color={Semantic.Muted}>
+            [Pasted text #{pasteId}{extraLines}]
+          </Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  // Normal message display
   return (
     <Box
       flexDirection="row"

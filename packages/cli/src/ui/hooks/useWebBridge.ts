@@ -118,6 +118,7 @@ export function useWebBridge({
             return {
               type: 'tool_group',
               tools: item.tools,
+              collapsible: item.collapsible,
               timestamp: item.id,
             };
           default:

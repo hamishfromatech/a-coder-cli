@@ -67,53 +67,75 @@ export const Footer: React.FC<FooterProps> = ({
   };
 
   return (
-    <Box marginTop={1} justifyContent="space-between" width="100%">
-      <Box flexShrink={1}>
-        <Text color={Semantic.Info} wrap="truncate" bold={nightly}>
-          {shortenPath(tildeifyPath(targetDir), pathLimit)}
-          {branchName && <Text color={Semantic.Muted}> ({branchName}*)</Text>}
-        </Text>
+    <Box
+      marginTop={1}
+      paddingTop={1}
+      justifyContent="space-between"
+      width="100%"
+    >
+      {/* Left: Path and git branch */}
+      <Box flexShrink={1} flexDirection="column">
+        <Box>
+          <Text color={Semantic.Info} wrap="truncate">
+            {shortenPath(tildeifyPath(targetDir), pathLimit)}
+          </Text>
+          {branchName && (
+            <Text color={Semantic.Info} dimColor>
+              {' '}
+              ({branchName}*)
+            </Text>
+          )}
+        </Box>
         {debugMode && (
-          <Text color={Semantic.Error}>
-            {' ' + (debugMessage || '--debug')}
+          <Text color={Semantic.Error} dimColor>
+            {debugMessage || '--debug'}
           </Text>
         )}
       </Box>
 
-      {/* Middle Section: Centered Sandbox Info */}
+      {/* Middle: Sandbox status */}
       <Box
         flexGrow={1}
         alignItems="center"
         justifyContent="center"
         display="flex"
+        flexDirection="column"
       >
         {process.env.SANDBOX && process.env.SANDBOX !== 'sandbox-exec' ? (
           <Text color={Semantic.Success}>
             {process.env.SANDBOX.replace(/^gemini-(?:cli-)?/, '')}
           </Text>
         ) : process.env.SANDBOX === 'sandbox-exec' ? (
-          <Text color={Semantic.Warning}>
-            MacOS Seatbelt{' '}
-            <Text color={Semantic.Muted}>({process.env.SEATBELT_PROFILE})</Text>
-          </Text>
+          <>
+            <Text color={Semantic.Warning}>
+              MacOS Seatbelt
+            </Text>
+            <Text color={Semantic.Warning} dimColor>
+              {process.env.SEATBELT_PROFILE}
+            </Text>
+          </>
         ) : (
-          <Text color={Semantic.Error}>
-            no sandbox <Text color={Semantic.Muted}>(see /docs)</Text>
-          </Text>
+          <>
+            <Text color={Semantic.Error} dimColor>
+              no sandbox
+            </Text>
+            <Text color={Semantic.Error} dimColor>
+              see /docs
+            </Text>
+          </>
         )}
       </Box>
 
-      {/* Right Section: Model info and status */}
-      <Box alignItems="center" flexShrink={1}>
+      {/* Right: Model and context usage */}
+      <Box alignItems="flex-end" flexShrink={1} flexDirection="column">
         <Text color={getColorForPercentage(percentage)} wrap="truncate">
-          {model}{' '}
-          <Text color={Semantic.Muted}>
-            ({(percentage * 100).toFixed(0)}% used)
-          </Text>
+          {model}
+        </Text>
+        <Text color={getColorForPercentage(percentage)} dimColor wrap="truncate">
+          {(percentage * 100).toFixed(0)}% context used
         </Text>
         {!showErrorDetails && errorCount > 0 && (
-          <Box marginLeft={1}>
-            <Text color={Semantic.Muted}>| </Text>
+          <Box>
             <ConsoleSummaryDisplay errorCount={errorCount} />
           </Box>
         )}

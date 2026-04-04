@@ -14,6 +14,28 @@ import { GeminiRespondingSpinner } from '../GeminiRespondingSpinner.js';
 import { MaxSizedBox } from '../shared/MaxSizedBox.js';
 import { getStatusIcon, getIcon } from '../../utils/icons.js';
 
+/**
+ * Determines the border color based on tool call status.
+ */
+function getBorderColor(status: ToolCallStatus): string {
+  switch (status) {
+    case ToolCallStatus.Error:
+      return Semantic.Error;
+    case ToolCallStatus.Confirming:
+      return Semantic.Warning;
+    case ToolCallStatus.Pending:
+      return Semantic.Warning;
+    case ToolCallStatus.Executing:
+      return Semantic.Info;
+    case ToolCallStatus.Success:
+      return Semantic.Success;
+    case ToolCallStatus.Canceled:
+      return Semantic.Muted;
+    default:
+      return Semantic.Secondary;
+  }
+}
+
 const STATIC_HEIGHT = 1;
 const RESERVED_LINE_COUNT = 5; // for tool name, status, padding etc.
 const STATUS_INDICATOR_WIDTH = 3;
@@ -64,7 +86,11 @@ export const ToolMessage: React.FC<ToolMessageProps> = ({
     }
   }
   return (
-    <Box paddingX={1} paddingY={0} flexDirection="column">
+    <Box
+      paddingX={0}
+      paddingY={1}
+      flexDirection="column"
+    >
       <Box minHeight={1}>
         <ToolStatusIndicator status={status} />
         <ToolInfo
@@ -116,33 +142,37 @@ type ToolStatusIndicatorProps = {
 
 const ToolStatusIndicator: React.FC<ToolStatusIndicatorProps> = ({
   status,
-}) => (
-  <Box minWidth={STATUS_INDICATOR_WIDTH}>
-    {status === ToolCallStatus.Pending && (
-      <Text color={Semantic.Warning}>{getIcon('Pending')}</Text>
-    )}
-    {status === ToolCallStatus.Executing && (
-      <GeminiRespondingSpinner
-        spinnerType="toggle"
-        nonRespondingDisplay={getIcon('Running')}
-      />
-    )}
-    {status === ToolCallStatus.Success && (
-      <Text color={Semantic.Success}>{getIcon('Success')}</Text>
-    )}
-    {status === ToolCallStatus.Confirming && (
-      <Text color={Semantic.Warning}>?</Text>
-    )}
-    {status === ToolCallStatus.Canceled && (
-      <Text color={Semantic.Muted}>{getIcon('Cancelled')}</Text>
-    )}
-    {status === ToolCallStatus.Error && (
-      <Text color={Semantic.Error} bold>
-        {getIcon('Error')}
-      </Text>
-    )}
-  </Box>
-);
+}) => {
+  const indicator = React.useMemo(() => {
+    switch (status) {
+      case ToolCallStatus.Pending:
+        return <Text color={Semantic.Warning}>{getIcon('Pending')}</Text>;
+      case ToolCallStatus.Executing:
+        return (
+          <GeminiRespondingSpinner
+            spinnerType="toggle"
+            nonRespondingDisplay={getIcon('Running')}
+          />
+        );
+      case ToolCallStatus.Success:
+        return <Text color={Semantic.Success}>{getIcon('Success')}</Text>;
+      case ToolCallStatus.Confirming:
+        return <Text color={Semantic.Warning}>⠸</Text>;
+      case ToolCallStatus.Canceled:
+        return <Text color={Semantic.Muted}>{getIcon('Cancelled')}</Text>;
+      case ToolCallStatus.Error:
+        return (
+          <Text color={Semantic.Error} bold>
+            {getIcon('Error')}
+          </Text>
+        );
+      default:
+        return <Text> </Text>;
+    }
+  }, [status]);
+
+  return <Box minWidth={STATUS_INDICATOR_WIDTH}>{indicator}</Box>;
+};
 
 type ToolInfo = {
   name: string;

@@ -65,6 +65,10 @@ export interface HistoryItemBase {
 export type HistoryItemUser = HistoryItemBase & {
   type: 'user';
   text: string;
+  pastedInfo?: {
+    pasteId: number;
+    lineCount: number;
+  };
 };
 
 export type HistoryItemGemini = HistoryItemBase & {
@@ -118,6 +122,7 @@ export type HistoryItemQuit = HistoryItemBase & {
 export type HistoryItemToolGroup = HistoryItemBase & {
   type: 'tool_group';
   tools: IndividualToolCallDisplay[];
+  collapsible?: boolean;
 };
 
 export type HistoryItemUserShell = HistoryItemBase & {

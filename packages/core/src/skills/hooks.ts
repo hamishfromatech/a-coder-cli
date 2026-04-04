@@ -27,6 +27,9 @@ export interface HookResult {
 
   /** Exit code of the hook script */
   exitCode?: number;
+
+  /** Environment variables written to CLAUDE_ENV_FILE (SessionStart hooks only) */
+  envUpdates?: Record<string, string>;
 }
 
 /**
@@ -34,6 +37,15 @@ export interface HookResult {
  *
  * Hook scripts are located in the skill's scripts/ directory
  * and are executed via the shell.
+ *
+ * Environment variables provided to scripts:
+ * - CLAUDE_PROJECT_DIR: Root path of the current project
+ * - CLAUDE_PLUGIN_ROOT: Directory where the plugin/skill resides
+ * - CLAUDE_ENV_FILE: Path to persist environment variables (SessionStart hooks only)
+ * - CLAUDE_SESSION_ID: Current session identifier
+ * - CLAUDE_CODE_REMOTE: Set to '1' if running in remote context
+ * - SKILL_NAME: Name of the skill
+ * - SKILL_DIR: Absolute path to skill directory
  */
 export class SkillHookExecutor {
   /**
@@ -43,6 +55,7 @@ export class SkillHookExecutor {
    * @param hookName - The name of the hook to execute
    * @param cwd - Current working directory for command execution
    * @param signal - Abort signal to cancel execution
+   * @param envFile - Optional path to environment file for persisting variables
    * @returns The hook execution result
    */
   async executeHook(
@@ -50,6 +63,7 @@ export class SkillHookExecutor {
     hookName: keyof SkillHooks,
     cwd: string,
     signal: AbortSignal,
+    envFile?: string,
   ): Promise<HookResult> {
     // Get the script path for the hook
     const scriptPath = this.getScriptPath(skill, hookName);
@@ -70,12 +84,22 @@ export class SkillHookExecutor {
     }
 
     try {
-      // Set up environment variables for the hook
+      // Create a temporary env file handler for capturing env updates
+      const envUpdates: Record<string, string> = {};
+      const tempEnvFile = envFile || this.createTempEnvFile();
+
+      // Set up environment variables for the hook (following Claude Code spec)
       const env = {
         ...process.env,
+        // Claude Code standard variables
+        CLAUDE_PROJECT_DIR: cwd,
+        CLAUDE_PLUGIN_ROOT: skill.skillDir,
+        CLAUDE_ENV_FILE: tempEnvFile,
+        CLAUDE_SESSION_ID: this.getSessionId(skill),
+        CLAUDE_CODE_REMOTE: process.env.CLAUDE_CODE_REMOTE || '',
+        // A-Coder specific variables
         SKILL_NAME: skill.name,
         SKILL_DIR: skill.skillDir,
-        CLAUDE_SESSION_ID: this.getSessionId(skill),
       };
 
       // Determine how to execute the script based on its extension and shebang
@@ -91,9 +115,27 @@ export class SkillHookExecutor {
 
       const output = stdout.trim() || stderr.trim() || '';
 
+      // Read any environment updates written to the env file
+      if (fs.existsSync(tempEnvFile)) {
+        const envContent = fs.readFileSync(tempEnvFile, 'utf-8');
+        const exportPattern = /^export\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*["']?([^"'\n]*)["']?/gm;
+        let match: RegExpExecArray | null;
+
+        while ((match = exportPattern.exec(envContent)) !== null) {
+          const [, key, value] = match;
+          envUpdates[key] = value;
+        }
+
+        // Clean up temp file if we created it
+        if (!envFile && fs.existsSync(tempEnvFile)) {
+          fs.unlinkSync(tempEnvFile);
+        }
+      }
+
       return {
         success: true,
         output,
+        envUpdates: Object.keys(envUpdates).length > 0 ? envUpdates : undefined,
       };
     } catch (error) {
       const errorMessage =
@@ -116,6 +158,7 @@ export class SkillHookExecutor {
    * @param hookNames - Array of hook names to execute
    * @param cwd - Current working directory for command execution
    * @param signal - Abort signal to cancel execution
+   * @param envFile - Optional path to environment file for persisting variables
    * @returns Array of hook execution results
    */
   async executeHooks(
@@ -123,11 +166,12 @@ export class SkillHookExecutor {
     hookNames: Array<keyof SkillHooks>,
     cwd: string,
     signal: AbortSignal,
+    envFile?: string,
   ): Promise<HookResult[]> {
     const results: HookResult[] = [];
 
     for (const hookName of hookNames) {
-      const result = await this.executeHook(skill, hookName, cwd, signal);
+      const result = await this.executeHook(skill, hookName, cwd, signal, envFile);
       results.push(result);
 
       // Stop if signal is aborted
@@ -166,6 +210,9 @@ export class SkillHookExecutor {
   /**
    * Build the command to execute a script, handling interpreters
    *
+   * Following Claude Code skill scripts specification:
+   * https://github.com/anthropics/claude-code/blob/main/plugins/plugin-dev/skills/hook-development/SKILL.md
+   *
    * @param scriptPath - Absolute path to the script
    * @returns The command string to execute
    */
@@ -174,22 +221,68 @@ export class SkillHookExecutor {
 
     // Check file extension for known interpreters
     switch (ext) {
-      case '.py':
-        return `python3 "${scriptPath}"`;
-      case '.js':
-        return `node "${scriptPath}"`;
-      case '.ts':
-        return `npx tsx "${scriptPath}"`;
+      // Shell scripts
       case '.sh':
-        return `bash "${scriptPath}"`;
       case '.bash':
         return `bash "${scriptPath}"`;
       case '.zsh':
         return `zsh "${scriptPath}"`;
+      case '.fish':
+        return `fish "${scriptPath}"`;
+      case '.ps1':
+        return `powershell -ExecutionPolicy Bypass -File "${scriptPath}"`;
+      case '.cmd':
+      case '.bat':
+        return `cmd.exe /c "${scriptPath}"`;
+
+      // Python
+      case '.py':
+      case '.pyw':
+        return `python3 "${scriptPath}"`;
+
+      // Node.js
+      case '.js':
+      case '.mjs':
+      case '.cjs':
+        return `node "${scriptPath}"`;
+      case '.ts':
+      case '.tsx':
+        return `npx tsx "${scriptPath}"`;
+
+      // Ruby
       case '.rb':
         return `ruby "${scriptPath}"`;
+
+      // PHP
       case '.php':
         return `php "${scriptPath}"`;
+
+      // Perl
+      case '.pl':
+      case '.pm':
+        return `perl "${scriptPath}"`;
+
+      // Raku
+      case '.raku':
+      case '.rakumod':
+        return `raku "${scriptPath}"`;
+
+      // Lua
+      case '.lua':
+        return `lua "${scriptPath}"`;
+
+      // Tcl
+      case '.tcl':
+        return `tclsh "${scriptPath}"`;
+
+      // AWK
+      case '.awk':
+        return `awk -f "${scriptPath}"`;
+
+      // SED
+      case '.sed':
+        return `sed -f "${scriptPath}"`;
+
       default:
         // For other files, try to execute directly (might have shebang)
         // Also handle files without extension by checking shebang
@@ -219,15 +312,22 @@ export class SkillHookExecutor {
   /**
    * Get session ID from skill
    *
-   * This is a placeholder - in a real implementation, this would
-   * come from the config or session context
-   *
    * @param _skill - The skill
    * @returns Session ID string or empty string
    */
   private getSessionId(_skill: Skill): string {
-    // This would be passed in from the config in a real implementation
     return process.env.CLAUDE_SESSION_ID || '';
+  }
+
+  /**
+   * Create a temporary environment file for capturing env updates
+   *
+   * @returns Path to the temporary env file
+   */
+  private createTempEnvFile(): string {
+    const tmpDir = require('os').tmpdir();
+    const randomId = Math.random().toString(36).substring(2, 15);
+    return path.join(tmpDir, `claude-env-${randomId}.sh`);
   }
 
   /**

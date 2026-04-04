@@ -4,36 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { GroundingMetadata } from '@google/genai';
 import { BaseTool, ToolResult } from './tools.js';
 import { Type } from '@google/genai';
 import { SchemaValidator } from '../utils/schemaValidator.js';
-
 import { getErrorMessage } from '../utils/errors.js';
+import { fetchWithTimeout } from '../utils/fetch.js';
 import { Config } from '../config/config.js';
-import { getResponseText } from '../utils/generateContentResponseUtilities.js';
-
-interface GroundingChunkWeb {
-  uri?: string;
-  title?: string;
-}
-
-interface GroundingChunkItem {
-  web?: GroundingChunkWeb;
-  // Other properties might exist if needed in the future
-}
-
-interface GroundingSupportSegment {
-  startIndex: number;
-  endIndex: number;
-  text?: string; // text is optional as per the example
-}
-
-interface GroundingSupportItem {
-  segment?: GroundingSupportSegment;
-  groundingChunkIndices?: number[];
-  confidenceScores?: number[]; // Optional as per example
-}
 
 /**
  * Parameters for the WebSearchTool.
@@ -42,44 +18,57 @@ export interface WebSearchToolParams {
   /**
    * The search query.
    */
-
   query: string;
+}
+
+/**
+ * A single search result from DuckDuckGo.
+ */
+export interface SearchResult {
+  title: string;
+  url: string;
+  snippet: string;
 }
 
 /**
  * Extends ToolResult to include sources for web search.
  */
 export interface WebSearchToolResult extends ToolResult {
-  sources?: GroundingMetadata extends { groundingChunks: GroundingChunkItem[] }
-    ? GroundingMetadata['groundingChunks']
-    : GroundingChunkItem[];
+  sources?: SearchResult[];
 }
 
 /**
- * A tool to perform web searches using Google Search via the Gemini API.
+ * DuckDuckGo HTML search URL endpoint.
  */
-export class WebSearchTool extends BaseTool<
-  WebSearchToolParams,
-  WebSearchToolResult
-> {
+const DDG_HTML_SEARCH_URL = 'https://html.duckduckgo.com/html/';
+
+/**
+ * Timeout for fetching search results in milliseconds.
+ */
+const SEARCH_FETCH_TIMEOUT_MS = 10000;
+
+/**
+ * Maximum number of search results to return.
+ */
+const MAX_RESULTS = 10;
+
+/**
+ * A tool to perform web searches using DuckDuckGo.
+ */
+export class WebSearchTool extends BaseTool<WebSearchToolParams, WebSearchToolResult> {
   static readonly Name: string = 'google_web_search';
 
-  constructor(private readonly config: Config) {
-    super(
-      WebSearchTool.Name,
-      'GoogleSearch',
-      'Performs a web search using Google Search (via the Gemini API) and returns the results. This tool is useful for finding information on the internet based on a query.',
-      {
-        type: Type.OBJECT,
-        properties: {
-          query: {
-            type: Type.STRING,
-            description: 'The search query to find information on the web.',
-          },
+  constructor(private readonly config?: Config) {
+    super(WebSearchTool.Name, 'GoogleSearch', 'Performs a web search using DuckDuckGo and returns the results. This tool is useful for finding information on the internet based on a query.', {
+      type: Type.OBJECT,
+      properties: {
+        query: {
+          type: Type.STRING,
+          description: 'The search query to find information on the web.',
         },
-        required: ['query'],
       },
-    );
+      required: ['query'],
+    });
   }
 
   /**
@@ -100,13 +89,104 @@ export class WebSearchTool extends BaseTool<
   }
 
   getDescription(params: WebSearchToolParams): string {
-    return `Searching the web for: "${params.query}"`;
+    return `Searching DuckDuckGo for: "${params.query}"`;
   }
 
-  async execute(
-    params: WebSearchToolParams,
-    signal: AbortSignal,
-  ): Promise<WebSearchToolResult> {
+  /**
+   * Parses DuckDuckGo HTML search results into structured data.
+   */
+  private parseSearchResults(html: string): SearchResult[] {
+    const results: SearchResult[] = [];
+
+    // DuckDuckGo HTML results use result__a class for titles
+    // Pattern: <a class="result__a" href="...">Title</a>
+    const titleRegex = /<a\s+class="result__a"\s+href="([^"]+)"[^>]*>([^<]+)<\/a>/gi;
+
+    let match;
+    while ((match = titleRegex.exec(html)) !== null && results.length < MAX_RESULTS) {
+      const url = match[1];
+      const title = this.cleanText(match[2]);
+
+      if (title && url) {
+        results.push({
+          title,
+          url: this.normalizeUrl(url),
+          snippet: '',
+        });
+      }
+    }
+
+    // If no results found with the primary regex, try alternative patterns
+    if (results.length === 0) {
+      // Alternative pattern for result links
+      const altRegex = /<a[^>]*class="result[^"]*"[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/gi;
+      while ((match = altRegex.exec(html)) !== null && results.length < MAX_RESULTS) {
+        const url = match[1];
+        const title = this.cleanText(match[2]);
+
+        if (title && url) {
+          results.push({
+            title,
+            url: this.normalizeUrl(url),
+            snippet: '',
+          });
+        }
+      }
+    }
+
+    // Extract snippets from result snippets if available
+    if (results.length > 0) {
+      const snippetRegex = /<a[^>]*class="result__snippet"[^>]*>([^<]*(?:<[^>]*>[^<]*)*)<\/a>/gi;
+      const snippets: string[] = [];
+      let snippetMatch;
+      while ((snippetMatch = snippetRegex.exec(html)) !== null) {
+        snippets.push(this.cleanText(snippetMatch[1]));
+      }
+
+      // Assign snippets to results
+      for (let i = 0; i < results.length && i < snippets.length; i++) {
+        results[i].snippet = snippets[i];
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Normalizes a URL, handling DuckDuckGo's redirect URLs.
+   */
+  private normalizeUrl(url: string): string {
+    // DuckDuckGo sometimes uses redirect URLs, extract the actual URL if needed
+    if (url.includes('uddg=')) {
+      try {
+        const urlObj = new URL(url);
+        const redirectedUrl = urlObj.searchParams.get('uddg');
+        if (redirectedUrl) {
+          return redirectedUrl;
+        }
+      } catch {
+        // Ignore parsing errors, return original
+      }
+    }
+    return url;
+  }
+
+  /**
+   * Cleans HTML text content.
+   */
+  private cleanText(text: string): string {
+    return text
+      .replace(/<[^>]*>/g, '')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  async execute(params: WebSearchToolParams, signal: AbortSignal): Promise<WebSearchToolResult> {
     const validationError = this.validateToolParams(params);
     if (validationError) {
       return {
@@ -114,83 +194,58 @@ export class WebSearchTool extends BaseTool<
         returnDisplay: validationError,
       };
     }
-    const geminiClient = this.config.getGeminiClient();
 
     try {
-      const response = await geminiClient.generateContent(
-        [{ role: 'user', parts: [{ text: params.query }] }],
-        { tools: [{ googleSearch: {} }] },
-        signal,
-      );
+      // Use GET request with query parameter for DuckDuckGo HTML
+      const searchUrl = `${DDG_HTML_SEARCH_URL}?q=${encodeURIComponent(params.query)}`;
 
-      const responseText = getResponseText(response);
-      const groundingMetadata = response.candidates?.[0]?.groundingMetadata;
-      const sources = groundingMetadata?.groundingChunks as
-        | GroundingChunkItem[]
-        | undefined;
-      const groundingSupports = groundingMetadata?.groundingSupports as
-        | GroundingSupportItem[]
-        | undefined;
+      const response = await fetchWithTimeout(searchUrl, SEARCH_FETCH_TIMEOUT_MS);
 
-      if (!responseText || !responseText.trim()) {
+      if (!response.ok) {
+        throw new Error(`DuckDuckGo returned status ${response.status}`);
+      }
+
+      const html = await response.text();
+
+      // Debug: log raw HTML for troubleshooting
+      if (this.config?.getDebugMode()) {
+        console.log('[WebSearch] Raw HTML response:', html.substring(0, 2000));
+      }
+
+      const results = this.parseSearchResults(html);
+
+      if (results.length === 0) {
         return {
-          llmContent: `No search results or information found for query: "${params.query}"`,
-          returnDisplay: 'No information found.',
+          llmContent: `No search results found for query: "${params.query}"`,
+          returnDisplay: 'No results found.',
         };
       }
 
-      let modifiedResponseText = responseText;
-      const sourceListFormatted: string[] = [];
+      // Format results for display
+      const formattedResults = results
+        .map(
+          (r, i) =>
+            `${i + 1}. **${r.title}**\n   URL: ${r.url}\n   ${r.snippet ? r.snippet.substring(0, 200) : ''}`,
+        )
+        .join('\n\n');
 
-      if (sources && sources.length > 0) {
-        sources.forEach((source: GroundingChunkItem, index: number) => {
-          const title = source.web?.title || 'Untitled';
-          const uri = source.web?.uri || 'No URI';
-          sourceListFormatted.push(`[${index + 1}] ${title} (${uri})`);
-        });
+      const sourcesList = results
+        .map((r, i) => `[${i + 1}] ${r.title} (${r.url})`)
+        .join('\n');
 
-        if (groundingSupports && groundingSupports.length > 0) {
-          const insertions: Array<{ index: number; marker: string }> = [];
-          groundingSupports.forEach((support: GroundingSupportItem) => {
-            if (support.segment && support.groundingChunkIndices) {
-              const citationMarker = support.groundingChunkIndices
-                .map((chunkIndex: number) => `[${chunkIndex + 1}]`)
-                .join('');
-              insertions.push({
-                index: support.segment.endIndex,
-                marker: citationMarker,
-              });
-            }
-          });
-
-          // Sort insertions by index in descending order to avoid shifting subsequent indices
-          insertions.sort((a, b) => b.index - a.index);
-
-          const responseChars = modifiedResponseText.split(''); // Use new variable
-          insertions.forEach((insertion) => {
-            // Fixed arrow function syntax
-            responseChars.splice(insertion.index, 0, insertion.marker);
-          });
-          modifiedResponseText = responseChars.join(''); // Assign back to modifiedResponseText
-        }
-
-        if (sourceListFormatted.length > 0) {
-          modifiedResponseText +=
-            '\n\nSources:\n' + sourceListFormatted.join('\n'); // Fixed string concatenation
-        }
-      }
+      const fullResponse = `Web search results for "${params.query}":\n\n${formattedResults}\n\nSources:\n${sourcesList}`;
 
       return {
-        llmContent: `Web search results for "${params.query}":\n\n${modifiedResponseText}`,
-        returnDisplay: `Search results for "${params.query}" returned.`,
-        sources,
+        llmContent: fullResponse,
+        returnDisplay: `Found ${results.length} result(s) for "${params.query}"`,
+        sources: results,
       };
     } catch (error: unknown) {
       const errorMessage = `Error during web search for query "${params.query}": ${getErrorMessage(error)}`;
       console.error(errorMessage, error);
       return {
         llmContent: `Error: ${errorMessage}`,
-        returnDisplay: `Error performing web search.`,
+        returnDisplay: 'Error performing web search.',
       };
     }
   }

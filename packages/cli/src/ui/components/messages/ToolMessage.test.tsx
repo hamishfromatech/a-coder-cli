@@ -71,19 +71,19 @@ describe('<ToolMessage />', () => {
       StreamingState.Idle,
     );
     const output = lastFrame();
-    expect(output).toContain('✔'); // Success indicator
+    expect(output).toContain('✓'); // Success indicator
     expect(output).toContain('test-tool');
     expect(output).toContain('A tool for testing');
     expect(output).toContain('MockMarkdown:Test result');
   });
 
   describe('ToolStatusIndicator rendering', () => {
-    it('shows ✔ for Success status', () => {
+    it('shows ✓ for Success status', () => {
       const { lastFrame } = renderWithContext(
         <ToolMessage {...baseProps} status={ToolCallStatus.Success} />,
         StreamingState.Idle,
       );
-      expect(lastFrame()).toContain('✔');
+      expect(lastFrame()).toContain('✓');
     });
 
     it('shows o for Pending status', () => {
@@ -110,12 +110,12 @@ describe('<ToolMessage />', () => {
       expect(lastFrame()).toContain('-');
     });
 
-    it('shows x for Error status', () => {
+    it('shows ✕ for Error status', () => {
       const { lastFrame } = renderWithContext(
         <ToolMessage {...baseProps} status={ToolCallStatus.Error} />,
         StreamingState.Idle,
       );
-      expect(lastFrame()).toContain('x');
+      expect(lastFrame()).toContain('✕');
     });
 
     it('shows paused spinner for Executing status when streamingState is Idle', () => {

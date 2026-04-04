@@ -8,12 +8,22 @@ import { Skill } from './types.js';
 
 /**
  * Slash command interface (matches CLI's SlashCommand)
- * This is a simplified version - the CLI extends this with more context
+ * Follows Claude Code command development specification
  */
 export interface SlashCommand {
+  /** Command name (matches skill name) */
   name: string;
+  /** Description shown in help menu */
   description?: string;
+  /** Argument hint for autocomplete display */
   argumentHint?: string;
+  /** Allowed tools for this command */
+  allowedTools?: string[];
+  /** Model override for command execution */
+  model?: string;
+  /** Keywords for fuzzy search */
+  keywords?: string[];
+  /** The action to execute */
   action: (
     context: any,
     args: string,
@@ -62,6 +72,8 @@ export function createSkillCommand(skill: Skill): SlashCommand {
     name: skill.name,
     description: skill.description,
     argumentHint: skill.frontmatter.argumentHint,
+    model: skill.frontmatter.model,
+    keywords: [skill.name], // Add skill name for fuzzy search
     action: async (context: any, args: string) => {
       return {
         type: 'tool',

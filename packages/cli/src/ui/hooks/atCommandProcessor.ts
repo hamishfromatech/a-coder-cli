@@ -29,6 +29,11 @@ interface HandleAtCommandParams {
   signal: AbortSignal;
 }
 
+interface PastedInfo {
+  pasteId: number;
+  lineCount: number;
+}
+
 interface HandleAtCommandResult {
   processedQuery: PartListUnion | null;
   shouldProceed: boolean;
@@ -122,17 +127,34 @@ export async function handleAtCommand({
   messageId: userMessageTimestamp,
   signal,
 }: HandleAtCommandParams): Promise<HandleAtCommandResult> {
+  // Extract pasteInfo if this query was from a paste operation
+  const pastedInfo = (query as unknown as { pastedInfo?: PastedInfo }).pastedInfo;
+
   const commandParts = parseAllAtCommands(query);
   const atPathCommandParts = commandParts.filter(
     (part) => part.type === 'atPath',
   );
 
   if (atPathCommandParts.length === 0) {
-    addItem({ type: 'user', text: query }, userMessageTimestamp);
+    addItem(
+      {
+        type: 'user',
+        text: query,
+        ...(pastedInfo && { pastedInfo }),
+      },
+      userMessageTimestamp,
+    );
     return { processedQuery: [{ text: query }], shouldProceed: true };
   }
 
-  addItem({ type: 'user', text: query }, userMessageTimestamp);
+  addItem(
+    {
+      type: 'user',
+      text: query,
+      ...(pastedInfo && { pastedInfo }),
+    },
+    userMessageTimestamp,
+  );
 
   // Get centralized file discovery service
   const fileDiscovery = config.getFileService();

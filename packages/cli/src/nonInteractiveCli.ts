@@ -12,7 +12,6 @@ import {
   shutdownTelemetry,
   isTelemetrySdkInitialized,
   ToolResultDisplay,
-  validateShellCommand,
 } from '@a-coder/core';
 import {
   Content,
@@ -299,31 +298,6 @@ export async function runNonInteractive(
             isClientInitiated: false,
             prompt_id,
           };
-
-          // Validate Shell commands in non-interactive mode (unless YOLO)
-          if (fc.name === 'Shell' && config.getApprovalMode() !== 'yolo' as any) {
-            const command = (fc.args as any)?.command || '';
-            const validation = validateShellCommand(command);
-            if (!validation.allowed) {
-              const errorMsg = `Shell command blocked in non-interactive mode: ${validation.reason}`;
-              if (printMode) {
-                printStructuredOutput(
-                  createPrintOutput('error', {
-                    tool_name: 'Shell',
-                    error: errorMsg,
-                  }),
-                );
-              } else {
-                console.error(`[blocked] Shell: ${command}`);
-                console.error(`  Reason: ${validation.reason}`);
-              }
-              // Skip this tool call and continue with others
-              toolResponseParts.push({
-                text: `Error: ${errorMsg}`,
-              });
-              continue;
-            }
-          }
 
           //Display tool call start information
           displayToolCallInfo(fc.name as string, fc.args ?? {}, 'start', undefined, undefined, printMode);

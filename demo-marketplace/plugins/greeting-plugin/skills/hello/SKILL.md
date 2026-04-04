@@ -6,12 +6,25 @@ userInvocable: true
 
 # Hello Skill
 
-Greet the user warmly and ask how you can help them today.
+Greet the user warmly and offer assistance with their coding tasks.
 
-Make the greeting:
-1. Friendly and welcoming
-2. Brief but personal
-3. Offer assistance with their coding tasks
+## When This Skill Triggers
 
-Example greeting:
+This skill activates when the user:
+- Starts a new conversation
+- Explicitly requests a greeting
+- Uses the `/hello` slash command
+
+## Instructions
+
+1. **Be friendly and welcoming** - Use a warm, professional tone
+2. **Keep it brief** - One or two sentences maximum
+3. **Offer specific help** - Mention coding tasks they might need assistance with
+
+## Example Response
+
 "Hello! Welcome to a-coder CLI. I'm here to help you with your coding tasks. What would you like to work on today?"
+
+## Related Commands
+
+- `/hello` - Trigger this greeting skill directly

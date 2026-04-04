@@ -31,6 +31,7 @@ import { TaskListTool } from '../tools/task-list.js';
 import { SubagentTool } from '../tools/subagent.js';
 import { SubagentSystemConfig, DEFAULT_SUBAGENT_CONFIG } from '../tools/subagent-types.js';
 import type { SubagentConfig as SubagentSettingsConfig } from '../tools/subagent-types.js';
+import { WebSearchTool } from '../tools/web-search.js';
 import {
   MemoryTool,
   setGeminiMdFilename,
@@ -694,7 +695,7 @@ export class Config {
     registerCoreTool(TaskListTool);
     registerCoreTool(ShellTool, this);
     registerCoreTool(MemoryTool);
-    // registerCoreTool(WebSearchTool, this); // Temporarily disabled
+    registerCoreTool(WebSearchTool);
 
     // Register SubagentTool if subagent system is enabled
     if (this.subagentConfig.enabled) {

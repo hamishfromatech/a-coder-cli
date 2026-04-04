@@ -246,7 +246,7 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
     openSkillsDialog,
     handleSkillSelect,
     availableSkills,
-  } = useSkillsCommand(addItem, (query) => submitQuery(query));
+  } = useSkillsCommand(addItem, (query) => submitQuery(query), config);
 
   const toggleCorgiMode = useCallback(() => {
     setCorgiMode((prev) => !prev);

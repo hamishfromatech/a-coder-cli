@@ -140,16 +140,43 @@ export interface SkillScriptInfo {
 
 /**
  * Maps file extensions to interpreters
+ *
+ * Following Claude Code skill scripts specification:
+ * https://github.com/anthropics/claude-code/blob/main/plugins/plugin-dev/skills/hook-development/SKILL.md
  */
 export const SCRIPT_INTERPRETERS: Record<string, string> = {
-  '.py': 'python3',
-  '.js': 'node',
-  '.ts': 'npx tsx',
+  // Shell scripts
   '.sh': 'bash',
   '.bash': 'bash',
   '.zsh': 'zsh',
+  '.fish': 'fish',
+  '.ps1': 'powershell', // PowerShell
+  '.cmd': 'cmd', // Windows CMD
+  '.bat': 'cmd', // Windows BAT
+
+  // Programming languages
+  '.py': 'python3',
+  '.pyw': 'python3', // Python without console window (Windows)
+  '.js': 'node',
+  '.mjs': 'node', // ES modules
+  '.cjs': 'node', // CommonJS modules
+  '.ts': 'npx tsx',
+  '.tsx': 'npx tsx', // TypeScript React
   '.rb': 'ruby',
   '.php': 'php',
+  '.pl': 'perl',
+  '.pm': 'perl', // Perl module
+  '.raku': 'raku',
+  '.rakumod': 'raku', // Raku module
+
+  // Other scripting
+  '.lua': 'lua',
+  '.tcl': 'tclsh',
+  '.awk': 'awk',
+  '.sed': 'sed',
+
+  // Compiled (will use shebang or direct execution)
+  '.exe': 'direct', // Windows executable
 };
 
 /**
@@ -164,19 +191,12 @@ export function getAutoAllowedTools(scripts: SkillScriptInfo[]): string[] {
   for (const script of scripts) {
     const interpreter = script.interpreter.toLowerCase();
 
-    // Map interpreters to required tools
-    if (interpreter === 'python3' || interpreter === 'python') {
-      tools.add('Bash'); // Python scripts need Bash to run
-    } else if (interpreter === 'node' || interpreter === 'npx') {
-      tools.add('Bash'); // Node scripts need Bash to run
-    } else if (interpreter === 'bash' || interpreter === 'sh' || interpreter === 'zsh') {
+    // All script interpreters need Bash tool to execute
+    // This includes: shell scripts, python, node, ruby, php, perl, etc.
+    if (interpreter !== 'unknown' && interpreter !== 'direct') {
       tools.add('Bash');
-    } else if (interpreter === 'ruby') {
-      tools.add('Bash');
-    } else if (interpreter === 'php') {
-      tools.add('Bash');
-    } else if (interpreter !== 'unknown') {
-      // For other interpreters, assume Bash is needed
+    } else if (interpreter === 'direct') {
+      // Direct executables might need Bash for shell operators
       tools.add('Bash');
     }
   }
