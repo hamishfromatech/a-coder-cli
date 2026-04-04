@@ -21,6 +21,7 @@ esbuild
     outfile: 'bundle/a-coder.js',
     platform: 'node',
     format: 'esm',
+    nodePaths: [path.resolve(__dirname, 'packages/cli/node_modules'), path.resolve(__dirname, 'node_modules')],
     define: {
       'process.env.CLI_VERSION': JSON.stringify(pkg.version),
     },
