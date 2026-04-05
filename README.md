@@ -69,6 +69,7 @@ Pre-built workflows for common patterns:
 git clone https://github.com/hamishfromatech/a-coder-cli.git
 cd a-coder-cli
 npm install
+npm run build
 npm install -g .
 ```
 
@@ -104,7 +105,7 @@ a-coder-cli
 | `qwen3.5:4b` | 4B | On-device, fast | Fast | Excellent |
 | `gemma4:4b` | 4B | Vision & coding | Fast | Excellent |
 | `minstral:3b` | 3B | Edge deployment | Fast | Good |
-| `qwen3.5:8b` | 8B | General coding | Good | Outstanding |
+| `qwen3.5:9b` | 9B | General coding | Good | Outstanding |
 | `rnj-1:8b` | 8B | Code & STEM | Good | Excellent |
 | `qwen3.5:14b` | 14B | Complex reasoning | Good | Outstanding |
 | `devstral-small-2:24b` | 24B | Software agents | Moderate | Outstanding |
@@ -226,9 +227,15 @@ Managed by **The A-Tech Corporation PTY LTD.**
 
 1. Install Node.js 20+
 2. Install Ollama: `curl -fsSL https://ollama.com/install.sh | sh`
-3. Pull a model: `ollama pull qwen3.5:8b`
-4. Start server: `ollama serve`
-5. Install A-Coder: `npm install -g a-coder-cli`
+3. Clone & install A-Coder:
+   ```bash
+   git clone https://github.com/hamishfromatech/a-coder-cli.git
+   cd a-coder-cli
+   npm install && npm run build
+   npm install -g .
+   ```
+4. Pull a model: `ollama pull qwen3.5:8b`
+5. Start server: `ollama serve`
 6. Run: `a-coder-cli`
 
 **The 30-Second Test:**
