@@ -91,15 +91,24 @@ export class WebServer {
    * Get the directory containing static files.
    */
   private getPublicDir(): string {
-    // In development, files are in src/web/public
-    // In production, they might be in dist/web/public
+    // Try multiple locations where public assets may live:
+    // 1. src/web/public (when running from dist/src/web/)
     const devPath = path.join(__dirname, 'public');
+    // 2. dist/web/public (alternative dist layout)
     const distPath = path.join(__dirname, '..', 'web', 'public');
+    // 3. bundle/web/public (when running from the esbuild bundle)
+    const bundlePath = path.join(__dirname, 'web', 'public');
+    // 4. Same directory as the running entry point (when installed globally)
+    const entryDir = path.join(path.dirname(process.argv[1]), 'web', 'public');
 
-    if (fs.existsSync(devPath)) {
-      return devPath;
+    for (const candidate of [devPath, distPath, bundlePath, entryDir]) {
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
     }
-    return distPath;
+
+    // Fallback: return the most likely path for the current context
+    return devPath;
   }
 
   /**

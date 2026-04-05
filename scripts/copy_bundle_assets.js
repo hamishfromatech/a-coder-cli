@@ -37,4 +37,17 @@ for (const file of sbFiles) {
   copyFileSync(join(root, file), join(bundleDir, basename(file)));
 }
 
+// Copy web public assets into bundle/web/public/
+const webPublicDir = join(bundleDir, 'web', 'public');
+if (!existsSync(webPublicDir)) {
+  mkdirSync(webPublicDir, { recursive: true });
+}
+const webPublicFiles = glob.sync('packages/cli/src/web/public/**/*', {
+  cwd: root,
+  nodir: true,
+});
+for (const file of webPublicFiles) {
+  copyFileSync(join(root, file), join(webPublicDir, basename(file)));
+}
+
 console.log('Assets copied to bundle/');

@@ -2,48 +2,119 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>A-Coder-CLI Web Interface</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#050505">
+  <meta name="description" content="A-Coder CLI - AI-powered development companion in the terminal">
+  <title>A-Coder CLI | AI Development Companion</title>
+  
+  <!-- Preconnect to fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  
+  <!-- Premium typography -->
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div class="container">
-    <header>
-      <h1>A-Coder-CLI</h1>
-      <div class="status" id="status">
-        <span class="status-indicator disconnected"></span>
-        <span class="status-text">Disconnected</span>
-      </div>
-    </header>
-
-    <main class="chat-container">
-      <div class="messages" id="messages">
-        <div class="welcome-message">
-          <h2>Welcome to A-Coder-CLI Web Interface</h2>
-          <p>This is a browser-based interface for a-coder-cli.</p>
-          <p>Messages sent from here will be processed by the CLI.</p>
-        </div>
-      </div>
-
-      <div class="input-container">
-        <textarea
-          id="message-input"
-          placeholder="Type your message..."
-          rows="1"
-          autofocus
-        ></textarea>
-        <button id="send-button" type="button">
-          <svg viewBox="0 0 24 24" width="24" height="24">
-            <path fill="currentColor" d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-          </svg>
-        </button>
-      </div>
-    </main>
-
-    <footer>
-      <span>Connected to <span id="server-url"></span></span>
-    </footer>
+  <!-- Ambient Background - Radial mesh gradients -->
+  <div class="ambient-bg">
+    <div class="gradient-orb orb-1"></div>
+    <div class="gradient-orb orb-2"></div>
+    <div class="gradient-orb orb-3"></div>
+    <div class="noise-overlay"></div>
   </div>
+
+  <!-- Floating Nav Pill - Fluid Island Architecture -->
+  <nav class="nav-pill">
+    <div class="nav-brand">
+      <span class="brand-icon">◈</span>
+      <span class="brand-text">A-Coder</span>
+    </div>
+    <div class="nav-status" id="nav-status">
+      <span class="status-dot" id="status-dot"></span>
+      <span class="status-label" id="status-label">Connecting</span>
+    </div>
+  </nav>
+
+  <!-- Main Interface - Asymmetrical Bento Layout -->
+  <main class="interface-shell">
+    <div class="interface-core">
+      
+      <!-- Welcome State - Editorial Luxury -->
+      <section class="welcome-state" id="welcome-state">
+        <div class="welcome-eyebrow">
+          <span class="eyebrow-pill">AI-Powered Development</span>
+        </div>
+        <h1 class="welcome-headline">
+          Your code companion<br>
+          <span class="headline-accent">in the terminal</span>
+        </h1>
+        <p class="welcome-subtext">
+          Send messages from your browser. Watch them flow through your CLI.<br>
+          Real-time streaming, tool execution, and intelligent responses.
+        </p>
+        <div class="welcome-cta">
+          <div class="cta-shell">
+            <button class="cta-core" id="start-chat-btn">
+              <span>Begin Conversation</span>
+              <span class="cta-icon-wrap">
+                <svg class="cta-arrow" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Chat Interface - Double-Bezel Architecture -->
+      <section class="chat-state hidden" id="chat-state">
+        <!-- Messages Shell - Nested enclosure -->
+        <div class="messages-shell">
+          <div class="messages-core" id="messages">
+            <!-- Messages render here -->
+          </div>
+        </div>
+
+        <!-- Input Shell - Glass Pill -->
+        <div class="input-shell">
+          <div class="input-core">
+            <div class="input-field-wrap">
+              <textarea
+                id="message-input"
+                placeholder="Describe what you want to build..."
+                rows="1"
+                autocomplete="off"
+                autocapitalize="off"
+                spellcheck="true"
+                aria-label="Message input"
+              ></textarea>
+            </div>
+            <button class="send-btn" id="send-button" type="button" aria-label="Send message">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
+                <path d="M22 2L11 13M22 2l-7 20-4-4-4-4 20-7z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </div>
+          <div class="input-hint">
+            <span>Press Enter to send</span>
+            <span class="hint-dot">·</span>
+            <span>Shift+Enter for new line</span>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- Server Info Footer - Minimal Glass -->
+  <footer class="server-footer">
+    <div class="footer-shell">
+      <span class="footer-label">Connected to</span>
+      <span class="footer-value" id="server-url">localhost</span>
+    </div>
+  </footer>
 
   <script src="app.js"></script>
 </body>
