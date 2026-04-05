@@ -1,43 +1,69 @@
 # A-Coder CLI
 
+## AI Code Assistance That Respects Your Privacy
 
-A-Coder CLI is a privacy-focused command-line AI workflow tool forked from [**Qwen Code**](https://github.com/QwenLM/qwen-code), designed to work with locally-hosted [Ollama](https://ollama.com) models for enhanced privacy and data sovereignty. This tool gives you the power of AI-assisted development while keeping your code and data completely under your control.
+**Your code stays on your machine. Always.**
 
-## 🔒 Privacy & Data Sovereignty First
+Most AI coding tools require uploading your code to their servers. A-Coder CLI runs entirely locally through Ollama, giving you AI-powered development without the privacy tradeoff.
 
-**Your code never leaves your environment.** Unlike cloud-based AI tools, A-Coder CLI processes everything locally through your own Ollama server, ensuring:
+---
 
-- **Complete Privacy**: No data transmission to external services
-- **Data Sovereignty**: Full control over your models and processing
-- **Offline Capability**: Work without internet dependency once models are downloaded
-- **Enterprise Ready**: Perfect for sensitive codebases and air-gapped environments
+## Why This Matters
 
-## ⚠️ Quality Considerations
+You shouldn't have to choose between AI assistance and code security. With A-Coder CLI:
 
-**Important:** This tool uses local Ollama models which may have different capabilities compared to cloud-based models:
+- **Zero data transmission** — All processing happens on your hardware
+- **No vendor lock-in** — Works with any Ollama-compatible model
+- **Offline capable** — Once set up, you don't need internet
+- **Enterprise ready** — Perfect for sensitive codebases and air-gapped environments
 
-- **Smaller models** (7B-14B parameters) may provide less accurate results than larger cloud models
-- **Response quality** varies significantly based on your chosen model and hardware
-- **Complex reasoning tasks** may require larger models (70B+) for optimal results
-- **Consider your use case**: Test with your specific workflows to ensure model suitability
+---
 
-## Key Features
+## What Works Well
 
-- **Code Understanding & Editing** - Query and edit large codebases beyond traditional context window limits
-- **Workflow Automation** - Automate operational tasks like handling pull requests and complex rebases
-- **Local Model Support** - Works with any Ollama-compatible model (Qwen, Llama, CodeLlama, etc.)
-- **Privacy-First Architecture** - All processing happens on your infrastructure
+| Task | Performance |
+|------|-------------|
+| Understanding new codebases | ⭐⭐⭐⭐ |
+| Refactoring functions | ⭐⭐⭐⭐ |
+| Writing tests and docs | ⭐⭐⭐⭐ |
+| Automating repetitive tasks | ⭐⭐⭐⭐ |
+| Complex architectural decisions | ⭐⭐ (needs larger models) |
+| Real-time debugging without reproduction | ⭐⭐ |
 
-## Quick Start
+**Bottom line**: It's a powerful tool for day-to-day development. Like any local model, it trades some capability for privacy.
+
+---
+
+## Core Capabilities
+
+### File Operations
+- **Read files** — Understand any file in your project
+- **Edit files** — Make surgical changes with context awareness
+- **Write files** — Generate new code, configs, documentation
+- **Search** — Grep and glob across your entire codebase
+
+### Advanced Features
+- **Memory** — Maintain context across sessions for long projects
+- **Subagent** — Execute parallel tasks for complex workflows
+- **Shell** — Run commands safely with validation
+- **Web Fetch/Search** — Pull from the internet when needed
+
+### Skills System
+Pre-built workflows for common patterns:
+- Code review automation
+- Testing strategies
+- Documentation generation
+- Git workflow helpers
+
+---
+
+## Quick Setup
 
 ### Prerequisites
+- Node.js 20+
+- Ollama installed and running
 
-1. **Node.js**: Ensure you have [Node.js version 20](https://nodejs.org/en/download) or higher installed
-2. **Ollama Server**: Install and run [Ollama](https://ollama.com) with your preferred models
-
-### Installation
-
-install from source:
+### Install (5 minutes)
 
 ```bash
 git clone https://github.com/hamishfromatech/a-coder-cli.git
@@ -46,142 +72,171 @@ npm install
 npm install -g .
 ```
 
-### Ollama Server Setup
-
-1. **Install Ollama** (if not already installed):
-   ```bash
-   curl -fsSL https://ollama.com/install.sh | sh
-   ```
-
-2. **Download a coding model**:
-   ```bash
-   ollama pull qwen2.5-coder:14b  # Recommended for code tasks
-   # or
-   ollama pull codellama:13b      # Alternative coding model
-   # or
-   ollama pull llama3.1:8b        # Smaller, faster option
-   ```
-
-3. **Start Ollama server**:
-   ```bash
-   ollama serve
-   ```
-
-### Configuration
-
-Configure your Ollama connection (the tool auto-detects local Ollama by default):
+### Configure Ollama
 
 ```bash
-# Optional: Custom Ollama server
-export OLLAMA_BASE_URL="http://localhost:11434/v1"
-export OLLAMA_MODEL="qwen2.5-coder:14b"
+# Pull a coding model (recommended)
+ollama pull qwen3.5:8b
 
-# Or create ~/.config/a-coder-cli/config.json:
-{
-  "baseUrl": "http://localhost:11434/v1",
-  "model": "qwen2.5-coder:14b"
-}
+# Alternative models
+# ollama pull qwen3.5:14b  # Better reasoning
+# ollama pull glm-4.7-flash:30b  # Best 30B class
+# ollama pull gemma4:4b  # Vision & coding
+
+# Start the server
+ollama serve
 ```
 
-## Usage Examples
+### Start Coding
 
-### Explore Codebases
-
-```sh
+```bash
 cd your-project/
 a-coder-cli
-> Describe the main pieces of this system's architecture
+> Describe the main architecture
 ```
 
-### Code Development
+---
 
-```sh
-> Refactor this function to improve readability and performance
+## Model Recommendations
+
+| Model | Size | Best For | Speed | Quality |
+|-------|------|----------|-------|---------|
+| `qwen3.5:4b` | 4B | On-device, fast | Fast | Excellent |
+| `gemma4:4b` | 4B | Vision & coding | Fast | Excellent |
+| `minstral:3b` | 3B | Edge deployment | Fast | Good |
+| `qwen3.5:8b` | 8B | General coding | Good | Outstanding |
+| `rnj-1:8b` | 8B | Code & STEM | Good | Excellent |
+| `qwen3.5:14b` | 14B | Complex reasoning | Good | Outstanding |
+| `devstral-small-2:24b` | 24B | Software agents | Moderate | Outstanding |
+| `lfm2:24b` | 24B | On-device hybrid | Moderate | Excellent |
+| `glm-4.7-flash:30b` | 30B | Best 30B class | Moderate | Outstanding |
+| `nemotron-cascade-2:30b` | 30B (3B activated) | Agentic workflows | Fast | Outstanding |
+
+**Start with 8B or 14B.** Upgrade if you hit limits.
+
+---
+
+## Real Examples
+
+### Understand a New Project
+
+```text
+> What are the core business logic components?
+> How does authentication work here?
+> What security mechanisms are in place?
+```
+
+### Refactor Code
+
+```text
+> What parts of this module can be optimized?
+> Help me refactor this to follow better patterns
+> Add proper error handling and logging
+```
+
+### Generate Tests
+
+```text
+> Write unit tests for this component
+> Add integration tests for the API
+> Create edge case coverage
 ```
 
 ### Automate Workflows
 
-```sh
-> Analyze git commits from the last 7 days, grouped by feature and team member
-```
-
-```sh
-> Convert all images in this directory to PNG format
-```
-
-## Popular Tasks
-
-### Understand New Codebases
-
 ```text
-> What are the core business logic components?
-> What security mechanisms are in place?
-> How does the data flow work?
+> Analyze git commits from the last 7 days
+> Convert all images to PNG format
+> Batch rename files based on pattern
 ```
 
-### Code Refactoring & Optimization
+---
 
-```text
-> What parts of this module can be optimized?
-> Help me refactor this class to follow better design patterns
-> Add proper error handling and logging
-```
+## Technical Details
 
-### Documentation & Testing
+**Privacy guarantees:**
+- Code never leaves your machine
+- No external API calls (unless you use web search)
+- No telemetry or usage tracking
+- Full visibility into all AI interactions
 
-```text
-> Generate comprehensive JSDoc comments for this function
-> Write unit tests for this component
-> Create API documentation
-```
+**Technical guarantees:**
+- Works offline after setup
+- No vendor lock-in
+- Open source (Apache 2.0)
+- Runs on any hardware with Ollama
 
-## Recommended Models
+---
 
-For optimal results with coding tasks:
+## Pricing
 
-| Model | Size | Best For | Quality | Speed |
-|-------|------|----------|---------|-------|
-| `qwen2.5-coder:14b` | 14B | Code generation, refactoring | ⭐⭐⭐⭐ | ⭐⭐⭐ |
-| `codellama:13b` | 13B | Code completion, debugging | ⭐⭐⭐ | ⭐⭐⭐ |
-| `llama3.1:8b` | 8B | General coding, faster responses | ⭐⭐ | ⭐⭐⭐⭐ |
-| `qwen2.5-coder:32b` | 32B | Complex reasoning, best quality | ⭐⭐⭐⭐⭐ | ⭐⭐ |
+**Free.**
 
-## Project Structure
+This is open source. No tiers, no limits, no "pro" version.
 
-```
-a-coder-cli/
-├── packages/           # Core packages
-├── docs/              # Documentation
-├── examples/          # Example code
-└── tests/            # Test files
-```
+---
 
-## Development & Contributing
+## Who This Is For
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) to learn how to contribute to the project.
+| ✅ You should use this if... | ❌ You should NOT use this if... |
+|------------------------------|---------------------------------|
+| You care about code privacy | You need cloud-only features |
+| You have an Ollama server | You want the absolute best models |
+| You're comfortable with CLI | You need a GUI |
+| You want full control | You don't want to run local infrastructure |
 
-## Privacy & Security
-
-- **Local Processing**: All AI computations happen on your Ollama server
-- **No Telemetry**: No usage data is transmitted externally
-- **Code Isolation**: Your source code never leaves your environment
-- **Audit Trail**: Full visibility into all AI interactions
+---
 
 ## Troubleshooting
 
-If you encounter issues, check the [troubleshooting guide](docs/troubleshooting.md).
+| Problem | Solution |
+|---------|----------|
+| Connection refused | Run `ollama serve` in another terminal |
+| Model not found | Run `ollama pull <model-name>` first |
+| Slow responses | Try a smaller model (8B vs 14B) |
+| Out of memory | Increase RAM or use smaller model |
 
-Common issues:
-- **Connection refused**: Ensure Ollama is running (`ollama serve`)
-- **Model not found**: Pull the model first (`ollama pull model-name`)
-- **Slow responses**: Consider using smaller models or upgrading hardware
+See [docs/troubleshooting.md](docs/troubleshooting.md) for more.
 
-## Acknowledgments
+---
 
-This project is forked from [**Qwen Code**](https://github.com/QwenLM/qwen-code), which was originally based on [Google Gemini CLI](https://github.com/hamishfromatech/a-coder-cli). We acknowledge and appreciate the excellent work of both teams. Our contribution focuses on privacy-first local model integration through Ollama.
+## Built On Shoulders of Giants
+
+This is a fork of [Qwen Code](https://github.com/QwenLM/qwen-code), which was originally based on [Google Gemini CLI](https://github.com/google-gemini/gemini-cli).
+
+We've added:
+- Ollama integration for local model execution
+- Privacy-first architecture
+- Skills system with pre-built workflows
+- Enhanced MCP support
+
+---
 
 ## License
 
-[LICENSE](./LICENSE)
+[Apache 2.0](LICENSE)
 
-This Codebase is managed by **The A-Tech Corporation PTY LTD.**
+Managed by **The A-Tech Corporation PTY LTD.**
+
+---
+
+## Ready to Try?
+
+**The 5-Minute Setup:**
+
+1. Install Node.js 20+
+2. Install Ollama: `curl -fsSL https://ollama.com/install.sh | sh`
+3. Pull a model: `ollama pull qwen3.5:8b`
+4. Start server: `ollama serve`
+5. Install A-Coder: `npm install -g a-coder-cli`
+6. Run: `a-coder-cli`
+
+**The 30-Second Test:**
+
+```bash
+cd /path/to/your/project
+a-coder-cli
+> What does this project do?
+```
+
+[Install now](#quick-setup) or [read the full docs](docs/cli/commands.md).
