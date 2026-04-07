@@ -1202,7 +1202,10 @@ export function useTextBuffer({
       )
         backspace();
       else if (key.name === 'delete' || (key.ctrl && key.name === 'd')) del();
-      else if (input && !key.ctrl && !key.meta) {
+      else if (key.paste && key.sequence) {
+        // Paste content - insert the entire sequence at once for efficiency
+        insert(key.sequence);
+      } else if (input && !key.ctrl && !key.meta) {
         insert(input);
       }
     },

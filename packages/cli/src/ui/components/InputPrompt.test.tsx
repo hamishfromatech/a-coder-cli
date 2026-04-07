@@ -123,7 +123,7 @@ describe('InputPrompt', () => {
   it('renders with placeholder when buffer is empty', () => {
     const { lastFrame, unmount } = render(<InputPrompt {...props} />);
     const output = lastFrame();
-    expect(output).toContain('Type your message');
+    expect(output).toContain('Type a message');
     unmount();
   });
 

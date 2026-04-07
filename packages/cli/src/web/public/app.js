@@ -16,6 +16,14 @@ let lastScrollPosition = 0;
 let isUserScrolling = false;
 
 // ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+function formatTime(date) {
+  const d = new Date(date);
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+// ============================================================================
 // DOM ELEMENTS
 // ============================================================================
 const messagesContainer = document.getElementById('messages');

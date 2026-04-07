@@ -15,6 +15,7 @@ import { sessionCommand } from '../ui/commands/sessionCommand.js';
 import { reloadSkillsCommand } from '../ui/commands/reloadSkillsCommand.js';
 import { skillsCommand } from '../ui/commands/skillsCommand.js';
 import { themeCommand } from '../ui/commands/themeCommand.js';
+import { terminalSetupCommand } from '../ui/commands/terminalSetupCommand.js';
 import { pluginCommand } from '../ui/commands/pluginCommand.js';
 import { agentCommand } from '../ui/commands/agentCommand.js';
 import { webCommand } from '../ui/commands/webCommand.js';
@@ -34,6 +35,7 @@ const loadBuiltInCommands = async (): Promise<SlashCommand[]> => [
   sessionCommand,
   skillsCommand,
   themeCommand,
+  terminalSetupCommand,
 ];
 
 export class CommandService {

@@ -13,8 +13,6 @@ import {
   Text,
   useStdin,
   useStdout,
-  useInput,
-  type Key as InkKeyType,
 } from 'ink';
 import { StreamingState, type HistoryItem, MessageType } from './types.js';
 import { useTerminalSize } from './hooks/useTerminalSize.js';
@@ -53,6 +51,7 @@ import { ToDoList } from './components/ToDoList.js';
 import { QueryQueueList } from './components/QueryQueueList.js';
 import { ContextSummaryDisplay } from './components/ContextSummaryDisplay.js';
 import { useHistory } from './hooks/useHistoryManager.js';
+import { useKeypress, isPasting } from './hooks/useKeypress.js';
 import process from 'node:process';
 import {
   getErrorMessage,
@@ -73,8 +72,6 @@ import {
   useSessionStats,
 } from './contexts/SessionContext.js';
 import { useGitBranchName } from './hooks/useGitBranchName.js';
-import { useBracketedPaste } from './hooks/useBracketedPaste.js';
-import { isPasting } from './hooks/useKeypress.js';
 import { useTextBuffer } from './components/shared/text-buffer.js';
 import * as fs from 'fs';
 import { UpdateNotification } from './components/UpdateNotification.js';
@@ -105,7 +102,6 @@ export const AppWrapper = (props: AppProps) => (
 );
 
 const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
-  useBracketedPaste();
   const [updateMessage, setUpdateMessage] = useState<string | null>(null);
   const { stdout } = useStdout();
   const nightly = version.includes('nightly');
@@ -481,15 +477,19 @@ You can switch authentication methods by typing /auth`;
     [slashCommands, commandContext, config],
   );
 
-  useInput((input: string, key: InkKeyType) => {
-    if (isPasting()) {
+  useKeypress((key) => {
+    if (process.env['DEBUG_KEYS'] === 'true') {
+      console.error(`[App] key received: name="${key.name}" ctrl=${key.ctrl} paste=${key.paste} sequence=${JSON.stringify(key.sequence)}`);
+    }
+
+    if (key.paste) {
       return;
     }
 
     // When help is showing, allow Escape or 'q' to close it
     // Skip all other key handling to prevent UI flickering
     if (showHelp) {
-      if (key.escape || input === 'q') {
+      if (key.name === 'escape' || key.sequence === 'q') {
         setShowHelp(false);
       }
       return;
@@ -505,11 +505,11 @@ You can switch authentication methods by typing /auth`;
       setConstrainHeight(true);
     }
 
-    if (key.ctrl && input === 'o') {
+    if (key.ctrl && key.name === 'o') {
       setShowThinking((prev) => !prev);
-    } else if (key.ctrl && input === 'e') {
+    } else if (key.ctrl && key.name === 'e') {
       setShowErrorDetails((prev) => !prev);
-    } else if (key.ctrl && input === 't') {
+    } else if (key.ctrl && key.name === 't') {
       const newValue = !showToolDescriptions;
       setShowToolDescriptions(newValue);
 
@@ -517,18 +517,21 @@ You can switch authentication methods by typing /auth`;
       if (Object.keys(mcpServers || {}).length > 0) {
         handleSlashCommand(newValue ? '/mcp desc' : '/mcp nodesc');
       }
-    } else if (key.ctrl && (input === 'c' || input === 'C')) {
+    } else if (key.ctrl && key.name === 'c') {
+      if (process.env['DEBUG_KEYS'] === 'true') {
+        console.error('[App] Ctrl+C detected');
+      }
       handleExit(ctrlCPressedOnceRef, setCtrlCPressedOnce, ctrlCTimerRef);
-    } else if (key.ctrl && (input === 'd' || input === 'D')) {
+    } else if (key.ctrl && key.name === 'd') {
       if (buffer.text.length > 0) {
         // Do nothing if there is text in the input.
         return;
       }
       handleExit(ctrlDPressedOnceRef, setCtrlDPressedOnce, ctrlDTimerRef);
-    } else if (key.ctrl && input === 's' && !enteringConstrainHeightMode) {
+    } else if (key.ctrl && key.name === 's' && !enteringConstrainHeightMode) {
       setConstrainHeight(false);
     }
-  });
+  }, { isActive: true });
 
   useEffect(() => {
     if (config) {
@@ -598,14 +601,20 @@ You can switch authentication methods by typing /auth`;
 
   const handleFinalSubmit = useCallback(
     (submittedValue: string) => {
-      const trimmedValue = submittedValue.trim();
-      // Show help when user sends "?" by itself
-      if (trimmedValue === '?') {
-        setShowHelp((prev) => !prev);
-        return;
-      }
-      if (trimmedValue.length > 0) {
-        submitQuery(trimmedValue);
+      try {
+        const trimmedValue = submittedValue.trim();
+        // Show help when user sends "?" by itself
+        if (trimmedValue === '?') {
+          setShowHelp((prev) => !prev);
+          return;
+        }
+        if (trimmedValue.length > 0) {
+          // Preserve pastedInfo if present by passing the original string.
+          // Note: submittedValue may have a pastedInfo property attached by InputPrompt.
+          submitQuery(submittedValue);
+        }
+      } catch (err) {
+        console.error('[App] Error in handleFinalSubmit:', err);
       }
     },
     [submitQuery],

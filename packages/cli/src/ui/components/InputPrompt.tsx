@@ -273,10 +273,12 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
         pasteCounterRef.current += 1;
       }
 
+      // Toggle shell mode with '!' (but not during paste)
       if (
         key.sequence === '!' &&
         buffer.text === '' &&
-        !completion.showSuggestions
+        !completion.showSuggestions &&
+        !key.paste
       ) {
         setShellModeActive(!shellModeActive);
         buffer.setText(''); // Clear the '!' from input
@@ -363,30 +365,10 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
           }
         }
 
+        // Enter = submit
         if (key.name === 'return' && !key.ctrl && !key.meta && !key.paste) {
           if (buffer.text.trim()) {
-            const [row, col] = buffer.cursor;
-            const line = buffer.lines[row];
-            const charBefore = col > 0 ? cpSlice(line, col - 1, col) : '';
-            const isMultiLine = buffer.lines.length > 1;
-
-            // At the start of a line (after a newline or at position 0)
-            if (charBefore === '') {
-              buffer.backspace();
-              buffer.newline();
-            // At the end of the buffer - submit (even for multiline)
-            } else if (
-              row === buffer.lines.length - 1 &&
-              col === cpLen(line)
-            ) {
-              handleSubmitAndClear(buffer.text);
-            // In the middle of multiline content - add newline
-            } else if (isMultiLine) {
-              buffer.newline();
-            // Single line - submit
-            } else {
-              handleSubmitAndClear(buffer.text);
-            }
+            handleSubmitAndClear(buffer.text);
           }
           return;
         }

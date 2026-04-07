@@ -53,6 +53,19 @@ This guide provides solutions to common issues and debugging tips.
   - **Cause:** The `is-in-ci` package checks for the presence of `CI`, `CONTINUOUS_INTEGRATION`, or any environment variable with a `CI_` prefix. When any of these are found, it signals that the environment is non-interactive, which prevents the CLI from starting in its interactive mode.
   - **Solution:** If the `CI_` prefixed variable is not needed for the CLI to function, you can temporarily unset it for the command. e.g., `env -u CI_TOKEN gemini`
 
+## Keyboard and Input Issues
+
+- **Multi-line paste causes keyboard to freeze**
+  - **Symptom:** Pasting multi-line text causes the keyboard to become unresponsive or the CLI to freeze
+  - **Cause:** Terminals send pasted content character-by-character or line-by-line. When each character/line triggers a separate React re-render, rapid re-renders can cause the UI to freeze
+  - **Solution:** The CLI uses bracketed paste mode to receive pasted content as a single batch. This allows the input system to process the entire paste as one atomic operation rather than character-by-character
+  - **Technical details:** The `useKeypress` hook in `packages/cli/src/ui/hooks/useKeypress.ts` detects bracketed paste markers (`\x1b[200~` and `\x1b[201~`) and emits the full paste content as a single key event with `paste: true`. The text buffer then inserts the entire sequence at once
+
+- **Keys repeat or type multiple times**
+  - **Symptom:** Pressing a single key causes the character to appear 2-3 times
+  - **Cause:** Multiple stdin listeners may be registered, causing keypress events to be duplicated
+  - **Solution:** The CLI uses a singleton listener pattern to ensure only one stdin handler processes keypresses. If this issue persists, there may be a bug in the listener registration logic
+
 ## Debugging Tips
 
 - **CLI debugging:**

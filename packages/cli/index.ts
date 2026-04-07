@@ -12,7 +12,7 @@ import { main } from './src/gemini.js';
 process.on('uncaughtException', (error) => {
   console.error('An unhandled exception occurred:');
   console.error(error);
-  process.exit(1);
+  // Don't exit - let the CLI continue running
 });
 
 // --- Global Entry Point ---
