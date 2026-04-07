@@ -1,6 +1,6 @@
 # A-Coder CLI
 
-## AI Code Assistance That Respects Your Privacy
+## An AI Coding Agent That Respects Your Privacy
 
 **Your code stays on your machine. Always.**
 

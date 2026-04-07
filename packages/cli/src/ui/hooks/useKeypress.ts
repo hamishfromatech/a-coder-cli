@@ -105,37 +105,19 @@ function processInput(text: string): void {
   }
 }
 
-// Set up stdin listener once
-function setupStdinListener(stdin: { on: Function; isTTY?: boolean }, setRawMode: (mode: boolean) => void): void {
-  if (isInitialized || !stdin.isTTY) {
-    return;
-  }
-
-  isInitialized = true;
-
-  try {
-    setRawMode(true);
-  } catch (err) {
-    console.error('[useKeypress] setRawMode error:', err);
-  }
-
-  stdin.on('data', (data: Buffer | string) => {
-    const str = Buffer.isBuffer(data) ? data.toString('utf8') : data;
-    processInput(str);
-  });
-}
+// Track if we've set up the listener on Ink's event emitter
+let inkListenerSetup = false;
 
 /**
- * A hook that listens for keypress events from stdin.
- *
- * Uses a singleton listener - only the first active useKeypress sets up
- * the stdin listener. All subsequent hooks share the same handlers set.
+ * A hook that listens for keypress events.
+ * Uses Ink's internal event emitter when available to coexist with useInput.
+ * Falls back to direct stdin handling when Ink's event system is not available.
  */
 export function useKeypress(
   onKeypress: (key: Key) => void,
   { isActive }: { isActive: boolean },
 ) {
-  const { stdin, setRawMode } = useStdin();
+  const { stdin, setRawMode, internal_eventEmitter } = useStdin();
   const onKeypressRef = useRef(onKeypress);
 
   useEffect(() => {
@@ -147,8 +129,56 @@ export function useKeypress(
       return;
     }
 
-    // Only set up stdin listener once
-    setupStdinListener(stdin, setRawMode);
+    // Prefer Ink's event emitter when available - this coexists with useInput
+    if (internal_eventEmitter) {
+      // Set raw mode via Ink's management
+      setRawMode(true);
+
+      // Set up listener on Ink's event emitter if not already done
+      if (!inkListenerSetup) {
+        internal_eventEmitter.on('input', (data: Buffer | string) => {
+          const str = Buffer.isBuffer(data) ? data.toString('utf8') : data;
+          processInput(str);
+        });
+        inkListenerSetup = true;
+      }
+
+      const handler: KeypressHandler = (key) => {
+        onKeypressRef.current(key);
+      };
+
+      handlers.add(handler);
+
+      return () => {
+        handlers.delete(handler);
+        // Note: We don't call setRawMode(false) here because other components
+        // may still need raw mode. Ink manages this via reference counting.
+      };
+    }
+
+    // Fallback: direct stdin handling (for non-Ink contexts)
+    if (isInitialized) {
+      const handler: KeypressHandler = (key) => {
+        onKeypressRef.current(key);
+      };
+      handlers.add(handler);
+      return () => {
+        handlers.delete(handler);
+      };
+    }
+
+    isInitialized = true;
+
+    try {
+      setRawMode(true);
+    } catch (err) {
+      console.error('[useKeypress] setRawMode error:', err);
+    }
+
+    stdin.on('data', (data: Buffer | string) => {
+      const str = Buffer.isBuffer(data) ? data.toString('utf8') : data;
+      processInput(str);
+    });
 
     const handler: KeypressHandler = (key) => {
       onKeypressRef.current(key);
@@ -159,5 +189,5 @@ export function useKeypress(
     return () => {
       handlers.delete(handler);
     };
-  }, [isActive, stdin, setRawMode]);
+  }, [isActive, stdin, setRawMode, internal_eventEmitter]);
 }

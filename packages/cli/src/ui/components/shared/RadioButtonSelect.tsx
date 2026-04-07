@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Text, Box, useInput } from 'ink';
 import { Colors } from '../../colors.js';
 
@@ -64,6 +64,12 @@ export function RadioButtonSelect<T>({
   const [activeIndex, setActiveIndex] = useState(safeInitialIndex);
   const [scrollOffset, setScrollOffset] = useState(0);
 
+  // Compute visible items with useMemo to stabilize reference
+  const visibleItems = useMemo(
+    () => items.slice(scrollOffset, scrollOffset + maxItemsToShow),
+    [items, scrollOffset, maxItemsToShow]
+  );
+
   // Ensure activeIndex is always within bounds when items change
   useEffect(() => {
     if (items.length === 0) {
@@ -85,8 +91,9 @@ export function RadioButtonSelect<T>({
     }
   }, [activeIndex, items.length, scrollOffset, maxItemsToShow]);
 
-  useInput(
-    (input, key) => {
+  // Memoize the input handler to prevent unnecessary re-registrations
+  const handleInput = useCallback(
+    (input: string, key: { upArrow: boolean; downArrow: boolean; return: boolean }) => {
       if (input === 'k' || key.upArrow) {
         if (items.length > 0) {
           const newIndex = activeIndex > 0 ? activeIndex - 1 : items.length - 1;
@@ -119,24 +126,26 @@ export function RadioButtonSelect<T>({
       // Enable selection directly from number keys.
       if (/^[1-9]$/.test(input)) {
         const targetIndex = Number.parseInt(input, 10) - 1;
-        if (targetIndex >= 0 && targetIndex < visibleItems.length) {
-          const selectedItem = visibleItems[targetIndex];
+        // Use the current visibleItems from closure (memoized)
+        const currentVisibleItems = items.slice(scrollOffset, scrollOffset + maxItemsToShow);
+        if (targetIndex >= 0 && targetIndex < currentVisibleItems.length) {
+          const selectedItem = currentVisibleItems[targetIndex];
           if (selectedItem) {
-            onSelect?.(selectedItem.value);
+            onSelect(selectedItem.value);
           }
         }
       }
     },
-    {
-      isActive:
-        isFocused &&
-        items.length > 0 &&
-        activeIndex >= 0 &&
-        activeIndex < items.length,
-    },
+    [items, activeIndex, scrollOffset, maxItemsToShow, onSelect, onHighlight]
   );
 
-  const visibleItems = items.slice(scrollOffset, scrollOffset + maxItemsToShow);
+  useInput(handleInput, {
+    isActive:
+      isFocused &&
+      items.length > 0 &&
+      activeIndex >= 0 &&
+      activeIndex < items.length,
+  });
 
   return (
     <Box flexDirection="column">

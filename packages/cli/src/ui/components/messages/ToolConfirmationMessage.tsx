@@ -40,12 +40,14 @@ export const ToolConfirmationMessage: React.FC<
   const { onConfirm } = confirmationDetails;
   const childWidth = terminalWidth - 2; // 2 for padding
 
-  useInput((_, key) => {
-    if (!isFocused) return;
-    if (key.escape) {
-      onConfirm(ToolConfirmationOutcome.Cancel);
-    }
-  });
+  useInput(
+    (_, key) => {
+      if (key.escape) {
+        onConfirm(ToolConfirmationOutcome.Cancel);
+      }
+    },
+    { isActive: isFocused }
+  );
 
   const handleSelect = (item: ToolConfirmationOutcome) => onConfirm(item);
 

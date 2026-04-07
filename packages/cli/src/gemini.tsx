@@ -264,8 +264,6 @@ export async function main() {
       </React.StrictMode>,
       {
         exitOnCtrlC: false,
-        // Enable concurrent rendering for better performance with React 19
-        concurrent: true,
       },
     );
 
