@@ -313,12 +313,12 @@ Expectation for required parameters:
     const fileName = path.basename(params.file_path);
     const fileDiff = Diff.createPatch(
       fileName,
-      editData.currentContent ?? '',
+      String(editData.currentContent ?? ''),
       editData.newContent,
       'Current',
       'Proposed',
       DEFAULT_DIFF_OPTIONS,
-    ) as string;
+    );
     const confirmationDetails: ToolEditConfirmationDetails = {
       type: 'edit',
       title: `Confirm Edit: ${shortenPath(makeRelative(params.file_path, this.config.getTargetDir()))}`,
@@ -406,12 +406,12 @@ Expectation for required parameters:
         const fileName = path.basename(params.file_path);
         const fileDiff = Diff.createPatch(
           fileName,
-          editData.currentContent ?? '', // Should not be null here if not isNewFile
+          String(editData.currentContent ?? ''),
           editData.newContent,
           'Current',
           'Proposed',
           DEFAULT_DIFF_OPTIONS,
-        ) as string;
+        );
         displayResult = { fileDiff, fileName };
       }
 

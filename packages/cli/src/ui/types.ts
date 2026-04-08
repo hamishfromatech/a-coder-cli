@@ -222,6 +222,18 @@ export interface ConsoleMessageItem {
   count: number;
 }
 
+export interface BackgroundShell {
+  id: string;
+  command: string;
+  pid: number;
+  output: string;
+  status: 'running' | 'completed' | 'killed';
+  exitCode: number | null;
+  startTime: number;
+}
+
+export type FocusMode = 'input' | 'shell-list' | 'shell-view';
+
 /**
  * Defines the result of the slash command processor for its consumer (useGeminiStream).
  */

@@ -14,7 +14,7 @@ import {
   useStdin,
   useStdout,
 } from 'ink';
-import { StreamingState, type HistoryItem, MessageType } from './types.js';
+import { StreamingState, type HistoryItem, MessageType, type FocusMode } from './types.js';
 import { useTerminalSize } from './hooks/useTerminalSize.js';
 import { useGeminiStream } from './hooks/useGeminiStream.js';
 import { useLoadingIndicator } from './hooks/useLoadingIndicator.js';
@@ -30,8 +30,11 @@ import { Header } from './components/Header.js';
 import { LoadingIndicator } from './components/LoadingIndicator.js';
 import { AutoAcceptIndicator } from './components/AutoAcceptIndicator.js';
 import { ShellModeIndicator } from './components/ShellModeIndicator.js';
+import { ShellIndicator } from './components/ShellIndicator.js';
+import { ShellOutputViewer } from './components/ShellOutputViewer.js';
 import { InputPrompt } from './components/InputPrompt.js';
 import { Footer } from './components/Footer.js';
+import { useBackgroundShells } from './hooks/useBackgroundShells.js';
 import { ThemeDialog } from './components/ThemeDialog.js';
 import { AuthDialog } from './components/AuthDialog.js';
 import { AuthInProgress } from './components/AuthInProgress.js';
@@ -167,6 +170,15 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
     limit: number;
     percentage: number;
   } | null>(null);
+
+  // Background shell state
+  const {
+    backgroundShells,
+    spawnBackgroundShell,
+    killShell,
+  } = useBackgroundShells();
+  const [focusMode, setFocusMode] = useState<FocusMode>('input');
+  const [selectedShellId, setSelectedShellId] = useState<string | null>(null);
 
   const openPrivacyNotice = useCallback(() => {
     setShowPrivacyNotice(true);
@@ -481,7 +493,7 @@ You can switch authentication methods by typing /auth`;
         }, CTRL_EXIT_PROMPT_DURATION_MS);
       }
     },
-    [slashCommands, commandContext, config],
+    [slashCommands, commandContext, config, backgroundShells, focusMode, selectedShellId, killShell],
   );
 
   useKeypress((key) => {
@@ -537,6 +549,65 @@ You can switch authentication methods by typing /auth`;
       handleExit(ctrlDPressedOnceRef, setCtrlDPressedOnce, ctrlDTimerRef);
     } else if (key.ctrl && key.name === 's' && !enteringConstrainHeightMode) {
       setConstrainHeight(false);
+    }
+
+    // Background shell navigation
+    if (focusMode === 'input') {
+      // In input mode, Escape returns to input (no-op but prevents accidental shell-list escape)
+      // Down arrow navigates to shell list if shells exist
+      if (key.name === 'down' && backgroundShells.length > 0) {
+        setFocusMode('shell-list');
+        return;
+      }
+    } else if (focusMode === 'shell-list') {
+      // In shell list mode
+      if (key.name === 'escape') {
+        setFocusMode('input');
+        return;
+      }
+      if (key.name === 'up') {
+        setSelectedShellId((prev) => {
+          const currentIndex = prev
+            ? backgroundShells.findIndex((s) => s.id === prev)
+            : 0;
+          const newIndex = currentIndex > 0 ? currentIndex - 1 : backgroundShells.length - 1;
+          return backgroundShells[newIndex]?.id || null;
+        });
+        return;
+      }
+      if (key.name === 'down') {
+        setSelectedShellId((prev) => {
+          const currentIndex = prev
+            ? backgroundShells.findIndex((s) => s.id === prev)
+            : 0;
+          const newIndex = (currentIndex + 1) % backgroundShells.length;
+          return backgroundShells[newIndex]?.id || null;
+        });
+        return;
+      }
+      if (key.name === 'return' || key.name === 'enter') {
+        // Enter the selected shell's view (or first shell if none selected)
+        const shellId = selectedShellId || backgroundShells[0]?.id;
+        if (shellId) {
+          setFocusMode('shell-view');
+        }
+        return;
+      }
+    } else if (focusMode === 'shell-view') {
+      // In shell view mode
+      if (key.name === 'x') {
+        // Kill the current shell
+        if (selectedShellId) {
+          killShell(selectedShellId);
+        }
+        return;
+      }
+      if (key.name === 'escape' || key.name === 'backspace' || key.name === 'return' || key.name === 'enter') {
+        // Return to input mode
+        setFocusMode('input');
+        setSelectedShellId(null);
+        return;
+      }
     }
   }, { isActive: true });
 
@@ -1027,6 +1098,16 @@ You can switch authentication methods by typing /auth`;
                       />
                     )}
                   {shellModeActive && <ShellModeIndicator />}
+                  {backgroundShells.length > 0 && (
+                    <ShellIndicator
+                      shells={backgroundShells}
+                      isFocused={focusMode === 'shell-list'}
+                      onSelectShell={(id) => {
+                        setSelectedShellId(id);
+                        setFocusMode('shell-view');
+                      }}
+                    />
+                  )}
                 </Box>
               </Box>
 
@@ -1059,8 +1140,24 @@ You can switch authentication methods by typing /auth`;
                 setShellModeActive={setShellModeActive}
                 waitingForConfirmation={streamingState === StreamingState.WaitingForConfirmation}
                 disabled={!isInputActive}
-                focus={isInputFocused}
+                focus={focusMode === 'input' && isInputFocused}
+                spawnBackgroundShell={spawnBackgroundShell}
+                focusMode={focusMode}
+                onFocusShellList={() => setFocusMode('shell-list')}
               />
+
+              {focusMode === 'shell-view' && selectedShellId && (
+                <ShellOutputViewer
+                  shell={backgroundShells.find((s) => s.id === selectedShellId)!}
+                  shellIndex={backgroundShells.findIndex((s) => s.id === selectedShellId)}
+                  onKill={() => killShell(selectedShellId)}
+                  onBack={() => {
+                    setFocusMode('input');
+                    setSelectedShellId(null);
+                  }}
+                  terminalWidth={mainAreaWidth}
+                />
+              )}
             </>
           )}
 

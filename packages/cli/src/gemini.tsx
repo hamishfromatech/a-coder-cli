@@ -24,6 +24,7 @@ import {
 import { getStartupWarnings } from './utils/startupWarnings.js';
 import { getUserStartupWarnings } from './utils/userStartupWarnings.js';
 import { runNonInteractive } from './nonInteractiveCli.js';
+import { runHeartbeatMode } from './heartbeatCli.js';
 import { loadExtensions, Extension } from './config/extension.js';
 import { cleanupCheckpoints, registerCleanup } from './utils/cleanup.js';
 import { getCliVersion } from './utils/version.js';
@@ -163,6 +164,13 @@ export async function main() {
 
   const argv = await parseArguments();
   debugLog(`Arguments parsed: ${JSON.stringify(argv)}`);
+
+  // Check for heartbeat mode
+  if (argv.heartbeat) {
+    debugLog('Starting heartbeat mode');
+    await runHeartbeatMode();
+    return;
+  }
 
   if (argv.upgrade) {
     debugLog('Handling upgrade');

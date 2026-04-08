@@ -42,6 +42,10 @@ export interface InputPromptProps {
   shellModeActive: boolean;
   setShellModeActive: (value: boolean) => void;
   waitingForConfirmation?: boolean;
+  // Background shell support
+  spawnBackgroundShell?: (command: string, cwd: string) => string;
+  focusMode?: 'input' | 'shell-list' | 'shell-view';
+  onFocusShellList?: () => void;
 }
 
 export const InputPrompt: React.FC<InputPromptProps> = ({
@@ -60,8 +64,12 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
   shellModeActive,
   setShellModeActive,
   waitingForConfirmation = false,
+  spawnBackgroundShell,
+  focusMode = 'input',
+  onFocusShellList,
 }) => {
   const [justNavigatedHistory, setJustNavigatedHistory] = useState(false);
+  const [backgroundMode, setBackgroundMode] = useState(false);
 
   const effectivePlaceholder = disabled
     ? '  A-Coder is thinking...'
@@ -71,6 +79,9 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
         ? '  Shell mode (Esc to exit)'
         : placeholder;
   const effectiveFocus = focus && !disabled;
+
+  // Background mode ref - persists across renders but doesn't cause re-renders
+  const backgroundModeRef = useRef(false);
 
   // Track paste events using the key.paste flag from useKeypress
   const pasteCounterRef = useRef(0);
@@ -314,6 +325,13 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
         return;
       }
 
+      // Ctrl+b to toggle background mode (run command in background)
+      if (key.ctrl && key.name === 'b') {
+        backgroundModeRef.current = !backgroundModeRef.current;
+        setBackgroundMode(backgroundModeRef.current);
+        return;
+      }
+
       if (completion.showSuggestions) {
         if (key.name === 'up') {
           completion.navigateUp();
@@ -396,7 +414,17 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
         // Enter = submit
         if (key.name === 'return' && !key.ctrl && !key.meta && !key.shift && !key.paste) {
           if (buffer.text.trim()) {
-            handleSubmitAndClear(buffer.text);
+            if (backgroundModeRef.current && spawnBackgroundShell) {
+              // Run in background instead of normal submit
+              spawnBackgroundShell(buffer.text, config.getTargetDir());
+              buffer.setText('');
+              backgroundModeRef.current = false;
+              if (onFocusShellList) {
+                onFocusShellList();
+              }
+            } else {
+              handleSubmitAndClear(buffer.text);
+            }
           }
           stopPropagation();
           return;
@@ -405,7 +433,17 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
         // Ctrl+Enter or Meta+Enter to submit (matches placeholder)
         if (key.name === 'return' && (key.ctrl || key.meta)) {
           if (buffer.text.trim()) {
-            handleSubmitAndClear(buffer.text);
+            if (backgroundModeRef.current && spawnBackgroundShell) {
+              // Run in background instead of normal submit
+              spawnBackgroundShell(buffer.text, config.getTargetDir());
+              buffer.setText('');
+              backgroundModeRef.current = false;
+              if (onFocusShellList) {
+                onFocusShellList();
+              }
+            } else {
+              handleSubmitAndClear(buffer.text);
+            }
           }
           stopPropagation();
           return;
@@ -476,6 +514,9 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
       handleSubmitAndClear,
       shellHistory,
       handleClipboardImage,
+      spawnBackgroundShell,
+      config,
+      onFocusShellList,
     ],
   );
 

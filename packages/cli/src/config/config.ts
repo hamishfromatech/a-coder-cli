@@ -66,6 +66,8 @@ export interface CliArgs {
   // Dash integration options
   resume: boolean | undefined;
   sessionId: string | undefined;
+  // Heartbeat mode
+  heartbeat: boolean | undefined;
 }
 
 export async function parseArguments(): Promise<CliArgs> {
@@ -236,6 +238,12 @@ export async function parseArguments(): Promise<CliArgs> {
     .option('session-id', {
       type: 'string',
       description: 'Specific session ID to resume (for Dash integration)',
+    })
+    // Heartbeat mode
+    .option('heartbeat', {
+      type: 'boolean',
+      description: 'Run in heartbeat mode (scheduled task execution from heartbeat.md)',
+      default: false,
     })
 
     .version(await getCliVersion()) // This will enable the --version flag based on package.json

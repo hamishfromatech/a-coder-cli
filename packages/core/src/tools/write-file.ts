@@ -172,12 +172,12 @@ export class WriteFileTool
 
     const fileDiff = Diff.createPatch(
       fileName,
-      originalContent, // Original content (empty if new file or unreadable)
-      correctedContent, // Content after potential correction
+      String(originalContent),
+      String(correctedContent),
       'Current',
       'Proposed',
       DEFAULT_DIFF_OPTIONS,
-    ) as string;
+    );
 
     const confirmationDetails: ToolEditConfirmationDetails = {
       type: 'edit',
@@ -251,12 +251,12 @@ export class WriteFileTool
 
       const fileDiff = Diff.createPatch(
         fileName,
-        currentContentForDiff,
-        fileContent,
+        String(currentContentForDiff),
+        String(fileContent),
         'Original',
         'Written',
         DEFAULT_DIFF_OPTIONS,
-      ) as string;
+      );
 
       const llmSuccessMessageParts = [
         isNewFile

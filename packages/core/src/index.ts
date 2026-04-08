@@ -19,6 +19,7 @@ export * from './core/geminiRequest.js';
 export * from './core/coreToolScheduler.js';
 export * from './core/nonInteractiveToolExecutor.js';
 export * from './core/contextMonitor.js';
+export * from './core/heartbeatManager.js';
 
 export * from './code_assist/codeAssist.js';
 export * from './code_assist/oauth2.js';
@@ -35,6 +36,7 @@ export * from './utils/gitIgnoreParser.js';
 export * from './utils/editor.js';
 export * from './utils/quotaErrorDetection.js';
 export * from './utils/toolPermissionMatcher.js';
+export * from './utils/heartbeatLock.js';
 
 // Export services
 export * from './services/fileDiscoveryService.js';
@@ -63,6 +65,7 @@ export * from './tools/mcp-tool.js';
 export * from './tools/skills.js';
 export * from './tools/subagent.js';
 export * from './tools/subagent-types.js';
+export * from './tools/initialize-heartbeat.js';
 
 // Export services
 export * from './services/fileDiscoveryService.js';
