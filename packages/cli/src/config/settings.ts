@@ -37,7 +37,7 @@ function getSystemSettingsPath(): string {
   } else if (platform() === 'win32') {
     return 'C:\\ProgramData\\a-coder-cli\\settings.json';
   } else {
-    return '/etc/a-coder-cli\\settings.json';
+    return '/etc/a-coder-cli/settings.json';
   }
 }
 

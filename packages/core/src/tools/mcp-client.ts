@@ -210,6 +210,8 @@ export async function connectAndDiscover(
       mcpClient.onerror = (error) => {
         console.error(`MCP ERROR (${mcpServerName}):`, error.toString());
         updateMCPServerStatus(mcpServerName, MCPServerStatus.DISCONNECTED);
+        // Remove tools from the registry so the model doesn't keep trying them
+        toolRegistry.unregisterToolsByServer(mcpServerName);
       };
 
       const tools = await discoverTools(

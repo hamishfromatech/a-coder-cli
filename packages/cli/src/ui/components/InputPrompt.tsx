@@ -15,7 +15,7 @@ import chalk from 'chalk';
 import stringWidth from 'string-width';
 import { useShellHistory } from '../hooks/useShellHistory.js';
 import { useCompletion } from '../hooks/useCompletion.js';
-import { useKeypress, Key } from '../hooks/useKeypress.js';
+import { useKeypress, Key, stopPropagation } from '../hooks/useKeypress.js';
 import { isAtCommand, isSlashCommand } from '../utils/commandUtils.js';
 import { CommandContext, SlashCommand } from '../commands/types.js';
 import { Config } from '@a-coder/core';
@@ -41,6 +41,7 @@ export interface InputPromptProps {
   suggestionsWidth: number;
   shellModeActive: boolean;
   setShellModeActive: (value: boolean) => void;
+  waitingForConfirmation?: boolean;
 }
 
 export const InputPrompt: React.FC<InputPromptProps> = ({
@@ -51,17 +52,24 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
   config,
   slashCommands,
   commandContext,
-  placeholder = '  Type a message (? for help) or @path/to/file',
+  placeholder = '  Type a message (Shift+Enter for newline, ? for help) or @path/to/file',
   focus = true,
   disabled = false,
   inputWidth,
   suggestionsWidth,
   shellModeActive,
   setShellModeActive,
+  waitingForConfirmation = false,
 }) => {
   const [justNavigatedHistory, setJustNavigatedHistory] = useState(false);
 
-  const effectivePlaceholder = disabled ? '  A-Coder is thinking...' : placeholder;
+  const effectivePlaceholder = disabled
+    ? '  A-Coder is thinking...'
+    : waitingForConfirmation
+      ? '  Waiting for your approval...'
+      : shellModeActive
+        ? '  Shell mode (Esc to exit)'
+        : placeholder;
   const effectiveFocus = focus && !disabled;
 
   // Track paste events using the key.paste flag from useKeypress
@@ -282,33 +290,39 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
       ) {
         setShellModeActive(!shellModeActive);
         buffer.setText(''); // Clear the '!' from input
+        stopPropagation();
         return;
       }
 
       if (key.name === 'escape') {
         if (shellModeActive) {
           setShellModeActive(false);
+          stopPropagation();
           return;
         }
 
         if (completion.showSuggestions) {
           completion.resetCompletionState();
+          stopPropagation();
           return;
         }
       }
 
       if (key.ctrl && key.name === 'l') {
         onClearScreen();
+        stopPropagation();
         return;
       }
 
       if (completion.showSuggestions) {
         if (key.name === 'up') {
           completion.navigateUp();
+          stopPropagation();
           return;
         }
         if (key.name === 'down') {
           completion.navigateDown();
+          stopPropagation();
           return;
         }
 
@@ -322,16 +336,19 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
               handleAutocomplete(targetIndex);
             }
           }
+          stopPropagation();
           return;
         }
       } else {
         if (!shellModeActive) {
           if (key.ctrl && key.name === 'p') {
             inputHistory.navigateUp();
+            stopPropagation();
             return;
           }
           if (key.ctrl && key.name === 'n') {
             inputHistory.navigateDown();
+            stopPropagation();
             return;
           }
           // Handle arrow-up/down for history on single-line or at edges
@@ -341,6 +358,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
               (buffer.visualCursor[0] === 0 && buffer.visualScrollRow === 0))
           ) {
             inputHistory.navigateUp();
+            stopPropagation();
             return;
           }
           if (
@@ -349,6 +367,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
               buffer.visualCursor[0] === buffer.allVisualLines.length - 1)
           ) {
             inputHistory.navigateDown();
+            stopPropagation();
             return;
           }
         } else {
@@ -356,20 +375,30 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
           if (key.name === 'up') {
             const prevCommand = shellHistory.getPreviousCommand();
             if (prevCommand !== null) buffer.setText(prevCommand);
+            stopPropagation();
             return;
           }
           if (key.name === 'down') {
             const nextCommand = shellHistory.getNextCommand();
             if (nextCommand !== null) buffer.setText(nextCommand);
+            stopPropagation();
             return;
           }
         }
 
+        // Shift+Enter = insert newline (for multi-line input)
+        if (key.name === 'return' && key.shift && !key.ctrl && !key.meta && !key.paste) {
+          buffer.newline();
+          stopPropagation();
+          return;
+        }
+
         // Enter = submit
-        if (key.name === 'return' && !key.ctrl && !key.meta && !key.paste) {
+        if (key.name === 'return' && !key.ctrl && !key.meta && !key.shift && !key.paste) {
           if (buffer.text.trim()) {
             handleSubmitAndClear(buffer.text);
           }
+          stopPropagation();
           return;
         }
 
@@ -378,6 +407,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
           if (buffer.text.trim()) {
             handleSubmitAndClear(buffer.text);
           }
+          stopPropagation();
           return;
         }
       }
@@ -385,26 +415,31 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
       // Newline insertion for paste or other cases
       if (key.name === 'return' && key.paste) {
         buffer.newline();
+        stopPropagation();
         return;
       }
 
       // Ctrl+A (Home) / Ctrl+E (End)
       if (key.ctrl && key.name === 'a') {
         buffer.move('home');
+        stopPropagation();
         return;
       }
       if (key.ctrl && key.name === 'e') {
         buffer.move('end');
+        stopPropagation();
         return;
       }
 
       // Kill line commands
       if (key.ctrl && key.name === 'k') {
         buffer.killLineRight();
+        stopPropagation();
         return;
       }
       if (key.ctrl && key.name === 'u') {
         buffer.killLineLeft();
+        stopPropagation();
         return;
       }
 
@@ -412,17 +447,22 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
       const isCtrlX = key.ctrl && (key.name === 'x' || key.sequence === '\x18');
       if (isCtrlX) {
         buffer.openInExternalEditor();
+        stopPropagation();
         return;
       }
 
       // Ctrl+V for clipboard image paste
       if (key.ctrl && key.name === 'v') {
         handleClipboardImage();
+        stopPropagation();
         return;
       }
 
       // Fallback to the text buffer's default input handling for all other keys
       buffer.handleInput(key);
+      // stopPropagation after fallback too — any typed character should not
+      // trigger App-level shortcuts like Ctrl+S, Ctrl+O, etc.
+      stopPropagation();
     },
     [
       effectiveFocus,
@@ -439,7 +479,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
     ],
   );
 
-  useKeypress(handleInput, { isActive: effectiveFocus });
+  useKeypress(handleInput, { isActive: effectiveFocus, priority: 100 });
 
   const linesToRender = buffer.viewportVisualLines;
   const [cursorVisualRowAbsolute, cursorVisualColAbsolute] =

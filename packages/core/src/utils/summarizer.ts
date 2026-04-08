@@ -126,6 +126,15 @@ export async function summarizeToolOutput(
     return getResponseText(parsedResponse) || textToSummarize;
   } catch (error) {
     console.error('Failed to summarize tool output.', error);
+    // Truncate instead of returning unbounded raw text that could overwhelm
+    // the context window
+    const TRUNCATION_LIMIT = 5000;
+    if (textToSummarize.length > TRUNCATION_LIMIT) {
+      return (
+        textToSummarize.slice(0, TRUNCATION_LIMIT) +
+        `\n... [truncated: ${textToSummarize.length - TRUNCATION_LIMIT} more characters]`
+      );
+    }
     return textToSummarize;
   }
 }

@@ -24,7 +24,7 @@ import { ensureCorrectEdit } from '../utils/editCorrector.js';
 import { DEFAULT_DIFF_OPTIONS } from './diffOptions.js';
 import { ReadFileTool } from './read-file.js';
 import { ModifiableTool, ModifyContext } from './modifiable-tool.js';
-import { isWithinRoot } from '../utils/fileUtils.js';
+import { isWithinRoot, isBinaryFile } from '../utils/fileUtils.js';
 
 /**
  * Parameters for the Edit tool
@@ -179,6 +179,24 @@ Expectation for required parameters:
     let finalOldString = params.old_string;
     let occurrences = 0;
     let error: { display: string; raw: string } | undefined = undefined;
+
+    // Reject binary files before attempting to read/edit them
+    try {
+      if (fs.existsSync(params.file_path) && isBinaryFile(params.file_path)) {
+        return {
+          currentContent: null,
+          newContent: '',
+          isNewFile: false,
+          occurrences: 0,
+          error: {
+            display: `Cannot edit binary file: ${params.file_path}`,
+            raw: `Binary file: ${params.file_path}`,
+          },
+        };
+      }
+    } catch {
+      // If we can't check, proceed — the read below will fail if inaccessible
+    }
 
     try {
       currentContent = fs.readFileSync(params.file_path, 'utf8');

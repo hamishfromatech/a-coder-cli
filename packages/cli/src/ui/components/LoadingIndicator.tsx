@@ -63,11 +63,12 @@ export const LoadingIndicator: React.FC<LoadingIndicatorProps> = ({
       {!isWaiting && (elapsedTime >= 3 || hasThought) && (
         <Box marginLeft={4} marginTop={0} flexDirection="row">
           <Text color={Semantic.Primary} dimColor>
-            {elapsedTime >= 3 && `${elapsedTime.toFixed(1)}s`}
+            {elapsedTime >= 3 && `${Math.round(elapsedTime)}s`}
             {elapsedTime >= 3 && hasThought && ' · '}
             {hasThought && !showThinking && 'Reasoning hidden (ctrl+o)'}
             {hasThought && showThinking && 'Showing reasoning'}
-            {!hasThought && elapsedTime >= 3 && 'esc to cancel'}
+            {!hasThought && elapsedTime >= 3 && elapsedTime < 30 && 'esc to cancel'}
+            {!hasThought && elapsedTime >= 30 && 'still working... esc to cancel'}
           </Text>
         </Box>
       )}

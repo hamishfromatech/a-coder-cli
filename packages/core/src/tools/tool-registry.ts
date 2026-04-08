@@ -56,6 +56,8 @@ Signal: Signal number or \`(none)\` if no signal was received.
     child.stdin.write(JSON.stringify(params));
     child.stdin.end();
 
+    const TOOL_TIMEOUT_MS = 60_000; // 60 seconds
+
     let stdout = '';
     let stderr = '';
     let error: Error | null = null;
@@ -63,6 +65,16 @@ Signal: Signal number or \`(none)\` if no signal was received.
     let signal: NodeJS.Signals | null = null;
 
     await new Promise<void>((resolve) => {
+      const timeout = setTimeout(() => {
+        child.kill('SIGTERM');
+        // Give it 5s to clean up, then force kill
+        setTimeout(() => {
+          try { child.kill('SIGKILL'); } catch { /* already dead */ }
+        }, 5000);
+        error = new Error(`Tool "${this.name}" timed out after ${TOOL_TIMEOUT_MS / 1000}s`);
+        resolve();
+      }, TOOL_TIMEOUT_MS);
+
       const onStdout = (data: Buffer) => {
         stdout += data?.toString();
       };
@@ -79,6 +91,7 @@ Signal: Signal number or \`(none)\` if no signal was received.
         _code: number | null,
         _signal: NodeJS.Signals | null,
       ) => {
+        clearTimeout(timeout);
         code = _code;
         signal = _signal;
         cleanup();
@@ -145,6 +158,22 @@ export class ToolRegistry {
     this.tools.set(tool.name, tool);
     if (this.config.getDebugMode()) {
       console.log(`[ToolRegistry Debug] Registered tool: "${tool.name}" (displayName: "${tool.displayName}")`);
+    }
+  }
+
+  /**
+   * Unregisters all tools from a specific MCP server.
+   * Used when an MCP server disconnects to prevent the model from
+   * trying to call tools that are no longer available.
+   */
+  unregisterToolsByServer(serverName: string): void {
+    for (const [name, tool] of this.tools.entries()) {
+      if (tool instanceof DiscoveredMCPTool && tool.serverName === serverName) {
+        this.tools.delete(name);
+        if (this.config.getDebugMode()) {
+          console.log(`[ToolRegistry Debug] Unregistered tool: "${name}" from disconnected server "${serverName}"`);
+        }
+      }
     }
   }
 

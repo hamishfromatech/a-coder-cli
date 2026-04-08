@@ -204,6 +204,13 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
         setAuthError(error);
         openAuthDialog();
       }
+    } else if (
+      !process.env.OPENAI_API_KEY &&
+      !process.env.OPENAI_BASE_URL &&
+      !process.env.GEMINI_API_KEY
+    ) {
+      // No auth configured and no env vars — open auth dialog to guide setup
+      openAuthDialog();
     }
   }, [settings.merged.selectedAuthType, openAuthDialog, setAuthError]);
 
@@ -622,42 +629,48 @@ You can switch authentication methods by typing /auth`;
 
   const logger = useLogger();
   const [userMessages, setUserMessages] = useState<string[]>([]);
+  const pastMessagesRef = useRef<string[]>([]);
 
+  // Fetch past messages from logger only once on mount
   useEffect(() => {
-    const fetchUserMessages = async () => {
-      const pastMessagesRaw = (await logger?.getPreviousUserMessages()) || []; // Newest first
+    const fetchPastMessages = async () => {
+      const pastMessagesRaw = (await logger?.getPreviousUserMessages()) || [];
+      pastMessagesRef.current = pastMessagesRaw;
+    };
+    fetchPastMessages();
+  }, [logger]);
 
-      const currentSessionUserMessages = history
-        .filter(
-          (item): item is HistoryItem & { type: 'user'; text: string } =>
-            item.type === 'user' &&
-            typeof item.text === 'string' &&
-            item.text.trim() !== '',
-        )
-        .map((item) => item.text)
-        .reverse(); // Newest first, to match pastMessagesRaw sorting
+  // Derive user messages from current session + cached past messages
+  useEffect(() => {
+    const currentSessionUserMessages = history
+      .filter(
+        (item): item is HistoryItem & { type: 'user'; text: string } =>
+          item.type === 'user' &&
+          typeof item.text === 'string' &&
+          item.text.trim() !== '',
+      )
+      .map((item) => item.text)
+      .reverse(); // Newest first, to match pastMessagesRaw sorting
 
-      // Combine, with current session messages being more recent
-      const combinedMessages = [
-        ...currentSessionUserMessages,
-        ...pastMessagesRaw,
-      ];
+    // Combine, with current session messages being more recent
+    const combinedMessages = [
+      ...currentSessionUserMessages,
+      ...pastMessagesRef.current,
+    ];
 
-      // Deduplicate consecutive identical messages from the combined list (still newest first)
-      const deduplicatedMessages: string[] = [];
-      if (combinedMessages.length > 0) {
-        deduplicatedMessages.push(combinedMessages[0]); // Add the newest one unconditionally
-        for (let i = 1; i < combinedMessages.length; i++) {
-          if (combinedMessages[i] !== combinedMessages[i - 1]) {
-            deduplicatedMessages.push(combinedMessages[i]);
-          }
+    // Deduplicate consecutive identical messages from the combined list (still newest first)
+    const deduplicatedMessages: string[] = [];
+    if (combinedMessages.length > 0) {
+      deduplicatedMessages.push(combinedMessages[0]); // Add the newest one unconditionally
+      for (let i = 1; i < combinedMessages.length; i++) {
+        if (combinedMessages[i] !== combinedMessages[i - 1]) {
+          deduplicatedMessages.push(combinedMessages[i]);
         }
       }
-      // Reverse to oldest first for useInputHistory
-      setUserMessages(deduplicatedMessages.reverse());
-    };
-    fetchUserMessages();
-  }, [history, logger]);
+    }
+    // Reverse to oldest first for useInputHistory
+    setUserMessages(deduplicatedMessages.reverse());
+  }, [history]);
 
   const isInputActive = !initError && !showHelp;
   const isInputFocused =
@@ -684,7 +697,7 @@ You can switch authentication methods by typing /auth`;
 
   const staticExtraHeight = /* margins and padding */ 3;
   const availableTerminalHeight = useMemo(
-    () => terminalHeight - footerHeight - staticExtraHeight,
+    () => Math.max(1, terminalHeight - footerHeight - staticExtraHeight),
     [terminalHeight, footerHeight],
   );
 
@@ -1044,6 +1057,7 @@ You can switch authentication methods by typing /auth`;
                 commandContext={commandContext}
                 shellModeActive={shellModeActive}
                 setShellModeActive={setShellModeActive}
+                waitingForConfirmation={streamingState === StreamingState.WaitingForConfirmation}
                 disabled={!isInputActive}
                 focus={isInputFocused}
               />

@@ -207,10 +207,10 @@ export const Help: React.FC<Help> = ({
         Keyboard Shortcuts
       </Text>
       <Text color={Colors.Foreground}>
-        <Text bold color={Colors.AccentPurple}>
-          Enter
-        </Text>{' '}
-        - Send message
+        <Text bold color={Colors.AccentPurple}>Enter</Text> - Send message
+      </Text>
+      <Text color={Colors.Foreground}>
+        <Text bold color={Colors.AccentPurple}>Shift+Enter</Text> - Insert newline
       </Text>
       <Text color={Colors.Foreground}>
         <Text bold color={Colors.AccentPurple}>
@@ -221,34 +221,55 @@ export const Help: React.FC<Help> = ({
           : '- New line'}
       </Text>
       <Text color={Colors.Foreground}>
-        <Text bold color={Colors.AccentPurple}>
-          Up/Down
-        </Text>{' '}
-        - History navigation / suggestion navigation
+        <Text bold color={Colors.AccentPurple}>Up/Down</Text> - History navigation / suggestion navigation
       </Text>
       <Text color={Colors.Foreground}>
-        <Text bold color={Colors.AccentPurple}>
-          Tab
-        </Text>{' '}
-        - Accept suggestion
+        <Text bold color={Colors.AccentPurple}>Tab</Text> - Accept suggestion
       </Text>
       <Text color={Colors.Foreground}>
-        <Text bold color={Colors.AccentPurple}>
-          Esc
-        </Text>{' '}
-        - Cancel / close suggestions
+        <Text bold color={Colors.AccentPurple}>Esc</Text> - Cancel stream / close suggestions / exit shell mode
       </Text>
       <Text color={Colors.Foreground}>
-        <Text bold color={Colors.AccentPurple}>
-          Ctrl+L
-        </Text>{' '}
-        - Clear screen
+        <Text bold color={Colors.AccentPurple}>Ctrl+A</Text> - Move to start of line
       </Text>
       <Text color={Colors.Foreground}>
-        <Text bold color={Colors.AccentPurple}>
-          Ctrl+C
-        </Text>{' '}
-        - Quit application
+        <Text bold color={Colors.AccentPurple}>Ctrl+E</Text> - Move to end of line / toggle error details
+      </Text>
+      <Text color={Colors.Foreground}>
+        <Text bold color={Colors.AccentPurple}>Ctrl+K</Text> - Delete from cursor to end of line
+      </Text>
+      <Text color={Colors.Foreground}>
+        <Text bold color={Colors.AccentPurple}>Ctrl+U</Text> - Delete from start of line to cursor
+      </Text>
+      <Text color={Colors.Foreground}>
+        <Text bold color={Colors.AccentPurple}>Ctrl+W</Text> - Delete word before cursor
+      </Text>
+      <Text color={Colors.Foreground}>
+        <Text bold color={Colors.AccentPurple}>Ctrl+X</Text> - Open in external editor
+      </Text>
+      <Text color={Colors.Foreground}>
+        <Text bold color={Colors.AccentPurple}>Ctrl+V</Text> - Paste image from clipboard
+      </Text>
+      <Text color={Colors.Foreground}>
+        <Text bold color={Colors.AccentPurple}>Ctrl+L</Text> - Clear screen
+      </Text>
+      <Text color={Colors.Foreground}>
+        <Text bold color={Colors.AccentPurple}>Ctrl+O</Text> - Toggle reasoning display
+      </Text>
+      <Text color={Colors.Foreground}>
+        <Text bold color={Colors.AccentPurple}>Ctrl+T</Text> - Toggle tool descriptions
+      </Text>
+      <Text color={Colors.Foreground}>
+        <Text bold color={Colors.AccentPurple}>Ctrl+S</Text> - Show more lines
+      </Text>
+      <Text color={Colors.Foreground}>
+        <Text bold color={Colors.AccentPurple}>Ctrl+Y</Text> - Toggle auto-approve (YOLO mode)
+      </Text>
+      <Text color={Colors.Foreground}>
+        <Text bold color={Colors.AccentPurple}>Shift+Tab</Text> - Toggle auto-edit mode
+      </Text>
+      <Text color={Colors.Foreground}>
+        <Text bold color={Colors.AccentPurple}>Ctrl+C / Ctrl+D</Text> - Quit application (press twice)
       </Text>
 
       <Box height={1} />

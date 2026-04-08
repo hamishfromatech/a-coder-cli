@@ -167,6 +167,8 @@ export type ServerGeminiStreamEvent =
   | ServerGeminiLoopDetectedEvent
   | ServerGeminiContextWarningEvent;
 
+const MAX_DEBUG_RESPONSES = 50;
+
 // A turn manages the agentic loop turn within the server context.
 export class Turn {
   readonly pendingToolCalls: ToolCallRequestInfo[];
@@ -205,6 +207,10 @@ export class Turn {
           return;
         }
         this.debugResponses.push(resp);
+        // Cap to prevent unbounded memory growth in long sessions
+        if (this.debugResponses.length > MAX_DEBUG_RESPONSES) {
+          this.debugResponses.shift();
+        }
 
         const text = getResponseText(resp);
         if (text) {

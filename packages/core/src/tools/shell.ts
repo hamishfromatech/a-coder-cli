@@ -19,6 +19,7 @@ import {
 import { Type } from '@google/genai';
 import { SchemaValidator } from '../utils/schemaValidator.js';
 import { getErrorMessage } from '../utils/errors.js';
+import { isWithinRoot } from '../utils/fileUtils.js';
 import stripAnsi from 'strip-ansi';
 
 export interface ShellToolParams {
@@ -123,6 +124,14 @@ Process Group PGID: Process group started or \`(none)\``,
         allowed: false,
         reason:
           'Command substitution using $() is not allowed for security reasons',
+      };
+    }
+    // Also block backtick command substitution
+    if (command.includes('`')) {
+      return {
+        allowed: false,
+        reason:
+          'Command substitution using backticks is not allowed for security reasons',
       };
     }
 
@@ -245,6 +254,9 @@ Process Group PGID: Process group started or \`(none)\``,
       );
       if (!fs.existsSync(directory)) {
         return 'Directory must exist.';
+      }
+      if (!isWithinRoot(directory, this.config.getTargetDir())) {
+        return 'Directory must be within the project root directory.';
       }
     }
     return null;

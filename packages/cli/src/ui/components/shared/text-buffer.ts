@@ -548,6 +548,78 @@ export function textBufferReducer(
     case 'move': {
       const { dir } = action.payload;
       const { lines, cursorRow, cursorCol, viewportWidth } = state;
+
+      // Word movements work on logical coordinates — skip expensive visual layout.
+      switch (dir) {
+        case 'wordLeft': {
+          if (cursorCol === 0 && cursorRow === 0) return state;
+
+          let newCursorRow = cursorRow;
+          let newCursorCol = cursorCol;
+
+          if (cursorCol === 0) {
+            newCursorRow--;
+            newCursorCol = cpLen(lines[newCursorRow] ?? '');
+          } else {
+            const lineContent = lines[cursorRow];
+            const arr = toCodePoints(lineContent);
+            let start = cursorCol;
+            let onlySpaces = true;
+            for (let i = 0; i < start; i++) {
+              if (isWordChar(arr[i])) {
+                onlySpaces = false;
+                break;
+              }
+            }
+            if (onlySpaces && start > 0) {
+              start--;
+            } else {
+              while (start > 0 && !isWordChar(arr[start - 1])) start--;
+              while (start > 0 && isWordChar(arr[start - 1])) start--;
+            }
+            newCursorCol = start;
+          }
+          return {
+            ...state,
+            cursorRow: newCursorRow,
+            cursorCol: newCursorCol,
+            preferredCol: null,
+          };
+        }
+        case 'wordRight': {
+          if (
+            cursorRow === lines.length - 1 &&
+            cursorCol === cpLen(lines[cursorRow] ?? '')
+          ) {
+            return state;
+          }
+
+          let newCursorRow = cursorRow;
+          let newCursorCol = cursorCol;
+          const lineContent = lines[cursorRow] ?? '';
+          const arr = toCodePoints(lineContent);
+
+          if (cursorCol >= arr.length) {
+            newCursorRow++;
+            newCursorCol = 0;
+          } else {
+            let end = cursorCol;
+            while (end < arr.length && !isWordChar(arr[end])) end++;
+            while (end < arr.length && isWordChar(arr[end])) end++;
+            newCursorCol = end;
+          }
+          return {
+            ...state,
+            cursorRow: newCursorRow,
+            cursorCol: newCursorCol,
+            preferredCol: null,
+          };
+        }
+        default:
+          break;
+      }
+
+      // Visual movements require the expensive visual layout calculation.
       const visualLayout = calculateVisualLayout(
         lines,
         [cursorRow, cursorCol],
@@ -610,72 +682,6 @@ export function textBufferReducer(
           newPreferredCol = null;
           newVisualCol = currentVisLineLen;
           break;
-        case 'wordLeft': {
-          const { cursorRow, cursorCol, lines } = state;
-          if (cursorCol === 0 && cursorRow === 0) return state;
-
-          let newCursorRow = cursorRow;
-          let newCursorCol = cursorCol;
-
-          if (cursorCol === 0) {
-            newCursorRow--;
-            newCursorCol = cpLen(lines[newCursorRow] ?? '');
-          } else {
-            const lineContent = lines[cursorRow];
-            const arr = toCodePoints(lineContent);
-            let start = cursorCol;
-            let onlySpaces = true;
-            for (let i = 0; i < start; i++) {
-              if (isWordChar(arr[i])) {
-                onlySpaces = false;
-                break;
-              }
-            }
-            if (onlySpaces && start > 0) {
-              start--;
-            } else {
-              while (start > 0 && !isWordChar(arr[start - 1])) start--;
-              while (start > 0 && isWordChar(arr[start - 1])) start--;
-            }
-            newCursorCol = start;
-          }
-          return {
-            ...state,
-            cursorRow: newCursorRow,
-            cursorCol: newCursorCol,
-            preferredCol: null,
-          };
-        }
-        case 'wordRight': {
-          const { cursorRow, cursorCol, lines } = state;
-          if (
-            cursorRow === lines.length - 1 &&
-            cursorCol === cpLen(lines[cursorRow] ?? '')
-          ) {
-            return state;
-          }
-
-          let newCursorRow = cursorRow;
-          let newCursorCol = cursorCol;
-          const lineContent = lines[cursorRow] ?? '';
-          const arr = toCodePoints(lineContent);
-
-          if (cursorCol >= arr.length) {
-            newCursorRow++;
-            newCursorCol = 0;
-          } else {
-            let end = cursorCol;
-            while (end < arr.length && !isWordChar(arr[end])) end++;
-            while (end < arr.length && isWordChar(arr[end])) end++;
-            newCursorCol = end;
-          }
-          return {
-            ...state,
-            cursorRow: newCursorRow,
-            cursorCol: newCursorCol,
-            preferredCol: null,
-          };
-        }
         default:
           break;
       }

@@ -18,10 +18,42 @@ export interface Key {
 
 type KeypressHandler = (key: Key) => void;
 
-// Singleton state
-const handlers = new Set<KeypressHandler>();
+interface HandlerEntry {
+  handler: KeypressHandler;
+  priority: number;
+}
+
+// Singleton state — ordered list by priority (highest first)
+const handlers: HandlerEntry[] = [];
 let isInitialized = false;
 let isPasteActive = false;
+let propagationStopped = false;
+
+/** Insert a handler into the list, maintaining descending priority order. */
+function insertHandler(handler: KeypressHandler, priority: number): void {
+  const entry: HandlerEntry = { handler, priority };
+  let i = 0;
+  while (i < handlers.length && handlers[i].priority >= priority) {
+    i++;
+  }
+  handlers.splice(i, 0, entry);
+}
+
+/** Remove a handler from the list by reference. */
+function removeHandler(handler: KeypressHandler): void {
+  const idx = handlers.findIndex((e) => e.handler === handler);
+  if (idx !== -1) handlers.splice(idx, 1);
+}
+
+/** Call inside a handler to prevent subsequent handlers from receiving the event. */
+export function stopPropagation(): void {
+  propagationStopped = true;
+}
+
+/** Check if the most recent key event was consumed by a higher-priority handler. */
+export function isPropagationStopped(): boolean {
+  return propagationStopped;
+}
 
 export function isPasting(): boolean {
   return isPasteActive;
@@ -29,15 +61,20 @@ export function isPasting(): boolean {
 
 export function resetKeypressSingleton() {
   isPasteActive = false;
-  handlers.clear();
+  handlers.length = 0;
   isInitialized = false;
+  propagationStopped = false;
+  inkListenerSetup = false;
 }
 
-// Internal function to emit a key to all handlers
+// Internal function to emit a key to all handlers in priority order (highest first).
+// Handlers can call stopPropagation() to prevent subsequent handlers from receiving the event.
 function emitKey(key: Key): void {
-  for (const h of handlers) {
+  propagationStopped = false;
+  for (const entry of handlers) {
+    if (propagationStopped) break;
     try {
-      h(key);
+      entry.handler(key);
     } catch (err) {
       console.error('[useKeypress] Handler error:', err);
     }
@@ -112,17 +149,27 @@ let inkListenerSetup = false;
  * A hook that listens for keypress events.
  * Uses Ink's internal event emitter when available to coexist with useInput.
  * Falls back to direct stdin handling when Ink's event system is not available.
+ *
+ * Priority: higher numbers fire first. Default is 0. Input-level handlers
+ * should use priority 100 so they fire before App-level handlers (priority 0).
+ * Handlers can call stopPropagation() to prevent lower-priority handlers from
+ * receiving the event.
  */
 export function useKeypress(
   onKeypress: (key: Key) => void,
-  { isActive }: { isActive: boolean },
+  { isActive, priority = 0 }: { isActive: boolean; priority?: number },
 ) {
   const { stdin, setRawMode, internal_eventEmitter } = useStdin();
   const onKeypressRef = useRef(onKeypress);
+  const priorityRef = useRef(priority);
 
   useEffect(() => {
     onKeypressRef.current = onKeypress;
   }, [onKeypress]);
+
+  useEffect(() => {
+    priorityRef.current = priority;
+  }, [priority]);
 
   useEffect(() => {
     if (!isActive || !stdin.isTTY) {
@@ -147,10 +194,10 @@ export function useKeypress(
         onKeypressRef.current(key);
       };
 
-      handlers.add(handler);
+      insertHandler(handler, priorityRef.current);
 
       return () => {
-        handlers.delete(handler);
+        removeHandler(handler);
         // Note: We don't call setRawMode(false) here because other components
         // may still need raw mode. Ink manages this via reference counting.
       };
@@ -161,9 +208,9 @@ export function useKeypress(
       const handler: KeypressHandler = (key) => {
         onKeypressRef.current(key);
       };
-      handlers.add(handler);
+      insertHandler(handler, priorityRef.current);
       return () => {
-        handlers.delete(handler);
+        removeHandler(handler);
       };
     }
 
@@ -183,11 +230,10 @@ export function useKeypress(
     const handler: KeypressHandler = (key) => {
       onKeypressRef.current(key);
     };
-
-    handlers.add(handler);
+    insertHandler(handler, priorityRef.current);
 
     return () => {
-      handlers.delete(handler);
+      removeHandler(handler);
     };
   }, [isActive, stdin, setRawMode, internal_eventEmitter]);
 }

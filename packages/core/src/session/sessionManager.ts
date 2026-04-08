@@ -379,14 +379,18 @@ export class SessionManager {
 
     const saveInterval = interval || this.settings.autoSaveInterval;
 
+    let isSaving = false;
     this.autoSaveTimer = setInterval(async () => {
-      if (this.currentSessionId) {
+      if (this.currentSessionId && !isSaving) {
+        isSaving = true;
         try {
           const history = getHistory();
           const metadata = getMetadata();
           await this.saveSession(this.currentSessionId, history, metadata);
         } catch (error) {
           console.error('Auto-save failed:', error);
+        } finally {
+          isSaving = false;
         }
       }
     }, saveInterval);

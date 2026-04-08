@@ -229,6 +229,11 @@ export const useGeminiStream = (
 
   useInput((_input, key) => {
     if (key.escape) {
+      // When waiting for tool confirmation, Escape cancels the confirmation
+      // (handled by ToolConfirmationMessage's useInput), not the entire stream.
+      if (streamingState === StreamingState.WaitingForConfirmation) {
+        return;
+      }
       handleEscapeKey();
     }
   });
@@ -537,7 +542,7 @@ export const useGeminiStream = (
       if (eventType === 'warning') {
         message = `Context usage is at ${percentage}% (${currentTokens}/${tokenLimit} tokens). Consider using /compress to free up space.`;
       } else if (eventType === 'critical') {
-        message = `Context usage is at ${percentage}% (${currentTokens}/${tokenLimit} tokens). Approaching token limit.`;
+        message = `Context usage is at ${percentage}% (${currentTokens}/${tokenLimit} tokens). Approaching token limit. Use /compress to free up space, or start a new conversation.`;
       } else if (eventType === 'auto_compress') {
         message = `Auto-compressing chat history (${percentage}% of ${tokenLimit} tokens)...`;
       }
@@ -563,6 +568,7 @@ export const useGeminiStream = (
     ): Promise<StreamProcessingStatus> => {
       let geminiMessageBuffer = '';
       const toolCallRequests: ToolCallRequestInfo[] = [];
+      let wasCancelled = false;
       for await (const event of stream) {
         switch (event.type) {
           case ServerGeminiEventType.Thought:
@@ -602,6 +608,7 @@ export const useGeminiStream = (
             break;
           case ServerGeminiEventType.UserCancelled:
             handleUserCancelledEvent(userMessageTimestamp);
+            wasCancelled = true;
             break;
           case ServerGeminiEventType.Error:
             handleErrorEvent(event.value, userMessageTimestamp);
@@ -634,7 +641,9 @@ export const useGeminiStream = (
       if (toolCallRequests.length > 0) {
         scheduleToolCalls(toolCallRequests, signal);
       }
-      return StreamProcessingStatus.Completed;
+      return wasCancelled
+        ? StreamProcessingStatus.UserCancelled
+        : StreamProcessingStatus.Completed;
     },
     [
       handleContentEvent,

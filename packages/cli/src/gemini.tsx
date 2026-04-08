@@ -141,12 +141,15 @@ async function handleUpgrade() {
 }
 
 export async function main() {
+  const isDebug = process.env.DEBUG === '1' || process.env.DEBUG === 'true';
   const debugLogPath = join(os.homedir(), 'gemini-debug.log');
-  const debugLog = (msg: string) => {
-    try {
-      fs.appendFileSync(debugLogPath, `${new Date().toISOString()} [MAIN] ${msg}\n`);
-    } catch (e) {}
-  };
+  const debugLog = isDebug
+    ? (msg: string) => {
+        try {
+          fs.appendFileSync(debugLogPath, `${new Date().toISOString()} [MAIN] ${msg}\n`);
+        } catch (e) {}
+      }
+    : (_msg: string) => {};
   debugLog('Entering main()');
   const workspaceRoot = process.cwd();
   const settings = loadSettings(workspaceRoot);
@@ -251,6 +254,9 @@ export async function main() {
 
   // Render UI, passing necessary config values. Check that there is no command line question.
   if (shouldBeInteractive) {
+    // Show immediate feedback while the rest of startup completes
+    process.stdout.write('Starting A-Coder CLI...\n');
+
     const version = await getCliVersion();
     setWindowTitle(basename(workspaceRoot), settings);
     const instance = render(

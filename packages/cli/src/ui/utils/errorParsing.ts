@@ -159,5 +159,5 @@ export function parseAndFormatApiError(
     return `[API Error: ${error}]`;
   }
 
-  return '[API Error: An unknown error occurred.]';
+  return '[API Error: An unknown error occurred. Check your network connection and try again.]';
 }

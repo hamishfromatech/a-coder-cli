@@ -220,32 +220,37 @@ async function readGeminiMdFiles(
   filePaths: string[],
   debugMode: boolean,
 ): Promise<GeminiFileContent[]> {
-  const results: GeminiFileContent[] = [];
-  for (const filePath of filePaths) {
-    try {
+  const settled = await Promise.allSettled(
+    filePaths.map(async (filePath) => {
       const content = await fs.readFile(filePath, 'utf-8');
-
-      // Process imports in the content
       const processedContent = await processImports(
         content,
         path.dirname(filePath),
         debugMode,
       );
+      return { filePath, content: processedContent } as GeminiFileContent;
+    }),
+  );
 
-      results.push({ filePath, content: processedContent });
+  const results: GeminiFileContent[] = [];
+  for (let i = 0; i < settled.length; i++) {
+    const result = settled[i];
+    if (result.status === 'fulfilled') {
+      results.push(result.value);
       if (debugMode)
         logger.debug(
-          `Successfully read and processed imports: ${filePath} (Length: ${processedContent.length})`,
+          `Successfully read and processed imports: ${result.value.filePath} (Length: ${result.value.content?.length ?? 0})`,
         );
-    } catch (error: unknown) {
+    } else {
+      const filePath = filePaths[i];
       const isTestEnv = process.env.NODE_ENV === 'test' || process.env.VITEST;
       if (!isTestEnv) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = result.reason instanceof Error ? result.reason.message : String(result.reason);
         logger.warn(
           `Warning: Could not read ${getAllGeminiMdFilenames()} file at ${filePath}. Error: ${message}`,
         );
       }
-      results.push({ filePath, content: null }); // Still include it with null content
+      results.push({ filePath, content: null });
       if (debugMode) logger.debug(`Failed to read: ${filePath}`);
     }
   }

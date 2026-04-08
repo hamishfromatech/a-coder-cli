@@ -36,8 +36,10 @@ export function isWithinRoot(
   pathToCheck: string,
   rootDirectory: string,
 ): boolean {
-  const normalizedPathToCheck = path.resolve(pathToCheck);
-  const normalizedRootDirectory = path.resolve(rootDirectory);
+  // Resolve symlinks on both paths to prevent symlink escape attacks.
+  // This also handles macOS /var -> /private/var symlinks.
+  const normalizedRootDirectory = resolvePath(rootDirectory);
+  const normalizedPathToCheck = resolvePath(pathToCheck);
 
   // Ensure the rootDirectory path ends with a separator for correct startsWith comparison,
   // unless it's the root path itself (e.g., '/' or 'C:\').
@@ -51,6 +53,37 @@ export function isWithinRoot(
     normalizedPathToCheck === normalizedRootDirectory ||
     normalizedPathToCheck.startsWith(rootWithSeparator)
   );
+}
+
+/**
+ * Resolve a path through realpathSync to handle symlinks consistently.
+ * If the path doesn't exist (e.g., a new file being created), resolves
+ * the nearest existing parent and appends the remaining components.
+ * This prevents symlink escape attacks where a symlink inside the project
+ * points to an external directory.
+ */
+function resolvePath(inputPath: string): string {
+  const resolved = path.resolve(inputPath);
+  try {
+    return fs.realpathSync(resolved);
+  } catch {
+    // Path doesn't exist — resolve the nearest existing parent
+    let current = resolved;
+    const remainingParts: string[] = [];
+    while (current !== path.dirname(current)) {
+      try {
+        const realParent = fs.realpathSync(current);
+        return remainingParts.length > 0
+          ? path.join(realParent, ...remainingParts.reverse())
+          : realParent;
+      } catch {
+        remainingParts.push(path.basename(current));
+        current = path.dirname(current);
+      }
+    }
+    // Reached filesystem root without finding an existing directory
+    return resolved;
+  }
 }
 
 /**

@@ -20,6 +20,8 @@ export interface RetryOptions {
     error?: unknown,
   ) => Promise<string | boolean | null>;
   authType?: string;
+  /** Called on each retry attempt with the attempt number and delay. */
+  onRetry?: (attempt: number, maxAttempts: number, delayMs: number) => void;
 }
 
 const DEFAULT_RETRY_OPTIONS: RetryOptions = {
@@ -77,6 +79,7 @@ export async function retryWithBackoff<T>(
     onPersistent429,
     authType,
     shouldRetry,
+    onRetry,
   } = {
     ...DEFAULT_RETRY_OPTIONS,
     ...options,
@@ -192,6 +195,7 @@ export async function retryWithBackoff<T>(
           `Attempt ${attempt} failed with status ${delayErrorStatus ?? 'unknown'}. Retrying after explicit delay of ${delayDurationMs}ms...`,
           error,
         );
+        onRetry?.(attempt, maxAttempts, delayDurationMs);
         await delay(delayDurationMs);
         // Reset currentDelay for next potential non-429 error, or if Retry-After is not present next time
         currentDelay = initialDelayMs;
@@ -201,6 +205,7 @@ export async function retryWithBackoff<T>(
         // Add jitter: +/- 30% of currentDelay
         const jitter = currentDelay * 0.3 * (Math.random() * 2 - 1);
         const delayWithJitter = Math.max(0, currentDelay + jitter);
+        onRetry?.(attempt, maxAttempts, Math.round(delayWithJitter));
         await delay(delayWithJitter);
         currentDelay = Math.min(maxDelayMs, currentDelay * 2);
       }

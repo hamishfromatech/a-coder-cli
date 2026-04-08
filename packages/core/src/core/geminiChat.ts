@@ -522,9 +522,10 @@ export class GeminiChat {
     const history = curated
       ? extractCuratedHistory(this.history)
       : this.history;
-    // Deep copy the history to avoid mutating the history outside of the
-    // chat session.
-    return structuredClone(history);
+    // Shallow copy the array to prevent callers from mutating the internal list.
+    // Deep cloning (structuredClone) was O(n) in both time and memory on every
+    // call; since callers only read the history, a shallow copy is sufficient.
+    return [...history];
   }
 
   /**

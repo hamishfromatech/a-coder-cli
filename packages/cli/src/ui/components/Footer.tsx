@@ -120,7 +120,7 @@ export const Footer: React.FC<FooterProps> = ({
               no sandbox
             </Text>
             <Text color={Semantic.Error} dimColor>
-              see /docs
+              use /help for info
             </Text>
           </>
         )}

@@ -662,19 +662,32 @@ export class GeminiClient {
     const historyToCompress = curatedHistory.slice(0, compressBeforeIndex);
     const historyToKeep = curatedHistory.slice(compressBeforeIndex);
 
+    // Save a backup of the full history so we can restore on failure.
+    // setHistory below mutates the chat, and if sendMessage fails,
+    // the retained portion would be lost.
+    const fullHistoryBackup = this.getChat().getHistory();
+
     this.getChat().setHistory(historyToCompress);
 
-    const { text: summary } = await this.getChat().sendMessage(
-      {
-        message: {
-          text: 'First, reason in your scratchpad. Then, generate the <state_snapshot>.',
+    let summary: string;
+    try {
+      const result = await this.getChat().sendMessage(
+        {
+          message: {
+            text: 'First, reason in your scratchpad. Then, generate the <state_snapshot>.',
+          },
+          config: {
+            systemInstruction: { text: getCompressionPrompt() },
+          },
         },
-        config: {
-          systemInstruction: { text: getCompressionPrompt() },
-        },
-      },
-      prompt_id,
-    );
+        prompt_id,
+      );
+      summary = result.text ?? '';
+    } catch (err) {
+      // Restore the full history on compression failure
+      this.getChat().setHistory(fullHistoryBackup);
+      throw err;
+    }
     this.chat = await this.startChat([
       {
         role: 'user',

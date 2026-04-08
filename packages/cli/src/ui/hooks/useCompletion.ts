@@ -421,7 +421,7 @@ export function useCompletion(
           if (
             entry.isDirectory() &&
             entry.name !== 'node_modules' &&
-            !entry.name.startsWith('.')
+            (!entry.name.startsWith('.') || searchPrefix.startsWith('.'))
           ) {
             if (foundSuggestions.length < maxResults) {
               foundSuggestions = foundSuggestions.concat(
