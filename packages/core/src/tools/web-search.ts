@@ -68,7 +68,7 @@ export class WebSearchTool extends BaseTool<WebSearchToolParams, WebSearchToolRe
         },
       },
       required: ['query'],
-    });
+    }, true, false, true);
   }
 
   /**

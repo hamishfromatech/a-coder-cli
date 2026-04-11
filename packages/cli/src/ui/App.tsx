@@ -89,7 +89,7 @@ import { OverflowProvider } from './contexts/OverflowContext.js';
 import { ShowMoreLines } from './components/ShowMoreLines.js';
 import { PrivacyNotice } from './privacy/PrivacyNotice.js';
 
-const CTRL_EXIT_PROMPT_DURATION_MS = 1000;
+const CTRL_EXIT_PROMPT_DURATION_MS = 3000;
 
 interface AppProps {
   config: Config;
@@ -136,6 +136,18 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
     stdout.write(ansiEscapes.clearTerminal);
     setStaticKey((prev) => prev + 1);
   }, [setStaticKey, stdout]);
+
+  // Sliding window for message history: keep the last MAX_VISIBLE_HISTORY items
+  // in the Static component to prevent excessive re-rendering in long sessions
+  const MAX_VISIBLE_HISTORY = 200;
+  const [archivedCount, setArchivedCount] = useState(0);
+  useEffect(() => {
+    if (history.length > MAX_VISIBLE_HISTORY) {
+      setArchivedCount(history.length - MAX_VISIBLE_HISTORY);
+    } else {
+      setArchivedCount(0);
+    }
+  }, [history.length]);
 
   const [geminiMdFileCount, setGeminiMdFileCount] = useState<number>(0);
   const [debugMessage, setDebugMessage] = useState<string>('');
@@ -469,6 +481,7 @@ You can switch authentication methods by typing /auth`;
       }
 
       if (pressedOnceRef.current) {
+        // Second press — exit
         if (timerRef.current) {
           clearTimeout(timerRef.current);
         }
@@ -478,14 +491,15 @@ You can switch authentication methods by typing /auth`;
         if (quitCommand && quitCommand.action) {
           quitCommand.action(commandContext, '');
         } else {
-          if (config.getDebugMode()) {
-            console.error('[DEBUG] process.exit(0) called from handleExit fallback');
-          }
           process.exit(0);
         }
       } else {
+        // First press — show warning
         pressedOnceRef.current = true;
         setPressedOnceState(true);
+        if (timerRef.current) {
+          clearTimeout(timerRef.current);
+        }
         timerRef.current = setTimeout(() => {
           pressedOnceRef.current = false;
           setPressedOnceState(false);
@@ -493,7 +507,7 @@ You can switch authentication methods by typing /auth`;
         }, CTRL_EXIT_PROMPT_DURATION_MS);
       }
     },
-    [slashCommands, commandContext, config, backgroundShells, focusMode, selectedShellId, killShell],
+    [slashCommands, commandContext],
   );
 
   useKeypress((key) => {
@@ -505,12 +519,23 @@ You can switch authentication methods by typing /auth`;
       return;
     }
 
-    // When help is showing, allow Escape or 'q' to close it
-    // Skip all other key handling to prevent UI flickering
+    // When a dialog is showing, skip all App-level key handling to prevent
+    // interference with the dialog's own useInput handlers.
     if (showHelp) {
       if (key.name === 'escape' || key.sequence === 'q') {
         setShowHelp(false);
       }
+      return;
+    }
+    if (
+      isThemeDialogOpen ||
+      isAuthenticating ||
+      isAuthDialogOpen ||
+      isModelDialogOpen ||
+      isEditorDialogOpen ||
+      isSkillsDialogOpen ||
+      showPrivacyNotice
+    ) {
       return;
     }
 
@@ -540,7 +565,23 @@ You can switch authentication methods by typing /auth`;
       if (process.env['DEBUG_KEYS'] === 'true') {
         console.error('[App] Ctrl+C detected');
       }
-      handleExit(ctrlCPressedOnceRef, setCtrlCPressedOnce, ctrlCTimerRef);
+      // First Ctrl+C: cancel current task if one is active
+      const isBusy =
+        streamingState === StreamingState.Responding ||
+        streamingState === StreamingState.WaitingForConfirmation;
+      if (isBusy) {
+        cancelCurrentTask();
+        // Reset the exit prompt so next double-press starts fresh
+        ctrlCPressedOnceRef.current = false;
+        setCtrlCPressedOnce(false);
+        if (ctrlCTimerRef.current) {
+          clearTimeout(ctrlCTimerRef.current);
+          ctrlCTimerRef.current = null;
+        }
+      } else {
+        // Not busy: show exit prompt (press again to exit)
+        handleExit(ctrlCPressedOnceRef, setCtrlCPressedOnce, ctrlCTimerRef);
+      }
     } else if (key.ctrl && key.name === 'd') {
       if (buffer.text.length > 0) {
         // Do nothing if there is text in the input.
@@ -635,6 +676,7 @@ You can switch authentication methods by typing /auth`;
   const {
     streamingState,
     submitQuery,
+    cancelCurrentTask,
     initError,
     pendingHistoryItems: pendingGeminiHistoryItems,
     thought,
@@ -895,7 +937,16 @@ You can switch authentication methods by typing /auth`;
               )}
               {!settings.merged.hideTips && <Tips config={config} />}
             </Box>,
-            ...history.map((h) => (
+            ...(archivedCount > 0
+              ? [
+                  <Box key="archived-notice" paddingX={1}>
+                    <Text dimColor>
+                      {`[${archivedCount} earlier message${archivedCount > 1 ? 's' : ''} archived]`}
+                    </Text>
+                  </Box>,
+                ]
+              : []),
+            ...history.slice(archivedCount).map((h) => (
               <HistoryItemDisplay
                 terminalWidth={mainAreaWidth}
                 availableTerminalHeight={staticAreaMaxItemHeight}

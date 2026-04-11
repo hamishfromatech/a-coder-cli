@@ -55,6 +55,10 @@ import {
   DEFAULT_GEMINI_FLASH_MODEL,
 } from './models.js';
 import { ClearcutLogger } from '../telemetry/clearcut-logger/clearcut-logger.js';
+import {
+  FeatureFlagService,
+  type FeatureFlagConfigInput,
+} from '../utils/featureFlags.js';
 
 export enum ApprovalMode {
   DEFAULT = 'default',
@@ -175,6 +179,7 @@ export interface ConfigParameters {
     max_tokens?: number;
   };
   subagent?: Partial<SubagentSystemConfig>;
+  featureFlags?: Record<string, FeatureFlagConfigInput>;
 }
 
 export class Config {
@@ -241,6 +246,7 @@ export class Config {
     enabled: true,
   };
   private readonly subagentConfig: SubagentSystemConfig;
+  private readonly featureFlagsConfig: Record<string, FeatureFlagConfigInput> | undefined;
 
   constructor(params: ConfigParameters) {
     this.sessionId = params.sessionId;
@@ -295,6 +301,7 @@ export class Config {
       ...DEFAULT_SUBAGENT_CONFIG,
       ...params.subagent,
     };
+    this.featureFlagsConfig = params.featureFlags;
 
     if (params.contextFileName) {
       setGeminiMdFilename(params.contextFileName);
@@ -610,6 +617,15 @@ export class Config {
 
   getSubagentConfig(): SubagentSystemConfig {
     return this.subagentConfig;
+  }
+
+  /**
+   * Returns the feature flags from settings, or undefined if none were configured.
+   * Callers can pass the result to `new FeatureFlagService(flags)` or the
+   * `featureFlags.initializeFromConfig(flags)` method.
+   */
+  getFeatureFlags(): Record<string, FeatureFlagConfigInput> | undefined {
+    return this.featureFlagsConfig;
   }
 
   async refreshMemory(): Promise<{ memoryContent: string; fileCount: number }> {

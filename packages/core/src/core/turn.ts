@@ -168,18 +168,22 @@ export type ServerGeminiStreamEvent =
   | ServerGeminiContextWarningEvent;
 
 const MAX_DEBUG_RESPONSES = 50;
+const MAX_THINKING_BUFFER_LENGTH = 500_000; // ~500KB cap for thinking content
 
 // A turn manages the agentic loop turn within the server context.
 export class Turn {
   readonly pendingToolCalls: ToolCallRequestInfo[];
   private debugResponses: GenerateContentResponse[];
+  private maxOutputTokens?: number;
 
   constructor(
     private readonly chat: GeminiChat,
     private readonly prompt_id: string,
+    maxOutputTokens?: number,
   ) {
     this.pendingToolCalls = [];
     this.debugResponses = [];
+    this.maxOutputTokens = maxOutputTokens;
   }
   // The run method yields simpler events suitable for server logic
   async *run(
@@ -192,6 +196,9 @@ export class Turn {
           message: req,
           config: {
             abortSignal: signal,
+            ...(this.maxOutputTokens !== undefined
+              ? { maxOutputTokens: this.maxOutputTokens }
+              : {}),
           },
         },
         this.prompt_id,
@@ -254,7 +261,12 @@ export class Turn {
                   thinkingBuffer += streamBuffer;
                   streamBuffer = '';
                 }
-                
+
+                // Cap thinking buffer to prevent OOM during extended reasoning
+                if (thinkingBuffer.length > MAX_THINKING_BUFFER_LENGTH) {
+                  thinkingBuffer = thinkingBuffer.slice(-MAX_THINKING_BUFFER_LENGTH / 2);
+                }
+
                 yield {
                   type: GeminiEventType.Thought,
                   value: { subject: 'Reasoning', description: thinkingBuffer.trim() + '...' },

@@ -57,7 +57,7 @@ describe('LoopDetectionService', () => {
     it(`should not detect a loop for fewer than TOOL_CALL_LOOP_THRESHOLD identical calls`, () => {
       const event = createToolCallRequestEvent('testTool', { param: 'value' });
       for (let i = 0; i < TOOL_CALL_LOOP_THRESHOLD - 1; i++) {
-        expect(service.addAndCheck(event)).toBe(false);
+        expect(service.addAndCheck(event).detected).toBe(false);
       }
       expect(loggers.logLoopDetected).not.toHaveBeenCalled();
     });
@@ -67,7 +67,9 @@ describe('LoopDetectionService', () => {
       for (let i = 0; i < TOOL_CALL_LOOP_THRESHOLD - 1; i++) {
         service.addAndCheck(event);
       }
-      expect(service.addAndCheck(event)).toBe(true);
+      const result = service.addAndCheck(event);
+      expect(result.detected).toBe(true);
+      expect(result.loopType).toBe('consecutive_identical_tool_calls');
       expect(loggers.logLoopDetected).toHaveBeenCalledTimes(1);
     });
 
@@ -76,7 +78,9 @@ describe('LoopDetectionService', () => {
       for (let i = 0; i < TOOL_CALL_LOOP_THRESHOLD; i++) {
         service.addAndCheck(event);
       }
-      expect(service.addAndCheck(event)).toBe(true);
+      const result = service.addAndCheck(event);
+      expect(result.detected).toBe(true);
+      expect(result.loopType).toBe('consecutive_identical_tool_calls');
       expect(loggers.logLoopDetected).toHaveBeenCalledTimes(2);
     });
 
@@ -92,9 +96,9 @@ describe('LoopDetectionService', () => {
       });
 
       for (let i = 0; i < TOOL_CALL_LOOP_THRESHOLD - 2; i++) {
-        expect(service.addAndCheck(event1)).toBe(false);
-        expect(service.addAndCheck(event2)).toBe(false);
-        expect(service.addAndCheck(event3)).toBe(false);
+        expect(service.addAndCheck(event1).detected).toBe(false);
+        expect(service.addAndCheck(event2).detected).toBe(false);
+        expect(service.addAndCheck(event3).detected).toBe(false);
       }
     });
   });
@@ -103,7 +107,7 @@ describe('LoopDetectionService', () => {
     it(`should not detect a loop for fewer than CONTENT_LOOP_THRESHOLD identical content strings`, () => {
       const event = createContentEvent('This is a test sentence.');
       for (let i = 0; i < CONTENT_LOOP_THRESHOLD - 1; i++) {
-        expect(service.addAndCheck(event)).toBe(false);
+        expect(service.addAndCheck(event).detected).toBe(false);
       }
       expect(loggers.logLoopDetected).not.toHaveBeenCalled();
     });
@@ -113,7 +117,9 @@ describe('LoopDetectionService', () => {
       for (let i = 0; i < CONTENT_LOOP_THRESHOLD - 1; i++) {
         service.addAndCheck(event);
       }
-      expect(service.addAndCheck(event)).toBe(true);
+      const result = service.addAndCheck(event);
+      expect(result.detected).toBe(true);
+      expect(result.loopType).toBe('chanting_identical_sentences');
       expect(loggers.logLoopDetected).toHaveBeenCalledTimes(1);
     });
 
@@ -121,8 +127,8 @@ describe('LoopDetectionService', () => {
       const event1 = createContentEvent('Sentence A');
       const event2 = createContentEvent('Sentence B');
       for (let i = 0; i < CONTENT_LOOP_THRESHOLD - 2; i++) {
-        expect(service.addAndCheck(event1)).toBe(false);
-        expect(service.addAndCheck(event2)).toBe(false);
+        expect(service.addAndCheck(event1).detected).toBe(false);
+        expect(service.addAndCheck(event2).detected).toBe(false);
       }
       expect(loggers.logLoopDetected).not.toHaveBeenCalled();
     });
@@ -131,23 +137,23 @@ describe('LoopDetectionService', () => {
   describe('Sentence Extraction and Punctuation', () => {
     it('should not check for loops when content has no sentence-ending punctuation', () => {
       const eventNoPunct = createContentEvent('This has no punctuation');
-      expect(service.addAndCheck(eventNoPunct)).toBe(false);
+      expect(service.addAndCheck(eventNoPunct).detected).toBe(false);
 
       const eventWithPunct = createContentEvent('This has punctuation!');
-      expect(service.addAndCheck(eventWithPunct)).toBe(false);
+      expect(service.addAndCheck(eventWithPunct).detected).toBe(false);
     });
 
     it('should not treat function calls or method calls as sentence endings', () => {
       // These should not trigger sentence detection, so repeating them many times should never cause a loop
       for (let i = 0; i < CONTENT_LOOP_THRESHOLD + 2; i++) {
-        expect(service.addAndCheck(createContentEvent('console.log()'))).toBe(
+        expect(service.addAndCheck(createContentEvent('console.log()')).detected).toBe(
           false,
         );
       }
 
       service.reset();
       for (let i = 0; i < CONTENT_LOOP_THRESHOLD + 2; i++) {
-        expect(service.addAndCheck(createContentEvent('obj.method()'))).toBe(
+        expect(service.addAndCheck(createContentEvent('obj.method()')).detected).toBe(
           false,
         );
       }
@@ -155,7 +161,7 @@ describe('LoopDetectionService', () => {
       service.reset();
       for (let i = 0; i < CONTENT_LOOP_THRESHOLD + 2; i++) {
         expect(
-          service.addAndCheck(createContentEvent('arr.filter().map()')),
+          service.addAndCheck(createContentEvent('arr.filter().map()')).detected,
         ).toBe(false);
       }
 
@@ -164,7 +170,7 @@ describe('LoopDetectionService', () => {
         expect(
           service.addAndCheck(
             createContentEvent('if (condition) { return true; }'),
-          ),
+          ).detected,
         ).toBe(false);
       }
     });
@@ -173,31 +179,31 @@ describe('LoopDetectionService', () => {
       // These should trigger sentence detection, so repeating them should eventually cause a loop
       for (let i = 0; i < CONTENT_LOOP_THRESHOLD - 1; i++) {
         expect(
-          service.addAndCheck(createContentEvent('This is a sentence.')),
+          service.addAndCheck(createContentEvent('This is a sentence.')).detected,
         ).toBe(false);
       }
       expect(
-        service.addAndCheck(createContentEvent('This is a sentence.')),
+        service.addAndCheck(createContentEvent('This is a sentence.')).detected,
       ).toBe(true);
 
       service.reset();
       for (let i = 0; i < CONTENT_LOOP_THRESHOLD - 1; i++) {
         expect(
-          service.addAndCheck(createContentEvent('Is this a question? ')),
+          service.addAndCheck(createContentEvent('Is this a question? ')).detected,
         ).toBe(false);
       }
       expect(
-        service.addAndCheck(createContentEvent('Is this a question? ')),
+        service.addAndCheck(createContentEvent('Is this a question? ')).detected,
       ).toBe(true);
 
       service.reset();
       for (let i = 0; i < CONTENT_LOOP_THRESHOLD - 1; i++) {
         expect(
-          service.addAndCheck(createContentEvent('What excitement!\n')),
+          service.addAndCheck(createContentEvent('What excitement!\n')).detected,
         ).toBe(false);
       }
       expect(
-        service.addAndCheck(createContentEvent('What excitement!\n')),
+        service.addAndCheck(createContentEvent('What excitement!\n')).detected,
       ).toBe(true);
     });
 
@@ -210,23 +216,23 @@ describe('LoopDetectionService', () => {
       for (let i = 0; i < CONTENT_LOOP_THRESHOLD - 1; i++) {
         service.addAndCheck(createContentEvent('Period.'));
       }
-      expect(service.addAndCheck(createContentEvent('Period.'))).toBe(true);
+      expect(service.addAndCheck(createContentEvent('Period.')).detected).toBe(true);
     });
 
     it('should handle empty sentences after trimming', () => {
       service.addAndCheck(createContentEvent('   .'));
-      expect(service.addAndCheck(createContentEvent('Normal sentence.'))).toBe(
+      expect(service.addAndCheck(createContentEvent('Normal sentence.')).detected).toBe(
         false,
       );
     });
 
     it('should require at least two sentences for loop detection', () => {
       const event = createContentEvent('Only one sentence.');
-      expect(service.addAndCheck(event)).toBe(false);
+      expect(service.addAndCheck(event).detected).toBe(false);
 
       // Even repeating the same single sentence shouldn't trigger detection
       for (let i = 0; i < 5; i++) {
-        expect(service.addAndCheck(event)).toBe(false);
+        expect(service.addAndCheck(event).detected).toBe(false);
       }
     });
   });
@@ -244,7 +250,7 @@ describe('LoopDetectionService', () => {
       service.addAndCheck(createContentEvent('.'));
 
       // Should still work correctly
-      expect(service.addAndCheck(createContentEvent('Test.'))).toBe(false);
+      expect(service.addAndCheck(createContentEvent('Test.')).detected).toBe(false);
     });
 
     it('should re-extract sentences when content grows by more than 100 characters', () => {
@@ -255,7 +261,7 @@ describe('LoopDetectionService', () => {
       service.addAndCheck(createContentEvent(longContent + '.'));
 
       // Should work correctly after re-extraction
-      expect(service.addAndCheck(createContentEvent('Test.'))).toBe(false);
+      expect(service.addAndCheck(createContentEvent('Test.')).detected).toBe(false);
     });
 
     it('should use indexOf for efficient counting instead of regex', () => {
@@ -267,7 +273,7 @@ describe('LoopDetectionService', () => {
       }
 
       // The threshold should be reached
-      expect(service.addAndCheck(createContentEvent(repeatedSentence))).toBe(
+      expect(service.addAndCheck(createContentEvent(repeatedSentence)).detected).toBe(
         true,
       );
     });
@@ -276,7 +282,7 @@ describe('LoopDetectionService', () => {
   describe('Edge Cases', () => {
     it('should handle empty content', () => {
       const event = createContentEvent('');
-      expect(service.addAndCheck(event)).toBe(false);
+      expect(service.addAndCheck(event).detected).toBe(false);
     });
   });
 
@@ -293,7 +299,7 @@ describe('LoopDetectionService', () => {
       service.addAndCheck(toolEvent);
 
       // Should start fresh
-      expect(service.addAndCheck(createContentEvent('Fresh content.'))).toBe(
+      expect(service.addAndCheck(createContentEvent('Fresh content.')).detected).toBe(
         false,
       );
     });
@@ -304,8 +310,8 @@ describe('LoopDetectionService', () => {
       const otherEvent = {
         type: 'unhandled_event',
       } as unknown as ServerGeminiStreamEvent;
-      expect(service.addAndCheck(otherEvent)).toBe(false);
-      expect(service.addAndCheck(otherEvent)).toBe(false);
+      expect(service.addAndCheck(otherEvent).detected).toBe(false);
+      expect(service.addAndCheck(otherEvent).detected).toBe(false);
     });
   });
 });

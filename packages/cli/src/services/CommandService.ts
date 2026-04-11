@@ -8,6 +8,8 @@ import { Config } from '@a-coder/core';
 import { aboutCommand } from '../ui/commands/aboutCommand.js';
 import { authCommand } from '../ui/commands/authCommand.js';
 import { clearCommand } from '../ui/commands/clearCommand.js';
+import { compactCommand } from '../ui/commands/compactCommand.js';
+import { costCommand } from '../ui/commands/costCommand.js';
 import { helpCommand } from '../ui/commands/helpCommand.js';
 import { memoryCommand } from '../ui/commands/memoryCommand.js';
 import { privacyCommand } from '../ui/commands/privacyCommand.js';
@@ -25,6 +27,8 @@ const loadBuiltInCommands = async (): Promise<SlashCommand[]> => [
   aboutCommand,
   authCommand,
   clearCommand,
+  compactCommand,
+  costCommand,
   helpCommand,
   memoryCommand,
   privacyCommand,

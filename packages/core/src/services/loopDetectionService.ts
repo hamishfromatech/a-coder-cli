@@ -14,6 +14,11 @@ const TOOL_CALL_LOOP_THRESHOLD = 5;
 const CONTENT_LOOP_THRESHOLD = 10;
 const SENTENCE_ENDING_PUNCTUATION_REGEX = /[.!?]+(?=\s|$)/;
 
+export interface LoopDetectionResult {
+  detected: boolean;
+  loopType: LoopType | null;
+}
+
 /**
  * Service for detecting and preventing infinite loops in AI responses.
  * Monitors tool call repetitions and content sentence repetitions.
@@ -42,9 +47,9 @@ export class LoopDetectionService {
   /**
    * Processes a stream event and checks for loop conditions.
    * @param event - The stream event to process
-   * @returns true if a loop is detected, false otherwise
+   * @returns LoopDetectionResult with detected flag and loop type
    */
-  addAndCheck(event: ServerGeminiStreamEvent): boolean {
+  addAndCheck(event: ServerGeminiStreamEvent): LoopDetectionResult {
     switch (event.type) {
       case GeminiEventType.ToolCallRequest:
         // content chanting only happens in one single stream, reset if there
@@ -55,11 +60,11 @@ export class LoopDetectionService {
         return this.checkContentLoop(event.value);
       default:
         this.reset();
-        return false;
+        return { detected: false, loopType: null };
     }
   }
 
-  private checkToolCallLoop(toolCall: { name: string; args: object }): boolean {
+  private checkToolCallLoop(toolCall: { name: string; args: object }): LoopDetectionResult {
     const key = this.getToolCallKey(toolCall);
     if (this.lastToolCallKey === key) {
       this.toolCallRepetitionCount++;
@@ -72,22 +77,22 @@ export class LoopDetectionService {
         this.config,
         new LoopDetectedEvent(LoopType.CONSECUTIVE_IDENTICAL_TOOL_CALLS),
       );
-      return true;
+      return { detected: true, loopType: LoopType.CONSECUTIVE_IDENTICAL_TOOL_CALLS };
     }
-    return false;
+    return { detected: false, loopType: null };
   }
 
-  private checkContentLoop(content: string): boolean {
+  private checkContentLoop(content: string): LoopDetectionResult {
     this.partialContent += content;
 
     if (!SENTENCE_ENDING_PUNCTUATION_REGEX.test(this.partialContent)) {
-      return false;
+      return { detected: false, loopType: null };
     }
 
     const completeSentences =
       this.partialContent.match(/[^.!?]+[.!?]+(?=\s|$)/g) || [];
     if (completeSentences.length === 0) {
-      return false;
+      return { detected: false, loopType: null };
     }
 
     const lastSentence = completeSentences[completeSentences.length - 1];
@@ -113,10 +118,10 @@ export class LoopDetectionService {
           this.config,
           new LoopDetectedEvent(LoopType.CHANTING_IDENTICAL_SENTENCES),
         );
-        return true;
+        return { detected: true, loopType: LoopType.CHANTING_IDENTICAL_SENTENCES };
       }
     }
-    return false;
+    return { detected: false, loopType: null };
   }
 
   /**

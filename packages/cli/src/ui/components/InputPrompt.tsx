@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useCallback, useEffect, useState, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { Box, Text } from 'ink';
 import { Colors, Semantic } from '../colors.js';
 import { SuggestionsDisplay } from './SuggestionsDisplay.js';
@@ -70,6 +70,62 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
 }) => {
   const [justNavigatedHistory, setJustNavigatedHistory] = useState(false);
   const [backgroundMode, setBackgroundMode] = useState(false);
+
+  // Reverse search (Ctrl+R) state
+  const [reverseSearchActive, setReverseSearchActive] = useState(false);
+  const [reverseSearchQuery, setReverseSearchQuery] = useState('');
+  const [reverseSearchMatchIndex, setReverseSearchMatchIndex] = useState(0);
+  const reverseSearchMatchesRef = useRef<string[]>([]);
+  const reverseSearchQueryRef = useRef('');
+
+  const reverseSearchMatches = useMemo(() => {
+    if (!reverseSearchQuery) return userMessages.filter((m) => m.trim()).slice(0, 20);
+    const q = reverseSearchQuery.toLowerCase();
+    // Search from newest to oldest, deduplicate
+    const seen = new Set<string>();
+    const matches: string[] = [];
+    for (let i = userMessages.length - 1; i >= 0 && matches.length < 20; i--) {
+      const msg = userMessages[i];
+      if (msg.toLowerCase().includes(q) && !seen.has(msg)) {
+        seen.add(msg);
+        matches.push(msg);
+      }
+    }
+    return matches;
+  }, [reverseSearchQuery, userMessages]);
+
+  const enterReverseSearch = useCallback(() => {
+    setReverseSearchActive(true);
+    setReverseSearchQuery('');
+    setReverseSearchMatchIndex(0);
+    reverseSearchQueryRef.current = '';
+  }, []);
+
+  const exitReverseSearch = useCallback(() => {
+    setReverseSearchActive(false);
+    setReverseSearchQuery('');
+    setReverseSearchMatchIndex(0);
+    reverseSearchMatchesRef.current = [];
+    reverseSearchQueryRef.current = '';
+  }, []);
+
+  // Keep reverseSearchMatchesRef in sync with computed matches
+  useEffect(() => {
+    reverseSearchMatchesRef.current = reverseSearchMatches;
+    // When matches change, reset index if out of bounds
+    if (reverseSearchMatchIndex >= reverseSearchMatches.length) {
+      setReverseSearchMatchIndex(Math.max(0, reverseSearchMatches.length - 1));
+    }
+  }, [reverseSearchMatches, reverseSearchMatchIndex]);
+
+  // Update buffer text when match index changes
+  useEffect(() => {
+    if (reverseSearchActive && reverseSearchMatches.length > 0) {
+      buffer.setText(reverseSearchMatches[reverseSearchMatchIndex]);
+    } else if (reverseSearchActive && reverseSearchMatches.length === 0) {
+      buffer.setText('');
+    }
+  }, [reverseSearchActive, reverseSearchMatchIndex, reverseSearchMatches, buffer]);
 
   const effectivePlaceholder = disabled
     ? '  A-Coder is thinking...'
@@ -282,7 +338,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
 
   const handleInput = useCallback(
     (key: Key) => {
-      if (!focus) {
+      if (!effectiveFocus) {
         return;
       }
 
@@ -325,10 +381,71 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
         return;
       }
 
-      // Ctrl+b to toggle background mode (run command in background)
-      if (key.ctrl && key.name === 'b') {
+      // Ctrl+R: Reverse search through history
+      if (key.ctrl && key.name === 'r') {
+        if (reverseSearchActive) {
+          // Cycle to next match
+          const matches = reverseSearchMatchesRef.current;
+          if (matches.length > 0) {
+            const nextIndex = (reverseSearchMatchIndex + 1) % matches.length;
+            setReverseSearchMatchIndex(nextIndex);
+            buffer.setText(matches[nextIndex]);
+          }
+        } else {
+          enterReverseSearch();
+        }
+        stopPropagation();
+        return;
+      }
+
+      // Handle input while in reverse search mode
+      if (reverseSearchActive) {
+        if (key.name === 'escape' || (key.ctrl && key.name === 'g')) {
+          exitReverseSearch();
+          stopPropagation();
+          return;
+        }
+        if (key.name === 'return' && !key.ctrl) {
+          // Accept the current match
+          const matches = reverseSearchMatchesRef.current;
+          if (matches.length > 0) {
+            buffer.setText(matches[reverseSearchMatchIndex]);
+          }
+          exitReverseSearch();
+          stopPropagation();
+          return;
+        }
+        // Typing characters appends to the search query
+        if (!key.ctrl && !key.meta && key.sequence && key.sequence.length === 1 && !key.paste) {
+          const newQuery = reverseSearchQuery + key.sequence;
+          setReverseSearchQuery(newQuery);
+          setReverseSearchMatchIndex(0);
+          stopPropagation();
+          return;
+        }
+        // Backspace removes last char from query
+        if (key.name === 'backspace' || (key.ctrl && key.name === 'h')) {
+          if (reverseSearchQuery.length > 0) {
+            const newQuery = reverseSearchQuery.slice(0, -1);
+            setReverseSearchQuery(newQuery);
+            setReverseSearchMatchIndex(0);
+          } else {
+            exitReverseSearch();
+          }
+          stopPropagation();
+          return;
+        }
+        // Any other key is consumed but ignored during reverse search
+        stopPropagation();
+        return;
+      }
+
+      // Ctrl+g to toggle background mode (run command in background)
+      // Note: Ctrl+B is reserved for readline cursor-left movement
+      if (key.ctrl && key.name === 'g') {
         backgroundModeRef.current = !backgroundModeRef.current;
         setBackgroundMode(backgroundModeRef.current);
+        stopPropagation();
         return;
       }
 
@@ -465,7 +582,8 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
       }
       if (key.ctrl && key.name === 'e') {
         buffer.move('end');
-        stopPropagation();
+        // Don't stopPropagation — let App-level Ctrl+E handler also fire
+        // (e.g., toggling error details panel)
         return;
       }
 
@@ -498,9 +616,11 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
 
       // Fallback to the text buffer's default input handling for all other keys
       buffer.handleInput(key);
-      // stopPropagation after fallback too — any typed character should not
-      // trigger App-level shortcuts like Ctrl+S, Ctrl+O, etc.
-      stopPropagation();
+      // Stop propagation for regular characters to prevent App-level handling.
+      // But let Ctrl shortcuts pass through so App-level handlers (Ctrl+O, Ctrl+T, etc.) can fire.
+      if (!key.ctrl && !key.meta) {
+        stopPropagation();
+      }
     },
     [
       effectiveFocus,
@@ -531,10 +651,10 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
     <>
       <Box paddingX={0} paddingY={1}>
         <Text
-          color={disabled ? Semantic.Muted : (shellModeActive ? Semantic.Warning : Semantic.Primary)}
+          color={disabled ? Semantic.Muted : (reverseSearchActive ? Semantic.Warning : (shellModeActive ? Semantic.Warning : Semantic.Primary))}
           bold
         >
-          {shellModeActive ? '! ' : '> '}
+          {reverseSearchActive ? '(search) ' : shellModeActive ? '! ' : '> '}
         </Text>
         <Box flexGrow={1} flexDirection="column">
           {buffer.text.length === 0 && effectivePlaceholder ? (
@@ -597,6 +717,26 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
             scrollOffset={completion.visibleStartIndex}
             userInput={buffer.text}
           />
+        </Box>
+      )}
+      {reverseSearchActive && (
+        <Box paddingX={1} flexDirection="column">
+          <Text>
+            <Text color={Semantic.Warning} bold>
+              (reverse-i-search)
+            </Text>
+            <Text color={Semantic.Primary}>
+              {` '${reverseSearchQuery || ''}': `}
+            </Text>
+            <Text dimColor>
+              {reverseSearchMatches.length > 0
+                ? `${reverseSearchMatchIndex + 1}/${reverseSearchMatches.length} matches`
+                : 'no matches found'}
+            </Text>
+          </Text>
+          <Text dimColor>
+            {'  Ctrl+R next match | Enter accept | Esc cancel'}
+          </Text>
         </Box>
       )}
     </>

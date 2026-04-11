@@ -133,6 +133,9 @@ export interface Settings {
 
   // Subagent system configuration
   subagent?: Partial<SubagentSystemConfig>;
+
+  // Feature flags for gradual feature rollout and toggling
+  featureFlags?: Record<string, boolean | { enabled: boolean; rolloutPercentage?: number }>;
 }
 
 export interface SettingsError {
@@ -226,6 +229,7 @@ export class LoadedSettings {
     deepMergeWithPlugin('telemetry');
     deepMergeWithPlugin('session');
     deepMergeWithPlugin('subagent');
+    deepMergeWithPlugin('featureFlags');
 
     // Auto-detect auth type if not explicitly set
     if (!merged.selectedAuthType) {

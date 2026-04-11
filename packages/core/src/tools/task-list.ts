@@ -52,6 +52,7 @@ Completed tasks appear at the bottom.`,
       } as Schema,
       false, // isOutputMarkdown
       false, // canUpdateOutput
+      true,  // isReadOnly
     );
   }
 

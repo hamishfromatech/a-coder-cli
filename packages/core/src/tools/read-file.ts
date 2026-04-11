@@ -72,6 +72,9 @@ export class ReadFileTool extends BaseTool<ReadFileToolParams, ToolResult> {
         required: ['absolute_path'],
         type: Type.OBJECT,
       },
+      true,  // isOutputMarkdown
+      false, // canUpdateOutput
+      true,  // isReadOnly
     );
   }
 

@@ -44,6 +44,13 @@ export interface Tool<
   canUpdateOutput: boolean;
 
   /**
+   * Whether this tool only reads data and doesn't mutate state.
+   * Read-only tools can be executed concurrently for better performance.
+   * Defaults to false.
+   */
+  isReadOnly?: boolean;
+
+  /**
    * Validates the parameters for the tool
    * Should be called from both `shouldConfirmExecute` and `execute`
    * `shouldConfirmExecute` should return false immediately if invalid
@@ -106,6 +113,7 @@ export abstract class BaseTool<
     readonly parameterSchema: Schema,
     readonly isOutputMarkdown: boolean = true,
     readonly canUpdateOutput: boolean = false,
+    readonly isReadOnly: boolean = false,
   ) {}
 
   /**

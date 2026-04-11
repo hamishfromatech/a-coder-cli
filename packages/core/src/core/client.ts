@@ -31,6 +31,7 @@ import { retryWithBackoff } from '../utils/retry.js';
 import { getErrorMessage } from '../utils/errors.js';
 import { isFunctionResponse } from '../utils/messageInspectors.js';
 import { tokenLimit } from './tokenLimits.js';
+import { computeOutputTokenBudget } from './tokenBudget.js';
 import {
   AuthType,
   ContentGenerator,
@@ -46,6 +47,8 @@ import {
   type ContextMonitorConfig,
 } from './contextMonitor.js';
 import { GeminiChat } from './geminiChat.js';
+import { CircuitBreaker } from '../utils/circuitBreaker.js';
+import { PromptCacheTracker } from '../utils/promptCacheTracker.js';
 
 /**
  * Returns the index of the content after the fraction of the total characters in the history.
@@ -103,6 +106,8 @@ export class GeminiClient {
 
   private readonly loopDetector: LoopDetectionService;
   private readonly contextMonitor: ContextMonitor;
+  private readonly compressionCircuitBreaker: CircuitBreaker;
+  private readonly promptCacheTracker: PromptCacheTracker;
   private lastPromptId?: string;
 
   constructor(private config: Config) {
@@ -120,6 +125,16 @@ export class GeminiClient {
       criticalThreshold: contextConfig.criticalThreshold,
       autoCompressThreshold: contextConfig.autoCompressThreshold,
     });
+
+    // Circuit breaker for compression: max 3 consecutive failures before stopping
+    this.compressionCircuitBreaker = new CircuitBreaker({
+      failureThreshold: 3,
+      resetTimeoutMs: 60_000,
+      name: 'context-compression',
+    });
+
+    // Track prompt cache state to detect cache-break events
+    this.promptCacheTracker = new PromptCacheTracker();
   }
 
   async initialize(contentGeneratorConfig: ContentGeneratorConfig) {
@@ -263,6 +278,20 @@ export class GeminiClient {
     try {
       const userMemory = this.config.getUserMemory();
       const systemInstruction = getCoreSystemPrompt(userMemory);
+
+      // Track prompt cache state for optimization insights
+      if (this.config.getDebugMode()) {
+        const cacheStatus = this.promptCacheTracker.checkAll(
+          systemInstruction,
+          toolDeclarations,
+        );
+        if (!cacheStatus.overallHit) {
+          console.debug(
+            `[PromptCache] Cache miss - systemPrompt: ${cacheStatus.systemPromptHit}, tools: ${cacheStatus.toolDeclarationsHit}`,
+          );
+        }
+      }
+
       // Always enable thinking config - API will ignore it for unsupported models,
       // and Turn.run() will parse any <thinking> tags from the stream
       const generateContentConfigWithThinking = {
@@ -354,11 +383,45 @@ export class GeminiClient {
     if (compressed) {
       yield { type: GeminiEventType.ChatCompressed, value: compressed };
     }
-    const turn = new Turn(this.getChat(), prompt_id);
+
+    // Compute a dynamic output token budget based on context usage.
+    // This helps avoid exceeding the model's total token limit when
+    // the conversation history is large.
+    let maxOutputTokens: number | undefined;
+    const currentTokens = this.getChatHistoryTokenCount();
+    const model = this.config.getModel();
+    const modelTokenLimit = tokenLimit(model);
+    const usagePercentage = modelTokenLimit > 0 ? currentTokens / modelTokenLimit : 0;
+    maxOutputTokens = computeOutputTokenBudget(
+      modelTokenLimit,
+      currentTokens,
+      usagePercentage,
+    );
+
+    const turn = new Turn(this.getChat(), prompt_id, maxOutputTokens);
     const resultStream = turn.run(request, signal);
     for await (const event of resultStream) {
-      if (this.loopDetector.addAndCheck(event)) {
+      const loopResult = this.loopDetector.addAndCheck(event);
+      if (loopResult.detected) {
+        // Instead of halting, silently inject a user message to break the loop
+        // and continue the conversation
         yield { type: GeminiEventType.LoopDetected };
+        this.loopDetector.reset();
+
+        const loopMessage =
+          loopResult.loopType === 'consecutive_identical_tool_calls'
+            ? 'You are in a loop — you have been making the same tool call repeatedly. Stop repeating that call. Move on to a different approach or summarize what you know so far instead of reading the same file again.'
+            : 'You are in a loop — you have been repeating the same text. Stop repeating yourself and provide a different response.';
+
+        // Start a new turn with the loop-breaking message and continue
+        const continuationStream = this.sendMessageStream(
+          [{ text: loopMessage }],
+          signal,
+          prompt_id,
+          boundedTurns - 1,
+          initialModel,
+        );
+        yield* continuationStream;
         return turn;
       }
       yield event;
@@ -619,6 +682,15 @@ export class GeminiClient {
     prompt_id: string,
     force: boolean = false,
   ): Promise<ChatCompressionInfo | null> {
+    // Check circuit breaker — if compression has failed too many times, skip it
+    if (!this.compressionCircuitBreaker.canExecute()) {
+      console.warn(
+        'Context compression circuit breaker is open — skipping compression. ' +
+        'Compression has failed too many times consecutively.',
+      );
+      return null;
+    }
+
     const curatedHistory = this.getChat().getHistory(true);
 
     // Regardless of `force`, don't do anything if the history is empty.
@@ -683,9 +755,11 @@ export class GeminiClient {
         prompt_id,
       );
       summary = result.text ?? '';
+      this.compressionCircuitBreaker.recordSuccess();
     } catch (err) {
       // Restore the full history on compression failure
       this.getChat().setHistory(fullHistoryBackup);
+      this.compressionCircuitBreaker.recordFailure();
       throw err;
     }
     this.chat = await this.startChat([

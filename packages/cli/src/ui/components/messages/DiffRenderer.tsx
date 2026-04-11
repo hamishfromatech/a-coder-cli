@@ -6,6 +6,7 @@
 
 import React from 'react';
 import { Box, Text } from 'ink';
+import { diffWords } from 'diff';
 import { Colors } from '../../colors.js';
 import crypto from 'crypto';
 import { colorizeCode } from '../../utils/CodeColorizer.js';
@@ -190,6 +191,82 @@ export const DiffRenderer: React.FC<DiffRendererProps> = ({
     baseIndentation = 0;
   }
 
+  // Pre-compute word-level diffs for paired del/add lines.
+  // A pair is a consecutive run of `del` lines followed by an equal-length run of `add` lines.
+  // For each pair index we compute diffWords between old and new content.
+  interface WordDiffSegment {
+    value: string;
+    added?: boolean;
+    removed?: boolean;
+  }
+
+  const wordDiffCache = React.useMemo(() => {
+    const cache = new Map<number, WordDiffSegment[]>();
+    let i = 0;
+    while (i < displayableLines.length) {
+      if (displayableLines[i].type !== 'del') {
+        i++;
+        continue;
+      }
+      // Gather consecutive del lines
+      const delStart = i;
+      while (i < displayableLines.length && displayableLines[i].type === 'del') {
+        i++;
+      }
+      const delEnd = i; // exclusive
+      // Gather consecutive add lines
+      const addStart = i;
+      while (i < displayableLines.length && displayableLines[i].type === 'add') {
+        i++;
+      }
+      const addEnd = i; // exclusive
+      const pairLen = Math.min(delEnd - delStart, addEnd - addStart);
+      if (pairLen === 0) continue; // no matching add lines, skip
+      for (let p = 0; p < pairLen; p++) {
+        const delIdx = delStart + p;
+        const addIdx = addStart + p;
+        const oldContent = displayableLines[delIdx].content.substring(baseIndentation);
+        const newContent = displayableLines[addIdx].content.substring(baseIndentation);
+        if (oldContent === newContent) continue; // identical, no word diff needed
+        const changes = diffWords(oldContent, newContent);
+        cache.set(delIdx, changes);
+        cache.set(addIdx, changes);
+      }
+    }
+    return cache;
+  }, [displayableLines, baseIndentation]);
+
+  // Render a single line's content with word-level diff highlighting.
+  // `lineType` is 'del' or 'add'; `baseColor` is 'red' or 'green'.
+  // `highlightColor` is the brighter color for changed segments.
+  const renderWordDiffContent = (
+    content: string,
+    lineType: 'del' | 'add',
+    baseColor: string,
+    highlightColor: string,
+    segments: WordDiffSegment[],
+  ): React.ReactNode => {
+    const isDel = lineType === 'del';
+    const nodes: React.ReactNode[] = [];
+    for (const seg of segments) {
+      const isChanged = isDel ? !!seg.removed : !!seg.added;
+      if (isChanged) {
+        nodes.push(
+          <Text key={nodes.length} color={highlightColor} bold wrap="wrap">
+            {seg.value}
+          </Text>,
+        );
+      } else {
+        nodes.push(
+          <Text key={nodes.length} color={baseColor} wrap="wrap">
+            {seg.value}
+          </Text>,
+        );
+      }
+    }
+    return <>{nodes}</>;
+  };
+
   let lastLineNumber: number | null = null;
   const MAX_CONTEXT_LINES_WITHOUT_GAP = 5;
 
@@ -258,15 +335,37 @@ export const DiffRenderer: React.FC<DiffRendererProps> = ({
 
         const displayContent = line.content.substring(baseIndentation);
 
+        // Check if this line has word-level diff data
+        const wordSegments = wordDiffCache.get(index);
+
+        // Determine highlight colors for word-level diffs
+        const highlightColor =
+          line.type === 'del' ? Colors.AccentRed : Colors.AccentGreen;
+
+        let contentNode: React.ReactNode;
+        if (wordSegments && !dim && (line.type === 'del' || line.type === 'add')) {
+          contentNode = renderWordDiffContent(
+            displayContent,
+            line.type,
+            color!,
+            highlightColor,
+            wordSegments,
+          );
+        } else {
+          contentNode = (
+            <Text color={color} dimColor={dim} wrap="wrap">
+              {displayContent}
+            </Text>
+          );
+        }
+
         acc.push(
           <Box key={lineKey} flexDirection="row">
             <Text color={Colors.Gray}>{gutterNumStr.padEnd(4)} </Text>
             <Text color={color} dimColor={dim}>
               {prefixSymbol}{' '}
             </Text>
-            <Text color={color} dimColor={dim} wrap="wrap">
-              {displayContent}
-            </Text>
+            {contentNode}
           </Box>,
         );
         return acc;

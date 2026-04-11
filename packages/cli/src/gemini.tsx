@@ -26,7 +26,7 @@ import { getUserStartupWarnings } from './utils/userStartupWarnings.js';
 import { runNonInteractive } from './nonInteractiveCli.js';
 import { runHeartbeatMode } from './heartbeatCli.js';
 import { loadExtensions, Extension } from './config/extension.js';
-import { cleanupCheckpoints, registerCleanup } from './utils/cleanup.js';
+import { cleanupCheckpoints, registerCleanup, setupGracefulShutdown } from './utils/cleanup.js';
 import { getCliVersion } from './utils/version.js';
 import {
   ApprovalMode,
@@ -282,6 +282,11 @@ export async function main() {
     );
 
     registerCleanup(() => instance.unmount());
+
+    // Set up graceful shutdown handlers for SIGTERM and double-press Ctrl+C
+    setupGracefulShutdown(() => {
+      console.log('\nShutting down gracefully... (press Ctrl+C again to force exit)');
+    });
     return;
   }
   // If not a TTY, read from stdin

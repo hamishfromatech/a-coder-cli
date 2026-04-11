@@ -119,7 +119,25 @@ export const findLastSafeSplitPoint = (content: string) => {
     searchStartIndex = dnlIndex - 1;
   }
 
-  // If no safe double newline is found, return content.length
-  // to keep the entire content as one piece.
+  // If no safe double newline is found, but content is very large,
+  // fall back to a single newline split to prevent unbounded buffer growth.
+  const ABSOLUTE_MAX_LENGTH = 8000;
+  if (content.length > ABSOLUTE_MAX_LENGTH) {
+    // Look for any newline (not in a code block) before ABSOLUTE_MAX_LENGTH
+    let fallbackSearch = ABSOLUTE_MAX_LENGTH;
+    while (fallbackSearch >= 0) {
+      const nlIndex = content.lastIndexOf('\n', fallbackSearch);
+      if (nlIndex === -1) {
+        break;
+      }
+      if (!isIndexInsideCodeBlock(content, nlIndex + 1)) {
+        return nlIndex + 1;
+      }
+      fallbackSearch = nlIndex - 1;
+    }
+    // Last resort: hard split at ABSOLUTE_MAX_LENGTH
+    return ABSOLUTE_MAX_LENGTH;
+  }
+
   return content.length;
 };

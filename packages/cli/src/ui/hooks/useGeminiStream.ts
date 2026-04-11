@@ -161,7 +161,6 @@ export const useGeminiStream = (
     pendingHistoryItems.push(pendingToolCallGroupDisplay);
   }
 
-  const loopDetectedRef = useRef(false);
   const isProcessingQueueRef = useRef(false);
 
   const onExec = useCallback(async (done: Promise<void>) => {
@@ -201,11 +200,56 @@ export const useGeminiStream = (
     return StreamingState.Idle;
   }, [isResponding, toolCalls]);
 
+  // Terminal bell notification when streaming completes (user may have switched windows)
+  const wasRespondingRef = useRef(false);
+  useEffect(() => {
+    const isCurrentlyResponding =
+      streamingState === StreamingState.Responding ||
+      streamingState === StreamingState.WaitingForConfirmation;
+    if (wasRespondingRef.current && !isCurrentlyResponding) {
+      try {
+        process.stdout.write('\x07');
+      } catch {
+        // Ignore if stdout is not available
+      }
+    }
+    wasRespondingRef.current = isCurrentlyResponding;
+  }, [streamingState]);
+
   const handleEscapeKey = useCallback(() => {
     if (streamingState === StreamingState.Responding) {
       turnCancelledRef.current = true;
       abortControllerRef.current?.abort();
-      
+
+      if (pendingHistoryItemRef.current) {
+        addItem(pendingHistoryItemRef.current, Date.now());
+      }
+      addItem(
+        {
+          type: MessageType.INFO,
+          text: 'Request cancelled.',
+        },
+        Date.now(),
+      );
+      setPendingHistoryItem(null);
+      setIsResponding(false);
+    }
+  }, [
+    streamingState,
+    pendingHistoryItemRef,
+    addItem,
+    setPendingHistoryItem,
+    setIsResponding,
+  ]);
+
+  const cancelCurrentTask = useCallback(() => {
+    if (
+      streamingState === StreamingState.Responding ||
+      streamingState === StreamingState.WaitingForConfirmation
+    ) {
+      turnCancelledRef.current = true;
+      abortControllerRef.current?.abort();
+
       if (pendingHistoryItemRef.current) {
         addItem(pendingHistoryItemRef.current, Date.now());
       }
@@ -518,16 +562,6 @@ export const useGeminiStream = (
     [addItem, config],
   );
 
-  const handleLoopDetectedEvent = useCallback(() => {
-    addItem(
-      {
-        type: 'info',
-        text: `A potential loop was detected. This can happen due to repetitive tool calls or other model behavior. The request has been halted.`,
-      },
-      Date.now(),
-    );
-  }, [addItem]);
-
   const handleContextWarningEvent = useCallback(
     (event: ServerGeminiContextWarningEvent) => {
       const { event: eventType, currentTokens, tokenLimit } = event.value;
@@ -569,13 +603,27 @@ export const useGeminiStream = (
       let geminiMessageBuffer = '';
       const toolCallRequests: ToolCallRequestInfo[] = [];
       let wasCancelled = false;
+      let lastThoughtUpdate = 0;
+      const THOUGHT_THROTTLE_MS = 200; // Throttle thought UI updates to avoid excessive re-renders
       for await (const event of stream) {
         switch (event.type) {
           case ServerGeminiEventType.Thought:
             // Safely handle thought events without failing the stream
             try {
               if (!config.getHideThinking()) {
-                setThought(event.value);
+                // Throttle thought updates to avoid excessive re-renders during
+                // long reasoning phases that can cause OOM
+                const now = Date.now();
+                if (now - lastThoughtUpdate >= THOUGHT_THROTTLE_MS) {
+                  lastThoughtUpdate = now;
+                  // Truncate description to prevent large strings in React state
+                  const MAX_THOUGHT_DISPLAY_LENGTH = 2000;
+                  const desc = event.value.description;
+                  const truncatedDesc = desc.length > MAX_THOUGHT_DISPLAY_LENGTH
+                    ? desc.slice(-MAX_THOUGHT_DISPLAY_LENGTH)
+                    : desc;
+                  setThought({ subject: event.value.subject, description: truncatedDesc });
+                }
               }
             } catch (e) {
               // Silently fail on thought events to not interrupt the stream
@@ -624,9 +672,7 @@ export const useGeminiStream = (
             handleMaxSessionTurnsEvent();
             break;
           case ServerGeminiEventType.LoopDetected:
-            // handle later because we want to move pending history to history
-            // before we add loop detected message to history
-            loopDetectedRef.current = true;
+            // Silently handled — the core injects a user message to break the loop
             break;
           case ServerGeminiEventType.ContextWarning:
             handleContextWarningEvent(event);
@@ -742,10 +788,6 @@ export const useGeminiStream = (
           addItem(pendingHistoryItemRef.current, userMessageTimestamp);
           setPendingHistoryItem(null);
         }
-        if (loopDetectedRef.current) {
-          loopDetectedRef.current = false;
-          handleLoopDetectedEvent();
-        }
       } catch (error: unknown) {
         if (error instanceof UnauthorizedError) {
           onAuthError();
@@ -792,7 +834,6 @@ export const useGeminiStream = (
       config,
       startNewPrompt,
       getPromptCount,
-      handleLoopDetectedEvent,
     ],
   );
 
@@ -1059,6 +1100,7 @@ export const useGeminiStream = (
   return {
     streamingState,
     submitQuery,
+    cancelCurrentTask,
     initError,
     pendingHistoryItems,
     thought,

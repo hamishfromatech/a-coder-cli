@@ -31,6 +31,10 @@ import {
   HookExecutor,
 } from '../hooks/hookExecutor.js';
 import * as Diff from 'diff';
+import {
+  getPermissionStore,
+  scopeFromOutcome,
+} from '../utils/permissionStore.js';
 
 export type ValidatingToolCall = {
   status: 'validating';
@@ -532,34 +536,44 @@ export class CoreToolScheduler {
         if (this.approvalMode === ApprovalMode.YOLO) {
           this.setStatusInternal(reqInfo.callId, 'scheduled');
         } else {
-          const confirmationDetails = await toolInstance.shouldConfirmExecute(
-            reqInfo.args,
-            signal,
+          // Check persisted permission rules before prompting the user
+          const permissionStore = getPermissionStore();
+          const hasPersistedPermission = await permissionStore.checkPermission(
+            reqInfo.name,
+            reqInfo.args as Record<string, unknown>,
           );
-
-          if (confirmationDetails) {
-            const originalOnConfirm = confirmationDetails.onConfirm;
-            const wrappedConfirmationDetails: ToolCallConfirmationDetails = {
-              ...confirmationDetails,
-              onConfirm: (
-                outcome: ToolConfirmationOutcome,
-                payload?: ToolConfirmationPayload,
-              ) =>
-                this.handleConfirmationResponse(
-                  reqInfo.callId,
-                  originalOnConfirm,
-                  outcome,
-                  signal,
-                  payload,
-                ),
-            };
-            this.setStatusInternal(
-              reqInfo.callId,
-              'awaiting_approval',
-              wrappedConfirmationDetails,
-            );
-          } else {
+          if (hasPersistedPermission) {
             this.setStatusInternal(reqInfo.callId, 'scheduled');
+          } else {
+            const confirmationDetails = await toolInstance.shouldConfirmExecute(
+              reqInfo.args,
+              signal,
+            );
+
+            if (confirmationDetails) {
+              const originalOnConfirm = confirmationDetails.onConfirm;
+              const wrappedConfirmationDetails: ToolCallConfirmationDetails = {
+                ...confirmationDetails,
+                onConfirm: (
+                  outcome: ToolConfirmationOutcome,
+                  payload?: ToolConfirmationPayload,
+                ) =>
+                  this.handleConfirmationResponse(
+                    reqInfo.callId,
+                    originalOnConfirm,
+                    outcome,
+                    signal,
+                    payload,
+                  ),
+              };
+              this.setStatusInternal(
+                reqInfo.callId,
+                'awaiting_approval',
+                wrappedConfirmationDetails,
+              );
+            } else {
+              this.setStatusInternal(reqInfo.callId, 'scheduled');
+            }
           }
         }
       } catch (error) {
@@ -590,6 +604,25 @@ export class CoreToolScheduler {
 
     if (toolCall && toolCall.status === 'awaiting_approval') {
       await originalOnConfirm(outcome);
+    }
+
+    // Persist permission rules when the user selects "Always allow"
+    if (
+      outcome === ToolConfirmationOutcome.ProceedAlways ||
+      outcome === ToolConfirmationOutcome.ProceedAlwaysTool ||
+      outcome === ToolConfirmationOutcome.ProceedAlwaysServer
+    ) {
+      try {
+        const permissionStore = getPermissionStore();
+        const scope = scopeFromOutcome(outcome);
+        await permissionStore.addRule(
+          toolCall!.request.name,
+          toolCall!.request.args as Record<string, unknown>,
+          scope,
+        );
+      } catch {
+        // Silently ignore persistence errors; in-memory approval still works
+      }
     }
 
     this.toolCalls = this.toolCalls.map((call) => {
@@ -701,74 +734,149 @@ export class CoreToolScheduler {
         call.status === 'error',
     );
 
-    if (allCallsFinalOrScheduled) {
-      const callsToExecute = this.toolCalls.filter(
-        (call) => call.status === 'scheduled',
-      );
+    if (!allCallsFinalOrScheduled) return;
 
-      callsToExecute.forEach((toolCall) => {
-        if (toolCall.status !== 'scheduled') return;
+    const callsToExecute = this.toolCalls.filter(
+      (call) => call.status === 'scheduled',
+    );
 
-        const scheduledCall = toolCall;
-        const { callId, name: toolName } = scheduledCall.request;
-        this.setStatusInternal(callId, 'executing');
+    if (callsToExecute.length === 0) return;
 
-        const liveOutputCallback =
-          scheduledCall.tool.canUpdateOutput && this.outputUpdateHandler
-            ? (outputChunk: string) => {
-                if (this.outputUpdateHandler) {
-                  this.outputUpdateHandler(callId, outputChunk);
-                }
-                this.toolCalls = this.toolCalls.map((tc) =>
-                  tc.request.callId === callId && tc.status === 'executing'
-                    ? { ...tc, liveOutput: outputChunk }
-                    : tc,
-                );
-                this.notifyToolCallsUpdate();
-              }
-            : undefined;
+    // Separate read-only and mutation tools for concurrent vs sequential execution
+    const readOnlyCalls = callsToExecute.filter(
+      (call) => call.status === 'scheduled' && call.tool?.isReadOnly,
+    );
+    const mutationCalls = callsToExecute.filter(
+      (call) => call.status === 'scheduled' && !call.tool?.isReadOnly,
+    );
 
-        scheduledCall.tool
-          .execute(scheduledCall.request.args, signal, liveOutputCallback)
-          .then(async (toolResult: ToolResult) => {
-            if (signal.aborted) {
-              this.setStatusInternal(
-                callId,
-                'cancelled',
-                'User cancelled tool execution.',
-              );
-              return;
-            }
+    // Execute all read-only tools concurrently
+    readOnlyCalls.forEach((toolCall) => {
+      this.executeToolCall(toolCall as ScheduledToolCall, signal);
+    });
 
-            const response = convertToFunctionResponse(
-              toolName,
-              callId,
-              toolResult.llmContent,
-              scheduledCall.request.thought_signature,
-            );
-            const successResponse: ToolCallResponseInfo = {
-              callId,
-              responseParts: response,
-              resultDisplay: toolResult.returnDisplay,
-              error: undefined,
-            };
+    // Execute mutation tools sequentially — each starts only after the previous finishes
+    const executeMutationsSequentially = async () => {
+      for (const toolCall of mutationCalls) {
+        if (signal.aborted) break;
+        if (toolCall.status !== 'scheduled') continue;
+        await this.executeToolCallAndWait(
+          toolCall as ScheduledToolCall,
+          signal,
+        );
+      }
+    };
 
-            this.setStatusInternal(callId, 'success', successResponse);
-          })
-          .catch((executionError: Error) => {
-            this.setStatusInternal(
-              callId,
-              'error',
-              createErrorResponse(
-                scheduledCall.request,
-                executionError instanceof Error
-                  ? executionError
-                  : new Error(String(executionError)),
-              ),
-            );
-          });
-      });
+    // Fire and forget — completion is tracked via status changes
+    executeMutationsSequentially().catch(() => {
+      // Errors are handled per-tool in executeToolCallAndWait
+    });
+  }
+
+  /**
+   * Executes a tool call (fire-and-forget). Used for read-only tools that can run concurrently.
+   */
+  private executeToolCall(
+    scheduledCall: ScheduledToolCall,
+    signal: AbortSignal,
+  ): void {
+    const { callId, name: toolName } = scheduledCall.request;
+    this.setStatusInternal(callId, 'executing');
+
+    const liveOutputCallback = this.createLiveOutputCallback(
+      scheduledCall,
+      callId,
+    );
+
+    scheduledCall.tool
+      .execute(scheduledCall.request.args, signal, liveOutputCallback)
+      .then((toolResult: ToolResult) => this.handleToolSuccess(scheduledCall, toolResult, signal))
+      .catch((executionError: Error) => this.handleToolError(scheduledCall, executionError));
+  }
+
+  /**
+   * Executes a tool call and waits for it to complete. Used for mutation tools that must run sequentially.
+   */
+  private executeToolCallAndWait(
+    scheduledCall: ScheduledToolCall,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const { callId, name: toolName } = scheduledCall.request;
+    this.setStatusInternal(callId, 'executing');
+
+    const liveOutputCallback = this.createLiveOutputCallback(
+      scheduledCall,
+      callId,
+    );
+
+    return scheduledCall.tool
+      .execute(scheduledCall.request.args, signal, liveOutputCallback)
+      .then((toolResult: ToolResult) => this.handleToolSuccess(scheduledCall, toolResult, signal))
+      .catch((executionError: Error) => this.handleToolError(scheduledCall, executionError));
+  }
+
+  private createLiveOutputCallback(
+    scheduledCall: ScheduledToolCall,
+    callId: string,
+  ): ((outputChunk: string) => void) | undefined {
+    if (!scheduledCall.tool.canUpdateOutput || !this.outputUpdateHandler) {
+      return undefined;
     }
+    return (outputChunk: string) => {
+      if (this.outputUpdateHandler) {
+        this.outputUpdateHandler(callId, outputChunk);
+      }
+      this.toolCalls = this.toolCalls.map((tc) =>
+        tc.request.callId === callId && tc.status === 'executing'
+          ? { ...tc, liveOutput: outputChunk }
+          : tc,
+      );
+      this.notifyToolCallsUpdate();
+    };
+  }
+
+  private handleToolSuccess(
+    scheduledCall: ScheduledToolCall,
+    toolResult: ToolResult,
+    signal: AbortSignal,
+  ): void {
+    const { callId, name: toolName } = scheduledCall.request;
+    if (signal.aborted) {
+      this.setStatusInternal(callId, 'cancelled', 'User cancelled tool execution.');
+      return;
+    }
+
+    const response = convertToFunctionResponse(
+      toolName,
+      callId,
+      toolResult.llmContent,
+      scheduledCall.request.thought_signature,
+    );
+    const successResponse: ToolCallResponseInfo = {
+      callId,
+      responseParts: response,
+      resultDisplay: toolResult.returnDisplay,
+      error: undefined,
+    };
+
+    this.setStatusInternal(callId, 'success', successResponse);
+  }
+
+  private handleToolError(
+    scheduledCall: ScheduledToolCall,
+    executionError: Error,
+  ): void {
+    const { callId } = scheduledCall.request;
+    this.setStatusInternal(
+      callId,
+      'error',
+      createErrorResponse(
+        scheduledCall.request,
+        executionError instanceof Error
+          ? executionError
+          : new Error(String(executionError)),
+      ),
+    );
   }
 
   private checkAndNotifyCompletion(): void {

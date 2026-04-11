@@ -97,6 +97,9 @@ export class LSTool extends BaseTool<LSToolParams, ToolResult> {
         required: ['path'],
         type: Type.OBJECT,
       },
+      true,  // isOutputMarkdown
+      false, // canUpdateOutput
+      true,  // isReadOnly
     );
   }
 

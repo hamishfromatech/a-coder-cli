@@ -14,6 +14,7 @@ export * from './core/geminiChat.js';
 export * from './core/logger.js';
 export * from './core/prompts.js';
 export * from './core/tokenLimits.js';
+export * from './core/tokenBudget.js';
 export * from './core/turn.js';
 export * from './core/geminiRequest.js';
 export * from './core/coreToolScheduler.js';
@@ -35,8 +36,14 @@ export * from './utils/memoryDiscovery.js';
 export * from './utils/gitIgnoreParser.js';
 export * from './utils/editor.js';
 export * from './utils/quotaErrorDetection.js';
+export * from './utils/errorClassification.js';
+export * from './utils/circuitBreaker.js';
 export * from './utils/toolPermissionMatcher.js';
+export * from './utils/permissionStore.js';
 export * from './utils/heartbeatLock.js';
+export * from './utils/featureFlags.js';
+export * from './utils/promptCacheTracker.js';
+export * from './utils/vcr.js';
 
 // Export services
 export * from './services/fileDiscoveryService.js';

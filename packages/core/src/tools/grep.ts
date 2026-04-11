@@ -83,6 +83,9 @@ export class GrepTool extends BaseTool<GrepToolParams, ToolResult> {
         required: ['pattern'],
         type: Type.OBJECT,
       },
+      true,  // isOutputMarkdown
+      false, // canUpdateOutput
+      true,  // isReadOnly
     );
   }
 

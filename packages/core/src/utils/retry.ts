@@ -9,6 +9,7 @@ import {
   isProQuotaExceededError,
   isGenericQuotaExceededError,
 } from './quotaErrorDetection.js';
+import { classifyApiError, ErrorCategory } from './errorClassification.js';
 
 export interface RetryOptions {
   maxAttempts: number;
@@ -22,6 +23,8 @@ export interface RetryOptions {
   authType?: string;
   /** Called on each retry attempt with the attempt number and delay. */
   onRetry?: (attempt: number, maxAttempts: number, delayMs: number) => void;
+  /** Called when a stale connection is detected, allowing the caller to reconnect. */
+  onStaleConnection?: () => void;
 }
 
 const DEFAULT_RETRY_OPTIONS: RetryOptions = {
@@ -38,18 +41,8 @@ const DEFAULT_RETRY_OPTIONS: RetryOptions = {
  * @returns True if the error is a transient error, false otherwise.
  */
 function defaultShouldRetry(error: Error | unknown): boolean {
-  // Check for common transient error status codes either in message or a status property
-  if (error && typeof (error as { status?: number }).status === 'number') {
-    const status = (error as { status: number }).status;
-    if (status === 429 || (status >= 500 && status < 600)) {
-      return true;
-    }
-  }
-  if (error instanceof Error && error.message) {
-    if (error.message.includes('429')) return true;
-    if (error.message.match(/5\d{2}/)) return true;
-  }
-  return false;
+  const classified = classifyApiError(error);
+  return classified.retryable;
 }
 
 /**
@@ -80,6 +73,7 @@ export async function retryWithBackoff<T>(
     authType,
     shouldRetry,
     onRetry,
+    onStaleConnection,
   } = {
     ...DEFAULT_RETRY_OPTIONS,
     ...options,
@@ -154,6 +148,17 @@ export async function retryWithBackoff<T>(
         consecutive429Count++;
       } else {
         consecutive429Count = 0;
+      }
+
+      // Check for stale connection — notify caller and use short delay
+      const classified = classifyApiError(error);
+      if (classified.category === ErrorCategory.STALE_CONNECTION && onStaleConnection) {
+        console.warn(`Attempt ${attempt} failed with stale connection. Reconnecting...`);
+        onStaleConnection();
+        const shortDelay = Math.min(1000, initialDelayMs);
+        onRetry?.(attempt, maxAttempts, shortDelay);
+        await delay(shortDelay);
+        continue;
       }
 
       // If we have persistent 429s and a fallback callback for OAuth

@@ -571,11 +571,16 @@ export class GeminiChat {
     const outputContent: Content[] = [];
     const chunks: GenerateContentResponse[] = [];
     let errorOccurred = false;
+    const MAX_CHUNKS = 1000;
 
     try {
       for await (const chunk of streamResponse) {
         if (isValidResponse(chunk)) {
           chunks.push(chunk);
+          // Cap chunks array to prevent OOM in very long sessions
+          if (chunks.length > MAX_CHUNKS) {
+            chunks.splice(0, chunks.length - MAX_CHUNKS / 2);
+          }
           const content = chunk.candidates?.[0]?.content;
           if (content !== undefined) {
             if (this.isThoughtContent(content)) {

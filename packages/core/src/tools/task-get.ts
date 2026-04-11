@@ -52,6 +52,7 @@ Returns the full task object with all details including:
       } as Schema,
       false, // isOutputMarkdown
       false, // canUpdateOutput
+      true,  // isReadOnly
     );
   }
 
