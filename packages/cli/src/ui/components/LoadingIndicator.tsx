@@ -67,8 +67,8 @@ export const LoadingIndicator: React.FC<LoadingIndicatorProps> = ({
             {elapsedTime >= 3 && hasThought && ' · '}
             {hasThought && !showThinking && 'Reasoning hidden (ctrl+o)'}
             {hasThought && showThinking && 'Showing reasoning'}
-            {!hasThought && elapsedTime >= 3 && elapsedTime < 30 && 'esc to cancel'}
-            {!hasThought && elapsedTime >= 30 && 'still working... esc to cancel'}
+            {!hasThought && elapsedTime >= 3 && elapsedTime < 30 && ' · esc to cancel'}
+            {!hasThought && elapsedTime >= 30 && ' · still working... esc to cancel'}
           </Text>
         </Box>
       )}

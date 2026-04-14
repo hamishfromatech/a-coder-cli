@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
-import { Box, Text, useInput } from 'ink';
+import React, { useCallback } from 'react';
+import { Box, Text } from 'ink';
 import { DiffRenderer } from './DiffRenderer.js';
 import { Colors } from '../../colors.js';
 import {
@@ -20,6 +20,7 @@ import {
   RadioSelectItem,
 } from '../shared/RadioButtonSelect.js';
 import { MaxSizedBox } from '../shared/MaxSizedBox.js';
+import { useKeypress, type Key, stopPropagation } from '../../hooks/useKeypress.js';
 
 export interface ToolConfirmationMessageProps {
   confirmationDetails: ToolCallConfirmationDetails;
@@ -40,14 +41,20 @@ export const ToolConfirmationMessage: React.FC<
   const { onConfirm } = confirmationDetails;
   const childWidth = terminalWidth - 2; // 2 for padding
 
-  useInput(
-    (_, key) => {
-      if (key.escape) {
+  const handleEscape = useCallback(
+    (key: Key) => {
+      if (key.name === 'escape') {
         onConfirm(ToolConfirmationOutcome.Cancel);
+        stopPropagation();
       }
     },
-    { isActive: isFocused }
+    [onConfirm],
   );
+
+  useKeypress(handleEscape, {
+    isActive: !!isFocused,
+    priority: 50,
+  });
 
   const handleSelect = (item: ToolConfirmationOutcome) => onConfirm(item);
 

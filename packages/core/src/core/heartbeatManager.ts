@@ -16,62 +16,11 @@ export interface HeartbeatConfig {
   maxIterations?: number;
 }
 
-export interface ParsedHeartbeatTask {
-  id: string;
-  description: string;
-  status: 'pending' | 'in_progress' | 'completed';
-}
-
 export interface HeartbeatStatus {
   lastRun: string | null;
   nextRun: string | null;
   status: 'idle' | 'running' | 'completed' | 'error';
   currentTask: string | null;
-}
-
-/**
- * Parses tasks from heartbeat.md file
- * @param content The content of heartbeat.md
- * @returns Array of parsed tasks
- */
-export function parseHeartbeatTasks(content: string): ParsedHeartbeatTask[] {
-  const tasks: ParsedHeartbeatTask[] = [];
-  const lines = content.split('\n');
-  let currentTask: Partial<ParsedHeartbeatTask> = {};
-
-  for (const line of lines) {
-    const pendingMatch = line.match(/^\s*[-*]\s*\[\s*\]\s*(.+)$/);
-    const inProgressMatch = line.match(/^\s*[-*]\s*\[!\]\s*(.+)$/);
-    const completedMatch = line.match(/^\s*[-*]\s*\[x\]\s*(.+)$/i);
-
-    if (pendingMatch) {
-      if (currentTask.description) {
-        tasks.push(currentTask as ParsedHeartbeatTask);
-      }
-      currentTask = { description: pendingMatch[1].trim(), status: 'pending' };
-    } else if (inProgressMatch) {
-      if (currentTask.description) {
-        tasks.push(currentTask as ParsedHeartbeatTask);
-      }
-      currentTask = { description: inProgressMatch[1].trim(), status: 'in_progress' };
-    } else if (completedMatch) {
-      if (currentTask.description) {
-        tasks.push(currentTask as ParsedHeartbeatTask);
-      }
-      currentTask = { description: completedMatch[1].trim(), status: 'completed' };
-    }
-  }
-
-  // Don't forget the last task
-  if (currentTask.description) {
-    tasks.push(currentTask as ParsedHeartbeatTask);
-  }
-
-  // Assign IDs
-  return tasks.map((task, index) => ({
-    ...task,
-    id: String(index + 1),
-  }));
 }
 
 /**
@@ -82,8 +31,28 @@ export function getHeartbeatPath(targetDir: string): string {
 }
 
 /**
- * Manages heartbeat mode scheduling and task execution.
- * Runs tasks from heartbeat.md on a specified interval by spawning child CLI processes.
+ * Gets the path to the plan.md file for a given target directory
+ */
+export function getPlanPath(targetDir: string): string {
+  return path.join(targetDir, GEMINI_DIR, 'plan.md');
+}
+
+/**
+ * Reads the interval from heartbeat.md if present
+ * @param heartbeatPath Path to heartbeat.md
+ * @returns Interval in minutes, or null if not found
+ */
+export function readHeartbeatInterval(heartbeatPath: string): number | null {
+  if (!fs.existsSync(heartbeatPath)) return null;
+
+  const content = fs.readFileSync(heartbeatPath, 'utf8');
+  const match = content.match(/^Interval:\s*(\d+)/m);
+  return match ? parseInt(match[1], 10) : null;
+}
+
+/**
+ * Manages heartbeat mode scheduling.
+ * Spawns a CLI process at each interval to work autonomously on the project.
  */
 export class HeartbeatManager {
   private config: Config;
@@ -94,6 +63,7 @@ export class HeartbeatManager {
   private maxIterations: number;
   private intervalMs: number;
   private heartbeatPath: string;
+  private planPath: string;
   private cliPath: string;
 
   constructor(config: Config, heartbeatConfig?: Partial<HeartbeatConfig>) {
@@ -101,6 +71,7 @@ export class HeartbeatManager {
     this.intervalMs = (heartbeatConfig?.intervalMinutes ?? 10) * 60 * 1000;
     this.maxIterations = heartbeatConfig?.maxIterations ?? -1; // -1 = infinite
     this.heartbeatPath = getHeartbeatPath(config.getTargetDir());
+    this.planPath = getPlanPath(config.getTargetDir());
     // Use 'a-coder-cli' command which should be available in PATH after global install
     this.cliPath = 'a-coder-cli';
   }
@@ -183,32 +154,10 @@ export class HeartbeatManager {
     });
 
     try {
-      // Read tasks from heartbeat.md
-      const tasks = await this.readHeartbeatTasks();
-      const pendingTasks = tasks.filter((t) => t.status === 'pending');
+      // Spawn CLI to work autonomously
+      await this.runCliCycle();
 
-      if (pendingTasks.length === 0) {
-        console.log('[Heartbeat] No pending tasks. Skipping.');
-        await this.updateHeartbeatStatus({ status: 'idle', currentTask: null });
-        return;
-      }
-
-      // Get the first pending task
-      const currentTask = pendingTasks[0];
-      console.log(`[Heartbeat] Processing task: ${currentTask.id} - ${currentTask.description}`);
-
-      await this.updateHeartbeatStatus({
-        status: 'running',
-        currentTask: currentTask.id,
-      });
-
-      // Execute the task by spawning a child CLI process
-      await this.executeTask(currentTask);
-
-      // Mark task as completed
-      await this.markTaskCompleted(currentTask.id);
-
-      console.log(`[Heartbeat] Completed task: ${currentTask.id}`);
+      console.log(`[Heartbeat] Cycle ${this.iterationCount} completed successfully.`);
 
     } catch (error) {
       console.error('[Heartbeat] Error during cycle:', error);
@@ -222,36 +171,46 @@ export class HeartbeatManager {
     }
   }
 
-  private async readHeartbeatTasks(): Promise<ParsedHeartbeatTask[]> {
-    if (!fs.existsSync(this.heartbeatPath)) {
-      return [];
-    }
+  /**
+   * Run a single CLI process for this heartbeat cycle.
+   * The CLI will read plan.md and heartbeat.md for context and use exit_heartbeat when done.
+   */
+  private async runCliCycle(): Promise<void> {
+    const prompt = `You are in heartbeat mode — an autonomous building cycle.
 
-    const content = fs.readFileSync(this.heartbeatPath, 'utf8');
-    return parseHeartbeatTasks(content);
-  }
+1. Read .a-coder-cli/plan.md for the overall project plan and architecture.
+2. Read .a-coder-cli/heartbeat.md for current progress and what to work on next.
 
-  private async markTaskCompleted(taskId: string): Promise<void> {
-    if (!fs.existsSync(this.heartbeatPath)) return;
+heartbeat.md is the source of truth for project progress. Based on what you find there, actively work on the next thing that needs to be done. This means writing code, fixing bugs, implementing features — real building work using your tools (edit, write_file, shell, etc.).
 
-    let content = fs.readFileSync(this.heartbeatPath, 'utf8');
-    const lines = content.split('\n');
-    let taskCounter = 0;
+Do NOT just read the files and stop. You must take action and make progress on the project.
 
-    const updatedLines = lines.map((line) => {
-      // Match any task line (pending, in_progress, or already completed)
-      const match = line.match(/^(\s*[-*]\s*\[)[ x!]\](.*)$/);
-      if (match) {
-        taskCounter++;
-        if (taskCounter === parseInt(taskId)) {
-          // Mark as completed
-          return `${match[1]}x\]${match[2]}`;
+When you have made meaningful progress and completed your work for this cycle, update heartbeat.md to reflect what you did and what's next, then call the exit_heartbeat tool to return control to the heartbeat scheduler. It will wake up again at the next interval to continue.`;
+
+    console.log(`[Heartbeat] Spawning CLI for cycle ${this.iterationCount}...`);
+
+    return new Promise((resolve, reject) => {
+      const child = spawn(this.cliPath, ['--prompt', prompt, '--yolo'], {
+        cwd: this.config.getTargetDir(),
+        stdio: 'inherit',
+        env: {
+          ...process.env,
+          HEARTBEAT_CYCLE_ID: String(this.iterationCount),
+        },
+      });
+
+      child.on('close', (code) => {
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`CLI process exited with code ${code}`));
         }
-      }
-      return line;
-    });
+      });
 
-    fs.writeFileSync(this.heartbeatPath, updatedLines.join('\n'), 'utf8');
+      child.on('error', (err) => {
+        reject(err);
+      });
+    });
   }
 
   private async updateHeartbeatStatus(status: Partial<HeartbeatStatus>): Promise<void> {
@@ -273,48 +232,5 @@ export class HeartbeatManager {
     }
 
     fs.writeFileSync(this.heartbeatPath, content, 'utf8');
-  }
-
-  /**
-   * Execute a task by spawning a child CLI process
-   */
-  private executeTask(task: ParsedHeartbeatTask): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const prompt = `Task: ${task.description}
-
-Please complete this task. When done, update the heartbeat.md file by marking the task as completed using the edit tool. Mark the task as completed when you finish the task or if you determine it cannot be completed.`;
-
-      const taskPromptId = `heartbeat-${task.id}-${Date.now()}`;
-
-      // Build CLI arguments
-      const cliArgs = [
-        '--prompt', prompt,
-        '--yolo', // Run in YOLO mode for automated execution
-      ];
-
-      console.log(`[Heartbeat] Spawning CLI for task ${task.id}...`);
-
-      const child = spawn(this.cliPath, cliArgs, {
-        cwd: this.config.getTargetDir(),
-        stdio: 'inherit',
-        env: {
-          ...process.env,
-          HEARTBEAT_TASK_ID: task.id,
-          HEARTBEAT_SESSION_ID: taskPromptId,
-        },
-      });
-
-      child.on('close', (code) => {
-        if (code === 0) {
-          resolve();
-        } else {
-          reject(new Error(`CLI process exited with code ${code}`));
-        }
-      });
-
-      child.on('error', (err) => {
-        reject(err);
-      });
-    });
   }
 }

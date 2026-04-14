@@ -4,12 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Text, Box } from 'ink';
-import { Colors } from '../colors.js';
+import { marked, type Token, type Tokens } from 'marked';
 import { colorizeCode } from './CodeColorizer.js';
 import { TableRenderer } from './TableRenderer.js';
-import { RenderInline } from './InlineMarkdownRenderer.js';
+import {
+  configureMarked,
+  formatToken,
+} from './formatMarkdown.js';
 
 interface MarkdownDisplayProps {
   text: string;
@@ -18,270 +21,60 @@ interface MarkdownDisplayProps {
   terminalWidth: number;
 }
 
-// Constants for Markdown parsing and rendering
+// --- Token Cache ---
+// Module-level cache — marked.lexer is the hot cost on virtual-scroll
+// remounts (~3ms per message). Same content → same tokens. Keyed by
+// a simple hash to avoid retaining full content strings.
+const TOKEN_CACHE_MAX = 500;
+const tokenCache = new Map<string, Token[]>();
 
-const EMPTY_LINE_HEIGHT = 1;
-const CODE_BLOCK_PREFIX_PADDING = 1;
-const LIST_ITEM_PREFIX_PADDING = 1;
-const LIST_ITEM_TEXT_FLEX_GROW = 1;
+// Characters that indicate markdown syntax. If none are present, skip the
+// ~3ms marked.lexer call entirely — render as a single paragraph.
+const MD_SYNTAX_RE = /[#*`|[>\-_~]|\n\n|^\d+\. |\n\d+\. /;
+function hasMarkdownSyntax(s: string): boolean {
+  return MD_SYNTAX_RE.test(s.length > 500 ? s.slice(0, 500) : s);
+}
 
-const MarkdownDisplayInternal: React.FC<MarkdownDisplayProps> = ({
-  text,
-  isPending,
-  availableTerminalHeight,
-  terminalWidth,
-}) => {
-  if (!text) return <></>;
-
-  const lines = text.split('\n');
-  const headerRegex = /^ *(#{1,4}) +(.*)/;
-  const codeFenceRegex = /^ *(`{3,}|~{3,}) *(\w*?) *$/;
-  const ulItemRegex = /^([ \t]*)([-*+]) +(.*)/;
-  const olItemRegex = /^([ \t]*)(\d+)\. +(.*)/;
-  const hrRegex = /^ *([-*_] *){3,} *$/;
-  const tableRowRegex = /^\s*\|(.+)\|\s*$/;
-  const tableSeparatorRegex = /^\s*\|?\s*(:?-+:?)\s*(\|\s*(:?-+:?)\s*)+\|?\s*$/;
-
-  const contentBlocks: React.ReactNode[] = [];
-  let inCodeBlock = false;
-  let lastLineEmpty = true;
-  let codeBlockContent: string[] = [];
-  let codeBlockLang: string | null = null;
-  let codeBlockFence = '';
-  let inTable = false;
-  let tableRows: string[][] = [];
-  let tableHeaders: string[] = [];
-
-  function addContentBlock(block: React.ReactNode) {
-    if (block) {
-      contentBlocks.push(block);
-      lastLineEmpty = false;
-    }
+// Simple string hash for cache keys (not cryptographic)
+function hashContent(content: string): string {
+  let hash = 0;
+  for (let i = 0; i < content.length; i++) {
+    const char = content.charCodeAt(i);
+    hash = ((hash << 5) - hash + char) | 0;
   }
+  return hash.toString(36);
+}
 
-  lines.forEach((line, index) => {
-    const key = `line-${index}`;
-
-    if (inCodeBlock) {
-      const fenceMatch = line.match(codeFenceRegex);
-      if (
-        fenceMatch &&
-        fenceMatch[1].startsWith(codeBlockFence[0]) &&
-        fenceMatch[1].length >= codeBlockFence.length
-      ) {
-        addContentBlock(
-          <RenderCodeBlock
-            key={key}
-            content={codeBlockContent}
-            lang={codeBlockLang}
-            isPending={isPending}
-            availableTerminalHeight={availableTerminalHeight}
-            terminalWidth={terminalWidth}
-          />,
-        );
-        inCodeBlock = false;
-        codeBlockContent = [];
-        codeBlockLang = null;
-        codeBlockFence = '';
-      } else {
-        codeBlockContent.push(line);
-      }
-      return;
-    }
-
-    const codeFenceMatch = line.match(codeFenceRegex);
-    const headerMatch = line.match(headerRegex);
-    const ulMatch = line.match(ulItemRegex);
-    const olMatch = line.match(olItemRegex);
-    const hrMatch = line.match(hrRegex);
-    const tableRowMatch = line.match(tableRowRegex);
-    const tableSeparatorMatch = line.match(tableSeparatorRegex);
-
-    if (codeFenceMatch) {
-      inCodeBlock = true;
-      codeBlockFence = codeFenceMatch[1];
-      codeBlockLang = codeFenceMatch[2] || null;
-    } else if (tableRowMatch && !inTable) {
-      // Potential table start - check if next line is separator
-      if (
-        index + 1 < lines.length &&
-        lines[index + 1].match(tableSeparatorRegex)
-      ) {
-        inTable = true;
-        tableHeaders = tableRowMatch[1].split('|').map((cell) => cell.trim());
-        tableRows = [];
-      } else {
-        // Not a table, treat as regular text
-        addContentBlock(
-          <Box key={key}>
-            <Text wrap="wrap">
-              <RenderInline text={line} />
-            </Text>
-          </Box>,
-        );
-      }
-    } else if (inTable && tableSeparatorMatch) {
-      // Skip separator line - already handled
-    } else if (inTable && tableRowMatch) {
-      // Add table row
-      const cells = tableRowMatch[1].split('|').map((cell) => cell.trim());
-      // Ensure row has same column count as headers
-      while (cells.length < tableHeaders.length) {
-        cells.push('');
-      }
-      if (cells.length > tableHeaders.length) {
-        cells.length = tableHeaders.length;
-      }
-      tableRows.push(cells);
-    } else if (inTable && !tableRowMatch) {
-      // End of table
-      if (tableHeaders.length > 0 && tableRows.length > 0) {
-        addContentBlock(
-          <RenderTable
-            key={`table-${contentBlocks.length}`}
-            headers={tableHeaders}
-            rows={tableRows}
-            terminalWidth={terminalWidth}
-          />,
-        );
-      }
-      inTable = false;
-      tableRows = [];
-      tableHeaders = [];
-
-      // Process current line as normal
-      if (line.trim().length > 0) {
-        addContentBlock(
-          <Box key={key}>
-            <Text wrap="wrap">
-              <RenderInline text={line} />
-            </Text>
-          </Box>,
-        );
-      }
-    } else if (hrMatch) {
-      addContentBlock(
-        <Box key={key}>
-          <Text dimColor>---</Text>
-        </Box>,
-      );
-    } else if (headerMatch) {
-      const level = headerMatch[1].length;
-      const headerText = headerMatch[2];
-      let headerNode: React.ReactNode = null;
-      switch (level) {
-        case 1:
-          headerNode = (
-            <Text bold color={Colors.AccentCyan}>
-              <RenderInline text={headerText} />
-            </Text>
-          );
-          break;
-        case 2:
-          headerNode = (
-            <Text bold color={Colors.AccentBlue}>
-              <RenderInline text={headerText} />
-            </Text>
-          );
-          break;
-        case 3:
-          headerNode = (
-            <Text bold>
-              <RenderInline text={headerText} />
-            </Text>
-          );
-          break;
-        case 4:
-          headerNode = (
-            <Text italic color={Colors.Gray}>
-              <RenderInline text={headerText} />
-            </Text>
-          );
-          break;
-        default:
-          headerNode = (
-            <Text>
-              <RenderInline text={headerText} />
-            </Text>
-          );
-          break;
-      }
-      if (headerNode) addContentBlock(<Box key={key}>{headerNode}</Box>);
-    } else if (ulMatch) {
-      const leadingWhitespace = ulMatch[1];
-      const marker = ulMatch[2];
-      const itemText = ulMatch[3];
-      addContentBlock(
-        <RenderListItem
-          key={key}
-          itemText={itemText}
-          type="ul"
-          marker={marker}
-          leadingWhitespace={leadingWhitespace}
-        />,
-      );
-    } else if (olMatch) {
-      const leadingWhitespace = olMatch[1];
-      const marker = olMatch[2];
-      const itemText = olMatch[3];
-      addContentBlock(
-        <RenderListItem
-          key={key}
-          itemText={itemText}
-          type="ol"
-          marker={marker}
-          leadingWhitespace={leadingWhitespace}
-        />,
-      );
-    } else {
-      if (line.trim().length === 0 && !inCodeBlock) {
-        if (!lastLineEmpty) {
-          contentBlocks.push(
-            <Box key={`spacer-${index}`} height={EMPTY_LINE_HEIGHT} />,
-          );
-          lastLineEmpty = true;
-        }
-      } else {
-        addContentBlock(
-          <Box key={key}>
-            <Text wrap="wrap">
-              <RenderInline text={line} />
-            </Text>
-          </Box>,
-        );
-      }
-    }
-  });
-
-  if (inCodeBlock) {
-    addContentBlock(
-      <RenderCodeBlock
-        key="line-eof"
-        content={codeBlockContent}
-        lang={codeBlockLang}
-        isPending={isPending}
-        availableTerminalHeight={availableTerminalHeight}
-        terminalWidth={terminalWidth}
-      />,
-    );
+function cachedLexer(content: string): Token[] {
+  // Fast path: plain text with no markdown syntax → single paragraph token
+  if (!hasMarkdownSyntax(content)) {
+    return [
+      {
+        type: 'paragraph',
+        raw: content,
+        text: content,
+        tokens: [{ type: 'text', raw: content, text: content }],
+      } as Token,
+    ];
   }
-
-  // Handle table at end of content
-  if (inTable && tableHeaders.length > 0 && tableRows.length > 0) {
-    addContentBlock(
-      <RenderTable
-        key={`table-${contentBlocks.length}`}
-        headers={tableHeaders}
-        rows={tableRows}
-        terminalWidth={terminalWidth}
-      />,
-    );
+  const key = hashContent(content);
+  const hit = tokenCache.get(key);
+  if (hit) {
+    // Promote to MRU
+    tokenCache.delete(key);
+    tokenCache.set(key, hit);
+    return hit;
   }
+  const tokens = marked.lexer(content);
+  if (tokenCache.size >= TOKEN_CACHE_MAX) {
+    const first = tokenCache.keys().next().value;
+    if (first !== undefined) tokenCache.delete(first);
+  }
+  tokenCache.set(key, tokens);
+  return tokens;
+}
 
-  return <>{contentBlocks}</>;
-};
-
-// Helper functions (adapted from static methods of MarkdownRenderer)
+// --- RenderCodeBlock (kept from original) ---
 
 interface RenderCodeBlockProps {
   content: string[];
@@ -291,6 +84,8 @@ interface RenderCodeBlockProps {
   terminalWidth: number;
 }
 
+const CODE_BLOCK_PREFIX_PADDING = 1;
+
 const RenderCodeBlockInternal: React.FC<RenderCodeBlockProps> = ({
   content,
   lang,
@@ -298,8 +93,7 @@ const RenderCodeBlockInternal: React.FC<RenderCodeBlockProps> = ({
   availableTerminalHeight,
   terminalWidth,
 }) => {
-  const MIN_LINES_FOR_MESSAGE = 1; // Minimum lines to show before the "generating more" message
-  const RESERVED_LINES = 2; // Lines reserved for the message itself and potential padding
+  const RESERVED_LINES = 2;
 
   if (isPending && availableTerminalHeight !== undefined) {
     const MAX_CODE_LINES_WHEN_PENDING = Math.max(
@@ -308,11 +102,10 @@ const RenderCodeBlockInternal: React.FC<RenderCodeBlockProps> = ({
     );
 
     if (content.length > MAX_CODE_LINES_WHEN_PENDING) {
-      if (MAX_CODE_LINES_WHEN_PENDING < MIN_LINES_FOR_MESSAGE) {
-        // Not enough space to even show the message meaningfully
+      if (MAX_CODE_LINES_WHEN_PENDING < 1) {
         return (
           <Box paddingLeft={CODE_BLOCK_PREFIX_PADDING}>
-            <Text color={Colors.Gray}>... code is being written ...</Text>
+            <Text dimColor>... code is being written ...</Text>
           </Box>
         );
       }
@@ -326,7 +119,7 @@ const RenderCodeBlockInternal: React.FC<RenderCodeBlockProps> = ({
       return (
         <Box paddingLeft={CODE_BLOCK_PREFIX_PADDING} flexDirection="column">
           {colorizedTruncatedCode}
-          <Text color={Colors.Gray}>... generating more ...</Text>
+          <Text dimColor>... generating more ...</Text>
         </Box>
       );
     }
@@ -354,56 +147,79 @@ const RenderCodeBlockInternal: React.FC<RenderCodeBlockProps> = ({
 
 const RenderCodeBlock = React.memo(RenderCodeBlockInternal);
 
-interface RenderListItemProps {
-  itemText: string;
-  type: 'ul' | 'ol';
-  marker: string;
-  leadingWhitespace?: string;
-}
+// --- Main MarkdownDisplay ---
 
-const RenderListItemInternal: React.FC<RenderListItemProps> = ({
-  itemText,
-  type,
-  marker,
-  leadingWhitespace = '',
-}) => {
-  const prefix = type === 'ol' ? `${marker}. ` : `${marker} `;
-  const prefixWidth = prefix.length;
-  const indentation = leadingWhitespace.length;
-
-  return (
-    <Box
-      paddingLeft={indentation + LIST_ITEM_PREFIX_PADDING}
-      flexDirection="row"
-    >
-      <Box width={prefixWidth}>
-        <Text>{prefix}</Text>
-      </Box>
-      <Box flexGrow={LIST_ITEM_TEXT_FLEX_GROW}>
-        <Text wrap="wrap">
-          <RenderInline text={itemText} />
-        </Text>
-      </Box>
-    </Box>
-  );
-};
-
-const RenderListItem = React.memo(RenderListItemInternal);
-
-interface RenderTableProps {
-  headers: string[];
-  rows: string[][];
-  terminalWidth: number;
-}
-
-const RenderTableInternal: React.FC<RenderTableProps> = ({
-  headers,
-  rows,
+const MarkdownDisplayInternal: React.FC<MarkdownDisplayProps> = ({
+  text,
+  isPending,
+  availableTerminalHeight,
   terminalWidth,
-}) => (
-  <TableRenderer headers={headers} rows={rows} terminalWidth={terminalWidth} />
-);
+}) => {
+  const elements = useMemo(() => {
+    if (!text) return [];
 
-const RenderTable = React.memo(RenderTableInternal);
+    configureMarked();
+    const tokens = cachedLexer(text);
+    const result: React.ReactNode[] = [];
+
+    for (let i = 0; i < tokens.length; i++) {
+      const token = tokens[i]!;
+
+      if (token.type === 'code') {
+        // Render code blocks as React components (syntax highlighted)
+        const codeToken = token as Tokens.Code;
+        result.push(
+          <RenderCodeBlock
+            key={`code-${i}`}
+            content={codeToken.text.split('\n')}
+            lang={codeToken.lang || null}
+            isPending={isPending}
+            availableTerminalHeight={availableTerminalHeight}
+            terminalWidth={terminalWidth}
+          />,
+        );
+      } else if (token.type === 'table') {
+        // Render tables as React components for proper flexbox layout
+        const tableToken = token as Tokens.Table;
+        const headers = tableToken.header.map(
+          (h) => h.tokens?.map((t) => t.raw || '').join('') || '',
+        );
+        const rows = tableToken.rows.map((row) =>
+          row.map((cell) =>
+            cell.tokens?.map((t) => t.raw || '').join('') || '',
+          ),
+        );
+        result.push(
+          <TableRenderer
+            key={`table-${i}`}
+            headers={headers}
+            rows={rows}
+            terminalWidth={terminalWidth}
+            align={tableToken.align}
+          />,
+        );
+      } else {
+        // All other tokens: render as React elements via formatToken
+        const formatted = formatToken(token);
+        // formatToken returns React elements or strings
+        if (typeof formatted === 'string') {
+          if (formatted.trim()) {
+            result.push(
+              <Text key={`block-${i}`} wrap="wrap">{formatted.trim()}</Text>,
+            );
+          }
+        } else {
+          result.push(
+            <Text key={`block-${i}`} wrap="wrap">{formatted}</Text>,
+          );
+        }
+      }
+    }
+
+    return result;
+  }, [text, isPending, availableTerminalHeight, terminalWidth]);
+
+  return <>{elements}</>;
+};
 
 export const MarkdownDisplay = React.memo(MarkdownDisplayInternal);

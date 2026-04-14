@@ -125,16 +125,18 @@ Last updated: ${timestamp}
     const timestamp = new Date().toISOString();
     return `# Heartbeat Tasks
 
+## Project Status
+<!-- The CLI will update this section as it works -->
+
 ## Task List
-<!-- Add tasks below using the format: - [ ] Task description -->
-<!-- Example: - [ ] Fix bug in authentication flow -->
-<!-- Completed tasks can be marked with: - [x] Task description -->
+<!-- Managed by the CLI during heartbeat cycles -->
 
 ## Status
 Last Run: ${timestamp}
 Next Run: <!-- Will be set by heartbeat scheduler -->
 Status: idle
 Current Task: null
+Interval: 10
 `;
   }
 }

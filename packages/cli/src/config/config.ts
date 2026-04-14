@@ -68,6 +68,7 @@ export interface CliArgs {
   sessionId: string | undefined;
   // Heartbeat mode
   heartbeat: boolean | undefined;
+  heartbeatInterval: number | undefined;
 }
 
 export async function parseArguments(): Promise<CliArgs> {
@@ -242,8 +243,12 @@ export async function parseArguments(): Promise<CliArgs> {
     // Heartbeat mode
     .option('heartbeat', {
       type: 'boolean',
-      description: 'Run in heartbeat mode (scheduled task execution from heartbeat.md)',
+      description: 'Run in heartbeat mode (scheduled autonomous project building)',
       default: false,
+    })
+    .option('heartbeat-interval', {
+      type: 'number',
+      description: 'Heartbeat interval in minutes (overrides Interval: in heartbeat.md, default: 10)',
     })
 
     .version(await getCliVersion()) // This will enable the --version flag based on package.json

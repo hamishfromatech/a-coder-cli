@@ -73,6 +73,7 @@ export * from './tools/skills.js';
 export * from './tools/subagent.js';
 export * from './tools/subagent-types.js';
 export * from './tools/initialize-heartbeat.js';
+export * from './tools/exit-heartbeat.js';
 
 // Export services
 export * from './services/fileDiscoveryService.js';

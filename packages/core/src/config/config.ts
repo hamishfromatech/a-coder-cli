@@ -33,6 +33,7 @@ import { SubagentSystemConfig, DEFAULT_SUBAGENT_CONFIG } from '../tools/subagent
 import type { SubagentConfig as SubagentSettingsConfig } from '../tools/subagent-types.js';
 import { WebSearchTool } from '../tools/web-search.js';
 import { InitializeHeartbeatTool } from '../tools/initialize-heartbeat.js';
+import { ExitHeartbeatTool } from '../tools/exit-heartbeat.js';
 import {
   MemoryTool,
   setGeminiMdFilename,
@@ -714,6 +715,7 @@ export class Config {
     registerCoreTool(MemoryTool);
     registerCoreTool(WebSearchTool);
     registerCoreTool(InitializeHeartbeatTool, this);
+    registerCoreTool(ExitHeartbeatTool, this);
 
     // Register SubagentTool if subagent system is enabled
     if (this.subagentConfig.enabled) {

@@ -6,154 +6,194 @@
 
 import React from 'react';
 import { Text, Box } from 'ink';
-import { Colors } from '../colors.js';
-import { RenderInline, getPlainTextLength } from './InlineMarkdownRenderer.js';
+import chalk from 'chalk';
+import stringWidth from 'string-width';
 
 interface TableRendererProps {
   headers: string[];
   rows: string[][];
   terminalWidth: number;
+  align?: ('left' | 'center' | 'right' | null)[];
 }
 
 /**
- * Custom table renderer for markdown tables
- * We implement our own instead of using ink-table due to module compatibility issues
+ * Strip markdown formatting tokens to yield plain text.
+ */
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/_(.*?)_/g, '$1')
+    .replace(/~~(.*?)~~/g, '$1')
+    .replace(/`(.*?)`/g, '$1')
+    .replace(/<u>(.*?)<\/u>/g, '$1')
+    .replace(/\[(.*?)\]\(.*?\)/g, '$1');
+}
+
+/**
+ * Visually truncate a plain-text string to fit within `maxDisplayWidth`.
+ * Appends "…" when truncation occurs (requires ≥ 4 display columns).
+ */
+function truncateToWidth(text: string, maxDisplayWidth: number): string {
+  const w = stringWidth(text);
+  if (w <= maxDisplayWidth) return text;
+
+  if (maxDisplayWidth <= 1) return maxDisplayWidth === 1 ? '…' : '';
+
+  // Reserve one column for the ellipsis character
+  const budget = maxDisplayWidth - 1;
+  let lo = 0;
+  let hi = text.length;
+  let best = '';
+  while (lo <= hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (stringWidth(text.substring(0, mid)) <= budget) {
+      best = text.substring(0, mid);
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return best + '…';
+}
+
+/**
+ * Pad a plain-text string to exactly `targetWidth` display columns
+ * using the specified alignment.
+ */
+function padToWidth(
+  text: string,
+  targetWidth: number,
+  alignment: 'left' | 'center' | 'right' | null,
+): string {
+  const w = stringWidth(text);
+  const gap = Math.max(0, targetWidth - w);
+
+  if (alignment === 'center') {
+    const left = Math.floor(gap / 2);
+    const right = gap - left;
+    return ' '.repeat(left) + text + ' '.repeat(right);
+  }
+  if (alignment === 'right') {
+    return ' '.repeat(gap) + text;
+  }
+  // left (default)
+  return text + ' '.repeat(gap);
+}
+
+/**
+ * Custom table renderer for markdown tables.
+ *
+ * Builds every row and border as a single string so Ink's Yoga flexbox
+ * engine cannot reorder or collapse whitespace between cells.  This
+ * guarantees pixel-perfect alignment between borders and content rows,
+ * even when cells contain wide characters (CJK, emoji).
  */
 export const TableRenderer: React.FC<TableRendererProps> = ({
   headers,
   rows,
   terminalWidth,
+  align,
 }) => {
-  // Calculate column widths using actual display width after markdown processing
-  const columnWidths = headers.map((header, index) => {
-    const headerWidth = getPlainTextLength(header);
-    const maxRowWidth = Math.max(
-      ...rows.map((row) => getPlainTextLength(row[index] || '')),
+  const numCols = headers.length;
+
+  // --- 1. Determine plain-text content widths ----------------------------
+  const plainHeaders = headers.map(stripMarkdown);
+  const plainRows = rows.map((row) => row.map(stripMarkdown));
+
+  const contentWidths = plainHeaders.map((header, ci) => {
+    const h = stringWidth(header);
+    const r = Math.max(
+      ...plainRows.map((row) => stringWidth(row[ci] ?? '')),
+      0,
     );
-    return Math.max(headerWidth, maxRowWidth) + 2; // Add padding
+    return Math.max(h, r, 1); // at least 1 column wide
   });
 
-  // Ensure table fits within terminal width
-  const totalWidth = columnWidths.reduce((sum, width) => sum + width + 1, 1);
-  const scaleFactor =
-    totalWidth > terminalWidth ? (terminalWidth - 5) / totalWidth : 1;
-  const adjustedWidths = columnWidths.map((width) =>
-    Math.max(3, Math.floor(width * scaleFactor)),
-  );
+  // --- 2. Compute final cell widths (content + 1-char pad each side) ---
+  const PAD = 1;
+  const cellWidths = contentWidths.map((w) => w + PAD * 2);
 
-  // Helper function to render a cell with proper width
-  const renderCell = (
-    content: string,
-    width: number,
-    isHeader = false,
-  ): React.ReactNode => {
-    const contentWidth = Math.max(0, width - 2);
-    const displayWidth = getPlainTextLength(content);
+  const tableWidth =
+    1 + cellWidths.reduce((s, w) => s + w, 0) + 1; // │ … │
 
-    let cellContent = content;
-    if (displayWidth > contentWidth) {
-      if (contentWidth <= 3) {
-        // Just truncate by character count
-        cellContent = content.substring(
-          0,
-          Math.min(content.length, contentWidth),
-        );
-      } else {
-        // Truncate preserving markdown formatting using binary search
-        let left = 0;
-        let right = content.length;
-        let bestTruncated = content;
-
-        // Binary search to find the optimal truncation point
-        while (left <= right) {
-          const mid = Math.floor((left + right) / 2);
-          const candidate = content.substring(0, mid);
-          const candidateWidth = getPlainTextLength(candidate);
-
-          if (candidateWidth <= contentWidth - 3) {
-            bestTruncated = candidate;
-            left = mid + 1;
-          } else {
-            right = mid - 1;
-          }
-        }
-
-        cellContent = bestTruncated + '...';
-      }
+  let finalCellWidths = cellWidths;
+  if (tableWidth > terminalWidth && terminalWidth > numCols + 3) {
+    // Scale content proportionally, re-add padding
+    const totalContent = contentWidths.reduce((s, w) => s + w, 0);
+    if (totalContent > 0) {
+      const available = terminalWidth - numCols - 1 - PAD * 2 * numCols;
+      const scaled = contentWidths.map((w) => {
+        const s = Math.round((w / totalContent) * available);
+        return Math.max(1, s);
+      });
+      finalCellWidths = scaled.map((w) => w + PAD * 2);
     }
+  }
 
-    // Calculate exact padding needed
-    const actualDisplayWidth = getPlainTextLength(cellContent);
-    const paddingNeeded = Math.max(0, contentWidth - actualDisplayWidth);
+  // --- 3. String builders ------------------------------------------------
 
-    return (
-      <Text>
-        {isHeader ? (
-          <Text bold color={Colors.AccentCyan}>
-            <RenderInline text={cellContent} />
-          </Text>
-        ) : (
-          <RenderInline text={cellContent} />
-        )}
-        {' '.repeat(paddingNeeded)}
-      </Text>
-    );
+  const buildBorder = (
+    left: string,
+    mid: string,
+    right: string,
+    useAlignment = false,
+  ): string => {
+    const segments = finalCellWidths.map((cw, ci) => {
+      const inner = cw - 2;
+      if (useAlignment && align?.[ci]) {
+        const a = align[ci]!;
+        const l = a === 'left' || a === 'center' ? ':' : '─';
+        const r = a === 'right' || a === 'center' ? ':' : '─';
+        return l + '─'.repeat(Math.max(0, inner - 2)) + r;
+      }
+      return '─'.repeat(inner);
+    });
+    return left + segments.join(mid) + right;
   };
 
-  // Helper function to render border
-  const renderBorder = (type: 'top' | 'middle' | 'bottom'): React.ReactNode => {
-    const chars = {
-      top: { left: '┌', middle: '┬', right: '┐', horizontal: '─' },
-      middle: { left: '├', middle: '┼', right: '┤', horizontal: '─' },
-      bottom: { left: '└', middle: '┴', right: '┘', horizontal: '─' },
-    };
+  const buildRow = (
+    cells: string[],
+    isHeader = false,
+  ): string => {
+    const parts = cells.map((raw, ci) => {
+      const cw = finalCellWidths[ci] ?? 3;
+      const inner = cw - PAD * 2; // usable content columns
 
-    const char = chars[type];
-    const borderParts = adjustedWidths.map((w) => char.horizontal.repeat(Math.max(0, w)));
-    const border = char.left + borderParts.join(char.middle) + char.right;
+      const plain = stripMarkdown(raw);
+      const fitted = truncateToWidth(plain, inner);
 
-    return <Text>{border}</Text>;
-  };
+      // Headers are always left-aligned visually
+      const colAlign = isHeader ? null : (align?.[ci] ?? null);
+      const padded = padToWidth(fitted, inner, colAlign);
 
-  // Helper function to render a table row
-  const renderRow = (cells: string[], isHeader = false): React.ReactNode => {
-    const renderedCells = cells.map((cell, index) => {
-      const width = adjustedWidths[index] || 0;
-      return renderCell(cell || '', width, isHeader);
+      return ' '.repeat(PAD) + padded + ' '.repeat(PAD);
     });
 
-    return (
-      <Text>
-        │{' '}
-        {renderedCells.map((cell, index) => (
-          <React.Fragment key={index}>
-            {cell}
-            {index < renderedCells.length - 1 ? ' │ ' : ''}
-          </React.Fragment>
-        ))}{' '}
-        │
-      </Text>
-    );
+    return '│' + parts.join('│') + '│';
   };
+
+  // --- 4. Render ---------------------------------------------------------
+
+  const topBorder = buildBorder('┌', '┬', '┐');
+  const midBorder = buildBorder('├', '┼', '┤', true);
+  const bottomBorder = buildBorder('└', '┴', '┘');
+
+  const headerRow = buildRow(headers, true);
+  const dataRows = rows.map((row) => buildRow(row, false));
+
+  // Apply header styling via chalk (single string = no flexbox issues)
+  const styledHeaderRow = chalk.bold.cyan(headerRow);
 
   return (
     <Box flexDirection="column" marginY={1}>
-      {/* Top border */}
-      {renderBorder('top')}
-
-      {/* Header row */}
-      {renderRow(headers, true)}
-
-      {/* Middle border */}
-      {renderBorder('middle')}
-
-      {/* Data rows */}
-      {rows.map((row, index) => (
-        <React.Fragment key={index}>{renderRow(row)}</React.Fragment>
+      <Text>{topBorder}</Text>
+      <Text>{styledHeaderRow}</Text>
+      <Text>{midBorder}</Text>
+      {dataRows.map((row, i) => (
+        <Text key={i}>{row}</Text>
       ))}
-
-      {/* Bottom border */}
-      {renderBorder('bottom')}
+      <Text>{bottomBorder}</Text>
     </Box>
   );
 };

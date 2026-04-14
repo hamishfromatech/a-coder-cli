@@ -12,6 +12,7 @@ import { GeminiMessage } from './messages/GeminiMessage.js';
 import { InfoMessage } from './messages/InfoMessage.js';
 import { ErrorMessage } from './messages/ErrorMessage.js';
 import { ToolGroupMessage } from './messages/ToolGroupMessage.js';
+import { CollapsibleToolGroup } from './messages/CollapsibleToolGroup.js';
 import { GeminiMessageContent } from './messages/GeminiMessageContent.js';
 import { CompressionMessage } from './messages/CompressionMessage.js';
 import { Box } from 'ink';
@@ -83,7 +84,7 @@ const HistoryItemDisplayInternal: React.FC<HistoryItemDisplayProps> = ({
       {item.type === 'model_stats' && <ModelStatsDisplay />}
       {item.type === 'tool_stats' && <ToolStatsDisplay />}
       {item.type === 'quit' && <SessionSummaryDisplay duration={item.duration} />}
-      {item.type === 'tool_group' && (
+      {item.type === 'tool_group' && !item.collapsible && (
         <ToolGroupMessage
           toolCalls={item.tools}
           groupId={item.id}
@@ -91,6 +92,17 @@ const HistoryItemDisplayInternal: React.FC<HistoryItemDisplayProps> = ({
           terminalWidth={terminalWidth}
           config={config}
           isFocused={isFocused}
+        />
+      )}
+      {item.type === 'tool_group' && item.collapsible && (
+        <CollapsibleToolGroup
+          groupId={item.id}
+          toolCalls={item.tools}
+          availableTerminalHeight={availableTerminalHeight}
+          terminalWidth={terminalWidth}
+          config={config}
+          isFocused={isFocused}
+          defaultCollapsed={true}
         />
       )}
       {item.type === 'compression' && (

@@ -102,7 +102,8 @@ describe('<LoadingIndicator />', () => {
       <LoadingIndicator {...props} />,
       StreamingState.Responding,
     );
-    expect(lastFrame()).toContain('60s elapsed');
+    expect(lastFrame()).toContain('60s');
+    expect(lastFrame()).toContain('still working');
   });
 
   it('should render rightContent when provided', () => {
@@ -126,7 +127,7 @@ describe('<LoadingIndicator />', () => {
       <StreamingContext.Provider value={StreamingState.Responding}>
         <LoadingIndicator
           currentLoadingPhrase="Now Responding"
-          elapsedTime={2}
+          elapsedTime={5}
         />
       </StreamingContext.Provider>,
     );

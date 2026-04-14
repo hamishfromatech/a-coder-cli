@@ -25,7 +25,10 @@ import { randomUUID } from 'crypto';
  */
 export interface SubagentToolParams {
   /** The task description for the subagent to accomplish */
-  task: string;
+  task?: string;
+
+  /** The task for the agent to perform (primary field from schema) */
+  prompt?: string;
 
   /** Agent type to use (built-in: 'general-purpose', 'Explore', 'Plan', or custom agent name) */
   subagent_type?: BuiltinAgentType | string;
@@ -93,7 +96,8 @@ When NOT to use the Agent tool:
 
 Usage notes:
 - Always include a short description (3-5 words) summarizing what the agent will do
-- Launch multiple agents concurrently whenever possible, to maximize performance; to do that, use a single message with multiple tool uses
+- Only spawn ONE agent per task. Do NOT spawn multiple agents to do the same or overlapping work.
+- You MAY launch multiple agents in a single message ONLY when they are doing genuinely different, independent tasks (e.g. one researching auth code while another researches database code)
 - When the agent is done, it will return a single message back to you. The result returned by the agent is not visible to the user. You should show the user a concise summary of the result.
 - You can optionally run agents in the background using the run_in_background parameter. When an agent runs in the background, you will be automatically notified when it completes — do NOT sleep, poll, or proactively check on its progress. Continue with other work or respond to the user instead.
 - **Foreground vs background**: Use foreground (default) when you need the agent's results before you can proceed — e.g., research agents whose findings inform your next steps. Use background when you have genuinely independent work to do in parallel.
@@ -214,7 +218,8 @@ assistant: Uses the Agent tool to launch the test-runner agent
    * Validate the parameters
    */
   override validateToolParams(params: SubagentToolParams): string | null {
-    if (!params.task || params.task.trim().length === 0) {
+    const taskText = params.task || params.prompt;
+    if (!taskText || taskText.trim().length === 0) {
       return 'Task description is required';
     }
 
@@ -257,13 +262,14 @@ assistant: Uses the Agent tool to launch the test-runner agent
     const agentType = params.subagent_type || 'general-purpose';
     const agentConfig = BUILTIN_AGENTS[agentType as BuiltinAgentType];
     const agentName = agentConfig?.name || agentType;
+    const taskText = params.task || params.prompt || '';
 
     let desc = `Spawning ${agentName} agent`;
 
     if (params.description) {
       desc += ` to ${params.description}`;
     } else {
-      desc += `: ${params.task.substring(0, 100)}${params.task.length > 100 ? '...' : ''}`;
+      desc += `: ${taskText.substring(0, 100)}${taskText.length > 100 ? '...' : ''}`;
     }
 
     if (params.isolation === 'worktree') {
@@ -300,12 +306,15 @@ assistant: Uses the Agent tool to launch the test-runner agent
     params: SubagentToolParams,
     _abortSignal: AbortSignal,
   ): Promise<ToolCallConfirmationDetails | false> {
+    const taskText = params.task || params.prompt || '';
+    const taskPreview = taskText.substring(0, 50) + (taskText.length > 50 ? '...' : '');
+
     // Require confirmation for destructive operations or worktree isolation
     if (params.allowDestructive) {
       return {
         type: 'exec',
         title: 'Spawn Agent with Destructive Tools',
-        command: `agent --allow-destructive --task "${params.task.substring(0, 50)}..."`,
+        command: `agent --allow-destructive --task "${taskPreview}"`,
         rootCommand: 'agent',
         onConfirm: async () => {
           // Confirmation handled by the UI
@@ -317,7 +326,7 @@ assistant: Uses the Agent tool to launch the test-runner agent
       return {
         type: 'exec',
         title: 'Spawn Agent in Isolated Worktree',
-        command: `agent --isolation worktree --task "${params.task.substring(0, 50)}..."`,
+        command: `agent --isolation worktree --task "${taskPreview}"`,
         rootCommand: 'agent',
         onConfirm: async () => {
           // Confirmation handled by the UI
@@ -387,10 +396,13 @@ assistant: Uses the Agent tool to launch the test-runner agent
     // Resolve agent type
     const { definition: agentDef } = await this.resolveAgentType(params.subagent_type);
 
+    // Normalize task from prompt or task field
+    const taskText = params.task || params.prompt || '';
+
     // Build the subagent config
     const config: SubagentConfig = {
       id: randomUUID(),
-      task: params.task,
+      task: taskText,
       agentType: params.subagent_type,
       description: params.description,
       workingDir: params.workingDir,
@@ -420,7 +432,7 @@ assistant: Uses the Agent tool to launch the test-runner agent
         const taskId = manager.spawnSubagentBackground(config);
         return {
           summary: `Background agent spawned (ID: ${taskId})`,
-          llmContent: `Background agent started with ID: ${taskId}.\n\nThe agent is working on: ${params.task}\n\nYou will be notified when it completes. Use TaskOutput with the task ID to retrieve results.`,
+          llmContent: `Background agent started with ID: ${taskId}.\n\nThe agent is working on: ${taskText}\n\nYou will be notified when it completes. Use TaskOutput with the task ID to retrieve results.`,
           returnDisplay: `Background task ID: ${taskId}`,
         };
       }

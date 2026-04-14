@@ -5,8 +5,9 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Text, Box, useInput } from 'ink';
+import { Text, Box } from 'ink';
 import { Colors } from '../../colors.js';
+import { useKeypress, type Key, stopPropagation } from '../../hooks/useKeypress.js';
 
 /**
  * Represents a single option for the RadioButtonSelect.
@@ -93,8 +94,8 @@ export function RadioButtonSelect<T>({
 
   // Memoize the input handler to prevent unnecessary re-registrations
   const handleInput = useCallback(
-    (input: string, key: { upArrow: boolean; downArrow: boolean; return: boolean }) => {
-      if (input === 'k' || key.upArrow) {
+    (key: Key) => {
+      if (key.name === 'up') {
         if (items.length > 0) {
           const newIndex = activeIndex > 0 ? activeIndex - 1 : items.length - 1;
           setActiveIndex(newIndex);
@@ -102,8 +103,10 @@ export function RadioButtonSelect<T>({
             onHighlight?.(items[newIndex].value);
           }
         }
+        stopPropagation();
+        return;
       }
-      if (input === 'j' || key.downArrow) {
+      if (key.name === 'down') {
         if (items.length > 0) {
           const newIndex = activeIndex < items.length - 1 ? activeIndex + 1 : 0;
           setActiveIndex(newIndex);
@@ -111,9 +114,10 @@ export function RadioButtonSelect<T>({
             onHighlight?.(items[newIndex].value);
           }
         }
+        stopPropagation();
+        return;
       }
-      if (key.return) {
-        // Add bounds check before accessing items[activeIndex]
+      if (key.name === 'return' || key.name === 'enter') {
         if (
           activeIndex >= 0 &&
           activeIndex < items.length &&
@@ -121,12 +125,13 @@ export function RadioButtonSelect<T>({
         ) {
           onSelect(items[activeIndex].value);
         }
+        stopPropagation();
+        return;
       }
 
       // Enable selection directly from number keys.
-      if (/^[1-9]$/.test(input)) {
-        const targetIndex = Number.parseInt(input, 10) - 1;
-        // Use the current visibleItems from closure (memoized)
+      if (/^[1-9]$/.test(key.sequence)) {
+        const targetIndex = Number.parseInt(key.sequence, 10) - 1;
         const currentVisibleItems = items.slice(scrollOffset, scrollOffset + maxItemsToShow);
         if (targetIndex >= 0 && targetIndex < currentVisibleItems.length) {
           const selectedItem = currentVisibleItems[targetIndex];
@@ -134,17 +139,20 @@ export function RadioButtonSelect<T>({
             onSelect(selectedItem.value);
           }
         }
+        stopPropagation();
+        return;
       }
     },
     [items, activeIndex, scrollOffset, maxItemsToShow, onSelect, onHighlight]
   );
 
-  useInput(handleInput, {
+  useKeypress(handleInput, {
     isActive:
-      isFocused &&
+      !!isFocused &&
       items.length > 0 &&
       activeIndex >= 0 &&
       activeIndex < items.length,
+    priority: 50,
   });
 
   return (
@@ -169,7 +177,7 @@ export function RadioButtonSelect<T>({
           <Box key={item.label}>
             <Box minWidth={2} flexShrink={0}>
               <Text color={isSelected ? Colors.AccentGreen : Colors.Foreground}>
-                {isSelected ? '●' : '○'}
+                {index + 1}
               </Text>
             </Box>
             {item.themeNameDisplay && item.themeTypeDisplay ? (

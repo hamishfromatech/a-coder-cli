@@ -105,12 +105,40 @@ const RenderInlineInternal: React.FC<RenderInlineProps> = ({ text }) => {
         if (linkMatch) {
           const linkText = linkMatch[1];
           const url = linkMatch[2];
-          renderedNode = (
-            <Text key={key}>
-              {linkText}
-              <Text color={Colors.AccentBlue}> ({url})</Text>
-            </Text>
-          );
+          // Use OSC 8 hyperlinks if terminal supports them, otherwise show URL inline
+          const supportsHl = (() => {
+            try {
+              // Dynamic require for CJS compatibility
+              const sh = require('supports-hyperlinks');
+              return sh.stdout ?? sh.default ?? false;
+            } catch {
+              return false;
+            }
+          })();
+          if (supportsHl && linkText && linkText !== url) {
+            renderedNode = (
+              <Text key={key}>
+                {'\x1b]8;;' + url + '\x07'}
+                <Text color={Colors.AccentBlue}>{linkText}</Text>
+                {'\x1b]8;;\x07'}
+              </Text>
+            );
+          } else if (supportsHl) {
+            renderedNode = (
+              <Text key={key}>
+                {'\x1b]8;;' + url + '\x07'}
+                <Text color={Colors.AccentBlue}>{url}</Text>
+                {'\x1b]8;;\x07'}
+              </Text>
+            );
+          } else {
+            renderedNode = (
+              <Text key={key}>
+                {linkText}
+                <Text color={Colors.AccentBlue}> ({url})</Text>
+              </Text>
+            );
+          }
         }
       } else if (
         fullMatch.startsWith('<u>') &&

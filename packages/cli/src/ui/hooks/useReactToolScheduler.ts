@@ -252,6 +252,11 @@ function generateFallbackDescription(
 /**
  * Transforms `TrackedToolCall` objects into `HistoryItemToolGroup` objects for UI display.
  */
+const READ_ONLY_TOOL_NAMES = new Set([
+  'read_file', 'read_many_files', 'read', 'glob', 'grep',
+  'list_directory', 'ls', 'web_fetch', 'web_search',
+]);
+
 export function mapToDisplay(
   toolOrTools: TrackedToolCall[] | TrackedToolCall,
   collapsible?: boolean,
@@ -259,6 +264,11 @@ export function mapToDisplay(
   const allToolCalls = Array.isArray(toolOrTools) ? toolOrTools : [toolOrTools];
   // Filter out write_todos as it has its own dedicated UI component
   const toolCalls = allToolCalls.filter(tc => tc.request.name !== 'write_todos');
+
+  // Auto-collapse groups of 2+ read-only tools (unless explicitly set)
+  if (collapsible === undefined && toolCalls.length >= 2) {
+    collapsible = toolCalls.every(tc => READ_ONLY_TOOL_NAMES.has(tc.request.name));
+  }
 
   const toolDisplays = toolCalls.map(
     (trackedCall): IndividualToolCallDisplay => {
