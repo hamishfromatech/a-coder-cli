@@ -63,6 +63,10 @@ export class InitializeHeartbeatTool extends BaseTool<InitializeHeartbeatToolPar
     return null;
   }
 
+  override getVerbPhrase(_params: InitializeHeartbeatToolParams): string {
+    return 'Starting heartbeat...';
+  }
+
   async execute(
     params: InitializeHeartbeatToolParams,
     _signal: AbortSignal,

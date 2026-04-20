@@ -54,15 +54,24 @@ export interface MarketplacePluginEntry {
   description: string;
   /** Current version */
   version: string;
-  /** Source repository reference */
-  source: {
-    type: 'git' | 'github' | 'gitlab' | 'bitbucket' | 'local';
-    url?: string;
-    repo?: string; // owner/repo format for GitHub
-    branch?: string;
-    ref?: string; // tag or commit
-    path?: string; // for local marketplaces
-  };
+  /** Source repository reference - can be string (local path) or object (remote) */
+  source:
+    | string // Local path format: "./plugins/plugin-name"
+    | {
+        // Standard format (expected by PluginManager)
+        type: 'git' | 'github' | 'gitlab' | 'bitbucket' | 'local';
+        url?: string;
+        repo?: string; // owner/repo format for GitHub
+        branch?: string;
+        ref?: string; // tag or commit
+        path?: string; // for local marketplaces
+      }
+    | {
+        // Actual marketplace format
+        source: 'url' | 'git-subdir';
+        url: string;
+        sha?: string;
+      };
   /** Plugin keywords */
   keywords?: string[];
   /** Categories for discovery */

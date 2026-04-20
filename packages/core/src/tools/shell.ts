@@ -92,6 +92,70 @@ Process Group PGID: Process group started or \`(none)\``,
     return description;
   }
 
+  override userFacingNameBackgroundColor(_params: ShellToolParams): string | undefined {
+    return 'AccentYellow';
+  }
+
+  override getVerbPhrase(_params: ShellToolParams): string {
+    return 'Running...';
+  }
+
+  /**
+   * Shell commands are concurrency-safe if they appear to be read-only.
+   * Detects common read-only command prefixes. Defaults to false
+   * (mutation) for safety — unknown commands run sequentially.
+   */
+  override isConcurrencySafe(params: ShellToolParams): boolean {
+    const command = (params.command ?? '').trim();
+    if (!command) return false;
+
+    // Extract the first word (the command name)
+    const firstWord = command.split(/\s+/)[0]?.toLowerCase() ?? '';
+
+    // Known read-only commands that don't modify filesystem or state
+    const readOnlyCommands = new Set([
+      'ls', 'cat', 'head', 'tail', 'less', 'more',
+      'grep', 'egrep', 'fgrep', 'rg', 'ack',
+      'find', 'locate', 'which', 'whereis', 'type',
+      'echo', 'printf', 'pwd', 'env', 'printenv',
+      'git', 'gitk',
+      'node', 'npx', 'npm', 'yarn', 'pnpm',
+      'curl', 'wget',
+      'wc', 'sort', 'uniq', 'diff', 'comm', 'cut', 'tr',
+      'stat', 'file', 'du', 'df', 'free', 'top', 'ps',
+      'whoami', 'hostname', 'uname', 'date', 'uptime',
+      'python3', 'python',
+      'tsc', 'eslint', 'prettier', 'ruff',
+    ]);
+
+    if (!readOnlyCommands.has(firstWord)) {
+      return false;
+    }
+
+    // For git: only status, log, diff, show, branch (list), remote are read-only
+    if (firstWord === 'git') {
+      const secondWord = command.split(/\s+/)[1]?.toLowerCase() ?? '';
+      const readOnlyGitCommands = new Set([
+        'status', 'log', 'diff', 'show', 'branch', 'remote',
+        'stash', 'tag', 'describe', 'rev-parse', 'config', 'blame',
+        'shortlog', 'reflog', 'ls-files', 'ls-tree', 'ls-remote',
+      ]);
+      return readOnlyGitCommands.has(secondWord);
+    }
+
+    // For npm/yarn/pnpm: only list/info/view/outdated are read-only
+    if (['npm', 'yarn', 'pnpm'].includes(firstWord)) {
+      const secondWord = command.split(/\s+/)[1]?.toLowerCase() ?? '';
+      const readOnlyNpmCommands = new Set([
+        'list', 'ls', 'info', 'view', 'outdated', 'pack', '--version', '-v',
+        'run', 'test',
+      ]);
+      return readOnlyNpmCommands.has(secondWord) || secondWord.startsWith('-');
+    }
+
+    return true;
+  }
+
   /**
    * Extracts the root command from a given shell command string.
    * This is used to identify the base command for permission checks.

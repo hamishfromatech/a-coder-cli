@@ -25,7 +25,6 @@ This documentation is organized into the following sections:
 - **Tools:**
   - **[Tools Overview](./tools/index.md):** Overview of the available tools.
   - **[File System Tools](./tools/file-system.md):** Documentation for the `read_file` and `write_file` tools.
-  - **[Multi-File Read Tool](./tools/multi-file.md):** Documentation for the `read_many_files` tool.
   - **[Shell Tool](./tools/shell.md):** Documentation for the `run_shell_command` tool.
   - **[Web Fetch Tool](./tools/web-fetch.md):** Documentation for the `web_fetch` tool.
   - **[Web Search Tool](./tools/web-search.md):** Documentation for the `google_web_search` tool.

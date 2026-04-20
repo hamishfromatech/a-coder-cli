@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Box, Text } from 'ink';
 import { DiffRenderer } from './DiffRenderer.js';
-import { Colors } from '../../colors.js';
+import { Colors, Semantic } from '../../colors.js';
 import {
   ToolCallConfirmationDetails,
   ToolConfirmationOutcome,
@@ -21,6 +21,40 @@ import {
 } from '../shared/RadioButtonSelect.js';
 import { MaxSizedBox } from '../shared/MaxSizedBox.js';
 import { useKeypress, type Key, stopPropagation } from '../../hooks/useKeypress.js';
+
+/**
+ * Tool name to pill color mapping for the permission dialog title.
+ */
+const TOOL_TYPE_COLORS: Record<string, string> = {
+  edit_file: Colors.AccentGreen,
+  write_file: Colors.AccentGreen,
+  shell: Colors.AccentYellow,
+  web_fetch: Colors.AccentPurple,
+  web_search: Colors.AccentPurple,
+  read_file: Colors.AccentCyan,
+  list_directory: Colors.AccentCyan,
+  glob: Colors.AccentCyan,
+  grep: Colors.AccentCyan,
+  subagent: Colors.AccentBlue,
+};
+
+/**
+ * Get a human-readable tool type label for the dialog subtitle.
+ */
+function getToolTypeLabel(type: string): string {
+  switch (type) {
+    case 'edit':
+      return 'File Edit';
+    case 'exec':
+      return 'Bash';
+    case 'info':
+      return 'Web';
+    case 'mcp':
+      return 'MCP';
+    default:
+      return 'Tool';
+  }
+}
 
 export interface ToolConfirmationMessageProps {
   confirmationDetails: ToolCallConfirmationDetails;
@@ -41,6 +75,10 @@ export const ToolConfirmationMessage: React.FC<
   const { onConfirm } = confirmationDetails;
   const childWidth = terminalWidth - 2; // 2 for padding
 
+  // Feedback input state
+  const [feedbackMode, setFeedbackMode] = useState<'none' | 'accept' | 'reject'>('none');
+  const [feedbackText, setFeedbackText] = useState('');
+
   const handleEscape = useCallback(
     (key: Key) => {
       if (key.name === 'escape') {
@@ -51,26 +89,51 @@ export const ToolConfirmationMessage: React.FC<
     [onConfirm],
   );
 
+  // Handle Tab key to toggle feedback input
+  const handleTab = useCallback(
+    (key: Key) => {
+      if (key.name === 'tab' && feedbackMode === 'none') {
+        setFeedbackMode('accept');
+        stopPropagation();
+      } else if (key.name === 'tab' && feedbackMode === 'accept') {
+        setFeedbackMode('reject');
+        stopPropagation();
+      } else if (key.name === 'tab') {
+        setFeedbackMode('none');
+        setFeedbackText('');
+        stopPropagation();
+      }
+    },
+    [feedbackMode],
+  );
+
   useKeypress(handleEscape, {
     isActive: !!isFocused,
     priority: 50,
   });
 
-  const handleSelect = (item: ToolConfirmationOutcome) => onConfirm(item);
+  useKeypress(handleTab, {
+    isActive: !!isFocused,
+    priority: 49,
+  });
 
-  let bodyContent: React.ReactNode | null = null; // Removed contextDisplay here
+  const handleSelect = (item: ToolConfirmationOutcome) => {
+    Promise.resolve(onConfirm(item)).catch((err: unknown) => {
+      console.error('[ToolConfirmationMessage] onConfirm rejected:', err);
+    });
+  };
+
+  let bodyContent: React.ReactNode | null = null;
   let question: string;
+  let titleText: string;
+  let titleColor: string;
 
   const options: Array<RadioSelectItem<ToolConfirmationOutcome>> = new Array<
     RadioSelectItem<ToolConfirmationOutcome>
   >();
 
-  // Body content is now the DiffRenderer, passing filename to it
-  // The bordered box is removed from here and handled within DiffRenderer
-
   function availableBodyContentHeight() {
     if (options.length === 0) {
-      // This should not happen in practice as options are always added before this is called.
       throw new Error('Options not provided for confirmation message');
     }
 
@@ -78,22 +141,23 @@ export const ToolConfirmationMessage: React.FC<
       return undefined;
     }
 
-    // Calculate the vertical space (in lines) consumed by UI elements
-    // surrounding the main body content.
-    const PADDING_OUTER_Y = 2; // Main container has `padding={1}` (top & bottom).
-    const MARGIN_BODY_BOTTOM = 1; // margin on the body container.
-    const HEIGHT_QUESTION = 1; // The question text is one line.
-    const MARGIN_QUESTION_BOTTOM = 1; // Margin on the question container.
-    const HEIGHT_OPTIONS = options.length; // Each option in the radio select takes one line.
+    const PADDING_OUTER_Y = 2;
+    const MARGIN_BODY_BOTTOM = 1;
+    const HEIGHT_QUESTION = 1;
+    const MARGIN_QUESTION_BOTTOM = 1;
+    const HEIGHT_OPTIONS = options.length;
+    const HEIGHT_HINT = 1;
 
     const surroundingElementsHeight =
       PADDING_OUTER_Y +
       MARGIN_BODY_BOTTOM +
       HEIGHT_QUESTION +
       MARGIN_QUESTION_BOTTOM +
-      HEIGHT_OPTIONS;
+      HEIGHT_OPTIONS +
+      HEIGHT_HINT;
     return Math.max(availableTerminalHeight - surroundingElementsHeight, 1);
   }
+
   if (confirmationDetails.type === 'edit') {
     if (confirmationDetails.isModifying) {
       return (
@@ -114,6 +178,8 @@ export const ToolConfirmationMessage: React.FC<
     }
 
     question = `Apply this change?`;
+    titleText = 'File Edit';
+    titleColor = Colors.AccentGreen;
     options.push(
       {
         label: 'Yes, allow once',
@@ -142,6 +208,8 @@ export const ToolConfirmationMessage: React.FC<
       confirmationDetails as ToolExecuteConfirmationDetails;
 
     question = `Allow execution?`;
+    titleText = 'Bash';
+    titleColor = Colors.AccentYellow;
     options.push(
       {
         label: 'Yes, allow once',
@@ -156,7 +224,7 @@ export const ToolConfirmationMessage: React.FC<
 
     let bodyContentHeight = availableBodyContentHeight();
     if (bodyContentHeight !== undefined) {
-      bodyContentHeight -= 2; // Account for padding;
+      bodyContentHeight -= 2;
     }
     bodyContent = (
       <Box flexDirection="column">
@@ -179,6 +247,8 @@ export const ToolConfirmationMessage: React.FC<
       !(infoProps.urls.length === 1 && infoProps.urls[0] === infoProps.prompt);
 
     question = `Do you want to proceed?`;
+    titleText = 'Web';
+    titleColor = Colors.AccentPurple;
     options.push(
       {
         label: 'Yes, allow once',
@@ -216,6 +286,8 @@ export const ToolConfirmationMessage: React.FC<
     );
 
     question = `Allow execution of MCP tool "${mcpProps.toolName}" from server "${mcpProps.serverName}"?`;
+    titleText = 'MCP';
+    titleColor = Colors.AccentBlue;
     options.push(
       {
         label: 'Yes, allow once',
@@ -223,7 +295,7 @@ export const ToolConfirmationMessage: React.FC<
       },
       {
         label: `Yes, always allow tool "${mcpProps.toolName}" from server "${mcpProps.serverName}"`,
-        value: ToolConfirmationOutcome.ProceedAlwaysTool, // Cast until types are updated
+        value: ToolConfirmationOutcome.ProceedAlwaysTool,
       },
       {
         label: `Yes, always allow all tools from server "${mcpProps.serverName}"`,
@@ -234,26 +306,75 @@ export const ToolConfirmationMessage: React.FC<
   }
 
   return (
-    <Box flexDirection="column" padding={1} width={childWidth}>
-      {/* Body Content (Diff Renderer or Command Info) */}
-      {/* No separate context display here anymore for edits */}
-      <Box flexGrow={1} flexShrink={1} overflow="hidden" marginBottom={1}>
-        {bodyContent}
+    <Box flexDirection="column" marginTop={1}>
+      {/* Rounded top border dialog */}
+      <Box
+        flexDirection="column"
+        borderStyle="round"
+        borderColor={titleColor}
+        borderLeft={false}
+        borderRight={false}
+        borderBottom={false}
+      >
+        {/* Title area with pill */}
+        <Box paddingX={1} flexDirection="column">
+          <Box justifyContent="space-between" alignItems="center">
+            <Box flexDirection="row" alignItems="center">
+              <Text
+                bold
+                backgroundColor={titleColor}
+                color="black"
+              >
+                {' ' + titleText + ' '}
+              </Text>
+            </Box>
+          </Box>
+        </Box>
+
+        {/* Body Content (Diff Renderer or Command Info) */}
+        <Box flexDirection="column" paddingX={1}>
+          {bodyContent}
+        </Box>
       </Box>
 
       {/* Confirmation Question */}
-      <Box marginBottom={1} flexShrink={0}>
+      <Box marginBottom={1} marginTop={1} flexShrink={0} paddingLeft={1}>
         <Text wrap="truncate">{question}</Text>
       </Box>
 
       {/* Select Input for Options */}
-      <Box flexShrink={0}>
+      <Box flexShrink={0} paddingLeft={1}>
         <RadioButtonSelect
           items={options}
           onSelect={handleSelect}
           isFocused={isFocused}
         />
       </Box>
+
+      {/* Hint line */}
+      <Box marginTop={1} paddingLeft={1}>
+        <Text dimColor>
+          Esc to cancel
+          {feedbackMode === 'none' && ' · Tab to amend'}
+          {feedbackMode !== 'none' && ' · Tab to switch mode'}
+        </Text>
+      </Box>
+
+      {/* Feedback input area */}
+      {feedbackMode !== 'none' && (
+        <Box marginTop={1} paddingLeft={1} flexDirection="column">
+          <Text dimColor>
+            {feedbackMode === 'accept'
+              ? 'Tell the AI what to do next:'
+              : 'Tell the AI what to do differently:'}
+          </Text>
+          <Box flexDirection="row" marginTop={1}>
+            <Text color={Semantic.Primary}>{'> '}</Text>
+            <Text>{feedbackText}</Text>
+            <Text dimColor>▏</Text>
+          </Box>
+        </Box>
+      )}
     </Box>
   );
 };

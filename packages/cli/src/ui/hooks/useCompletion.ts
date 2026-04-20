@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { glob } from 'glob';
@@ -21,6 +21,32 @@ import {
   Suggestion,
 } from '../components/SuggestionsDisplay.js';
 import { CommandContext, SlashCommand } from '../commands/types.js';
+
+// Completion result cache to avoid redundant filesystem scans
+const COMPLETION_CACHE_TTL_MS = 5000;
+const completionCache = new Map<string, { results: Suggestion[]; timestamp: number }>();
+
+function getCachedCompletion(key: string): Suggestion[] | null {
+  const entry = completionCache.get(key);
+  if (entry && Date.now() - entry.timestamp < COMPLETION_CACHE_TTL_MS) {
+    return entry.results;
+  }
+  if (entry) {
+    completionCache.delete(key);
+  }
+  return null;
+}
+
+function setCachedCompletion(key: string, results: Suggestion[]): void {
+  completionCache.set(key, { results, timestamp: Date.now() });
+  // Evict oldest entries when cache grows too large
+  if (completionCache.size > 100) {
+    const oldest = completionCache.keys().next().value;
+    if (oldest !== undefined) {
+      completionCache.delete(oldest);
+    }
+  }
+}
 
 /**
  * Fuzzy match a query against a string
@@ -484,6 +510,17 @@ export function useCompletion(
     };
 
     const fetchSuggestions = async () => {
+      // Check cache before hitting the filesystem
+      const cacheKey = `@:${partialPath}:${baseDirAbsolute}`;
+      const cached = getCachedCompletion(cacheKey);
+      if (cached) {
+        setSuggestions(cached);
+        setShowSuggestions(cached.length > 0);
+        setActiveSuggestionIndex(cached.length > 0 ? 0 : -1);
+        setVisibleStartIndex(0);
+        return;
+      }
+
       setIsLoadingSuggestions(true);
       let fetchedSuggestions: Suggestion[] = [];
 
@@ -585,6 +622,7 @@ export function useCompletion(
         });
 
         if (isMounted) {
+          setCachedCompletion(cacheKey, fetchedSuggestions);
           setSuggestions(fetchedSuggestions);
           setShowSuggestions(fetchedSuggestions.length > 0);
           setActiveSuggestionIndex(fetchedSuggestions.length > 0 ? 0 : -1);

@@ -11,6 +11,7 @@ import os from 'os';
 import pathMod from 'path';
 import { useState, useCallback, useEffect, useMemo, useReducer } from 'react';
 import stringWidth from 'string-width';
+import { cachedStringWidth } from '../../utils/lineWidthCache.js';
 import { unescapePath } from '@a-coder/core';
 import { toCodePoints, cpLen, cpSlice } from '../../utils/textUtils.js';
 
@@ -199,7 +200,7 @@ function calculateVisualLayout(
         // Iterate through code points to build the current visual line (chunk)
         for (let i = currentPosInLogLine; i < codePointsInLogLine.length; i++) {
           const char = codePointsInLogLine[i];
-          const charVisualWidth = stringWidth(char);
+          const charVisualWidth = cachedStringWidth(char);
 
           if (currentChunkVisualWidth + charVisualWidth > viewportWidth) {
             // Character would exceed viewport width

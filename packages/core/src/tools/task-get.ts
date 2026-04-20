@@ -56,6 +56,10 @@ Returns the full task object with all details including:
     );
   }
 
+  override getVerbPhrase(_params: TaskGetParams): string {
+    return 'Getting task...';
+  }
+
   async execute(
     params: TaskGetParams,
     signal: AbortSignal,

@@ -25,6 +25,7 @@ import { DEFAULT_DIFF_OPTIONS } from './diffOptions.js';
 import { ReadFileTool } from './read-file.js';
 import { ModifiableTool, ModifyContext } from './modifiable-tool.js';
 import { isWithinRoot, isBinaryFile } from '../utils/fileUtils.js';
+import { normalizePathForCache } from '../utils/fileContentCache.js';
 
 /**
  * Parameters for the Edit tool
@@ -358,6 +359,14 @@ Expectation for required parameters:
     return `${shortenPath(relativePath)}: ${oldStringSnippet} => ${newStringSnippet}`;
   }
 
+  override userFacingNameBackgroundColor(_params: EditToolParams): string | undefined {
+    return 'AccentGreen';
+  }
+
+  override getVerbPhrase(_params: EditToolParams): string {
+    return 'Editing...';
+  }
+
   /**
    * Executes the edit operation with the given parameters.
    * @param params Parameters for the edit operation
@@ -425,6 +434,9 @@ Expectation for required parameters:
           `User modified the \`new_string\` content to be: ${params.new_string}.`,
         );
       }
+
+      // Invalidate file content cache since we just modified this file
+      this.config.getFileContentCache().invalidate(normalizePathForCache(params.file_path));
 
       return {
         llmContent: llmSuccessMessageParts.join(' '),

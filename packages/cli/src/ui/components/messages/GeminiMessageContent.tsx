@@ -7,6 +7,7 @@
 import React from 'react';
 import { Box } from 'ink';
 import { MarkdownDisplay } from '../../utils/MarkdownDisplay.js';
+import { MessageResponse } from '../shared/MessageResponse.js';
 
 interface GeminiMessageContentProps {
   text: string;
@@ -16,10 +17,10 @@ interface GeminiMessageContentProps {
 }
 
 /*
- * Gemini message content is a semi-hacked component. The intention is to represent a partial
- * of GeminiMessage and is only used when a response gets too long. In that instance messages
- * are split into multiple GeminiMessageContent's to enable the root <Static> component in
- * App.tsx to be as performant as humanly possible.
+ * Gemini message content represents a partial of GeminiMessage and is only used
+ * when a response gets too long. Messages are split into multiple
+ * GeminiMessageContent's for performance. Uses MessageResponse to maintain
+ * consistent ⎿ prefix alignment with the parent message.
  */
 const GeminiMessageContentInternal: React.FC<GeminiMessageContentProps> = ({
   text,
@@ -27,18 +28,17 @@ const GeminiMessageContentInternal: React.FC<GeminiMessageContentProps> = ({
   availableTerminalHeight,
   terminalWidth,
 }) => {
-  const originalPrefix = '👑 ';
-  const prefixWidth = originalPrefix.length;
-
   return (
-    <Box flexDirection="column" paddingLeft={prefixWidth}>
-      <MarkdownDisplay
-        text={text}
-        isPending={isPending}
-        availableTerminalHeight={availableTerminalHeight}
-        terminalWidth={terminalWidth}
-      />
-    </Box>
+    <MessageResponse>
+      <Box flexDirection="column">
+        <MarkdownDisplay
+          text={text}
+          isPending={isPending}
+          availableTerminalHeight={availableTerminalHeight}
+          terminalWidth={terminalWidth - 5}
+        />
+      </Box>
+    </MessageResponse>
   );
 };
 

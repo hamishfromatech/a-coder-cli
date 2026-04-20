@@ -16,6 +16,7 @@ import {
   AGENT_FILE_NAME,
   AGENT_SOURCE,
 } from './types.js';
+import { MCPServerConfig } from '../config/config.js';
 
 /**
  * Agent discovery locations by priority (highest to lowest)
@@ -70,6 +71,11 @@ export function parseAgentFrontmatter(
     tools: parsed.data.tools as string[] | undefined,
     disallowedTools: parsed.data.disallowedTools as string[] | undefined,
     metadata: parsed.data.metadata as Record<string, unknown> | undefined,
+    mcpServers: parsed.data.mcpServers
+      ? parseMcpServers(parsed.data.mcpServers as Record<string, unknown>)
+      : undefined,
+    memoryFile: parsed.data.memoryFile as string | undefined,
+    blockNestedSubagents: parsed.data.blockNestedSubagents as boolean | undefined,
   };
 
   // Validate required fields
@@ -93,6 +99,35 @@ export function parseAgentFrontmatter(
     frontmatter,
     content: parsed.content,
   };
+}
+
+/**
+ * Parse inline MCP server configurations from frontmatter.
+ * Converts plain objects into MCPServerConfig instances.
+ */
+function parseMcpServers(
+  raw: Record<string, unknown>,
+): Record<string, MCPServerConfig> {
+  const servers: Record<string, MCPServerConfig> = {};
+  for (const [name, config] of Object.entries(raw)) {
+    const c = config as Record<string, unknown>;
+    servers[name] = new MCPServerConfig(
+      c.command as string | undefined,
+      c.args as string[] | undefined,
+      c.env as Record<string, string> | undefined,
+      c.cwd as string | undefined,
+      c.url as string | undefined,
+      c.httpUrl as string | undefined,
+      c.headers as Record<string, string> | undefined,
+      c.tcp as string | undefined,
+      c.timeout as number | undefined,
+      c.trust as boolean | undefined,
+      c.description as string | undefined,
+      c.includeTools as string[] | undefined,
+      c.excludeTools as string[] | undefined,
+    );
+  }
+  return servers;
 }
 
 /**
@@ -208,6 +243,9 @@ export async function loadAgentFromFile(
       systemPrompt: systemPrompt.trim() || undefined,
       source,
       filePath,
+      mcpServers: frontmatter.mcpServers,
+      memoryFile: frontmatter.memoryFile,
+      blockNestedSubagents: frontmatter.blockNestedSubagents,
     };
   } catch (error) {
     console.error(`Error loading agent from ${filePath}:`, error);

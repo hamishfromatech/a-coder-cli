@@ -183,23 +183,47 @@ export async function openDiff(
       case 'cursor':
       case 'zed':
       case 'a-coder':
-        // Use spawn for GUI-based editors to avoid blocking the entire process
+        // Use spawn for GUI-based editors to avoid blocking the entire process.
+        // Include a timeout so the promise doesn't hang indefinitely if the
+        // editor process never exits (e.g. VSCode --wait not working on macOS
+        // when an instance is already running).
+        const EDITOR_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
         return new Promise((resolve, reject) => {
           const childProcess = spawn(diffCommand.command, diffCommand.args, {
             stdio: 'inherit',
             shell: true,
           });
 
+          let settled = false;
+          const timeout = setTimeout(() => {
+            if (!settled) {
+              settled = true;
+              childProcess.kill('SIGTERM');
+              reject(new Error(
+                `Editor (${editor}) timed out after ${EDITOR_TIMEOUT_MS / 1000}s. ` +
+                'The diff editor process did not exit. Try closing it manually.',
+              ));
+            }
+          }, EDITOR_TIMEOUT_MS);
+
           childProcess.on('close', (code) => {
-            if (code === 0) {
-              resolve();
-            } else {
-              reject(new Error(`${editor} exited with code ${code}`));
+            if (!settled) {
+              settled = true;
+              clearTimeout(timeout);
+              if (code === 0) {
+                resolve();
+              } else {
+                reject(new Error(`${editor} exited with code ${code}`));
+              }
             }
           });
 
           childProcess.on('error', (error) => {
-            reject(error);
+            if (!settled) {
+              settled = true;
+              clearTimeout(timeout);
+              reject(error);
+            }
           });
         });
 

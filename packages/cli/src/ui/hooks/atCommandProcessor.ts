@@ -113,7 +113,7 @@ function parseAllAtCommands(query: string): AtCommandPart[] {
 /**
  * Processes user input potentially containing one or more '@<path>' commands.
  * If found, it attempts to read the specified files/directories using the
- * 'read_many_files' tool. The user query is modified to include resolved paths,
+ * glob and read_file tools. The user query is modified to include resolved paths,
  * and the content of the files is appended in a structured block.
  *
  * @returns An object indicating whether the main hook should proceed with an
@@ -160,18 +160,18 @@ export async function handleAtCommand({
   const fileDiscovery = config.getFileService();
   const respectGitIgnore = config.getFileFilteringRespectGitIgnore();
 
-  const pathSpecsToRead: string[] = [];
+  const filesToRead: string[] = [];
   const atPathToResolvedSpecMap = new Map<string, string>();
   const contentLabelsForDisplay: string[] = [];
   const ignoredPaths: string[] = [];
 
   const toolRegistry = await config.getToolRegistry();
-  const readManyFilesTool = toolRegistry.getTool('read_many_files');
+  const readFileTool = toolRegistry.getTool('read_file');
   const globTool = toolRegistry.getTool('glob');
 
-  if (!readManyFilesTool) {
+  if (!readFileTool) {
     addItem(
-      { type: 'error', text: 'Error: read_many_files tool not found.' },
+      { type: 'error', text: 'Error: read_file tool not found.' },
       userMessageTimestamp,
     );
     return { processedQuery: null, shouldProceed: false };
@@ -218,16 +218,61 @@ export async function handleAtCommand({
       const absolutePath = path.resolve(config.getTargetDir(), pathName);
       const stats = await fs.stat(absolutePath);
       if (stats.isDirectory()) {
-        currentPathSpec = pathName.endsWith('/')
-          ? `${pathName}**`
-          : `${pathName}/**`;
-        onDebugMessage(
-          `Path ${pathName} resolved to directory, using glob: ${currentPathSpec}`,
-        );
+        // For directories, use glob to expand into individual files
+        if (globTool) {
+          try {
+            const globResult = await globTool.execute(
+              { pattern: `${pathName}/**`, path: config.getTargetDir() },
+              signal,
+            );
+            if (
+              globResult.llmContent &&
+              typeof globResult.llmContent === 'string' &&
+              !globResult.llmContent.startsWith('No files found') &&
+              !globResult.llmContent.startsWith('Error:')
+            ) {
+              const lines = globResult.llmContent.split('\n');
+              // Skip header line, collect file paths
+              const dirFiles: string[] = [];
+              for (let i = 1; i < lines.length; i++) {
+                const filePath = lines[i].trim();
+                if (filePath) {
+                  const relativePath = path.relative(config.getTargetDir(), filePath);
+                  dirFiles.push(relativePath);
+                }
+              }
+              if (dirFiles.length > 0) {
+                filesToRead.push(...dirFiles);
+                currentPathSpec = `${pathName}/ (${dirFiles.length} files)`;
+                resolvedSuccessfully = true;
+              } else {
+                onDebugMessage(
+                  `Directory ${pathName} contained no readable files. Path will be skipped.`,
+                );
+              }
+            } else {
+              onDebugMessage(
+                `Glob search for '${pathName}/**' found no files. Path ${pathName} will be skipped.`,
+              );
+            }
+          } catch (globError) {
+            console.error(
+              `Error during glob search for ${pathName}: ${getErrorMessage(globError)}`,
+            );
+            onDebugMessage(
+              `Error during glob search for ${pathName}. Path ${pathName} will be skipped.`,
+            );
+          }
+        } else {
+          onDebugMessage(
+            `Glob tool not found. Directory ${pathName} cannot be expanded. Path will be skipped.`,
+          );
+        }
       } else {
         onDebugMessage(`Path ${pathName} resolved to file: ${currentPathSpec}`);
+        filesToRead.push(currentPathSpec);
+        resolvedSuccessfully = true;
       }
-      resolvedSuccessfully = true;
     } catch (error) {
       if (isNodeError(error) && error.code === 'ENOENT') {
         if (config.getEnableRecursiveFileSearch() && globTool) {
@@ -255,6 +300,7 @@ export async function handleAtCommand({
                 onDebugMessage(
                   `Glob search for ${pathName} found ${firstMatchAbsolute}, using relative path: ${currentPathSpec}`,
                 );
+                filesToRead.push(currentPathSpec);
                 resolvedSuccessfully = true;
               } else {
                 onDebugMessage(
@@ -290,7 +336,6 @@ export async function handleAtCommand({
     }
 
     if (resolvedSuccessfully) {
-      pathSpecsToRead.push(currentPathSpec);
       atPathToResolvedSpecMap.set(originalAtPath, currentPathSpec);
       contentLabelsForDisplay.push(pathName);
     }
@@ -349,7 +394,7 @@ export async function handleAtCommand({
   }
 
   // Fallback for lone "@" or completely invalid @-commands resulting in empty initialQueryText
-  if (pathSpecsToRead.length === 0) {
+  if (filesToRead.length === 0) {
     onDebugMessage('No valid file paths found in @ commands to read.');
     if (initialQueryText === '@' && query.trim() === '@') {
       // If the only thing was a lone @, pass original query (which might have spaces)
@@ -367,79 +412,98 @@ export async function handleAtCommand({
 
   const processedQueryParts: PartUnion[] = [{ text: initialQueryText }];
 
-  const toolArgs = {
-    paths: pathSpecsToRead,
-    respect_git_ignore: respectGitIgnore, // Use configuration setting
-  };
-  let toolCallDisplay: IndividualToolCallDisplay;
-
-  try {
-    const result = await readManyFilesTool.execute(toolArgs, signal);
-    toolCallDisplay = {
-      callId: `client-read-${userMessageTimestamp}`,
-      name: readManyFilesTool.displayName,
-      description: readManyFilesTool.getDescription(toolArgs),
-      status: ToolCallStatus.Success,
-      resultDisplay:
-        result.returnDisplay ||
-        `Successfully read: ${contentLabelsForDisplay.join(', ')}`,
-      confirmationDetails: undefined,
-    };
-
-    if (Array.isArray(result.llmContent)) {
-      const fileContentRegex = /^--- (.*?) ---\n\n([\s\S]*?)\n\n$/;
-      processedQueryParts.push({
-        text: '\n--- Content from referenced files ---',
-      });
-      for (const part of result.llmContent) {
-        if (typeof part === 'string') {
-          const match = fileContentRegex.exec(part);
-          if (match) {
-            const filePathSpecInContent = match[1]; // This is a resolved pathSpec
-            const fileActualContent = match[2].trim();
-            processedQueryParts.push({
-              text: `\nContent from @${filePathSpecInContent}:\n`,
-            });
-            processedQueryParts.push({ text: fileActualContent });
-          } else {
-            processedQueryParts.push({ text: part });
-          }
-        } else {
-          // part is a Part object.
-          processedQueryParts.push(part);
-        }
+  // Read all files in parallel using the read_file tool
+  const readResults = await Promise.all(
+    filesToRead.map(async (filePath) => {
+      const absolutePath = path.resolve(config.getTargetDir(), filePath);
+      try {
+        const result = await readFileTool.execute(
+          { absolute_path: absolutePath },
+          signal,
+        );
+        return {
+          filePath: absolutePath,
+          relativePath: filePath,
+          result,
+        };
+      } catch (error) {
+        return {
+          filePath: absolutePath,
+          relativePath: filePath,
+          error: getErrorMessage(error),
+        };
       }
-      processedQueryParts.push({ text: '\n--- End of content ---' });
-    } else {
-      onDebugMessage(
-        'read_many_files tool returned no content or empty content.',
-      );
-    }
+    }),
+  );
 
-    addItem(
-      { type: 'tool_group', tools: [toolCallDisplay] } as Omit<
-        HistoryItem,
-        'id'
-      >,
-      userMessageTimestamp,
-    );
-    return { processedQuery: processedQueryParts, shouldProceed: true };
-  } catch (error: unknown) {
-    toolCallDisplay = {
-      callId: `client-read-${userMessageTimestamp}`,
-      name: readManyFilesTool.displayName,
-      description: readManyFilesTool.getDescription(toolArgs),
-      status: ToolCallStatus.Error,
-      resultDisplay: `Error reading files (${contentLabelsForDisplay.join(', ')}): ${getErrorMessage(error)}`,
-      confirmationDetails: undefined,
-    };
-    addItem(
-      { type: 'tool_group', tools: [toolCallDisplay] } as Omit<
-        HistoryItem,
-        'id'
-      >,
-      userMessageTimestamp,
-    );
-    return { processedQuery: null, shouldProceed: false };
+  const toolCallDisplay: IndividualToolCallDisplay = {
+    callId: `client-read-${userMessageTimestamp}`,
+    name: 'ReadFile',
+    description: `Reading ${filesToRead.length} file(s): ${contentLabelsForDisplay.join(', ')}`,
+    status: ToolCallStatus.Success,
+    resultDisplay: `Successfully read: ${contentLabelsForDisplay.join(', ')}`,
+    confirmationDetails: undefined,
+  };
+
+  const successfulReads: string[] = [];
+  const failedReads: string[] = [];
+
+  processedQueryParts.push({
+    text: '\n--- Content from referenced files ---',
+  });
+
+  for (const readResult of readResults) {
+    if ('error' in readResult) {
+      failedReads.push(readResult.relativePath);
+      processedQueryParts.push({
+        text: `\nError reading @${readResult.relativePath}: ${readResult.error}`,
+      });
+    } else if (readResult.result.llmContent) {
+      const rawContent = readResult.result.llmContent;
+      processedQueryParts.push({
+        text: `\nContent from @${readResult.relativePath}:\n`,
+      });
+      if (typeof rawContent === 'string') {
+        processedQueryParts.push({ text: rawContent });
+      } else if (Array.isArray(rawContent)) {
+        for (const part of rawContent) {
+          if (typeof part === 'string') {
+            processedQueryParts.push({ text: part });
+          } else if ('text' in part) {
+            processedQueryParts.push({ text: part.text });
+          } else {
+            // Non-text Part (e.g. image, PDF) — push as-is
+            processedQueryParts.push(part as PartUnion);
+          }
+        }
+      } else {
+        // Single non-string Part
+        processedQueryParts.push(rawContent as PartUnion);
+      }
+      successfulReads.push(readResult.relativePath);
+    } else {
+      failedReads.push(readResult.relativePath);
+      processedQueryParts.push({
+        text: `\nNo content returned for @${readResult.relativePath}`,
+      });
+    }
   }
+
+  processedQueryParts.push({ text: '\n--- End of content ---' });
+
+  if (failedReads.length > 0) {
+    toolCallDisplay.status = successfulReads.length > 0 ? ToolCallStatus.Success : ToolCallStatus.Error;
+    toolCallDisplay.resultDisplay = successfulReads.length > 0
+      ? `Partially read: ${successfulReads.join(', ')}. Failed: ${failedReads.join(', ')}`
+      : `Error reading files: ${failedReads.join(', ')}`;
+  }
+
+  addItem(
+    { type: 'tool_group', tools: [toolCallDisplay] } as Omit<
+      HistoryItem,
+      'id'
+    >,
+    userMessageTimestamp,
+  );
+  return { processedQuery: processedQueryParts, shouldProceed: true };
 }

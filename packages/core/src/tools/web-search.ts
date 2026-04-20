@@ -92,6 +92,14 @@ export class WebSearchTool extends BaseTool<WebSearchToolParams, WebSearchToolRe
     return `Searching DuckDuckGo for: "${params.query}"`;
   }
 
+  override userFacingNameBackgroundColor(_params: WebSearchToolParams): string | undefined {
+    return 'AccentPurple';
+  }
+
+  override getVerbPhrase(_params: WebSearchToolParams): string {
+    return 'Searching...';
+  }
+
   /**
    * Parses DuckDuckGo HTML search results into structured data.
    */

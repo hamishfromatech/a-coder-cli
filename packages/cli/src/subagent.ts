@@ -15,6 +15,7 @@
 import {
   SUBAGENT_MODE_ENV_VAR,
   SUBAGENT_CONFIG_ENV_VAR,
+  SUBAGENT_DEPTH_ENV_VAR,
   SubagentMessageType,
   SubagentConfig,
   SubagentResult,
@@ -31,6 +32,8 @@ import { loadSettings } from './config/settings.js';
 import { loadExtensions } from './config/extension.js';
 import { parseArguments, loadCliConfig } from './config/config.js';
 import { validateAuthMethod } from './config/auth.js';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 
 // Verify we're in subagent mode
 if (process.env[SUBAGENT_MODE_ENV_VAR] !== 'true') {
@@ -238,6 +241,21 @@ async function runSubagent(): Promise<void> {
     // Add subagent-specific instructions
     taskPrompt = `${taskPrompt}\n\n---\nYou are a subagent working on a specific task. Guidelines:\n1. Focus only on the assigned task - do not expand scope\n2. Be concise in your responses\n3. When complete, provide a clear summary of what was done\n4. If you cannot complete the task, explain why clearly\n5. Track any files you read or modify\n6. Track any shell commands you execute`;
 
+    // Load subagent-specific persistent memory if configured
+    if (subagentConfig.memoryFile) {
+      try {
+        const memoryPath = path.isAbsolute(subagentConfig.memoryFile)
+          ? subagentConfig.memoryFile
+          : path.join(workspaceRoot, subagentConfig.memoryFile);
+        const memoryContent = await fs.readFile(memoryPath, 'utf-8');
+        if (memoryContent.trim()) {
+          taskPrompt = `## Your Persistent Memory\n${memoryContent}\n\n---\n\n${taskPrompt}`;
+        }
+      } catch {
+        // Memory file doesn't exist yet — that's fine, it'll be created on first save
+      }
+    }
+
     sendProgress('Executing task...', 30);
 
     // Get the Gemini client
@@ -247,13 +265,15 @@ async function runSubagent(): Promise<void> {
       return;
     }
 
-    // Get the tool registry
-    const toolRegistry = await config.getToolRegistry();
-
-    // Filter tools if allowedTools is specified
-    if (subagentConfig.allowedTools && subagentConfig.allowedTools.length > 0) {
-      // Tool filtering could be implemented here if needed
-    }
+    // Create an isolated tool registry for this subagent.
+    // This gives the subagent its own tools and MCP servers,
+    // separate from the parent agent's global registry.
+    const toolRegistry = await config.createSubagentToolRegistry({
+      allowedTools: subagentConfig.allowedTools,
+      disallowedTools: subagentConfig.disallowedTools,
+      blockNestedSubagents: subagentConfig.blockNestedSubagents,
+      mcpServers: subagentConfig.mcpServers,
+    });
 
     // Execute the agentic loop
     let accumulatedResponse = ''; // Accumulate all response text across turns
@@ -331,10 +351,6 @@ async function runSubagent(): Promise<void> {
           // Track file operations for reporting (using Set to deduplicate)
           if (toolName === 'read_file' && toolArgs?.absolute_path) {
             filesReadSet.add(toolArgs.absolute_path as string);
-          } else if (toolName === 'read_many_files' && toolArgs?.paths) {
-            for (const p of toolArgs.paths as string[]) {
-              filesReadSet.add(p);
-            }
           } else if (toolName === 'write_file' && toolArgs?.file_path) {
             filesModifiedSet.add(toolArgs.file_path as string);
           } else if (toolName === 'edit' && toolArgs?.file_path) {

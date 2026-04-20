@@ -23,7 +23,6 @@ import {
 } from './turn.js';
 import { Config } from '../config/config.js';
 import { getCoreSystemPrompt, getCompressionPrompt } from './prompts.js';
-import { ReadManyFilesTool } from '../tools/read-many-files.js';
 import { getResponseText } from '../utils/generateContentResponseUtilities.js';
 import { checkNextSpeaker } from '../utils/nextSpeakerChecker.js';
 import { reportError } from '../utils/errorReporting.js';
@@ -49,6 +48,7 @@ import {
 import { GeminiChat } from './geminiChat.js';
 import { CircuitBreaker } from '../utils/circuitBreaker.js';
 import { PromptCacheTracker } from '../utils/promptCacheTracker.js';
+import { startupProfiler } from '../utils/startupProfiler.js';
 
 /**
  * Returns the index of the content after the fraction of the total characters in the history.
@@ -124,6 +124,7 @@ export class GeminiClient {
       warningThreshold: contextConfig.warningThreshold,
       criticalThreshold: contextConfig.criticalThreshold,
       autoCompressThreshold: contextConfig.autoCompressThreshold,
+      microcompactThreshold: contextConfig.microcompactThreshold,
     });
 
     // Circuit breaker for compression: max 3 consecutive failures before stopping
@@ -138,12 +139,48 @@ export class GeminiClient {
   }
 
   async initialize(contentGeneratorConfig: ContentGeneratorConfig) {
+    startupProfiler.checkpoint('initialize-start');
     this.contentGenerator = await createContentGenerator(
       contentGeneratorConfig,
       this.config,
       this.config.getSessionId(),
     );
+    startupProfiler.checkpoint('content-generator-ready');
+    // Warm the API connection in parallel with chat setup.
+    // The first API call pays TCP+TLS handshake cost (~100-200ms).
+    // Firing this early overlaps that with startChat() work.
+    const preconnectPromise = this.preconnect().catch(() => {
+      // Preconnect is best-effort; failures are silently ignored.
+      // The connection is still warmed even if the request "fails".
+    });
     this.chat = await this.startChat();
+    startupProfiler.checkpoint('chat-ready');
+    // Don't await — preconnect runs concurrently for speed.
+    // It will complete in the background.
+    void preconnectPromise;
+    startupProfiler.checkpoint('initialize-done');
+    const report = startupProfiler.getReport();
+    if (report) {
+      console.debug(report);
+    }
+  }
+
+  /**
+   * Fires a minimal API request to warm the TCP+TLS connection
+   * before the first real API call. This overlaps the connection
+   * setup (~100-200ms) with other initialization work.
+   */
+  private async preconnect(): Promise<void> {
+    try {
+      const generator = this.getContentGenerator();
+      await generator.countTokens({
+        model: this.config.getModel(),
+        contents: [{ role: 'user', parts: [{ text: '' }] }],
+      });
+    } catch {
+      // Preconnect is best-effort — the TCP connection is warmed
+      // even if the actual request fails with an API error.
+    }
   }
 
   getContentGenerator(): ContentGenerator {
@@ -221,30 +258,72 @@ export class GeminiClient {
     // Add full file context if the flag is set
     if (this.config.getFullContext()) {
       try {
-        const readManyFilesTool = toolRegistry.getTool(
-          'read_many_files',
-        ) as ReadManyFilesTool;
-        if (readManyFilesTool) {
-          // Read all files in the target directory
-          const result = await readManyFilesTool.execute(
-            {
-              paths: ['**/*'], // Read everything recursively
-              useDefaultExcludes: true, // Use default excludes
-            },
+        const globTool = toolRegistry.getTool('glob');
+        const readFileTool = toolRegistry.getTool('read_file');
+
+        if (globTool && readFileTool) {
+          // Use glob to discover all files, then read them in parallel
+          const globResult = await globTool.execute(
+            { pattern: '**/*', path: this.config.getTargetDir() },
             AbortSignal.timeout(30000),
           );
-          if (result.llmContent) {
-            initialParts.push({
-              text: `\n--- Full File Context ---\n${result.llmContent}`,
-            });
+
+          if (
+            globResult.llmContent &&
+            typeof globResult.llmContent === 'string' &&
+            !globResult.llmContent.startsWith('No files found')
+          ) {
+            const filePaths = globResult.llmContent
+              .split('\n')
+              .slice(1) // Skip header line
+              .map((line: string) => line.trim())
+              .filter(Boolean);
+
+            if (filePaths.length > 0) {
+              const readResults = await Promise.all(
+                filePaths.map((filePath: string) =>
+                  readFileTool
+                    .execute(
+                      { absolute_path: filePath },
+                      AbortSignal.timeout(30000),
+                    )
+                    .then((result) => {
+                      const content = result.llmContent;
+                      if (typeof content === 'string') {
+                        return `--- ${filePath} ---\n\n${content}\n\n`;
+                      }
+                      if (Array.isArray(content)) {
+                        const text = (content as Array<Record<string, unknown>>)
+                          .filter((p) => 'text' in p)
+                          .map((p) => (p as { text: string }).text)
+                          .join('\n');
+                        return `--- ${filePath} ---\n\n${text}\n\n`;
+                      }
+                      return '';
+                    })
+                    .catch(() => ''),
+                ),
+              );
+
+              const content = readResults.filter(Boolean).join('');
+              if (content) {
+                initialParts.push({
+                  text: `\n--- Full File Context ---\n${content}`,
+                });
+              } else {
+                console.warn(
+                  'Full context requested, but no files could be read.',
+                );
+              }
+            }
           } else {
             console.warn(
-              'Full context requested, but read_many_files returned no content.',
+              'Full context requested, but glob found no files.',
             );
           }
         } else {
           console.warn(
-            'Full context requested, but read_many_files tool not found.',
+            'Full context requested, but glob or read_file tool not found.',
           );
         }
       } catch (error) {
@@ -284,11 +363,18 @@ export class GeminiClient {
         const cacheStatus = this.promptCacheTracker.checkAll(
           systemInstruction,
           toolDeclarations,
+          this.config.getModel(),
         );
         if (!cacheStatus.overallHit) {
-          console.debug(
-            `[PromptCache] Cache miss - systemPrompt: ${cacheStatus.systemPromptHit}, tools: ${cacheStatus.toolDeclarationsHit}`,
-          );
+          if (cacheStatus.breakReason) {
+            console.debug(
+              `[PromptCache] Cache break: ${cacheStatus.breakReason.systemPromptChanged ? 'system prompt changed' : ''}${cacheStatus.breakReason.toolDeclarationsChanged ? ' tool declarations changed' : ''}${cacheStatus.breakReason.modelChanged ? ` model changed (${cacheStatus.breakReason.previousModel} → ${cacheStatus.breakReason.currentModel})` : ''}`.trim(),
+            );
+          } else {
+            console.debug(
+              `[PromptCache] Cache miss - systemPrompt: ${cacheStatus.systemPromptHit}, tools: ${cacheStatus.toolDeclarationsHit}, model: ${cacheStatus.modelHit}`,
+            );
+          }
         }
       }
 
@@ -373,6 +459,20 @@ export class GeminiClient {
             yield { type: GeminiEventType.ChatCompressed, value: compressed };
             // Update token count after compression
             await this.getChat().updateHistoryTokenCount();
+          }
+        }
+
+        // Microcompact: incrementally remove old tool results at 50% threshold
+        // This is cheaper than full compression and doesn't require an LLM call
+        if (contextUsage.event === ContextEvent.MICRO_COMPACT) {
+          const microResult = this.microcompact();
+          if (microResult && microResult.removedCount > 0) {
+            await this.getChat().updateHistoryTokenCount();
+            const newTokens = this.getChatHistoryTokenCount();
+            yield {
+              type: GeminiEventType.ChatCompressed,
+              value: { originalTokenCount: currentTokens, newTokenCount: newTokens },
+            };
           }
         }
       }
@@ -789,6 +889,55 @@ export class GeminiClient {
       originalTokenCount,
       newTokenCount,
     };
+  }
+
+  /**
+   * Incrementally removes old tool results from history without an LLM call.
+   * This is much cheaper than full compression and preserves the cache prefix.
+   * Only triggers when context usage exceeds the microcompact threshold (default: 50%).
+   *
+   * Modeled after Claude Code's microCompact pattern which removes tool results
+   * to free up context without invalidating the cached prompt prefix.
+   */
+  private microcompact(): { removedCount: number } | null {
+    const curatedHistory = this.getChat().getHistory(true);
+    if (curatedHistory.length < 4) return null;
+
+    const model = this.config.getModel();
+    const modelTokenLimit = tokenLimit(model);
+    const currentTokens = this.getChatHistoryTokenCount();
+
+    // Only microcompact when context exceeds 50% of the model's limit
+    if (currentTokens < modelTokenLimit * 0.5) return null;
+
+    // Find function-response entries in the first 40% of history
+    const cutoffIndex = Math.floor(curatedHistory.length * 0.4);
+    let removedCount = 0;
+    const newHistory: Content[] = [];
+
+    for (let i = 0; i < curatedHistory.length; i++) {
+      const entry = curatedHistory[i];
+
+      // Keep entries that are: user messages, model text responses, or in the recent window
+      if (i >= cutoffIndex || !isFunctionResponse(entry)) {
+        newHistory.push(entry);
+      } else {
+        // Replace removed function-response pairs with a brief placeholder
+        // to maintain conversation coherence
+        if (removedCount === 0) {
+          newHistory.push({
+            role: 'user',
+            parts: [{ text: '[Earlier tool results removed for context management]' }],
+          });
+        }
+        removedCount++;
+      }
+    }
+
+    if (removedCount === 0) return null;
+
+    this.getChat().setHistory(newHistory);
+    return { removedCount };
   }
 
   /**

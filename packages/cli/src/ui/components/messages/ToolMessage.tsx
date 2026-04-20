@@ -12,7 +12,77 @@ import { Colors, Semantic } from '../../colors.js';
 import { MarkdownDisplay } from '../../utils/MarkdownDisplay.js';
 import { GeminiRespondingSpinner } from '../GeminiRespondingSpinner.js';
 import { MaxSizedBox } from '../shared/MaxSizedBox.js';
-import { getStatusIcon, getIcon } from '../../utils/icons.js';
+import { MessageResponse } from '../shared/MessageResponse.js';
+
+/**
+ * Map of tool internal names to their pill background colors.
+ * These colors categorize tools visually:
+ * - Cyan: read/search operations
+ * - Green: write/edit operations
+ * - Yellow: execution/shell operations
+ * - Purple: web/network operations
+ * - Blue: agent/special operations
+ */
+const TOOL_PILL_COLORS: Record<string, string> = {
+  read_file: Colors.AccentCyan,
+  list_directory: Colors.AccentCyan,
+  glob: Colors.AccentCyan,
+  grep: Colors.AccentCyan,
+  write_file: Colors.AccentGreen,
+  edit_file: Colors.AccentGreen,
+  shell: Colors.AccentYellow,
+  web_fetch: Colors.AccentPurple,
+  web_search: Colors.AccentPurple,
+  subagent: Colors.AccentBlue,
+  task_create: Colors.AccentBlue,
+  task_update: Colors.AccentBlue,
+  task_list: Colors.AccentCyan,
+  task_get: Colors.AccentCyan,
+  skills: Colors.AccentPurple,
+  memory: Colors.AccentGreen,
+  write_todos: Colors.AccentGreen,
+  initialize_heartbeat: Colors.AccentYellow,
+  exit_heartbeat: Colors.AccentYellow,
+};
+
+/**
+ * Map of tool internal names to their verb phrases for in-progress spinners.
+ */
+const TOOL_VERB_PHRASES: Record<string, string> = {
+  read_file: 'Reading...',
+  list_directory: 'Listing...',
+  glob: 'Searching...',
+  grep: 'Searching...',
+  write_file: 'Writing...',
+  edit_file: 'Editing...',
+  shell: 'Running...',
+  web_fetch: 'Fetching...',
+  web_search: 'Searching...',
+  subagent: 'Thinking...',
+  task_create: 'Creating task...',
+  task_update: 'Updating task...',
+  task_list: 'Listing tasks...',
+  task_get: 'Getting task...',
+  skills: 'Loading skill...',
+  memory: 'Remembering...',
+  write_todos: 'Updating todos...',
+  initialize_heartbeat: 'Starting heartbeat...',
+  exit_heartbeat: 'Stopping heartbeat...',
+};
+
+/**
+ * Get the pill background color for a tool name.
+ */
+function getPillColor(toolName: string): string | undefined {
+  return TOOL_PILL_COLORS[toolName];
+}
+
+/**
+ * Get the verb phrase for a tool in progress.
+ */
+function getVerbPhrase(toolName: string): string | undefined {
+  return TOOL_VERB_PHRASES[toolName];
+}
 
 /**
  * Determines the border color based on tool call status.
@@ -38,8 +108,7 @@ function getBorderColor(status: ToolCallStatus): string {
 
 const STATIC_HEIGHT = 1;
 const RESERVED_LINE_COUNT = 5; // for tool name, status, padding etc.
-const STATUS_INDICATOR_WIDTH = 3;
-const MIN_LINES_SHOWN = 2; // show at least this many lines
+const MIN_LINES_SHOWN = 2;
 
 // Large threshold to ensure we don't cause performance issues for very large
 // outputs that will get truncated further by MaxSizedBox anyway.
@@ -66,7 +135,7 @@ export const ToolMessage: React.FC<ToolMessageProps> = ({
   const availableHeight = availableTerminalHeight
     ? Math.max(
         availableTerminalHeight - STATIC_HEIGHT - RESERVED_LINE_COUNT,
-        MIN_LINES_SHOWN + 1, // enforce minimum lines shown
+        MIN_LINES_SHOWN + 1,
       )
     : undefined;
 
@@ -77,33 +146,87 @@ export const ToolMessage: React.FC<ToolMessageProps> = ({
     renderOutputAsMarkdown = false;
   }
 
-  const childWidth = terminalWidth - 3; // account for padding.
+  const childWidth = terminalWidth - 5; // account for ⎿ prefix + padding
   if (typeof resultDisplay === 'string') {
     if (resultDisplay.length > MAXIMUM_RESULT_DISPLAY_CHARACTERS) {
-      // Truncate the result display to fit within the available width.
       resultDisplay =
         '...' + resultDisplay.slice(-MAXIMUM_RESULT_DISPLAY_CHARACTERS);
     }
   }
+
+  const pillColor = getPillColor(name);
+  const verbPhrase = getVerbPhrase(name);
+  const isExecuting = status === ToolCallStatus.Executing;
+
   return (
-    <Box
-      paddingX={0}
-      paddingY={1}
-      flexDirection="column"
-    >
-      <Box minHeight={1}>
-        <ToolStatusIndicator status={status} />
-        <ToolInfo
-          name={name}
-          status={status}
-          description={description}
-          emphasis={emphasis}
-        />
-        {emphasis === 'high' && <TrailingIndicator />}
+    <Box flexDirection="column" paddingY={1}>
+      {/* Tool name row: [dot] [pill:ToolName] (description) */}
+      <Box flexDirection="row" flexWrap="nowrap" alignItems="center">
+        {/* Blinking dot indicator for in-progress tools */}
+        {isExecuting && (
+          <Box minWidth={2} marginRight={1}>
+            <GeminiRespondingSpinner spinnerType="toggle" nonRespondingDisplay="●" />
+          </Box>
+        )}
+        {!isExecuting && status === ToolCallStatus.Success && (
+          <Box minWidth={2} marginRight={1}>
+            <Text color={Semantic.Success}>✓</Text>
+          </Box>
+        )}
+        {!isExecuting && status === ToolCallStatus.Error && (
+          <Box minWidth={2} marginRight={1}>
+            <Text color={Semantic.Error} bold>✕</Text>
+          </Box>
+        )}
+        {!isExecuting && status === ToolCallStatus.Canceled && (
+          <Box minWidth={2} marginRight={1}>
+            <Text color={Semantic.Muted}>○</Text>
+          </Box>
+        )}
+        {!isExecuting && status === ToolCallStatus.Confirming && (
+          <Box minWidth={2} marginRight={1}>
+            <Text color={Semantic.Warning}>⠸</Text>
+          </Box>
+        )}
+        {!isExecuting && status === ToolCallStatus.Pending && (
+          <Box minWidth={2} marginRight={1}>
+            <Text color={Semantic.Muted}>○</Text>
+          </Box>
+        )}
+
+        {/* Tool name pill */}
+        <Text
+          bold
+          wrap="truncate-end"
+          backgroundColor={pillColor}
+          color={pillColor ? 'black' : undefined}
+        >
+          {' ' + name + ' '}
+        </Text>
+
+        {/* Description in parentheses */}
+        {description && description !== name && (
+          <Box flexWrap="wrap" marginLeft={1}>
+            <Text color={Semantic.Muted} wrap="truncate-end">
+              {description}
+            </Text>
+          </Box>
+        )}
       </Box>
+
+      {/* Verb phrase for executing tools */}
+      {isExecuting && verbPhrase && (
+        <Box paddingLeft={3}>
+          <Text dimColor color={Semantic.Primary}>
+            {verbPhrase}
+          </Text>
+        </Box>
+      )}
+
+      {/* Result display */}
       {resultDisplay && (
-        <Box paddingLeft={STATUS_INDICATOR_WIDTH} width="100%" marginTop={1}>
-          <Box flexDirection="column">
+        <MessageResponse>
+          <Box flexDirection="column" width="100%">
             {typeof resultDisplay === 'string' && renderOutputAsMarkdown && (
               <Box flexDirection="column">
                 <MarkdownDisplay
@@ -130,94 +253,8 @@ export const ToolMessage: React.FC<ToolMessageProps> = ({
               />
             )}
           </Box>
-        </Box>
+        </MessageResponse>
       )}
     </Box>
   );
 };
-
-type ToolStatusIndicatorProps = {
-  status: ToolCallStatus;
-};
-
-const ToolStatusIndicator: React.FC<ToolStatusIndicatorProps> = ({
-  status,
-}) => {
-  const indicator = React.useMemo(() => {
-    switch (status) {
-      case ToolCallStatus.Pending:
-        return <Text color={Semantic.Warning}>{getIcon('Pending')}</Text>;
-      case ToolCallStatus.Executing:
-        return (
-          <GeminiRespondingSpinner
-            spinnerType="toggle"
-            nonRespondingDisplay={getIcon('Running')}
-          />
-        );
-      case ToolCallStatus.Success:
-        return <Text color={Semantic.Success}>{getIcon('Success')}</Text>;
-      case ToolCallStatus.Confirming:
-        return <Text color={Semantic.Warning}>⠸</Text>;
-      case ToolCallStatus.Canceled:
-        return <Text color={Semantic.Muted}>{getIcon('Cancelled')}</Text>;
-      case ToolCallStatus.Error:
-        return (
-          <Text color={Semantic.Error} bold>
-            {getIcon('Error')}
-          </Text>
-        );
-      default:
-        return <Text> </Text>;
-    }
-  }, [status]);
-
-  return <Box minWidth={STATUS_INDICATOR_WIDTH}>{indicator}</Box>;
-};
-
-type ToolInfo = {
-  name: string;
-  description: string;
-  status: ToolCallStatus;
-  emphasis: TextEmphasis;
-};
-const ToolInfo: React.FC<ToolInfo> = ({
-  name,
-  description,
-  status,
-  emphasis,
-}) => {
-  const nameColor = React.useMemo<string>(() => {
-    switch (emphasis) {
-      case 'high':
-        return Colors.Foreground;
-      case 'medium':
-        return Colors.Foreground;
-      case 'low':
-        return Semantic.Muted;
-      default: {
-        const exhaustiveCheck: never = emphasis;
-        return exhaustiveCheck;
-      }
-    }
-  }, [emphasis]);
-  return (
-    <Box>
-      <Text
-        wrap="truncate-end"
-        strikethrough={status === ToolCallStatus.Canceled}
-      >
-        <Text color={nameColor} bold>
-          {name}
-        </Text>{' '}
-        <Text color={Semantic.Muted}>{description}</Text>
-      </Text>
-    </Box>
-  );
-};
-
-const TrailingIndicator: React.FC = () => (
-  <Text color={Colors.Foreground} wrap="truncate">
-    {' '}
-    ←
-  </Text>
-);

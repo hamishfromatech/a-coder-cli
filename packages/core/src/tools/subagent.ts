@@ -299,6 +299,14 @@ assistant: Uses the Agent tool to launch the test-runner agent
     return desc;
   }
 
+  override userFacingNameBackgroundColor(_params: SubagentToolParams): string | undefined {
+    return 'AccentBlue';
+  }
+
+  override getVerbPhrase(_params: SubagentToolParams): string {
+    return 'Thinking...';
+  }
+
   /**
    * Determine if confirmation is needed
    */
@@ -424,6 +432,15 @@ assistant: Uses the Agent tool to launch the test-runner agent
     config.allowedTools = this.resolveAllowedTools(params, agentDef);
     config.disallowedTools = this.resolveDisallowedTools(params, agentDef);
 
+    // Pass isolation fields from agent definition
+    if (agentDef?.mcpServers) {
+      config.mcpServers = agentDef.mcpServers;
+    }
+    if (agentDef?.memoryFile) {
+      config.memoryFile = agentDef.memoryFile;
+    }
+    config.blockNestedSubagents = agentDef?.blockNestedSubagents ?? false;
+
     try {
       const manager = getSubagentManager();
 
@@ -432,14 +449,14 @@ assistant: Uses the Agent tool to launch the test-runner agent
         const taskId = manager.spawnSubagentBackground(config);
         return {
           summary: `Background agent spawned (ID: ${taskId})`,
-          llmContent: `Background agent started with ID: ${taskId}.\n\nThe agent is working on: ${taskText}\n\nYou will be notified when it completes. Use TaskOutput with the task ID to retrieve results.`,
+          llmContent: `Background agent started with ID: ${taskId}.\n\nThe agent is working on: ${taskText}\n\nYou will be notified when it completes. Do NOT poll for results — the notification will arrive automatically.`,
           returnDisplay: `Background task ID: ${taskId}`,
         };
       }
 
       // Foreground execution
       const result = await manager.spawnSubagent(config);
-      return this.formatResult(result, agentDef);
+      return this.formatResult(result, agentDef, config);
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
@@ -512,13 +529,24 @@ assistant: Uses the Agent tool to launch the test-runner agent
   }
 
   /**
-   * Format the subagent result for display
+   * Format the subagent result for display, following Claude Code's structured format.
+   * Includes handoff security classification for destructive operations.
    */
-  private formatResult(result: SubagentResult, agentDef?: AgentDefinition | null): ToolResult {
+  private formatResult(result: SubagentResult, agentDef?: AgentDefinition | null, config?: SubagentConfig): ToolResult {
     const agentName = agentDef?.name || 'Agent';
+
+    // Run handoff security classifier
+    const manager = getSubagentManager();
+    const securityWarning = config ? manager.classifyHandoffSafety(result, config) : null;
+
     let llmContent = `## ${agentName} Result\n\n`;
     llmContent += `**Status:** ${result.success ? '✅ Success' : '❌ Failed'}\n`;
     llmContent += `**Summary:** ${result.summary}\n\n`;
+
+    // Prepend security warning if detected
+    if (securityWarning) {
+      llmContent = `⚠️ ${securityWarning}\n\n${llmContent}`;
+    }
 
     if (result.details) {
       llmContent += `### Details\n${result.details}\n\n`;
@@ -544,12 +572,19 @@ assistant: Uses the Agent tool to launch the test-runner agent
       llmContent += `**Duration:** ${Math.round(result.duration / 1000)}s\n`;
     }
 
+    if (result.tokenUsage) {
+      llmContent += `**Tokens:** ${result.tokenUsage.total.toLocaleString()} (in: ${result.tokenUsage.input.toLocaleString()}, out: ${result.tokenUsage.output.toLocaleString()})\n`;
+    }
+
     let returnDisplay = result.summary;
     if (result.filesModified && result.filesModified.length > 0) {
       returnDisplay += `\n\nModified: ${result.filesModified.join(', ')}`;
     }
     if (result.errors && result.errors.length > 0) {
       returnDisplay += `\n\nErrors: ${result.errors.join('; ')}`;
+    }
+    if (securityWarning) {
+      returnDisplay = `⚠️ ${securityWarning}\n\n${returnDisplay}`;
     }
 
     return {

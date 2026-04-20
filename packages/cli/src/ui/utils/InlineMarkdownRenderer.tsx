@@ -8,6 +8,7 @@ import React from 'react';
 import { Text } from 'ink';
 import { Colors } from '../colors.js';
 import stringWidth from 'string-width';
+import { cachedStringWidth } from './lineWidthCache.js';
 
 // Constants for Markdown parsing
 const BOLD_MARKER_LENGTH = 2; // For "**"
@@ -186,5 +187,5 @@ export const getPlainTextLength = (text: string): number => {
     .replace(/`(.*?)`/g, '$1')
     .replace(/<u>(.*?)<\/u>/g, '$1')
     .replace(/\[(.*?)\]\(.*?\)/g, '$1');
-  return stringWidth(cleanText);
+  return cachedStringWidth(cleanText);
 };

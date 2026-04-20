@@ -206,6 +206,14 @@ I have fetched the content from the following URL(s). Please use this content to
     return `Processing URLs and instructions from prompt: "${displayPrompt}"`;
   }
 
+  override userFacingNameBackgroundColor(_params: WebFetchToolParams): string | undefined {
+    return 'AccentPurple';
+  }
+
+  override getVerbPhrase(_params: WebFetchToolParams): string {
+    return 'Fetching...';
+  }
+
   async shouldConfirmExecute(
     params: WebFetchToolParams,
   ): Promise<ToolCallConfirmationDetails | false> {

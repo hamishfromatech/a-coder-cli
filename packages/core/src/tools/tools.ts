@@ -51,6 +51,32 @@ export interface Tool<
   isReadOnly?: boolean;
 
   /**
+   * Determines if this tool invocation with the given parameters is safe
+   * to run concurrently with other tool invocations.
+   * This is a finer-grained version of isReadOnly that considers parameters.
+   * For example, a shell command that reads (e.g., `ls`) is concurrency-safe,
+   * while one that writes (e.g., `rm`) is not.
+   * Defaults to the value of isReadOnly if not overridden.
+   */
+  isConcurrencySafe?(params: TParams): boolean;
+
+  /**
+   * Returns a background color for the tool name pill in the UI.
+   * The pill renders the tool displayName with this color as background
+   * for visual categorization (e.g., cyan for read, green for write,
+   * yellow for shell/exec).
+   * Return undefined for no background (plain text).
+   */
+  userFacingNameBackgroundColor?(params: TParams): string | undefined;
+
+  /**
+   * Returns a present-participle verb phrase for the tool's in-progress
+   * spinner (e.g., "Reading...", "Writing...", "Running...").
+   * Used by the UI to show per-tool-use activity.
+   */
+  getVerbPhrase?(params: TParams): string;
+
+  /**
    * Validates the parameters for the tool
    * Should be called from both `shouldConfirmExecute` and `execute`
    * `shouldConfirmExecute` should return false immediately if invalid
@@ -164,6 +190,33 @@ export abstract class BaseTool<
     abortSignal: AbortSignal,
   ): Promise<ToolCallConfirmationDetails | false> {
     return Promise.resolve(false);
+  }
+
+  /**
+   * Returns a background color for the tool name pill.
+   * Default: undefined (no background). Override in subclasses.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  userFacingNameBackgroundColor(params: TParams): string | undefined {
+    return undefined;
+  }
+
+  /**
+   * Returns a verb phrase for the in-progress spinner.
+   * Default: "Working...". Override in subclasses for specific verbs.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  getVerbPhrase(params: TParams): string {
+    return 'Working...';
+  }
+
+  /**
+   * Determines if this tool invocation is safe to run concurrently.
+   * Defaults to the value of isReadOnly. Override for parameter-dependent
+   * concurrency decisions (e.g., shell commands that are read-only vs mutating).
+   */
+  isConcurrencySafe(params: TParams): boolean {
+    return this.isReadOnly ?? false;
   }
 
   /**

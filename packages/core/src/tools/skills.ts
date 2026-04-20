@@ -386,6 +386,10 @@ export class SkillsTool extends BaseTool<SkillsToolParams, ToolResult> {
     }
   }
 
+  override getVerbPhrase(_params: SkillsToolParams): string {
+    return 'Loading skill...';
+  }
+
   async execute(
     params: SkillsToolParams,
     signal: AbortSignal,

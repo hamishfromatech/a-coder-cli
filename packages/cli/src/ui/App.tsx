@@ -11,6 +11,7 @@ import {
   measureElement,
   Static,
   Text,
+  useApp,
   useStdin,
   useStdout,
 } from 'ink';
@@ -28,9 +29,6 @@ import { useConsoleMessages } from './hooks/useConsoleMessages.js';
 import { useWebBridge } from './hooks/useWebBridge.js';
 import { Header } from './components/Header.js';
 import { LoadingIndicator } from './components/LoadingIndicator.js';
-import { AutoAcceptIndicator } from './components/AutoAcceptIndicator.js';
-import { ShellModeIndicator } from './components/ShellModeIndicator.js';
-import { ShellIndicator } from './components/ShellIndicator.js';
 import { ShellOutputViewer } from './components/ShellOutputViewer.js';
 import { InputPrompt } from './components/InputPrompt.js';
 import { Footer } from './components/Footer.js';
@@ -52,9 +50,7 @@ import { DetailedMessagesDisplay } from './components/DetailedMessagesDisplay.js
 import { HistoryItemDisplay } from './components/HistoryItemDisplay.js';
 import { ToDoList } from './components/ToDoList.js';
 import { QueryQueueList } from './components/QueryQueueList.js';
-import { ContextSummaryDisplay } from './components/ContextSummaryDisplay.js';
 import { useHistory } from './hooks/useHistoryManager.js';
-import { useKeypress, isPasting } from './hooks/useKeypress.js';
 import process from 'node:process';
 import {
   getErrorMessage,
@@ -77,7 +73,8 @@ import {
 import { useGitBranchName } from './hooks/useGitBranchName.js';
 import { useTextBuffer } from './components/shared/text-buffer.js';
 import * as fs from 'fs';
-import { UpdateNotification } from './components/UpdateNotification.js';
+import { StaticHistoryArea } from './components/StaticHistoryArea.js';
+import { StatusBar } from './components/StatusBar.js';
 import {
   isProQuotaExceededError,
   isGenericQuotaExceededError,
@@ -86,10 +83,12 @@ import {
 import { checkForUpdates } from './utils/updateCheck.js';
 import ansiEscapes from 'ansi-escapes';
 import { OverflowProvider } from './contexts/OverflowContext.js';
+import { DialogProvider } from './contexts/DialogContext.js';
+import { UIStateProvider } from './contexts/UIStateContext.js';
 import { ShowMoreLines } from './components/ShowMoreLines.js';
 import { PrivacyNotice } from './privacy/PrivacyNotice.js';
-
-const CTRL_EXIT_PROMPT_DURATION_MS = 3000;
+import { useUIState } from './contexts/UIStateContext.js';
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts.js';
 
 interface AppProps {
   config: Config;
@@ -100,13 +99,18 @@ interface AppProps {
 
 export const AppWrapper = (props: AppProps) => (
   <SessionStatsProvider>
-    <App {...props} />
+    <DialogProvider>
+      <UIStateProvider>
+        <App {...props} />
+      </UIStateProvider>
+    </DialogProvider>
   </SessionStatsProvider>
 );
 
 const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
   const [updateMessage, setUpdateMessage] = useState<string | null>(null);
   const { stdout } = useStdout();
+  const { exit: inkExit } = useApp();
   const nightly = version.includes('nightly');
 
   useEffect(() => {
@@ -156,13 +160,21 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
   const [authError, setAuthError] = useState<string | null>(null);
   const [editorError, setEditorError] = useState<string | null>(null);
   const [footerHeight, setFooterHeight] = useState<number>(0);
-  const [corgiMode, setCorgiMode] = useState(false);
   const [currentModel, setCurrentModel] = useState(config.getModel());
   const [shellModeActive, setShellModeActive] = useState(false);
-  const [showErrorDetails, setShowErrorDetails] = useState<boolean>(false);
-  const [showThinking, setShowThinking] = useState<boolean>(false);
-  const [showToolDescriptions, setShowToolDescriptions] =
-    useState<boolean>(false);
+  const {
+    showErrorDetails,
+    toggleErrorDetails,
+    showThinking: showThinkingFromContext,
+    toggleThinking,
+    showToolDescriptions,
+    setShowToolDescriptions,
+    constrainHeight,
+    setConstrainHeight,
+    corgiMode,
+    toggleCorgiMode,
+  } = useUIState();
+
   const [ctrlCPressedOnce, setCtrlCPressedOnce] = useState(false);
   const ctrlCPressedOnceRef = useRef(false);
   const [quittingMessages, setQuittingMessages] = useState<
@@ -172,7 +184,6 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
   const [ctrlDPressedOnce, setCtrlDPressedOnce] = useState(false);
   const ctrlDPressedOnceRef = useRef(false);
   const ctrlDTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const [constrainHeight, setConstrainHeight] = useState<boolean>(true);
   const [showPrivacyNotice, setShowPrivacyNotice] = useState<boolean>(false);
   const [modelSwitchedFromQuotaError, setModelSwitchedFromQuotaError] =
     useState<boolean>(false);
@@ -216,7 +227,7 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
     isAuthenticating,
     cancelAuthentication,
     isManualTrigger,
-  } = useAuthCommand(settings, setAuthError, config);
+  } = useAuthCommand(settings, setAuthError, config, inkExit);
 
   const { isModelDialogOpen, openModelDialog, handleModelSelect, availableModels } =
     useModelCommand(config, settings, addItem);
@@ -274,10 +285,6 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
     handleSkillSelect,
     availableSkills,
   } = useSkillsCommand(addItem, (query) => submitQuery(query), config);
-
-  const toggleCorgiMode = useCallback(() => {
-    setCorgiMode((prev) => !prev);
-  }, []);
 
   const performMemoryRefresh = useCallback(async () => {
     addItem(
@@ -444,6 +451,7 @@ You can switch authentication methods by typing /auth`;
     showToolDescriptions,
     setQuittingMessages,
     openPrivacyNotice,
+    inkExit,
   );
   const pendingHistoryItems = [...pendingSlashCommandHistoryItems];
 
@@ -469,188 +477,6 @@ You can switch authentication methods by typing /auth`;
     isValidPath,
     shellModeActive,
   });
-
-  const handleExit = useCallback(
-    (
-      pressedOnceRef: React.MutableRefObject<boolean>,
-      setPressedOnceState: (value: boolean) => void,
-      timerRef: React.MutableRefObject<NodeJS.Timeout | null>,
-    ) => {
-      if (isPasting()) {
-        return;
-      }
-
-      if (pressedOnceRef.current) {
-        // Second press — exit
-        if (timerRef.current) {
-          clearTimeout(timerRef.current);
-        }
-        const quitCommand = slashCommands.find(
-          (cmd) => cmd.name === 'quit' || cmd.altName === 'exit',
-        );
-        if (quitCommand && quitCommand.action) {
-          quitCommand.action(commandContext, '');
-        } else {
-          process.exit(0);
-        }
-      } else {
-        // First press — show warning
-        pressedOnceRef.current = true;
-        setPressedOnceState(true);
-        if (timerRef.current) {
-          clearTimeout(timerRef.current);
-        }
-        timerRef.current = setTimeout(() => {
-          pressedOnceRef.current = false;
-          setPressedOnceState(false);
-          timerRef.current = null;
-        }, CTRL_EXIT_PROMPT_DURATION_MS);
-      }
-    },
-    [slashCommands, commandContext],
-  );
-
-  useKeypress((key) => {
-    if (process.env['DEBUG_KEYS'] === 'true') {
-      console.error(`[App] key received: name="${key.name}" ctrl=${key.ctrl} paste=${key.paste} sequence=${JSON.stringify(key.sequence)}`);
-    }
-
-    if (key.paste) {
-      return;
-    }
-
-    // When a dialog is showing, skip all App-level key handling to prevent
-    // interference with the dialog's own useInput handlers.
-    if (showHelp) {
-      if (key.name === 'escape' || key.sequence === 'q') {
-        setShowHelp(false);
-      }
-      return;
-    }
-    if (
-      isThemeDialogOpen ||
-      isAuthenticating ||
-      isAuthDialogOpen ||
-      isModelDialogOpen ||
-      isEditorDialogOpen ||
-      isSkillsDialogOpen ||
-      showPrivacyNotice
-    ) {
-      return;
-    }
-
-    let enteringConstrainHeightMode = false;
-    if (!constrainHeight) {
-      // Automatically re-enter constrain height mode if the user types
-      // anything. When constrainHeight==false, the user will experience
-      // significant flickering so it is best to disable it immediately when
-      // the user starts interacting with the app.
-      enteringConstrainHeightMode = true;
-      setConstrainHeight(true);
-    }
-
-    if (key.ctrl && key.name === 'o') {
-      setShowThinking((prev) => !prev);
-    } else if (key.ctrl && key.name === 'e') {
-      setShowErrorDetails((prev) => !prev);
-    } else if (key.ctrl && key.name === 't') {
-      const newValue = !showToolDescriptions;
-      setShowToolDescriptions(newValue);
-
-      const mcpServers = config.getMcpServers();
-      if (Object.keys(mcpServers || {}).length > 0) {
-        handleSlashCommand(newValue ? '/mcp desc' : '/mcp nodesc');
-      }
-    } else if (key.ctrl && key.name === 'c') {
-      if (process.env['DEBUG_KEYS'] === 'true') {
-        console.error('[App] Ctrl+C detected');
-      }
-      // First Ctrl+C: cancel current task if one is active
-      const isBusy =
-        streamingState === StreamingState.Responding ||
-        streamingState === StreamingState.WaitingForConfirmation;
-      if (isBusy) {
-        cancelCurrentTask();
-        // Reset the exit prompt so next double-press starts fresh
-        ctrlCPressedOnceRef.current = false;
-        setCtrlCPressedOnce(false);
-        if (ctrlCTimerRef.current) {
-          clearTimeout(ctrlCTimerRef.current);
-          ctrlCTimerRef.current = null;
-        }
-      } else {
-        // Not busy: show exit prompt (press again to exit)
-        handleExit(ctrlCPressedOnceRef, setCtrlCPressedOnce, ctrlCTimerRef);
-      }
-    } else if (key.ctrl && key.name === 'd') {
-      if (buffer.text.length > 0) {
-        // Do nothing if there is text in the input.
-        return;
-      }
-      handleExit(ctrlDPressedOnceRef, setCtrlDPressedOnce, ctrlDTimerRef);
-    } else if (key.ctrl && key.name === 's' && !enteringConstrainHeightMode) {
-      setConstrainHeight(false);
-    }
-
-    // Background shell navigation
-    if (focusMode === 'input') {
-      // In input mode, Escape returns to input (no-op but prevents accidental shell-list escape)
-      // Down arrow navigates to shell list if shells exist
-      if (key.name === 'down' && backgroundShells.length > 0) {
-        setFocusMode('shell-list');
-        return;
-      }
-    } else if (focusMode === 'shell-list') {
-      // In shell list mode
-      if (key.name === 'escape') {
-        setFocusMode('input');
-        return;
-      }
-      if (key.name === 'up') {
-        setSelectedShellId((prev) => {
-          const currentIndex = prev
-            ? backgroundShells.findIndex((s) => s.id === prev)
-            : 0;
-          const newIndex = currentIndex > 0 ? currentIndex - 1 : backgroundShells.length - 1;
-          return backgroundShells[newIndex]?.id || null;
-        });
-        return;
-      }
-      if (key.name === 'down') {
-        setSelectedShellId((prev) => {
-          const currentIndex = prev
-            ? backgroundShells.findIndex((s) => s.id === prev)
-            : 0;
-          const newIndex = (currentIndex + 1) % backgroundShells.length;
-          return backgroundShells[newIndex]?.id || null;
-        });
-        return;
-      }
-      if (key.name === 'return' || key.name === 'enter') {
-        // Enter the selected shell's view (or first shell if none selected)
-        const shellId = selectedShellId || backgroundShells[0]?.id;
-        if (shellId) {
-          setFocusMode('shell-view');
-        }
-        return;
-      }
-    } else if (focusMode === 'shell-view') {
-      // In shell view mode
-      if (key.name === 'x') {
-        // Kill the current shell
-        if (selectedShellId) {
-          killShell(selectedShellId);
-        }
-        return;
-      }
-      if (key.name === 'escape' || key.name === 'backspace' || key.name === 'return' || key.name === 'enter') {
-        // Return to input mode
-        setFocusMode('input');
-        setSelectedShellId(null);
-        return;
-      }
-    }
-  }, { isActive: true });
 
   useEffect(() => {
     if (config) {
@@ -717,6 +543,44 @@ You can switch authentication methods by typing /auth`;
     addItem,
     history,
     streamingState,
+  });
+
+  useKeyboardShortcuts({
+    showHelp,
+    setShowHelp,
+    showToolDescriptions,
+    setShowToolDescriptions,
+    constrainHeight,
+    setConstrainHeight,
+    streamingState,
+    cancelCurrentTask,
+    buffer,
+    config,
+    handleSlashCommand,
+    toggleThinking,
+    toggleErrorDetails,
+    slashCommands,
+    commandContext,
+    inkExit,
+    ctrlCPressedOnceRef,
+    setCtrlCPressedOnce,
+    ctrlCTimerRef,
+    ctrlDPressedOnceRef,
+    setCtrlDPressedOnce,
+    ctrlDTimerRef,
+    focusMode,
+    setFocusMode,
+    selectedShellId,
+    setSelectedShellId,
+    backgroundShells,
+    killShell,
+    isThemeDialogOpen,
+    isAuthDialogOpen,
+    isAuthenticating,
+    isModelDialogOpen,
+    isEditorDialogOpen,
+    isSkillsDialogOpen,
+    showPrivacyNotice,
   });
 
   const handleFinalSubmit = useCallback(
@@ -910,56 +774,18 @@ You can switch authentication methods by typing /auth`;
   return (
     <StreamingContext.Provider value={streamingState}>
       <Box flexDirection="column" marginBottom={1} width={terminalWidth} paddingX={2}>
-        {/* Move UpdateNotification outside Static so it can re-render when updateMessage changes */}
-        {updateMessage && <UpdateNotification message={updateMessage} />}
-
-        {/*
-         * The Static component is an Ink intrinsic in which there can only be 1 per application.
-         * Because of this restriction we're hacking it slightly by having a 'header' item here to
-         * ensure that it's statically rendered.
-         *
-         * Background on the Static Item: Anything in the Static component is written a single time
-         * to the console. Think of it like doing a console.log and then never using ANSI codes to
-         * clear that content ever again. Effectively it has a moving frame that every time new static
-         * content is set it'll flush content to the terminal and move the area which it's "clearing"
-         * down a notch. Without Static the area which gets erased and redrawn continuously grows.
-         */}
-        <Static
-          key={staticKey}
-          items={[
-            <Box flexDirection="column" key="header">
-              {!settings.merged.hideBanner && (
-                <Header
-                  terminalWidth={terminalWidth}
-                  version={version}
-                  nightly={nightly}
-                />
-              )}
-              {!settings.merged.hideTips && <Tips config={config} />}
-            </Box>,
-            ...(archivedCount > 0
-              ? [
-                  <Box key="archived-notice" paddingX={1}>
-                    <Text dimColor>
-                      {`[${archivedCount} earlier message${archivedCount > 1 ? 's' : ''} archived]`}
-                    </Text>
-                  </Box>,
-                ]
-              : []),
-            ...history.slice(archivedCount).map((h) => (
-              <HistoryItemDisplay
-                terminalWidth={mainAreaWidth}
-                availableTerminalHeight={staticAreaMaxItemHeight}
-                key={h.id}
-                item={h}
-                isPending={false}
-                config={config}
-              />
-            )),
-          ]}
-        >
-          {(item) => item}
-        </Static>
+        <StaticHistoryArea
+          history={history}
+          archivedCount={archivedCount}
+          staticKey={staticKey}
+          settings={settings}
+          config={config}
+          version={version}
+          nightly={nightly}
+          mainAreaWidth={mainAreaWidth}
+          staticAreaMaxItemHeight={staticAreaMaxItemHeight}
+          updateMessage={updateMessage}
+        />
         <OverflowProvider>
           <Box ref={pendingHistoryItemRef} flexDirection="column">
             {pendingHistoryItems.map((item) => {
@@ -1105,7 +931,7 @@ You can switch authentication methods by typing /auth`;
                       ? undefined
                       : thought
                   }
-                  showThinking={showThinking}
+                  showThinking={showThinkingFromContext}
                   currentLoadingPhrase={
                     config.getAccessibility()?.disableLoadingPhrases
                       ? undefined
@@ -1114,53 +940,22 @@ You can switch authentication methods by typing /auth`;
                   elapsedTime={elapsedTime}
                 />
               </Box>
-              <Box
-                marginTop={0}
-                display="flex"
-                justifyContent="space-between"
-                width="100%"
-              >
-                <Box>
-                  {process.env.GEMINI_SYSTEM_MD && (
-                    <Text color={Colors.AccentRed}>|⌐■_■| </Text>
-                  )}
-                  {ctrlCPressedOnce ? (
-                    <Text color={Colors.AccentYellow}>
-                      Press Ctrl+C again to exit.
-                    </Text>
-                  ) : ctrlDPressedOnce ? (
-                    <Text color={Colors.AccentYellow}>
-                      Press Ctrl+D again to exit.
-                    </Text>
-                  ) : (
-                    <ContextSummaryDisplay
-                      geminiMdFileCount={geminiMdFileCount}
-                      contextFileNames={contextFileNames}
-                      mcpServers={config.getMcpServers()}
-                      showToolDescriptions={showToolDescriptions}
-                    />
-                  )}
-                </Box>
-                <Box>
-                  {showAutoAcceptIndicator !== ApprovalMode.DEFAULT &&
-                    !shellModeActive && (
-                      <AutoAcceptIndicator
-                        approvalMode={showAutoAcceptIndicator}
-                      />
-                    )}
-                  {shellModeActive && <ShellModeIndicator />}
-                  {backgroundShells.length > 0 && (
-                    <ShellIndicator
-                      shells={backgroundShells}
-                      isFocused={focusMode === 'shell-list'}
-                      onSelectShell={(id) => {
-                        setSelectedShellId(id);
-                        setFocusMode('shell-view');
-                      }}
-                    />
-                  )}
-                </Box>
-              </Box>
+              <StatusBar
+                ctrlCPressedOnce={ctrlCPressedOnce}
+                ctrlDPressedOnce={ctrlDPressedOnce}
+                geminiMdFileCount={geminiMdFileCount}
+                contextFileNames={contextFileNames}
+                config={config}
+                showToolDescriptions={showToolDescriptions}
+                showAutoAcceptIndicator={showAutoAcceptIndicator}
+                shellModeActive={shellModeActive}
+                backgroundShells={backgroundShells}
+                focusMode={focusMode}
+                onSelectShell={(id) => {
+                  setSelectedShellId(id);
+                  setFocusMode('shell-view');
+                }}
+              />
 
               {showErrorDetails && (
                 <OverflowProvider>
@@ -1260,6 +1055,7 @@ You can switch authentication methods by typing /auth`;
             contextUsage={contextUsage}
             nightly={nightly}
             terminalWidth={terminalWidth}
+            approvalMode={showAutoAcceptIndicator}
           />
         </Box>
       </Box>

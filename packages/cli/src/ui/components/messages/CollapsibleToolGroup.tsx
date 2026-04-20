@@ -11,6 +11,7 @@ import { ToolMessage } from './ToolMessage.js';
 import { ToolConfirmationMessage } from './ToolConfirmationMessage.js';
 import { Colors, Semantic } from '../../colors.js';
 import { Config } from '@a-coder/core';
+import { useMinDisplayTime } from '../../hooks/useMinDisplayTime.js';
 
 interface CollapsibleToolGroupProps {
   groupId: number;
@@ -103,6 +104,10 @@ export const CollapsibleToolGroup: React.FC<CollapsibleToolGroupProps> = ({
   const { icon, color } = useMemo(() => getGroupIcon(toolCalls), [toolCalls]);
   const isComplete = useMemo(() => allToolsComplete(toolCalls), [toolCalls]);
 
+  // Hold the collapsed summary visible for at least 700ms after completion
+  // to prevent flickering when tool groups complete very quickly
+  const showCompletedHint = useMinDisplayTime(isComplete, 700);
+
   const hasPending = useMemo(
     () => !toolCalls.every((t) => t.status === ToolCallStatus.Success),
     [toolCalls]
@@ -155,7 +160,7 @@ export const CollapsibleToolGroup: React.FC<CollapsibleToolGroupProps> = ({
         {!isComplete && (
           <Text color={Semantic.Muted}> (ctrl+o to {isCollapsed ? 'expand' : 'collapse'})</Text>
         )}
-        {isComplete && (
+        {isComplete && showCompletedHint && (
           <Text color={Semantic.Muted}> (completed)</Text>
         )}
       </Box>

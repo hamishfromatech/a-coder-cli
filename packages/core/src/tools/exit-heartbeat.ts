@@ -58,6 +58,10 @@ export class ExitHeartbeatTool extends BaseTool<ExitHeartbeatToolParams, ToolRes
     return null;
   }
 
+  override getVerbPhrase(_params: ExitHeartbeatToolParams): string {
+    return 'Stopping heartbeat...';
+  }
+
   async execute(
     params: ExitHeartbeatToolParams,
     _signal: AbortSignal,

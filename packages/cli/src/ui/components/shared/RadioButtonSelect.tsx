@@ -123,7 +123,15 @@ export function RadioButtonSelect<T>({
           activeIndex < items.length &&
           items[activeIndex]
         ) {
-          onSelect(items[activeIndex].value);
+          // Wrap in Promise.resolve to handle both sync and async onConfirm
+          // callbacks. Without this, a rejected async onConfirm would be an
+          // unhandled promise rejection, leaving the tool stuck in
+          // awaiting_approval indefinitely.
+          Promise.resolve(onSelect(items[activeIndex].value)).catch(
+            (err: unknown) => {
+              console.error('[RadioButtonSelect] onConfirm rejected:', err);
+            },
+          );
         }
         stopPropagation();
         return;
@@ -136,7 +144,11 @@ export function RadioButtonSelect<T>({
         if (targetIndex >= 0 && targetIndex < currentVisibleItems.length) {
           const selectedItem = currentVisibleItems[targetIndex];
           if (selectedItem) {
-            onSelect(selectedItem.value);
+            Promise.resolve(onSelect(selectedItem.value)).catch(
+              (err: unknown) => {
+                console.error('[RadioButtonSelect] onConfirm rejected:', err);
+              },
+            );
           }
         }
         stopPropagation();

@@ -21,7 +21,6 @@ import { EditTool } from '../tools/edit.js';
 import { ShellTool } from '../tools/shell.js';
 import { WriteFileTool } from '../tools/write-file.js';
 import { WebFetchTool } from '../tools/web-fetch.js';
-import { ReadManyFilesTool } from '../tools/read-many-files.js';
 import { WriteToDosTool } from '../tools/write-todos.js';
 import { SkillsTool } from '../tools/skills.js';
 import { TaskCreateTool } from '../tools/task-create.js';
@@ -31,6 +30,7 @@ import { TaskListTool } from '../tools/task-list.js';
 import { SubagentTool } from '../tools/subagent.js';
 import { SubagentSystemConfig, DEFAULT_SUBAGENT_CONFIG } from '../tools/subagent-types.js';
 import type { SubagentConfig as SubagentSettingsConfig } from '../tools/subagent-types.js';
+import { discoverMcpTools } from '../tools/mcp-client.js';
 import { WebSearchTool } from '../tools/web-search.js';
 import { InitializeHeartbeatTool } from '../tools/initialize-heartbeat.js';
 import { ExitHeartbeatTool } from '../tools/exit-heartbeat.js';
@@ -44,6 +44,7 @@ import { FileDiscoveryService } from '../services/fileDiscoveryService.js';
 import { GitService } from '../services/gitService.js';
 import { loadServerHierarchicalMemory } from '../utils/memoryDiscovery.js';
 import { getProjectTempDir } from '../utils/paths.js';
+import { FileContentCache } from '../utils/fileContentCache.js';
 import {
   initializeTelemetry,
   DEFAULT_TELEMETRY_TARGET,
@@ -79,6 +80,7 @@ export interface ContextManagementConfig {
   warningThreshold: number;      // Default: 0.7 (70%)
   criticalThreshold: number;     // Default: 0.85 (85%)
   autoCompressThreshold: number;  // Default: 0.9 (90%)
+  microcompactThreshold: number; // Default: 0.5 (50%) — incremental cleanup
   enabled: boolean;
 }
 
@@ -213,6 +215,7 @@ export class Config {
   };
   private fileDiscoveryService: FileDiscoveryService | null = null;
   private gitService: GitService | undefined = undefined;
+  private fileContentCache: FileContentCache | null = null;
   private readonly checkpointing: boolean;
   private readonly proxy: string | undefined;
   private readonly cwd: string;
@@ -244,6 +247,7 @@ export class Config {
     warningThreshold: 0.7,
     criticalThreshold: 0.85,
     autoCompressThreshold: 0.9,
+    microcompactThreshold: 0.5,
     enabled: true,
   };
   private readonly subagentConfig: SubagentSystemConfig;
@@ -565,6 +569,17 @@ export class Config {
     return this.fileDiscoveryService;
   }
 
+  /**
+   * Returns the shared file content cache. Used by ReadFileTool to avoid
+   * redundant disk reads, and invalidated by WriteFileTool/EditTool.
+   */
+  getFileContentCache(): FileContentCache {
+    if (!this.fileContentCache) {
+      this.fileContentCache = new FileContentCache();
+    }
+    return this.fileContentCache;
+  }
+
   getUsageStatisticsEnabled(): boolean {
     return this.usageStatisticsEnabled;
   }
@@ -704,7 +719,6 @@ export class Config {
     registerCoreTool(EditTool, this);
     registerCoreTool(WriteFileTool, this);
     registerCoreTool(WebFetchTool, this);
-    registerCoreTool(ReadManyFilesTool, this);
     registerCoreTool(WriteToDosTool);
     registerCoreTool(SkillsTool, this);
     registerCoreTool(TaskCreateTool);
@@ -723,6 +737,82 @@ export class Config {
     }
 
     await registry.discoverTools();
+    return registry;
+  }
+
+  /**
+   * Create an isolated tool registry for a subagent.
+   * Registers only the tools the subagent is allowed to use and
+   * connects to any inline MCP servers defined in the agent.
+   */
+  async createSubagentToolRegistry(options: {
+    allowedTools?: string[];
+    disallowedTools?: string[];
+    blockNestedSubagents?: boolean;
+    mcpServers?: Record<string, MCPServerConfig>;
+  }): Promise<ToolRegistry> {
+    const registry = new ToolRegistry(this);
+
+    const allowedSet = new Set(options.allowedTools || []);
+    const disallowedSet = new Set(options.disallowedTools || []);
+    const allAllowed = allowedSet.has('*');
+
+    const shouldRegister = (className: string, toolName: string): boolean => {
+      if (!allAllowed && !allowedSet.has(className) && !allowedSet.has(toolName)) {
+        return false;
+      }
+      if (disallowedSet.has(className) || disallowedSet.has(toolName)) {
+        return false;
+      }
+      return true;
+    };
+
+    const toolClasses: Array<{ Class: any; name: string; args: unknown[] }> = [
+      { Class: LSTool, name: 'list_directory', args: [this] },
+      { Class: ReadFileTool, name: 'read_file', args: [this] },
+      { Class: GrepTool, name: 'grep', args: [this] },
+      { Class: GlobTool, name: 'glob', args: [this] },
+      { Class: EditTool, name: 'edit', args: [this] },
+      { Class: WriteFileTool, name: 'write_file', args: [this] },
+      { Class: WebFetchTool, name: 'web_fetch', args: [this] },
+      { Class: WriteToDosTool, name: 'WriteToDos', args: [] },
+      { Class: SkillsTool, name: 'Skills', args: [this] },
+      { Class: TaskCreateTool, name: 'TaskCreate', args: [] },
+      { Class: TaskGetTool, name: 'TaskGet', args: [] },
+      { Class: TaskUpdateTool, name: 'TaskUpdate', args: [] },
+      { Class: TaskListTool, name: 'TaskList', args: [] },
+      { Class: ShellTool, name: 'shell', args: [this] },
+      { Class: MemoryTool, name: 'save_memory', args: [] },
+      { Class: WebSearchTool, name: 'web_search', args: [] },
+    ];
+
+    // Only register SubagentTool if nested subagents are allowed
+    if (!options.blockNestedSubagents && this.subagentConfig.enabled) {
+      toolClasses.push({ Class: SubagentTool, name: 'Agent', args: [this.sessionId] });
+    }
+
+    for (const { Class, name, args } of toolClasses) {
+      const className = Class.name;
+      const staticName = Class.Name || className;
+      if (shouldRegister(className, staticName) || shouldRegister(className, name)) {
+        try {
+          registry.registerTool(new Class(...args));
+        } catch (error) {
+          console.error(`[Subagent Registry] Failed to register ${className}:`, error);
+        }
+      }
+    }
+
+    // Connect inline MCP servers if defined
+    if (options.mcpServers && Object.keys(options.mcpServers).length > 0) {
+      await discoverMcpTools(
+        options.mcpServers,
+        undefined,
+        registry,
+        this.getDebugMode(),
+      );
+    }
+
     return registry;
   }
 }

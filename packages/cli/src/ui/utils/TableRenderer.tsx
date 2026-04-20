@@ -8,6 +8,7 @@ import React from 'react';
 import { Text, Box } from 'ink';
 import chalk from 'chalk';
 import stringWidth from 'string-width';
+import { cachedStringWidth } from './lineWidthCache.js';
 
 interface TableRendererProps {
   headers: string[];
@@ -35,7 +36,7 @@ function stripMarkdown(text: string): string {
  * Appends "…" when truncation occurs (requires ≥ 4 display columns).
  */
 function truncateToWidth(text: string, maxDisplayWidth: number): string {
-  const w = stringWidth(text);
+  const w = cachedStringWidth(text);
   if (w <= maxDisplayWidth) return text;
 
   if (maxDisplayWidth <= 1) return maxDisplayWidth === 1 ? '…' : '';
@@ -47,7 +48,7 @@ function truncateToWidth(text: string, maxDisplayWidth: number): string {
   let best = '';
   while (lo <= hi) {
     const mid = Math.floor((lo + hi) / 2);
-    if (stringWidth(text.substring(0, mid)) <= budget) {
+    if (cachedStringWidth(text.substring(0, mid)) <= budget) {
       best = text.substring(0, mid);
       lo = mid + 1;
     } else {
@@ -66,7 +67,7 @@ function padToWidth(
   targetWidth: number,
   alignment: 'left' | 'center' | 'right' | null,
 ): string {
-  const w = stringWidth(text);
+  const w = cachedStringWidth(text);
   const gap = Math.max(0, targetWidth - w);
 
   if (alignment === 'center') {
@@ -102,9 +103,9 @@ export const TableRenderer: React.FC<TableRendererProps> = ({
   const plainRows = rows.map((row) => row.map(stripMarkdown));
 
   const contentWidths = plainHeaders.map((header, ci) => {
-    const h = stringWidth(header);
+    const h = cachedStringWidth(header);
     const r = Math.max(
-      ...plainRows.map((row) => stringWidth(row[ci] ?? '')),
+      ...plainRows.map((row) => cachedStringWidth(row[ci] ?? '')),
       0,
     );
     return Math.max(h, r, 1); // at least 1 column wide

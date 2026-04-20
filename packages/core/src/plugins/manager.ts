@@ -41,6 +41,12 @@ export class PluginManager {
   async initialize(): Promise<void> {
     const plugins = await this.discovery.discoverAll();
     this.registry.registerAll(plugins);
+
+    // Also load marketplaces from disk
+    // Note: This should only run once during initialization
+    if (this.marketplaces.size === 0) {
+      await this.reloadMarketplaces();
+    }
   }
 
   /**
@@ -80,11 +86,24 @@ export class PluginManager {
     // Fetch the catalog
     try {
       await this.fetchMarketplaceCatalog(config);
+      // Update ID to use the actual marketplace name if available
+      if (config.catalog && config.catalog.name) {
+        const newId = config.catalog.name;
+        config.id = newId;
+        config.name = newId;
+        this.marketplaces.set(newId, config);
+        // Also keep the original ID for backward compatibility
+        if (newId !== id) {
+          this.marketplaces.set(id, config);
+        }
+      } else {
+        this.marketplaces.set(id, config);
+      }
     } catch (error) {
       config.error = error instanceof Error ? error.message : String(error);
+      this.marketplaces.set(id, config);
     }
 
-    this.marketplaces.set(id, config);
     return config;
   }
 
@@ -145,9 +164,15 @@ export class PluginManager {
       }
     } else {
       // Clone
-      const url = repo.includes('github.com')
-        ? `https://github.com/${repo}.git`
-        : repo;
+      let url: string;
+      if (repo.includes('github.com')) {
+        url = repo;
+      } else if (repo.includes('/')) {
+        // Assume owner/repo format for GitHub
+        url = `https://github.com/${repo}.git`;
+      } else {
+        url = repo;
+      }
       execSync(`git clone ${url} ${dirName}`, { cwd: cacheDir, stdio: 'ignore' });
       if (ref && ref !== 'main') {
         execSync(`git checkout ${ref}`, { cwd: targetPath, stdio: 'ignore' });
@@ -179,6 +204,50 @@ export class PluginManager {
    */
   listMarketplaces(): MarketplaceConfig[] {
     return Array.from(this.marketplaces.values());
+  }
+
+  /**
+   * Convert marketplace source format to standard source format
+   */
+  private convertMarketplaceSource(source: any): {
+    type: 'git' | 'github' | 'gitlab' | 'bitbucket' | 'local';
+    url?: string;
+    repo?: string;
+    ref?: string;
+    path?: string;
+  } {
+    if (typeof source === 'string') {
+      // Local path format: "./plugins/plugin-name"
+      if (source.startsWith('./') || source.startsWith('/') || source.startsWith('..')) {
+        return {
+          type: 'local',
+          path: source,
+        };
+      } else {
+        // Assume it's a GitHub repo
+        return {
+          type: 'github',
+          repo: source,
+        };
+      }
+    } else if (source && typeof source === 'object') {
+      // Check if it's already the standard format
+      if ('type' in source) {
+        return source;
+      }
+      // Check if it's the marketplace format
+      if ('source' in source && source.url) {
+        if (source.source === 'url' || source.source === 'git-subdir') {
+          return {
+            type: 'github',
+            url: source.url,
+            ref: source.sha,
+          };
+        }
+      }
+    }
+
+    throw new Error(`Unsupported plugin source format: ${JSON.stringify(source)}`);
   }
 
   /**
@@ -232,17 +301,23 @@ export class PluginManager {
     try {
       let sourceRefValue: string = '';
 
-      if (entry.source.type === 'github' || entry.source.type === 'git') {
-        const repo = entry.source.repo || entry.source.url;
+      // Convert marketplace source to standard format
+      const standardSource = this.convertMarketplaceSource(entry.source);
+
+      if (standardSource.type === 'github' || standardSource.type === 'git') {
+        const repo = standardSource.repo || standardSource.url;
         if (!repo) {
           throw new Error('No repository specified');
         }
 
         sourceRefValue = repo;
 
-        const url = repo.includes('github.com')
-          ? `https://github.com/${repo}.git`
-          : repo;
+        // Check if repo is already a full URL
+        const url = repo.includes('://')
+          ? repo
+          : repo.includes('github.com')
+            ? `https://github.com/${repo}.git`
+            : repo;
 
         if (fs.existsSync(pluginDir)) {
           // Pull latest
@@ -251,11 +326,11 @@ export class PluginManager {
           execSync(`git clone ${url} ${pluginName}`, { cwd: installDir, stdio: 'ignore' });
         }
 
-        if (entry.source.ref) {
-          execSync(`git checkout ${entry.source.ref}`, { cwd: pluginDir, stdio: 'ignore' });
+        if (standardSource.ref) {
+          execSync(`git checkout ${standardSource.ref}`, { cwd: pluginDir, stdio: 'ignore' });
         }
-      } else if (entry.source.type === 'local') {
-        const srcPath = entry.source.path;
+      } else if (standardSource.type === 'local') {
+        const srcPath = standardSource.path;
         if (!srcPath || !fs.existsSync(srcPath)) {
           throw new Error('Local plugin path not found');
         }
@@ -263,7 +338,7 @@ export class PluginManager {
         // Copy recursively
         this.copyRecursive(srcPath, pluginDir);
       } else {
-        throw new Error(`Unsupported plugin source type: ${entry.source.type}`);
+        throw new Error(`Unsupported plugin source type: ${standardSource.type}`);
       }
 
       // Load and validate the plugin
@@ -278,7 +353,21 @@ export class PluginManager {
       }
 
       installedPlugin.marketplaceName = marketplaceName;
-      installedPlugin.sourceRef = sourceRefValue || entry.source.url || entry.source.path || '';
+      // Handle different source formats for sourceRef
+      let sourceRefStr = sourceRefValue;
+      if (!sourceRefStr && typeof entry.source === 'object') {
+        if ('url' in entry.source && entry.source.url) {
+          sourceRefStr = entry.source.url;
+        } else if ('path' in entry.source && entry.source.path) {
+          sourceRefStr = entry.source.path;
+        } else if ('source' in entry.source && entry.source.url) {
+          // Marketplace format
+          sourceRefStr = entry.source.url;
+        }
+      } else if (!sourceRefStr && typeof entry.source === 'string') {
+        sourceRefStr = entry.source;
+      }
+      installedPlugin.sourceRef = sourceRefStr || '';
       installedPlugin.installedAt = new Date();
 
       // Register the plugin
@@ -347,6 +436,49 @@ export class PluginManager {
    */
   async reload(): Promise<void> {
     await this.initialize();
+  }
+
+  /**
+   * Reload marketplaces from disk
+   */
+  async reloadMarketplaces(): Promise<void> {
+    const cacheDir = path.join(homedir(), SETTINGS_DIRECTORY_NAME, 'marketplaces');
+
+    if (!fs.existsSync(cacheDir)) {
+      return;
+    }
+
+    const entries = fs.readdirSync(cacheDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        const marketplacePath = path.join(cacheDir, entry.name);
+        const marketplaceConfigPath = path.join(marketplacePath, '.claude-plugin', 'marketplace.json');
+
+        if (fs.existsSync(marketplaceConfigPath)) {
+          try {
+            const content = fs.readFileSync(marketplaceConfigPath, 'utf-8');
+            const catalog = JSON.parse(content);
+            // Use the catalog name as the ID, fallback to directory name
+            const id = catalog.name || entry.name;
+
+            const config: MarketplaceConfig = {
+              id,
+              name: catalog.name || id,
+              source: PluginSource.GitHub,
+              sourceRef: marketplacePath,
+              autoUpdate: true,
+              lastFetched: fs.statSync(marketplacePath).mtime,
+              catalog: catalog,
+              error: undefined,
+            };
+
+            this.marketplaces.set(id, config);
+          } catch (error) {
+            console.warn(`Failed to load marketplace ${entry.name}:`, error);
+          }
+        }
+      }
+    }
   }
 
   /**

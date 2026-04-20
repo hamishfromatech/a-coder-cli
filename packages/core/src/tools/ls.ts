@@ -156,6 +156,14 @@ export class LSTool extends BaseTool<LSToolParams, ToolResult> {
     return shortenPath(relativePath);
   }
 
+  override userFacingNameBackgroundColor(_params: LSToolParams): string | undefined {
+    return 'AccentCyan';
+  }
+
+  override getVerbPhrase(_params: LSToolParams): string {
+    return 'Listing...';
+  }
+
   // Helper for consistent error formatting
   private errorResult(llmContent: string, returnDisplay: string): ToolResult {
     return {

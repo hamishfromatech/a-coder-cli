@@ -18,8 +18,6 @@ export const InfoMessage: React.FC<InfoMessageProps> = ({ text }) => {
     <Box
       flexDirection="row"
       marginY={1}
-      borderStyle="single"
-      borderColor={Semantic.Info}
       paddingX={1}
     >
       <Box paddingRight={1}>

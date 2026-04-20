@@ -24,39 +24,25 @@ export const UserMessage: React.FC<UserMessageProps> = ({ text, pastedInfo }) =>
 
     return (
       <Box
-        flexDirection="row"
         paddingX={1}
         marginY={1}
-        alignSelf="flex-start"
       >
-        <Box paddingRight={1}>
-          <Text bold>[YOU]</Text>
-        </Box>
-        <Box flexGrow={1}>
-          <Text color={Semantic.Muted}>
-            [Pasted text #{pasteId}{extraLines}]
-          </Text>
-        </Box>
+        <Text color={Semantic.Muted}>
+          [Pasted text #{pasteId}{extraLines}]
+        </Text>
       </Box>
     );
   }
 
-  // Normal message display
+  // Normal message display — no bracket prefix, clean text
   return (
     <Box
-      flexDirection="row"
       paddingX={1}
       marginY={1}
-      alignSelf="flex-start"
     >
-      <Box paddingRight={1}>
-        <Text bold>[YOU]</Text>
-      </Box>
-      <Box flexGrow={1}>
-        <Text wrap="wrap" color={Colors.Foreground}>
-          {text}
-        </Text>
-      </Box>
+      <Text wrap="wrap" color={Colors.Foreground}>
+        {text}
+      </Text>
     </Box>
   );
 };

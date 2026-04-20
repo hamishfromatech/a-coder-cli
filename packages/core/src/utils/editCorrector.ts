@@ -14,7 +14,6 @@ import { GeminiClient } from '../core/client.js';
 import { EditToolParams, EditTool } from '../tools/edit.js';
 import { WriteFileTool } from '../tools/write-file.js';
 import { ReadFileTool } from '../tools/read-file.js';
-import { ReadManyFilesTool } from '../tools/read-many-files.js';
 import { GrepTool } from '../tools/grep.js';
 import { LruCache } from './LruCache.js';
 import { DEFAULT_GEMINI_FLASH_MODEL } from '../config/models.js';
@@ -92,7 +91,6 @@ async function findLastEditTimestamp(
   const toolsInResp = new Set([
     WriteFileTool.Name,
     EditTool.Name,
-    ReadManyFilesTool.Name,
     GrepTool.Name,
   ]);
   // Tools that may reference the file path in their FunctionCall `args`.

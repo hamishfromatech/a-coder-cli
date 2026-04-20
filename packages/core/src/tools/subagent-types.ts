@@ -33,6 +33,9 @@ export interface AgentTypeConfig {
 
   /** System prompt to use for this agent */
   systemPrompt?: string;
+
+  /** Permission mode override for this agent type */
+  permissionMode?: SubagentPermissionMode;
 }
 
 /**
@@ -84,6 +87,12 @@ export const BUILTIN_AGENTS: Record<BuiltinAgentType, AgentTypeConfig> = {
 };
 
 /**
+ * Permission mode for subagents.
+ * Inherits from parent by default, can be overridden per-agent.
+ */
+export type SubagentPermissionMode = 'default' | 'auto-edit' | 'yolo' | 'bubble';
+
+/**
  * Source type for an agent definition
  */
 export type AgentSourceType = 'builtin' | 'user' | 'project' | 'plugin';
@@ -92,6 +101,58 @@ export type AgentSourceType = 'builtin' | 'user' | 'project' | 'plugin';
  * Isolation mode for subagents
  */
 export type IsolationMode = 'worktree' | undefined;
+
+/**
+ * Result status for subagent completion
+ */
+export type SubagentResultStatus = 'completed' | 'failed' | 'killed' | 'async_launched';
+
+/**
+ * Structured agent tool result, following Claude Code's format
+ */
+export interface AgentToolResult {
+  /** Result status */
+  status: SubagentResultStatus;
+
+  /** The original prompt/task */
+  prompt: string;
+
+  /** Unique agent ID */
+  agentId: string;
+
+  /** Main text content from the agent's final response */
+  content: string;
+
+  /** Total number of tool uses across all turns */
+  totalToolUseCount: number;
+
+  /** Total execution time in milliseconds */
+  totalDurationMs: number;
+
+  /** Token usage statistics */
+  totalTokens?: number;
+
+  /** Optional output file path for background agents */
+  outputFile?: string;
+}
+
+/**
+ * Cache-safe parameters for fork subagents.
+ * These parameters must be identical for prompt cache hits.
+ */
+export interface CacheSafeParams {
+  /** The system prompt (must be the parent's rendered system prompt for cache hits) */
+  systemPrompt?: string;
+
+  /** User context strings */
+  userContext?: Record<string, string>;
+
+  /** System context strings */
+  systemContext?: Record<string, string>;
+
+  /** Parent conversation messages for context inheritance */
+  forkContextMessages?: unknown[];
+}
 
 /**
  * Configuration for spawning a subagent
@@ -147,6 +208,24 @@ export interface SubagentConfig {
 
   /** AbortSignal for cancellation */
   abortSignal?: AbortSignal;
+
+  /** Permission mode override for this agent */
+  permissionMode?: SubagentPermissionMode;
+
+  /** Cache-safe parameters for fork subagents (context inheritance) */
+  cacheSafeParams?: CacheSafeParams;
+
+  /** Whether to avoid showing permission prompts (auto-deny for background agents) */
+  shouldAvoidPermissionPrompts?: boolean;
+
+  /** Inline MCP servers specific to this subagent (isolated from global) */
+  mcpServers?: Record<string, import('../config/config.js').MCPServerConfig>;
+
+  /** Subagent-specific persistent memory file path */
+  memoryFile?: string;
+
+  /** Block subagent from spawning further subagents (recursion protection) */
+  blockNestedSubagents?: boolean;
 }
 
 /**
@@ -351,7 +430,6 @@ export const DEFAULT_SUBAGENT_CONFIG: SubagentSystemConfig = {
   defaultTimeout: 300000, // 5 minutes
   allowedTools: [
     'read_file',
-    'read_many_files',
     'glob',
     'grep',
     'list_directory',
@@ -377,7 +455,6 @@ export const DESTRUCTIVE_TOOLS = ['Write', 'Edit', 'Bash', 'shell', 'write_file'
 export const READ_ONLY_TOOLS = [
   'Read',
   'read_file',
-  'read_many_files',
   'Glob',
   'glob',
   'Grep',

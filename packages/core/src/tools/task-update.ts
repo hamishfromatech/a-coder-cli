@@ -116,6 +116,10 @@ Important: Always mark tasks as completed when you finish them. This unblocks de
     );
   }
 
+  override getVerbPhrase(_params: TaskUpdateParams): string {
+    return 'Updating task...';
+  }
+
   async execute(
     params: TaskUpdateParams,
     signal: AbortSignal,

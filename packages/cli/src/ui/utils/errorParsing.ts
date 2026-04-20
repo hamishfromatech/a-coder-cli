@@ -161,3 +161,41 @@ export function parseAndFormatApiError(
 
   return '[API Error: An unknown error occurred. Check your network connection and try again.]';
 }
+
+/**
+ * Extracts the Retry-After delay (in milliseconds) from an error object.
+ * Returns 0 if no valid Retry-After header is found.
+ */
+export function extractRetryAfterMs(error: unknown): number {
+  if (typeof error !== 'object' || error === null) return 0;
+
+  // Check structured error with response headers
+  const err = error as Record<string, unknown>;
+  if (
+    'response' in err &&
+    typeof err.response === 'object' &&
+    err.response !== null
+  ) {
+    const response = err.response as Record<string, unknown>;
+    if (
+      'headers' in response &&
+      typeof response.headers === 'object' &&
+      response.headers !== null
+    ) {
+      const headers = response.headers as Record<string, unknown>;
+      const retryAfter = headers['retry-after'];
+      if (typeof retryAfter === 'string') {
+        const seconds = parseInt(retryAfter, 10);
+        if (!isNaN(seconds)) {
+          return seconds * 1000;
+        }
+        // Try parsing as HTTP date
+        const date = new Date(retryAfter);
+        if (!isNaN(date.getTime())) {
+          return Math.max(0, date.getTime() - Date.now());
+        }
+      }
+    }
+  }
+  return 0;
+}

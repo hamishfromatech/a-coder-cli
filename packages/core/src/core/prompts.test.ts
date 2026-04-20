@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { describe, it, expect, vi } from 'vitest';
-import { getCoreSystemPrompt } from './prompts.js';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { getCoreSystemPrompt, resetSystemPromptCache } from './prompts.js';
 import { isGitRepository } from '../utils/gitUtils.js';
 
 // Mock tool names if they are dynamically generated or complex
@@ -14,9 +14,6 @@ vi.mock('../tools/edit', () => ({ EditTool: { Name: 'replace' } }));
 vi.mock('../tools/glob', () => ({ GlobTool: { Name: 'glob' } }));
 vi.mock('../tools/grep', () => ({ GrepTool: { Name: 'search_file_content' } }));
 vi.mock('../tools/read-file', () => ({ ReadFileTool: { Name: 'read_file' } }));
-vi.mock('../tools/read-many-files', () => ({
-  ReadManyFilesTool: { Name: 'read_many_files' },
-}));
 vi.mock('../tools/shell', () => ({
   ShellTool: { Name: 'run_shell_command' },
 }));
@@ -28,6 +25,10 @@ vi.mock('../utils/gitUtils', () => ({
 }));
 
 describe('Core System Prompt (prompts.ts)', () => {
+  beforeEach(() => {
+    resetSystemPromptCache();
+  });
+
   it('should return the base prompt when no userMemory is provided', () => {
     vi.stubEnv('SANDBOX', undefined);
     const prompt = getCoreSystemPrompt();

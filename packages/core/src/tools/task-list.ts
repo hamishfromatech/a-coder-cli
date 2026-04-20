@@ -56,6 +56,10 @@ Completed tasks appear at the bottom.`,
     );
   }
 
+  override getVerbPhrase(_params: TaskListParams): string {
+    return 'Listing tasks...';
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async execute(
     params: TaskListParams,

@@ -18,6 +18,7 @@ export const useAuthCommand = (
   settings: LoadedSettings,
   setAuthError: (error: string | null) => void,
   config: Config,
+  onExit?: () => void,
 ) => {
   const [isAuthDialogOpen, setIsAuthDialogOpen] = useState(
     settings.merged.selectedAuthType === undefined ||
@@ -70,14 +71,15 @@ Logging in with Google... Please restart Gemini CLI to continue.
 ----------------------------------------------------------------
             `,
           );
-          process.exit(0);
+          onExit?.();
+          return;
         }
       }
       setIsAuthDialogOpen(false);
       setIsManualTrigger(false);
       setAuthError(null);
     },
-    [settings, setAuthError, config],
+    [settings, setAuthError, config, onExit],
   );
 
   const cancelAuthentication = useCallback(() => {

@@ -5,8 +5,59 @@
  */
 
 import { SlashCommand, SlashCommandActionReturn, type CommandContext, CommandCategory } from './types.js';
-import { PluginManager } from '@a-coder/core';
-import { PluginScope, PluginState } from '@a-coder/core';
+import { PluginManager, PluginScope, PluginState } from '@a-coder/core';
+
+/**
+ * Fuzzy match a query against a string
+ */
+function fuzzyMatch(query: string, target: string): boolean {
+  const lowerQuery = query.toLowerCase();
+  const lowerTarget = target.toLowerCase();
+  let queryIndex = 0;
+
+  for (let i = 0; i < lowerTarget.length && queryIndex < lowerQuery.length; i++) {
+    if (lowerTarget[i] === lowerQuery[queryIndex]) {
+      queryIndex++;
+    }
+  }
+
+  return queryIndex === lowerQuery.length;
+}
+
+/**
+ * Completion function for plugin install command
+ * Provides fuzzy search suggestions for plugin names from all marketplaces
+ */
+async function pluginInstallCompletion(
+  context: CommandContext,
+  partialArg: string,
+): Promise<string[]> {
+  try {
+    const manager = new PluginManager();
+    await manager.initialize();
+
+    const marketplaces = manager.listMarketplaces();
+    const allPluginNames: string[] = [];
+
+    for (const mp of marketplaces) {
+      if (mp.catalog && mp.catalog.plugins) {
+        for (const plugin of mp.catalog.plugins) {
+          allPluginNames.push(`${plugin.name}@${mp.id}`);
+        }
+      }
+    }
+
+    if (!partialArg || partialArg.trim() === '') {
+      return allPluginNames.slice(0, 20);
+    }
+
+    // Filter using fuzzy match
+    const matches = allPluginNames.filter((name) => fuzzyMatch(partialArg, name));
+    return matches.slice(0, 50);
+  } catch (error) {
+    return [];
+  }
+}
 
 /**
  * Plugin management command
@@ -17,24 +68,60 @@ export const pluginCommand: SlashCommand = {
   category: 'plugin' as CommandCategory,
   keywords: ['plugins', 'install', 'marketplace', 'extension', 'add-on'],
   argumentHint: '<subcommand> [args]',
-  examples: ['/plugin list', '/plugin install my-plugin@marketplace', '/plugin marketplace list'],
+  examples: ['/plugin list', '/plugin install <tab to autocomplete>', '/plugin marketplace list'],
   subCommands: [
     {
       name: 'discover',
       description: 'Browse available plugins from marketplaces',
       action: async (context: CommandContext, args: string): Promise<SlashCommandActionReturn> => {
-        // In a full implementation, this would show an interactive UI
-        // For now, we'll just list available plugins from marketplaces
-        return {
-          type: 'message',
-          messageType: 'info',
-          content: 'Plugin discovery - use /plugin marketplace list to see available marketplaces',
-        };
+        try {
+          const { PluginManager } = await import('@a-coder/core');
+          const manager = new PluginManager();
+          await manager.initialize();
+
+          const marketplaces = manager.listMarketplaces();
+
+          if (marketplaces.length === 0) {
+            return {
+              type: 'message',
+              messageType: 'info',
+              content: 'No marketplaces configured. Add one with /plugin marketplace add <source>',
+            };
+          }
+
+          let output = 'Available plugins in marketplaces:\n\n';
+          let totalPlugins = 0;
+
+          marketplaces.forEach((mp) => {
+            if (mp.catalog && mp.catalog.plugins) {
+              output += `${mp.name} (${mp.catalog.plugins.length} plugins):\n`;
+              mp.catalog.plugins.slice(0, 50).forEach((plugin) => {
+                output += `  - ${plugin.name}: ${plugin.description}\n`;
+              });
+              totalPlugins += mp.catalog.plugins.length;
+              output += '\n';
+            }
+          });
+
+          return {
+            type: 'message',
+            messageType: 'info',
+            content: output,
+          };
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          return {
+            type: 'message',
+            messageType: 'error',
+            content: `Failed to list available plugins: ${errorMessage}`,
+          };
+        }
       },
     },
     {
       name: 'install',
       description: 'Install a plugin from a marketplace',
+      completion: pluginInstallCompletion,
       action: async (context: CommandContext, args: string): Promise<SlashCommandActionReturn> => {
         const { config } = context.services;
 
@@ -73,7 +160,18 @@ export const pluginCommand: SlashCommand = {
 
           // Check if marketplace exists
           const marketplaces = manager.listMarketplaces();
-          if (!marketplaces.find((m) => m.id === marketplaceName)) {
+          let marketplace = marketplaces.find((m) => m.id === marketplaceName);
+
+          // If not found by exact ID, try to find by name or partial match
+          if (!marketplace) {
+            marketplace = marketplaces.find((m) =>
+              m.name === marketplaceName ||
+              m.id.includes(marketplaceName) ||
+              marketplaceName.includes(m.id)
+            );
+          }
+
+          if (!marketplace) {
             return {
               type: 'message',
               messageType: 'error',
@@ -300,9 +398,10 @@ export const pluginCommand: SlashCommand = {
               const manager = new PluginManager();
               await manager.initialize();
 
-              const sourceRef = args.trim();
+              const sourceRefOriginal = args.trim();
               let source: typeof PluginSource[keyof typeof PluginSource];
               let id: string;
+              let sourceRef = sourceRefOriginal;
 
               // Determine source type
               if (sourceRef.includes('github.com')) {
@@ -317,9 +416,11 @@ export const pluginCommand: SlashCommand = {
                 source = PluginSource.Local;
                 id = sourceRef.replace(/[^a-zA-Z0-9-]/g, '-');
               } else if (sourceRef.includes('/')) {
-                // Assume owner/repo format for GitHub
+                // Transform owner/repo format to GitHub URL
                 source = PluginSource.GitHub;
-                id = sourceRef;
+                // Use a normalized ID (replace special chars with dashes)
+                id = sourceRef.replace(/[^a-zA-Z0-9-]/g, '-');
+                sourceRef = `https://github.com/${sourceRef}`;
               } else {
                 return {
                   type: 'message',
@@ -392,6 +493,51 @@ export const pluginCommand: SlashCommand = {
                 type: 'message',
                 messageType: 'error',
                 content: `Failed to list marketplaces: ${errorMessage}`,
+              };
+            }
+          },
+        },
+        {
+          name: 'reload',
+          description: 'Reload marketplaces from disk',
+          action: async (context: CommandContext, args: string): Promise<SlashCommandActionReturn> => {
+            try {
+              const { PluginManager } = await import('@a-coder/core');
+              const manager = new PluginManager();
+              await manager.initialize();
+
+              await manager.reloadMarketplaces();
+
+              const marketplaces = manager.listMarketplaces();
+
+              if (marketplaces.length === 0) {
+                return {
+                  type: 'message',
+                  messageType: 'info',
+                  content: 'No marketplaces found on disk.',
+                };
+              }
+
+              let output = 'Marketplaces reloaded from disk:\n\n';
+              marketplaces.forEach((m) => {
+                const status = m.error ? 'Error' : m.catalog ? 'Ready' : 'Loading';
+                output += `  - ${m.name} (${m.source}): ${status}\n`;
+                if (m.catalog) {
+                  output += `    Plugins: ${m.catalog.plugins.length}\n`;
+                }
+              });
+
+              return {
+                type: 'message',
+                messageType: 'info',
+                content: output,
+              };
+            } catch (error) {
+              const errorMessage = error instanceof Error ? error.message : String(error);
+              return {
+                type: 'message',
+                messageType: 'error',
+                content: `Failed to reload marketplaces: ${errorMessage}`,
               };
             }
           },

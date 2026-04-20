@@ -139,6 +139,12 @@ Signal: Signal number or \`(none)\` if no signal was received.
 export class ToolRegistry {
   private tools: Map<string, Tool> = new Map();
   private config: Config;
+  /**
+   * Cached tool schema declarations. Invalidated when tools are added/removed.
+   * Sorted with built-in tools first (stable prefix for prompt cache hits),
+   * then discovered/MCP tools.
+   */
+  private schemaCache: FunctionDeclaration[] | null = null;
 
   constructor(config: Config) {
     this.config = config;
@@ -156,6 +162,7 @@ export class ToolRegistry {
       );
     }
     this.tools.set(tool.name, tool);
+    this.schemaCache = null; // Invalidate cache on mutation
     if (this.config.getDebugMode()) {
       console.log(`[ToolRegistry Debug] Registered tool: "${tool.name}" (displayName: "${tool.displayName}")`);
     }
@@ -167,13 +174,18 @@ export class ToolRegistry {
    * trying to call tools that are no longer available.
    */
   unregisterToolsByServer(serverName: string): void {
+    let changed = false;
     for (const [name, tool] of this.tools.entries()) {
       if (tool instanceof DiscoveredMCPTool && tool.serverName === serverName) {
         this.tools.delete(name);
+        changed = true;
         if (this.config.getDebugMode()) {
           console.log(`[ToolRegistry Debug] Unregistered tool: "${name}" from disconnected server "${serverName}"`);
         }
       }
+    }
+    if (changed) {
+      this.schemaCache = null; // Invalidate cache on mutation
     }
   }
 
@@ -188,6 +200,7 @@ export class ToolRegistry {
         this.tools.delete(tool.name);
       }
     }
+    this.schemaCache = null; // Invalidate cache after removing discovered tools
 
     await this.discoverAndRegisterToolsFromCommand();
 
@@ -324,16 +337,36 @@ export class ToolRegistry {
 
   /**
    * Retrieves the list of tool schemas (FunctionDeclaration array).
-   * Extracts the declarations from the ToolListUnion structure.
-   * Includes discovered (vs registered) tools if configured.
+   * Returns a cached, stable ordering: built-in tools sorted alphabetically
+   * first, then discovered/MCP tools sorted alphabetically. This ordering
+   * ensures a contiguous stable prefix for prompt cache hits even when
+   * dynamic tools are added or removed.
+   *
    * @returns An array of FunctionDeclarations.
    */
   getFunctionDeclarations(): FunctionDeclaration[] {
-    const declarations: FunctionDeclaration[] = [];
-    this.tools.forEach((tool) => {
-      declarations.push(tool.schema);
-    });
-    return declarations;
+    if (this.schemaCache !== null) {
+      return this.schemaCache;
+    }
+
+    const builtin: FunctionDeclaration[] = [];
+    const discovered: FunctionDeclaration[] = [];
+
+    for (const tool of this.tools.values()) {
+      const entry = tool.schema;
+      if (tool instanceof DiscoveredTool || tool instanceof DiscoveredMCPTool) {
+        discovered.push(entry);
+      } else {
+        builtin.push(entry);
+      }
+    }
+
+    // Stable sort: built-in tools first (alphabetical), then discovered/MCP tools (alphabetical)
+    builtin.sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''));
+    discovered.sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''));
+
+    this.schemaCache = [...builtin, ...discovered];
+    return this.schemaCache;
   }
 
   /**

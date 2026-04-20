@@ -82,6 +82,7 @@ export const useSlashCommandProcessor = (
   showToolDescriptions: boolean = false,
   setQuittingMessages: (message: HistoryItem[]) => void,
   openPrivacyNotice: () => void,
+  onExit?: () => void,
 ) => {
   const session = useSessionStats();
   const [commands, setCommands] = useState<SlashCommand[]>([]);
@@ -868,7 +869,7 @@ For more information, see: \u001b[36mhttps://goo.gle/a-coder-cli-docs-mcp\u001b[
           ]);
 
           setTimeout(() => {
-            process.exit(0);
+            onExit?.();
           }, 100);
         },
       },

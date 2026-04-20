@@ -7,6 +7,7 @@
 import React, { Fragment, useEffect, useId } from 'react';
 import { Box, Text } from 'ink';
 import stringWidth from 'string-width';
+import { cachedStringWidth } from '../../utils/lineWidthCache.js';
 import { Semantic } from '../../colors.js';
 import { toCodePoints } from '../../utils/textUtils.js';
 import { useOverflowActions } from '../../contexts/OverflowContext.js';
@@ -397,7 +398,7 @@ function layoutInkElementAsStyledText(
   // First, lay out the non-wrapping segments
   row.noWrapSegments.forEach((segment) => {
     nonWrappingContent.push(segment);
-    noWrappingWidth += stringWidth(segment.text);
+    noWrappingWidth += cachedStringWidth(segment.text);
   });
 
   if (row.segments.length === 0) {
@@ -482,7 +483,7 @@ function layoutInkElementAsStyledText(
 
       words.forEach((word) => {
         if (!word) return;
-        const wordWidth = stringWidth(word);
+        const wordWidth = cachedStringWidth(word);
 
         if (
           wrappingPartWidth + wordWidth > availableWidth &&
@@ -502,7 +503,7 @@ function layoutInkElementAsStyledText(
             let splitIndex = 0;
             let currentSplitWidth = 0;
             for (const char of remainingWordAsCodePoints) {
-              const charWidth = stringWidth(char);
+              const charWidth = cachedStringWidth(char);
               if (
                 wrappingPartWidth + currentSplitWidth + charWidth >
                 availableWidth
@@ -518,7 +519,7 @@ function layoutInkElementAsStyledText(
                 .slice(0, splitIndex)
                 .join('');
               addToWrappingPart(part, segment.props);
-              wrappingPartWidth += stringWidth(part);
+              wrappingPartWidth += cachedStringWidth(part);
               remainingWordAsCodePoints =
                 remainingWordAsCodePoints.slice(splitIndex);
             }

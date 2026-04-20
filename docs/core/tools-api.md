@@ -37,7 +37,6 @@ The core comes with a suite of pre-defined tools, typically found in `packages/c
   - `GrepTool` (`grep.ts`): Searches for patterns in files.
   - `GlobTool` (`glob.ts`): Finds files matching glob patterns.
   - `EditTool` (`edit.ts`): Performs in-place modifications to files (often requiring confirmation).
-  - `ReadManyFilesTool` (`read-many-files.ts`): Reads and concatenates content from multiple files or glob patterns (used by the `@` command in CLI).
 - **Execution Tools:**
   - `ShellTool` (`shell.ts`): Executes arbitrary shell commands (requires careful sandboxing and user confirmation).
 - **Web Tools:**

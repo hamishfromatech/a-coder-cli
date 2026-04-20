@@ -28,9 +28,9 @@ export interface RetryOptions {
 }
 
 const DEFAULT_RETRY_OPTIONS: RetryOptions = {
-  maxAttempts: 5,
-  initialDelayMs: 5000,
-  maxDelayMs: 30000, // 30 seconds
+  maxAttempts: 10,
+  initialDelayMs: 1000,
+  maxDelayMs: 60000, // 60 seconds
   shouldRetry: defaultShouldRetry,
 };
 
@@ -66,9 +66,7 @@ export async function retryWithBackoff<T>(
   options?: Partial<RetryOptions>,
 ): Promise<T> {
   const {
-    maxAttempts,
     initialDelayMs,
-    maxDelayMs,
     onPersistent429,
     authType,
     shouldRetry,
@@ -79,9 +77,19 @@ export async function retryWithBackoff<T>(
     ...options,
   };
 
+  // Increase patience for non-interactive/CI sessions only when using defaults
+  const isInteractive = process.stdout.isTTY;
+  const maxAttempts = isInteractive
+    ? (options?.maxAttempts ?? DEFAULT_RETRY_OPTIONS.maxAttempts)
+    : (options?.maxAttempts ?? Math.max(DEFAULT_RETRY_OPTIONS.maxAttempts, 15));
+  const maxDelayMs = isInteractive
+    ? (options?.maxDelayMs ?? DEFAULT_RETRY_OPTIONS.maxDelayMs)
+    : (options?.maxDelayMs ?? Math.max(DEFAULT_RETRY_OPTIONS.maxDelayMs, 120_000));
+
   let attempt = 0;
   let currentDelay = initialDelayMs;
   let consecutive429Count = 0;
+  let consecutive529Count = 0;
 
   while (attempt < maxAttempts) {
     attempt++;
@@ -148,6 +156,27 @@ export async function retryWithBackoff<T>(
         consecutive429Count++;
       } else {
         consecutive429Count = 0;
+      }
+
+      // Track consecutive 529 (overloaded) errors — trigger fallback after 3
+      if (errorStatus === 529) {
+        consecutive529Count++;
+        if (consecutive529Count >= 3 && onPersistent429) {
+          try {
+            const fallbackModel = await onPersistent429(authType, error);
+            if (fallbackModel !== false && fallbackModel !== null) {
+              attempt = 0;
+              consecutive529Count = 0;
+              consecutive429Count = 0;
+              currentDelay = initialDelayMs;
+              continue;
+            }
+          } catch {
+            // Fallback handler failed, continue with retry
+          }
+        }
+      } else {
+        consecutive529Count = 0;
       }
 
       // Check for stale connection — notify caller and use short delay

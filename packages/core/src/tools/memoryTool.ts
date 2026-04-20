@@ -109,6 +109,10 @@ export class MemoryTool extends BaseTool<SaveMemoryParams, ToolResult> {
     );
   }
 
+  override getVerbPhrase(_params: SaveMemoryParams): string {
+    return 'Remembering...';
+  }
+
   static async performAddMemoryEntry(
     text: string,
     memoryFilePath: string,

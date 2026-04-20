@@ -175,6 +175,14 @@ export class GlobTool extends BaseTool<GlobToolParams, ToolResult> {
     return description;
   }
 
+  override userFacingNameBackgroundColor(_params: GlobToolParams): string | undefined {
+    return 'AccentCyan';
+  }
+
+  override getVerbPhrase(_params: GlobToolParams): string {
+    return 'Searching...';
+  }
+
   /**
    * Executes the glob search with the given parameters
    */

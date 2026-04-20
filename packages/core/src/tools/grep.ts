@@ -340,6 +340,14 @@ export class GrepTool extends BaseTool<GrepToolParams, ToolResult> {
     return description;
   }
 
+  override userFacingNameBackgroundColor(_params: GrepToolParams): string | undefined {
+    return 'AccentCyan';
+  }
+
+  override getVerbPhrase(_params: GrepToolParams): string {
+    return 'Searching...';
+  }
+
   /**
    * Performs the actual search using the prioritized strategies.
    * @param options Search options including pattern, absolute path, and include glob.

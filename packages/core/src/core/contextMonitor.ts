@@ -10,12 +10,14 @@ export interface ContextMonitorConfig {
   warningThreshold: number;      // Default: 0.7 (70%)
   criticalThreshold: number;     // Default: 0.85 (85%)
   autoCompressThreshold: number;  // Default: 0.9 (90%)
+  microcompactThreshold: number; // Default: 0.5 (50%) — incremental cleanup
 }
 
 export enum ContextEvent {
   WARNING = 'warning',       // Approaching limit
   CRITICAL = 'critical',     // Near limit, warn user
-  AUTO_COMPRESS = 'auto_compress' // Trigger auto-compression
+  AUTO_COMPRESS = 'auto_compress', // Trigger auto-compression
+  MICRO_COMPACT = 'micro_compact', // Incremental context cleanup
 }
 
 export interface ContextUsageInfo {
@@ -29,6 +31,7 @@ const DEFAULT_CONFIG: ContextMonitorConfig = {
   warningThreshold: 0.7,
   criticalThreshold: 0.85,
   autoCompressThreshold: 0.9,
+  microcompactThreshold: 0.5,
 };
 
 export class ContextMonitor extends EventEmitter {
@@ -66,6 +69,14 @@ export class ContextMonitor extends EventEmitter {
     if (percentage >= this.config.warningThreshold) {
       return {
         event: ContextEvent.WARNING,
+        currentTokens,
+        tokenLimit,
+        percentage,
+      };
+    }
+    if (percentage >= this.config.microcompactThreshold) {
+      return {
+        event: ContextEvent.MICRO_COMPACT,
         currentTokens,
         tokenLimit,
         percentage,

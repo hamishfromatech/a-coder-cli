@@ -5,9 +5,10 @@
  */
 
 import React from 'react';
-import { Text, Box } from 'ink';
+import { Box, Text } from 'ink';
 import { MarkdownDisplay } from '../../utils/MarkdownDisplay.js';
-import { Colors, Semantic } from '../../colors.js';
+import { Semantic } from '../../colors.js';
+import { MessageResponse } from '../shared/MessageResponse.js';
 
 interface GeminiMessageProps {
   text: string;
@@ -23,22 +24,17 @@ const GeminiMessageInternal: React.FC<GeminiMessageProps> = ({
   terminalWidth,
 }) => {
   return (
-    <Box
-      flexDirection="row"
-      paddingX={1}
-      marginY={1}
-    >
-      <Box paddingRight={1}>
-        <Text bold color={Semantic.Primary}>[AI]</Text>
-      </Box>
-      <Box flexGrow={1} flexDirection="column">
-        <MarkdownDisplay
-          text={text}
-          isPending={isPending}
-          availableTerminalHeight={availableTerminalHeight}
-          terminalWidth={terminalWidth}
-        />
-      </Box>
+    <Box flexDirection="column" marginY={1}>
+      <MessageResponse>
+        <Box flexDirection="column">
+          <MarkdownDisplay
+            text={text}
+            isPending={isPending}
+            availableTerminalHeight={availableTerminalHeight}
+            terminalWidth={terminalWidth - 5}
+          />
+        </Box>
+      </MessageResponse>
     </Box>
   );
 };

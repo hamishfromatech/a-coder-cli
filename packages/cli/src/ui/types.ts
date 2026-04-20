@@ -89,6 +89,7 @@ export type HistoryItemInfo = HistoryItemBase & {
 export type HistoryItemError = HistoryItemBase & {
   type: 'error';
   text: string;
+  retryAfterMs?: number;
 };
 
 export type HistoryItemAbout = HistoryItemBase & {
@@ -125,6 +126,16 @@ export type HistoryItemToolGroup = HistoryItemBase & {
   collapsible?: boolean;
 };
 
+export type HistoryItemCollapsedReadGroup = HistoryItemBase & {
+  type: 'collapsed_read_group';
+  summary: string;
+  toolCount: number;
+  toolTypes: string[];
+  latestHint: string;
+  toolNames: string[];
+  isExpanded: boolean;
+};
+
 export type HistoryItemUserShell = HistoryItemBase & {
   type: 'user_shell';
   text: string;
@@ -148,6 +159,7 @@ export type HistoryItemWithoutId =
   | HistoryItemError
   | HistoryItemAbout
   | HistoryItemToolGroup
+  | HistoryItemCollapsedReadGroup
   | HistoryItemStats
   | HistoryItemModelStats
   | HistoryItemToolStats

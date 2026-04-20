@@ -22,7 +22,7 @@ import {
   Status as CoreStatus,
   EditorType,
 } from '@a-coder/core';
-import { useCallback, useState, useMemo } from 'react';
+import { useCallback, useState, useMemo, useRef } from 'react';
 import {
   HistoryItemToolGroup,
   IndividualToolCallDisplay,
@@ -75,41 +75,75 @@ export function useReactToolScheduler(
     TrackedToolCall[]
   >([]);
 
+  // Debounce tool output updates to reduce React re-renders
+  const TOOL_OUTPUT_DEBOUNCE_MS = 50;
+  const outputDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingOutputUpdatesRef = useRef<Map<string, string>>(new Map());
+
+  const flushOutputUpdates = useCallback(() => {
+    if (pendingOutputUpdatesRef.current.size === 0) return;
+
+    const updates = new Map(pendingOutputUpdatesRef.current);
+    pendingOutputUpdatesRef.current.clear();
+
+    setPendingHistoryItem((prevItem) => {
+      if (prevItem?.type === 'tool_group') {
+        return {
+          ...prevItem,
+          tools: prevItem.tools.map((toolDisplay) => {
+            const update = updates.get(toolDisplay.callId);
+            if (update !== undefined && toolDisplay.status === ToolCallStatus.Executing) {
+              return { ...toolDisplay, resultDisplay: update };
+            }
+            return toolDisplay;
+          }),
+        };
+      }
+      return prevItem;
+    });
+
+    setToolCallsForDisplay((prevCalls) =>
+      prevCalls.map((tc) => {
+        if (tc.status === 'executing') {
+          const update = updates.get(tc.request.callId);
+          if (update !== undefined) {
+            const executingTc = tc as TrackedExecutingToolCall;
+            return { ...executingTc, liveOutput: update };
+          }
+        }
+        return tc;
+      }),
+    );
+  }, [setPendingHistoryItem]);
+
   const outputUpdateHandler: OutputUpdateHandler = useCallback(
     (toolCallId, outputChunk) => {
-      setPendingHistoryItem((prevItem) => {
-        if (prevItem?.type === 'tool_group') {
-          return {
-            ...prevItem,
-            tools: prevItem.tools.map((toolDisplay) =>
-              toolDisplay.callId === toolCallId &&
-              toolDisplay.status === ToolCallStatus.Executing
-                ? { ...toolDisplay, resultDisplay: outputChunk }
-                : toolDisplay,
-            ),
-          };
-        }
-        return prevItem;
-      });
+      // Buffer the update
+      pendingOutputUpdatesRef.current.set(toolCallId, outputChunk);
 
-      setToolCallsForDisplay((prevCalls) =>
-        prevCalls.map((tc) => {
-          if (tc.request.callId === toolCallId && tc.status === 'executing') {
-            const executingTc = tc as TrackedExecutingToolCall;
-            return { ...executingTc, liveOutput: outputChunk };
-          }
-          return tc;
-        }),
-      );
+      // Debounce the flush
+      if (outputDebounceTimerRef.current) {
+        clearTimeout(outputDebounceTimerRef.current);
+      }
+      outputDebounceTimerRef.current = setTimeout(() => {
+        outputDebounceTimerRef.current = null;
+        flushOutputUpdates();
+      }, TOOL_OUTPUT_DEBOUNCE_MS);
     },
-    [setPendingHistoryItem],
+    [flushOutputUpdates],
   );
 
   const allToolCallsCompleteHandler: AllToolCallsCompleteHandler = useCallback(
     (completedToolCalls) => {
+      // Flush any pending output updates before completion
+      if (outputDebounceTimerRef.current) {
+        clearTimeout(outputDebounceTimerRef.current);
+        outputDebounceTimerRef.current = null;
+      }
+      flushOutputUpdates();
       onComplete(completedToolCalls);
     },
-    [onComplete],
+    [onComplete, flushOutputUpdates],
   );
 
   const toolCallsUpdateHandler: ToolCallsUpdateHandler = useCallback(
@@ -156,7 +190,13 @@ export function useReactToolScheduler(
       request: ToolCallRequestInfo | ToolCallRequestInfo[],
       signal: AbortSignal,
     ) => {
-      scheduler.schedule(request, signal);
+      scheduler.schedule(request, signal).catch((error: unknown) => {
+        // Prevent unhandled promise rejection. schedule() can throw if
+        // called while other tools are still running, or if tool validation
+        // fails. Without this catch, the error is silently swallowed and
+        // tools can be left in 'validating' state indefinitely.
+        console.error('[ToolScheduler] schedule() failed:', error);
+      });
     },
     [scheduler],
   );
@@ -253,7 +293,7 @@ function generateFallbackDescription(
  * Transforms `TrackedToolCall` objects into `HistoryItemToolGroup` objects for UI display.
  */
 const READ_ONLY_TOOL_NAMES = new Set([
-  'read_file', 'read_many_files', 'read', 'glob', 'grep',
+  'read_file', 'read', 'glob', 'grep',
   'list_directory', 'ls', 'web_fetch', 'web_search',
 ]);
 

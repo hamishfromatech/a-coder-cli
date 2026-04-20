@@ -44,7 +44,6 @@ vi.mock('../tools/edit');
 vi.mock('../tools/shell');
 vi.mock('../tools/write-file');
 vi.mock('../tools/web-fetch');
-vi.mock('../tools/read-many-files');
 vi.mock('../tools/memoryTool', () => ({
   MemoryTool: vi.fn(),
   setGeminiMdFilename: vi.fn(),

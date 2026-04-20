@@ -9,6 +9,7 @@ import { Dirent } from 'fs';
 import * as path from 'path';
 import { getErrorMessage, isNodeError } from './errors.js';
 import { FileDiscoveryService } from '../services/fileDiscoveryService.js';
+import { memoizeWithTTL } from './memoize.js';
 
 const MAX_ITEMS = 200;
 const TRUNCATION_INDICATOR = '...';
@@ -285,6 +286,18 @@ function formatStructure(
  * @param options Optional configuration settings.
  * @returns A promise resolving to the formatted folder structure string.
  */
+/**
+ * Cached version of getFolderStructure. The folder structure rarely changes
+ * mid-query, so a 5-second TTL avoids redundant filesystem walks while still
+ * picking up changes reasonably quickly.
+ */
+export const getCachedFolderStructure = memoizeWithTTL(
+  getFolderStructure,
+  5000,
+  (directory: string, options?: FolderStructureOptions) =>
+    `${directory}:${options?.maxItems ?? 200}:${options?.respectGitIgnore ?? true}`,
+);
+
 export async function getFolderStructure(
   directory: string,
   options?: FolderStructureOptions,

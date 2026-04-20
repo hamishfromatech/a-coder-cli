@@ -27,6 +27,7 @@ import {
 import { DEFAULT_DIFF_OPTIONS } from './diffOptions.js';
 import { ModifiableTool, ModifyContext } from './modifiable-tool.js';
 import { getSpecificMimeType, isWithinRoot } from '../utils/fileUtils.js';
+import { normalizePathForCache } from '../utils/fileContentCache.js';
 import {
   recordFileOperationMetric,
   FileOperation,
@@ -134,6 +135,14 @@ export class WriteFileTool
       this.config.getTargetDir(),
     );
     return `Writing to ${shortenPath(relativePath)}`;
+  }
+
+  override userFacingNameBackgroundColor(_params: WriteFileToolParams): string | undefined {
+    return 'AccentGreen';
+  }
+
+  override getVerbPhrase(_params: WriteFileToolParams): string {
+    return 'Writing...';
   }
 
   /**
@@ -291,6 +300,9 @@ export class WriteFileTool
           extension,
         );
       }
+
+      // Invalidate file content cache since we just modified this file
+      this.config.getFileContentCache().invalidate(normalizePathForCache(params.file_path));
 
       return {
         llmContent: llmSuccessMessageParts.join(' '),

@@ -87,6 +87,10 @@ Use TaskUpdate to mark tasks as in_progress or completed, and to manage dependen
     );
   }
 
+  override getVerbPhrase(_params: TaskCreateParams): string {
+    return 'Creating task...';
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async execute(
     params: TaskCreateParams,

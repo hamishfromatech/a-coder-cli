@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
 import { Box, Text } from 'ink';
 import { Colors, Semantic } from '../colors.js';
 import { SuggestionsDisplay } from './SuggestionsDisplay.js';
@@ -13,8 +13,10 @@ import { TextBuffer } from './shared/text-buffer.js';
 import { cpSlice, cpLen } from '../utils/textUtils.js';
 import chalk from 'chalk';
 import stringWidth from 'string-width';
+import { cachedStringWidth } from '../utils/lineWidthCache.js';
 import { useShellHistory } from '../hooks/useShellHistory.js';
 import { useCompletion } from '../hooks/useCompletion.js';
+import { useReverseSearch } from '../hooks/useReverseSearch.js';
 import { useKeypress, Key, stopPropagation } from '../hooks/useKeypress.js';
 import { isAtCommand, isSlashCommand } from '../utils/commandUtils.js';
 import { CommandContext, SlashCommand } from '../commands/types.js';
@@ -71,61 +73,18 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
   const [justNavigatedHistory, setJustNavigatedHistory] = useState(false);
   const [backgroundMode, setBackgroundMode] = useState(false);
 
-  // Reverse search (Ctrl+R) state
-  const [reverseSearchActive, setReverseSearchActive] = useState(false);
-  const [reverseSearchQuery, setReverseSearchQuery] = useState('');
-  const [reverseSearchMatchIndex, setReverseSearchMatchIndex] = useState(0);
-  const reverseSearchMatchesRef = useRef<string[]>([]);
-  const reverseSearchQueryRef = useRef('');
-
-  const reverseSearchMatches = useMemo(() => {
-    if (!reverseSearchQuery) return userMessages.filter((m) => m.trim()).slice(0, 20);
-    const q = reverseSearchQuery.toLowerCase();
-    // Search from newest to oldest, deduplicate
-    const seen = new Set<string>();
-    const matches: string[] = [];
-    for (let i = userMessages.length - 1; i >= 0 && matches.length < 20; i--) {
-      const msg = userMessages[i];
-      if (msg.toLowerCase().includes(q) && !seen.has(msg)) {
-        seen.add(msg);
-        matches.push(msg);
-      }
-    }
-    return matches;
-  }, [reverseSearchQuery, userMessages]);
-
-  const enterReverseSearch = useCallback(() => {
-    setReverseSearchActive(true);
-    setReverseSearchQuery('');
-    setReverseSearchMatchIndex(0);
-    reverseSearchQueryRef.current = '';
-  }, []);
-
-  const exitReverseSearch = useCallback(() => {
-    setReverseSearchActive(false);
-    setReverseSearchQuery('');
-    setReverseSearchMatchIndex(0);
-    reverseSearchMatchesRef.current = [];
-    reverseSearchQueryRef.current = '';
-  }, []);
-
-  // Keep reverseSearchMatchesRef in sync with computed matches
-  useEffect(() => {
-    reverseSearchMatchesRef.current = reverseSearchMatches;
-    // When matches change, reset index if out of bounds
-    if (reverseSearchMatchIndex >= reverseSearchMatches.length) {
-      setReverseSearchMatchIndex(Math.max(0, reverseSearchMatches.length - 1));
-    }
-  }, [reverseSearchMatches, reverseSearchMatchIndex]);
-
-  // Update buffer text when match index changes
-  useEffect(() => {
-    if (reverseSearchActive && reverseSearchMatches.length > 0) {
-      buffer.setText(reverseSearchMatches[reverseSearchMatchIndex]);
-    } else if (reverseSearchActive && reverseSearchMatches.length === 0) {
-      buffer.setText('');
-    }
-  }, [reverseSearchActive, reverseSearchMatchIndex, reverseSearchMatches, buffer]);
+  const {
+    reverseSearchActive,
+    reverseSearchQuery,
+    reverseSearchMatchIndex,
+    reverseSearchMatches,
+    enterReverseSearch,
+    exitReverseSearch,
+    cycleNextMatch,
+    appendSearchChar,
+    removeSearchChar,
+    acceptMatch,
+  } = useReverseSearch(userMessages, buffer);
 
   const effectivePlaceholder = disabled
     ? '  A-Coder is thinking...'
@@ -384,13 +343,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
       // Ctrl+R: Reverse search through history
       if (key.ctrl && key.name === 'r') {
         if (reverseSearchActive) {
-          // Cycle to next match
-          const matches = reverseSearchMatchesRef.current;
-          if (matches.length > 0) {
-            const nextIndex = (reverseSearchMatchIndex + 1) % matches.length;
-            setReverseSearchMatchIndex(nextIndex);
-            buffer.setText(matches[nextIndex]);
-          }
+          cycleNextMatch();
         } else {
           enterReverseSearch();
         }
@@ -406,36 +359,24 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
           return;
         }
         if (key.name === 'return' && !key.ctrl) {
-          // Accept the current match
-          const matches = reverseSearchMatchesRef.current;
-          if (matches.length > 0) {
-            buffer.setText(matches[reverseSearchMatchIndex]);
-          }
-          exitReverseSearch();
+          acceptMatch();
           stopPropagation();
           return;
         }
-        // Typing characters appends to the search query
         if (!key.ctrl && !key.meta && key.sequence && key.sequence.length === 1 && !key.paste) {
-          const newQuery = reverseSearchQuery + key.sequence;
-          setReverseSearchQuery(newQuery);
-          setReverseSearchMatchIndex(0);
+          appendSearchChar(key.sequence);
           stopPropagation();
           return;
         }
-        // Backspace removes last char from query
         if (key.name === 'backspace' || (key.ctrl && key.name === 'h')) {
           if (reverseSearchQuery.length > 0) {
-            const newQuery = reverseSearchQuery.slice(0, -1);
-            setReverseSearchQuery(newQuery);
-            setReverseSearchMatchIndex(0);
+            removeSearchChar();
           } else {
             exitReverseSearch();
           }
           stopPropagation();
           return;
         }
-        // Any other key is consumed but ignored during reverse search
         stopPropagation();
         return;
       }
@@ -670,7 +611,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
             linesToRender.map((lineText, visualIdxInRenderedSet) => {
               const cursorVisualRow = cursorVisualRowAbsolute - scrollVisualRow;
               let display = cpSlice(lineText, 0, inputWidth);
-              const currentVisualWidth = stringWidth(display);
+              const currentVisualWidth = cachedStringWidth(display);
               if (currentVisualWidth < inputWidth) {
                 display = display + ' '.repeat(inputWidth - currentVisualWidth);
               }

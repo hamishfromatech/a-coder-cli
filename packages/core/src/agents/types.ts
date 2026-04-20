@@ -4,11 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { MCPServerConfig } from '../config/config.js';
+import type { AgentSourceType } from '../tools/subagent-types.js';
+
 /**
  * Source type for an agent definition
  * Re-exported from subagent-types for convenience
  */
-export type { AgentSourceType } from '../tools/subagent-types.js';
+export type { AgentSourceType };
 
 /**
  * Agent source constants
@@ -44,6 +47,15 @@ export interface AgentFrontmatter {
 
   /** Additional metadata */
   metadata?: Record<string, unknown>;
+
+  /** Inline MCP servers specific to this agent (isolated from global) */
+  mcpServers?: Record<string, MCPServerConfig>;
+
+  /** Subagent-specific persistent memory file path */
+  memoryFile?: string;
+
+  /** Block subagent from spawning further subagents (recursion protection) */
+  blockNestedSubagents?: boolean;
 }
 
 /**
@@ -79,9 +91,16 @@ export interface AgentDefinition {
 
   /** File path (for file-based agents) */
   filePath?: string;
-}
 
-import type { AgentSourceType } from '../tools/subagent-types.js';
+  /** Inline MCP servers specific to this agent */
+  mcpServers?: Record<string, MCPServerConfig>;
+
+  /** Subagent-specific persistent memory file path */
+  memoryFile?: string;
+
+  /** Block subagent from spawning further subagents */
+  blockNestedSubagents?: boolean;
+}
 
 /**
  * Options for agent discovery

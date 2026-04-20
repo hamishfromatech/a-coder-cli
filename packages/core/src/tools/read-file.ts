@@ -5,6 +5,8 @@
  */
 
 import path from 'path';
+import fs from 'fs';
+import fsPromises from 'fs/promises';
 import { SchemaValidator } from '../utils/schemaValidator.js';
 import { makeRelative, shortenPath } from '../utils/paths.js';
 import { BaseTool, ToolResult } from './tools.js';
@@ -19,6 +21,7 @@ import {
   recordFileOperationMetric,
   FileOperation,
 } from '../telemetry/metrics.js';
+import { normalizePathForCache } from '../utils/fileContentCache.js';
 
 /**
  * Parameters for the ReadFile tool
@@ -121,6 +124,14 @@ export class ReadFileTool extends BaseTool<ReadFileToolParams, ToolResult> {
     return shortenPath(relativePath);
   }
 
+  override userFacingNameBackgroundColor(_params: ReadFileToolParams): string | undefined {
+    return 'AccentCyan';
+  }
+
+  override getVerbPhrase(_params: ReadFileToolParams): string {
+    return 'Reading...';
+  }
+
   async execute(
     params: ReadFileToolParams,
     _signal: AbortSignal,
@@ -131,6 +142,33 @@ export class ReadFileTool extends BaseTool<ReadFileToolParams, ToolResult> {
         llmContent: `Error: Invalid parameters provided. Reason: ${validationError}`,
         returnDisplay: validationError,
       };
+    }
+
+    // Try file content cache first (only for full file reads without offset/limit)
+    const normalizedPath = path.resolve(params.absolute_path);
+    if (params.offset === undefined && params.limit === undefined) {
+      try {
+        const stat = await fsPromises.stat(normalizedPath);
+        if (stat.isFile()) {
+          const cache = this.config.getFileContentCache();
+          const cached = cache.get(normalizedPath, stat.mtimeMs);
+          if (cached !== undefined) {
+            recordFileOperationMetric(
+              this.config,
+              FileOperation.READ,
+              cached.split('\n').length,
+              getSpecificMimeType(params.absolute_path),
+              path.extname(params.absolute_path),
+            );
+            return {
+              llmContent: cached,
+              returnDisplay: cached,
+            };
+          }
+        }
+      } catch {
+        // stat failed — fall through to normal read
+      }
     }
 
     const result = await processSingleFileContent(
@@ -145,6 +183,20 @@ export class ReadFileTool extends BaseTool<ReadFileToolParams, ToolResult> {
         llmContent: result.error, // The detailed error for LLM
         returnDisplay: result.returnDisplay, // User-friendly error
       };
+    }
+
+    // Cache successful full-file reads for future use
+    if (params.offset === undefined && params.limit === undefined) {
+      try {
+        const stat = await fsPromises.stat(normalizedPath);
+        const content = typeof result.llmContent === 'string' ? result.llmContent : '';
+        if (content) {
+          const cache = this.config.getFileContentCache();
+          cache.set(normalizedPath, content, stat.mtimeMs, Buffer.byteLength(content));
+        }
+      } catch {
+        // stat failed — don't cache, just proceed
+      }
     }
 
     const lines =

@@ -499,22 +499,33 @@ export class CoreToolScheduler {
 
             // If any hook asks for confirmation, defer to user
             if (result.permissionDecision === 'ask') {
+              const hookOnConfirm = async (outcome: ToolConfirmationOutcome) => {
+                if (outcome === ToolConfirmationOutcome.Cancel) {
+                  this.setStatusInternal(
+                    reqInfo.callId,
+                    'cancelled',
+                    'User denied the tool call',
+                  );
+                } else {
+                  this.setStatusInternal(reqInfo.callId, 'scheduled');
+                  this.attemptExecutionOfScheduledCalls(signal);
+                }
+              };
               const askConfirmationDetails: ToolCallConfirmationDetails = {
                 type: 'ask',
                 title: `Confirm: ${reqInfo.name}`,
                 message: result.systemMessage || `The tool ${reqInfo.name} requires your confirmation.`,
-                onConfirm: async (outcome: ToolConfirmationOutcome) => {
-                  if (outcome === ToolConfirmationOutcome.Cancel) {
-                    this.setStatusInternal(
-                      reqInfo.callId,
-                      'cancelled',
-                      'User denied the tool call',
-                    );
-                  } else {
-                    this.setStatusInternal(reqInfo.callId, 'scheduled');
-                    this.attemptExecutionOfScheduledCalls(signal);
-                  }
-                },
+                onConfirm: (
+                  outcome: ToolConfirmationOutcome,
+                  payload?: ToolConfirmationPayload,
+                ) =>
+                  this.handleConfirmationResponse(
+                    reqInfo.callId,
+                    hookOnConfirm,
+                    outcome,
+                    signal,
+                    payload,
+                  ),
               };
               this.setStatusInternal(reqInfo.callId, 'awaiting_approval', askConfirmationDetails);
               continue;
@@ -726,28 +737,37 @@ export class CoreToolScheduler {
   }
 
   private attemptExecutionOfScheduledCalls(signal: AbortSignal): void {
-    const allCallsFinalOrScheduled = this.toolCalls.every(
-      (call) =>
-        call.status === 'scheduled' ||
-        call.status === 'cancelled' ||
-        call.status === 'success' ||
-        call.status === 'error',
-    );
-
-    if (!allCallsFinalOrScheduled) return;
-
+    // Execute any scheduled tools immediately, without waiting for other
+    // tools still in validating/awaiting_approval. Previously this method
+    // required ALL tools to be final-or-scheduled before executing any,
+    // which caused batch-blocking: unrelated tools were stuck waiting for
+    // one approval prompt to resolve.
     const callsToExecute = this.toolCalls.filter(
       (call) => call.status === 'scheduled',
     );
 
     if (callsToExecute.length === 0) return;
 
-    // Separate read-only and mutation tools for concurrent vs sequential execution
+    // Separate concurrency-safe and mutation tools for concurrent vs sequential execution
+    // Uses isConcurrencySafe (finer-grained, parameter-aware) when available,
+    // falls back to isReadOnly boolean for backward compatibility.
     const readOnlyCalls = callsToExecute.filter(
-      (call) => call.status === 'scheduled' && call.tool?.isReadOnly,
+      (call) => {
+        if (call.status !== 'scheduled') return false;
+        if (call.tool?.isConcurrencySafe) {
+          return call.tool.isConcurrencySafe(call.request.args as any);
+        }
+        return call.tool?.isReadOnly ?? false;
+      },
     );
     const mutationCalls = callsToExecute.filter(
-      (call) => call.status === 'scheduled' && !call.tool?.isReadOnly,
+      (call) => {
+        if (call.status !== 'scheduled') return false;
+        if (call.tool?.isConcurrencySafe) {
+          return !call.tool.isConcurrencySafe(call.request.args as any);
+        }
+        return !(call.tool?.isReadOnly ?? false);
+      },
     );
 
     // Execute all read-only tools concurrently

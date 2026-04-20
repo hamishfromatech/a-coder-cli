@@ -57,6 +57,14 @@ export class WriteToDosTool extends BaseTool<WriteToDosParams, ToolResult> {
     );
   }
 
+  override userFacingNameBackgroundColor(_params: WriteToDosParams): string | undefined {
+    return 'AccentGreen';
+  }
+
+  override getVerbPhrase(_params: WriteToDosParams): string {
+    return 'Updating todos...';
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async execute(params: WriteToDosParams, signal: AbortSignal): Promise<ToolResult> {
     const todoCount = params.todos?.length ?? 0;

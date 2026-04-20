@@ -7,11 +7,10 @@
 import { ThoughtSummary } from '@a-coder/core';
 import React from 'react';
 import { Box, Text } from 'ink';
-import { Colors, Semantic } from '../colors.js';
+import { Semantic } from '../colors.js';
 import { useStreamingContext } from '../contexts/StreamingContext.js';
 import { StreamingState } from '../types.js';
 import { GeminiRespondingSpinner } from './GeminiRespondingSpinner.js';
-import { formatDuration } from '../utils/formatters.js';
 
 interface LoadingIndicatorProps {
   currentLoadingPhrase?: string;
@@ -21,6 +20,11 @@ interface LoadingIndicatorProps {
   showThinking?: boolean;
 }
 
+/**
+ * Global loading indicator shown during LLM streaming.
+ * Now more compact — per-tool-use spinners are shown inline in ToolMessage
+ * components, so this only shows for overall query state (thinking, waiting).
+ */
 export const LoadingIndicator: React.FC<LoadingIndicatorProps> = ({
   currentLoadingPhrase,
   elapsedTime,
@@ -34,46 +38,42 @@ export const LoadingIndicator: React.FC<LoadingIndicatorProps> = ({
     return null;
   }
 
-  const primaryText = currentLoadingPhrase || thought?.subject;
   const hasThought = thought?.description;
   const isWaiting = streamingState === StreamingState.WaitingForConfirmation;
 
+  // Only show the global spinner for thinking/waiting states.
+  // Per-tool-use spinners are shown inline in ToolMessage components.
   return (
     <Box marginTop={1} flexDirection="column">
-      {/* Main loading line with spinner */}
-      <Box>
-        <Box marginRight={2}>
-          <GeminiRespondingSpinner
-            nonRespondingDisplay={isWaiting ? '⠏' : undefined}
-          />
-        </Box>
-        {primaryText && (
+      {/* Main loading line — only shown when there's a phrase (thinking) */}
+      {(currentLoadingPhrase || thought?.subject) && (
+        <Box>
+          <Box marginRight={2}>
+            <GeminiRespondingSpinner
+              nonRespondingDisplay={isWaiting ? '⠏' : undefined}
+            />
+          </Box>
           <Text
             color={isWaiting ? Semantic.Warning : Semantic.Primary}
-            bold={!isWaiting}
+            dimColor={!isWaiting}
           >
-            {primaryText}
+            {currentLoadingPhrase || thought?.subject}
           </Text>
-        )}
-        {/* Right-aligned content (e.g., model switch notification) */}
-        {rightContent && <Box marginLeft={2}>{rightContent}</Box>}
-      </Box>
+          {/* Right-aligned content (e.g., model switch notification) */}
+          {rightContent && <Box marginLeft={2}>{rightContent}</Box>}
+        </Box>
+      )}
 
-      {/* Secondary info: elapsed time, cancel hint, thought indicator */}
-      {!isWaiting && (elapsedTime >= 3 || hasThought) && (
-        <Box marginLeft={4} marginTop={0} flexDirection="row">
-          <Text color={Semantic.Primary} dimColor>
-            {elapsedTime >= 3 && `${Math.round(elapsedTime)}s`}
-            {elapsedTime >= 3 && hasThought && ' · '}
-            {hasThought && !showThinking && 'Reasoning hidden (ctrl+o)'}
-            {hasThought && showThinking && 'Showing reasoning'}
-            {!hasThought && elapsedTime >= 3 && elapsedTime < 30 && ' · esc to cancel'}
-            {!hasThought && elapsedTime >= 30 && ' · still working... esc to cancel'}
+      {/* Secondary info: thought indicator */}
+      {hasThought && !showThinking && (
+        <Box marginLeft={4} marginTop={0}>
+          <Text color={Semantic.Muted} dimColor>
+            Reasoning hidden (ctrl+o)
           </Text>
         </Box>
       )}
 
-      {/* Thought description - show only when explicitly requested */}
+      {/* Thought description — show only when explicitly requested */}
       {showThinking && hasThought && (
         <Box
           marginLeft={4}

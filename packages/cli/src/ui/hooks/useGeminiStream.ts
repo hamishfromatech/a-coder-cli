@@ -40,7 +40,7 @@ import {
   ToolCallStatus,
 } from '../types.js';
 import { isAtCommand } from '../utils/commandUtils.js';
-import { parseAndFormatApiError } from '../utils/errorParsing.js';
+import { parseAndFormatApiError, extractRetryAfterMs } from '../utils/errorParsing.js';
 import { useShellCommandProcessor } from './shellCommandProcessor.js';
 import { handleAtCommand } from './atCommandProcessor.js';
 import { findLastSafeSplitPoint } from '../utils/markdownUtilities.js';
@@ -57,6 +57,7 @@ import {
   TrackedCancelledToolCall,
 } from './useReactToolScheduler.js';
 import { useSessionStats } from '../contexts/SessionContext.js';
+import { STREAM_DEBOUNCE_MS } from '../constants.js';
 
 export function mergePartListUnions(list: PartListUnion[]): PartListUnion {
   const resultParts: PartListUnion = [];
@@ -102,6 +103,9 @@ export const useGeminiStream = (
   const abortControllerRef = useRef<AbortController | null>(null);
   const turnCancelledRef = useRef(false);
   const [isResponding, setIsResponding] = useState<boolean>(false);
+  // Queue for completed tools that arrive while isResponding is true.
+  // This prevents silently dropping tool results due to stale React state.
+  const pendingCompletedToolsRef = useRef<TrackedToolCall[]>([]);
   const [thought, setThought] = useState<ThoughtSummary | null>(null);
   const [todos, setTodos] = useState<ToDoItem[]>([]);
   const [queryQueue, setQueryQueue] = useState<
@@ -110,6 +114,10 @@ export const useGeminiStream = (
   const [pendingHistoryItemRef, setPendingHistoryItem] =
     useStateAndRef<HistoryItemWithoutId | null>(null);
   const processedMemoryToolsRef = useRef<Set<string>>(new Set());
+  // Stream content debouncing: accumulate content chunks and flush
+  // at a capped rate to reduce React re-renders during streaming.
+  const streamDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingContentChunksRef = useRef<string[]>([]);
   const { startNewPrompt, getPromptCount } = useSessionStats();
   const logger = useLogger();
   const gitService = useMemo(() => {
@@ -149,17 +157,19 @@ export const useGeminiStream = (
     [toolCalls],
   );
 
-  // Create pending history items array
-  // Note: This is computed on every render since pendingHistoryItemRef is a ref
-  const pendingHistoryItems: HistoryItemWithoutId[] = [];
-
-  if (pendingHistoryItemRef.current) {
-    pendingHistoryItems.push(pendingHistoryItemRef.current);
-  }
-
-  if (pendingToolCallGroupDisplay) {
-    pendingHistoryItems.push(pendingToolCallGroupDisplay);
-  }
+  // Memoize pending history items to avoid fresh allocation on every render.
+  // pendingHistoryItemRef.current is updated synchronously before the state change
+  // that triggers re-render, so reading it inside useMemo is safe.
+  const pendingHistoryItems = useMemo<HistoryItemWithoutId[]>(() => {
+    const items: HistoryItemWithoutId[] = [];
+    if (pendingHistoryItemRef.current) {
+      items.push(pendingHistoryItemRef.current);
+    }
+    if (pendingToolCallGroupDisplay) {
+      items.push(pendingToolCallGroupDisplay);
+    }
+    return items;
+  }, [pendingToolCallGroupDisplay]);
 
   const isProcessingQueueRef = useRef(false);
 
@@ -216,32 +226,6 @@ export const useGeminiStream = (
     wasRespondingRef.current = isCurrentlyResponding;
   }, [streamingState]);
 
-  const handleEscapeKey = useCallback(() => {
-    if (streamingState === StreamingState.Responding) {
-      turnCancelledRef.current = true;
-      abortControllerRef.current?.abort();
-
-      if (pendingHistoryItemRef.current) {
-        addItem(pendingHistoryItemRef.current, Date.now());
-      }
-      addItem(
-        {
-          type: MessageType.INFO,
-          text: 'Request cancelled.',
-        },
-        Date.now(),
-      );
-      setPendingHistoryItem(null);
-      setIsResponding(false);
-    }
-  }, [
-    streamingState,
-    pendingHistoryItemRef,
-    addItem,
-    setPendingHistoryItem,
-    setIsResponding,
-  ]);
-
   const cancelCurrentTask = useCallback(() => {
     if (
       streamingState === StreamingState.Responding ||
@@ -278,7 +262,7 @@ export const useGeminiStream = (
       if (streamingState === StreamingState.WaitingForConfirmation) {
         return;
       }
-      handleEscapeKey();
+      cancelCurrentTask();
     }
   });
 
@@ -417,6 +401,41 @@ export const useGeminiStream = (
 
   // --- Stream Event Handlers ---
 
+  /**
+   * Flushes accumulated content chunks to the pending history item.
+   * Called by the debounce timer or immediately on split points / stream end.
+   */
+  const flushStreamContent = useCallback(
+    (userMessageTimestamp: number) => {
+      const chunks = pendingContentChunksRef.current;
+      if (chunks.length === 0) return;
+      pendingContentChunksRef.current = [];
+
+      const accumulated = chunks.join('');
+
+      if (turnCancelledRef.current) {
+        return;
+      }
+
+      if (
+        pendingHistoryItemRef.current?.type !== 'gemini' &&
+        pendingHistoryItemRef.current?.type !== 'gemini_content'
+      ) {
+        if (pendingHistoryItemRef.current) {
+          addItem(pendingHistoryItemRef.current, userMessageTimestamp);
+        }
+        setPendingHistoryItem({ type: 'gemini', text: accumulated });
+      } else {
+        // Append accumulated content to existing pending item
+        setPendingHistoryItem((item) => ({
+          type: item?.type as 'gemini' | 'gemini_content',
+          text: (item?.text ?? '') + accumulated,
+        }));
+      }
+    },
+    [addItem, pendingHistoryItemRef, setPendingHistoryItem],
+  );
+
   const handleContentEvent = useCallback(
     (
       eventValue: ContentEvent['value'],
@@ -424,10 +443,11 @@ export const useGeminiStream = (
       userMessageTimestamp: number,
     ): string => {
       if (turnCancelledRef.current) {
-        // Prevents additional output after a user initiated cancel.
         return '';
       }
+
       let newGeminiMessageBuffer = currentGeminiMessageBuffer + eventValue;
+
       if (
         pendingHistoryItemRef.current?.type !== 'gemini' &&
         pendingHistoryItemRef.current?.type !== 'gemini_content'
@@ -438,24 +458,18 @@ export const useGeminiStream = (
         setPendingHistoryItem({ type: 'gemini', text: '' });
         newGeminiMessageBuffer = eventValue;
       }
-      // Split large messages for better rendering performance. Ideally,
-      // we should maximize the amount of output sent to <Static />.
+
+      // Check for split point — if found, flush immediately to promote to <Static>
       const splitPoint = findLastSafeSplitPoint(newGeminiMessageBuffer);
-      if (splitPoint === newGeminiMessageBuffer.length) {
-        // Update the existing message with accumulated content
-        setPendingHistoryItem((item) => ({
-          type: item?.type as 'gemini' | 'gemini_content',
-          text: newGeminiMessageBuffer,
-        }));
-      } else {
-        // This indicates that we need to split up this Gemini Message.
-        // Splitting a message is primarily a performance consideration. There is a
-        // <Static> component at the root of App.tsx which takes care of rendering
-        // content statically or dynamically. Everything but the last message is
-        // treated as static in order to prevent re-rendering an entire message history
-        // multiple times per-second (as streaming occurs). Prior to this change you'd
-        // see heavy flickering of the terminal. This ensures that larger messages get
-        // broken up so that there are more "statically" rendered.
+
+      if (splitPoint < newGeminiMessageBuffer.length) {
+        // Split point found — flush any buffered chunks, then handle the split
+        if (streamDebounceTimerRef.current) {
+          clearTimeout(streamDebounceTimerRef.current);
+          streamDebounceTimerRef.current = null;
+        }
+        pendingContentChunksRef.current = [];
+
         const beforeText = newGeminiMessageBuffer.substring(0, splitPoint);
         const afterText = newGeminiMessageBuffer.substring(splitPoint);
         addItem(
@@ -468,17 +482,37 @@ export const useGeminiStream = (
           userMessageTimestamp,
         );
         setPendingHistoryItem({ type: 'gemini_content', text: afterText });
-        newGeminiMessageBuffer = afterText;
+        return afterText;
       }
+
+      // No split point — buffer the chunk and debounce the UI update
+      pendingContentChunksRef.current.push(eventValue);
+
+      if (streamDebounceTimerRef.current) {
+        clearTimeout(streamDebounceTimerRef.current);
+      }
+      streamDebounceTimerRef.current = setTimeout(() => {
+        streamDebounceTimerRef.current = null;
+        flushStreamContent(userMessageTimestamp);
+      }, STREAM_DEBOUNCE_MS);
+
       return newGeminiMessageBuffer;
     },
-    [addItem, pendingHistoryItemRef, setPendingHistoryItem],
+    [addItem, pendingHistoryItemRef, setPendingHistoryItem, flushStreamContent],
   );
 
   const handleUserCancelledEvent = useCallback(
     (userMessageTimestamp: number) => {
       if (turnCancelledRef.current) {
         return;
+      }
+      // Flush any pending content before handling cancellation
+      if (streamDebounceTimerRef.current) {
+        clearTimeout(streamDebounceTimerRef.current);
+        streamDebounceTimerRef.current = null;
+      }
+      if (pendingContentChunksRef.current.length > 0) {
+        flushStreamContent(userMessageTimestamp);
       }
       if (pendingHistoryItemRef.current) {
         if (pendingHistoryItemRef.current.type === 'tool_group') {
@@ -506,7 +540,7 @@ export const useGeminiStream = (
       );
       setIsResponding(false);
     },
-    [addItem, pendingHistoryItemRef, setPendingHistoryItem],
+    [addItem, pendingHistoryItemRef, setPendingHistoryItem, flushStreamContent],
   );
 
   const handleErrorEvent = useCallback(
@@ -515,6 +549,7 @@ export const useGeminiStream = (
         addItem(pendingHistoryItemRef.current, userMessageTimestamp);
         setPendingHistoryItem(null);
       }
+      const retryAfterMs = extractRetryAfterMs(eventValue.error);
       addItem(
         {
           type: MessageType.ERROR,
@@ -525,6 +560,7 @@ export const useGeminiStream = (
             config.getModel(),
             DEFAULT_GEMINI_FLASH_MODEL,
           ),
+          ...(retryAfterMs > 0 ? { retryAfterMs } : {}),
       },
         userMessageTimestamp,
       );
@@ -784,6 +820,15 @@ export const useGeminiStream = (
         // Clear thought state after stream completes
         setThought(null);
 
+        // Flush any remaining debounced content before committing
+        if (streamDebounceTimerRef.current) {
+          clearTimeout(streamDebounceTimerRef.current);
+          streamDebounceTimerRef.current = null;
+        }
+        if (pendingContentChunksRef.current.length > 0) {
+          flushStreamContent(userMessageTimestamp);
+        }
+
         if (pendingHistoryItemRef.current) {
           addItem(pendingHistoryItemRef.current, userMessageTimestamp);
           setPendingHistoryItem(null);
@@ -868,6 +913,9 @@ export const useGeminiStream = (
   const handleCompletedTools = useCallback(
     async (completedToolCallsFromScheduler: TrackedToolCall[]) => {
       if (isResponding) {
+        // Queue the results instead of silently dropping them.
+        // They'll be processed once isResponding becomes false.
+        pendingCompletedToolsRef.current.push(...completedToolCallsFromScheduler);
         return;
       }
 
@@ -996,6 +1044,17 @@ export const useGeminiStream = (
       modelSwitchedFromQuotaError,
     ],
   );
+
+  // Process any queued completed tools once isResponding becomes false.
+  // This handles the race condition where tools complete while React state
+  // still shows isResponding=true (stale closure), which previously caused
+  // tool results to be silently dropped and the CLI to hang.
+  useEffect(() => {
+    if (!isResponding && pendingCompletedToolsRef.current.length > 0) {
+      const pending = pendingCompletedToolsRef.current.splice(0);
+      handleCompletedTools(pending);
+    }
+  }, [isResponding, handleCompletedTools]);
 
   useEffect(() => {
     const saveRestorableToolCalls = async () => {
