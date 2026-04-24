@@ -265,7 +265,7 @@ export class GeminiClient {
           // Use glob to discover all files, then read them in parallel
           const globResult = await globTool.execute(
             { pattern: '**/*', path: this.config.getTargetDir() },
-            AbortSignal.timeout(30000),
+            AbortSignal.timeout(1000000),
           );
 
           if (
@@ -285,7 +285,7 @@ export class GeminiClient {
                   readFileTool
                     .execute(
                       { absolute_path: filePath },
-                      AbortSignal.timeout(30000),
+                      AbortSignal.timeout(1000000),
                     )
                     .then((result) => {
                       const content = result.llmContent;

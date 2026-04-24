@@ -53,6 +53,7 @@ export async function runHeartbeatMode(): Promise<void> {
     {
       ...argv,
       yolo: true, // Force YOLO mode for heartbeat
+      heartbeat: true,
     } as CliArgs,
   );
 

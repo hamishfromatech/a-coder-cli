@@ -336,8 +336,7 @@ describe('runNonInteractive', () => {
 
     expect(mockChat.sendMessageStream).toHaveBeenCalledTimes(1);
     expect(consoleErrorSpy).toHaveBeenCalledWith(
-      `
- Reached max session turns for this session. Increase the number of turns by specifying maxSessionTurns in settings.json.`,
+      '\n Max session turns reached. Increase the number of turns by specifying maxSessionTurns in settings.json.',
     );
     expect(mockProcessExit).not.toHaveBeenCalled();
   });

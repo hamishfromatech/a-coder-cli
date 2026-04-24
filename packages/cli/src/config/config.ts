@@ -296,6 +296,7 @@ export async function loadCliConfig(
     subagent: argv.subagent === false
       ? { enabled: false }
       : settings.subagent,
+    heartbeatMode: !!argv.heartbeat,
   });
 }
 

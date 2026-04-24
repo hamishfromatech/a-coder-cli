@@ -21,6 +21,10 @@ import {
 } from '@google/genai';
 
 import { parseAndFormatApiError } from './ui/utils/errorParsing.js';
+import {
+  c, bg, bold, dim, sym, supportsColor,
+  getToolColor, getToolVerb, formatToolArgs, hr
+} from './ui/utils/ansiFormatter.js';
 
 /**
  * Structured output format for --print mode
@@ -59,10 +63,10 @@ function getResponseText(response: GenerateContentResponse): string | null {
   return null;
 }
 
-// Helper function to format tool call arguments for display
-function formatToolArgs(args: Record<string, unknown>): string {
+// Helper function to format tool call arguments for display (plain text fallback)
+function formatToolArgsPlain(args: Record<string, unknown>): string {
   if (!args || Object.keys(args).length === 0) {
-    return '(no arguments)';
+    return '';
   }
 
   const formattedArgs = Object.entries(args)
@@ -139,53 +143,100 @@ function displayToolCallInfo(
     return;
   }
 
-  // Human-readable output
+  const colored = supportsColor();
   const timestamp = new Date().toLocaleTimeString();
-  const argsStr = formatToolArgs(args);
 
-  switch (status) {
-    case 'start':
-      process.stdout.write(
-        `\n[${timestamp}] 🔧 Executing tool: ${toolName} ${argsStr}\n`,
-      );
-      break;
-    case 'success':
-      if (resultDisplay) {
-        if (typeof resultDisplay === 'string' && resultDisplay.trim()) {
-          process.stdout.write(
-            `[${timestamp}] ✅ Tool ${toolName} completed successfully\n`,
-          );
-          process.stdout.write(`📋 Result:\n${resultDisplay}\n`);
-        } else if (
-          typeof resultDisplay === 'object' &&
-          'fileDiff' in resultDisplay
-        ) {
-          process.stdout.write(
-            `[${timestamp}] ✅ Tool ${toolName} completed successfully\n`,
-          );
-          process.stdout.write(`📋 File: ${resultDisplay.fileName}\n`);
-          process.stdout.write(`📋 Diff:\n${resultDisplay.fileDiff}\n`);
+  if (colored) {
+    const tc = getToolColor(toolName);
+    const verb = getToolVerb(toolName);
+    const argsStr = formatToolArgs(args);
+
+    switch (status) {
+      case 'start':
+        process.stdout.write('\n');
+        process.stdout.write(dim(c.gray(`[${timestamp}]`)));
+        process.stdout.write(` ${c.green(sym.ok)} ${bold(tc.bg(' ' + toolName + ' '))}`);
+        if (argsStr) process.stdout.write(dim(` ${argsStr}`));
+        process.stdout.write('\n');
+        process.stdout.write(dim(c.gray(`  ${verb}...`)));
+        process.stdout.write('\n');
+        break;
+      case 'success':
+        if (resultDisplay) {
+          if (typeof resultDisplay === 'string' && resultDisplay.trim()) {
+            process.stdout.write(dim(c.gray(`[${timestamp}]`)));
+            process.stdout.write(` ${c.green(sym.ok)} ${bold(tc.bg(' ' + toolName + ' '))}`);
+            process.stdout.write('\n');
+            process.stdout.write(`${resultDisplay}\n`);
+          } else if (
+            typeof resultDisplay === 'object' &&
+            'fileDiff' in resultDisplay
+          ) {
+            process.stdout.write(dim(c.gray(`[${timestamp}]`)));
+            process.stdout.write(` ${c.green(sym.ok)} ${bold(tc.bg(' ' + toolName + ' '))}`);
+            process.stdout.write(dim(` ${resultDisplay.fileName}`));
+            process.stdout.write('\n');
+            process.stdout.write(`${resultDisplay.fileDiff}\n`);
+          } else {
+            process.stdout.write(dim(c.gray(`[${timestamp}]`)));
+            process.stdout.write(` ${c.green(sym.ok)} ${bold(tc.bg(' ' + toolName + ' '))}`);
+            process.stdout.write('\n');
+          }
         } else {
-          process.stdout.write(
-            `[${timestamp}] ✅ Tool ${toolName} completed successfully (no output)\n`,
-          );
+          process.stdout.write(dim(c.gray(`[${timestamp}]`)));
+          process.stdout.write(` ${c.green(sym.ok)} ${bold(tc.bg(' ' + toolName + ' '))}`);
+          process.stdout.write('\n');
         }
-      } else {
-        process.stdout.write(
-          `[${timestamp}] ✅ Tool ${toolName} completed successfully (no output)\n`,
-        );
-      }
-      break;
-    case 'error':
-      process.stdout.write(
-        `[${timestamp}] ❌ Tool ${toolName} failed: ${errorMessage}\n`,
-      );
-      break;
-    default:
-      process.stdout.write(
-        `[${timestamp}] ⚠️ Tool ${toolName} reported unknown status: ${status}\n`,
-      );
-      break;
+        break;
+      case 'error':
+        process.stdout.write(dim(c.gray(`[${timestamp}]`)));
+        process.stdout.write(` ${c.red(sym.fail)} ${bold(tc.bg(' ' + toolName + ' '))}`);
+        process.stdout.write(` ${c.red(errorMessage ?? 'unknown error')}`);
+        process.stdout.write('\n');
+        break;
+      default:
+        process.stdout.write(dim(c.gray(`[${timestamp}]`)));
+        process.stdout.write(` ${c.yellow(sym.bullet)} ${bold(toolName)}`);
+        process.stdout.write(` ${c.yellow(`unknown status: ${status}`)}`);
+        process.stdout.write('\n');
+        break;
+    }
+  } else {
+    // Plain text fallback (no color support)
+    const argsStr = formatToolArgsPlain(args);
+
+    switch (status) {
+      case 'start':
+        process.stdout.write('\n');
+        process.stdout.write(`[${timestamp}] > ${toolName}`);
+        if (argsStr) process.stdout.write(` ${argsStr}`);
+        process.stdout.write('\n');
+        break;
+      case 'success':
+        if (resultDisplay) {
+          if (typeof resultDisplay === 'string' && resultDisplay.trim()) {
+            process.stdout.write(`[${timestamp}] ✓ ${toolName}\n`);
+            process.stdout.write(`${resultDisplay}\n`);
+          } else if (
+            typeof resultDisplay === 'object' &&
+            'fileDiff' in resultDisplay
+          ) {
+            process.stdout.write(`[${timestamp}] ✓ ${toolName} (${resultDisplay.fileName})\n`);
+            process.stdout.write(`${resultDisplay.fileDiff}\n`);
+          } else {
+            process.stdout.write(`[${timestamp}] ✓ ${toolName}\n`);
+          }
+        } else {
+          process.stdout.write(`[${timestamp}] ✓ ${toolName}\n`);
+        }
+        break;
+      case 'error':
+        process.stdout.write(`[${timestamp}] ✗ ${toolName}: ${errorMessage}\n`);
+        break;
+      default:
+        process.stdout.write(`[${timestamp}] ? ${toolName}: unknown status\n`);
+        break;
+    }
   }
 }
 
@@ -225,9 +276,13 @@ export async function runNonInteractive(
             }),
           );
         } else {
-          console.error(
-            '\n Reached max session turns for this session. Increase the number of turns by specifying maxSessionTurns in settings.json.',
-          );
+          if (supportsColor()) {
+            console.error(`\n${c.yellow(sym.bullet)} ${bold('Max session turns reached')}. Increase the number of turns by specifying maxSessionTurns in settings.json.`);
+          } else {
+            console.error(
+              '\n Max session turns reached. Increase the number of turns by specifying maxSessionTurns in settings.json.',
+            );
+          }
         }
         return;
       }
@@ -287,6 +342,9 @@ export async function runNonInteractive(
       }
 
       if (functionCalls.length > 0) {
+        if (!printMode) {
+          process.stdout.write(hr() + '\n');
+        }
         const toolResponseParts: Part[] = [];
 
         for (const fc of functionCalls) {

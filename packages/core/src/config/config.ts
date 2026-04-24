@@ -183,6 +183,7 @@ export interface ConfigParameters {
   };
   subagent?: Partial<SubagentSystemConfig>;
   featureFlags?: Record<string, FeatureFlagConfigInput>;
+  heartbeatMode?: boolean;
 }
 
 export class Config {
@@ -252,6 +253,7 @@ export class Config {
   };
   private readonly subagentConfig: SubagentSystemConfig;
   private readonly featureFlagsConfig: Record<string, FeatureFlagConfigInput> | undefined;
+  private readonly heartbeatMode: boolean;
 
   constructor(params: ConfigParameters) {
     this.sessionId = params.sessionId;
@@ -307,6 +309,7 @@ export class Config {
       ...params.subagent,
     };
     this.featureFlagsConfig = params.featureFlags;
+    this.heartbeatMode = params.heartbeatMode ?? false;
 
     if (params.contextFileName) {
       setGeminiMdFilename(params.contextFileName);
@@ -644,6 +647,10 @@ export class Config {
     return this.featureFlagsConfig;
   }
 
+  isHeartbeatMode(): boolean {
+    return this.heartbeatMode;
+  }
+
   async refreshMemory(): Promise<{ memoryContent: string; fileCount: number }> {
     const { memoryContent, fileCount } = await loadServerHierarchicalMemory(
       this.getWorkingDir(),
@@ -729,7 +736,9 @@ export class Config {
     registerCoreTool(MemoryTool);
     registerCoreTool(WebSearchTool);
     registerCoreTool(InitializeHeartbeatTool, this);
-    registerCoreTool(ExitHeartbeatTool, this);
+    if (this.heartbeatMode) {
+      registerCoreTool(ExitHeartbeatTool, this);
+    }
 
     // Register SubagentTool if subagent system is enabled
     if (this.subagentConfig.enabled) {

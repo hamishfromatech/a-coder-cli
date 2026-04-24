@@ -119,8 +119,8 @@ export class OpenAIContentGenerator implements ContentGenerator {
 
     // Configure timeout settings - using progressive timeouts
     const timeoutConfig = {
-      // Base timeout for most requests (4 hours)
-      timeout: 14400000,
+      // Base timeout for most requests (1000 seconds)
+      timeout: 1000000,
       // Maximum retries for failed requests
       maxRetries: 3,
       // HTTP client options
