@@ -6,7 +6,7 @@
 
 import * as path from 'node:path';
 import { promises as fs } from 'node:fs';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import * as os from 'os';
 
 /**
@@ -56,7 +56,7 @@ export class OpenAILogger {
     }
 
     const timestamp = new Date().toISOString().replace(/:/g, '-');
-    const id = uuidv4().slice(0, 8);
+    const id = randomUUID().slice(0, 8);
     const filename = `openai-${timestamp}-${id}.json`;
     const filePath = path.join(this.logDir, filename);
 
