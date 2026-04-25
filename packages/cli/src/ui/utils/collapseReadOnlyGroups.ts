@@ -22,6 +22,7 @@ const READ_ONLY_TOOL_NAMES = new Set([
  * Minimum number of consecutive read-only tool groups to trigger collapsing.
  * Below this threshold, items are shown individually.
  */
+const MAX_DETAIL_ITEMS = 4;
 const COLLAPSE_THRESHOLD = 3;
 
 /**
@@ -44,25 +45,26 @@ const TOOL_CATEGORIES: Record<string, { label: string; plural: string }> = {
  * operation (e.g., "Read src/config.ts", "Searched for 'useEffect'").
  */
 function generateHint(tool: { name?: string; description?: string }): string {
-  const name = tool.name ?? '';
   const desc = tool.description ?? '';
-
-  if (name === 'read_file') {
-    // Extract file path from description like "Reading src/config.ts"
-    const match = desc.match(/(?:Reading|Read)\s+(.+)/i);
-    return match ? `Read ${match[1]}` : desc;
-  }
-  if (name === 'grep') {
-    const match = desc.match(/(?:Searching|Searched)\s+(?:for\s+)?['"]?([^'"]+?)['"]?\s/i);
-    return match ? `Searched for '${match[1]}'` : desc;
-  }
-  if (name === 'glob') {
-    const match = desc.match(/(?:Searching|Finding)\s+(?:for\s+)?['"]?([^'"]+?)['"]?\s/i);
-    return match ? `Found '${match[1]}'` : desc;
-  }
-
-  // Truncate long descriptions
+  if (!desc || desc === '.' || desc === 'Path unavailable') return '';
   return desc.length > 60 ? desc.substring(0, 57) + '...' : desc;
+}
+
+/**
+ * Formats a list of tool descriptions into a compact parenthetical.
+ * Deduplicates "." entries and truncates when there are too many.
+ */
+function formatDetailList(descs: string[]): string {
+  const filtered = descs.filter((d) => d && d !== '.' && d !== 'Path unavailable');
+  if (filtered.length === 0) return '';
+
+  const unique = [...new Set(filtered)];
+  if (unique.length > MAX_DETAIL_ITEMS) {
+    const shown = unique.slice(0, MAX_DETAIL_ITEMS - 1);
+    const remaining = unique.length - shown.length;
+    return `${shown.join(', ')}, +${remaining} more`;
+  }
+  return unique.join(', ');
 }
 
 /**
@@ -85,6 +87,7 @@ export function collapseReadOnlyToolGroups(
       // Collapse into a single summary entry
       const toolNames: string[] = [];
       const categoryCounts: Record<string, number> = {};
+      const categoryDescriptions: Record<string, string[]> = {};
       let latestHint = '';
 
       for (const group of readBuffer) {
@@ -92,24 +95,22 @@ export function collapseReadOnlyToolGroups(
         for (const tool of group.tools) {
           const name = tool.name ?? '';
           toolNames.push(name);
-          const cat = TOOL_CATEGORIES[name];
-          if (cat) {
-            categoryCounts[name] = (categoryCounts[name] || 0) + 1;
-          } else {
-            // Unknown tool — use generic count
-            categoryCounts[name] = (categoryCounts[name] || 0) + 1;
-          }
+          categoryCounts[name] = (categoryCounts[name] || 0) + 1;
+          if (!categoryDescriptions[name]) categoryDescriptions[name] = [];
+          categoryDescriptions[name].push(tool.description ?? '');
           // Track the most recent hint (from the last tool in the last group)
           latestHint = generateHint(tool);
         }
       }
 
-      // Build category-based summary
+      // Build category-based summary with file details
       const parts: string[] = [];
       for (const [toolName, count] of Object.entries(categoryCounts)) {
         const cat = TOOL_CATEGORIES[toolName];
         if (cat) {
-          parts.push(`${cat.label} ${count} ${count > 1 ? cat.plural : cat.plural.replace(/s$/, '')}`);
+          const noun = count > 1 ? cat.plural : cat.plural.replace(/s$/, '');
+          const detail = formatDetailList(categoryDescriptions[toolName] || []);
+          parts.push(detail ? `${cat.label.toLowerCase()} ${count} ${noun} (${detail})` : `${cat.label.toLowerCase()} ${count} ${noun}`);
         } else {
           const displayName = toolName.replace(/_/g, ' ');
           parts.push(count > 1 ? `${count} ${displayName}s` : displayName);

@@ -12,6 +12,7 @@ import { ToolConfirmationMessage } from './ToolConfirmationMessage.js';
 import { Colors, Semantic } from '../../colors.js';
 import { Config } from '@a-coder/core';
 import { useMinDisplayTime } from '../../hooks/useMinDisplayTime.js';
+import { LAYOUT } from '../../constants.js';
 
 interface CollapsibleToolGroupProps {
   groupId: number;
@@ -24,26 +25,65 @@ interface CollapsibleToolGroupProps {
 }
 
 /**
- * Generates a human-readable summary of tool operations.
+ * Tool name categories for compact summary labels.
+ */
+const TOOL_CATEGORIES: Record<string, { verb: string; noun: string }> = {
+  read_file: { verb: 'read', noun: 'file' },
+  glob: { verb: 'searched', noun: 'pattern' },
+  grep: { verb: 'searched', noun: 'pattern' },
+  list_directory: { verb: 'listed', noun: 'directory' },
+  web_fetch: { verb: 'fetched', noun: 'URL' },
+  web_search: { verb: 'searched', noun: 'query' },
+};
+
+const MAX_DETAIL_ITEMS = 4;
+
+/**
+ * Generates a compact, category-aware summary of tool operations.
+ * E.g., "read 3 files (src/App.ts, src/utils.ts, lib/config.ts)"
  */
 function generateToolSummary(toolCalls: IndividualToolCallDisplay[]): string {
-  const counts: Record<string, number> = {};
-  
+  const categoryCounts: Record<string, number> = {};
+  const categoryDescriptions: Record<string, string[]> = {};
+
   for (const tool of toolCalls) {
-    const baseName = tool.name.replace(/_/g, ' ');
-    counts[baseName] = (counts[baseName] || 0) + 1;
+    categoryCounts[tool.name] = (categoryCounts[tool.name] || 0) + 1;
+    if (!categoryDescriptions[tool.name]) categoryDescriptions[tool.name] = [];
+    categoryDescriptions[tool.name].push(tool.description || '');
   }
-  
+
   const parts: string[] = [];
-  for (const [name, count] of Object.entries(counts)) {
-    if (count === 1) {
-      parts.push(name);
+  for (const [toolName, count] of Object.entries(categoryCounts)) {
+    const cat = TOOL_CATEGORIES[toolName];
+    if (cat) {
+      const noun = count > 1 ? cat.noun + 's' : cat.noun;
+      const descs = categoryDescriptions[toolName];
+      const detail = formatDetailList(descs);
+      parts.push(detail ? `${cat.verb} ${count} ${noun} (${detail})` : `${cat.verb} ${count} ${noun}`);
     } else {
-      parts.push(`${count} ${name}s`);
+      const displayName = toolName.replace(/_/g, ' ');
+      parts.push(count > 1 ? `${count} ${displayName}s` : displayName);
     }
   }
-  
+
   return parts.join(', ');
+}
+
+/**
+ * Formats a list of tool descriptions into a compact parenthetical.
+ * Deduplicates "." entries and truncates when there are too many.
+ */
+function formatDetailList(descs: string[]): string {
+  const filtered = descs.filter((d) => d && d !== '.' && d !== 'Path unavailable');
+  if (filtered.length === 0) return '';
+
+  const unique = [...new Set(filtered)];
+  if (unique.length > MAX_DETAIL_ITEMS) {
+    const shown = unique.slice(0, MAX_DETAIL_ITEMS - 1);
+    const remaining = unique.length - shown.length;
+    return `${shown.join(', ')}, +${remaining} more`;
+  }
+  return unique.join(', ');
 }
 
 /**
@@ -106,7 +146,7 @@ export const CollapsibleToolGroup: React.FC<CollapsibleToolGroupProps> = ({
 
   // Hold the collapsed summary visible for at least 700ms after completion
   // to prevent flickering when tool groups complete very quickly
-  const showCompletedHint = useMinDisplayTime(isComplete, 700);
+  const showCompletedHint = useMinDisplayTime(isComplete, LAYOUT.collapsibleHoldMs);
 
   const hasPending = useMemo(
     () => !toolCalls.every((t) => t.status === ToolCallStatus.Success),
@@ -148,20 +188,23 @@ export const CollapsibleToolGroup: React.FC<CollapsibleToolGroupProps> = ({
     >
       {/* Collapsible header */}
       <Box paddingX={1} paddingY={0}>
+        {isCollapsed ? (
+          <Text color={Semantic.Muted} dimColor>{'  '}⎿  </Text>
+        ) : null}
         <Text
           color={color}
           bold={isCollapsed}
         >
-          {isCollapsed ? '❯' : '▼'} {summary}
+          {isCollapsed ? '▸' : '▾'} {summary}
         </Text>
         {isCollapsed && hasPending && (
-          <Text color={Semantic.Muted}>…</Text>
+          <Text color={Semantic.Muted} dimColor>...</Text>
         )}
         {!isComplete && (
-          <Text color={Semantic.Muted}> (ctrl+o to {isCollapsed ? 'expand' : 'collapse'})</Text>
+          <Text color={Semantic.Muted} dimColor> ctrl+o to {isCollapsed ? 'expand' : 'collapse'}</Text>
         )}
         {isComplete && showCompletedHint && (
-          <Text color={Semantic.Muted}> (completed)</Text>
+          <Text color={Semantic.Muted}> done</Text>
         )}
       </Box>
 

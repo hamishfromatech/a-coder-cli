@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { Text } from 'ink';
-import { Colors } from '../colors.js';
+import { Semantic } from '../colors.js';
 import { type MCPServerConfig } from '@a-coder/core';
 
 interface ContextSummaryDisplayProps {
@@ -63,5 +63,5 @@ export const ContextSummaryDisplay: React.FC<ContextSummaryDisplayProps> = ({
     }
   }
 
-  return <Text color={Colors.Gray} wrap="wrap">{summaryText}</Text>;
+  return <Text color={Semantic.Muted} dimColor wrap="wrap">{summaryText}</Text>;
 };

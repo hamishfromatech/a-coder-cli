@@ -6,13 +6,13 @@
 
 import React from 'react';
 import { Box, Text } from 'ink';
-import { Colors } from '../colors.js';
+import { Semantic } from '../colors.js';
 
 export const ShellModeIndicator: React.FC = () => (
   <Box>
-    <Text color={Colors.AccentYellow}>
-      shell mode enabled
-      <Text color={Colors.Gray}> (esc to disable)</Text>
+    <Text color={Semantic.Warning} dimColor>
+      shell mode
+      <Text color={Semantic.Muted}> esc to exit</Text>
     </Text>
   </Box>
 );

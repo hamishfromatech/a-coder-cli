@@ -8,7 +8,7 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import { CompressionProps } from '../../types.js';
 import Spinner from 'ink-spinner';
-import { Colors } from '../../colors.js';
+import { Semantic } from '../../colors.js';
 
 export interface CompressionDisplayProps {
   compression: CompressionProps;
@@ -22,23 +22,23 @@ export const CompressionMessage: React.FC<CompressionDisplayProps> = ({
   compression,
 }) => {
   const text = compression.isPending
-    ? 'Compressing chat history'
+    ? 'Compressing chat history...'
     : `Chat history compressed from ${compression.originalTokenCount ?? 'unknown'}` +
       ` to ${compression.newTokenCount ?? 'unknown'} tokens.`;
 
   return (
-    <Box flexDirection="row">
+    <Box flexDirection="row" marginY={1} paddingX={1}>
       <Box marginRight={1}>
         {compression.isPending ? (
           <Spinner type="dots" />
         ) : (
-          <Text color={Colors.AccentPurple}>👑</Text>
+          <Text color={Semantic.Success}>✓</Text>
         )}
       </Box>
       <Box>
         <Text
           color={
-            compression.isPending ? Colors.AccentPurple : Colors.AccentGreen
+            compression.isPending ? Semantic.Primary : Semantic.Success
           }
         >
           {text}

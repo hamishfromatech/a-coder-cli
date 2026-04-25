@@ -9,6 +9,7 @@ import { Box, Text } from 'ink';
 import { MarkdownDisplay } from '../../utils/MarkdownDisplay.js';
 import { Semantic } from '../../colors.js';
 import { MessageResponse } from '../shared/MessageResponse.js';
+import { LAYOUT } from '../../constants.js';
 
 interface GeminiMessageProps {
   text: string;
@@ -31,7 +32,7 @@ const GeminiMessageInternal: React.FC<GeminiMessageProps> = ({
             text={text}
             isPending={isPending}
             availableTerminalHeight={availableTerminalHeight}
-            terminalWidth={terminalWidth - 5}
+            terminalWidth={terminalWidth - LAYOUT.nestIndent}
           />
         </Box>
       </MessageResponse>

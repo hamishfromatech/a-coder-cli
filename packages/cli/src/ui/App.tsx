@@ -89,6 +89,7 @@ import { ShowMoreLines } from './components/ShowMoreLines.js';
 import { PrivacyNotice } from './privacy/PrivacyNotice.js';
 import { useUIState } from './contexts/UIStateContext.js';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts.js';
+import { LAYOUT } from './constants.js';
 
 interface AppProps {
   config: Config;
@@ -143,7 +144,7 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
 
   // Sliding window for message history: keep the last MAX_VISIBLE_HISTORY items
   // in the Static component to prevent excessive re-rendering in long sessions
-  const MAX_VISIBLE_HISTORY = 200;
+  const MAX_VISIBLE_HISTORY = LAYOUT.maxVisibleHistory;
   const [archivedCount, setArchivedCount] = useState(0);
   useEffect(() => {
     if (history.length > MAX_VISIBLE_HISTORY) {
@@ -466,8 +467,8 @@ You can switch authentication methods by typing /auth`;
     }
   }, []);
 
-  const inputWidth = Math.max(20, terminalWidth - 8);
-  const suggestionsWidth = Math.max(20, terminalWidth - 10);
+  const inputWidth = Math.max(LAYOUT.minInputWidth, terminalWidth - 8);
+  const suggestionsWidth = Math.max(LAYOUT.minInputWidth, terminalWidth - 10);
 
   const buffer = useTextBuffer({
     initialText: '',
@@ -687,9 +688,10 @@ You can switch authentication methods by typing /auth`;
 
     // debounce so it doesn't fire up too often during resize
     const handler = setTimeout(() => {
+      // debounce so it doesn't fire up too often during resize
       setStaticNeedsRefresh(false);
       refreshStatic();
-    }, 300);
+    }, LAYOUT.resizeDebounceMs);
 
     return () => {
       clearTimeout(handler);
@@ -766,7 +768,7 @@ You can switch authentication methods by typing /auth`;
       </Box>
     );
   }
-  const mainAreaWidth = Math.max(20, terminalWidth - 4);
+  const mainAreaWidth = Math.max(LAYOUT.minInputWidth, terminalWidth - LAYOUT.contentPaddingX * 2);
   const debugConsoleMaxHeight = Math.floor(Math.max(terminalHeight * 0.2, 5));
   // Arbitrary threshold to ensure that items in the static area are large
   // enough but not too large to make the terminal hard to use.

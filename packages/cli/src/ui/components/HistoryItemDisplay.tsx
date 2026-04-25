@@ -117,11 +117,11 @@ const HistoryItemDisplayInternal: React.FC<HistoryItemDisplayProps> = ({
       {item.type === 'collapsed_read_group' && (
         <Box flexDirection="column" paddingX={1}>
           <Box>
-            <Text dimColor>{item.summary}</Text>
-            <Text color={Semantic.Muted}> (ctrl+o to {item.isExpanded ? 'collapse' : 'expand'})</Text>
+            <Text dimColor color={Semantic.Muted}>{item.summary}</Text>
+            <Text color={Semantic.Muted} dimColor> ctrl+o to {item.isExpanded ? 'collapse' : 'expand'}</Text>
           </Box>
           {!item.isExpanded && item.latestHint && (
-            <Text dimColor>  {item.latestHint}</Text>
+            <Text color={Semantic.Muted} dimColor>  {item.latestHint}</Text>
           )}
         </Box>
       )}

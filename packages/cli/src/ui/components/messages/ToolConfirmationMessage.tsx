@@ -7,7 +7,7 @@
 import React, { useCallback, useState } from 'react';
 import { Box, Text } from 'ink';
 import { DiffRenderer } from './DiffRenderer.js';
-import { Colors, Semantic } from '../../colors.js';
+import { Semantic } from '../../colors.js';
 import {
   ToolCallConfirmationDetails,
   ToolConfirmationOutcome,
@@ -26,16 +26,16 @@ import { useKeypress, type Key, stopPropagation } from '../../hooks/useKeypress.
  * Tool name to pill color mapping for the permission dialog title.
  */
 const TOOL_TYPE_COLORS: Record<string, string> = {
-  edit_file: Colors.AccentGreen,
-  write_file: Colors.AccentGreen,
-  shell: Colors.AccentYellow,
-  web_fetch: Colors.AccentPurple,
-  web_search: Colors.AccentPurple,
-  read_file: Colors.AccentCyan,
-  list_directory: Colors.AccentCyan,
-  glob: Colors.AccentCyan,
-  grep: Colors.AccentCyan,
-  subagent: Colors.AccentBlue,
+  edit_file: Semantic.Success,
+  write_file: Semantic.Success,
+  shell: Semantic.Warning,
+  web_fetch: Semantic.Primary,
+  web_search: Semantic.Primary,
+  read_file: Semantic.Info,
+  list_directory: Semantic.Info,
+  glob: Semantic.Info,
+  grep: Semantic.Info,
+  subagent: Semantic.Info,
 };
 
 /**
@@ -164,13 +164,13 @@ export const ToolConfirmationMessage: React.FC<
         <Box
           minWidth="90%"
           borderStyle="round"
-          borderColor={Colors.Gray}
+          borderColor={Semantic.Muted}
           justifyContent="space-around"
           padding={1}
           overflow="hidden"
         >
           <Text>Modify in progress: </Text>
-          <Text color={Colors.AccentGreen}>
+          <Text color={Semantic.Success}>
             Save and close external editor to continue
           </Text>
         </Box>
@@ -179,7 +179,7 @@ export const ToolConfirmationMessage: React.FC<
 
     question = `Apply this change?`;
     titleText = 'File Edit';
-    titleColor = Colors.AccentGreen;
+    titleColor = Semantic.Success;
     options.push(
       {
         label: 'Yes, allow once',
@@ -209,7 +209,7 @@ export const ToolConfirmationMessage: React.FC<
 
     question = `Allow execution?`;
     titleText = 'Bash';
-    titleColor = Colors.AccentYellow;
+    titleColor = Semantic.Warning;
     options.push(
       {
         label: 'Yes, allow once',
@@ -234,7 +234,7 @@ export const ToolConfirmationMessage: React.FC<
             maxWidth={Math.max(childWidth - 4, 1)}
           >
             <Box>
-              <Text color={Colors.AccentCyan}>{executionProps.command}</Text>
+              <Text color={Semantic.Info}>{executionProps.command}</Text>
             </Box>
           </MaxSizedBox>
         </Box>
@@ -248,7 +248,7 @@ export const ToolConfirmationMessage: React.FC<
 
     question = `Do you want to proceed?`;
     titleText = 'Web';
-    titleColor = Colors.AccentPurple;
+    titleColor = Semantic.Primary;
     options.push(
       {
         label: 'Yes, allow once',
@@ -263,7 +263,7 @@ export const ToolConfirmationMessage: React.FC<
 
     bodyContent = (
       <Box flexDirection="column" paddingX={1} marginLeft={1}>
-        <Text color={Colors.AccentCyan}>{infoProps.prompt}</Text>
+        <Text color={Semantic.Info}>{infoProps.prompt}</Text>
         {displayUrls && infoProps.urls && infoProps.urls.length > 0 && (
           <Box flexDirection="column" marginTop={1}>
             <Text>URLs to fetch:</Text>
@@ -280,14 +280,14 @@ export const ToolConfirmationMessage: React.FC<
 
     bodyContent = (
       <Box flexDirection="column" paddingX={1} marginLeft={1}>
-        <Text color={Colors.AccentCyan}>MCP Server: {mcpProps.serverName}</Text>
-        <Text color={Colors.AccentCyan}>Tool: {mcpProps.toolName}</Text>
+        <Text color={Semantic.Info}>MCP Server: {mcpProps.serverName}</Text>
+        <Text color={Semantic.Info}>Tool: {mcpProps.toolName}</Text>
       </Box>
     );
 
     question = `Allow execution of MCP tool "${mcpProps.toolName}" from server "${mcpProps.serverName}"?`;
     titleText = 'MCP';
-    titleColor = Colors.AccentBlue;
+    titleColor = Semantic.Info;
     options.push(
       {
         label: 'Yes, allow once',
@@ -338,12 +338,12 @@ export const ToolConfirmationMessage: React.FC<
       </Box>
 
       {/* Confirmation Question */}
-      <Box marginBottom={1} marginTop={1} flexShrink={0} paddingLeft={1}>
-        <Text wrap="truncate">{question}</Text>
+      <Box marginBottom={0} marginTop={1} flexShrink={0} paddingLeft={1}>
+        <Text wrap="truncate" bold>{question}</Text>
       </Box>
 
       {/* Select Input for Options */}
-      <Box flexShrink={0} paddingLeft={1}>
+      <Box flexShrink={0} paddingLeft={1} marginTop={0}>
         <RadioButtonSelect
           items={options}
           onSelect={handleSelect}
@@ -352,23 +352,22 @@ export const ToolConfirmationMessage: React.FC<
       </Box>
 
       {/* Hint line */}
-      <Box marginTop={1} paddingLeft={1}>
-        <Text dimColor>
-          Esc to cancel
-          {feedbackMode === 'none' && ' · Tab to amend'}
-          {feedbackMode !== 'none' && ' · Tab to switch mode'}
+      <Box marginTop={0} paddingLeft={1}>
+        <Text dimColor color={Semantic.Muted}>
+          esc cancel{feedbackMode === 'none' && ' · tab amend'}
+          {feedbackMode !== 'none' && ' · tab switch'}
         </Text>
       </Box>
 
       {/* Feedback input area */}
       {feedbackMode !== 'none' && (
         <Box marginTop={1} paddingLeft={1} flexDirection="column">
-          <Text dimColor>
+          <Text dimColor color={Semantic.Muted}>
             {feedbackMode === 'accept'
-              ? 'Tell the AI what to do next:'
-              : 'Tell the AI what to do differently:'}
+              ? 'what should happen next:'
+              : 'what to do differently:'}
           </Text>
-          <Box flexDirection="row" marginTop={1}>
+          <Box flexDirection="row" marginTop={0}>
             <Text color={Semantic.Primary}>{'> '}</Text>
             <Text>{feedbackText}</Text>
             <Text dimColor>▏</Text>

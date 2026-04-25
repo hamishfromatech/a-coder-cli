@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { Box, Text } from 'ink';
-import { Colors } from '../colors.js';
+import { Semantic } from '../colors.js';
 import { GIT_COMMIT_INFO } from '../../generated/git-commit.js';
 
 interface AboutBoxProps {
@@ -28,22 +28,20 @@ export const AboutBox: React.FC<AboutBoxProps> = ({
 }) => (
   <Box
     borderStyle="round"
-    borderColor={Colors.Gray}
+    borderColor={Semantic.Muted}
     flexDirection="column"
     padding={1}
     marginY={1}
     width="100%"
   >
     <Box marginBottom={1}>
-      <Text bold color={Colors.AccentPurple}>
-        About A-Coder CLI
+      <Text bold color={Semantic.Primary}>
+        about a-coder cli
       </Text>
     </Box>
     <Box flexDirection="row">
       <Box width={15}>
-        <Text bold color={Colors.LightBlue}>
-          CLI Version
-        </Text>
+        <Text color={Semantic.Info}>cli version</Text>
       </Box>
       <Box flexGrow={1}>
         <Text wrap="wrap">{cliVersion}</Text>
@@ -52,9 +50,7 @@ export const AboutBox: React.FC<AboutBoxProps> = ({
     {GIT_COMMIT_INFO && !['N/A'].includes(GIT_COMMIT_INFO) && (
       <Box flexDirection="row">
         <Box width={15}>
-          <Text bold color={Colors.LightBlue}>
-            Git Commit
-          </Text>
+          <Text color={Semantic.Info}>git commit</Text>
         </Box>
         <Box flexGrow={1}>
           <Text wrap="wrap">{GIT_COMMIT_INFO}</Text>
@@ -63,9 +59,7 @@ export const AboutBox: React.FC<AboutBoxProps> = ({
     )}
     <Box flexDirection="row">
       <Box width={15}>
-        <Text bold color={Colors.LightBlue}>
-          Model
-        </Text>
+        <Text color={Semantic.Info}>model</Text>
       </Box>
       <Box flexGrow={1}>
         <Text wrap="wrap">{modelVersion}</Text>
@@ -73,9 +67,7 @@ export const AboutBox: React.FC<AboutBoxProps> = ({
     </Box>
     <Box flexDirection="row">
       <Box width={15}>
-        <Text bold color={Colors.LightBlue}>
-          Sandbox
-        </Text>
+        <Text color={Semantic.Info}>sandbox</Text>
       </Box>
       <Box flexGrow={1}>
         <Text wrap="wrap">{sandboxEnv}</Text>
@@ -83,9 +75,7 @@ export const AboutBox: React.FC<AboutBoxProps> = ({
     </Box>
     <Box flexDirection="row">
       <Box width={15}>
-        <Text bold color={Colors.LightBlue}>
-          OS
-        </Text>
+        <Text color={Semantic.Info}>os</Text>
       </Box>
       <Box flexGrow={1}>
         <Text wrap="wrap">{osVersion}</Text>
@@ -93,9 +83,7 @@ export const AboutBox: React.FC<AboutBoxProps> = ({
     </Box>
     <Box flexDirection="row">
       <Box width={15}>
-        <Text bold color={Colors.LightBlue}>
-          Auth Method
-        </Text>
+        <Text color={Semantic.Info}>auth method</Text>
       </Box>
       <Box flexGrow={1}>
         <Text wrap="wrap">
@@ -106,9 +94,7 @@ export const AboutBox: React.FC<AboutBoxProps> = ({
     {gcpProject && (
       <Box flexDirection="row">
         <Box width={15}>
-          <Text bold color={Colors.LightBlue}>
-            GCP Project
-          </Text>
+          <Text color={Semantic.Info}>gcp project</Text>
         </Box>
         <Box flexGrow={1}>
           <Text wrap="wrap">{gcpProject}</Text>

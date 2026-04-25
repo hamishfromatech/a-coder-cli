@@ -13,6 +13,7 @@ import { MarkdownDisplay } from '../../utils/MarkdownDisplay.js';
 import { GeminiRespondingSpinner } from '../GeminiRespondingSpinner.js';
 import { MaxSizedBox } from '../shared/MaxSizedBox.js';
 import { MessageResponse } from '../shared/MessageResponse.js';
+import { CONTENT, LAYOUT } from '../../constants.js';
 
 /**
  * Map of tool internal names to their pill background colors.
@@ -107,12 +108,6 @@ function getBorderColor(status: ToolCallStatus): string {
 }
 
 const STATIC_HEIGHT = 1;
-const RESERVED_LINE_COUNT = 5; // for tool name, status, padding etc.
-const MIN_LINES_SHOWN = 2;
-
-// Large threshold to ensure we don't cause performance issues for very large
-// outputs that will get truncated further by MaxSizedBox anyway.
-const MAXIMUM_RESULT_DISPLAY_CHARACTERS = 1000000;
 export type TextEmphasis = 'high' | 'medium' | 'low';
 
 export interface ToolMessageProps extends IndividualToolCallDisplay {
@@ -134,8 +129,8 @@ export const ToolMessage: React.FC<ToolMessageProps> = ({
 }) => {
   const availableHeight = availableTerminalHeight
     ? Math.max(
-        availableTerminalHeight - STATIC_HEIGHT - RESERVED_LINE_COUNT,
-        MIN_LINES_SHOWN + 1,
+        availableTerminalHeight - STATIC_HEIGHT - CONTENT.toolReservedLines,
+        CONTENT.minToolLinesShown + 1,
       )
     : undefined;
 
@@ -146,11 +141,11 @@ export const ToolMessage: React.FC<ToolMessageProps> = ({
     renderOutputAsMarkdown = false;
   }
 
-  const childWidth = terminalWidth - 5; // account for ⎿ prefix + padding
+  const childWidth = terminalWidth - LAYOUT.nestIndent; // account for ⎿ prefix + padding
   if (typeof resultDisplay === 'string') {
-    if (resultDisplay.length > MAXIMUM_RESULT_DISPLAY_CHARACTERS) {
+    if (resultDisplay.length > CONTENT.maxToolResultCharacters) {
       resultDisplay =
-        '...' + resultDisplay.slice(-MAXIMUM_RESULT_DISPLAY_CHARACTERS);
+        '...' + resultDisplay.slice(-CONTENT.maxToolResultCharacters);
     }
   }
 
@@ -158,41 +153,56 @@ export const ToolMessage: React.FC<ToolMessageProps> = ({
   const verbPhrase = getVerbPhrase(name);
   const isExecuting = status === ToolCallStatus.Executing;
 
-  return (
-    <Box flexDirection="column" paddingY={1}>
-      {/* Tool name row: [dot] [pill:ToolName] (description) */}
-      <Box flexDirection="row" flexWrap="nowrap" alignItems="center">
-        {/* Blinking dot indicator for in-progress tools */}
-        {isExecuting && (
-          <Box minWidth={2} marginRight={1}>
-            <GeminiRespondingSpinner spinnerType="toggle" nonRespondingDisplay="●" />
-          </Box>
-        )}
-        {!isExecuting && status === ToolCallStatus.Success && (
+  // Compute the status indicator
+  const statusIndicator = (() => {
+    if (isExecuting) {
+      return (
+        <Box minWidth={2} marginRight={1}>
+          <GeminiRespondingSpinner spinnerType="toggle" nonRespondingDisplay="●" />
+        </Box>
+      );
+    }
+    switch (status) {
+      case ToolCallStatus.Success:
+        return (
           <Box minWidth={2} marginRight={1}>
             <Text color={Semantic.Success}>✓</Text>
           </Box>
-        )}
-        {!isExecuting && status === ToolCallStatus.Error && (
+        );
+      case ToolCallStatus.Error:
+        return (
           <Box minWidth={2} marginRight={1}>
             <Text color={Semantic.Error} bold>✕</Text>
           </Box>
-        )}
-        {!isExecuting && status === ToolCallStatus.Canceled && (
+        );
+      case ToolCallStatus.Canceled:
+        return (
           <Box minWidth={2} marginRight={1}>
             <Text color={Semantic.Muted}>○</Text>
           </Box>
-        )}
-        {!isExecuting && status === ToolCallStatus.Confirming && (
+        );
+      case ToolCallStatus.Confirming:
+        return (
           <Box minWidth={2} marginRight={1}>
             <Text color={Semantic.Warning}>⠸</Text>
           </Box>
-        )}
-        {!isExecuting && status === ToolCallStatus.Pending && (
+        );
+      case ToolCallStatus.Pending:
+        return (
           <Box minWidth={2} marginRight={1}>
             <Text color={Semantic.Muted}>○</Text>
           </Box>
-        )}
+        );
+      default:
+        return null;
+    }
+  })();
+
+  return (
+    <Box flexDirection="column" paddingY={1}>
+      {/* Tool name row: [status] [pill:ToolName] (description) */}
+      <Box flexDirection="row" flexWrap="nowrap" alignItems="center">
+        {statusIndicator}
 
         {/* Tool name pill */}
         <Text

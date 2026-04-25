@@ -116,30 +116,36 @@ export const Footer: React.FC<FooterProps> = ({
   );
 
   return (
-    <Box
-      marginTop={1}
-      paddingTop={1}
-      justifyContent="space-between"
-      width="100%"
-    >
-      {/* Left: Model + mode + branch */}
-      <Box flexShrink={1} alignItems="center">
-        {leftParts}
+    <Box flexDirection="column" width="100%">
+      {/* Subtle separator line above the footer */}
+      <Box width="100%">
+        <Text dimColor color={Semantic.Muted}>{'─'.repeat(40)}</Text>
       </Box>
+      <Box
+        marginTop={0}
+        paddingTop={1}
+        justifyContent="space-between"
+        width="100%"
+      >
+        {/* Left: Model + mode + branch */}
+        <Box flexShrink={1} alignItems="center">
+          {leftParts}
+        </Box>
 
-      {/* Right: Context usage */}
-      <Box alignItems="center" flexShrink={0}>
-        {contextUsage && percentage > 0 && rightContent}
-        {!showErrorDetails && errorCount > 0 && (
-          <Text color={Semantic.Error} dimColor>
-            {' '}({errorCount} error{errorCount !== 1 ? 's' : ''})
-          </Text>
-        )}
-        {debugMode && (
-          <Text color={Semantic.Error} dimColor>
-            {' '}{debugMessage || '--debug'}
-          </Text>
-        )}
+        {/* Right: Context usage */}
+        <Box alignItems="center" flexShrink={0}>
+          {contextUsage && percentage > 0 && rightContent}
+          {!showErrorDetails && errorCount > 0 && (
+            <Text color={Semantic.Error} dimColor>
+              {' '}({errorCount} error{errorCount !== 1 ? 's' : ''})
+            </Text>
+          )}
+          {debugMode && (
+            <Text color={Semantic.Error} dimColor>
+              {' '}{debugMessage || '--debug'}
+            </Text>
+          )}
+        </Box>
       </Box>
     </Box>
   );

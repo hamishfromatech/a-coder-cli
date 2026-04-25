@@ -21,10 +21,10 @@ export const UpdateNotification = ({ message }: UpdateNotificationProps) => (
     flexDirection="row"
   >
     <Box paddingRight={1}>
-      <Text bold color={Semantic.Warning}>{Icons.UpdateLabel}</Text>
+      <Text bold color={Semantic.Warning}>{Icons.Update}</Text>
     </Box>
     <Box flexGrow={1}>
-      <Text wrap="wrap" color={Colors.Foreground}>{message}</Text>
+      <Text wrap="wrap" color={Semantic.Warning}>{message}</Text>
     </Box>
   </Box>
 );

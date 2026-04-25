@@ -23,21 +23,28 @@ const MessageResponseContext = React.createContext(false);
 export function MessageResponse({ children, height }: MessageResponseProps) {
   const isNested = useContext(MessageResponseContext);
 
-  // If already inside a MessageResponse, skip the prefix
-  if (isNested) {
-    return <>{children}</>;
+  // Top level: no prefix, mark as parent
+  if (!isNested) {
+    return (
+      <MessageResponseContext.Provider value={true}>
+        <Box flexDirection="row" height={height} overflowY={height ? 'hidden' : undefined}>
+          <Box flexShrink={1} flexGrow={1}>
+            {children}
+          </Box>
+        </Box>
+      </MessageResponseContext.Provider>
+    );
   }
 
+  // Nested (tool results): show ⎿ prefix
   return (
-    <MessageResponseContext.Provider value={true}>
-      <Box flexDirection="row" height={height} overflowY={height ? 'hidden' : undefined}>
-        <Box flexShrink={0}>
-          <Text dimColor color={Semantic.Muted}>{'  '}⎿  </Text>
-        </Box>
-        <Box flexShrink={1} flexGrow={1}>
-          {children}
-        </Box>
+    <Box flexDirection="row" height={height} overflowY={height ? 'hidden' : undefined}>
+      <Box flexShrink={0}>
+        <Text dimColor color={Semantic.Muted}>{'  '}⎿  </Text>
       </Box>
-    </MessageResponseContext.Provider>
+      <Box flexShrink={1} flexGrow={1}>
+        {children}
+      </Box>
+    </Box>
   );
 }

@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { Box, Text } from 'ink';
-import { Colors } from '../colors.js';
+import { Colors, Semantic } from '../colors.js';
 import { SlashCommand, CommandCategory } from '../commands/types.js';
 
 interface Help {
@@ -19,14 +19,14 @@ interface Help {
  * Category display configuration
  */
 const CATEGORY_CONFIG: Record<CommandCategory, { label: string; color: string }> = {
-  general: { label: 'General', color: Colors.Foreground },
+  general: { label: 'General', color: Semantic.Secondary },
   agent: { label: 'Agents', color: Colors.AccentPurple },
   skill: { label: 'Skills', color: Colors.AccentGreen },
   plugin: { label: 'Plugins', color: Colors.AccentYellow },
   session: { label: 'Session', color: Colors.AccentBlue },
   config: { label: 'Configuration', color: Colors.Gray },
   memory: { label: 'Memory', color: Colors.AccentCyan },
-  advanced: { label: 'Advanced', color: Colors.Foreground },
+  advanced: { label: 'Advanced', color: Semantic.Secondary },
 };
 
 /**
@@ -61,17 +61,16 @@ function renderCommand(command: SlashCommand, indent = 0): React.ReactNode {
           {indentStr}/{command.name}
         </Text>
         {command.altName && (
-          <Text color={Colors.Gray}> (or /{command.altName})</Text>
+          <Text color={Semantic.Muted}> (or /{command.altName})</Text>
         )}
         {command.description && (
-          <Text color={Colors.Gray}> - {command.description}</Text>
+          <Text color={Semantic.Muted}> {command.description}</Text>
         )}
       </Text>
 
-      {/* Show argument hint if available */}
       {command.argumentHint && (
         <Text color={Colors.AccentCyan} dimColor>
-          {indentStr}  Usage: /{command.name}{' '}
+          {indentStr}  usage: /{command.name}{' '}
           {typeof command.argumentHint === 'string'
             ? command.argumentHint
             : command.argumentHint
@@ -82,14 +81,12 @@ function renderCommand(command: SlashCommand, indent = 0): React.ReactNode {
         </Text>
       )}
 
-      {/* Show examples if available */}
       {command.examples && command.examples.length > 0 && (
-        <Text color={Colors.Gray} dimColor>
-          {indentStr}  Example: {command.examples[0]}
+        <Text color={Semantic.Muted} dimColor>
+          {indentStr}  e.g. {command.examples[0]}
         </Text>
       )}
 
-      {/* Render sub-commands */}
       {command.subCommands &&
         command.subCommands.map((subCommand) =>
           renderCommand(subCommand, indent + 2),
@@ -122,52 +119,46 @@ export const Help: React.FC<Help> = ({
     <Box
       flexDirection="column"
       marginBottom={1}
-      borderColor={Colors.Gray}
+      borderColor={Semantic.Muted}
       borderStyle="single"
       padding={1}
     >
       {/* Title */}
       <Text bold color={Colors.AccentPurple}>
-        a-coder-cli Help
+        a-coder-cli help
       </Text>
       <Box height={1} />
 
-      {/* Basics Section */}
-      <Text bold color={Colors.Foreground}>
-        📖 Basics
+      {/* Basics */}
+      <Text bold color={Semantic.Secondary}>
+        basics
       </Text>
       <Text color={Colors.Foreground}>
         <Text bold color={Colors.AccentPurple}>
           @
         </Text>{' '}
-        - Add file context (e.g.,{' '}
-        <Text bold color={Colors.AccentPurple}>
-          @src/myFile.ts
-        </Text>
-        )
+        add file context{' '}
+        <Text color={Semantic.Muted}>(e.g. @src/myFile.ts)</Text>
       </Text>
       <Text color={Colors.Foreground}>
         <Text bold color={Colors.AccentPurple}>
           !
         </Text>{' '}
-        - Execute shell commands (e.g.,{' '}
-        <Text bold color={Colors.AccentPurple}>
-          !npm run start
-        </Text>
-        )
+        execute shell commands{' '}
+        <Text color={Semantic.Muted}>(e.g. !npm run start)</Text>
       </Text>
       <Text color={Colors.Foreground}>
         <Text bold color={Colors.AccentPurple}>
           ?
         </Text>{' '}
-        - Show/hide this help
+        show/hide this help
       </Text>
 
       <Box height={1} />
 
-      {/* Commands Section - Grouped by Category */}
-      <Text bold color={Colors.Foreground}>
-        Commands
+      {/* Commands */}
+      <Text bold color={Semantic.Secondary}>
+        commands
       </Text>
 
       {categoryOrder.map((category) => {
@@ -186,133 +177,105 @@ export const Help: React.FC<Help> = ({
         );
       })}
 
-      {/* Shell command */}
+      {/* Shell */}
       <Box flexDirection="column" marginTop={1}>
-        <Text bold color={Colors.Foreground}>
-          Shell
+        <Text bold color={Semantic.Secondary}>
+          shell
         </Text>
         <Text color={Colors.Foreground}>
           <Text bold color={Colors.AccentPurple}>
-            {' '}
-            !{' '}
-          </Text>
-          - Execute a shell command
+            !
+          </Text>{' '}
+          execute a shell command
         </Text>
       </Box>
 
       <Box height={1} />
 
-      {/* Keyboard Shortcuts Section */}
-      <Text bold color={Colors.Foreground}>
-        Keyboard Shortcuts
+      {/* Keyboard Shortcuts */}
+      <Text bold color={Semantic.Secondary}>
+        keyboard shortcuts
       </Text>
       <Text color={Colors.Foreground}>
-        <Text bold color={Colors.AccentPurple}>Enter</Text> - Send message
+        <Text bold color={Colors.AccentPurple}>Enter</Text> send message
       </Text>
       <Text color={Colors.Foreground}>
-        <Text bold color={Colors.AccentPurple}>Shift+Enter</Text> - Insert newline
+        <Text bold color={Colors.AccentPurple}>Shift+Enter</Text> insert newline
       </Text>
       <Text color={Colors.Foreground}>
-        <Text bold color={Colors.AccentPurple}>
-          {process.platform === 'win32' ? 'Ctrl+Enter' : 'Ctrl+J'}
-        </Text>{' '}
-        {process.platform === 'linux'
-          ? '- New line (Alt+Enter for some distros)'
-          : '- New line'}
+        <Text bold color={Colors.AccentPurple}>Up/Down</Text> history / suggestion navigation
       </Text>
       <Text color={Colors.Foreground}>
-        <Text bold color={Colors.AccentPurple}>Up/Down</Text> - History navigation / suggestion navigation
+        <Text bold color={Colors.AccentPurple}>Tab</Text> accept suggestion
       </Text>
       <Text color={Colors.Foreground}>
-        <Text bold color={Colors.AccentPurple}>Tab</Text> - Accept suggestion
+        <Text bold color={Colors.AccentPurple}>Esc</Text> cancel stream / close suggestions / exit shell
       </Text>
       <Text color={Colors.Foreground}>
-        <Text bold color={Colors.AccentPurple}>Esc</Text> - Cancel stream / close suggestions / exit shell mode
+        <Text bold color={Colors.AccentPurple}>Ctrl+A/E</Text> start/end of line
       </Text>
       <Text color={Colors.Foreground}>
-        <Text bold color={Colors.AccentPurple}>Ctrl+A</Text> - Move to start of line
+        <Text bold color={Colors.AccentPurple}>Ctrl+K/U</Text> delete to end/start of line
       </Text>
       <Text color={Colors.Foreground}>
-        <Text bold color={Colors.AccentPurple}>Ctrl+E</Text> - Move to end of line / toggle error details
+        <Text bold color={Colors.AccentPurple}>Ctrl+W</Text> delete word before cursor
       </Text>
       <Text color={Colors.Foreground}>
-        <Text bold color={Colors.AccentPurple}>Ctrl+K</Text> - Delete from cursor to end of line
+        <Text bold color={Colors.AccentPurple}>Ctrl+X</Text> open in external editor
       </Text>
       <Text color={Colors.Foreground}>
-        <Text bold color={Colors.AccentPurple}>Ctrl+U</Text> - Delete from start of line to cursor
+        <Text bold color={Colors.AccentPurple}>Ctrl+V</Text> paste image from clipboard
       </Text>
       <Text color={Colors.Foreground}>
-        <Text bold color={Colors.AccentPurple}>Ctrl+W</Text> - Delete word before cursor
+        <Text bold color={Colors.AccentPurple}>Ctrl+L</Text> clear screen
       </Text>
       <Text color={Colors.Foreground}>
-        <Text bold color={Colors.AccentPurple}>Ctrl+X</Text> - Open in external editor
+        <Text bold color={Colors.AccentPurple}>Ctrl+O</Text> toggle reasoning display
       </Text>
       <Text color={Colors.Foreground}>
-        <Text bold color={Colors.AccentPurple}>Ctrl+V</Text> - Paste image from clipboard
+        <Text bold color={Colors.AccentPurple}>Ctrl+T</Text> toggle tool descriptions
       </Text>
       <Text color={Colors.Foreground}>
-        <Text bold color={Colors.AccentPurple}>Ctrl+L</Text> - Clear screen
+        <Text bold color={Colors.AccentPurple}>Ctrl+S</Text> show more lines
       </Text>
       <Text color={Colors.Foreground}>
-        <Text bold color={Colors.AccentPurple}>Ctrl+O</Text> - Toggle reasoning display
+        <Text bold color={Colors.AccentPurple}>Ctrl+Y</Text> toggle auto-approve (yolo mode)
       </Text>
       <Text color={Colors.Foreground}>
-        <Text bold color={Colors.AccentPurple}>Ctrl+T</Text> - Toggle tool descriptions
+        <Text bold color={Colors.AccentPurple}>Shift+Tab</Text> toggle auto-edit mode
       </Text>
       <Text color={Colors.Foreground}>
-        <Text bold color={Colors.AccentPurple}>Ctrl+S</Text> - Show more lines
-      </Text>
-      <Text color={Colors.Foreground}>
-        <Text bold color={Colors.AccentPurple}>Ctrl+Y</Text> - Toggle auto-approve (YOLO mode)
-      </Text>
-      <Text color={Colors.Foreground}>
-        <Text bold color={Colors.AccentPurple}>Shift+Tab</Text> - Toggle auto-edit mode
-      </Text>
-      <Text color={Colors.Foreground}>
-        <Text bold color={Colors.AccentPurple}>Ctrl+C / Ctrl+D</Text> - Quit application (press twice)
+        <Text bold color={Colors.AccentPurple}>Ctrl+C/D</Text> quit (press twice)
       </Text>
 
       <Box height={1} />
 
-      {/* Agents Section */}
-      <Text bold color={Colors.Foreground}>
-        Custom Agents
+      {/* Custom Agents */}
+      <Text bold color={Semantic.Secondary}>
+        custom agents
       </Text>
-      <Text color={Colors.Gray}>
-        Create custom agents for specialized tasks:
-      </Text>
-      <Text color={Colors.Foreground}>
-        <Text bold color={Colors.AccentPurple}>
-          {' '}
-          /agent create
-        </Text>{' '}
-        - Create a new custom agent
+      <Text color={Semantic.Muted}>
+        Create agents for specialized tasks
       </Text>
       <Text color={Colors.Foreground}>
-        <Text bold color={Colors.AccentPurple}>
-          {' '}
-          /agent list
-        </Text>{' '}
-        - List all available agents
+        <Text bold color={Colors.AccentPurple}>/agent create</Text> create a new agent
       </Text>
       <Text color={Colors.Foreground}>
-        <Text bold color={Colors.AccentPurple}>
-          {' '}
-          /agent help
-        </Text>{' '}
-        - Learn more about creating agents
+        <Text bold color={Colors.AccentPurple}>/agent list</Text> list available agents
+      </Text>
+      <Text color={Colors.Foreground}>
+        <Text bold color={Colors.AccentPurple}>/agent help</Text> learn more
       </Text>
 
       <Box height={1} />
 
-      {/* Tips */}
-      <Text color={Colors.Gray} dimColor>
-        Tip: Use fuzzy matching! Type partial command names like "ag" to match "agent"
+      <Text color={Semantic.Muted} dimColor>
+        fuzzy matching works -- type "ag" to match "agent"
       </Text>
 
       <Box height={1} />
-      <Text color={Colors.Gray}>
-        Press Esc or q to close
+      <Text color={Semantic.Muted}>
+        press Esc or q to close
       </Text>
     </Box>
   );

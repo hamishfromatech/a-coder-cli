@@ -22,7 +22,7 @@ interface LoadingIndicatorProps {
 
 /**
  * Global loading indicator shown during LLM streaming.
- * Now more compact — per-tool-use spinners are shown inline in ToolMessage
+ * Compact design — per-tool-use spinners are shown inline in ToolMessage
  * components, so this only shows for overall query state (thinking, waiting).
  */
 export const LoadingIndicator: React.FC<LoadingIndicatorProps> = ({
@@ -41,11 +41,9 @@ export const LoadingIndicator: React.FC<LoadingIndicatorProps> = ({
   const hasThought = thought?.description;
   const isWaiting = streamingState === StreamingState.WaitingForConfirmation;
 
-  // Only show the global spinner for thinking/waiting states.
-  // Per-tool-use spinners are shown inline in ToolMessage components.
   return (
     <Box marginTop={1} flexDirection="column">
-      {/* Main loading line — only shown when there's a phrase (thinking) */}
+      {/* Main loading line */}
       {(currentLoadingPhrase || thought?.subject) && (
         <Box>
           <Box marginRight={2}>
@@ -59,24 +57,23 @@ export const LoadingIndicator: React.FC<LoadingIndicatorProps> = ({
           >
             {currentLoadingPhrase || thought?.subject}
           </Text>
-          {/* Right-aligned content (e.g., model switch notification) */}
           {rightContent && <Box marginLeft={2}>{rightContent}</Box>}
         </Box>
       )}
 
-      {/* Secondary info: thought indicator */}
+      {/* Reasoning hidden hint */}
       {hasThought && !showThinking && (
         <Box marginLeft={4} marginTop={0}>
           <Text color={Semantic.Muted} dimColor>
-            Reasoning hidden (ctrl+o)
+            reasoning hidden (ctrl+o)
           </Text>
         </Box>
       )}
 
-      {/* Thought description — show only when explicitly requested */}
+      {/* Thought description panel */}
       {showThinking && hasThought && (
         <Box
-          marginLeft={4}
+          marginLeft={2}
           marginTop={0}
           paddingY={1}
           paddingX={2}

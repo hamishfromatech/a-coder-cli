@@ -24,7 +24,7 @@ export const InfoMessage: React.FC<InfoMessageProps> = ({ text }) => {
         <Text bold color={Semantic.Info}>{Icons.InfoLabel}</Text>
       </Box>
       <Box flexGrow={1}>
-        <Text wrap="wrap" color={Colors.Foreground}>
+        <Text wrap="wrap" color={Colors.Foreground} dimColor>
           {text}
         </Text>
       </Box>
