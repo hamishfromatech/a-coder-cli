@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import { Semantic, Colors } from '../colors.js';
+import { Semantic, Colors, contrastText } from '../colors.js';
 
 interface ShellIndicatorProps {
   shells: Array<{ id: string; command: string; status: string }>;
@@ -21,7 +21,7 @@ export const ShellIndicator: React.FC<ShellIndicatorProps> = ({
       backgroundColor={isFocused ? Semantic.Primary : Colors.Gray}
       paddingX={1}
     >
-      <Text color="black" bold>
+      <Text color={contrastText(isFocused ? Semantic.Primary : Colors.Gray)} bold>
         &gt;_ {running > 0 && `${running}${done > 0 ? '/' : ''}`}{done > 0 ? `${done}` : ''}
       </Text>
     </Box>

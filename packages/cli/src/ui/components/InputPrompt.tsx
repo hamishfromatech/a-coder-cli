@@ -6,7 +6,7 @@
 
 import React, { useCallback, useEffect, useState, useRef } from 'react';
 import { Box, Text } from 'ink';
-import { Colors, Semantic } from '../colors.js';
+import { Colors, Semantic, contrastText } from '../colors.js';
 import { SuggestionsDisplay } from './SuggestionsDisplay.js';
 import { useInputHistory } from '../hooks/useInputHistory.js';
 import { TextBuffer } from './shared/text-buffer.js';
@@ -596,7 +596,7 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
           paddingX={1}
           backgroundColor={shellModeActive ? Semantic.Warning : (reverseSearchActive ? Semantic.Warning : Semantic.Primary)}
         >
-          <Text color="black" bold>
+          <Text color={contrastText(shellModeActive || reverseSearchActive ? Semantic.Warning : Semantic.Primary)} bold>
             {reverseSearchActive ? '/' : shellModeActive ? '!' : '>'}
           </Text>
         </Box>

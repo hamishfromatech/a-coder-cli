@@ -35,6 +35,33 @@ export const Semantic: SemanticColors = {
   },
 };
 
+/**
+ * Returns 'black' or 'white' based on the luminance of a background color
+ * for maximum contrast. Works with hex colors and Ink named colors.
+ */
+function getLuminance(hex: string): number {
+  const shorthand = hex.length === 4 && hex.startsWith('#');
+  const full = shorthand
+    ? `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`
+    : hex;
+  const r = parseInt(full.slice(1, 3), 16) / 255;
+  const g = parseInt(full.slice(3, 5), 16) / 255;
+  const b = parseInt(full.slice(5, 7), 16) / 255;
+  return 0.299 * r + 0.587 * g + 0.114 * b;
+}
+
+function isNamedDarkColor(name: string): boolean {
+  const dark = new Set(['black', 'blue', 'magenta', 'red', 'gray', 'grey']);
+  return dark.has(name.toLowerCase());
+}
+
+export function contrastText(bgColor: string): 'black' | 'white' {
+  if (bgColor.startsWith('#')) {
+    return getLuminance(bgColor) > 0.5 ? 'black' : 'white';
+  }
+  return isNamedDarkColor(bgColor) ? 'white' : 'black';
+}
+
 export const Colors: ColorsTheme = {
   get type() {
     return themeManager.getActiveTheme().colors.type;

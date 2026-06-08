@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import { Colors, Semantic } from '../colors.js';
+import { Colors, Semantic, contrastText } from '../colors.js';
 import { SlashCommand, CommandCategory } from '../commands/types.js';
 import { Divider } from './shared/Divider.js';
 
@@ -104,19 +104,19 @@ export const Help: React.FC<Help> = ({ commands }) => {
         <Box flexDirection="row" gap={2} flexWrap="wrap">
           <Box>
             <Box backgroundColor={Colors.AccentPurple} paddingX={1}>
-              <Text color="black" bold>@file</Text>
+              <Text color={contrastText(Colors.AccentPurple)} bold>@file</Text>
             </Box>
             <Text dimColor> context</Text>
           </Box>
           <Box>
             <Box backgroundColor={Semantic.Warning} paddingX={1}>
-              <Text color="black" bold>!cmd</Text>
+              <Text color={contrastText(Semantic.Warning)} bold>!cmd</Text>
             </Box>
             <Text dimColor> shell</Text>
           </Box>
           <Box>
             <Box backgroundColor={Semantic.Muted} paddingX={1}>
-              <Text color="black" bold>?</Text>
+              <Text color={contrastText(Semantic.Muted)} bold>?</Text>
             </Box>
             <Text dimColor> help</Text>
           </Box>
@@ -163,7 +163,7 @@ export const Help: React.FC<Help> = ({ commands }) => {
           ].map(({ key, desc }) => (
             <Box key={key} flexDirection="row" gap={0} alignItems="center">
               <Box backgroundColor={Colors.AccentPurple} paddingX={1}>
-                <Text color="black" bold>{key}</Text>
+                <Text color={contrastText(Colors.AccentPurple)} bold>{key}</Text>
               </Box>
               <Text dimColor> {desc}</Text>
             </Box>

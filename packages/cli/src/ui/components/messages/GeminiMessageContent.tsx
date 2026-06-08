@@ -1,12 +1,7 @@
-/**
- * @license
- * Copyright 2025 Google LLC
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React from 'react';
-import { Box } from 'ink';
+import { Box, Text } from 'ink';
 import { MarkdownDisplay } from '../../utils/MarkdownDisplay.js';
+import { Semantic } from '../../colors.js';
 import { MessageResponse } from '../shared/MessageResponse.js';
 import { LAYOUT } from '../../constants.js';
 
@@ -17,12 +12,6 @@ interface GeminiMessageContentProps {
   terminalWidth: number;
 }
 
-/*
- * Gemini message content represents a partial of GeminiMessage and is only used
- * when a response gets too long. Messages are split into multiple
- * GeminiMessageContent's for performance. Uses MessageResponse to maintain
- * consistent ⎿ prefix alignment with the parent message.
- */
 const GeminiMessageContentInternal: React.FC<GeminiMessageContentProps> = ({
   text,
   isPending,
@@ -30,25 +19,25 @@ const GeminiMessageContentInternal: React.FC<GeminiMessageContentProps> = ({
   terminalWidth,
 }) => {
   return (
-    <MessageResponse>
-      <Box flexDirection="column">
-        <MarkdownDisplay
-          text={text}
-          isPending={isPending}
-          availableTerminalHeight={availableTerminalHeight}
-          terminalWidth={terminalWidth - LAYOUT.nestIndent}
-        />
+    <Box flexDirection="row" paddingX={1}>
+      <Box flexShrink={0} width={1} marginRight={1}>
+        <Text bold color={Semantic.Info}>{'▍'}</Text>
       </Box>
-    </MessageResponse>
+      <Box flexGrow={1} flexDirection="column">
+        <MessageResponse>
+          <MarkdownDisplay
+            text={text}
+            isPending={isPending}
+            availableTerminalHeight={availableTerminalHeight}
+            terminalWidth={terminalWidth - LAYOUT.nestIndent - 2}
+          />
+        </MessageResponse>
+      </Box>
+    </Box>
   );
 };
 
-/**
- * Memoized Gemini message content component to prevent unnecessary re-renders
- * during streaming. Only re-renders when text content or props change.
- */
 export const GeminiMessageContent = React.memo(GeminiMessageContentInternal, (prevProps, nextProps) => {
-  // Only re-render if text changed or relevant props changed
   return (
     prevProps.text === nextProps.text &&
     prevProps.isPending === nextProps.isPending &&

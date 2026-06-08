@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import { Colors, Semantic } from '../colors.js';
+import { Colors, Semantic, contrastText } from '../colors.js';
 import { ContextSummaryDisplay } from './ContextSummaryDisplay.js';
 import { AutoAcceptIndicator } from './AutoAcceptIndicator.js';
 import { ShellIndicator } from './ShellIndicator.js';
@@ -49,14 +49,14 @@ export const StatusBar: React.FC<StatusBarProps> = ({
           backgroundColor={Semantic.Warning}
           paddingX={1}
         >
-          <Text color="black" bold>Ctrl+C again to exit</Text>
+          <Text color={contrastText(Semantic.Warning)} bold>Ctrl+C again to exit</Text>
         </Box>
       ) : ctrlDPressedOnce ? (
         <Box
           backgroundColor={Semantic.Warning}
           paddingX={1}
         >
-          <Text color="black" bold>Ctrl+D again to exit</Text>
+          <Text color={contrastText(Semantic.Warning)} bold>Ctrl+D again to exit</Text>
         </Box>
       ) : (
         <ContextSummaryDisplay
@@ -73,7 +73,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
       )}
       {shellModeActive && (
         <Box backgroundColor={Semantic.Warning} paddingX={1}>
-          <Text color="black" bold>!</Text>
+          <Text color={contrastText(Semantic.Warning)} bold>!</Text>
         </Box>
       )}
       {backgroundShells.length > 0 && (

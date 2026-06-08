@@ -2,33 +2,33 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Box, Text } from 'ink';
 import { IndividualToolCallDisplay, ToolCallStatus } from '../../types.js';
 import { DiffRenderer } from './DiffRenderer.js';
-import { Colors, Semantic } from '../../colors.js';
+import { Colors, Semantic, contrastText } from '../../colors.js';
 import { MarkdownDisplay } from '../../utils/MarkdownDisplay.js';
 import { GeminiRespondingSpinner } from '../GeminiRespondingSpinner.js';
 import { MaxSizedBox } from '../shared/MaxSizedBox.js';
 import { MessageResponse } from '../shared/MessageResponse.js';
 import { CONTENT, LAYOUT } from '../../constants.js';
 
-const TOOL_PILL_COLORS: Record<string, { bg: string; fg: string }> = {
-  read_file: { bg: Colors.AccentCyan, fg: 'black' },
-  list_directory: { bg: Colors.AccentCyan, fg: 'black' },
-  glob: { bg: Colors.AccentCyan, fg: 'black' },
-  grep: { bg: Colors.AccentCyan, fg: 'black' },
-  write_file: { bg: Colors.AccentGreen, fg: 'black' },
-  edit_file: { bg: Colors.AccentGreen, fg: 'black' },
-  shell: { bg: Colors.AccentYellow, fg: 'black' },
-  web_fetch: { bg: Colors.AccentPurple, fg: 'black' },
-  web_search: { bg: Colors.AccentPurple, fg: 'black' },
-  subagent: { bg: Colors.AccentBlue, fg: 'black' },
-  task_create: { bg: Colors.AccentBlue, fg: 'black' },
-  task_update: { bg: Colors.AccentBlue, fg: 'black' },
-  task_list: { bg: Colors.AccentCyan, fg: 'black' },
-  task_get: { bg: Colors.AccentCyan, fg: 'black' },
-  skills: { bg: Colors.AccentPurple, fg: 'black' },
-  memory: { bg: Colors.AccentGreen, fg: 'black' },
-  write_todos: { bg: Colors.AccentGreen, fg: 'black' },
-  initialize_heartbeat: { bg: Colors.AccentYellow, fg: 'black' },
-  exit_heartbeat: { bg: Colors.AccentYellow, fg: 'black' },
+const TOOL_PILL_COLORS: Record<string, string> = {
+  read_file: Colors.AccentCyan,
+  list_directory: Colors.AccentCyan,
+  glob: Colors.AccentCyan,
+  grep: Colors.AccentCyan,
+  write_file: Colors.AccentGreen,
+  edit_file: Colors.AccentGreen,
+  shell: Colors.AccentYellow,
+  web_fetch: Colors.AccentPurple,
+  web_search: Colors.AccentPurple,
+  subagent: Colors.AccentBlue,
+  task_create: Colors.AccentBlue,
+  task_update: Colors.AccentBlue,
+  task_list: Colors.AccentCyan,
+  task_get: Colors.AccentCyan,
+  skills: Colors.AccentPurple,
+  memory: Colors.AccentGreen,
+  write_todos: Colors.AccentGreen,
+  initialize_heartbeat: Colors.AccentYellow,
+  exit_heartbeat: Colors.AccentYellow,
 };
 
 const TOOL_VERB_PHRASES: Record<string, string> = {
@@ -171,10 +171,10 @@ export const ToolMessage: React.FC<ToolMessageProps> = ({
         </Box>
         {pillStyle ? (
           <Box
-            backgroundColor={pillStyle.bg}
+            backgroundColor={pillStyle}
             paddingX={1}
           >
-            <Text color={pillStyle.fg} bold wrap="truncate-end">
+            <Text color={contrastText(pillStyle)} bold wrap="truncate-end">
               {name}
             </Text>
           </Box>

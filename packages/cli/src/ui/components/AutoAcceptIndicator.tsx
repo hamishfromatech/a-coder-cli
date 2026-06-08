@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { ApprovalMode } from '@a-coder/core';
-import { Semantic } from '../colors.js';
+import { Semantic, contrastText } from '../colors.js';
 
 interface AutoAcceptIndicatorProps {
   approvalMode: ApprovalMode;
@@ -16,7 +16,7 @@ export const AutoAcceptIndicator: React.FC<AutoAcceptIndicatorProps> = ({
 
   return (
     <Box backgroundColor={color} paddingX={1}>
-      <Text color="black" bold>{label}</Text>
+      <Text color={contrastText(color)} bold>{label}</Text>
     </Box>
   );
 };

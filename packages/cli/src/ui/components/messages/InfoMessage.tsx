@@ -1,9 +1,3 @@
-/**
- * @license
- * Copyright 2025 Google LLC
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React from 'react';
 import { Text, Box } from 'ink';
 import { Colors, Semantic } from '../../colors.js';
@@ -15,11 +9,10 @@ interface InfoMessageProps {
 
 export const InfoMessage: React.FC<InfoMessageProps> = ({ text }) => {
   return (
-    <Box
-      flexDirection="row"
-      marginY={1}
-      paddingX={1}
-    >
+    <Box flexDirection="row" marginY={1} paddingX={1}>
+      <Box flexShrink={0} width={1} marginRight={1}>
+        <Text bold color={Semantic.Info}>{'▍'}</Text>
+      </Box>
       <Box paddingRight={1}>
         <Text bold color={Semantic.Info}>{Icons.InfoLabel}</Text>
       </Box>

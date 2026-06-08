@@ -7,7 +7,7 @@
 import React, { useCallback, useState } from 'react';
 import { Box, Text } from 'ink';
 import { DiffRenderer } from './DiffRenderer.js';
-import { Semantic } from '../../colors.js';
+import { Semantic, contrastText } from '../../colors.js';
 import {
   ToolCallConfirmationDetails,
   ToolConfirmationOutcome,
@@ -323,7 +323,7 @@ export const ToolConfirmationMessage: React.FC<
               <Text
                 bold
                 backgroundColor={titleColor}
-                color="black"
+                color={contrastText(titleColor)}
               >
                 {' ' + titleText + ' '}
               </Text>

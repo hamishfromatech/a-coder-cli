@@ -308,13 +308,13 @@ export const DiffRenderer: React.FC<DiffRendererProps> = ({
         switch (line.type) {
           case 'add':
             gutterNumStr = (line.newLine ?? '').toString();
-            color = 'green';
+            color = Colors.AccentGreen;
             prefixSymbol = '+';
             lastLineNumber = line.newLine ?? null;
             break;
           case 'del':
             gutterNumStr = (line.oldLine ?? '').toString();
-            color = 'red';
+            color = Colors.AccentRed;
             prefixSymbol = '-';
             // For deletions, update lastLineNumber based on oldLine if it's advancing.
             // This helps manage gaps correctly if there are multiple consecutive deletions

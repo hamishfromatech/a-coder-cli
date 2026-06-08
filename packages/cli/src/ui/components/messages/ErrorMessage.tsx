@@ -1,9 +1,3 @@
-/**
- * @license
- * Copyright 2025 Google LLC
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React from 'react';
 import { Text, Box } from 'ink';
 import { Semantic } from '../../colors.js';
@@ -25,26 +19,17 @@ export const ErrorMessage: React.FC<ErrorMessageProps> = ({ text, verbose }) => 
   const displayText = truncateError(text, maxLen);
 
   return (
-    <Box
-      flexDirection="column"
-      marginY={1}
-      borderStyle="single"
-      borderLeft={true}
-      borderRight={false}
-      borderTop={false}
-      borderBottom={false}
-      borderColor={Semantic.Error}
-      paddingX={1}
-    >
-      <Box flexDirection="row">
-        <Box paddingRight={1}>
-          <Text bold color={Semantic.Error}>{Icons.ErrorLabel}</Text>
-        </Box>
-        <Box flexGrow={1}>
-          <Text wrap="wrap" color={Semantic.Error}>
-            {displayText}
-          </Text>
-        </Box>
+    <Box flexDirection="row" marginY={1} paddingX={1}>
+      <Box flexShrink={0} width={1} marginRight={1}>
+        <Text bold color={Semantic.Error}>{'▍'}</Text>
+      </Box>
+      <Box paddingRight={1}>
+        <Text bold color={Semantic.Error}>{Icons.ErrorLabel}</Text>
+      </Box>
+      <Box flexGrow={1}>
+        <Text wrap="wrap" color={Semantic.Error}>
+          {displayText}
+        </Text>
       </Box>
     </Box>
   );
