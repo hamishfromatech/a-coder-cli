@@ -1,15 +1,8 @@
-/**
- * @license
- * Copyright 2025 Google LLC
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React from 'react';
 import { Box, Text } from 'ink';
-import { Colors } from '../colors.js';
+import { Colors, Semantic } from '../colors.js';
 import { ContextSummaryDisplay } from './ContextSummaryDisplay.js';
 import { AutoAcceptIndicator } from './AutoAcceptIndicator.js';
-import { ShellModeIndicator } from './ShellModeIndicator.js';
 import { ShellIndicator } from './ShellIndicator.js';
 import { ApprovalMode, type Config } from '@a-coder/core';
 import type { BackgroundShell, FocusMode } from '../types.js';
@@ -43,22 +36,28 @@ export const StatusBar: React.FC<StatusBarProps> = ({
 }) => (
   <Box
     marginTop={0}
-    display="flex"
+    marginBottom={1}
     justifyContent="space-between"
     width="100%"
   >
-    <Box>
+    <Box flexDirection="row" gap={1} alignItems="center">
       {process.env.GEMINI_SYSTEM_MD && (
-        <Text color={Colors.AccentRed}>|⌐■_■| </Text>
+        <Text color={Colors.AccentRed}>|⌐■_■|</Text>
       )}
       {ctrlCPressedOnce ? (
-        <Text color={Colors.AccentYellow}>
-          Press Ctrl+C again to exit.
-        </Text>
+        <Box
+          backgroundColor={Semantic.Warning}
+          paddingX={1}
+        >
+          <Text color="black" bold>Ctrl+C again to exit</Text>
+        </Box>
       ) : ctrlDPressedOnce ? (
-        <Text color={Colors.AccentYellow}>
-          Press Ctrl+D again to exit.
-        </Text>
+        <Box
+          backgroundColor={Semantic.Warning}
+          paddingX={1}
+        >
+          <Text color="black" bold>Ctrl+D again to exit</Text>
+        </Box>
       ) : (
         <ContextSummaryDisplay
           geminiMdFileCount={geminiMdFileCount}
@@ -68,14 +67,15 @@ export const StatusBar: React.FC<StatusBarProps> = ({
         />
       )}
     </Box>
-    <Box>
-      {showAutoAcceptIndicator !== ApprovalMode.DEFAULT &&
-        !shellModeActive && (
-          <AutoAcceptIndicator
-            approvalMode={showAutoAcceptIndicator}
-          />
-        )}
-      {shellModeActive && <ShellModeIndicator />}
+    <Box flexDirection="row" gap={1} alignItems="center">
+      {showAutoAcceptIndicator !== ApprovalMode.DEFAULT && !shellModeActive && (
+        <AutoAcceptIndicator approvalMode={showAutoAcceptIndicator} />
+      )}
+      {shellModeActive && (
+        <Box backgroundColor={Semantic.Warning} paddingX={1}>
+          <Text color="black" bold>!</Text>
+        </Box>
+      )}
       {backgroundShells.length > 0 && (
         <ShellIndicator
           shells={backgroundShells}

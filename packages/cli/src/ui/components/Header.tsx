@@ -1,18 +1,11 @@
-/**
- * @license
- * Copyright 2025 Google LLC
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React from 'react';
 import { Box, Text } from 'ink';
 import { Semantic } from '../colors.js';
-import { shortAsciiLogo, longAsciiLogo } from './AsciiArt.js';
-import { getAsciiArtWidth } from '../utils/textUtils.js';
+import { longAsciiLogo } from './AsciiArt.js';
 
 interface HeaderProps {
-  customAsciiArt?: string; // For user-defined ASCII art
-  terminalWidth: number; // For responsive logo
+  customAsciiArt?: string;
+  terminalWidth: number;
   version: string;
   nightly: boolean;
 }
@@ -23,36 +16,40 @@ export const Header: React.FC<HeaderProps> = ({
   version,
   nightly,
 }) => {
-  let displayTitle;
-  const widthOfLongLogo = getAsciiArtWidth(longAsciiLogo);
-
-  if (customAsciiArt) {
-    displayTitle = customAsciiArt;
-  } else {
-    displayTitle =
-      terminalWidth >= widthOfLongLogo ? longAsciiLogo : shortAsciiLogo;
-  }
-
-  const artWidth = getAsciiArtWidth(displayTitle);
+  const showShort = terminalWidth < 50;
+  const displayTitle = showShort ? 'A-CODER' : (customAsciiArt || longAsciiLogo);
 
   return (
     <Box
       marginBottom={1}
-      alignItems="flex-start"
-      width={artWidth}
-      flexShrink={0}
       flexDirection="column"
+      width={terminalWidth}
     >
-      <Text bold color={Semantic.Primary}>
-        {displayTitle}
-      </Text>
-      {nightly && (
-        <Box width="100%" flexDirection="row" justifyContent="flex-end">
-          <Text color={Semantic.Muted}>
-            nightly · v{version}
-          </Text>
+      <Box flexDirection="row" alignItems="center" justifyContent="space-between">
+        <Text bold color={Semantic.Primary}>
+          {displayTitle}
+        </Text>
+        <Box flexDirection="row" gap={1} alignItems="center">
+          {nightly && (
+            <Box
+              borderStyle="round"
+              borderColor={Semantic.Warning}
+              paddingX={1}
+              paddingY={0}
+            >
+              <Text color={Semantic.Warning} bold>nightly</Text>
+            </Box>
+          )}
+          <Box
+            borderStyle="round"
+            borderColor={Semantic.Muted}
+            paddingX={1}
+            paddingY={0}
+          >
+            <Text color={Semantic.Muted} dimColor>v{version}</Text>
+          </Box>
         </Box>
-      )}
+      </Box>
     </Box>
   );
 };

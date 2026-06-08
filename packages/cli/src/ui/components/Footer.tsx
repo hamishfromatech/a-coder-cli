@@ -29,31 +29,30 @@ interface FooterProps {
   highContrast?: boolean;
 }
 
-function getApprovalModeLabel(mode?: ApprovalMode): string {
+function getApprovalColor(mode?: ApprovalMode): string {
   switch (mode) {
-    case ApprovalMode.AUTO_EDIT:
-      return 'auto-edit';
-    case ApprovalMode.YOLO:
-      return 'yolo';
-    default:
-      return '';
+    case ApprovalMode.YOLO: return Semantic.Error;
+    case ApprovalMode.AUTO_EDIT: return Semantic.Success;
+    default: return Semantic.Muted;
   }
 }
 
-function getContextColor(percentage: number): string {
-  if (percentage >= 0.9) return Semantic.Error;
-  if (percentage >= 0.7) return Semantic.Warning;
-  return Semantic.Muted;
+function getApprovalLabel(mode?: ApprovalMode): string {
+  switch (mode) {
+    case ApprovalMode.AUTO_EDIT: return 'AE';
+    case ApprovalMode.YOLO: return 'YO';
+    default: return '';
+  }
 }
 
-function ContextProgressBar({ percentage, width = 10 }: { percentage: number; width?: number }) {
+function ContextMiniBar({ percentage, width = 6 }: { percentage: number; width?: number }) {
   const filled = Math.round(percentage * width);
   const empty = width - filled;
-  const color = getContextColor(percentage);
+  const color = percentage >= 0.9 ? Semantic.Error : percentage >= 0.7 ? Semantic.Warning : Semantic.Muted;
   const bar = '█'.repeat(filled) + '░'.repeat(empty);
   return (
     <Text color={color} dimColor>
-      {bar} {(percentage * 100).toFixed(0)}%
+      {bar}
     </Text>
   );
 }
@@ -66,63 +65,25 @@ export const Footer: React.FC<FooterProps> = ({
   corgiMode,
   errorCount,
   showErrorDetails,
-  promptTokenCount,
   contextUsage,
   approvalMode,
   terminalWidth,
   footerStyle = 'detailed',
   highContrast = false,
 }) => {
-  const modeLabel = getApprovalModeLabel(approvalMode);
-  const currentTokens = contextUsage?.tokens ?? promptTokenCount;
   const percentage = contextUsage?.percentage ?? 0;
-  const contextColor = getContextColor(percentage);
-
-  const leftParts: React.ReactNode[] = [];
-  leftParts.push(
-    <Text key="model" color={Semantic.Primary} bold={highContrast}>
-      {model}
-    </Text>
-  );
-
-  if (modeLabel) {
-    leftParts.push(
-      <Text key="mode-sep" color={Semantic.Muted}> · </Text>
-    );
-    leftParts.push(
-      <Text key="mode" color={approvalMode === ApprovalMode.YOLO ? Semantic.Error : Semantic.Success} bold>
-        {modeLabel}
-        {approvalMode === ApprovalMode.YOLO ? '!' : ''}
-      </Text>
-    );
-  }
-
-  if (branchName) {
-    leftParts.push(
-      <Text key="branch-sep" color={Semantic.Muted}> · </Text>
-    );
-    leftParts.push(
-      <Text key="branch" color={Semantic.Muted} dimColor={!highContrast}>
-        {branchName}
-      </Text>
-    );
-  }
-
-  const leftSide = (
-    <Box flexShrink={1} alignItems="center">
-      {leftParts}
-    </Box>
-  );
+  const approvalColor = getApprovalColor(approvalMode);
+  const approvalLabel = getApprovalLabel(approvalMode);
 
   if (footerStyle === 'minimal') {
     return (
       <Box flexDirection="column" width="100%">
         <Divider width={terminalWidth} marginTop={0} marginBottom={0} />
-        <Box marginTop={0} paddingTop={1} justifyContent="space-between" width="100%">
-          {leftSide}
-          <Box alignItems="center" flexShrink={0}>
+        <Box paddingTop={1} justifyContent="space-between" width="100%">
+          <Text bold={highContrast} color={Semantic.Primary}>{model}</Text>
+          <Box>
             {percentage > 0 && (
-              <Text color={contextColor} dimColor>
+              <Text color={percentage >= 0.9 ? Semantic.Error : Semantic.Muted} dimColor>
                 {(percentage * 100).toFixed(0)}%
               </Text>
             )}
@@ -136,19 +97,23 @@ export const Footer: React.FC<FooterProps> = ({
     return (
       <Box flexDirection="column" width="100%">
         <Divider width={terminalWidth} marginTop={0} marginBottom={0} />
-        <Box marginTop={0} paddingTop={1} justifyContent="space-between" width="100%">
-          {leftSide}
-          <Box alignItems="center" flexShrink={0}>
-            {percentage > 0 && <ContextProgressBar percentage={percentage} width={8} />}
+        <Box paddingTop={1} justifyContent="space-between" width="100%">
+          <Box flexDirection="row" gap={1} alignItems="center">
+            <Text bold color={Semantic.Primary}>{model}</Text>
+            {branchName && <Text color={Semantic.Muted} dimColor>| {branchName}</Text>}
+            {approvalLabel && (
+              <Text color={approvalColor} bold>{approvalLabel}</Text>
+            )}
+          </Box>
+          <Box flexDirection="row" gap={1} alignItems="center">
+            {percentage > 0 && <ContextMiniBar percentage={percentage} width={6} />}
             {!showErrorDetails && errorCount > 0 && (
               <Text color={Semantic.Error} dimColor bold={highContrast}>
-                {' '}({errorCount})
+                !{errorCount}
               </Text>
             )}
             {debugMode && (
-              <Text color={Semantic.Error} dimColor>
-                {' '}{debugMessage || '--debug'}
-              </Text>
+              <Text color={Semantic.Error} dimColor>DBG</Text>
             )}
           </Box>
         </Box>
@@ -159,20 +124,33 @@ export const Footer: React.FC<FooterProps> = ({
   return (
     <Box flexDirection="column" width="100%">
       <Divider width={terminalWidth} marginTop={0} marginBottom={0} />
-      <Box marginTop={0} paddingTop={1} justifyContent="space-between" width="100%">
-        {leftSide}
-        <Box alignItems="center" flexShrink={0}>
-          {contextUsage && percentage > 0 && (
-            <ContextProgressBar percentage={percentage} width={10} />
+      <Box paddingTop={1} justifyContent="space-between" width="100%">
+        <Box flexDirection="row" gap={2} alignItems="center">
+          <Text bold color={Semantic.Primary}>{model}</Text>
+          {approvalLabel && (
+            <Text color={approvalColor} bold>[{approvalLabel}]</Text>
+          )}
+          {branchName && (
+            <Text color={Semantic.Muted} dimColor>{branchName}</Text>
+          )}
+        </Box>
+        <Box flexDirection="row" gap={2} alignItems="center">
+          {percentage > 0 && (
+            <Box flexDirection="row" gap={1} alignItems="center">
+              <ContextMiniBar percentage={percentage} width={8} />
+              <Text color={percentage >= 0.9 ? Semantic.Error : Semantic.Muted} dimColor>
+                {(percentage * 100).toFixed(0)}%
+              </Text>
+            </Box>
           )}
           {!showErrorDetails && errorCount > 0 && (
             <Text color={Semantic.Error} dimColor bold={highContrast}>
-              {' '}({errorCount} error{errorCount !== 1 ? 's' : ''})
+              {errorCount} error{errorCount !== 1 ? 's' : ''}
             </Text>
           )}
           {debugMode && (
             <Text color={Semantic.Error} dimColor>
-              {' '}{debugMessage || '--debug'}
+              {debugMessage || 'debug'}
             </Text>
           )}
         </Box>

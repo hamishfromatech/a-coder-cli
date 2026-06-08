@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "@a-coder/core": "file:../core",
+    "@inkjs/ui": "^2.0.0",
     "@types/update-notifier": "^6.0.8",
     "command-exists": "^1.2.9",
     "diff": "^8.0.3",

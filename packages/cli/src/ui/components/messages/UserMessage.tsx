@@ -1,9 +1,3 @@
-/**
- * @license
- * Copyright 2025 Google LLC
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React from 'react';
 import { Text, Box } from 'ink';
 import { Colors, Semantic } from '../../colors.js';
@@ -17,29 +11,39 @@ interface UserMessageProps {
 }
 
 export const UserMessage: React.FC<UserMessageProps> = ({ text, pastedInfo }) => {
-  // If this was pasted content, show a collapsed view
   if (pastedInfo) {
     const { pasteId, lineCount } = pastedInfo;
     const extraLines = lineCount > 1 ? ` +${lineCount - 1} lines` : '';
 
     return (
       <Box
-        paddingX={1}
+        flexDirection="row"
         marginY={1}
+        paddingX={1}
+        paddingY={1}
       >
-        <Text color={Semantic.Muted}>
-          [Pasted text #{pasteId}{extraLines}]
+        <Box marginRight={1} flexShrink={0}>
+          <Text color={Semantic.Muted}>📋</Text>
+        </Box>
+        <Text color={Semantic.Muted} dimColor>
+          Pasted #{pasteId}{extraLines}
         </Text>
       </Box>
     );
   }
 
-  // Normal message display — no bracket prefix, clean text
   return (
     <Box
-      paddingX={1}
+      flexDirection="column"
       marginY={1}
+      paddingX={2}
+      paddingY={1}
+      borderStyle="round"
+      borderColor={Semantic.Secondary}
     >
+      <Box flexDirection="row" marginBottom={1}>
+        <Text bold color={Semantic.Primary}>you</Text>
+      </Box>
       <Text wrap="wrap" color={Colors.Foreground}>
         {text}
       </Text>

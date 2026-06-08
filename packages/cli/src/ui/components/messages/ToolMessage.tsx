@@ -1,9 +1,3 @@
-/**
- * @license
- * Copyright 2025 Google LLC
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React, { useEffect, useState, useRef } from 'react';
 import { Box, Text } from 'ink';
 import { IndividualToolCallDisplay, ToolCallStatus } from '../../types.js';
@@ -15,40 +9,28 @@ import { MaxSizedBox } from '../shared/MaxSizedBox.js';
 import { MessageResponse } from '../shared/MessageResponse.js';
 import { CONTENT, LAYOUT } from '../../constants.js';
 
-/**
- * Map of tool internal names to their pill background colors.
- * These colors categorize tools visually:
- * - Cyan: read/search operations
- * - Green: write/edit operations
- * - Yellow: execution/shell operations
- * - Purple: web/network operations
- * - Blue: agent/special operations
- */
-const TOOL_PILL_COLORS: Record<string, string> = {
-  read_file: Colors.AccentCyan,
-  list_directory: Colors.AccentCyan,
-  glob: Colors.AccentCyan,
-  grep: Colors.AccentCyan,
-  write_file: Colors.AccentGreen,
-  edit_file: Colors.AccentGreen,
-  shell: Colors.AccentYellow,
-  web_fetch: Colors.AccentPurple,
-  web_search: Colors.AccentPurple,
-  subagent: Colors.AccentBlue,
-  task_create: Colors.AccentBlue,
-  task_update: Colors.AccentBlue,
-  task_list: Colors.AccentCyan,
-  task_get: Colors.AccentCyan,
-  skills: Colors.AccentPurple,
-  memory: Colors.AccentGreen,
-  write_todos: Colors.AccentGreen,
-  initialize_heartbeat: Colors.AccentYellow,
-  exit_heartbeat: Colors.AccentYellow,
+const TOOL_PILL_COLORS: Record<string, { bg: string; fg: string }> = {
+  read_file: { bg: Colors.AccentCyan, fg: 'black' },
+  list_directory: { bg: Colors.AccentCyan, fg: 'black' },
+  glob: { bg: Colors.AccentCyan, fg: 'black' },
+  grep: { bg: Colors.AccentCyan, fg: 'black' },
+  write_file: { bg: Colors.AccentGreen, fg: 'black' },
+  edit_file: { bg: Colors.AccentGreen, fg: 'black' },
+  shell: { bg: Colors.AccentYellow, fg: 'black' },
+  web_fetch: { bg: Colors.AccentPurple, fg: 'black' },
+  web_search: { bg: Colors.AccentPurple, fg: 'black' },
+  subagent: { bg: Colors.AccentBlue, fg: 'black' },
+  task_create: { bg: Colors.AccentBlue, fg: 'black' },
+  task_update: { bg: Colors.AccentBlue, fg: 'black' },
+  task_list: { bg: Colors.AccentCyan, fg: 'black' },
+  task_get: { bg: Colors.AccentCyan, fg: 'black' },
+  skills: { bg: Colors.AccentPurple, fg: 'black' },
+  memory: { bg: Colors.AccentGreen, fg: 'black' },
+  write_todos: { bg: Colors.AccentGreen, fg: 'black' },
+  initialize_heartbeat: { bg: Colors.AccentYellow, fg: 'black' },
+  exit_heartbeat: { bg: Colors.AccentYellow, fg: 'black' },
 };
 
-/**
- * Map of tool internal names to their verb phrases for in-progress spinners.
- */
 const TOOL_VERB_PHRASES: Record<string, string> = {
   read_file: 'Reading...',
   list_directory: 'Listing...',
@@ -71,50 +53,36 @@ const TOOL_VERB_PHRASES: Record<string, string> = {
   exit_heartbeat: 'Stopping heartbeat...',
 };
 
-/**
- * Get the pill background color for a tool name.
- */
-function getPillColor(toolName: string): string | undefined {
+function getPillStyle(toolName: string) {
   return TOOL_PILL_COLORS[toolName];
 }
 
-/**
- * Get the verb phrase for a tool in progress.
- */
 function getVerbPhrase(toolName: string): string | undefined {
   return TOOL_VERB_PHRASES[toolName];
 }
 
-/**
- * Determines the border color based on tool call status.
- */
-function getBorderColor(status: ToolCallStatus): string {
+function getStatusColor(status: ToolCallStatus): string {
   switch (status) {
-    case ToolCallStatus.Error:
-      return Semantic.Error;
-    case ToolCallStatus.Confirming:
-      return Semantic.Warning;
-    case ToolCallStatus.Pending:
-      return Semantic.Warning;
-    case ToolCallStatus.Executing:
-      return Semantic.Info;
-    case ToolCallStatus.Success:
-      return Semantic.Success;
-    case ToolCallStatus.Canceled:
-      return Semantic.Muted;
-    default:
-      return Semantic.Secondary;
+    case ToolCallStatus.Error: return Semantic.Error;
+    case ToolCallStatus.Confirming: return Semantic.Warning;
+    case ToolCallStatus.Pending: return Semantic.Warning;
+    case ToolCallStatus.Executing: return Semantic.Info;
+    case ToolCallStatus.Success: return Semantic.Success;
+    case ToolCallStatus.Canceled: return Semantic.Muted;
+    default: return Semantic.Secondary;
   }
 }
 
-const STATIC_HEIGHT = 1;
-export type TextEmphasis = 'high' | 'medium' | 'low';
-
-export interface ToolMessageProps extends IndividualToolCallDisplay {
-  availableTerminalHeight?: number;
-  terminalWidth: number;
-  emphasis?: TextEmphasis;
-  renderOutputAsMarkdown?: boolean;
+function getStatusChar(status: ToolCallStatus): string {
+  switch (status) {
+    case ToolCallStatus.Success: return '✓';
+    case ToolCallStatus.Error: return '✕';
+    case ToolCallStatus.Canceled: return '○';
+    case ToolCallStatus.Confirming: return '?';
+    case ToolCallStatus.Pending: return '○';
+    case ToolCallStatus.Executing: return '>';
+    default: return ' ';
+  }
 }
 
 function ToolElapsedTime({ startTime, durationMs, isExecuting }: { startTime?: number; durationMs?: number; isExecuting: boolean }) {
@@ -139,9 +107,19 @@ function ToolElapsedTime({ startTime, durationMs, isExecuting }: { startTime?: n
   const seconds = (elapsed / 1000).toFixed(1);
   return (
     <Text dimColor color={Semantic.Muted}>
-      {' '}[{seconds}s]
+      {' '}{seconds}s
     </Text>
   );
+}
+
+const STATIC_HEIGHT = 1;
+export type TextEmphasis = 'high' | 'medium' | 'low';
+
+export interface ToolMessageProps extends IndividualToolCallDisplay {
+  availableTerminalHeight?: number;
+  terminalWidth: number;
+  emphasis?: TextEmphasis;
+  renderOutputAsMarkdown?: boolean;
 }
 
 export const ToolMessage: React.FC<ToolMessageProps> = ({
@@ -163,14 +141,11 @@ export const ToolMessage: React.FC<ToolMessageProps> = ({
       )
     : undefined;
 
-  // Long tool call response in MarkdownDisplay doesn't respect availableTerminalHeight properly,
-  // we're forcing it to not render as markdown when the response is too long, it will fallback
-  // to render as plain text, which is contained within the terminal using MaxSizedBox
   if (availableHeight) {
     renderOutputAsMarkdown = false;
   }
 
-  const childWidth = terminalWidth - LAYOUT.nestIndent; // account for ⎿ prefix + padding
+  const childWidth = terminalWidth - LAYOUT.nestIndent;
   if (typeof resultDisplay === 'string') {
     if (resultDisplay.length > CONTENT.maxToolResultCharacters) {
       resultDisplay =
@@ -178,81 +153,43 @@ export const ToolMessage: React.FC<ToolMessageProps> = ({
     }
   }
 
-  const pillColor = getPillColor(name);
+  const pillStyle = getPillStyle(name);
   const verbPhrase = getVerbPhrase(name);
   const isExecuting = status === ToolCallStatus.Executing;
-
-  // Compute the status indicator
-  const statusIndicator = (() => {
-    if (isExecuting) {
-      return (
-        <Box minWidth={2} marginRight={1}>
-          <GeminiRespondingSpinner spinnerType="toggle" nonRespondingDisplay="●" />
-        </Box>
-      );
-    }
-    switch (status) {
-      case ToolCallStatus.Success:
-        return (
-          <Box minWidth={2} marginRight={1}>
-            <Text color={Semantic.Success}>✓</Text>
-          </Box>
-        );
-      case ToolCallStatus.Error:
-        return (
-          <Box minWidth={2} marginRight={1}>
-            <Text color={Semantic.Error} bold>✕</Text>
-          </Box>
-        );
-      case ToolCallStatus.Canceled:
-        return (
-          <Box minWidth={2} marginRight={1}>
-            <Text color={Semantic.Muted}>○</Text>
-          </Box>
-        );
-      case ToolCallStatus.Confirming:
-        return (
-          <Box minWidth={2} marginRight={1}>
-            <Text color={Semantic.Warning}>⠸</Text>
-          </Box>
-        );
-      case ToolCallStatus.Pending:
-        return (
-          <Box minWidth={2} marginRight={1}>
-            <Text color={Semantic.Muted}>○</Text>
-          </Box>
-        );
-      default:
-        return null;
-    }
-  })();
+  const statusColor = getStatusColor(status);
+  const statusChar = getStatusChar(status);
 
   return (
-    <Box flexDirection="column" paddingY={1}>
-      {/* Tool name row: [status] [pill:ToolName] (description) */}
-      <Box flexDirection="row" flexWrap="nowrap" alignItems="center">
-        {statusIndicator}
-
-        {/* Tool name pill */}
-        <Text
-          bold
-          wrap="truncate-end"
-          backgroundColor={pillColor}
-          color={pillColor ? 'black' : undefined}
-        >
-          {' ' + name + ' '}
-        </Text>
-
-        {/* Description in parentheses */}
+    <Box flexDirection="column" paddingY={1} paddingX={1}>
+      <Box flexDirection="row" flexWrap="nowrap" alignItems="center" marginBottom={isExecuting || resultDisplay ? 1 : 0}>
+        <Box minWidth={2} marginRight={1}>
+          {isExecuting ? (
+            <GeminiRespondingSpinner spinnerType="toggle" nonRespondingDisplay="●" />
+          ) : (
+            <Text color={statusColor} bold>{statusChar}</Text>
+          )}
+        </Box>
+        {pillStyle ? (
+          <Box
+            backgroundColor={pillStyle.bg}
+            paddingX={1}
+          >
+            <Text color={pillStyle.fg} bold wrap="truncate-end">
+              {name}
+            </Text>
+          </Box>
+        ) : (
+          <Text bold color={statusColor} wrap="truncate-end">
+            {name}
+          </Text>
+        )}
         {description && description !== name && (
-          <Box flexWrap="wrap" marginLeft={1}>
-            <Text color={Semantic.Muted} wrap="truncate-end">
+          <Box marginLeft={1}>
+            <Text color={Semantic.Muted} dimColor wrap="truncate-end">
               {description}
             </Text>
           </Box>
         )}
-
-        {/* Elapsed time */}
         <ToolElapsedTime
           startTime={startTime}
           durationMs={durationMs}
@@ -260,46 +197,42 @@ export const ToolMessage: React.FC<ToolMessageProps> = ({
         />
       </Box>
 
-      {/* Verb phrase for executing tools */}
       {isExecuting && verbPhrase && (
-        <Box paddingLeft={3}>
-          <Text dimColor color={Semantic.Primary}>
+        <Box paddingLeft={4} marginBottom={1}>
+          <Text color={Semantic.Muted} dimColor>
             {verbPhrase}
           </Text>
         </Box>
       )}
 
-      {/* Result display */}
       {resultDisplay && (
-        <MessageResponse>
-          <Box flexDirection="column" width="100%">
-            {typeof resultDisplay === 'string' && renderOutputAsMarkdown && (
-              <Box flexDirection="column">
+        <Box marginLeft={2}>
+          <MessageResponse>
+            <Box flexDirection="column" width="100%">
+              {typeof resultDisplay === 'string' && renderOutputAsMarkdown && (
                 <MarkdownDisplay
                   text={resultDisplay}
                   isPending={false}
                   availableTerminalHeight={availableHeight}
                   terminalWidth={childWidth}
                 />
-              </Box>
-            )}
-            {typeof resultDisplay === 'string' && !renderOutputAsMarkdown && (
-              <MaxSizedBox maxHeight={availableHeight} maxWidth={childWidth}>
-                <Box>
+              )}
+              {typeof resultDisplay === 'string' && !renderOutputAsMarkdown && (
+                <MaxSizedBox maxHeight={availableHeight} maxWidth={childWidth}>
                   <Text wrap="wrap">{resultDisplay}</Text>
-                </Box>
-              </MaxSizedBox>
-            )}
-            {typeof resultDisplay !== 'string' && (
-              <DiffRenderer
-                diffContent={resultDisplay.fileDiff}
-                filename={resultDisplay.fileName}
-                availableTerminalHeight={availableHeight}
-                terminalWidth={childWidth}
-              />
-            )}
-          </Box>
-        </MessageResponse>
+                </MaxSizedBox>
+              )}
+              {typeof resultDisplay !== 'string' && (
+                <DiffRenderer
+                  diffContent={resultDisplay.fileDiff}
+                  filename={resultDisplay.fileName}
+                  availableTerminalHeight={availableHeight}
+                  terminalWidth={childWidth}
+                />
+              )}
+            </Box>
+          </MessageResponse>
+        </Box>
       )}
     </Box>
   );

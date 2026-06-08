@@ -87,11 +87,11 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
   } = useReverseSearch(userMessages, buffer);
 
   const effectivePlaceholder = disabled
-    ? '  A-Coder is thinking...'
+    ? ' A-Coder is thinking...'
     : waitingForConfirmation
-      ? '  Waiting for your approval...'
+      ? ' Waiting for your approval...'
       : shellModeActive
-        ? '  Shell mode (Esc to exit)'
+        ? ' Shell mode (Esc to exit)'
         : placeholder;
   const effectiveFocus = focus && !disabled;
 
@@ -591,12 +591,15 @@ export const InputPrompt: React.FC<InputPromptProps> = ({
   return (
     <>
       <Box paddingX={0} paddingY={1}>
-        <Text
-          color={disabled ? Semantic.Muted : (reverseSearchActive ? Semantic.Warning : (shellModeActive ? Semantic.Warning : Semantic.Primary))}
-          bold
+        <Box
+          marginRight={1}
+          paddingX={1}
+          backgroundColor={shellModeActive ? Semantic.Warning : (reverseSearchActive ? Semantic.Warning : Semantic.Primary)}
         >
-          {reverseSearchActive ? '(search) ' : shellModeActive ? '! ' : '> '}
-        </Text>
+          <Text color="black" bold>
+            {reverseSearchActive ? '/' : shellModeActive ? '!' : '>'}
+          </Text>
+        </Box>
         <Box flexGrow={1} flexDirection="column">
           {buffer.text.length === 0 && effectivePlaceholder ? (
             effectiveFocus ? (

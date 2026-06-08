@@ -1,13 +1,7 @@
-/**
- * @license
- * Copyright 2025 Google LLC
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React from 'react';
 import { Box, Text } from 'ink';
 import { MarkdownDisplay } from '../../utils/MarkdownDisplay.js';
-import { Semantic } from '../../colors.js';
+import { Semantic, Colors } from '../../colors.js';
 import { MessageResponse } from '../shared/MessageResponse.js';
 import { LAYOUT } from '../../constants.js';
 
@@ -25,7 +19,22 @@ const GeminiMessageInternal: React.FC<GeminiMessageProps> = ({
   terminalWidth,
 }) => {
   return (
-    <Box flexDirection="column" marginY={1}>
+    <Box
+      flexDirection="column"
+      marginY={1}
+      paddingX={2}
+      paddingY={1}
+      borderStyle="round"
+      borderColor={Semantic.Muted}
+    >
+      <Box flexDirection="row" marginBottom={1}>
+        <Text bold color={Semantic.Info}>coder</Text>
+        {isPending && (
+          <Box marginLeft={1}>
+            <Text color={Semantic.Warning} dimColor>●</Text>
+          </Box>
+        )}
+      </Box>
       <MessageResponse>
         <Box flexDirection="column">
           <MarkdownDisplay
@@ -40,12 +49,7 @@ const GeminiMessageInternal: React.FC<GeminiMessageProps> = ({
   );
 };
 
-/**
- * Memoized Gemini message component to prevent unnecessary re-renders
- * during streaming. Only re-renders when text content or props change.
- */
 export const GeminiMessage = React.memo(GeminiMessageInternal, (prevProps, nextProps) => {
-  // Only re-render if text changed or relevant props changed
   return (
     prevProps.text === nextProps.text &&
     prevProps.isPending === nextProps.isPending &&

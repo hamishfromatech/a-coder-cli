@@ -1,9 +1,3 @@
-/**
- * @license
- * Copyright 2025 Google LLC
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import { Box, Text } from 'ink';
 import { ToDoItem } from '@a-coder/core';
 import { Colors, Semantic } from '../colors.js';
@@ -13,15 +7,22 @@ interface ToDoListProps {
 }
 
 export const ToDoList = ({ todos }: ToDoListProps) => {
-  if (todos.length === 0) {
-    return null;
-  }
+  if (todos.length === 0) return null;
 
   return (
-    <Box flexDirection="column" paddingX={1} marginBottom={1}>
-      <Text bold color={Semantic.Info}>
-        Plan:
-      </Text>
+    <Box
+      flexDirection="column"
+      paddingX={1}
+      marginBottom={1}
+      borderStyle="round"
+      borderColor={Semantic.Info}
+    >
+      <Box flexDirection="row" gap={1} marginBottom={1}>
+        <Text bold color={Semantic.Info}>Plan</Text>
+        <Text color={Semantic.Muted} dimColor>
+          ({todos.filter(t => t.status === 'completed').length}/{todos.length})
+        </Text>
+      </Box>
       {todos.map((todo, index) => (
         <Box key={index} marginLeft={1}>
           <Text color={getStatusColor(todo.status)}>
@@ -35,28 +36,20 @@ export const ToDoList = ({ todos }: ToDoListProps) => {
 
 function getStatusIcon(status: ToDoItem['status']): string {
   switch (status) {
-    case 'completed':
-      return '✓';
-    case 'in_progress':
-      return '❯';
-    case 'cancelled':
-      return '✕';
+    case 'completed': return '✓';
+    case 'in_progress': return '❯';
+    case 'cancelled': return '✕';
     case 'pending':
-    default:
-      return '○';
+    default: return '○';
   }
 }
 
 function getStatusColor(status: ToDoItem['status']): string {
   switch (status) {
-    case 'completed':
-      return Semantic.Success;
-    case 'in_progress':
-      return Semantic.Warning;
-    case 'cancelled':
-      return Semantic.Muted;
+    case 'completed': return Semantic.Success;
+    case 'in_progress': return Semantic.Warning;
+    case 'cancelled': return Semantic.Muted;
     case 'pending':
-    default:
-      return Semantic.Info;
+    default: return Colors.AccentCyan;
   }
 }
