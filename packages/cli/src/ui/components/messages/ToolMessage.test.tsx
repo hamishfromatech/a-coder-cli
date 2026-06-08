@@ -123,7 +123,8 @@ describe('<ToolMessage />', () => {
         <ToolMessage {...baseProps} status={ToolCallStatus.Executing} />,
         StreamingState.Idle,
       );
-      expect(lastFrame()).toContain('⊷');
+      expect(lastFrame()).toContain('[');
+      expect(lastFrame()).toContain('s]');
       expect(lastFrame()).not.toContain('MockRespondingSpinner');
       expect(lastFrame()).not.toContain('✔');
     });

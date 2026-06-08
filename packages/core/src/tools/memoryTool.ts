@@ -48,11 +48,22 @@ Do NOT use this tool:
 
 export const GEMINI_CONFIG_DIR = '.a-coder-cli';
 export const DEFAULT_CONTEXT_FILENAME = 'A-CODER.md';
+/**
+ * Project-level instruction files we auto-discover (similar to Claude Code's
+ * `CLAUDE.md` or Aider's `AGENTS.md`). All existing files are read in
+ * order; the first match is used as the canonical "project memory" file
+ * that the MemoryTool appends to.
+ */
+export const DEFAULT_CONTEXT_FILENAMES: string[] = [
+  'AGENTS.md',
+  'A-CODER.md',
+  'GEMINI.md',
+];
 export const MEMORY_SECTION_HEADER = '## Ollama Added Memories';
 
 // This variable will hold the currently configured filename for A-CODER.md context files.
-// It defaults to DEFAULT_CONTEXT_FILENAME but can be overridden by setOllamaMdFilename.
-let currentGeminiMdFilename: string | string[] = DEFAULT_CONTEXT_FILENAME;
+// It defaults to DEFAULT_CONTEXT_FILENAMES but can be overridden by setOllamaMdFilename.
+let currentGeminiMdFilename: string | string[] = DEFAULT_CONTEXT_FILENAMES;
 
 export function setGeminiMdFilename(newFilename: string | string[]): void {
   if (Array.isArray(newFilename)) {

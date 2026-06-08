@@ -96,6 +96,28 @@ export function addCommonOptions(yargs: Argv): Argv {
       description: 'Enables checkpointing of file edits',
       default: false,
     })
+    .option('permission-mode', {
+      alias: 'pm',
+      type: 'string',
+      choices: ['default', 'autoEdit', 'plan', 'yolo'],
+      description:
+        'Default permission mode. "default" asks before every file/shell change, "autoEdit" auto-approves file edits, "plan" forbids file/shell changes (planning only), "yolo" auto-approves everything.',
+    })
+    .option('continue-session', {
+      type: 'boolean',
+      description:
+        'Resume the most recent session in the current project (alias for --resume latest).',
+    })
+    .option('max-turns', {
+      type: 'number',
+      description:
+        'Cap the number of model-tool round-trips per prompt (0 = unlimited).',
+    })
+    .option('auto-accept', {
+      type: 'boolean',
+      description:
+        'ACP / headless mode: auto-allow all session/request_permission requests without prompting.',
+    })
     .option('telemetry', {
       type: 'boolean',
       description:
@@ -135,9 +157,8 @@ export function addCommonOptions(yargs: Argv): Argv {
     })
     .option('resume', {
       alias: 'r',
-      type: 'boolean',
-      description: 'Resume the last session',
-      default: false,
+      type: 'string',
+      description: 'Resume a session by id or name (or "latest" for the most recent).',
     })
     .option('session-id', {
       type: 'string',
@@ -187,5 +208,17 @@ export function addCommonOptions(yargs: Argv): Argv {
     .option('openai-base-url', {
       type: 'string',
       description: 'OpenAI base URL (for custom endpoints)',
+    })
+    .option('output-format', {
+      alias: 'o',
+      type: 'string',
+      choices: ['text', 'json', 'stream-json'],
+      description:
+        'Output format for non-interactive mode: text (default JSON lines), json (legacy alias for text), stream-json (Claude Code compatible NDJSON)',
+    })
+    .option('acp', {
+      type: 'boolean',
+      description:
+        'Run as an Agent Client Protocol (ACP) server over stdio. Speak JSON-RPC 2.0 to a-coder-cli; ignores --print and UI.',
     });
 }

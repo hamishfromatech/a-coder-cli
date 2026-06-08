@@ -25,6 +25,7 @@ import { getStartupWarnings } from './utils/startupWarnings.js';
 import { getUserStartupWarnings } from './utils/userStartupWarnings.js';
 import { runNonInteractive } from './nonInteractiveCli.js';
 import { runHeartbeatMode } from './heartbeatCli.js';
+import { runAcpServer } from './acp.js';
 import { loadExtensions, Extension } from './config/extension.js';
 import { cleanupCheckpoints, registerCleanup, setupGracefulShutdown } from './utils/cleanup.js';
 import { getCliVersion } from './utils/version.js';
@@ -156,6 +157,7 @@ export async function main() {
   const settings = loadSettings(workspaceRoot);
 
   debugLog('Settings loaded');
+
   await cleanupCheckpoints();
   if (settings.errors.length > 0) {
     debugLog(`Settings errors: ${JSON.stringify(settings.errors)}`);
@@ -165,10 +167,67 @@ export async function main() {
   const argv = await parseArguments();
   debugLog(`Arguments parsed: ${JSON.stringify(argv)}`);
 
+  // Resolve --continue-session / --resume <id> into a real sessionId.
+  let activeSessionId: string = sessionId;
+  if (argv.continueSession || argv.resume) {
+    try {
+      const { SessionManager } = await import('@a-coder/core');
+      const projectName = basename(workspaceRoot);
+      const sm = new SessionManager();
+      const sessions = await sm.listSessions({
+        projectName,
+        sortBy: 'updatedAt',
+        sortOrder: 'desc',
+      });
+      if (
+        argv.resume &&
+        typeof argv.resume === 'string' &&
+        argv.resume !== 'latest'
+      ) {
+        const target = sessions.find(
+          (s) => s.id === argv.resume || s.name === argv.resume,
+        );
+        if (target) {
+          activeSessionId = target.id;
+          debugLog(`Resumed session ${target.id}`);
+        } else {
+          debugLog(`--resume target ${argv.resume} not found`);
+        }
+      } else if (sessions.length > 0) {
+        activeSessionId = sessions[0].id;
+        debugLog(`Continuing session ${sessions[0].id}`);
+      } else {
+        debugLog('No prior session found, starting new one');
+      }
+    } catch (err) {
+      debugLog(`Failed to resolve --continue/--resume: ${(err as Error).message}`);
+    }
+  }
+
   // Check for heartbeat mode
   if (argv.heartbeat) {
     debugLog('Starting heartbeat mode');
     await runHeartbeatMode();
+    return;
+  }
+
+  // Check for ACP server mode (Agent Client Protocol over stdio)
+  if (argv.acp) {
+    debugLog('Starting ACP server mode');
+    await runAcpServer({
+      cwd: workspaceRoot,
+      harness: 'a-coder-cli',
+      model: typeof argv.model === 'string' ? argv.model : undefined,
+      autoAccept: !!argv.autoAccept,
+      permissionMode:
+        (argv.permissionMode as
+          | 'default'
+          | 'autoEdit'
+          | 'plan'
+          | 'yolo'
+          | undefined) ?? (argv.yolo ? 'yolo' : 'default'),
+      sessionId: activeSessionId,
+    });
     return;
   }
 
@@ -182,7 +241,7 @@ export async function main() {
   const config = await loadCliConfig(
     settings.merged,
     extensions,
-    sessionId,
+    activeSessionId,
     argv,
   );
 
@@ -320,7 +379,7 @@ export async function main() {
   );
 
   console.log('[TRACE] Calling runNonInteractive...');
-  await runNonInteractive(nonInteractiveConfig, input, prompt_id, argv.print ?? false);
+  await runNonInteractive(nonInteractiveConfig, input, prompt_id, argv.print ?? false, argv.outputFormat);
   console.log('[TRACE] runNonInteractive finished');
   process.exit(0);
 }

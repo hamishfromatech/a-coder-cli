@@ -50,6 +50,8 @@ export interface IndividualToolCallDisplay {
   status: ToolCallStatus;
   confirmationDetails: ToolCallConfirmationDetails | undefined;
   renderOutputAsMarkdown?: boolean;
+  startTime?: number;
+  durationMs?: number;
 }
 
 export interface CompressionProps {

@@ -49,6 +49,8 @@ export interface UseKeyboardShortcutsOptions {
   isEditorDialogOpen: boolean;
   isSkillsDialogOpen: boolean;
   showPrivacyNotice: boolean;
+  showThemePreview: boolean;
+  setShowThemePreview: (value: boolean) => void;
 }
 
 export const useKeyboardShortcuts = (options: UseKeyboardShortcutsOptions) => {
@@ -88,6 +90,8 @@ export const useKeyboardShortcuts = (options: UseKeyboardShortcutsOptions) => {
     isEditorDialogOpen,
     isSkillsDialogOpen,
     showPrivacyNotice,
+    showThemePreview,
+    setShowThemePreview: setShowThemePreviewOption,
   } = options;
 
   const handleExit = useCallback(
@@ -152,6 +156,13 @@ export const useKeyboardShortcuts = (options: UseKeyboardShortcutsOptions) => {
       isSkillsDialogOpen ||
       showPrivacyNotice
     ) {
+      return;
+    }
+
+    if (showThemePreview) {
+      if (key.name === 'escape' || key.sequence === 'q') {
+        setShowThemePreviewOption(false);
+      }
       return;
     }
 

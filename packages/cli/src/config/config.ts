@@ -48,6 +48,10 @@ export interface CliArgs {
   showMemoryUsage: boolean | undefined;
   show_memory_usage: boolean | undefined;
   yolo: boolean | undefined;
+  permissionMode: 'default' | 'autoEdit' | 'plan' | 'yolo' | undefined;
+  continueSession: boolean | undefined;
+  maxTurns: number | undefined;
+  autoAccept: boolean | undefined;
   subagent: boolean | undefined;
   telemetry: boolean | undefined;
   checkpointing: boolean | undefined;
@@ -62,14 +66,40 @@ export interface CliArgs {
   hideThinking: boolean | undefined;
   openaiApiKey: string | undefined;
   openaiBaseUrl: string | undefined;
+  outputFormat: 'text' | 'json' | 'stream-json' | undefined;
   upgrade: boolean | undefined;
   print: boolean | undefined;
+  acp: boolean | undefined;
   // Dash integration options
-  resume: boolean | undefined;
+  resume: string | boolean | undefined;
   sessionId: string | undefined;
   // Heartbeat mode
   heartbeat: boolean | undefined;
   heartbeatInterval: number | undefined;
+}
+
+function resolveApprovalMode(
+  argv: CliArgs,
+  settings?: { approvalMode?: string },
+): ApprovalMode {
+  if (argv.yolo) return ApprovalMode.YOLO;
+  if (argv.permissionMode) {
+    switch (argv.permissionMode) {
+      case 'yolo':
+        return ApprovalMode.YOLO;
+      case 'plan':
+        return ApprovalMode.PLAN;
+      case 'autoEdit':
+        return ApprovalMode.AUTO_EDIT;
+      case 'default':
+      default:
+        return ApprovalMode.DEFAULT;
+    }
+  }
+  if (settings?.approvalMode === 'yolo') return ApprovalMode.YOLO;
+  if (settings?.approvalMode === 'plan') return ApprovalMode.PLAN;
+  if (settings?.approvalMode === 'autoEdit') return ApprovalMode.AUTO_EDIT;
+  return ApprovalMode.DEFAULT;
 }
 
 export async function parseArguments(): Promise<CliArgs> {
@@ -92,13 +122,18 @@ export async function parseArguments(): Promise<CliArgs> {
     .group(['yolo', 'subagent', 'checkpointing', 'heartbeat'], 'Behavior Options:')
     .group(['telemetry', 'telemetry-target', 'telemetry-otlp-endpoint', 'telemetry-log-prompts'], 'Telemetry Options:')
     .group(['extensions', 'list-extensions', 'ide-mode', 'openai-logging', 'openai-api-key', 'openai-base-url'], 'Advanced Options:')
-    .group(['upgrade', 'print', 'resume', 'session-id', 'hide-thinking'], 'Other Options:')
+    .group(['upgrade', 'print', 'acp', 'resume', 'session-id', 'hide-thinking'], 'Other Options:')
     .epilog('For more information, visit the documentation or use --help for detailed usage.')
     .strict()
     .check((argv) => {
       if (argv.prompt && argv.promptInteractive) {
         throw new Error(
           'Cannot use both --prompt (-p) and --prompt-interactive (-i) together',
+        );
+      }
+      if (argv.acp && (argv.prompt || argv.promptInteractive)) {
+        throw new Error(
+          '--acp runs the persistent JSON-RPC server; do not combine with --prompt / --prompt-interactive',
         );
       }
       return true;
@@ -238,7 +273,7 @@ export async function loadCliConfig(
     mcpServers,
     userMemory: memoryContent,
     geminiMdFileCount: fileCount,
-    approvalMode: argv.yolo || false ? ApprovalMode.YOLO : ApprovalMode.DEFAULT,
+    approvalMode: resolveApprovalMode(argv, settings as { approvalMode?: string }),
     showMemoryUsage:
       argv.showMemoryUsage ||
       argv.show_memory_usage ||
@@ -273,7 +308,7 @@ export async function loadCliConfig(
     bugCommand: settings.bugCommand,
     model: argv.model!,
     extensionContextFilePaths,
-    maxSessionTurns: settings.maxSessionTurns ?? -1,
+    maxSessionTurns: argv.maxTurns ?? settings.maxSessionTurns ?? -1,
     maxTokens: settings.maxTokens,
     listExtensions: argv.listExtensions || false,
     activeExtensions: activeExtensions.map((e) => ({

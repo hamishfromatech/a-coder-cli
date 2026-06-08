@@ -13,6 +13,7 @@ interface UIState {
   showToolDescriptions: boolean;
   constrainHeight: boolean;
   corgiMode: boolean;
+  highContrast: boolean;
 }
 
 interface UIStateContextValue extends UIState {
@@ -22,6 +23,7 @@ interface UIStateContextValue extends UIState {
   setShowToolDescriptions: (value: boolean) => void;
   setConstrainHeight: (value: boolean) => void;
   toggleCorgiMode: () => void;
+  setHighContrast: (value: boolean) => void;
 }
 
 const UIStateContext = createContext<UIStateContextValue | null>(null);
@@ -33,6 +35,7 @@ export function UIStateProvider({ children }: { children: React.ReactNode }) {
   const [showToolDescriptions, setShowToolDescriptions] = useState(false);
   const [constrainHeight, setConstrainHeight] = useState(true);
   const [corgiMode, setCorgiMode] = useState(false);
+  const [highContrast, setHighContrast] = useState(false);
 
   const toggleErrorDetails = useCallback(() => setShowErrorDetails((v) => !v), []);
   const toggleThinking = useCallback(() => setShowThinking((v) => !v), []);
@@ -46,14 +49,16 @@ export function UIStateProvider({ children }: { children: React.ReactNode }) {
       showToolDescriptions,
       constrainHeight,
       corgiMode,
+      highContrast,
       setShowHelp,
       toggleErrorDetails,
       toggleThinking,
       setShowToolDescriptions,
       setConstrainHeight,
       toggleCorgiMode,
+      setHighContrast,
     }),
-    [showHelp, showErrorDetails, showThinking, showToolDescriptions, constrainHeight, corgiMode, toggleErrorDetails, toggleThinking, toggleCorgiMode],
+    [showHelp, showErrorDetails, showThinking, showToolDescriptions, constrainHeight, corgiMode, highContrast, setHighContrast, toggleErrorDetails, toggleThinking, toggleCorgiMode],
   );
 
   return <UIStateContext.Provider value={value}>{children}</UIStateContext.Provider>;

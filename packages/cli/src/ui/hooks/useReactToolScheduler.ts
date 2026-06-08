@@ -343,6 +343,7 @@ export function mapToDisplay(
         name: displayName,
         description,
         renderOutputAsMarkdown,
+        startTime: (trackedCall as TrackedExecutingToolCall).startTime,
       };
 
       switch (trackedCall.status) {
@@ -352,6 +353,7 @@ export function mapToDisplay(
             status: mapCoreStatusToDisplayStatus(trackedCall.status),
             resultDisplay: trackedCall.response.resultDisplay,
             confirmationDetails: undefined,
+            durationMs: trackedCall.durationMs,
           };
         case 'error':
           return {
@@ -360,6 +362,7 @@ export function mapToDisplay(
             status: mapCoreStatusToDisplayStatus(trackedCall.status),
             resultDisplay: trackedCall.response.resultDisplay,
             confirmationDetails: undefined,
+            durationMs: trackedCall.durationMs,
           };
         case 'cancelled':
           return {
@@ -367,6 +370,7 @@ export function mapToDisplay(
             status: mapCoreStatusToDisplayStatus(trackedCall.status),
             resultDisplay: trackedCall.response.resultDisplay,
             confirmationDetails: undefined,
+            durationMs: trackedCall.durationMs,
           };
         case 'awaiting_approval':
           return {

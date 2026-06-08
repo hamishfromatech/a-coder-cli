@@ -36,6 +36,7 @@ import { GIT_COMMIT_INFO } from '../../generated/git-commit.js';
 import { formatDuration, formatMemoryUsage } from '../utils/formatters.js';
 import { getCliVersion } from '../../utils/version.js';
 import { LoadedSettings } from '../../config/settings.js';
+import { recordMruCommand } from '../utils/mruCommands.js';
 import {
   type CommandContext,
   type SlashCommandActionReturn,
@@ -82,6 +83,7 @@ export const useSlashCommandProcessor = (
   showToolDescriptions: boolean = false,
   setQuittingMessages: (message: HistoryItem[]) => void,
   openPrivacyNotice: () => void,
+  openThemePreview: () => void,
   onExit?: () => void,
 ) => {
   const session = useSessionStats();
@@ -1226,6 +1228,9 @@ For more information, see: \u001b[36mhttps://goo.gle/a-coder-cli-docs-mcp\u001b[
       if (commandToExecute) {
         const args = parts.slice(pathIndex).join(' ');
 
+        // Track MRU command usage
+        recordMruCommand(commandToExecute.name);
+
         if (commandToExecute.action) {
           const result = await commandToExecute.action(commandContext, args);
 
@@ -1260,6 +1265,9 @@ For more information, see: \u001b[36mhttps://goo.gle/a-coder-cli-docs-mcp\u001b[
                     return { type: 'handled' };
                   case 'theme':
                     openThemeDialog();
+                    return { type: 'handled' };
+                  case 'theme-preview':
+                    openThemePreview();
                     return { type: 'handled' };
                   case 'privacy':
                     openPrivacyNotice();

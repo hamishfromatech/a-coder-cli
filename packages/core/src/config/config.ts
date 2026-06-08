@@ -65,6 +65,7 @@ import {
 export enum ApprovalMode {
   DEFAULT = 'default',
   AUTO_EDIT = 'autoEdit',
+  PLAN = 'plan',
   YOLO = 'yolo',
 }
 

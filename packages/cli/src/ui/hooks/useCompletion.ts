@@ -21,6 +21,7 @@ import {
   Suggestion,
 } from '../components/SuggestionsDisplay.js';
 import { CommandContext, SlashCommand } from '../commands/types.js';
+import { getMruCommands } from '../utils/mruCommands.js';
 
 // Completion result cache to avoid redundant filesystem scans
 const COMPLETION_CACHE_TTL_MS = 5000;
@@ -358,7 +359,27 @@ export function useCompletion(
           };
         });
 
-        setSuggestions(finalSuggestions);
+        // Prepend MRU (most recently used) commands at the top
+        // Only show MRU when no partial input exists (user just typed "/")
+        if (commandPathParts.length === 0 && !partial) {
+          const mruNames = getMruCommands();
+          const mruSuggestions: Suggestion[] = [];
+          for (const name of mruNames) {
+            if (finalSuggestions.some((s) => s.value === name)) continue;
+            const cmd = commandsToSearch.find((c) => c.name === name);
+            if (cmd && cmd.description && !cmd.subCommands) {
+              mruSuggestions.push({
+                label: cmd.name,
+                value: cmd.name,
+                description: cmd.description,
+                category: 'recent',
+              });
+            }
+          }
+          setSuggestions([...mruSuggestions, ...finalSuggestions]);
+        } else {
+          setSuggestions(finalSuggestions);
+        }
         setShowSuggestions(finalSuggestions.length > 0);
         setActiveSuggestionIndex(finalSuggestions.length > 0 ? 0 : -1);
         setIsLoadingSuggestions(false);

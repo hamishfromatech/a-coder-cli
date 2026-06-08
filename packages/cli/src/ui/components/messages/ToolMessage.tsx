@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Box, Text } from 'ink';
 import { IndividualToolCallDisplay, ToolCallStatus } from '../../types.js';
 import { DiffRenderer } from './DiffRenderer.js';
@@ -117,6 +117,33 @@ export interface ToolMessageProps extends IndividualToolCallDisplay {
   renderOutputAsMarkdown?: boolean;
 }
 
+function ToolElapsedTime({ startTime, durationMs, isExecuting }: { startTime?: number; durationMs?: number; isExecuting: boolean }) {
+  const [elapsed, setElapsed] = useState(0);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (isExecuting && startTime) {
+      const tick = () => setElapsed(Date.now() - startTime);
+      tick();
+      intervalRef.current = setInterval(tick, 200);
+      return () => {
+        if (intervalRef.current) clearInterval(intervalRef.current);
+      };
+    } else if (durationMs !== undefined) {
+      setElapsed(durationMs);
+    }
+  }, [isExecuting, startTime, durationMs]);
+
+  if ((elapsed === 0 && !isExecuting) || elapsed < 0) return null;
+
+  const seconds = (elapsed / 1000).toFixed(1);
+  return (
+    <Text dimColor color={Semantic.Muted}>
+      {' '}[{seconds}s]
+    </Text>
+  );
+}
+
 export const ToolMessage: React.FC<ToolMessageProps> = ({
   name,
   description,
@@ -126,6 +153,8 @@ export const ToolMessage: React.FC<ToolMessageProps> = ({
   terminalWidth,
   emphasis = 'medium',
   renderOutputAsMarkdown = true,
+  startTime,
+  durationMs,
 }) => {
   const availableHeight = availableTerminalHeight
     ? Math.max(
@@ -222,6 +251,13 @@ export const ToolMessage: React.FC<ToolMessageProps> = ({
             </Text>
           </Box>
         )}
+
+        {/* Elapsed time */}
+        <ToolElapsedTime
+          startTime={startTime}
+          durationMs={durationMs}
+          isExecuting={isExecuting}
+        />
       </Box>
 
       {/* Verb phrase for executing tools */}

@@ -87,6 +87,7 @@ import { DialogProvider } from './contexts/DialogContext.js';
 import { UIStateProvider } from './contexts/UIStateContext.js';
 import { ShowMoreLines } from './components/ShowMoreLines.js';
 import { PrivacyNotice } from './privacy/PrivacyNotice.js';
+import { ThemePreview } from './components/ThemePreview.js';
 import { useUIState } from './contexts/UIStateContext.js';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts.js';
 import { LAYOUT } from './constants.js';
@@ -174,6 +175,7 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
     setConstrainHeight,
     corgiMode,
     toggleCorgiMode,
+    highContrast,
   } = useUIState();
 
   const [ctrlCPressedOnce, setCtrlCPressedOnce] = useState(false);
@@ -186,6 +188,7 @@ const App = ({ config, settings, startupWarnings = [], version }: AppProps) => {
   const ctrlDPressedOnceRef = useRef(false);
   const ctrlDTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [showPrivacyNotice, setShowPrivacyNotice] = useState<boolean>(false);
+  const [showThemePreview, setShowThemePreview] = useState<boolean>(false);
   const [modelSwitchedFromQuotaError, setModelSwitchedFromQuotaError] =
     useState<boolean>(false);
   const [userTier, setUserTier] = useState<UserTierId | undefined>(undefined);
@@ -428,6 +431,10 @@ You can switch authentication methods by typing /auth`;
     config.setFlashFallbackHandler(flashFallbackHandler);
   }, [config, addItem, userTier]);
 
+  const openThemePreview = useCallback(() => {
+    setShowThemePreview(true);
+  }, []);
+
   const {
     handleSlashCommand,
     slashCommands,
@@ -452,6 +459,7 @@ You can switch authentication methods by typing /auth`;
     showToolDescriptions,
     setQuittingMessages,
     openPrivacyNotice,
+    openThemePreview,
     inkExit,
   );
   const pendingHistoryItems = [...pendingSlashCommandHistoryItems];
@@ -582,6 +590,8 @@ You can switch authentication methods by typing /auth`;
     isEditorDialogOpen,
     isSkillsDialogOpen,
     showPrivacyNotice,
+    showThemePreview,
+    setShowThemePreview,
   });
 
   const handleFinalSubmit = useCallback(
@@ -734,6 +744,7 @@ You can switch authentication methods by typing /auth`;
       !isThemeDialogOpen &&
       !isEditorDialogOpen &&
       !showPrivacyNotice &&
+      !showThemePreview &&
       geminiClient?.isInitialized?.()
     ) {
       submitQuery(initialPrompt);
@@ -747,6 +758,7 @@ You can switch authentication methods by typing /auth`;
     isThemeDialogOpen,
     isEditorDialogOpen,
     showPrivacyNotice,
+    showThemePreview,
     geminiClient,
   ]);
 
@@ -920,6 +932,8 @@ You can switch authentication methods by typing /auth`;
               onExit={() => setShowPrivacyNotice(false)}
               config={config}
             />
+          ) : showThemePreview ? (
+            <ThemePreview />
           ) : (
             <>
               {/* Container for status area to prevent overlap */}
@@ -1058,6 +1072,8 @@ You can switch authentication methods by typing /auth`;
             nightly={nightly}
             terminalWidth={terminalWidth}
             approvalMode={showAutoAcceptIndicator}
+            footerStyle={settings.merged.footerStyle || 'detailed'}
+            highContrast={settings.merged.highContrast}
           />
         </Box>
       </Box>

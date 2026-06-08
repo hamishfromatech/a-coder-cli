@@ -49,6 +49,8 @@ function getCategoryColor(category?: string): string {
       return Colors.Gray;
     case 'memory':
       return Colors.AccentCyan;
+    case 'recent':
+      return Colors.AccentCyan;
     default:
       return Colors.Foreground;
   }

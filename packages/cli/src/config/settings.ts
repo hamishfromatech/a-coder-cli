@@ -136,6 +136,10 @@ export interface Settings {
 
   // Feature flags for gradual feature rollout and toggling
   featureFlags?: Record<string, boolean | { enabled: boolean; rolloutPercentage?: number }>;
+
+  // UI settings
+  footerStyle?: 'compact' | 'detailed' | 'minimal';
+  highContrast?: boolean;
 }
 
 export interface SettingsError {

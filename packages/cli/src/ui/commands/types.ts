@@ -87,7 +87,7 @@ export interface MessageActionReturn {
  */
 export interface OpenDialogActionReturn {
   type: 'dialog';
-  dialog: 'help' | 'auth' | 'theme' | 'privacy' | 'editor' | 'skills';
+  dialog: 'help' | 'auth' | 'theme' | 'theme-preview' | 'privacy' | 'editor' | 'skills';
 }
 
 export type SlashCommandActionReturn =

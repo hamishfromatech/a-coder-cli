@@ -13,12 +13,8 @@ import {
   isTelemetrySdkInitialized,
   ToolResultDisplay,
 } from '@a-coder/core';
-import {
-  Content,
-  Part,
-  FunctionCall,
-  GenerateContentResponse,
-} from '@google/genai';
+import { Content, GenerateContentResponse, Part, FunctionCall } from '@google/genai';
+import { GeminiChat } from '@a-coder/core';
 
 import { parseAndFormatApiError } from './ui/utils/errorParsing.js';
 import {
@@ -27,7 +23,7 @@ import {
 } from './ui/utils/ansiFormatter.js';
 
 /**
- * Structured output format for --print mode
+ * Structured output format for --print mode (legacy)
  */
 interface PrintOutput {
   type: 'text' | 'tool_call' | 'tool_result' | 'error';
@@ -40,6 +36,8 @@ interface PrintOutput {
     error?: string;
   };
 }
+
+type OutputFormat = 'text' | 'json' | 'stream-json';
 
 function getResponseText(response: GenerateContentResponse): string | null {
   if (response.candidates && response.candidates.length > 0) {
@@ -105,6 +103,147 @@ function createPrintOutput(
   };
 }
 
+function generateSessionId(): string {
+  return `ses_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function emitStreamJson(message: Record<string, unknown>): void {
+  process.stdout.write(JSON.stringify(message) + '\n');
+}
+
+function emitStreamJsonInit(sessionId: string, model: string): void {
+  emitStreamJson({
+    type: 'system',
+    subtype: 'init',
+    session_id: sessionId,
+    model,
+    tools: [],
+    cwd: process.cwd(),
+    claude_code_version: '0.0.10',
+    uuid: generateSessionId(),
+  });
+}
+
+function emitStreamJsonAssistantText(text: string, sessionId: string): void {
+  emitStreamJson({
+    type: 'assistant',
+    message: {
+      id: `msg_${generateSessionId()}`,
+      type: 'assistant',
+      role: 'assistant',
+      content: [{ type: 'text', text }],
+      model: '',
+      stop_reason: null,
+      stop_sequence: null,
+    },
+    parent_tool_use_id: null,
+    uuid: generateSessionId(),
+    session_id: sessionId,
+  });
+}
+
+function emitStreamJsonToolUse(
+  toolName: string,
+  toolArgs: Record<string, unknown>,
+  toolUseId: string,
+  sessionId: string,
+): void {
+  emitStreamJson({
+    type: 'assistant',
+    message: {
+      id: `msg_${generateSessionId()}`,
+      type: 'assistant',
+      role: 'assistant',
+      content: [{
+        type: 'tool_use',
+        id: toolUseId,
+        name: toolName,
+        input: toolArgs,
+      }],
+      model: '',
+      stop_reason: null,
+      stop_sequence: null,
+    },
+    parent_tool_use_id: null,
+    uuid: generateSessionId(),
+    session_id: sessionId,
+  });
+}
+
+function emitStreamJsonToolResult(
+  toolName: string,
+  toolUseId: string,
+  result: unknown,
+  sessionId: string,
+): void {
+  const content = typeof result === 'string' ? result : JSON.stringify(result);
+  emitStreamJson({
+    type: 'assistant',
+    message: {
+      id: `msg_${generateSessionId()}`,
+      type: 'assistant',
+      role: 'assistant',
+      content: [{
+        type: 'tool_result',
+        tool_use_id: toolUseId,
+        name: toolName,
+        content,
+      }],
+      model: '',
+      stop_reason: null,
+      stop_sequence: null,
+    },
+    parent_tool_use_id: null,
+    uuid: generateSessionId(),
+    session_id: sessionId,
+  });
+}
+
+function emitStreamJsonResult(
+  sessionId: string,
+  isErr: boolean,
+  resultText: string,
+  durationMs: number,
+  numTurns: number,
+): void {
+  emitStreamJson({
+    type: 'result',
+    subtype: isErr ? 'error_during_execution' : 'success',
+    duration_ms: durationMs,
+    duration_api_ms: durationMs,
+    is_error: isErr,
+    num_turns: numTurns,
+    result: resultText,
+    stop_reason: isErr ? 'error' : 'end_turn',
+    total_cost_usd: 0,
+    usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+    modelUsage: {},
+    permission_denials: [],
+    uuid: generateSessionId(),
+    session_id: sessionId,
+  });
+}
+
+function emitStreamJsonError(sessionId: string, error: string): void {
+  emitStreamJson({
+    type: 'result',
+    subtype: 'error_during_execution',
+    duration_ms: 0,
+    duration_api_ms: 0,
+    is_error: true,
+    num_turns: 0,
+    result: error,
+    stop_reason: 'error',
+    total_cost_usd: 0,
+    usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+    modelUsage: {},
+    permission_denials: [],
+    errors: [error],
+    uuid: generateSessionId(),
+    session_id: sessionId,
+  });
+}
+
 // Helper function to display tool call information
 function displayToolCallInfo(
   toolName: string,
@@ -113,7 +252,31 @@ function displayToolCallInfo(
   resultDisplay?: ToolResultDisplay,
   errorMessage?: string,
   printMode?: boolean,
+  outputFormat?: OutputFormat,
+  sessionId?: string,
+  toolUseId?: string,
 ): void {
+  if (outputFormat === 'stream-json' && sessionId) {
+    if (status === 'start') {
+      emitStreamJsonToolUse(toolName, args, toolUseId ?? `${toolName}-${Date.now()}`, sessionId);
+    } else if (status === 'success') {
+      emitStreamJsonToolResult(
+        toolName,
+        toolUseId ?? `${toolName}-${Date.now()}`,
+        typeof resultDisplay === 'string' ? resultDisplay : resultDisplay,
+        sessionId,
+      );
+    } else if (status === 'error') {
+      emitStreamJsonToolResult(
+        toolName,
+        toolUseId ?? `${toolName}-${Date.now()}`,
+        errorMessage ?? 'Unknown error',
+        sessionId,
+      );
+    }
+    return;
+  }
+
   // In print mode, output structured JSON
   if (printMode) {
     if (status === 'start') {
@@ -245,6 +408,7 @@ export async function runNonInteractive(
   input: string,
   prompt_id: string,
   printMode: boolean = false,
+  outputFormat?: OutputFormat,
 ): Promise<void> {
   await config.initialize();
   // Handle EPIPE errors when the output is piped to a command that closes early.
@@ -254,6 +418,14 @@ export async function runNonInteractive(
       process.exit(0);
     }
   });
+
+  const isStreamJson = outputFormat === 'stream-json';
+  const sessionId = isStreamJson ? generateSessionId() : '';
+  const startTime = Date.now();
+
+  if (isStreamJson) {
+    emitStreamJsonInit(sessionId, config.getModel?.() ?? '');
+  }
 
   const geminiClient = config.getGeminiClient();
   const toolRegistry: ToolRegistry = await config.getToolRegistry();
@@ -269,7 +441,9 @@ export async function runNonInteractive(
         config.getMaxSessionTurns() > 0 &&
         turnCount > config.getMaxSessionTurns()
       ) {
-        if (printMode) {
+        if (isStreamJson) {
+          emitStreamJsonError(sessionId, 'Max session turns reached');
+        } else if (printMode) {
           printStructuredOutput(
             createPrintOutput('error', {
               error: 'Max session turns reached',
@@ -306,7 +480,9 @@ export async function runNonInteractive(
           console.log('[DEBUG] Non-interactive received stream response chunk');
         }
         if (abortController.signal.aborted) {
-          if (printMode) {
+          if (isStreamJson) {
+            emitStreamJsonError(sessionId, 'Operation cancelled');
+          } else if (printMode) {
             printStructuredOutput(
               createPrintOutput('error', {
                 error: 'Operation cancelled',
@@ -319,7 +495,9 @@ export async function runNonInteractive(
         }
         const textPart = getResponseText(resp);
         if (textPart) {
-          if (printMode) {
+          if (isStreamJson) {
+            emitStreamJsonAssistantText(textPart, sessionId);
+          } else if (printMode) {
             printStructuredOutput(
               createPrintOutput('text', {
                 text: textPart,
@@ -342,7 +520,7 @@ export async function runNonInteractive(
       }
 
       if (functionCalls.length > 0) {
-        if (!printMode) {
+        if (!printMode && !isStreamJson) {
           process.stdout.write(hr() + '\n');
         }
         const toolResponseParts: Part[] = [];
@@ -358,7 +536,7 @@ export async function runNonInteractive(
           };
 
           //Display tool call start information
-          displayToolCallInfo(fc.name as string, fc.args ?? {}, 'start', undefined, undefined, printMode);
+          displayToolCallInfo(fc.name as string, fc.args ?? {}, 'start', undefined, undefined, printMode, outputFormat, sessionId, callId);
 
           const toolResponse = await executeToolCall(
             config,
@@ -381,12 +559,17 @@ export async function runNonInteractive(
               undefined,
               errorMessage,
               printMode,
+              outputFormat,
+              sessionId,
+              callId,
             );
 
             const isToolNotFound = toolResponse.error.message.includes(
               'not found in registry',
             );
-            if (printMode) {
+            if (isStreamJson) {
+              // Error already emitted via displayToolCallInfo
+            } else if (printMode) {
               printStructuredOutput(
                 createPrintOutput('error', {
                   tool_name: fc.name as string,
@@ -399,6 +582,9 @@ export async function runNonInteractive(
               );
             }
             if (!isToolNotFound) {
+              if (isStreamJson) {
+                emitStreamJsonError(sessionId, `Error executing tool ${fc.name}: ${toolResponse.resultDisplay || toolResponse.error.message}`);
+              }
               process.exit(1);
             }
           } else {
@@ -410,6 +596,9 @@ export async function runNonInteractive(
               toolResponse.resultDisplay,
               undefined,
               printMode,
+              outputFormat,
+              sessionId,
+              callId,
             );
           }
 
@@ -428,14 +617,22 @@ export async function runNonInteractive(
         }
         currentMessages = [{ role: 'user', parts: toolResponseParts }];
       } else {
-        if (!printMode) {
+        if (!printMode && !isStreamJson) {
           process.stdout.write('\n'); // Ensure a final newline
+        }
+        if (isStreamJson) {
+          emitStreamJsonResult(sessionId, false, 'Completed', Date.now() - startTime, turnCount);
         }
         return;
       }
     }
   } catch (error) {
-    if (printMode) {
+    if (isStreamJson) {
+      emitStreamJsonError(sessionId, parseAndFormatApiError(
+        error,
+        config.getContentGeneratorConfig()?.authType,
+      ));
+    } else if (printMode) {
       printStructuredOutput(
         createPrintOutput('error', {
           error: parseAndFormatApiError(
@@ -457,5 +654,190 @@ export async function runNonInteractive(
     if (isTelemetrySdkInitialized()) {
       await shutdownTelemetry();
     }
+  }
+}
+
+// ------------------------------------------------------------------
+// ACP support: a re-entrant per-turn driver that can be called from a
+// long-lived JSON-RPC server. Re-uses the same stream-json emission path
+// that the legacy one-shot --print / --output-format mode uses, so any
+// tool additions to nonInteractiveCli also gain ACP support for free.
+// ------------------------------------------------------------------
+
+export interface AcpTurnContext {
+  config: Config;
+  chat: GeminiChat;
+  toolRegistry: ToolRegistry;
+  abortController: AbortController;
+  sessionId: string;
+  model: string;
+}
+
+export interface AcpTurnResult {
+  stopReason: 'end_turn' | 'max_turns' | 'cancelled' | 'error';
+  turns: number;
+  text: string;
+  error?: string;
+}
+
+/**
+ * Run a single ACP turn: stream the response, execute any tool calls, and
+ * loop until the model returns a final text answer (or hits limits).
+ */
+export async function runStreamTurn(
+  ctx: AcpTurnContext,
+  input: string,
+): Promise<AcpTurnResult> {
+  const { config, chat, toolRegistry, abortController, sessionId } = ctx;
+
+  let currentMessages: Content[] = [{ role: 'user', parts: [{ text: input }] }];
+  let turnCount = 0;
+  const maxTurns = config.getMaxSessionTurns();
+  let collectedText = '';
+  const startTime = Date.now();
+
+  try {
+    while (true) {
+      turnCount++;
+      if (maxTurns > 0 && turnCount > maxTurns) {
+        emitStreamJsonError(sessionId, 'Max session turns reached');
+        return {
+          stopReason: 'max_turns',
+          turns: turnCount,
+          text: collectedText,
+        };
+      }
+
+      const functionCalls: FunctionCall[] = [];
+      const promptId = `acp-${Date.now().toString(36)}`;
+      const responseStream = await chat.sendMessageStream(
+        {
+          message: currentMessages[0]?.parts || [],
+          config: {
+            abortSignal: abortController.signal,
+            tools: [
+              { functionDeclarations: toolRegistry.getFunctionDeclarations() },
+            ],
+          },
+        },
+        promptId,
+      );
+
+      for await (const resp of responseStream) {
+        if (abortController.signal.aborted) {
+          emitStreamJsonError(sessionId, 'Operation cancelled');
+          return {
+            stopReason: 'cancelled',
+            turns: turnCount,
+            text: collectedText,
+          };
+        }
+        const textPart = getResponseText(resp);
+        if (textPart) {
+          collectedText += textPart;
+          emitStreamJsonAssistantText(textPart, sessionId);
+        }
+        if (resp.functionCalls) {
+          functionCalls.push(...resp.functionCalls);
+        }
+      }
+
+      if (functionCalls.length === 0) {
+        emitStreamJsonResult(
+          sessionId,
+          false,
+          'Completed',
+          Date.now() - startTime,
+          turnCount,
+        );
+        return {
+          stopReason: 'end_turn',
+          turns: turnCount,
+          text: collectedText,
+        };
+      }
+
+      const toolResponseParts: Part[] = [];
+      for (const fc of functionCalls) {
+        const callId = fc.id ?? `${fc.name}-${Date.now()}`;
+        const requestInfo: ToolCallRequestInfo = {
+          callId,
+          name: fc.name as string,
+          args: (fc.args ?? {}) as Record<string, unknown>,
+          isClientInitiated: false,
+          prompt_id: `acp-${Date.now().toString(36)}`,
+        };
+        emitStreamJsonToolUse(
+          fc.name as string,
+          (fc.args ?? {}) as Record<string, unknown>,
+          callId,
+          sessionId,
+        );
+        const toolResponse = await executeToolCall(
+          config,
+          requestInfo,
+          toolRegistry,
+          abortController.signal,
+        );
+
+        if (toolResponse.error) {
+          const errorMessage =
+            typeof toolResponse.resultDisplay === 'string'
+              ? toolResponse.resultDisplay
+              : toolResponse.error?.message;
+          emitStreamJsonToolResult(
+            fc.name as string,
+            callId,
+            errorMessage ?? 'Unknown error',
+            sessionId,
+          );
+
+          const isToolNotFound = toolResponse.error.message.includes(
+            'not found in registry',
+          );
+          if (!isToolNotFound) {
+            return {
+              stopReason: 'error',
+              turns: turnCount,
+              text: collectedText,
+              error: errorMessage,
+            };
+          }
+        } else {
+          emitStreamJsonToolResult(
+            fc.name as string,
+            callId,
+            toolResponse.resultDisplay ?? '',
+            sessionId,
+          );
+        }
+
+        if (toolResponse.responseParts) {
+          const parts = Array.isArray(toolResponse.responseParts)
+            ? toolResponse.responseParts
+            : [toolResponse.responseParts];
+          for (const part of parts) {
+            if (typeof part === 'string') {
+              toolResponseParts.push({ text: part });
+            } else if (part) {
+              toolResponseParts.push(part);
+            }
+          }
+        }
+      }
+      currentMessages = [{ role: 'user', parts: toolResponseParts }];
+    }
+  } catch (error) {
+    const msg = parseAndFormatApiError(
+      error,
+      config.getContentGeneratorConfig()?.authType,
+    );
+    emitStreamJsonError(sessionId, msg);
+    return {
+      stopReason: 'error',
+      turns: turnCount,
+      text: collectedText,
+      error: msg,
+    };
   }
 }

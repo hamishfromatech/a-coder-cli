@@ -11,6 +11,7 @@ import { clearCommand } from '../ui/commands/clearCommand.js';
 import { compactCommand } from '../ui/commands/compactCommand.js';
 import { costCommand } from '../ui/commands/costCommand.js';
 import { helpCommand } from '../ui/commands/helpCommand.js';
+import { initCommand } from '../ui/commands/initCommand.js';
 import { memoryCommand } from '../ui/commands/memoryCommand.js';
 import { privacyCommand } from '../ui/commands/privacyCommand.js';
 import { sessionCommand } from '../ui/commands/sessionCommand.js';
@@ -30,6 +31,7 @@ const loadBuiltInCommands = async (): Promise<SlashCommand[]> => [
   compactCommand,
   costCommand,
   helpCommand,
+  initCommand,
   memoryCommand,
   privacyCommand,
   pluginCommand,
