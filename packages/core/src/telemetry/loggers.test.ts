@@ -51,6 +51,7 @@ import * as uiTelemetry from './uiTelemetry.js';
 describe('loggers', () => {
   const mockLogger = {
     emit: vi.fn(),
+    enabled: () => true,
   };
   const mockUiEvent = {
     addEvent: vi.fn(),
