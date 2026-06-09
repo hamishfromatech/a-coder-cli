@@ -1,32 +1,38 @@
-/**
- * @license
- * Copyright 2025 Google LLC
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React from 'react';
 import { Text } from 'ink';
-import Spinner from 'ink-spinner';
-import type { SpinnerName } from 'cli-spinners';
 import { useStreamingContext } from '../contexts/StreamingContext.js';
 import { StreamingState } from '../types.js';
+import { useAnimation } from '../hooks/useAnimation.js';
 
-interface GeminiRespondingSpinnerProps {
-  /**
-   * Optional string to display when not in Responding state.
-   * If not provided and not Responding, renders null.
-   */
+const BRAILLE_SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+const BRAILLE_DOTS = ['⣾', '⣽', '⣻', '⢿', '⡿', '⣟', '⣯', '⣷'];
+const BRAILLE_BOUNCE = ['⠁', '⠂', '⠄', '⡀', '⢀', '⠠', '⠐', '⠈'];
+const BRAILLE_BLOCK = ['▖', '▘', '▝', '▗'];
+
+export type BrailleSpinnerStyle = 'braille' | 'dots' | 'bounce' | 'block';
+
+const SPINNER_SETS: Record<BrailleSpinnerStyle, string[]> = {
+  braille: BRAILLE_SPINNER,
+  dots: BRAILLE_DOTS,
+  bounce: BRAILLE_BOUNCE,
+  block: BRAILLE_BLOCK,
+};
+
+interface BrailleSpinnerProps {
   nonRespondingDisplay?: string;
-  spinnerType?: SpinnerName;
+  spinnerStyle?: BrailleSpinnerStyle;
 }
 
-export const GeminiRespondingSpinner: React.FC<
-  GeminiRespondingSpinnerProps
-> = ({ nonRespondingDisplay, spinnerType = 'dots' }) => {
+export const GeminiRespondingSpinner: React.FC<BrailleSpinnerProps> = ({
+  nonRespondingDisplay,
+  spinnerStyle = 'braille',
+}) => {
   const streamingState = useStreamingContext();
+  const { frame } = useAnimation(80, streamingState === StreamingState.Responding);
 
   if (streamingState === StreamingState.Responding) {
-    return <Spinner type={spinnerType} />;
+    const chars = SPINNER_SETS[spinnerStyle] || BRAILLE_SPINNER;
+    return <Text>{chars[frame % chars.length]}</Text>;
   } else if (nonRespondingDisplay) {
     return <Text>{nonRespondingDisplay}</Text>;
   }

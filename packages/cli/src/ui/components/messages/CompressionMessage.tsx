@@ -1,46 +1,35 @@
-/**
- * @license
- * Copyright 2025 Google LLC
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React from 'react';
 import { Box, Text } from 'ink';
 import { CompressionProps } from '../../types.js';
-import Spinner from 'ink-spinner';
 import { Semantic } from '../../colors.js';
+import { useAnimation } from '../../hooks/useAnimation.js';
+
+const COMPRESS_FRAMES = ['⣾', '⣽', '⣻', '⢿', '⡿', '⣟', '⣯', '⣷'];
 
 export interface CompressionDisplayProps {
   compression: CompressionProps;
 }
 
-/*
- * Compression messages appear when the /compress command is run, and show a loading spinner
- * while compression is in progress, followed up by some compression stats.
- */
 export const CompressionMessage: React.FC<CompressionDisplayProps> = ({
   compression,
 }) => {
+  const { frame } = useAnimation(80, compression.isPending);
   const text = compression.isPending
     ? 'Compressing chat history...'
-    : `Chat history compressed from ${compression.originalTokenCount ?? 'unknown'}` +
-      ` to ${compression.newTokenCount ?? 'unknown'} tokens.`;
+    : `Chat history compressed from ${compression.originalTokenCount ?? 'unknown'}`
+      + ` to ${compression.newTokenCount ?? 'unknown'} tokens.`;
 
   return (
     <Box flexDirection="row" marginY={1} paddingX={1}>
       <Box marginRight={1}>
         {compression.isPending ? (
-          <Spinner type="dots" />
+          <Text color={Semantic.Primary}>{COMPRESS_FRAMES[frame % COMPRESS_FRAMES.length]}</Text>
         ) : (
           <Text color={Semantic.Success}>✓</Text>
         )}
       </Box>
       <Box>
-        <Text
-          color={
-            compression.isPending ? Semantic.Primary : Semantic.Success
-          }
-        >
+        <Text color={compression.isPending ? Semantic.Primary : Semantic.Success}>
           {text}
         </Text>
       </Box>

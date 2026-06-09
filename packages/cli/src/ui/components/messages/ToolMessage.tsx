@@ -164,7 +164,7 @@ export const ToolMessage: React.FC<ToolMessageProps> = ({
       <Box flexDirection="row" flexWrap="nowrap" alignItems="center" marginBottom={isExecuting || resultDisplay ? 1 : 0}>
         <Box minWidth={2} marginRight={1}>
           {isExecuting ? (
-            <GeminiRespondingSpinner spinnerType="toggle" nonRespondingDisplay="●" />
+            <GeminiRespondingSpinner spinnerStyle="dots" nonRespondingDisplay="●" />
           ) : (
             <Text color={statusColor} bold>{statusChar}</Text>
           )}

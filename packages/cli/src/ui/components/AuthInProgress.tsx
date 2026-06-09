@@ -1,13 +1,9 @@
-/**
- * @license
- * Copyright 2025 Google LLC
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
-import Spinner from 'ink-spinner';
 import { Colors, Semantic } from '../colors.js';
+import { useAnimation } from '../hooks/useAnimation.js';
+
+const AUTH_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 interface AuthInProgressProps {
   onTimeout: () => void;
@@ -17,6 +13,7 @@ export function AuthInProgress({
   onTimeout,
 }: AuthInProgressProps): React.JSX.Element {
   const [timedOut, setTimedOut] = useState(false);
+  const { frame } = useAnimation(80, !timedOut);
 
   useInput((_, key) => {
     if (key.escape) {
@@ -29,7 +26,6 @@ export function AuthInProgress({
       setTimedOut(true);
       onTimeout();
     }, 180000);
-
     return () => clearTimeout(timer);
   }, [onTimeout]);
 
@@ -48,7 +44,7 @@ export function AuthInProgress({
       ) : (
         <Box>
           <Text>
-            <Spinner type="dots" /> Waiting for auth... (Press ESC to cancel)
+            <Text color={Semantic.Primary}>{AUTH_FRAMES[frame % AUTH_FRAMES.length]}</Text> Waiting for auth... (Press ESC to cancel)
           </Text>
         </Box>
       )}
