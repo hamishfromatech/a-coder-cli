@@ -32,37 +32,8 @@
 
 - The running-tasks viewer (Down on an empty editor, `/subagents`) now scrolls: the picker renders a windowed list sized to the terminal (4–18 rows with `… N more above/below` markers) whose viewport follows the cursor, so a workflow's swarm of sub-agents or a pile of background processes can be navigated no matter how many there are. The bash-process live view gained ↑/↓ scrolling over the retained output tail (previously agent timelines only).
 
-<<<<<<< HEAD
 - The `/model` picker now fetches the live catalog from every provider on open: the cached list paints instantly (the picker never blocks on the network), then `refreshDynamicModels(force)` re-fetches all fetchable providers — Ollama Cloud, OpenAdapter, LM Studio, llama.cpp, and local Ollama — bypassing their 2–5 minute TTL caches, and the list repaints with any newly added models. The repaint re-applies the user's live search query so a late refresh never clobbers typing. `/scoped-models`, `/model <term>` and the post-login flow already fetched fresh via the registry cache reset; model cycling keeps its TTL cache on purpose so rapid cycling stays instant.
 - Redesigned settled tool call results as uniform three-layer cards: an outcome headline (✓/✗ glyph + tool-specific stats — `40 lines` for read, `6 matches in 2 files` for grep, `+12 −4` for edit, `N lines` for write, `N entries`/`N results` for ls/find, `exit 0 · 1.2s` for bash replacing the trailing Took line), a 3-line content preview with one unified `... N more <unit>, ctrl+shift+o to expand` footer everywhere, and errors that always break through. Compact-classified resource reads (AGENTS.md, SKILL.md, docs) stay headline-only. MCP and renderer-less extension tools collapse from a raw output dump to the same headline + preview block, and their args JSON now only shows when expanded.
-=======
-- Fixed single-object `edit` tool inputs failing validation by accepting them as one-edit arrays in both coding-agent and harness edit tools ([#7835](https://github.com/earendil-works/pi/issues/7835)).
-- Fixed managed-tool downloads delaying TUI startup and hiding diagnostics in fullscreen mode by mounting the TUI first and showing download progress and warnings inside it.
-- Fixed opening a model selector immediately after startup cancelling and restarting the in-progress model catalog refresh.
-- Fixed inherited GitHub Copilot login triggering API rate limits while enabling model policies by limiting concurrent policy updates ([#6187](https://github.com/earendil-works/pi/issues/6187)).
-- Fixed fullscreen transcript search snapping back to the current match during manual scrolling and fragmented mouse input leaking into the search query.
-- Fixed inherited required LaTeX arguments starting on a new line being parsed as empty ([#7760](https://github.com/earendil-works/pi/issues/7760)).
-- Updated the transitive `nanoid` development dependency to address a denial-of-service vulnerability.
-- Fixed fallback rendering for extension tool results to collapse long output and honor tool expansion ([#7979](https://github.com/earendil-works/pi/issues/7979)).
-- Fixed JSON and RPC `message_update` events dropping cumulative usage during streaming. See [JSON Event Mode](docs/json.md) and [RPC `message_update`](docs/rpc.md#message_update-streaming) ([#7982](https://github.com/earendil-works/pi/pull/7982) by [@christianklotz](https://github.com/christianklotz)).
-- Fixed `pi.sendMessage(..., { triggerTurn: false })` steering an active run instead of only recording the custom message ([#8022](https://github.com/earendil-works/pi/pull/8022) by [@cristinaponcela](https://github.com/cristinaponcela)).
-- Fixed the `defaultTools` setting dropping extension and SDK custom tools when selecting built-in defaults.
-- Fixed the subagent example rejecting YAML array syntax for the `tools` frontmatter field ([#7598](https://github.com/earendil-works/pi/pull/7598) by [@alexsavio](https://github.com/alexsavio)).
-- Fixed the subagent example dropping parent session model, thinking, and tool configuration ([#7897](https://github.com/earendil-works/pi/pull/7897) by [@virtuald](https://github.com/virtuald)).
-- Fixed custom system prompts concatenating the current working directory with later appended prompt content ([#7887](https://github.com/earendil-works/pi/pull/7887) by [@distributedlock](https://github.com/distributedlock)).
-- Fixed inherited OpenAI Responses function and custom tool calls losing namespaces during streaming, proxying, and replay ([#7709](https://github.com/earendil-works/pi/issues/7709)).
-- Fixed inherited upstream request buffer failures not triggering automatic assistant retries.
-- Fixed inherited built-in and custom DeepSeek API models sending output limits through an unsupported field.
-- Fixed inherited Amazon Bedrock replay rejecting tool arguments that contain empty object keys while preserving all valid nested values ([#7882](https://github.com/earendil-works/pi/pull/7882) by [@muyiyr](https://github.com/muyiyr)).
-- Fixed inherited DeepSeek compatibility detection for base URLs whose hostname contains uppercase letters ([#7933](https://github.com/earendil-works/pi/pull/7933) by [@yearth](https://github.com/yearth)).
-- Fixed inherited Google Generative AI and Vertex AI responses with tool calls incorrectly treating output-limit or provider-error stops as normal tool use ([#8059](https://github.com/earendil-works/pi/issues/8059)).
-- Fixed inherited fullscreen mouse drag selection and OSC 8 link activation in terminals that report generic SGR mouse release button codes ([#7963](https://github.com/earendil-works/pi/issues/7963)).
-- Fixed inherited focused fullscreen overlays not receiving mouse wheel or viewport scroll keys such as PageUp and PageDown ([#7894](https://github.com/earendil-works/pi/issues/7894)).
-- Fixed inherited LaTeX control spaces split across line endings causing complete expressions to fall back to raw source.
-- Fixed split `Alt+Enter` input over SSH being misread as Escape, added `PI_TUI_ESC_TIMEOUT` for high-latency terminals, and limited that timeout to lone Escape input ([#7899](https://github.com/earendil-works/pi/pull/7899) by [@powerfooI](https://github.com/powerfooI)).
-- Fixed inherited idle fullscreen sessions repainting and clearing text selection when the terminal loses focus ([#7892](https://github.com/earendil-works/pi/pull/7892) by [@terrorobe](https://github.com/terrorobe)).
-- Fixed fullscreen selection copy to use the host clipboard and report failure instead of claiming success when OSC 52 is unsupported ([#8110](https://github.com/earendil-works/pi/pull/8110) by [@Panoplos](https://github.com/Panoplos)).
->>>>>>> ca21c1686 (fix: single edit input (#8011))
 
 - Reorganized the interactive TUI layout into clean zones: background sub-agent and background-process status now render as one consolidated status rail — a single line flush below the editor (`⚡ 2 running · backend (5 tools, 8s) · npm run dev (12s)`) with a dim right-aligned `↓ tasks` hint for the running-tasks viewer — replacing the three scattered surfaces (the inline `⚙ AGENTS` transcript card, the `⚡` agents bar above the editor widgets, and the `▸` processes bar below the footer). Errors and warnings render as a grouped notice block pinned at the end of the transcript (`✗`/`⚠` icons, theme colors, hanging-indent wrapping, identical consecutive notices collapsed with a ×N count, only the 6 most recent shown) instead of naked `Error:` text lines spliced into the conversation.
 

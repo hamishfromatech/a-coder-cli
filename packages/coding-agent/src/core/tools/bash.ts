@@ -248,8 +248,31 @@ export interface BashSpawnContext {
 
 export type BashSpawnHook = (context: BashSpawnContext) => BashSpawnContext;
 
-function resolveSpawnContext(command: string, cwd: string, spawnHook?: BashSpawnHook): BashSpawnContext {
-	const baseContext: BashSpawnContext = { command, cwd, env: { ...getShellEnv() } };
+function resolveSpawnContext(
+	command: string,
+	cwd: string,
+	spawnHook: BashSpawnHook | undefined,
+	exposeSessionEnvironment: boolean,
+	ctx: ExtensionContext | undefined,
+): BashSpawnContext {
+	const env = { ...getShellEnv() };
+	delete env.A_CODER_SESSION_ID;
+	delete env.A_CODER_SESSION_FILE;
+	delete env.A_CODER_PROVIDER;
+	delete env.A_CODER_MODEL;
+	delete env.A_CODER_REASONING_LEVEL;
+	if (exposeSessionEnvironment && ctx) {
+		const model = ctx.model;
+		env.A_CODER_SESSION_ID = ctx.sessionManager.getSessionId();
+		const sessionFile = ctx.sessionManager.getSessionFile();
+		if (sessionFile) env.A_CODER_SESSION_FILE = sessionFile;
+		if (model) {
+			env.A_CODER_PROVIDER = model.provider;
+			env.A_CODER_MODEL = model.id;
+		}
+		if (ctx.thinkingLevel) env.A_CODER_REASONING_LEVEL = ctx.thinkingLevel;
+	}
+	const baseContext: BashSpawnContext = { command, cwd, env };
 	return spawnHook ? spawnHook(baseContext) : baseContext;
 }
 
@@ -260,6 +283,8 @@ export interface BashToolOptions {
 	commandPrefix?: string;
 	/** Optional explicit shell path from settings */
 	shellPath?: string;
+	/** Expose current session metadata as A_CODER_* environment variables. Default: true */
+	exposeSessionEnvironment?: boolean;
 	/** Hook to adjust command, cwd, or env before execution */
 	spawnHook?: BashSpawnHook;
 	/** Session id recorded on background-process records so completion
@@ -413,6 +438,7 @@ export function createBashToolDefinition(
 ): ToolDefinition<typeof bashSchema, BashToolDetails | undefined, BashRenderState> {
 	const ops = options?.operations ?? createLocalBashOperations({ shellPath: options?.shellPath });
 	const commandPrefix = options?.commandPrefix;
+	const exposeSessionEnvironment = options?.exposeSessionEnvironment ?? true;
 	const spawnHook = options?.spawnHook;
 	return {
 		name: "bash",
@@ -421,6 +447,11 @@ export function createBashToolDefinition(
 		promptSnippet: "Execute bash commands (ls, grep, find, etc.)",
 		promptGuidelines: [
 			"Use background: true for long-running commands like dev servers, file watchers, or builds that should keep running while you continue other work. The tool returns immediately and output is captured to a temp file.",
+			...(exposeSessionEnvironment
+				? [
+						"Inspect A_CODER_* environment variables (A_CODER_SESSION_ID, A_CODER_SESSION_FILE, A_CODER_PROVIDER, A_CODER_MODEL, A_CODER_REASONING_LEVEL) for current session details.",
+					]
+				: []),
 		],
 		parameters: bashSchema,
 		constrainedSampling: { type: "json_schema", strict: "prefer" },
@@ -432,7 +463,13 @@ export function createBashToolDefinition(
 			ctx?: ExtensionContext,
 		) {
 			const resolvedCommand = commandPrefix ? `${commandPrefix}\n${command}` : command;
-			const spawnContext = resolveSpawnContext(resolvedCommand, ctx?.cwd || cwd, spawnHook);
+			const spawnContext = resolveSpawnContext(
+				resolvedCommand,
+				ctx?.cwd || cwd,
+				spawnHook,
+				exposeSessionEnvironment,
+				ctx,
+			);
 			const output = new OutputAccumulator({ tempFilePrefix: "pi-bash" });
 			let acceptingOutput = true;
 			let updateTimer: NodeJS.Timeout | undefined;
@@ -722,5 +759,11 @@ export function createBashToolDefinition(
 }
 
 export function createBashTool(cwd: string, options?: BashToolOptions): AgentTool<typeof bashSchema> {
-	return wrapToolDefinition(createBashToolDefinition(cwd, options));
+	const definition = createBashToolDefinition(cwd, options);
+	const tool = wrapToolDefinition(definition);
+	Object.assign(tool, {
+		promptSnippet: definition.promptSnippet,
+		promptGuidelines: definition.promptGuidelines,
+	});
+	return tool;
 }
