@@ -25,6 +25,7 @@ import {
 	waitForRawStdoutBackpressure,
 	writeRawStdout,
 } from "../../core/output-guard.ts";
+import { type SessionInfo, SessionManager } from "../../core/session-manager.ts";
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { type Theme, theme } from "../interactive/theme/theme.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
@@ -344,6 +345,32 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			shutdownHandler: () => {
 				shutdownRequested = true;
 			},
+			permissionPromptHandler: async (toolName, reason) => {
+				const id = crypto.randomUUID();
+				return new Promise((resolve) => {
+					pendingExtensionRequests.set(id, {
+						resolve: (response: RpcExtensionUIResponse) => {
+							if ("cancelled" in response && response.cancelled) {
+								resolve(false);
+							} else if ("confirmed" in response) {
+								resolve(response.confirmed);
+							} else {
+								resolve(false);
+							}
+						},
+						reject: () => resolve(false),
+					});
+					output({
+						type: "extension_ui_request",
+						id,
+						method: "confirm",
+						title: `Allow ${toolName}?`,
+						message: reason ?? `Permission required for "${toolName}"`,
+						kind: "permission",
+						toolName,
+					} as RpcExtensionUIRequest);
+				});
+			},
 			onError: (err) => {
 				output({ type: "extension_error", extensionPath: err.extensionPath, event: err.event, error: err.error });
 			},
@@ -377,6 +404,10 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 	await rebindSession();
 	registerSignalHandlers();
+
+	// Pre-fetch dynamic (Ollama Cloud) models in the background so the model
+	// picker is populated by the time the user opens it, without blocking startup.
+	void session.modelRegistry.refreshDynamicModels().catch(() => {});
 
 	// Handle a single command
 	const handleCommand = async (command: RpcCommand): Promise<RpcResponse | undefined> => {
@@ -443,6 +474,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				const state: RpcSessionState = {
 					model: session.model,
 					thinkingLevel: session.thinkingLevel,
+					permissionMode: session.permissionMode,
 					isStreaming: session.isStreaming,
 					isCompacting: session.isCompacting,
 					steeringMode: session.steeringMode,
@@ -451,6 +483,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					sessionId: session.sessionId,
 					sessionName: session.sessionName,
 					autoCompactionEnabled: session.autoCompactionEnabled,
+					compactionAutoContinue: session.compactionAutoContinue,
 					messageCount: session.messages.length,
 					pendingMessageCount: session.pendingMessageCount,
 				};
@@ -462,7 +495,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// =================================================================
 
 			case "set_model": {
-				const models = await session.modelRegistry.getAvailable();
+				const models = session.modelRegistry.getAvailable();
 				const model = models.find((m) => m.provider === command.provider && m.id === command.modelId);
 				if (!model) {
 					return error(id, "set_model", `Model not found: ${command.provider}/${command.modelId}`);
@@ -480,8 +513,22 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "get_available_models": {
-				const models = await session.modelRegistry.getAvailable();
+				// Non-blocking: return the cached model list immediately so the picker
+				// never waits on a network fetch. A best-effort background refresh keeps
+				// dynamic (Ollama Cloud) models current; the explicit refresh_models
+				// command does a forced fetch.
+				void session.modelRegistry.refreshDynamicModels().catch(() => {});
+				const models = session.modelRegistry.getAvailable();
 				return success(id, "get_available_models", { models });
+			}
+
+			case "refresh_models": {
+				session.modelRegistry.refresh();
+				const refreshError = await session.modelRegistry.refreshDynamicModels(true);
+				if (refreshError) {
+					return error(id, "refresh_models", refreshError);
+				}
+				return success(id, "refresh_models");
 			}
 
 			// =================================================================
@@ -499,6 +546,32 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					return success(id, "cycle_thinking_level", null);
 				}
 				return success(id, "cycle_thinking_level", { level });
+			}
+
+			// =================================================================
+			// Permission mode
+			// =================================================================
+
+			case "set_permission_mode": {
+				const mode = command.mode;
+				if (!["ask", "allow", "read-only", "auto"].includes(mode)) {
+					return error(id, "set_permission_mode", `Invalid permission mode: ${mode}`);
+				}
+				session.setPermissionMode(mode);
+				return success(id, "set_permission_mode");
+			}
+
+			case "get_permission_mode": {
+				return success(id, "get_permission_mode", { mode: session.permissionMode });
+			}
+
+			// =================================================================
+			// Auth
+			// =================================================================
+
+			case "reload_auth": {
+				runtimeHost.services.authStorage.reload();
+				return success(id, "reload_auth");
 			}
 
 			// =================================================================
@@ -527,6 +600,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			case "set_auto_compaction": {
 				session.setAutoCompactionEnabled(command.enabled);
 				return success(id, "set_auto_compaction");
+			}
+
+			case "set_compaction_auto_continue": {
+				session.setCompactionAutoContinue(command.enabled);
+				return success(id, "set_compaction_auto_continue");
 			}
 
 			// =================================================================
@@ -571,6 +649,19 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			case "export_html": {
 				const path = await session.exportToHtml(command.outputPath);
 				return success(id, "export_html", { path });
+			}
+
+			case "export_jsonl": {
+				const path = session.exportToJsonl(command.outputPath);
+				return success(id, "export_jsonl", { path });
+			}
+
+			case "import_jsonl": {
+				const result = await runtimeHost.importFromJsonl(command.inputPath);
+				if (!result.cancelled) {
+					await rebindSession();
+				}
+				return success(id, "import_jsonl", result);
 			}
 
 			case "switch_session": {
@@ -624,6 +715,23 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				return success(id, "get_tree", { tree: sessionManager.getTree(), leafId: sessionManager.getLeafId() });
 			}
 
+			case "list_sessions": {
+				const sessions = await SessionManager.listAll();
+				return success(id, "list_sessions", {
+					sessions: sessions.map((s: SessionInfo) => ({
+						path: s.path,
+						id: s.id,
+						cwd: s.cwd,
+						name: s.name,
+						parentSessionPath: s.parentSessionPath,
+						created: s.created.toISOString(),
+						modified: s.modified.toISOString(),
+						messageCount: s.messageCount,
+						firstMessage: s.firstMessage,
+					})),
+				});
+			}
+
 			case "get_last_assistant_text": {
 				const text = session.getLastAssistantText();
 				return success(id, "get_last_assistant_text", { text });
@@ -636,6 +744,15 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				}
 				session.setSessionName(name);
 				return success(id, "set_session_name");
+			}
+
+			case "set_entry_label": {
+				try {
+					session.sessionManager.appendLabelChange(command.entryId, command.label);
+					return success(id, "set_entry_label");
+				} catch (e) {
+					return error(id, "set_entry_label", e instanceof Error ? e.message : String(e));
+				}
 			}
 
 			// =================================================================

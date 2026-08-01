@@ -11,6 +11,7 @@ import type { SessionStats } from "../../core/agent-session.ts";
 import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
 import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.ts";
+import type { PermissionMode } from "../../core/settings-manager.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
 
 // ============================================================================
@@ -32,10 +33,18 @@ export type RpcCommand =
 	| { id?: string; type: "set_model"; provider: string; modelId: string }
 	| { id?: string; type: "cycle_model" }
 	| { id?: string; type: "get_available_models" }
+	| { id?: string; type: "refresh_models" }
 
 	// Thinking
 	| { id?: string; type: "set_thinking_level"; level: ThinkingLevel }
 	| { id?: string; type: "cycle_thinking_level" }
+
+	// Permission mode
+	| { id?: string; type: "set_permission_mode"; mode: PermissionMode }
+	| { id?: string; type: "get_permission_mode" }
+
+	// Auth
+	| { id?: string; type: "reload_auth" }
 
 	// Queue modes
 	| { id?: string; type: "set_steering_mode"; mode: "all" | "one-at-a-time" }
@@ -44,6 +53,7 @@ export type RpcCommand =
 	// Compaction
 	| { id?: string; type: "compact"; customInstructions?: string }
 	| { id?: string; type: "set_auto_compaction"; enabled: boolean }
+	| { id?: string; type: "set_compaction_auto_continue"; enabled: boolean }
 
 	// Retry
 	| { id?: string; type: "set_auto_retry"; enabled: boolean }
@@ -56,14 +66,18 @@ export type RpcCommand =
 	// Session
 	| { id?: string; type: "get_session_stats" }
 	| { id?: string; type: "export_html"; outputPath?: string }
+	| { id?: string; type: "export_jsonl"; outputPath?: string }
+	| { id?: string; type: "import_jsonl"; inputPath: string }
 	| { id?: string; type: "switch_session"; sessionPath: string }
 	| { id?: string; type: "fork"; entryId: string }
 	| { id?: string; type: "clone" }
 	| { id?: string; type: "get_fork_messages" }
 	| { id?: string; type: "get_entries"; since?: string }
 	| { id?: string; type: "get_tree" }
+	| { id?: string; type: "list_sessions" }
 	| { id?: string; type: "get_last_assistant_text" }
 	| { id?: string; type: "set_session_name"; name: string }
+	| { id?: string; type: "set_entry_label"; entryId: string; label: string | undefined }
 
 	// Messages
 	| { id?: string; type: "get_messages" }
@@ -87,6 +101,19 @@ export interface RpcSlashCommand {
 	sourceInfo: SourceInfo;
 }
 
+/** Serializable session summary for the session quick-switcher (dates as ISO strings). */
+export interface RpcSessionInfo {
+	path: string;
+	id: string;
+	cwd: string;
+	name?: string;
+	parentSessionPath?: string;
+	created: string;
+	modified: string;
+	messageCount: number;
+	firstMessage: string;
+}
+
 // ============================================================================
 // RPC State
 // ============================================================================
@@ -94,6 +121,7 @@ export interface RpcSlashCommand {
 export interface RpcSessionState {
 	model?: Model<any>;
 	thinkingLevel: ThinkingLevel;
+	permissionMode: PermissionMode;
 	isStreaming: boolean;
 	isCompacting: boolean;
 	steeringMode: "all" | "one-at-a-time";
@@ -102,6 +130,7 @@ export interface RpcSessionState {
 	sessionId: string;
 	sessionName?: string;
 	autoCompactionEnabled: boolean;
+	compactionAutoContinue: boolean;
 	messageCount: number;
 	pendingMessageCount: number;
 }
@@ -144,6 +173,7 @@ export type RpcResponse =
 			success: true;
 			data: { models: Model<any>[] };
 	  }
+	| { id?: string; type: "response"; command: "refresh_models"; success: true }
 
 	// Thinking
 	| { id?: string; type: "response"; command: "set_thinking_level"; success: true }
@@ -155,6 +185,19 @@ export type RpcResponse =
 			data: { level: ThinkingLevel } | null;
 	  }
 
+	// Permission mode
+	| { id?: string; type: "response"; command: "set_permission_mode"; success: true }
+	| {
+			id?: string;
+			type: "response";
+			command: "get_permission_mode";
+			success: true;
+			data: { mode: PermissionMode };
+	  }
+
+	// Auth
+	| { id?: string; type: "response"; command: "reload_auth"; success: true }
+
 	// Queue modes
 	| { id?: string; type: "response"; command: "set_steering_mode"; success: true }
 	| { id?: string; type: "response"; command: "set_follow_up_mode"; success: true }
@@ -162,6 +205,7 @@ export type RpcResponse =
 	// Compaction
 	| { id?: string; type: "response"; command: "compact"; success: true; data: CompactionResult }
 	| { id?: string; type: "response"; command: "set_auto_compaction"; success: true }
+	| { id?: string; type: "response"; command: "set_compaction_auto_continue"; success: true }
 
 	// Retry
 	| { id?: string; type: "response"; command: "set_auto_retry"; success: true }
@@ -174,6 +218,8 @@ export type RpcResponse =
 	// Session
 	| { id?: string; type: "response"; command: "get_session_stats"; success: true; data: SessionStats }
 	| { id?: string; type: "response"; command: "export_html"; success: true; data: { path: string } }
+	| { id?: string; type: "response"; command: "export_jsonl"; success: true; data: { path: string } }
+	| { id?: string; type: "response"; command: "import_jsonl"; success: true; data: { cancelled: boolean } }
 	| { id?: string; type: "response"; command: "switch_session"; success: true; data: { cancelled: boolean } }
 	| { id?: string; type: "response"; command: "fork"; success: true; data: { text: string; cancelled: boolean } }
 	| { id?: string; type: "response"; command: "clone"; success: true; data: { cancelled: boolean } }
@@ -201,11 +247,19 @@ export type RpcResponse =
 	| {
 			id?: string;
 			type: "response";
+			command: "list_sessions";
+			success: true;
+			data: { sessions: RpcSessionInfo[] };
+	  }
+	| {
+			id?: string;
+			type: "response";
 			command: "get_last_assistant_text";
 			success: true;
 			data: { text: string | null };
 	  }
 	| { id?: string; type: "response"; command: "set_session_name"; success: true }
+	| { id?: string; type: "response"; command: "set_entry_label"; success: true }
 
 	// Messages
 	| { id?: string; type: "response"; command: "get_messages"; success: true; data: { messages: AgentMessage[] } }
@@ -229,7 +283,19 @@ export type RpcResponse =
 /** Emitted when an extension needs user input */
 export type RpcExtensionUIRequest =
 	| { type: "extension_ui_request"; id: string; method: "select"; title: string; options: string[]; timeout?: number }
-	| { type: "extension_ui_request"; id: string; method: "confirm"; title: string; message: string; timeout?: number }
+	| {
+			type: "extension_ui_request";
+			id: string;
+			method: "confirm";
+			title: string;
+			message: string;
+			timeout?: number;
+			/** "permission" marks a built-in tool-approval prompt (vs a generic extension
+			 * confirm). Desktop clients use it to render an inline approval bar instead
+			 * of a modal. `toolName` names the tool awaiting approval. */
+			kind?: "permission";
+			toolName?: string;
+	  }
 	| {
 			type: "extension_ui_request";
 			id: string;
