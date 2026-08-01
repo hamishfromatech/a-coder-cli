@@ -1,0 +1,474 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   A-Coder Desktop · Hermes-inspired design tokens
+   Neutral glass chrome · hairline borders · Nous-blue accent
+   Flat, not boxed — surfaces float on layered soft shadows and
+   accent-tinted hairlines, never card-in-card. One accent seed
+   (--pi-accent) derives fills, rings, and strokes via color-mix.
+   ============================================================ */
+
+:root {
+	/* Typography — native UI face first, JetBrains Mono for code/numerals */
+	--font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
+		"Segoe WPC", system-ui, "Geist", "Geist Variable", sans-serif,
+		"Apple Color Emoji", "Segoe UI Emoji";
+	--font-mono: "JetBrains Mono", "SF Mono", "Geist Mono", ui-monospace,
+		SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+	font-family: var(--font-sans);
+	font-feature-settings: "cv11", "ss01", "tnum";
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+
+	/* Backdrop image inversion multiplier. Ported from Hermes desktop: when 1,
+	   the chat backdrop image is fully inverted by the CSS filter. Themes can
+	   set this to 0 to keep the image's original colors. */
+	--backdrop-invert-mul: 1;
+
+	/* ---------- Neutral glass dark theme (default) ---------- */
+
+	/* Neutral near-black chrome. Chat sits on --pi-bg (deepest); sidebar and
+	   panels on --pi-surface; editor/cards on --pi-surface-raised; modals on
+	   --pi-surface-overlay. Each step is a small neutral lift, never warm. */
+	--pi-bg-rgb: 10 10 12;
+	--pi-bg: rgb(var(--pi-bg-rgb)); /* chat chrome (deepest) */
+	--pi-surface-rgb: 14 14 17;
+	--pi-surface: rgb(var(--pi-surface-rgb)); /* sidebar / panels */
+	--pi-surface-raised-rgb: 22 22 27;
+	--pi-surface-raised: rgb(var(--pi-surface-raised-rgb)); /* cards, editor */
+	--pi-surface-overlay-rgb: 28 28 34;
+	--pi-surface-overlay: rgb(var(--pi-surface-overlay-rgb)); /* modals / popovers */
+
+	/* Accent-tinted hairlines — a cool blue whisper, never gray. Derived from
+	   the accent so the whole UI shares one tonal spine. */
+	--pi-border: color-mix(in srgb, var(--pi-accent) 14%, transparent);
+	--pi-border-strong: color-mix(in srgb, var(--pi-accent) 26%, transparent);
+
+	/* Neutral-cool text scale */
+	--pi-text-rgb: 232 233 238;
+	--pi-text: rgb(var(--pi-text-rgb));
+	--pi-text-secondary-rgb: 168 172 184;
+	--pi-text-secondary: rgb(var(--pi-text-secondary-rgb));
+	--pi-text-muted-rgb: 111 115 128;
+	--pi-text-muted: rgb(var(--pi-text-muted-rgb));
+	--pi-text-faint-rgb: 72 75 86;
+	--pi-text-faint: rgb(var(--pi-text-faint-rgb));
+
+	/* Nous-blue accent — the singular brand color */
+	--pi-accent-rgb: 46 127 255;
+	--pi-accent: rgb(var(--pi-accent-rgb));
+	--pi-accent-hover-rgb: 74 149 255;
+	--pi-accent-hover: rgb(var(--pi-accent-hover-rgb));
+	--pi-accent-soft: color-mix(in srgb, var(--pi-accent) 14%, transparent);
+	--pi-accent-ring: color-mix(in srgb, var(--pi-accent) 32%, transparent);
+
+	/* Semantic role colors (cool-toned to harmonize with the neutral chrome) */
+	--pi-user-rgb: 127 209 160;
+	--pi-user: rgb(var(--pi-user-rgb)); /* cool green */
+	--pi-assistant-rgb: 46 127 255;
+	--pi-assistant: rgb(var(--pi-assistant-rgb)); /* accent blue */
+	--pi-tool-rgb: 163 163 255;
+	--pi-tool: rgb(var(--pi-tool-rgb)); /* indigo */
+
+	/* Status */
+	--pi-success-rgb: 63 185 143;
+	--pi-success: rgb(var(--pi-success-rgb));
+	--pi-warning-rgb: 234 179 8;
+	--pi-warning: rgb(var(--pi-warning-rgb));
+	--pi-error-rgb: 240 86 86;
+	--pi-error: rgb(var(--pi-error-rgb));
+	--pi-error-soft: color-mix(in srgb, var(--pi-error) 14%, transparent);
+
+	color-scheme: dark;
+}
+
+/* Light theme — neutral paper glass with deep blue */
+.light {
+	--pi-bg-rgb: 246 246 248;
+	--pi-bg: rgb(var(--pi-bg-rgb)); /* neutral light chrome */
+	--pi-surface-rgb: 255 255 255;
+	--pi-surface: rgb(var(--pi-surface-rgb));
+	--pi-surface-raised-rgb: 241 241 244;
+	--pi-surface-raised: rgb(var(--pi-surface-raised-rgb));
+	--pi-surface-overlay-rgb: 255 255 255;
+	--pi-surface-overlay: rgb(var(--pi-surface-overlay-rgb));
+	--pi-border: color-mix(in srgb, var(--pi-accent) 16%, transparent);
+	--pi-border-strong: color-mix(in srgb, var(--pi-accent) 28%, transparent);
+
+	--pi-text-rgb: 26 27 34;
+	--pi-text: rgb(var(--pi-text-rgb));
+	--pi-text-secondary-rgb: 68 71 79;
+	--pi-text-secondary: rgb(var(--pi-text-secondary-rgb));
+	--pi-text-muted-rgb: 113 116 124;
+	--pi-text-muted: rgb(var(--pi-text-muted-rgb));
+	--pi-text-faint-rgb: 168 171 179;
+	--pi-text-faint: rgb(var(--pi-text-faint-rgb));
+
+	--pi-accent-rgb: 0 83 253;
+	--pi-accent: rgb(var(--pi-accent-rgb));
+	--pi-accent-hover-rgb: 0 64 204;
+	--pi-accent-hover: rgb(var(--pi-accent-hover-rgb));
+	--pi-accent-soft: color-mix(in srgb, var(--pi-accent) 10%, transparent);
+	--pi-accent-ring: color-mix(in srgb, var(--pi-accent) 26%, transparent);
+
+	--pi-user-rgb: 26 142 105;
+	--pi-user: rgb(var(--pi-user-rgb));
+	--pi-assistant-rgb: 0 83 253;
+	--pi-assistant: rgb(var(--pi-assistant-rgb));
+	--pi-tool-rgb: 99 102 241;
+	--pi-tool: rgb(var(--pi-tool-rgb));
+
+	--pi-success-rgb: 22 163 110;
+	--pi-success: rgb(var(--pi-success-rgb));
+	--pi-warning-rgb: 202 138 4;
+	--pi-warning: rgb(var(--pi-warning-rgb));
+	--pi-error-rgb: 220 38 38;
+	--pi-error: rgb(var(--pi-error-rgb));
+	--pi-error-soft: color-mix(in srgb, var(--pi-error) 10%, transparent);
+
+	color-scheme: light;
+}
+
+html,
+body,
+#root {
+	height: 100%;
+	width: 100%;
+	margin: 0;
+	padding: 0;
+	overflow: hidden;
+}
+
+/* Near-invisible grain to break up digital flatness — neutral, very subtle. */
+body::after {
+	content: "";
+	position: fixed;
+	inset: 0;
+	z-index: 99999;
+	pointer-events: none;
+	opacity: 0.012;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'%3E%3Crect x='0' y='0' width='1' height='1' fill='%23808080'/%3E%3Crect x='1' y='0' width='1' height='1' fill='%23606060'/%3E%3Crect x='0' y='1' width='1' height='1' fill='%23a0a0a0'/%3E%3Crect x='1' y='1' width='1' height='1' fill='%23404040'/%3E%3C/svg%3E");
+	background-size: 4px 4px;
+	mix-blend-mode: overlay;
+}
+.light body::after {
+	opacity: 0.008;
+}
+
+body {
+	background-color: var(--pi-bg);
+	color: var(--pi-text);
+}
+
+/* ============================================================
+   Scrollbar — neutral-tinted, hairline-thin.
+   ============================================================ */
+::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+::-webkit-scrollbar-track {
+	background: transparent;
+}
+::-webkit-scrollbar-thumb {
+	background: color-mix(in srgb, var(--pi-text) 12%, transparent);
+	border-radius: 999px;
+	transition: background 0.15s ease;
+}
+::-webkit-scrollbar-thumb:hover {
+	background: color-mix(in srgb, var(--pi-text) 22%, transparent);
+}
+
+/* ============================================================
+   Max-width container for content — prevents edge-to-edge stretch
+   ============================================================ */
+.pi-container {
+	width: 100%;
+	max-width: 1280px;
+	margin-left: auto;
+	margin-right: auto;
+	padding-left: 1.5rem;
+	padding-right: 1.5rem;
+}
+
+/* ============================================================
+   Chat surface — drawer-aware horizontal rhythm
+   ============================================================ */
+.chat-surface {
+	padding-left: var(--chat-gutter, 1.5rem);
+	padding-right: var(--chat-gutter-right, var(--chat-gutter, 1.5rem));
+	position: relative;
+}
+.chat-composer {
+	padding-left: var(--chat-gutter, 1.5rem);
+	padding-right: var(--chat-gutter-right, var(--chat-gutter, 1.5rem));
+}
+
+.chat-column {
+	width: 100%;
+	max-width: var(--chat-max-width, 48rem);
+	margin-left: auto;
+	margin-right: auto;
+}
+
+/* ============================================================
+   Component utilities — kept tiny & composable.
+   ============================================================ */
+
+/* Flat surface: hairline ring + the faintest ambient lift. Hermes keeps
+   in-panel structure as hairlines, not heavy shadow. */
+.pi-card {
+	background: var(--pi-surface);
+	border-radius: 10px;
+	box-shadow: 0 0 0 1px var(--pi-border);
+}
+.pi-card-overlay {
+	background: var(--pi-surface-overlay);
+	border-radius: 14px;
+	/* Borderless elevation: layered soft shadow, no hard 1px ring. */
+	box-shadow:
+		0 1px 1px rgba(0, 0, 0, 0.04),
+		0 4px 12px rgba(0, 0, 0, 0.16),
+		0 16px 48px rgba(0, 0, 0, 0.28);
+}
+
+/* Focus ring matching the accent. */
+.pi-focus:focus,
+.pi-focus:focus-visible {
+	outline: none;
+	box-shadow:
+		0 0 0 1px var(--pi-accent),
+		0 0 0 3px var(--pi-accent-ring);
+}
+
+/* Tabular numerals for stats / status bars. */
+.pi-tabular {
+	font-variant-numeric: tabular-nums;
+	font-feature-settings: "tnum";
+}
+
+/* Hide native chrome for select arrow replacement. */
+.pi-select {
+	appearance: none;
+	background-image: none;
+}
+
+/* Animated shimmer for "streaming" dots. */
+@keyframes pi-pulse {
+	0%, 100% { opacity: 0.4; transform: scale(0.85); }
+	50%      { opacity: 1;   transform: scale(1);   }
+}
+.pi-dot {
+	animation: pi-pulse 1.4s ease-in-out infinite;
+}
+.pi-dot:nth-child(2) { animation-delay: 0.2s; }
+.pi-dot:nth-child(3) { animation-delay: 0.4s; }
+
+/* Glass surface — translucent fill + backdrop blur for the floating composer
+   and user bubble. Sits on the neutral chrome so the blur picks up context. */
+.pi-glass {
+	background: color-mix(in srgb, var(--pi-surface-raised) 78%, transparent);
+	backdrop-filter: blur(0.75rem) saturate(1.08);
+	-webkit-backdrop-filter: blur(0.75rem) saturate(1.08);
+}
+
+/* The fade that the floating composer sits on above the thread. */
+.pi-composer-fade {
+	background: linear-gradient(
+		to bottom,
+		transparent,
+		color-mix(in srgb, var(--pi-bg) 62%, transparent)
+	);
+}
+
+/* ============================================================
+   Utility classes for transitions and interactions
+   ============================================================ */
+
+.transition-smooth {
+	transition-property: background-color, border-color, color, fill, stroke,
+		opacity, box-shadow, transform, filter, backdrop-filter;
+	transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+	transition-duration: 150ms;
+}
+
+.transition-hover {
+	transition-property: background-color, border-color, color, fill, stroke,
+		opacity, box-shadow, transform;
+	transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+	transition-duration: 120ms;
+}
+
+/* Active/pressed state feedback */
+.active-press {
+	transition-property: transform;
+	transition-timing-function: ease-out;
+	transition-duration: 75ms;
+}
+.active-press:active {
+	transform: scale(0.98);
+}
+
+/* Respect reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.001ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.001ms !important;
+	}
+}
+
+/* ================== Markdown (Streamdown) rendering ================== */
+/* Tokens — conversation typography rhythm, ported from Hermes desktop. */
+:root {
+	--conversation-text-font-size: 0.8125rem;
+	--conversation-tool-font-size: 0.6875rem;
+	--dt-line-height: 1.5;
+	--paragraph-gap: 0.7rem;
+	--pi-image-preview-max-width: 34rem;
+	--pi-image-preview-height: clamp(16rem, 40dvh, 26rem);
+	--pi-inline-code-background: rgb(255 255 255 / 0.08);
+	--pi-inline-code-foreground: var(--pi-text);
+}
+.light {
+	--pi-inline-code-background: rgb(0 0 0 / 0.06);
+	--pi-inline-code-foreground: var(--pi-text);
+}
+
+@keyframes pi-code-card-stream-enter {
+	from {
+		opacity: 0;
+		transform: translateY(2px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+@keyframes pi-code-card-stream-glow {
+	0% {
+		box-shadow:
+			0 0 0 1px color-mix(in srgb, var(--pi-accent) 12%, transparent),
+			0 0.5rem 1.5rem color-mix(in srgb, var(--pi-accent) 6%, transparent);
+	}
+	100% {
+		box-shadow:
+			0 0 0 1px color-mix(in srgb, var(--pi-accent) 20%, transparent),
+			0 0.625rem 1.75rem color-mix(in srgb, var(--pi-accent) 12%, transparent);
+	}
+}
+
+/* Tailwind Typography sets `.prose :where(p) { margin: 1.25em }`, which ties our
+   `my-*` utilities on specificity and wins on source order. Reclaim paragraph
+   spacing here at higher specificity. Top-owned, bottom snug, first-child flush. */
+.aui-md :where(p) {
+	margin-block: var(--paragraph-gap) 0;
+}
+.aui-md :where(h1, h2, h3, h4) {
+	margin-block: 1rem 0.25rem;
+}
+.aui-md > :first-child,
+.aui-md > :first-child > :first-child {
+	margin-top: 0;
+}
+
+/* RTL/bidi: each block resolves its own base direction from its first strong
+   char (UAX#9 plaintext). Inline code/KaTeX stay LTR and isolated. */
+.aui-md :where(p, h1, h2, h3, h4, h5, h6, li, blockquote) {
+	unicode-bidi: plaintext;
+	text-align: start;
+}
+.aui-md :where(:not(pre) > code),
+.aui-md .katex {
+	direction: ltr;
+	unicode-bidi: isolate;
+}
+.aui-md :not(pre) > code {
+	background: var(--pi-inline-code-background);
+	color: var(--pi-inline-code-foreground);
+}
+
+/* Streamdown wraps code fences in a `data-streamdown="code-block"` container
+   with its own chrome. We render our own <CodeCard>, so strip the upstream
+   chrome down to a layout-only passthrough. */
+.aui-md [data-streamdown="code-block"] {
+	contain: none;
+	overflow: visible;
+	margin-block: var(--paragraph-gap) 0 !important;
+	padding: 0 !important;
+	gap: 0 !important;
+	border: 0 !important;
+	border-radius: 0 !important;
+	background: transparent !important;
+	color: inherit;
+}
+.aui-md [data-streamdown="code-block"] code {
+	max-width: none;
+	font-family: inherit;
+	font-size: inherit;
+	padding: 0;
+	border-radius: 0;
+	background: transparent;
+	color: inherit;
+	overflow-x: visible;
+	overflow-wrap: inherit;
+	vertical-align: baseline;
+	word-break: inherit;
+	white-space: inherit;
+}
+.aui-md [data-streamdown="code-block"]:has(.aui-prose-fence) {
+	margin-block: 0 !important;
+}
+.aui-md .aui-prose-fence {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	color: var(--pi-text);
+}
+
+.aui-md [data-slot="code-card"] {
+	margin-block: var(--paragraph-gap) 0;
+	position: relative;
+	transition:
+		border-color 180ms ease-out,
+		box-shadow 180ms ease-out,
+		background-color 180ms ease-out;
+}
+.aui-md [data-slot="code-card"][data-streaming="true"] {
+	animation:
+		pi-code-card-stream-enter 180ms cubic-bezier(0.16, 1, 0.3, 1) both,
+		pi-code-card-stream-glow 1.8s ease-in-out 180ms infinite alternate;
+	border-color: color-mix(in srgb, var(--pi-accent) 24%, var(--pi-border));
+	box-shadow:
+		0 0 0 1px color-mix(in srgb, var(--pi-accent) 10%, transparent),
+		0 0.625rem 1.75rem color-mix(in srgb, var(--pi-accent) 8%, transparent);
+}
+.aui-md [data-slot="code-card"][data-streaming="true"] [data-slot="code-card-body"] {
+	-webkit-mask-image: linear-gradient(to bottom, black 0%, black calc(100% - 1.5rem), rgb(0 0 0 / 64%) 100%);
+	mask-image: linear-gradient(to bottom, black 0%, black calc(100% - 1.5rem), rgb(0 0 0 / 64%) 100%);
+}
+.aui-md :where(.aui-shiki, .aui-shiki > pre) {
+	margin: 0 !important;
+}
+
+/* GFM alert callouts — keep the inner prose rhythm. */
+.aui-md-alert :where(p) {
+	margin-block: var(--paragraph-gap) 0;
+}
+
+/* Table resets — Streamdown nests blocks, so carry spacing on the wrapper. */
+.aui-md .aui-md-table {
+	border-spacing: 0;
+}
+.aui-md .aui-md-table > table,
+.aui-md .aui-md-table thead,
+.aui-md .aui-md-table tbody,
+.aui-md .aui-md-table tr,
+.aui-md .aui-md-table th,
+.aui-md .aui-md-table td {
+	margin: 0 !important;
+}
