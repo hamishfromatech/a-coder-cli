@@ -1,0 +1,370 @@
+name: Desktop Build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "desktop-app/**"
+      - ".github/workflows/desktop-build.yml"
+    tags:
+      - "desktop-v*"
+  pull_request:
+    branches: [main]
+    paths:
+      - "desktop-app/**"
+      - ".github/workflows/desktop-build.yml"
+  workflow_dispatch:
+  # Called by build-binaries.yml on `v*` tags so desktop installers are staged
+  # into the same unified GitHub Release as the CLI binaries. When called this
+  # way the `release` job below is skipped (it only fires on `desktop-v*`).
+  workflow_call:
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+# Permissions required for the release job to create a GitHub Release and
+# upload assets via the GitHub API.
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS Apple Silicon
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            args: --target aarch64-apple-darwin
+          # macOS Intel
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+            args: --target x86_64-apple-darwin
+          # Linux
+          - platform: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            args: --target x86_64-unknown-linux-gnu
+          # Windows
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            args: --target x86_64-pc-windows-msvc
+
+    runs-on: ${{ matrix.platform }}
+    defaults:
+      run:
+        working-directory: desktop-app
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      # ──────────────────────────────────────────────────────────────────────
+      # macOS: import Developer ID certificate into a temporary keychain.
+      # Tauri's bundler picks up the identity from the keychain and signs the
+      # .app bundle automatically. Notarization is performed with notarytool
+      # after the build, then the ticket is stapled to the bundle.
+      #
+      # Required secrets (see README "Secrets setup" section):
+      #   APPLE_CERTIFICATE           base64-encoded Developer ID Application .p12
+      #   APPLE_CERTIFICATE_PASSWORD  password for the .p12
+      #   APPLE_SIGNING_IDENTITY      e.g. "Developer ID Application: Earendil (TEAMID)"
+      #   APPLE_ID                    Apple ID of the developer account
+      #   APPLE_PASSWORD              app-specific password (appleid.apple.com)
+      #   APPLE_TEAM_ID               10-character team identifier
+      # ──────────────────────────────────────────────────────────────────────
+      - name: Import Apple Developer certificate
+        if: matrix.platform == 'macos-latest' && env.APPLE_CERTIFICATE != ''
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          # Create a temporary keychain so we don't pollute the runner default.
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Import the Developer ID certificate.
+          CERT_PATH="$RUNNER_TEMP/developer_id.p12"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$CERT_PATH"
+          security import "$CERT_PATH" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH" \
+            -T /usr/bin/codesign
+
+          # Make the keychain the default and let codesign access it without prompts.
+          security default-keychain -s "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+      - name: Build desktop app (macOS)
+        if: matrix.platform == 'macos-latest'
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Updater signing key (for the .tar.gz.sig artifacts). Optional but
+          # required if the updater plugin is enabled.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npm run tauri:build -- ${{ matrix.args }}
+
+      - name: Build desktop app (Linux/Windows)
+        if: matrix.platform != 'macos-latest'
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npm run tauri:build -- ${{ matrix.args }}
+
+      # ──────────────────────────────────────────────────────────────────────
+      # macOS notarization + stapling. Tauri's bundler will notarize for you
+      # when APPLE_ID/APPLE_PASSWORD/APPLE_TEAM_ID are set, but we run an
+      # explicit notarytool check + stapler pass as a safety net so a failed
+      # notarization fails the build instead of shipping an unsigned DMG.
+      # ──────────────────────────────────────────────────────────────────────
+      - name: Notarize and staple macOS bundle
+        if: matrix.platform == 'macos-latest' && env.APPLE_ID != ''
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          BUNDLE_DIR="src-tauri/target/${{ matrix.target }}/release/bundle"
+          APP_PATH="$(find "$BUNDLE_DIR" -name '*.app' -type d | head -n1)"
+          if [ -z "$APP_PATH" ]; then
+            echo "No .app bundle found in $BUNDLE_DIR"
+            exit 1
+          fi
+
+          # Zip the .app for notarytool submission.
+          ZIP_PATH="$RUNNER_TEMP/app.zip"
+          ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH"
+
+          # Submit and wait for the notarization ticket.
+          echo "Submitting $ZIP_PATH to Apple notarization service..."
+          SUBMIT_OUTPUT=$(xcrun notarytool submit "$ZIP_PATH" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait)
+          echo "$SUBMIT_OUTPUT"
+
+          REQUEST_ID=$(echo "$SUBMIT_OUTPUT" | awk '/id:/ {print $2; exit}')
+          STATUS=$(echo "$SUBMIT_OUTPUT" | awk '/status:/ {print $2; exit}')
+
+          if [ "$STATUS" != "Accepted" ]; then
+            echo "Notarization failed with status: $STATUS"
+            if [ -n "$REQUEST_ID" ]; then
+              xcrun notarytool log "$REQUEST_ID" \
+                --apple-id "$APPLE_ID" \
+                --password "$APPLE_PASSWORD" \
+                --team-id "$APPLE_TEAM_ID" || true
+            fi
+            exit 1
+          fi
+
+          # Staple the ticket to the .app bundle.
+          xcrun stapler staple "$APP_PATH"
+          xcrun stapler validate "$APP_PATH"
+
+      # ──────────────────────────────────────────────────────────────────────
+      # Windows code signing. Two paths are supported:
+      #   1. Azure Trusted Signing / Key Vault (recommended, no PFX on disk)
+      #   2. PFX certificate stored as a base64 secret (legacy / self-signed)
+      #
+      # Tauri's bundler signs the .exe/.msi automatically when the
+      # TAURI_SIGNING_PRIVATE_KEY_* and Windows cert env vars are present, but
+      # we run an explicit signtool pass so signing failures surface here
+      # rather than producing an unsigned installer.
+      #
+      # Required secrets (see README "Secrets setup" section):
+      #   WINDOWS_CERTIFICATE            base64-encoded PFX (legacy path only)
+      #   WINDOWS_CERTIFICATE_PASSWORD   password for the PFX (legacy path only)
+      #   AZURE_TENANT_ID                Azure Trusted Signing (path 1)
+      #   AZURE_CLIENT_ID                Azure Trusted Signing (path 1)
+      #   AZURE_CLIENT_SECRET            Azure Trusted Signing (path 1)
+      #   AZURE_TRUSTED_SIGNING_ACCOUNT  Azure Trusted Signing account name
+      #   AZURE_TRUSTED_SIGNING_PROFILE  Azure Trusted Signing cert profile
+      #   AZURE_TRUSTED_SIGNING_ENDPOINT e.g. https://eus.codesigning.azure.net
+      # ──────────────────────────────────────────────────────────────────────
+      - name: Sign Windows installers (Azure Trusted Signing)
+        if: matrix.platform == 'windows-latest' && env.AZURE_TENANT_ID != ''
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TRUSTED_SIGNING_ACCOUNT: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT }}
+          AZURE_TRUSTED_SIGNING_PROFILE: ${{ secrets.AZURE_TRUSTED_SIGNING_PROFILE }}
+          AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ secrets.AZURE_TRUSTED_SIGNING_ENDPOINT }}
+        shell: pwsh
+        run: |
+          # Install AzureSignTool (cross-platform signtool replacement).
+          dotnet tool install --global AzureSignTool
+          $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
+
+          $bundleDir = "src-tauri\target\${{ matrix.target }}\release\bundle"
+          $filesToSign = @()
+          $filesToSign += Get-ChildItem -Path $bundleDir -Recurse -Include *.exe,*.msi -ErrorAction SilentlyContinue
+
+          if ($filesToSign.Count -eq 0) {
+            Write-Host "No .exe/.msi installers found in $bundleDir"
+            exit 1
+          }
+
+          foreach ($file in $filesToSign) {
+            Write-Host "Signing $($file.FullName)..."
+            azure-signtool sign `
+              --azure-trusted-signing-account-endpoint "$env:AZURE_TRUSTED_SIGNING_ENDPOINT" `
+              --azure-trusted-signing-account-name "$env:AZURE_TRUSTED_SIGNING_ACCOUNT" `
+              --azure-trusted-signing-certificate-profile-name "$env:AZURE_TRUSTED_SIGNING_PROFILE" `
+              --azure-key-vault-tenant-id "$env:AZURE_TENANT_ID" `
+              --azure-key-vault-client-id "$env:AZURE_CLIENT_ID" `
+              --azure-key-vault-client-secret "$env:AZURE_CLIENT_SECRET" `
+              --timestamp-rfc3161 "http://timestamp.digicert.com" `
+              --file-digest sha256 `
+              "$($file.FullName)"
+          }
+
+      - name: Sign Windows installers (PFX certificate)
+        if: matrix.platform == 'windows-latest' && env.WINDOWS_CERTIFICATE != '' && env.AZURE_TENANT_ID == ''
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        shell: pwsh
+        run: |
+          $pfxPath = Join-Path $env:RUNNER_TEMP "windows-cert.pfx"
+          [System.Convert]::FromBase64String($env:WINDOWS_CERTIFICATE) | Set-Content -Path $pfxPath -AsByteStream
+
+          $bundleDir = "src-tauri\target\${{ matrix.target }}\release\bundle"
+          $filesToSign = Get-ChildItem -Path $bundleDir -Recurse -Include *.exe,*.msi -ErrorAction SilentlyContinue
+
+          if (-not $filesToSign) {
+            Write-Host "No .exe/.msi installers found in $bundleDir"
+            exit 1
+          }
+
+          # Locate signtool.exe (ships with Windows SDK).
+          $signtool = Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter signtool.exe `
+            | Where-Object { $_.FullName -match 'x64' } `
+            | Sort-Object FullName -Descending `
+            | Select-Object -First 1
+
+          if (-not $signtool) {
+            Write-Host "signtool.exe not found"
+            exit 1
+          }
+
+          foreach ($file in $filesToSign) {
+            Write-Host "Signing $($file.FullName)..."
+            & $signtool.FullName sign /f $pfxPath /p $env:WINDOWS_CERTIFICATE_PASSWORD `
+              /tr http://timestamp.digicert.com /td sha256 /fd sha256 `
+              $file.FullName
+          }
+
+      - name: Cleanup keychain
+        if: always() && matrix.platform == 'macos-latest'
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          if [ -f "$KEYCHAIN_PATH" ]; then
+            security delete-keychain "$KEYCHAIN_PATH" || true
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: a-coder-desktop-${{ matrix.target }}
+          path: |
+            desktop-app/src-tauri/target/${{ matrix.target }}/release/bundle/*
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Release job (legacy standalone path): runs after the build matrix succeeds
+  # but ONLY on `desktop-v*` tags. The unified release flow is driven by
+  # build-binaries.yml, which calls this workflow via `workflow_call` on `v*`
+  # tags and stages desktop artifacts into the same GitHub Release as the CLI
+  # binaries. When called that way this job is skipped (the `desktop-v*`
+  # condition is false). Publish the draft manually after reviewing assets.
+  # ──────────────────────────────────────────────────────────────────────────
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/desktop-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: false
+
+      - name: Flatten artifacts
+        run: |
+          # Flatten the per-target artifact directories into a single release/
+          # directory so the release lists one file per asset.
+          mkdir -p release
+          find artifacts -type f \( \
+            -name '*.dmg' -o \
+            -name '*.app.tar.gz' -o \
+            -name '*.app.tar.gz.sig' -o \
+            -name '*.deb' -o \
+            -name '*.AppImage' -o \
+            -name '*.AppImage.sig' -o \
+            -name '*.rpm' -o \
+            -name '*.exe' -o \
+            -name '*.msi' -o \
+            -name '*.exe.sig' -o \
+            -name '*.msi.sig' \
+          \) -exec cp {} release/ \;
+
+          ls -la release/
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: A-Coder Desktop ${{ github.ref_name }}
+          body: |
+            ## A-Coder Desktop ${{ github.ref_name }}
+
+            Download the installer for your platform below. macOS builds are
+            signed and notarized; Windows builds are signed with an EV
+            certificate.
+
+            **Verify the download** (optional):
+            - macOS: `spctl -a -t install -vv A-Coder Desktop_*.dmg`
+            - Windows: right-click the installer → Properties → Digital Signatures
+          draft: true
+          prerelease: false
+          files: release/*
+          tag_name: ${{ github.ref_name }}

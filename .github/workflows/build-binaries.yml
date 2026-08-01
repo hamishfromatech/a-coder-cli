@@ -103,9 +103,16 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  # Desktop installers (macOS dmg, Linux deb/AppImage, Windows nsis/msi) are
+  # built by the reusable desktop-build workflow and staged into the same
+  # unified GitHub Release as the CLI binaries below. Runs in parallel with
+  # the CLI build.
+  desktop-build:
+    uses: ./.github/workflows/desktop-build.yml
+
   stage-github-release:
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, desktop-build]
     permissions:
       actions: read
       contents: write
@@ -144,6 +151,125 @@ jobs:
 
           sha256sum -c SHA256SUMS
 
+      - name: Download desktop installer artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: desktop-artifacts
+          merge-multiple: false
+
+      - name: Flatten desktop installers into release-assets
+        run: |
+          set -euo pipefail
+          # Copy every installer and updater artifact produced by the desktop
+          # build matrix into release-assets/ so they ship in one release.
+          find desktop-artifacts -type f \( \
+            -name '*.dmg' -o \
+            -name '*.app.tar.gz' -o \
+            -name '*.app.tar.gz.sig' -o \
+            -name '*.deb' -o \
+            -name '*.rpm' -o \
+            -name '*.AppImage' -o \
+            -name '*.AppImage.tar.gz' -o \
+            -name '*.AppImage.tar.gz.sig' -o \
+            -name '*-setup.exe' -o \
+            -name '*-setup.nsis.zip' -o \
+            -name '*-setup.nsis.zip.sig' -o \
+            -name '*.msi' -o \
+            -name '*.msi.sig' -o \
+            -name '*.exe.sig' \
+          \) -exec cp {} release-assets/ \;
+
+          echo "Staged desktop assets:"
+          ls -la release-assets/*.dmg release-assets/*.deb release-assets/*.AppImage* \
+            release-assets/*-setup.* release-assets/*.msi* 2>/dev/null || true
+
+      - name: Generate Tauri updater latest.json
+        env:
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+        run: |
+          set -euo pipefail
+          # Build the Tauri v2 updater manifest by scanning the per-target
+          # desktop artifact directories (deterministic arch mapping). The
+          # flatten step above copies the archives into release-assets/ under
+          # their original basenames, so download URLs use those basenames.
+          node <<'NODE'
+          const fs = require("fs");
+          const path = require("path");
+          const tag = process.env.RELEASE_TAG;
+          const repo = process.env.GH_REPO;
+          const version = tag.replace(/^v/, "");
+          const pubDate = new Date().toISOString();
+          const base = `https://github.com/${repo}/releases/download/${tag}`;
+          const root = "desktop-artifacts";
+
+          // [updaterKey, targetDir, archiveGlob, sigGlob]
+          const specs = [
+            ["darwin-aarch64", "a-coder-desktop-aarch64-apple-darwin", "*.app.tar.gz", "*.app.tar.gz.sig"],
+            ["darwin-x86_64",  "a-coder-desktop-x86_64-apple-darwin",  "*.app.tar.gz", "*.app.tar.gz.sig"],
+            ["linux-x86_64",   "a-coder-desktop-x86_64-unknown-linux-gnu", "*.AppImage.tar.gz", "*.AppImage.tar.gz.sig"],
+            ["win32-x86_64",   "a-coder-desktop-x86_64-pc-windows-msvc", "*-setup.nsis.zip", "*-setup.nsis.zip.sig"],
+          ];
+
+          function findOne(dir, glob) {
+            if (!fs.existsSync(dir)) return null;
+            const re = new RegExp("^" + glob.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$");
+            const hit = fs.readdirSync(dir, { withFileTypes: true })
+              .filter((e) => e.isFile() && re.test(e.name))
+              .map((e) => e.name)
+              .sort()[0];
+            return hit ? path.join(dir, hit) : null;
+          }
+          function walk(dir) {
+            // Recursively find the first file matching glob under dir.
+            if (!fs.existsSync(dir)) return null;
+            const stack = [dir];
+            while (stack.length) {
+              const cur = stack.pop();
+              for (const e of fs.readdirSync(cur, { withFileTypes: true })) {
+                const full = path.join(cur, e.name);
+                if (e.isDirectory()) stack.push(full);
+                else if (e.isFile() && matcher(e.name)) return full;
+              }
+            }
+            return null;
+          }
+          function matcher(glob) {
+            return (name) => {
+              const re = new RegExp("^" + glob.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$");
+              return re.test(name);
+            };
+          }
+
+          const platforms = {};
+          for (const [key, targetDir, archiveGlob, sigGlob] of specs) {
+            const dir = path.join(root, targetDir);
+            const match = matcher(archiveGlob);
+            const sigMatch = matcher(sigGlob);
+            // Search recursively; updater archives live under .../release/bundle/.
+            const findRec = (d, test) => {
+              if (!fs.existsSync(d)) return null;
+              for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+                const full = path.join(d, e.name);
+                if (e.isDirectory()) { const r = findRec(full, test); if (r) return r; }
+                else if (e.isFile() && test(e.name)) return full;
+              }
+              return null;
+            };
+            const archive = findRec(dir, match);
+            const sig = findRec(dir, sigMatch);
+            if (!archive || !sig) { console.error(`  skipping ${key} (missing archive or signature in ${targetDir})`); continue; }
+            platforms[key] = {
+              signature: fs.readFileSync(sig, "utf8").trim(),
+              url: `${base}/${path.basename(archive)}`,
+            };
+          }
+
+          const manifest = { version, notes: `A-Coder Desktop ${version}`, pub_date: pubDate, platforms };
+          fs.writeFileSync("release-assets/latest.json", JSON.stringify(manifest, null, 2) + "\n");
+          console.log("Generated latest.json:");
+          console.log(fs.readFileSync("release-assets/latest.json", "utf8"));
+          NODE
       - name: Create draft GitHub Release and upload binaries
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -152,7 +278,8 @@ jobs:
 
           cd release-assets
 
-          release_assets=(
+          # CLI assets that MUST be present (validated as a subset below).
+          cli_assets=(
             pi-darwin-arm64.tar.gz
             pi-darwin-x64.tar.gz
             pi-linux-x64.tar.gz
@@ -173,21 +300,31 @@ jobs:
             gh release delete "${RELEASE_TAG}" --yes
           fi
 
+          # Upload every staged file (CLI binaries + desktop installers +
+          # updater manifest). Exclude RELEASE_NOTES.md, which is the body.
+          mapfile -t upload_files < <(find . -maxdepth 1 -type f ! -name RELEASE_NOTES.md | sort)
+
           gh release create "${RELEASE_TAG}" \
             --verify-tag \
             --draft \
             --title "${RELEASE_TAG}" \
             --notes-file RELEASE_NOTES.md \
-            "${release_assets[@]}"
+            "${upload_files[@]}"
 
-          expected_asset_names="$(printf '%s\n' "${release_assets[@]}" | sort)"
+          # Validate the CLI asset set is present (subset check). Desktop
+          # installer filenames are version-dependent, so we do not require an
+          # exact match against the full asset list.
           actual_asset_names="$(gh release view "${RELEASE_TAG}" --json assets --jq '.assets[].name' | sort)"
+          for asset in "${cli_assets[@]}"; do
+            if ! grep -qx "${asset}" <<<"${actual_asset_names}"; then
+              echo "::error::Missing required CLI asset: ${asset}"
+              diff -u <(printf '%s\n' "${cli_assets[@]}" | sort) <(printf '%s\n' "${actual_asset_names}") || true
+              exit 1
+            fi
+          done
 
-          if [[ "${actual_asset_names}" != "${expected_asset_names}" ]]; then
-            echo "::error::Draft GitHub Release asset set does not match expected files."
-            diff -u <(printf '%s\n' "${expected_asset_names}") <(printf '%s\n' "${actual_asset_names}") || true
-            exit 1
-          fi
+          echo "Unified draft release staged with CLI + desktop assets:"
+          printf '%s\n' "${actual_asset_names}"
 
   publish-npm:
     runs-on: ubuntu-latest
@@ -272,6 +409,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - build
+      - desktop-build
       - stage-github-release
       - publish-npm
       - publish-github-release
