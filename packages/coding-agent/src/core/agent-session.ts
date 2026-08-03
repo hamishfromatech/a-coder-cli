@@ -47,6 +47,7 @@ import { formatDuration } from "../utils/duration.ts";
 import { stripFrontmatter } from "../utils/frontmatter.ts";
 import { resolvePath } from "../utils/paths.ts";
 import { sleep } from "../utils/sleep.ts";
+import { normalizeToolResultImages } from "../utils/tool-result-images.ts";
 import { type AgentPermissionMode, findAgent, resolveAgentTools } from "./agents/index.ts";
 import { formatNoApiKeyFoundMessage, formatNoModelSelectedMessage } from "./auth-guidance.ts";
 import { type BashResult, executeBashWithOperations } from "./bash-executor.ts";
@@ -969,12 +970,19 @@ export class AgentSession {
 						}
 					: result;
 
+			// Normalize tool-result images (auto-resize) after all transformations,
+			// so extension-injected images are handled too.
+			const normalizedContent = await normalizeToolResultImages(effectiveResult.content, {
+				autoResizeImages: this.settingsManager.getImageAutoResize(),
+			});
+			const normalizedResult = { ...effectiveResult, content: normalizedContent };
+
 			const runner = this._extensionRunner;
 			if (!runner.hasHandlers("tool_result")) {
-				if (effectiveResult === result) {
+				if (normalizedResult === result) {
 					return undefined;
 				}
-				return { content: effectiveResult.content, details: effectiveResult.details, isError: hookIsError };
+				return { content: normalizedResult.content, details: normalizedResult.details, isError: hookIsError };
 			}
 
 			try {
@@ -983,19 +991,23 @@ export class AgentSession {
 					toolName: toolCall.name,
 					toolCallId: toolCall.id,
 					input: args as Record<string, unknown>,
-					content: effectiveResult.content,
-					details: effectiveResult.details,
+					content: normalizedResult.content,
+					details: normalizedResult.details,
 					isError: hookIsError,
 				});
 
 				if (!hookResult) {
-					return effectiveResult === result && hookIsError === isError
+					return normalizedResult === result && hookIsError === isError
 						? undefined
-						: { content: effectiveResult.content, details: effectiveResult.details, isError: hookIsError };
+						: { content: normalizedResult.content, details: normalizedResult.details, isError: hookIsError };
 				}
 
+				// Extensions may replace or inject images; normalize again on their output.
+				const finalContent = await normalizeToolResultImages(hookResult.content ?? [], {
+					autoResizeImages: this.settingsManager.getImageAutoResize(),
+				});
 				return {
-					content: hookResult.content,
+					content: finalContent,
 					details: hookResult.details,
 					isError: hookResult.isError ?? hookIsError,
 				};
@@ -2960,9 +2972,10 @@ export class AgentSession {
 		// Case 1: Recoverable failure. Explicit/silent context overflow still uses context metadata.
 		// A length stop is recoverable when output ended below the model's original desired limit,
 		// independent of the configured context size or any context-clamped provider request limit.
-		const contextOverflow = sameModel && isContextOverflow(assistantMessage, contextWindow);
+		// A successful response over the configured window should compact but must not retry: the
+		// assistant answer already completed and agent.continue() cannot continue from an assistant.
 		const recoverableLength = sameModel && isRecoverableLength(assistantMessage, this.model?.maxTokens ?? 0);
-		if (contextOverflow || recoverableLength) {
+		if (sameModel && (isContextOverflow(assistantMessage, contextWindow) || recoverableLength)) {
 			const willRetry = assistantMessage.stopReason !== "stop";
 
 			if (!willRetry) {
@@ -2970,16 +2983,14 @@ export class AgentSession {
 			}
 
 			if (this._overflowRecoveryAttempted) {
-				const errorMessage = contextOverflow
-					? "Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model."
-					: "Truncated response recovery failed after one compact-and-retry attempt.";
 				this._emit({
 					type: "compaction_end",
 					reason: "overflow",
 					result: undefined,
 					aborted: false,
 					willRetry: false,
-					errorMessage,
+					errorMessage:
+						"Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model.",
 				});
 				return false;
 			}
