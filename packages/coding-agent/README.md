@@ -667,6 +667,8 @@ a-coder-cli --thinking high "Solve this complex problem"
 | `A_CODER_CLI_SKIP_VERSION_CHECK` | Skip the version update check at startup. This prevents the GitHub releases latest-version request |
 | `A_CODER_CLI_TELEMETRY` | Override install/update telemetry and provider attribution headers. Use `1`/`true`/`yes` to enable or `0`/`false`/`no` to disable. This does not disable update checks |
 | `A_CODER_CLI_ANALYTICS` | Override the opt-in `enableAnalytics` PostHog events. `1`/`true`/`yes` force-enable (still requires a `trackingId`), `0`/`false`/`no` force-disable. Offline mode always disables analytics |
+| `AI_AGENT` | Set to `a-coder-cli` by the CLI and RPC entry points so generic tooling can attribute child processes to A-Coder |
+
 | `PI_CACHE_RETENTION` | Set to `long` for extended prompt cache (Anthropic: 1h, OpenAI: 24h) |
 | `VISUAL`, `EDITOR` | Fallback external editor for Ctrl+G when `externalEditor` is unset; defaults to Notepad on Windows and `nano` elsewhere |
 
