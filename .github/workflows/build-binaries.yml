@@ -108,6 +108,8 @@ jobs:
   # unified GitHub Release as the CLI binaries below. Runs in parallel with
   # the CLI build.
   desktop-build:
+    permissions:
+      contents: write
     uses: ./.github/workflows/desktop-build.yml
 
   stage-github-release:
