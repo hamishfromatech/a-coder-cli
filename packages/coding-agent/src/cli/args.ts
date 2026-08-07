@@ -8,6 +8,7 @@ import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR, ENV_SESSION_DIR } from "../co
 import type { ExtensionFlag } from "../core/extensions/types.ts";
 
 export type Mode = "text" | "json" | "rpc";
+export type PermissionModeArg = "ask" | "allow" | "read-only" | "auto";
 
 export interface Args {
 	provider?: string;
@@ -21,6 +22,7 @@ export interface Args {
 	help?: boolean;
 	version?: boolean;
 	mode?: Mode;
+	permissionMode?: PermissionModeArg;
 	name?: string;
 	noSession?: boolean;
 	session?: string;
@@ -43,6 +45,7 @@ export interface Args {
 	themes?: string[];
 	noThemes?: boolean;
 	noContextFiles?: boolean;
+	desktop?: boolean;
 	listModels?: string | true;
 	offline?: boolean;
 	verbose?: boolean;
@@ -55,9 +58,14 @@ export interface Args {
 }
 
 const VALID_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+const VALID_PERMISSION_MODES = ["ask", "allow", "read-only", "auto"] as const;
 
 export function isValidThinkingLevel(level: string): level is ThinkingLevel {
 	return VALID_THINKING_LEVELS.includes(level as ThinkingLevel);
+}
+
+export function isValidPermissionMode(mode: string): mode is PermissionModeArg {
+	return VALID_PERMISSION_MODES.includes(mode as PermissionModeArg);
 }
 
 export function parseArgs(args: string[]): Args {
@@ -79,6 +87,16 @@ export function parseArgs(args: string[]): Args {
 			const mode = args[++i];
 			if (mode === "text" || mode === "json" || mode === "rpc") {
 				result.mode = mode;
+			}
+		} else if (arg === "--permission-mode" && i + 1 < args.length) {
+			const mode = args[++i];
+			if (isValidPermissionMode(mode)) {
+				result.permissionMode = mode;
+			} else {
+				result.diagnostics.push({
+					type: "warning",
+					message: `Invalid permission mode "${mode}". Valid values: ${VALID_PERMISSION_MODES.join(", ")}`,
+				});
 			}
 		} else if (arg === "--continue" || arg === "-c") {
 			result.continue = true;
@@ -168,6 +186,8 @@ export function parseArgs(args: string[]): Args {
 			result.noThemes = true;
 		} else if (arg === "--no-context-files" || arg === "-nc") {
 			result.noContextFiles = true;
+		} else if (arg === "--desktop" || arg === "-d") {
+			result.desktop = true;
 		} else if (arg === "--list-models") {
 			// Check if next arg is a search pattern (not a flag or file arg)
 			if (i + 1 < args.length && !args[i + 1].startsWith("-") && !args[i + 1].startsWith("@")) {
@@ -229,7 +249,7 @@ ${chalk.bold("Commands:")}
   ${APP_NAME} install <source> [-l]     Install extension source and add to settings
   ${APP_NAME} remove <source> [-l]      Remove extension source from settings
   ${APP_NAME} uninstall <source> [-l]   Alias for remove
-  ${APP_NAME} update [source|self|pi]   Update pi (use --all for pi and extensions)
+  ${APP_NAME} update [source|self|${APP_NAME}]   Update ${APP_NAME} (use --all for ${APP_NAME} and extensions)
   ${APP_NAME} list                      List installed extensions from settings
   ${APP_NAME} config                    Open TUI to enable/disable package resources
   ${APP_NAME} <command> --help          Show help for install/remove/uninstall/update/list
@@ -241,6 +261,7 @@ ${chalk.bold("Options:")}
   --system-prompt <text>         System prompt (default: coding assistant prompt)
   --append-system-prompt <text>  Append text or file contents to the system prompt (can be used multiple times)
   --mode <mode>                  Output mode: text (default), json, or rpc
+  --permission-mode <mode>       Permission mode: ask, allow, read-only, or auto
   --print, -p                    Non-interactive mode: process prompt and exit
   --continue, -c                 Continue previous session
   --resume, -r                   Select a session to resume
@@ -268,12 +289,13 @@ ${chalk.bold("Options:")}
   --theme <path>                 Load a theme file or directory (can be used multiple times)
   --no-themes                    Disable theme discovery and loading
   --no-context-files, -nc        Disable AGENTS.md and CLAUDE.md discovery and loading
+  --desktop, -d                 Launch the A-Coder Desktop app in the current directory
   --export <file>                Export session file to HTML and exit
   --list-models [search]         List available models (with optional fuzzy search)
   --verbose                      Force verbose startup (overrides quietStartup setting)
   --approve, -a                  Trust project-local files for this run
   --no-approve, -na              Ignore project-local files for this run
-  --offline                      Disable startup network operations (same as PI_OFFLINE=1)
+  --offline                      Disable startup network operations (same as A_CODER_CLI_OFFLINE=1)
   --help, -h                     Show this help
   --version, -v                  Show version number
 
@@ -373,10 +395,10 @@ ${chalk.bold("Environment Variables:")}
   AWS_REGION                       - AWS region for Amazon Bedrock (e.g., us-east-1)
   ${ENV_AGENT_DIR.padEnd(32)} - Config directory (default: ~/${CONFIG_DIR_NAME}/agent)
   ${ENV_SESSION_DIR.padEnd(32)} - Session storage directory (overridden by --session-dir)
-  PI_PACKAGE_DIR                   - Override package directory (for Nix/Guix store paths)
-  PI_OFFLINE                       - Disable startup network operations when set to 1/true/yes
-  PI_TELEMETRY                     - Override install telemetry when set to 1/true/yes or 0/false/no
-  PI_SHARE_VIEWER_URL              - Base URL for /share command (default: https://pi.dev/session/)
+  A_CODER_CLI_PACKAGE_DIR          - Override package directory (for Nix/Guix store paths)
+  A_CODER_CLI_OFFLINE              - Disable startup network operations when set to 1/true/yes
+  A_CODER_CLI_TELEMETRY            - Override install telemetry when set to 1/true/yes or 0/false/no
+  A_CODER_CLI_SHARE_VIEWER_URL     - Base URL for /share command (default: https://a-coder-cli.dev/session/)
 
 ${chalk.bold("Built-in Tool Names:")}
   read   - Read file contents

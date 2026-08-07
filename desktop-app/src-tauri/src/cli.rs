@@ -1,5 +1,16 @@
 use std::path::PathBuf;
 
+/// Workspace path forwarded by the `pi --desktop` CLI launcher via the
+/// `A_CODER_DESKTOP_WORKSPACE` environment variable. Returns `None` when the
+/// desktop app was launched normally (no workspace preselected), so the
+/// frontend falls back to the persisted project or the picker.
+#[tauri::command]
+pub fn get_initial_workspace() -> Option<String> {
+    std::env::var("A_CODER_DESKTOP_WORKSPACE")
+        .ok()
+        .filter(|s| !s.is_empty())
+}
+
 /// Resolve the a-coder-cli executable from PATH, with an optional override.
 pub fn resolve_cli_path(override_path: Option<String>) -> Result<PathBuf, String> {
     if let Some(path) = override_path {

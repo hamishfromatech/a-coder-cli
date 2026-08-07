@@ -66,6 +66,9 @@ export default function App() {
 	const [showMemory, setShowMemory] = useState(false);
 	const [showOnboarding, setShowOnboarding] = useState(() => !isOnboardingComplete());
 	const [trustPrompt, setTrustPrompt] = useState<string | null>(null);
+	// Gate first connect on the initial-workspace lookup so a `pi --desktop`
+	// launch preselects the terminal's folder before the engine boots.
+	const [bootReady, setBootReady] = useState(false);
 	const unlistenRef = useRef<(() => void) | null>(null);
 	const switchProjectRef = useRef<(path: string) => void>(() => {});
 	const loadingHistoryRef = useRef(false);
@@ -147,6 +150,28 @@ export default function App() {
 	useEffect(() => {
 		applyNamedTheme(skin, theme);
 	}, [skin, theme]);
+
+	// Resolve a workspace preselected by the `pi --desktop` CLI launcher
+	// (A_CODER_DESKTOP_WORKSPACE) and apply it before booting the engine so the
+	// terminal's folder opens directly, skipping the project picker. Runs once.
+	useEffect(() => {
+		let cancelled = false;
+		(async () => {
+			let ws: string | null = null;
+			try {
+				ws = await rpc.getInitialWorkspace();
+			} catch {
+				// best-effort: fall back to persisted project / picker
+			}
+			if (cancelled) return;
+			if (ws) setProjectPath(ws);
+			setBootReady(true);
+		})();
+		return () => {
+			cancelled = true;
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
 
 	// Prime the completion-sound AudioContext on the first user gesture so the
 	// async agent_end chime isn't muted by WKWebView's autoplay policy.
@@ -530,8 +555,9 @@ export default function App() {
 	useEffect(() => {
 		let cancelled = false;
 
-		async function bootstrap() {
+			async function bootstrap() {
 			if (cancelled) return;
+			if (!bootReady) return; // Wait for the initial-workspace lookup
 			if (showOnboarding) return; // Wait for onboarding to complete
 			const startCwd = reopenLastProject ? effectiveCwd : FALLBACK_CWD;
 			// Resume the most recent session for this project so past conversation
@@ -549,7 +575,7 @@ export default function App() {
 			unlistenRef.current?.();
 			rpc.disconnect().catch(() => {});
 		};
-	}, [connectEngine, showOnboarding, reopenLastProject, effectiveCwd]);
+	}, [connectEngine, showOnboarding, reopenLastProject, effectiveCwd, bootReady]);
 
 	// Listen for native menu actions.
 	useEffect(() => {
@@ -728,6 +754,17 @@ export default function App() {
 	const projectName = projectPath
 		? (projectPath.split(/[/\\]/).filter(Boolean).at(-1) ?? projectPath)
 		: "No project";
+
+	if (!bootReady) {
+		return (
+			<div className="flex h-full w-full items-center justify-center bg-pi-bg text-pi-text">
+				<div className="flex flex-col items-center gap-3">
+					<div className="size-7 animate-spin rounded-full border-2 border-pi-border border-t-pi-text/70" />
+					<p className="text-sm text-pi-muted">Starting A-Coder Desktop…</p>
+				</div>
+			</div>
+		);
+	}
 
 	return (
 		<div className="flex h-full w-full flex-col overflow-hidden bg-pi-bg text-pi-text">

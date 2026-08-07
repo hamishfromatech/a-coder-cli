@@ -23,6 +23,7 @@ fn main() {
 		.plugin(tauri_plugin_process::init())
 		.manage(AppState::default())
 		.invoke_handler(tauri::generate_handler![
+			cli::get_initial_workspace,
 			rpc_commands::connect,
 			rpc_commands::disconnect,
 			rpc_commands::send_command,

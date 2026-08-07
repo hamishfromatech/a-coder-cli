@@ -461,6 +461,11 @@ export async function readTextFile(path: string): Promise<string> {
 	return await invoke<string>("read_text_file", { path });
 }
 
+/** Workspace preselected by the `pi --desktop` CLI launcher (A_CODER_DESKTOP_WORKSPACE). */
+export async function getInitialWorkspace(): Promise<string | null> {
+	return await invoke<string | null>("get_initial_workspace");
+}
+
 export async function listFiles(
 	cwd: string,
 	extension: string,

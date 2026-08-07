@@ -11,6 +11,7 @@ import chalk from "chalk";
 import { type Args, type Mode, parseArgs, printHelp } from "./cli/args.ts";
 import { processFileArguments } from "./cli/file-processor.ts";
 import { buildInitialMessage } from "./cli/initial-message.ts";
+import { launchDesktop } from "./cli/desktop.ts";
 import { listModels } from "./cli/list-models.ts";
 import { createProjectTrustContext } from "./cli/project-trust.ts";
 import { selectSession } from "./cli/session-picker.ts";
@@ -45,7 +46,7 @@ import { hasTrustRequiringProjectResources, ProjectTrustStore } from "./core/tru
 import { runMigrations, showDeprecationWarnings } from "./migrations.ts";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.ts";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.ts";
-import { handleConfigCommand, handlePackageCommand } from "./package-manager-cli.ts";
+import { handleConfigCommand, handlePackageCommand, handleResourcesCommand } from "./package-manager-cli.ts";
 import { isLocalPath, normalizePath, resolvePath } from "./utils/paths.ts";
 import { cleanupWindowsSelfUpdateQuarantine } from "./utils/windows-self-update.ts";
 
@@ -467,10 +468,10 @@ export interface MainOptions {
 
 export async function main(args: string[], options?: MainOptions) {
 	resetTimings();
-	const offlineMode = args.includes("--offline") || isTruthyEnvFlag(process.env.PI_OFFLINE);
+	const offlineMode = args.includes("--offline") || isTruthyEnvFlag(process.env.A_CODER_CLI_OFFLINE);
 	if (offlineMode) {
-		process.env.PI_OFFLINE = "1";
-		process.env.PI_SKIP_VERSION_CHECK = "1";
+		process.env.A_CODER_CLI_OFFLINE = "1";
+		process.env.A_CODER_CLI_SKIP_VERSION_CHECK = "1";
 	}
 
 	if (process.platform === "win32") {
@@ -500,6 +501,11 @@ export async function main(args: string[], options?: MainOptions) {
 		return;
 	}
 
+	if (await handleResourcesCommand(args, { extensionFactories: options?.extensionFactories })) {
+		process.exit(process.exitCode ?? 0);
+		return;
+	}
+
 	const parsed = parseArgs(args);
 	if (parsed.diagnostics.length > 0) {
 		for (const d of parsed.diagnostics) {
@@ -511,6 +517,13 @@ export async function main(args: string[], options?: MainOptions) {
 		}
 	}
 	time("parseArgs");
+
+	if (parsed.desktop) {
+		// Launch the A-Coder Desktop app in the current working directory, then exit.
+		// Handled before any runtime/session setup so `pi --desktop` is cheap and fast.
+		await launchDesktop(cwd);
+		process.exit(0);
+	}
 
 	if (parsed.version) {
 		console.log(VERSION);
@@ -626,6 +639,9 @@ export async function main(args: string[], options?: MainOptions) {
 				parsed.projectTrustOverride ??
 				(!hasTrustRequiringResources || trustStore.get(cwd) === true));
 		const runtimeSettingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted });
+		if (parsed.permissionMode) {
+			runtimeSettingsManager.applyOverrides({ permissionMode: parsed.permissionMode });
+		}
 		const services = await createAgentSessionServices({
 			cwd,
 			agentDir,
@@ -744,6 +760,26 @@ export async function main(args: string[], options?: MainOptions) {
 	applyHttpProxySettings(settingsManager.getGlobalSettings().httpProxy);
 	configureHttpDispatcher(settingsManager.getHttpIdleTimeoutMs());
 
+	// Discover the active model's real context window (e.g. via Ollama
+	// /api/show) before the first prompt, so auto-compaction thresholds and the
+	// usage bar reflect the actual model instead of the 128k catalog default.
+	try {
+		await session.resolveActiveModelContextWindow();
+	} catch (e) {
+		console.error(chalk.yellow("Context window lookup failed:", e instanceof Error ? e.message : String(e)));
+	}
+
+	// Auto-compact large sessions on startup to prevent slow first prompts
+	// when resuming a session with lots of history to a local model.
+	if (parsed.continue && appMode !== "print") {
+		try {
+			await session.compactOnStartup();
+		} catch (e) {
+			// Compaction failure shouldn't block startup; log and continue
+			console.error(chalk.yellow("Startup compaction failed:", e instanceof Error ? e.message : String(e)));
+		}
+	}
+
 	if (parsed.help) {
 		const extensionFlags = resourceLoader
 			.getExtensions()
@@ -797,9 +833,9 @@ export async function main(args: string[], options?: MainOptions) {
 		process.exit(1);
 	}
 
-	const startupBenchmark = isTruthyEnvFlag(process.env.PI_STARTUP_BENCHMARK);
+	const startupBenchmark = isTruthyEnvFlag(process.env.A_CODER_CLI_STARTUP_BENCHMARK);
 	if (startupBenchmark && appMode !== "interactive") {
-		console.error(chalk.red("Error: PI_STARTUP_BENCHMARK only supports interactive mode"));
+		console.error(chalk.red("Error: A_CODER_CLI_STARTUP_BENCHMARK only supports interactive mode"));
 		process.exit(1);
 	}
 
