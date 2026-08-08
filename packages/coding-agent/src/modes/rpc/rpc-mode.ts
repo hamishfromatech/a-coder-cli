@@ -513,10 +513,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "get_available_models": {
-				// Non-blocking: return the cached model list immediately so the picker
-				// never waits on a network fetch. A best-effort background refresh keeps
-				// dynamic (Ollama Cloud) models current; the explicit refresh_models
-				// command does a forced fetch.
+				// Non-blocking: return the cached list immediately so the picker never
+				// waits on a fetch. The startup pre-fetch keeps dynamic (Ollama Cloud)
+				// models current; the picker re-fetches once shortly after open to pick
+				// up any models the background refresh added. The explicit
+				// refresh_models command does a forced fetch.
 				void session.modelRegistry.refreshDynamicModels().catch(() => {});
 				const models = session.modelRegistry.getAvailable();
 				return success(id, "get_available_models", { models });
@@ -712,7 +713,30 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 			case "get_tree": {
 				const sessionManager = session.sessionManager;
-				return success(id, "get_tree", { tree: sessionManager.getTree(), leafId: sessionManager.getLeafId() });
+				const fullTree = sessionManager.getTree();
+				// Strip full message bodies from the tree. The desktop only needs the
+				// entry id, the message role, the label, and the parent/child structure.
+				// Returning full AgentMessages made get_tree ~13MB for large sessions,
+				// which stalled or lost the response over the IPC pipe.
+				const strip = (nodes: typeof fullTree): unknown[] =>
+				nodes.map((n) => {
+					const entry: Record<string, unknown> = {
+						id: n.entry.id,
+						type: n.entry.type,
+						parentId: n.entry.parentId,
+						timestamp: n.entry.timestamp,
+					};
+					if (n.entry.type === "message") {
+						entry.message = { role: n.entry.message.role };
+					}
+					return {
+						entry,
+						children: strip(n.children),
+						label: n.label,
+						labelTimestamp: n.labelTimestamp,
+					};
+				});
+				return success(id, "get_tree", { tree: strip(fullTree), leafId: sessionManager.getLeafId() });
 			}
 
 			case "list_sessions": {

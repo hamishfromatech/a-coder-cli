@@ -770,8 +770,13 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 
 	// Auto-compact large sessions on startup to prevent slow first prompts
-	// when resuming a session with lots of history to a local model.
-	if (parsed.continue && appMode !== "print") {
+	// when resuming a session with lots of history to a local model. In rpc mode
+	// (desktop/integrations) we skip the BLOCKING startup compaction: it would
+	// stall the command loop for ~19s (an LLM summarization call), hanging every
+	// UI command (model picker, etc.). A large resumed session instead self-heals
+	// via the overflow path on the first prompt. Interactive/print modes still
+	// block, since the TUI shows the wait and print is one-shot.
+	if (parsed.continue && appMode !== "print" && parsed.mode !== "rpc") {
 		try {
 			await session.compactOnStartup();
 		} catch (e) {
