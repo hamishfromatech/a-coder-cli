@@ -26,6 +26,10 @@ pub struct RpcClient {
 	pending: Arc<Mutex<HashMap<String, PendingRequest>>>,
 	_app_handle: AppHandle,
 	_io_handle: JoinHandle<()>,
+	// Retain the Child so kill_on_drop keeps the CLI alive for the client's
+	// lifetime (and kills it on disconnect). Without this the Child is dropped
+	// at the end of spawn and kill_on_drop would kill the CLI immediately.
+	_child: Child,
 }
 
 impl RpcClient {
@@ -81,6 +85,7 @@ impl RpcClient {
 			pending,
 			_app_handle: app_handle,
 			_io_handle: io_handle,
+			_child: child,
 		})
 	}
 
