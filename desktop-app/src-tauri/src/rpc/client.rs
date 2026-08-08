@@ -5,16 +5,19 @@ use std::sync::Arc;
 
 use crate::cli::reconstructed_path;
 
+use serde::Deserialize;
 use serde_json::Value;
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
+use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::task::JoinHandle;
+use tokio::time::timeout;
 use uuid::Uuid;
 
 /// A pending request waiting for a correlated response.
-struct PendingRequest {
+pub(crate) struct PendingRequest {
 	resolve: oneshot::Sender<Result<Value, String>>,
 }
 
@@ -65,6 +68,7 @@ impl RpcClient {
 			.stdin(Stdio::piped())
 			.stdout(Stdio::piped())
 			.stderr(Stdio::piped())
+			.kill_on_drop(true)
 			.spawn()
 			.map_err(|e| format!("Failed to spawn CLI: {}", e))?;
 
@@ -80,8 +84,24 @@ impl RpcClient {
 		})
 	}
 
-	/// Send a command and wait for its correlated response.
-	pub async fn send(&self, command: Value) -> Result<Value, String> {
+	/// Clone the send handles so a caller can send + await the response WITHOUT
+	/// holding the client lock (Tauri/Tokio best practice: don't hold a MutexGuard
+	/// across a long await — a lost response would otherwise block every later
+	/// invoke that needs the client).
+	pub(crate) fn handles(
+		&self,
+	) -> (mpsc::Sender<String>, Arc<Mutex<HashMap<String, PendingRequest>>>) {
+		(self.stdin_tx.clone(), self.pending.clone())
+	}
+
+	/// Send + await a response using cloned handles (no client lock held during the
+	/// await). A response timeout guarantees a lost/unmatched response can never
+	/// hang the caller indefinitely.
+	pub(crate) async fn send_with(
+		stdin_tx: mpsc::Sender<String>,
+		pending: Arc<Mutex<HashMap<String, PendingRequest>>>,
+		command: Value,
+	) -> Result<Value, String> {
 		let id = Uuid::new_v4().to_string();
 		let mut command_with_id = command.clone();
 		if let Some(obj) = command_with_id.as_object_mut() {
@@ -92,17 +112,31 @@ impl RpcClient {
 
 		let (tx, rx) = oneshot::channel::<Result<Value, String>>();
 		{
-			let mut pending = self.pending.lock().await;
-			pending.insert(id, PendingRequest { resolve: tx });
+			let mut guard = pending.lock().await;
+			guard.insert(id.clone(), PendingRequest { resolve: tx });
 		}
 
 		let line = serde_json::to_string(&command_with_id).map_err(|e| e.to_string())?;
-		self.stdin_tx
+		stdin_tx
 			.send(line)
 			.await
 			.map_err(|e| format!("Failed to send command: {}", e))?;
 
-		rx.await.map_err(|_| "RPC channel closed".to_string())?
+		// Bound the wait so a missing response (CLI died, line lost, or an
+		// unhandled command) can never block the caller — and thus never hold the
+		// client lock — forever. On timeout, drop the stale pending entry.
+		match timeout(Duration::from_secs(20), rx).await {
+			Ok(Ok(result)) => {
+				result
+			}
+			Ok(Err(_)) => {
+				Err("RPC channel closed".to_string())
+			}
+			Err(_) => {
+				pending.lock().await.remove(&id);
+				Err("RPC response timed out".to_string())
+			}
+		}
 	}
 
 	/// Send a raw line without waiting for a response (used for extension UI responses).
@@ -138,12 +172,23 @@ impl RpcClient {
 			let reader = BufReader::new(stdout);
 			let mut lines = reader.lines();
 			while let Ok(Some(line)) = lines.next_line().await {
-				match serde_json::from_str::<Value>(&line) {
+				// Disable serde_json's default ~128-level recursion limit: the session
+				// tree is a nested chain that can be hundreds of levels deep for long
+				// sessions, and a too-deep response line would otherwise fail to parse
+				// here and be silently dropped (the lost-response bug). This is a
+				// trusted local CLI, so unbounded recursion is safe.
+				// Parse with the recursion limit disabled (long sessions produce a nested
+				// tree chain hundreds of levels deep; serde_json's default 128-level limit
+				// would otherwise drop the response). serde_stacker moves the deserialize
+				// stack to the heap so deep input can't overflow the task stack.
+				let mut de = serde_json::Deserializer::from_str(&line);
+				de.disable_recursion_limit();
+				match Value::deserialize(serde_stacker::Deserializer::new(&mut de)) {
 					Ok(value) => {
 						Self::dispatch_line(value, &pending, &app_handle).await;
 					}
 					Err(e) => {
-						tracing::warn!("Failed to parse RPC line: {} | line: {}", e, line);
+						tracing::warn!("Failed to parse RPC line: {}", e);
 					}
 				}
 			}
@@ -170,7 +215,8 @@ impl RpcClient {
 		if value.get("type").and_then(|t| t.as_str()) == Some("response") {
 			if let Some(id) = value.get("id").and_then(|id| id.as_str()) {
 				let mut guard = pending.lock().await;
-				if let Some(req) = guard.remove(id) {
+				let matched = guard.remove(id);
+				if let Some(req) = matched {
 					let result = if value.get("success").and_then(|s| s.as_bool()) == Some(true) {
 						Ok(value.get("data").cloned().unwrap_or(Value::Null))
 					} else {

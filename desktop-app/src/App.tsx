@@ -5,6 +5,8 @@ import * as rpc from "./lib/rpc";
 import { installFirstGestureAudioPrime, playCompletionSound } from "./lib/completion-sound";
 import { triggerHaptic } from "./lib/haptics";
 import { rafCoalesce } from "./lib/raf-coalesce";
+import { synthesize, playAudioBlob, type VoiceSettings } from "./lib/voice";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { useSessionStore } from "./stores/session-store";
 import { useSettingsStore } from "./stores/settings-store";
 import { useWorkspaceStore } from "./stores/workspace-store";
@@ -52,6 +54,43 @@ function isOnboardingComplete(): boolean {
 		return localStorage.getItem(ONBOARDING_FLAG) === "true";
 	} catch {
 		return false;
+	}
+}
+
+/** Extract the text of the last assistant message in a run (for voice mode). */
+function lastAssistantText(messages: AgentMessage[]): string {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const m = messages[i];
+		if (m.role !== "assistant") continue;
+		const content = m.content;
+		if (!Array.isArray(content)) return "";
+		const text = content
+			.filter((c): c is { type: "text"; text: string } => c.type === "text")
+			.map((c) => c.text)
+			.join("");
+		return text;
+	}
+	return "";
+}
+
+/** Speak text aloud via the configured TTS endpoint. Best-effort; errors are non-fatal. */
+async function speakReply(text: string): Promise<void> {
+	const voice = useSettingsStore.getState();
+	if (!voice.voiceEnabled || !voice.voiceAutoSpeak) return;
+	const settings: VoiceSettings = {
+		voiceSttBaseUrl: voice.voiceSttBaseUrl,
+		voiceSttApiKey: voice.voiceSttApiKey,
+		voiceSttModel: voice.voiceSttModel,
+		voiceTtsBaseUrl: voice.voiceTtsBaseUrl,
+		voiceTtsApiKey: voice.voiceTtsApiKey,
+		voiceTtsModel: voice.voiceTtsModel,
+		voiceTtsVoice: voice.voiceTtsVoice,
+	};
+	try {
+		const blob = await synthesize(text, settings);
+		playAudioBlob(blob);
+	} catch (e) {
+		console.warn("TTS failed", e);
 	}
 }
 
@@ -335,6 +374,12 @@ export default function App() {
 							if (!useSessionStore.getState().abortRequested) {
 								playCompletionSound();
 								triggerHaptic("streamDone");
+								// Voice mode: read the final assistant reply aloud.
+								const voice = useSettingsStore.getState();
+								if (voice.voiceEnabled && voice.voiceAutoSpeak && "messages" in event) {
+									const text = lastAssistantText((event as { messages: AgentMessage[] }).messages);
+									if (text) void speakReply(text);
+								}
 							}
 							break;
 						case "auto_retry_start":
@@ -359,17 +404,21 @@ export default function App() {
 							void (async () => {
 								try {
 									await syncEngineState();
-									try {
-										const treeRes = (await rpc.sendCommand({ type: "get_tree" })) as {
-											tree: rpc.SessionTreeNode[];
-											leafId: string | null;
-										};
-										if (treeRes?.tree) setTree(treeRes.tree, treeRes.leafId);
-									} catch (e) {
-										toast.error(
-											"Failed to load session tree after session start",
-											e instanceof Error ? e.message : String(e),
-										);
+									// Best-effort tree refresh after a session switch. The connect-time get_tree
+									// already populated it, so a failure here is non-critical: retry silently
+									// (a lost/delayed response usually succeeds on retry) and never nag.
+									for (let attempt = 0; attempt < 3; attempt++) {
+										try {
+											const treeRes = (await rpc.sendCommand({ type: "get_tree" })) as {
+												tree: rpc.SessionTreeNode[];
+												leafId: string | null;
+											};
+											if (treeRes?.tree) setTree(treeRes.tree, treeRes.leafId);
+											break;
+										} catch (e) {
+											console.warn("session_start get_tree attempt failed", attempt, e);
+											if (attempt < 2) await new Promise((r) => setTimeout(r, 1500));
+										}
 									}
 									try {
 										const msgsRes = (await rpc.sendCommand({ type: "get_messages" })) as {

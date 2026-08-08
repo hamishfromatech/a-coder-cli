@@ -1,10 +1,18 @@
 import {
 	CornerDownLeft,
 	Loader2,
+	Mic,
 	Square,
 	Image as ImageIcon,
 } from "lucide-react";
 import { toast } from "../stores/toast-store";
+import { useSettingsStore } from "../stores/settings-store";
+import {
+	createMicRecorder,
+	transcribe,
+	type MicRecorder,
+	type VoiceSettings,
+} from "../lib/voice";
 import {
 	useEffect,
 	useLayoutEffect,
@@ -37,6 +45,10 @@ export function Composer() {
 	const [attachedImages, setAttachedImages] = useState<ImageContent[]>([]);
 	const [cursor, setCursor] = useState(0);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
+	const micRef = useRef<MicRecorder | null>(null);
+	const [recording, setRecording] = useState(false);
+	const [transcribing, setTranscribing] = useState(false);
+	const { voiceEnabled, voiceAutoSubmit } = useSettingsStore();
 	const {
 		status,
 		isStreaming,
@@ -166,6 +178,65 @@ export function Composer() {
 			await rpc.abort();
 		} finally {
 			setIsStreaming(false);
+		}
+	};
+
+	const handleMic = async () => {
+		if (transcribing) return;
+		// Stop -> transcribe -> submit or fill.
+		if (recording && micRef.current) {
+			const mic = micRef.current;
+			micRef.current = null;
+			setRecording(false);
+			setTranscribing(true);
+			let transcribed = "";
+			try {
+				const blob = await mic.stop();
+				const voice = useSettingsStore.getState();
+				const settings: VoiceSettings = {
+					voiceSttBaseUrl: voice.voiceSttBaseUrl,
+					voiceSttApiKey: voice.voiceSttApiKey,
+					voiceSttModel: voice.voiceSttModel,
+					voiceTtsBaseUrl: voice.voiceTtsBaseUrl,
+					voiceTtsApiKey: voice.voiceTtsApiKey,
+					voiceTtsModel: voice.voiceTtsModel,
+					voiceTtsVoice: voice.voiceTtsVoice,
+				};
+				transcribed = (await transcribe(blob, settings)).trim();
+			} catch (e) {
+				setTranscribing(false);
+				toast.error("Voice transcription failed", e instanceof Error ? e.message : String(e));
+				return;
+			}
+			setTranscribing(false);
+			if (!transcribed) {
+				toast.warning("No speech detected");
+				return;
+			}
+			if (voiceAutoSubmit && connected) {
+				setIsStreaming(true);
+				triggerHaptic("submit");
+				try {
+					await rpc.prompt(transcribed);
+				} catch (e) {
+					setIsStreaming(false);
+					toast.error("Failed to send message", e instanceof Error ? e.message : String(e));
+				}
+			} else {
+				setText((prev) => (prev ? `${prev} ${transcribed}` : transcribed));
+				textareaRef.current?.focus();
+			}
+			return;
+		}
+		// Start recording.
+		if (!connected) return;
+		try {
+			const mic = await createMicRecorder();
+			await mic.start();
+			micRef.current = mic;
+			setRecording(true);
+		} catch (e) {
+			toast.error("Microphone unavailable", e instanceof Error ? e.message : String(e));
 		}
 	};
 
@@ -400,6 +471,27 @@ export function Composer() {
 					/>
 				</div>
 
+				{voiceEnabled && !isStreaming && (
+					<button
+						onClick={() => void handleMic()}
+						disabled={transcribing}
+						className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-all focus-visible:shadow-focus focus-visible:outline-none disabled:opacity-50 ${
+							recording
+								? "animate-pulse bg-pi-error text-white"
+								: "bg-pi-surface-raised text-pi-text shadow-[0_0_0_1px_var(--pi-border)] hover:bg-pi-surface-overlay"
+						}`}
+						title={recording ? "Stop recording" : "Voice input"}
+						aria-label={recording ? "Stop recording" : "Voice input"}
+					>
+						{transcribing ? (
+							<Loader2 className="h-3.5 w-3.5 animate-spin" />
+						) : recording ? (
+							<Square className="h-3.5 w-3.5 fill-current" />
+						) : (
+							<Mic className="h-3.5 w-3.5" />
+						)}
+					</button>
+				)}
 				{isStreaming ? (
 					<button
 						onClick={() => void handleAbort()}

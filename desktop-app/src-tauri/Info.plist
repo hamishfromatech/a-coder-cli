@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Voice mode: microphone access for speech-to-text. -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>A-Coder Desktop uses the microphone for voice mode (speech-to-text).</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>A-Coder Desktop transcribes your speech to send as a prompt.</string>
+</dict>
+</plist>

@@ -11,6 +11,7 @@ mod settings;
 mod share;
 mod state;
 mod tray;
+mod voice;
 
 use rpc::commands as rpc_commands;
 use state::AppState;
@@ -24,6 +25,8 @@ fn main() {
 		.manage(AppState::default())
 		.invoke_handler(tauri::generate_handler![
 			cli::get_initial_workspace,
+			voice::voice_transcribe,
+			voice::voice_synthesize,
 			rpc_commands::connect,
 			rpc_commands::disconnect,
 			rpc_commands::send_command,

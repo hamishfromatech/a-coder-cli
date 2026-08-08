@@ -61,6 +61,29 @@ export function ModelPicker({
 		inputRef.current?.focus();
 	}, []);
 
+	// Dynamic (Ollama Cloud) models are fetched in the background on startup; the
+	// initial load returns the cached list instantly so the picker never hangs.
+	// Re-fetch once shortly after open to pick up any models the background
+	// refresh added (e.g. kimi-k2.7-code), without blocking the open.
+	useEffect(() => {
+		let cancelled = false;
+		const t = setTimeout(async () => {
+			if (cancelled) return;
+			try {
+				const result = (await rpc.sendCommand({ type: "get_available_models" })) as {
+					models?: AnyModel[];
+				};
+				if (!cancelled && result.models) setModels(result.models);
+			} catch {
+				// best-effort; the initial load already populated the list
+			}
+		}, 1500);
+		return () => {
+			cancelled = true;
+			clearTimeout(t);
+		};
+	}, []);
+
 	const filtered = useMemo(() => {
 		const q = filter.toLowerCase();
 		return models.filter((m) =>

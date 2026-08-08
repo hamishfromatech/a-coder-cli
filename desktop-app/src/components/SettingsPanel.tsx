@@ -52,6 +52,7 @@ import { PackagesEditor } from "./panels/widgets/PackagesEditor";
 import { PathListInput } from "./panels/widgets/PathListInput";
 import { PermissionPoliciesEditor } from "./panels/widgets/PermissionPoliciesEditor";
 import { ResourcesSection } from "./panels/widgets/ResourcesSection";
+import { VoiceSection } from "./panels/widgets/VoiceSection";
 import { CompletionSoundPicker } from "./panels/widgets/CompletionSoundPicker";
 
 // ============================================================================
@@ -997,6 +998,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 	const isCustomProviders = activeNavId === "custom-providers";
 	const isKeybindings = activeNavId === "keybindings";
 	const isResources = activeNavId === "resources";
+	const isVoice = activeNavId === "voice";
 	const showBanner = showFirstLaunch && authEmpty === true && !search.trim();
 
 	return (
@@ -1132,6 +1134,8 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 									<KeybindingsSection />
 								) : isResources ? (
 									<ResourcesSection />
+								) : isVoice ? (
+									<VoiceSection />
 								) : isAdvanced ? (
 									<section className="space-y-4">
 										<header>

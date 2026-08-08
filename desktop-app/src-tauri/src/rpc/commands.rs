@@ -50,9 +50,15 @@ pub async fn send_command(
 	state: State<'_, AppState>,
 	command: Value,
 ) -> Result<Value, String> {
-	let guard = state.client.lock().await;
-	let client = guard.as_ref().ok_or("Not connected to engine")?;
-	client.send(command).await
+	// Lock only long enough to clone the send handles, then drop the guard so a
+	// slow/lost response can't block other invoke calls (Tauri/Tokio: don't hold a
+	// MutexGuard across a long await). send_with bounds the wait with a timeout.
+	let (stdin_tx, pending) = {
+		let guard = state.client.lock().await;
+		let client = guard.as_ref().ok_or("Not connected to engine")?;
+		client.handles()
+	};
+	crate::rpc::client::RpcClient::send_with(stdin_tx, pending, command).await
 }
 
 #[command]

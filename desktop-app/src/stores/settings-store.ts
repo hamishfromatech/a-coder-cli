@@ -55,6 +55,29 @@ export interface SettingsState {
 	hapticsEnabled: boolean;
 	setHapticsEnabled: (enabled: boolean) => void;
 
+	// ---- Voice mode (local UI pref; persisted) ----
+	// Users supply OpenAI-compatible STT/TTS endpoints so any provider works.
+	voiceEnabled: boolean;
+	setVoiceEnabled: (enabled: boolean) => void;
+	voiceSttBaseUrl: string;
+	setVoiceSttBaseUrl: (url: string) => void;
+	voiceSttApiKey: string;
+	setVoiceSttApiKey: (key: string) => void;
+	voiceSttModel: string;
+	setVoiceSttModel: (model: string) => void;
+	voiceTtsBaseUrl: string;
+	setVoiceTtsBaseUrl: (url: string) => void;
+	voiceTtsApiKey: string;
+	setVoiceTtsApiKey: (key: string) => void;
+	voiceTtsModel: string;
+	setVoiceTtsModel: (model: string) => void;
+	voiceTtsVoice: string;
+	setVoiceTtsVoice: (voice: string) => void;
+	voiceAutoSubmit: boolean;
+	setVoiceAutoSubmit: (enabled: boolean) => void;
+	voiceAutoSpeak: boolean;
+	setVoiceAutoSpeak: (enabled: boolean) => void;
+
 	// ---- cli settings snapshot (not persisted; reloaded on connect) ----
 	cliGlobalSettings: CliSettings;
 	cliProjectSettings: CliSettings;
@@ -132,6 +155,27 @@ export const useSettingsStore = create<SettingsState>()(
 			hapticsEnabled: true,
 			setHapticsEnabled: (hapticsEnabled) => set({ hapticsEnabled }),
 
+			voiceEnabled: false,
+			setVoiceEnabled: (voiceEnabled) => set({ voiceEnabled }),
+			voiceSttBaseUrl: "",
+			setVoiceSttBaseUrl: (voiceSttBaseUrl) => set({ voiceSttBaseUrl }),
+			voiceSttApiKey: "",
+			setVoiceSttApiKey: (voiceSttApiKey) => set({ voiceSttApiKey }),
+			voiceSttModel: "whisper-1",
+			setVoiceSttModel: (voiceSttModel) => set({ voiceSttModel }),
+			voiceTtsBaseUrl: "",
+			setVoiceTtsBaseUrl: (voiceTtsBaseUrl) => set({ voiceTtsBaseUrl }),
+			voiceTtsApiKey: "",
+			setVoiceTtsApiKey: (voiceTtsApiKey) => set({ voiceTtsApiKey }),
+			voiceTtsModel: "gpt-4o-mini-tts",
+			setVoiceTtsModel: (voiceTtsModel) => set({ voiceTtsModel }),
+			voiceTtsVoice: "alloy",
+			setVoiceTtsVoice: (voiceTtsVoice) => set({ voiceTtsVoice }),
+			voiceAutoSubmit: true,
+			setVoiceAutoSubmit: (voiceAutoSubmit) => set({ voiceAutoSubmit }),
+			voiceAutoSpeak: true,
+			setVoiceAutoSpeak: (voiceAutoSpeak) => set({ voiceAutoSpeak }),
+
 			chatBackdrop: true,
 			setChatBackdrop: (chatBackdrop) => set({ chatBackdrop }),
 
@@ -161,6 +205,16 @@ export const useSettingsStore = create<SettingsState>()(
 				completionSoundEnabled: state.completionSoundEnabled,
 				completionSoundVariantId: state.completionSoundVariantId,
 				hapticsEnabled: state.hapticsEnabled,
+			voiceEnabled: state.voiceEnabled,
+			voiceSttBaseUrl: state.voiceSttBaseUrl,
+			voiceSttApiKey: state.voiceSttApiKey,
+			voiceSttModel: state.voiceSttModel,
+			voiceTtsBaseUrl: state.voiceTtsBaseUrl,
+			voiceTtsApiKey: state.voiceTtsApiKey,
+			voiceTtsModel: state.voiceTtsModel,
+			voiceTtsVoice: state.voiceTtsVoice,
+			voiceAutoSubmit: state.voiceAutoSubmit,
+			voiceAutoSpeak: state.voiceAutoSpeak,
 			chatBackdrop: state.chatBackdrop,
 			}),
 		},

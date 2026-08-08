@@ -87,6 +87,7 @@ export type SettingsSectionId =
 	| "external-tools"
 	| "resources"
 	| "keybindings"
+	| "voice"
 	| "advanced";
 
 export interface SettingsSection {
@@ -624,6 +625,14 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 				advanced: true,
 			},
 		],
+	},
+
+	// ---- Voice -----------------------------------------------------------
+	{
+		id: "voice",
+		navId: "voice",
+		label: "Voice",
+		description: "Speech-to-text and text-to-speech endpoints (OpenAI-compatible).",
 	},
 
 	// ---- Advanced ---------------------------------------------------------
