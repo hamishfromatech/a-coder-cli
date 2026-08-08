@@ -1975,6 +1975,103 @@ async function generateModels() {
 		});
 	}
 
+	// Built-in providers not covered by upstream catalogs.
+	const OLLAMA_CLOUD_COMPAT: OpenAICompletionsCompat = {
+		supportsStore: false,
+		supportsDeveloperRole: false,
+		supportsReasoningEffort: false,
+		maxTokensField: "max_tokens",
+		supportsStrictMode: false,
+		supportsLongCacheRetention: false,
+	};
+	const ollamaCloudModels: Model<"openai-completions">[] = [
+		{
+			id: "llama3.3",
+			name: "Ollama Cloud: Llama 3.3",
+			api: "openai-completions",
+			provider: "ollama-cloud",
+			baseUrl: "https://ollama.com/v1",
+			reasoning: false,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 128000,
+			maxTokens: 131072,
+			compat: OLLAMA_CLOUD_COMPAT,
+		},
+		{
+			id: "qwen2.5-coder",
+			name: "Ollama Cloud: Qwen 2.5 Coder",
+			api: "openai-completions",
+			provider: "ollama-cloud",
+			baseUrl: "https://ollama.com/v1",
+			reasoning: false,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 128000,
+			maxTokens: 131072,
+			compat: OLLAMA_CLOUD_COMPAT,
+		},
+		{
+			id: "mistral",
+			name: "Ollama Cloud: Mistral",
+			api: "openai-completions",
+			provider: "ollama-cloud",
+			baseUrl: "https://ollama.com/v1",
+			reasoning: false,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 128000,
+			maxTokens: 131072,
+			compat: OLLAMA_CLOUD_COMPAT,
+		},
+		{
+			id: "phi4",
+			name: "Ollama Cloud: Phi-4",
+			api: "openai-completions",
+			provider: "ollama-cloud",
+			baseUrl: "https://ollama.com/v1",
+			reasoning: false,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 128000,
+			maxTokens: 131072,
+			compat: OLLAMA_CLOUD_COMPAT,
+		},
+	];
+	for (const model of ollamaCloudModels) {
+		if (!allModels.some((m) => m.provider === model.provider && m.id === model.id)) {
+			allModels.push(model);
+		}
+	}
+
+	const openadapterModels: Model<"openai-completions">[] = [
+		{
+			id: "openadapter/auto",
+			name: "OpenAdapter: Auto",
+			api: "openai-completions",
+			provider: "openadapter",
+			baseUrl: "https://api.openadapter.in/v1",
+			reasoning: false,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 128000,
+			maxTokens: 4096,
+			compat: {
+				supportsStore: false,
+				supportsDeveloperRole: false,
+				supportsReasoningEffort: false,
+				maxTokensField: "max_tokens",
+				supportsStrictMode: false,
+				supportsLongCacheRetention: false,
+			},
+		},
+	];
+	for (const model of openadapterModels) {
+		if (!allModels.some((m) => m.provider === model.provider && m.id === model.id)) {
+			allModels.push(model);
+		}
+	}
+
 	// Azure Foundry deploys these with larger context windows than OpenAI's own API,
 	// which caps gpt-5.4/gpt-5.5 at 272k. See models-sold-directly-by-azure docs.
 	const AZURE_CONTEXT_WINDOW_OVERRIDES: Record<string, number> = {
