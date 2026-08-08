@@ -2,14 +2,14 @@ name: Desktop Build
 
 on:
   push:
-    branches: [main]
+    branches: [main, feat/desktop-unified-release]
     paths:
       - "desktop-app/**"
       - ".github/workflows/desktop-build.yml"
     tags:
       - "desktop-v*"
   pull_request:
-    branches: [main]
+    branches: [main, feat/desktop-unified-release]
     paths:
       - "desktop-app/**"
       - ".github/workflows/desktop-build.yml"
