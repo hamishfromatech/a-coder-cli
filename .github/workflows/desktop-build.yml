@@ -298,6 +298,9 @@ jobs:
           fi
 
       - name: Upload artifacts
+        # always() so built installers are uploaded even if a later step
+        # (e.g. code signing) fails — we want the artifacts for testing.
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: a-coder-desktop-${{ matrix.target }}
