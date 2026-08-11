@@ -254,6 +254,11 @@ function countOccurrences(content: string, oldText: string): number {
 	return fuzzyContent.split(fuzzyOldText).length - 1;
 }
 
+function countExactOccurrences(content: string, oldText: string): number {
+	if (oldText.length === 0) return 0;
+	return content.split(oldText).length - 1;
+}
+
 function getNotFoundError(path: string, editIndex: number, totalEdits: number): Error {
 	if (totalEdits === 1) {
 		return new Error(
@@ -329,7 +334,15 @@ export function applyEditsToNormalizedContent(
 			throw getNotFoundError(path, i, normalizedEdits.length);
 		}
 
-		const occurrences = countOccurrences(replacementBaseContent, edit.oldText);
+		// Count occurrences in the same domain the match was found in. When the
+		// edit matched exactly, count exact occurrences: counting in fuzzy space
+		// would normalize both sides (e.g. strip trailing whitespace), collapsing
+		// a unique exact match like "abc " in "abc \nabc" into "abc" and falsely
+		// reporting a duplicate. Only fall back to fuzzy counting when the match
+		// itself was fuzzy.
+		const occurrences = matchResult.usedFuzzyMatch
+			? countOccurrences(replacementBaseContent, edit.oldText)
+			: countExactOccurrences(replacementBaseContent, edit.oldText);
 		if (occurrences > 1) {
 			throw getDuplicateError(path, i, normalizedEdits.length, occurrences);
 		}

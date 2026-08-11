@@ -6,7 +6,7 @@ describe("getPiUserAgent", () => {
 		const runtime = process.versions.bun ? `bun/${process.versions.bun}` : `node/${process.version}`;
 		const userAgent = getPiUserAgent("1.2.3");
 
-		expect(userAgent).toBe(`pi/1.2.3 (${process.platform}; ${runtime}; ${process.arch})`);
-		expect(userAgent).toMatch(/^pi\/[^\s()]+ \([^;()]+;\s*[^;()]+;\s*[^()]+\)$/);
+		expect(userAgent).toBe(`a-coder-cli/1.2.3 (${process.platform}; ${runtime}; ${process.arch})`);
+		expect(userAgent).toMatch(/^a-coder-cli\/[^\s()]+ \([^;()]+;\s*[^;()]+;\s*[^()]+\)$/);
 	});
 });

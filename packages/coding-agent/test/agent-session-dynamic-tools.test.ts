@@ -76,7 +76,7 @@ describe("AgentSession dynamic tool registration", () => {
 			"Use dynamic_tool when the user asks for dynamic behavior tests.",
 		]);
 		expect(dynamicTool?.sourceInfo).toMatchObject({
-			path: "<inline:1>",
+			path: "<inline:2>",
 			source: "inline",
 			scope: "temporary",
 			origin: "top-level",

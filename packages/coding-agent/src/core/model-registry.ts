@@ -19,6 +19,8 @@ import {
 	type SimpleStreamOptions,
 } from "@earendil-works/pi-ai/compat";
 import { registerOAuthProvider, resetOAuthProviders } from "@earendil-works/pi-ai/oauth";
+import { fetchOllamaCloudModels } from "@earendil-works/pi-ai/providers/ollama-cloud";
+import { fetchOllamaContextWindow, looksLikeOllama } from "@earendil-works/pi-ai/providers/ollama-context";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { type Static, Type } from "typebox";
@@ -357,6 +359,15 @@ export class ModelRegistry {
 	private loadError: string | undefined = undefined;
 	readonly authStorage: AuthStorage;
 	private modelsJsonPath: string | undefined;
+	private ollamaCloudRefreshPromise: Promise<void> | undefined;
+	private ollamaCloudLastSuccess = 0;
+	private ollamaCloudLastAttempt = 0;
+	private static readonly OLLAMA_CLOUD_REFRESH_MS = 5 * 60 * 1000;
+	private static readonly OLLAMA_CLOUD_FAILURE_RETRY_MS = 30 * 1000;
+	// Dynamic context-window lookups (Ollama /api/show). Cached per model so a
+	// reselect within the TTL reuses the value instead of refetching the server.
+	private contextWindowCache: Map<string, { value: number | undefined; fetchedAt: number }> = new Map();
+	private static readonly CONTEXT_WINDOW_REFRESH_MS = 10 * 60 * 1000;
 
 	private constructor(authStorage: AuthStorage, modelsJsonPath: string | undefined) {
 		this.authStorage = authStorage;
@@ -389,6 +400,17 @@ export class ModelRegistry {
 		for (const [providerName, config] of this.registeredProviders.entries()) {
 			this.applyProviderConfig(providerName, config);
 		}
+
+		// Reloading from disk resets the built-in catalog (and any models.json
+		// placeholders), so invalidate the Ollama Cloud dynamic refresh cache so
+		// the next refreshDynamicModels() fetches live models instead of reusing
+		// a stale cached list or skipping because static entries exist.
+		this.ollamaCloudLastSuccess = 0;
+		this.ollamaCloudLastAttempt = 0;
+		this.ollamaCloudRefreshPromise = undefined;
+		// Reloading models.json can change baseUrl/model ids, so stale
+		// /api/show lookups no longer apply.
+		this.contextWindowCache.clear();
 	}
 
 	/**
@@ -643,6 +665,128 @@ export class ModelRegistry {
 	 */
 	getAvailable(): Model<Api>[] {
 		return this.models.filter((m) => this.hasConfiguredAuth(m));
+	}
+
+	/**
+	 * Refresh dynamic provider model lists. Currently Ollama Cloud is fetched
+	 * from https://ollama.com/v1/models when auth is configured. Best-effort:
+	 * failures leave the existing static models in place. Concurrent calls share
+	 * one in-flight fetch.
+	 *
+	 * @param force When true, bypass the success/failure caches and fetch
+	 * immediately. Used by the explicit "refresh models" command.
+	 * @returns An error message if a forced refresh failed, otherwise undefined.
+	 */
+	async refreshDynamicModels(force = false): Promise<string | undefined> {
+		return this.refreshOllamaCloudModels(force);
+	}
+
+	/**
+	 * Refresh Ollama Cloud's model list from https://ollama.com/v1/models.
+	 * Best-effort: on failure the existing (static) models remain. Concurrent
+	 * calls share one in-flight fetch.
+	 *
+	 * @param force When true, bypass the success/failure caches and fetch
+	 * immediately. Returns an error message if the refresh fails.
+	 */
+	private async refreshOllamaCloudModels(force = false): Promise<string | undefined> {
+		if (!this.hasConfiguredAuthForProvider("ollama-cloud")) return;
+
+		const now = Date.now();
+		const recentlySucceeded = now - this.ollamaCloudLastSuccess < ModelRegistry.OLLAMA_CLOUD_REFRESH_MS;
+		const recentlyAttempted = now - this.ollamaCloudLastAttempt < ModelRegistry.OLLAMA_CLOUD_FAILURE_RETRY_MS;
+		if (!force && (this.ollamaCloudRefreshPromise || recentlyAttempted)) {
+			return (this.ollamaCloudRefreshPromise ?? Promise.resolve()).then(() => undefined);
+		}
+
+		this.ollamaCloudRefreshPromise = (async () => {
+			this.ollamaCloudLastAttempt = Date.now();
+			// Automatic background refreshes can skip when we recently succeeded
+			// and already have live Ollama Cloud models. Explicit forced refreshes
+			// bypass this cache.
+			if (!force && recentlySucceeded && this.models.some((m) => m.provider === "ollama-cloud")) {
+				this.ollamaCloudRefreshPromise = undefined;
+				return;
+			}
+			try {
+				const apiKey = await this.getApiKeyForProvider("ollama-cloud");
+				if (!apiKey) return;
+
+				const refreshed = await fetchOllamaCloudModels(apiKey);
+				if (refreshed.length === 0) return;
+
+				// Replace existing ollama-cloud models with the refreshed list.
+				this.models = this.models.filter((m) => m.provider !== "ollama-cloud");
+				this.models.push(...refreshed);
+				this.ollamaCloudLastSuccess = Date.now();
+			} catch (error) {
+				// Leave last-known models in place. Failures retry after a short
+				// delay so a user can recover by saving a key and retrying /model.
+				const message = error instanceof Error ? error.message : String(error);
+				console.error("Failed to refresh Ollama Cloud models:", error);
+				throw new Error(message);
+			} finally {
+				this.ollamaCloudRefreshPromise = undefined;
+			}
+		})();
+		const promise = this.ollamaCloudRefreshPromise;
+
+		if (force) {
+			try {
+				await promise;
+			} catch (error) {
+				return error instanceof Error ? error.message : String(error);
+			}
+		}
+
+		return promise.then(() => undefined);
+	}
+
+	/**
+	 * Best-effort: discover and apply a model's real context window from its
+	 * provider. Only Ollama is probed today (via the native /api/show endpoint),
+	 * because OpenAI and Anthropic ship correct static values in the catalog.
+	 * Cached per model for {@link ModelRegistry.CONTEXT_WINDOW_REFRESH_MS};
+	 * failures fall back to the model's existing contextWindow. Returns the
+	 * updated model (new reference, also replaced in the registry) when the
+	 * value changed, otherwise undefined. Never throws.
+	 */
+	async resolveDynamicContextWindow(model: Model<Api>): Promise<Model<Api> | undefined> {
+		if (!looksLikeOllama(model)) return undefined;
+		const key = `${model.provider}:${model.id}`;
+		const now = Date.now();
+		const cached = this.contextWindowCache.get(key);
+		if (cached && now - cached.fetchedAt < ModelRegistry.CONTEXT_WINDOW_REFRESH_MS) {
+			return this.applyCachedContextWindow(model, cached.value);
+		}
+
+		let value: number | undefined;
+		try {
+			value = await fetchOllamaContextWindow(model.baseUrl, model.id);
+		} catch {
+			value = undefined;
+		}
+		this.contextWindowCache.set(key, { value, fetchedAt: now });
+		return this.applyCachedContextWindow(model, value);
+	}
+
+	private applyCachedContextWindow(model: Model<Api>, value: number | undefined): Model<Api> | undefined {
+		if (value === undefined || value <= 0 || value === model.contextWindow) return undefined;
+		const idx = this.models.findIndex((m) => m.provider === model.provider && m.id === model.id);
+		const updated: Model<Api> = { ...model, contextWindow: value };
+		if (idx >= 0) this.models[idx] = { ...this.models[idx]!, contextWindow: value };
+		return updated;
+	}
+
+	/**
+	 * Check whether a provider has any configured auth (without needing a model).
+	 */
+	private hasConfiguredAuthForProvider(provider: string): boolean {
+		return (
+			this.authStorage.hasAuth(provider) ||
+			(this.providerRequestConfigs.get(provider)?.apiKey !== undefined &&
+				isConfigValueConfigured(this.providerRequestConfigs.get(provider)!.apiKey!))
+		);
 	}
 
 	/**

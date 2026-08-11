@@ -17,15 +17,32 @@ function toPosixPath(value: string): string {
 	return value.split(path.sep).join("/");
 }
 
-const findSchema = Type.Object({
-	pattern: Type.String({
-		description: "Glob pattern to match files, e.g. '*.ts', '**/*.json', or 'src/**/*.spec.ts'",
-	}),
-	path: Type.Optional(Type.String({ description: "Directory to search in (default: current directory)" })),
-	limit: Type.Optional(Type.Number({ description: "Maximum number of results (default: 1000)" })),
-});
+const findSchema = Type.Object(
+	{
+		pattern: Type.String({
+			description: "Glob pattern to match files, e.g. '*.ts', '**/*.json', or 'src/**/*.spec.ts'",
+		}),
+		path: Type.Optional(Type.String({ description: "Directory to search in (default: current directory)" })),
+		limit: Type.Optional(Type.Number({ minimum: 1, description: "Maximum number of results (default: 1000)" })),
+	},
+	{ additionalProperties: false },
+);
 
 export type FindToolInput = Static<typeof findSchema>;
+
+function prepareFindArguments(input: unknown): FindToolInput {
+	if (!input || typeof input !== "object") {
+		return input as FindToolInput;
+	}
+
+	const args = input as Record<string, unknown>;
+	if (typeof args.path === "string" || typeof args.file_path !== "string") {
+		return args as FindToolInput;
+	}
+
+	const { file_path, ...rest } = args;
+	return { ...rest, path: file_path } as FindToolInput;
+}
 
 const DEFAULT_LIMIT = 1000;
 
@@ -117,6 +134,7 @@ export function createFindToolDefinition(
 		description: `Search for files by glob pattern. Returns matching file paths relative to the search directory. Respects .gitignore. Output is truncated to ${DEFAULT_LIMIT} results or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first).`,
 		promptSnippet: "Find files by glob pattern (respects .gitignore)",
 		parameters: findSchema,
+		prepareArguments: prepareFindArguments,
 		async execute(
 			_toolCallId,
 			{ pattern, path: searchDir, limit }: { pattern: string; path?: string; limit?: number },
@@ -148,7 +166,7 @@ export function createFindToolDefinition(
 				(async () => {
 					try {
 						const searchPath = resolveToCwd(searchDir || ".", cwd);
-						const effectiveLimit = limit ?? DEFAULT_LIMIT;
+						const effectiveLimit = Math.max(1, limit ?? DEFAULT_LIMIT);
 						const ops = customOps ?? defaultFindOperations;
 
 						// If custom operations provide glob(), use that instead of fd.

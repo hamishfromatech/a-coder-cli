@@ -177,13 +177,11 @@ export {
 } from "./core/model-resolver.ts";
 export type {
 	PackageManager,
-	PathMetadata,
 	ProgressCallback,
 	ProgressEvent,
-	ResolvedPaths,
-	ResolvedResource,
 } from "./core/package-manager.ts";
 export { DefaultPackageManager } from "./core/package-manager.ts";
+export { resolvePermissionDecision } from "./core/permission-policy.ts";
 export type { ResourceCollision, ResourceDiagnostic, ResourceLoader } from "./core/resource-loader.ts";
 export { DefaultResourceLoader, loadProjectContextFiles } from "./core/resource-loader.ts";
 // SDK for programmatic usage
@@ -245,6 +243,8 @@ export {
 	type DefaultProjectTrust,
 	type ImageSettings,
 	type PackageSource,
+	type PermissionMode,
+	type PermissionPolicyConfig,
 	type RetrySettings,
 	SettingsManager,
 	type SettingsManagerCreateOptions,
@@ -275,6 +275,8 @@ export {
 	createGrepToolDefinition,
 	createLocalBashOperations,
 	createLsToolDefinition,
+	createMemoryTool,
+	createMemoryToolDefinition,
 	createReadToolDefinition,
 	createWriteToolDefinition,
 	DEFAULT_MAX_BYTES,
@@ -296,6 +298,7 @@ export {
 	type LsToolDetails,
 	type LsToolInput,
 	type LsToolOptions,
+	type MemoryToolInput,
 	type ReadOperations,
 	type ReadToolDetails,
 	type ReadToolInput,

@@ -94,3 +94,53 @@ if (totalUpdates === 0) {
 } else {
 	console.log(`\n✅ Updated ${totalUpdates} dependency version(s)`);
 }
+
+// Sync desktop app versions to match lockstep version
+const lockstepVersion = Object.values(versionMap)[0];
+let desktopUpdates = 0;
+
+const desktopPkgPath = join(process.cwd(), 'desktop-app', 'package.json');
+try {
+	const desktopPkg = JSON.parse(readFileSync(desktopPkgPath, 'utf8'));
+	if (desktopPkg.version !== lockstepVersion) {
+		console.log(`\ndesktop-app/package.json:`);
+		console.log(`  version: ${desktopPkg.version} → ${lockstepVersion}`);
+		desktopPkg.version = lockstepVersion;
+		writeFileSync(desktopPkgPath, JSON.stringify(desktopPkg, null, '\t') + '\n');
+		desktopUpdates++;
+	}
+} catch {}
+
+const tauriConfPath = join(process.cwd(), 'desktop-app', 'src-tauri', 'tauri.conf.json');
+try {
+	const tauriConf = JSON.parse(readFileSync(tauriConfPath, 'utf8'));
+	if (tauriConf.version !== lockstepVersion) {
+		console.log(`\ndesktop-app/src-tauri/tauri.conf.json:`);
+		console.log(`  version: ${tauriConf.version} → ${lockstepVersion}`);
+		tauriConf.version = lockstepVersion;
+		writeFileSync(tauriConfPath, JSON.stringify(tauriConf, null, '\t') + '\n');
+		desktopUpdates++;
+	}
+} catch {}
+
+const cargoTomlPath = join(process.cwd(), 'desktop-app', 'src-tauri', 'Cargo.toml');
+try {
+	const cargoContent = readFileSync(cargoTomlPath, 'utf8');
+	const updatedCargo = cargoContent.replace(
+		/(^\[package\]\s*\n\s*version\s*=\s*)"[^"]*"/m,
+		`$1"${lockstepVersion}"`
+	);
+	if (updatedCargo !== cargoContent) {
+		const oldVersion = cargoContent.match(/^\[package\]\s*\n\s*version\s*=\s*"([^"]*)"/m)?.[1];
+		console.log(`\ndesktop-app/src-tauri/Cargo.toml:`);
+		console.log(`  version: ${oldVersion} → ${lockstepVersion}`);
+		writeFileSync(cargoTomlPath, updatedCargo);
+		desktopUpdates++;
+	}
+} catch {}
+
+if (desktopUpdates === 0) {
+	console.log('\nDesktop app versions already in sync.');
+} else {
+	console.log(`\n✅ Updated ${desktopUpdates} desktop app file(s)`);
+}

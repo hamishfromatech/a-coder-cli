@@ -4,8 +4,15 @@
 
 ### Added
 
-- Added public SDK exports for CLI-equivalent model and scoped-model resolution ([#6201](https://github.com/earendil-works/pi/issues/6201)).
+- Added a built-in `todo` tool for multi-step task tracking. The model rewrites the full task list on each call and the result snapshots it in `details.todos` (branch-safe, stateless), so the desktop UI and TUI can render a live checklist. Active by default alongside read/bash/edit/write.
+- Added a `/todos` built-in command (TUI) that opens a persistent task-list panel mirroring the latest `todo` tool result on the current branch.
+- Added a `list_sessions` RPC command that returns all stored sessions in the profile, enabling the desktop's session quick-switcher.
 - Added extension entry renderers for persisted display-only session entries that are rendered in interactive mode without being sent to the model context.
+- Added dynamic context-window discovery for Ollama models. The active model's real context window is fetched from the Ollama `/api/show` endpoint (`model_info` `*.context_length`, with an explicit `num_ctx` parameter override) and used for auto-compaction thresholds and the context-usage bar, instead of the 128k catalog default. OpenAI and Anthropic already ship correct static values.
+
+### Changed
+
+- Swapped default keybindings: `shift+tab` now opens the permission mode selector, and `shift+ctrl+m` cycles the thinking level.
 
 ### Fixed
 
@@ -16,6 +23,16 @@
 - Fixed split-turn compaction to serialize summary requests so single-concurrency local providers do not fail with 429 errors ([#5536](https://github.com/earendil-works/pi/issues/5536)).
 - Fixed custom session entries appended during assistant streaming to render before the live assistant message, matching persisted session order.
 - Fixed oversized bash tool timeouts to fail with a clear validation error instead of being clamped to an immediate timeout ([#6181](https://github.com/earendil-works/pi/issues/6181)).
+- Fixed `edit` falsely rejecting unique exact matches as duplicates when the text differed only by trailing whitespace or other fuzzy-normalized characters; occurrence counting now stays in the same exact/fuzzy domain as the match.
+- Fixed `ls` silently omitting broken symlinks; dangling symlinks now appear in listings without a directory suffix, and the per-entry stat loop now honors the abort signal instead of continuing after cancellation.
+- Fixed `truncateLine` (grep) to avoid splitting UTF-16 surrogate pairs when truncating long match lines.
+- Fixed the file mutation queue to use a stable key for not-yet-existing files inside symlinked directories so concurrent create/edit of the same path serialize correctly.
+- Fixed `write` to report UTF-8 byte size rather than UTF-16 code-unit count in its success message.
+- Fixed `read` to observe the abort signal after image MIME detection and file read so an aborted image read stops before resizing.
+- Fixed `grep`, `find`, `ls`, and `read` to accept the `file_path` alias for `path` (matching `edit`/`write`) so models emitting `file_path` search the intended directory instead of silently falling back to cwd (grep/find/ls) or failing validation (read).
+- Tightened tool parameter schemas with `additionalProperties: false` and minimum/length constraints so malformed tool-call arguments fail validation loudly rather than being silently ignored.
+- Fixed the extension `context` hook to not crash the turn when a message carries non-cloneable data; `structuredClone` is now guarded and skipped when no extension handles `context`.
+- Fixed a throwing `tool_result` extension handler from converting a successful tool result into an error; `afterToolCall` now catches handler failures and preserves the original result.
 
 ## [0.80.3] - 2026-06-30
 

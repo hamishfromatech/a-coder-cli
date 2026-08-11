@@ -17,13 +17,30 @@ import { getTextOutput, renderToolPath, replaceTabs, str } from "./render-utils.
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateHead } from "./truncate.ts";
 
-const readSchema = Type.Object({
-	path: Type.String({ description: "Path to the file to read (relative or absolute)" }),
-	offset: Type.Optional(Type.Number({ description: "Line number to start reading from (1-indexed)" })),
-	limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read" })),
-});
+const readSchema = Type.Object(
+	{
+		path: Type.String({ description: "Path to the file to read (relative or absolute)" }),
+		offset: Type.Optional(Type.Number({ description: "Line number to start reading from (1-indexed)" })),
+		limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read" })),
+	},
+	{ additionalProperties: false },
+);
 
 export type ReadToolInput = Static<typeof readSchema>;
+
+function prepareReadArguments(input: unknown): ReadToolInput {
+	if (!input || typeof input !== "object") {
+		return input as ReadToolInput;
+	}
+
+	const args = input as Record<string, unknown>;
+	if (typeof args.path === "string" || typeof args.file_path !== "string") {
+		return args as ReadToolInput;
+	}
+
+	const { file_path, ...rest } = args;
+	return { ...rest, path: file_path } as ReadToolInput;
+}
 
 export interface ReadToolDetails {
 	truncation?: TruncationResult;
@@ -213,13 +230,8 @@ export function createReadToolDefinition(
 		promptSnippet: "Read file contents",
 		promptGuidelines: ["Use read to examine files instead of cat or sed."],
 		parameters: readSchema,
-		async execute(
-			_toolCallId,
-			{ path, offset, limit }: { path: string; offset?: number; limit?: number },
-			signal?: AbortSignal,
-			_onUpdate?,
-			ctx?,
-		) {
+		prepareArguments: prepareReadArguments,
+		async execute(_toolCallId, params: ReadToolInput, signal?: AbortSignal, _onUpdate?, ctx?) {
 			return new Promise<{ content: (TextContent | ImageContent)[]; details: ReadToolDetails | undefined }>(
 				(resolve, reject) => {
 					if (signal?.aborted) {
@@ -235,18 +247,26 @@ export function createReadToolDefinition(
 
 					(async () => {
 						try {
+							// Defensive fallback for direct callers that bypass prepareArguments.
+							const path = params.path ?? (params as unknown as { file_path?: string }).file_path;
+							if (typeof path !== "string") {
+								throw new Error("Missing path argument for read tool");
+							}
+							const { offset, limit } = params;
 							const absolutePath = await resolveReadPathAsync(path, cwd);
 							if (aborted) return;
 							// Check if file exists and is readable.
 							await ops.access(absolutePath);
 							if (aborted) return;
 							const mimeType = ops.detectImageMimeType ? await ops.detectImageMimeType(absolutePath) : undefined;
+							if (aborted) return;
 							let content: (TextContent | ImageContent)[];
 							let details: ReadToolDetails | undefined;
 							const nonVisionImageNote = getNonVisionImageNote(ctx?.model);
 							if (mimeType) {
 								// Read image as binary.
 								const buffer = await ops.readFile(absolutePath);
+								if (aborted) return;
 								const processed = await processImage(buffer, mimeType, { autoResizeImages });
 								if (!processed.ok) {
 									let textNote = `Read image file [${mimeType}]\n${processed.message}`;

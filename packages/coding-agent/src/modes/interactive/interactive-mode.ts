@@ -82,8 +82,10 @@ import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "../../core/provider-display-nam
 import type { ResourceDiagnostic } from "../../core/resource-loader.ts";
 import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.ts";
 import { type SessionEntry, SessionManager, sessionEntryToContextMessages } from "../../core/session-manager.ts";
+import type { PermissionMode } from "../../core/settings-manager.ts";
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
+import { createSubagentManager } from "../../core/subagents/manager.ts";
 import { isInstallTelemetryEnabled } from "../../core/telemetry.ts";
 import type { TruncationResult } from "../../core/tools/truncate.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../core/trust-manager.ts";
@@ -116,6 +118,7 @@ import { formatKeyText, keyDisplayText, keyHint, keyText, rawKeyHint } from "./c
 import { LoginDialogComponent } from "./components/login-dialog.ts";
 import { ModelSelectorComponent } from "./components/model-selector.ts";
 import { type AuthSelectorProvider, OAuthSelectorComponent } from "./components/oauth-selector.ts";
+import { PermissionModeSelectorComponent } from "./components/permission-mode-selector.ts";
 import { ScopedModelsSelectorComponent } from "./components/scoped-models-selector.ts";
 import { SessionSelectorComponent } from "./components/session-selector.ts";
 import { SettingsSelectorComponent } from "./components/settings-selector.ts";
@@ -128,6 +131,7 @@ import {
 	type StatusIndicator,
 	WorkingStatusIndicator,
 } from "./components/status-indicator.ts";
+import { readTodosFromBranch, TodoListComponent } from "./components/todo-list.ts";
 import { ToolExecutionComponent } from "./components/tool-execution.ts";
 import { TreeSelectorComponent } from "./components/tree-selector.ts";
 import { TrustSelectorComponent } from "./components/trust-selector.ts";
@@ -716,7 +720,7 @@ export class InteractiveMode {
 			);
 			const onboarding = theme.fg(
 				"dim",
-				`Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.`,
+				`${APP_NAME} can explain its own features and look up its docs. Ask it how to use or extend ${APP_NAME}.`,
 			);
 			this.builtInHeader = new ExpandableText(
 				() => `${logo}\n${compactInstructions}\n${compactOnboarding}\n\n${onboarding}`,
@@ -852,7 +856,7 @@ export class InteractiveMode {
 	}
 
 	private async checkForPackageUpdates(): Promise<string[]> {
-		if (process.env.PI_OFFLINE) {
+		if (process.env.A_CODER_CLI_OFFLINE) {
 			return [];
 		}
 
@@ -948,7 +952,7 @@ export class InteractiveMode {
 	}
 
 	private reportInstallTelemetry(version: string): void {
-		if (process.env.PI_OFFLINE) {
+		if (process.env.A_CODER_CLI_OFFLINE) {
 			return;
 		}
 
@@ -956,7 +960,7 @@ export class InteractiveMode {
 			return;
 		}
 
-		void fetch(`https://pi.dev/api/report-install?version=${encodeURIComponent(version)}`, {
+		void fetch(`https://a-coder-cli.dev/api/report-install?version=${encodeURIComponent(version)}`, {
 			headers: {
 				"User-Agent": getPiUserAgent(version),
 			},
@@ -1632,6 +1636,10 @@ export class InteractiveMode {
 		this.footer.setSession(this.session);
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
 		this.footerDataProvider.setCwd(this.sessionManager.getCwd());
+		this.session.setPermissionPromptHandler(async (toolName, reason) => {
+			return await this.showExtensionConfirm(`Allow ${toolName}?`, reason);
+		});
+		this.updatePermissionModeStatus(this.session.permissionMode);
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
 		this.outputPad = this.settingsManager.getOutputPad();
 		this.ui.setShowHardwareCursor(this.settingsManager.getShowHardwareCursor());
@@ -2519,6 +2527,7 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.session.tree", () => this.showTreeSelector());
 		this.defaultEditor.onAction("app.session.fork", () => this.showUserMessageSelector());
 		this.defaultEditor.onAction("app.session.resume", () => this.showSessionSelector());
+		this.defaultEditor.onAction("app.permissionMode.select", () => this.showPermissionModeSelector());
 
 		this.defaultEditor.onChange = (text: string) => {
 			const wasBashMode = this.isBashMode;
@@ -2576,6 +2585,11 @@ export class InteractiveMode {
 				const searchTerm = text.startsWith("/model ") ? text.slice(7).trim() : undefined;
 				this.editor.setText("");
 				await this.handleModelCommand(searchTerm);
+				return;
+			}
+			if (text === "/permission") {
+				this.showPermissionModeSelector();
+				this.editor.setText("");
 				return;
 			}
 			if (text === "/export" || text.startsWith("/export ")) {
@@ -2662,6 +2676,16 @@ export class InteractiveMode {
 			if (text === "/reload") {
 				this.editor.setText("");
 				await this.handleReloadCommand();
+				return;
+			}
+			if (text === "/subagents" || text.startsWith("/subagents ")) {
+				this.editor.setText("");
+				await this.handleSubagentsCommand();
+				return;
+			}
+			if (text === "/todos") {
+				this.editor.setText("");
+				this.showTodosPanel();
 				return;
 			}
 			if (text === "/debug") {
@@ -3327,7 +3351,7 @@ export class InteractiveMode {
 			new Text(
 				theme.fg(
 					"warning",
-					`This project is not trusted. Project ${CONFIG_DIR_NAME} resources and packages are ignored. Use /trust to save a trust decision, then restart pi.`,
+					`This project is not trusted. Project ${CONFIG_DIR_NAME} resources and packages are ignored. Use /trust to save a trust decision, then restart a-coder-cli.`,
 				),
 				1,
 				0,
@@ -3750,7 +3774,7 @@ export class InteractiveMode {
 	showNewVersionNotification(release: LatestPiRelease): void {
 		const action = theme.fg("accent", `${APP_NAME} update`);
 		const updateInstruction = theme.fg("muted", `New version ${release.version} is available. Run `) + action;
-		const changelogUrl = "https://pi.dev/changelog";
+		const changelogUrl = "https://a-coder-cli.dev/changelog";
 		const changelogLink = getCapabilities().hyperlinks
 			? hyperlink(theme.fg("accent", changelogUrl), changelogUrl)
 			: theme.fg("accent", changelogUrl);
@@ -3995,11 +4019,20 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
+	private showTodosPanel(): void {
+		const todos = readTodosFromBranch(this.sessionManager.getBranch() as Array<{ type: string; message?: unknown }>);
+		this.showSelector((done) => {
+			const component = new TodoListComponent(todos, done);
+			return { component, focus: component };
+		});
+	}
+
 	private showSettingsSelector(): void {
 		this.showSelector((done) => {
 			const selector = new SettingsSelectorComponent(
 				{
 					autoCompact: this.session.autoCompactionEnabled,
+					compactionAutoContinue: this.session.compactionAutoContinue,
 					showImages: this.settingsManager.getShowImages(),
 					imageWidthCells: this.settingsManager.getImageWidthCells(),
 					autoResizeImages: this.settingsManager.getImageAutoResize(),
@@ -4033,6 +4066,9 @@ export class InteractiveMode {
 					onAutoCompactChange: (enabled) => {
 						this.session.setAutoCompactionEnabled(enabled);
 						this.footer.setAutoCompactEnabled(enabled);
+					},
+					onCompactionAutoContinueChange: (enabled) => {
+						this.session.setCompactionAutoContinue(enabled);
 					},
 					onShowImagesChange: (enabled) => {
 						this.settingsManager.setShowImages(enabled);
@@ -4208,7 +4244,8 @@ export class InteractiveMode {
 
 		this.session.modelRegistry.refresh();
 		try {
-			return await this.session.modelRegistry.getAvailable();
+			await this.session.modelRegistry.refreshDynamicModels();
+			return this.session.modelRegistry.getAvailable();
 		} catch {
 			return [];
 		}
@@ -4292,7 +4329,7 @@ export class InteractiveMode {
 					trustStore.setMany(selection.updates);
 					done();
 					this.showStatus(
-						`Saved trust decision: ${selection.trusted ? "trusted" : "untrusted"}. Restart pi for this to take effect.`,
+						`Saved trust decision: ${selection.trusted ? "trusted" : "untrusted"}. Restart a-coder-cli for this to take effect.`,
 					);
 				},
 				onCancel: () => {
@@ -4311,7 +4348,6 @@ export class InteractiveMode {
 				this.session.model,
 				this.settingsManager,
 				this.session.modelRegistry,
-				this.session.scopedModels,
 				async (model) => {
 					try {
 						await this.session.setModel(model);
@@ -4336,9 +4372,34 @@ export class InteractiveMode {
 		});
 	}
 
+	private showPermissionModeSelector(): void {
+		this.showSelector((done) => {
+			const selector = new PermissionModeSelectorComponent(
+				this.session.permissionMode,
+				(mode) => {
+					this.session.setPermissionMode(mode);
+					this.updatePermissionModeStatus(mode);
+					done();
+					this.showStatus(`Permission mode: ${mode}`);
+				},
+				() => {
+					done();
+					this.ui.requestRender();
+				},
+			);
+			return { component: selector, focus: selector };
+		});
+	}
+
+	private updatePermissionModeStatus(mode: PermissionMode): void {
+		this.footerDataProvider.setExtensionStatus("permissionMode", `Permission mode: ${mode}`);
+		this.ui.requestRender();
+	}
+
 	private async showModelsSelector(): Promise<void> {
 		// Get all available models
 		this.session.modelRegistry.refresh();
+		await this.session.modelRegistry.refreshDynamicModels();
 		const allModels = this.session.modelRegistry.getAvailable();
 
 		if (allModels.length === 0) {
@@ -4834,6 +4895,7 @@ export class InteractiveMode {
 		previousModel: Model<any> | undefined,
 	): Promise<void> {
 		this.session.modelRegistry.refresh();
+		await this.session.modelRegistry.refreshDynamicModels();
 
 		const actionLabel = authType === "oauth" ? `Logged in to ${providerName}` : `Saved API key for ${providerName}`;
 
@@ -5181,6 +5243,31 @@ export class InteractiveMode {
 		}
 	}
 
+	private async handleSubagentsCommand(): Promise<void> {
+		const manager = createSubagentManager({});
+		const list = manager.list();
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new DynamicBorder());
+		this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "Subagents")), 1, 0));
+		this.chatContainer.addChild(new Spacer(1));
+		if (list.length === 0) {
+			this.chatContainer.addChild(new Text(theme.fg("muted", "No subagents running."), 1, 0));
+		} else {
+			for (const record of list) {
+				this.chatContainer.addChild(new Text(theme.fg("accent", `- ${record.id}: ${record.status}`), 1, 0));
+				if (record.lastOutput) {
+					this.chatContainer.addChild(new Text(`  ${record.lastOutput.slice(0, 200)}`, 1, 0));
+				}
+				if (record.error) {
+					this.chatContainer.addChild(new Text(theme.fg("error", `  error: ${record.error}`), 1, 0));
+				}
+			}
+		}
+		this.chatContainer.addChild(new DynamicBorder());
+		this.chatContainer.addChild(new Spacer(1));
+		this.ui.requestRender();
+	}
+
 	private async handleExportCommand(text: string): Promise<void> {
 		const outputPath = this.getPathCommandArgument(text, "/export");
 
@@ -5517,6 +5604,7 @@ export class InteractiveMode {
 		const followUp = this.getAppKeyDisplay("app.message.followUp");
 		const dequeue = this.getAppKeyDisplay("app.message.dequeue");
 		const pasteImage = this.getAppKeyDisplay("app.clipboard.pasteImage");
+		const selectPermissionMode = this.getAppKeyDisplay("app.permissionMode.select");
 
 		let hotkeys = `
 **Navigation**
@@ -5560,6 +5648,7 @@ export class InteractiveMode {
 | \`${followUp}\` | Queue follow-up message |
 | \`${dequeue}\` | Restore queued messages |
 | \`${pasteImage}\` | Paste image from clipboard |
+| \`${selectPermissionMode}\` | Open permission mode selector |
 | \`/\` | Slash commands |
 | \`!\` | Run bash command |
 | \`!!\` | Run bash command (excluded from context) |

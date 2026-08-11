@@ -1,3 +1,4 @@
+import { basename, dirname, join, relative } from "node:path";
 import { Markdown, type MarkdownTheme } from "@earendil-works/pi-tui";
 import chalk from "chalk";
 import { selectConfig } from "./cli/config-selector.ts";
@@ -16,10 +17,15 @@ import {
 	VERSION,
 } from "./config.ts";
 import type { ExtensionFactory } from "./core/extensions/types.ts";
-import { DefaultPackageManager } from "./core/package-manager.ts";
+import {
+	DefaultPackageManager,
+	type PathMetadata,
+	type ResolvedPaths,
+	type ResolvedResource,
+} from "./core/package-manager.ts";
 import { type AppMode, resolveProjectTrusted } from "./core/project-trust.ts";
 import { DefaultResourceLoader } from "./core/resource-loader.ts";
-import { SettingsManager } from "./core/settings-manager.ts";
+import { type PackageSource, SettingsManager } from "./core/settings-manager.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "./core/trust-manager.ts";
 import { spawnProcess } from "./utils/child-process.ts";
 import { getLatestPiRelease, isNewerPackageVersion } from "./utils/version-check.ts";
@@ -81,7 +87,7 @@ function getPackageCommandUsage(command: PackageCommand): string {
 		case "remove":
 			return `${APP_NAME} remove <source> [-l] [--approve|--no-approve]`;
 		case "update":
-			return `${APP_NAME} update [source|self|pi] [--self|--extensions|--all] [--extension <source>] [--approve|--no-approve] [--force]`;
+			return `${APP_NAME} update [source|self|${APP_NAME}] [--self|--extensions|--all] [--extension <source>] [--approve|--no-approve] [--force]`;
 		case "list":
 			return `${APP_NAME} list [--approve|--no-approve]`;
 	}
@@ -132,22 +138,25 @@ Examples:
 			console.log(`${chalk.bold("Usage:")}
   ${getPackageCommandUsage("update")}
 
-Update pi and installed packages.
+Update ${APP_NAME} and installed packages.
+
+Arguments:
+  [source]                Package source, or "self"/"${APP_NAME}" for ${APP_NAME}
 
 Options:
-  --self                  Update pi only (default when no target is given)
+  --self                  Update ${APP_NAME} only (default when no target is given)
   --extensions            Update installed packages only
-  --all                   Update pi and installed packages
+  --all                   Update ${APP_NAME} and installed packages
   --extension <source>    Update one package only
   -a, --approve           Trust project-local files for this command
   -na, --no-approve       Ignore project-local files for this command
-  --force                 Reinstall pi even if the current version is latest
+  --force                 Reinstall ${APP_NAME} even if the current version is latest
 
 Short forms:
-  ${APP_NAME} update                Update pi only
-  ${APP_NAME} update --all          Update pi and all extensions
+  ${APP_NAME} update                Update ${APP_NAME} only
+  ${APP_NAME} update --all          Update ${APP_NAME} and all extensions
   ${APP_NAME} update <source>       Update one package
-  ${APP_NAME} update pi             Update pi only (self works as alias to pi)
+  ${APP_NAME} update ${APP_NAME}             Update ${APP_NAME} only (self works as alias to ${APP_NAME})
 `);
 			return;
 
@@ -305,7 +314,7 @@ function parsePackageCommand(args: string[]): PackageCommandOptions | undefined 
 			}
 			updateTarget = { type: "extensions", source: extensionFlagSource };
 		} else if (source) {
-			const sourceIsSelf = source === "self" || source === "pi";
+			const sourceIsSelf = source === "self" || source === "pi" || source === "a-coder-cli";
 			if (sourceIsSelf) {
 				updateTarget = extensionsFlag ? { type: "all" } : { type: "self" };
 			} else {
@@ -364,7 +373,7 @@ function printSelfUpdateUnavailable(
 	const entrypoint = process.argv[1];
 	if (entrypoint) {
 		console.error("");
-		console.error(`Location of pi executable: ${entrypoint}`);
+		console.error(`Location of a-coder-cli executable: ${entrypoint}`);
 	}
 }
 
@@ -492,7 +501,7 @@ function reportProjectTrustWarnings(warnings: readonly string[]): void {
 	}
 }
 
-async function createCommandSettingsManager(options: {
+export async function createCommandSettingsManager(options: {
 	cwd: string;
 	agentDir: string;
 	projectTrustOverride?: boolean;
@@ -765,6 +774,316 @@ export async function handlePackageCommand(
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : "Unknown package command error";
 		console.error(chalk.red(`Error: ${message}`));
+		process.exitCode = 1;
+		return true;
+	}
+}
+
+// ============================================================================
+// Machine-readable resources subcommand for the desktop settings UI.
+// Outputs JSON on stdout; diagnostics go to stderr so stdout stays parseable.
+// ============================================================================
+
+export type ResourcesCommand = "resolve" | "install" | "remove" | "update" | "list" | "toggle";
+
+type ResourcesResourceType = "extensions" | "skills" | "prompts" | "themes";
+
+interface ResourcesCommandOptions {
+	command: ResourcesCommand;
+	cwd: string;
+	json: boolean;
+	local?: boolean;
+	source?: string;
+	resourceType?: ResourcesResourceType;
+	path?: string;
+	enabled?: boolean;
+	scope?: "user" | "project";
+	origin?: "top-level" | "package";
+	baseDir?: string;
+}
+
+function parseResourcesCommand(args: string[]): ResourcesCommandOptions | undefined {
+	if (args.length === 0 || args[0] !== "resources") {
+		return undefined;
+	}
+
+	const rest = args.slice(1);
+	let command: ResourcesCommand | undefined;
+	let cwd = process.cwd();
+	let json = false;
+	let local = false;
+	let source: string | undefined;
+	let resourceType: ResourcesResourceType | undefined;
+	let path: string | undefined;
+	let enabled: boolean | undefined;
+	let scope: "user" | "project" | undefined;
+	let origin: "top-level" | "package" | undefined;
+	let baseDir: string | undefined;
+
+	for (let i = 0; i < rest.length; i++) {
+		const arg = rest[i];
+		switch (arg) {
+			case "resolve":
+			case "install":
+			case "remove":
+			case "update":
+			case "list":
+			case "toggle":
+				command = arg;
+				break;
+			case "--cwd":
+				cwd = rest[++i] ?? cwd;
+				break;
+			case "--json":
+				json = true;
+				break;
+			case "-l":
+			case "--local":
+				local = true;
+				break;
+			case "--source":
+				source = rest[++i];
+				break;
+			case "--type":
+				resourceType = rest[++i] as ResourcesResourceType;
+				break;
+			case "--path":
+				path = rest[++i];
+				break;
+			case "--enabled": {
+				const v = rest[++i];
+				enabled = v === "true" || v === "1";
+				break;
+			}
+			case "--scope": {
+				const v = rest[++i];
+				if (v === "user" || v === "project") scope = v;
+				break;
+			}
+			case "--origin": {
+				const v = rest[++i];
+				if (v === "top-level" || v === "package") origin = v;
+				break;
+			}
+			case "--baseDir":
+				baseDir = rest[++i];
+				break;
+		}
+	}
+
+	if (!command) return undefined;
+	return { command, cwd, json, local, source, resourceType, path, enabled, scope, origin, baseDir };
+}
+
+function resourcesJsonResponse(data: unknown): string {
+	return JSON.stringify({ success: true, data }, null, 2);
+}
+
+function resourcesJsonError(message: string): string {
+	return JSON.stringify({ success: false, error: message }, null, 2);
+}
+
+function getResourcesTopLevelBaseDir(scope: "user" | "project", cwd: string, agentDir: string): string {
+	return scope === "project" ? join(cwd, CONFIG_DIR_NAME) : agentDir;
+}
+
+function toggleTopLevelResource(
+	settingsManager: SettingsManager,
+	cwd: string,
+	agentDir: string,
+	resourceType: ResourcesResourceType,
+	path: string,
+	enabled: boolean,
+	scope: "user" | "project",
+	baseDirHint?: string,
+): void {
+	const settings = scope === "project" ? settingsManager.getProjectSettings() : settingsManager.getGlobalSettings();
+	const current = (settings[resourceType] ?? []) as string[];
+	const baseDir = baseDirHint ?? getResourcesTopLevelBaseDir(scope, cwd, agentDir);
+	const pattern = relative(baseDir, path);
+	const updated = current.filter((p) => {
+		const stripped = p.startsWith("!") || p.startsWith("+") || p.startsWith("-") ? p.slice(1) : p;
+		return stripped !== pattern;
+	});
+	updated.push(enabled ? `+${pattern}` : `-${pattern}`);
+
+	if (scope === "project") {
+		if (resourceType === "extensions") settingsManager.setProjectExtensionPaths(updated);
+		else if (resourceType === "skills") settingsManager.setProjectSkillPaths(updated);
+		else if (resourceType === "prompts") settingsManager.setProjectPromptTemplatePaths(updated);
+		else if (resourceType === "themes") settingsManager.setProjectThemePaths(updated);
+	} else {
+		if (resourceType === "extensions") settingsManager.setExtensionPaths(updated);
+		else if (resourceType === "skills") settingsManager.setSkillPaths(updated);
+		else if (resourceType === "prompts") settingsManager.setPromptTemplatePaths(updated);
+		else if (resourceType === "themes") settingsManager.setThemePaths(updated);
+	}
+}
+
+function togglePackageResource(
+	settingsManager: SettingsManager,
+	resourceType: ResourcesResourceType,
+	path: string,
+	enabled: boolean,
+	packageSource: string,
+	baseDirHint?: string,
+): void {
+	const globalPackages = settingsManager.getGlobalSettings().packages ?? [];
+	const projectPackages = settingsManager.getProjectSettings().packages ?? [];
+	let scope: "user" | "project" | null = null;
+	let packages: PackageSource[] = [...globalPackages];
+	if (projectPackages.some((pkg) => (typeof pkg === "string" ? pkg : pkg.source) === packageSource)) {
+		scope = "project";
+		packages = [...projectPackages];
+	} else if (globalPackages.some((pkg) => (typeof pkg === "string" ? pkg : pkg.source) === packageSource)) {
+		scope = "user";
+	} else {
+		throw new Error(`Package source not found in settings: ${packageSource}`);
+	}
+
+	const idx = packages.findIndex((pkg) => (typeof pkg === "string" ? pkg : pkg.source) === packageSource);
+	if (idx === -1) throw new Error(`Package source not found: ${packageSource}`);
+
+	let pkg = packages[idx];
+	if (typeof pkg === "string") {
+		pkg = { source: pkg };
+		packages[idx] = pkg;
+	}
+	const current = ((pkg as Record<string, unknown>)[resourceType] as string[] | undefined) ?? [];
+	const baseDir = baseDirHint ?? dirname(path);
+	const pattern = relative(baseDir, path);
+	const updated = current.filter((p) => {
+		const stripped = p.startsWith("!") || p.startsWith("+") || p.startsWith("-") ? p.slice(1) : p;
+		return stripped !== pattern;
+	});
+	updated.push(enabled ? `+${pattern}` : `-${pattern}`);
+
+	const hasFilters = (["extensions", "skills", "prompts", "themes"] as const).some(
+		(k) => (pkg as Record<string, unknown>)[k] !== undefined,
+	);
+	if (!hasFilters) {
+		packages[idx] = (pkg as { source: string }).source;
+	} else {
+		(pkg as Record<string, unknown>)[resourceType] = updated.length > 0 ? updated : undefined;
+	}
+
+	if (scope === "project") {
+		settingsManager.setProjectPackages(packages);
+	} else {
+		settingsManager.setPackages(packages);
+	}
+}
+
+export async function handleResourcesCommand(
+	args: string[],
+	runtimeOptions: PackageCommandRuntimeOptions = {},
+): Promise<boolean> {
+	const options = parseResourcesCommand(args);
+	if (!options) return false;
+
+	const trustOverride = parseProjectTrustOverride(args);
+	const agentDir = getAgentDir();
+	const { settingsManager, projectTrustWarnings } = await createCommandSettingsManager({
+		cwd: options.cwd,
+		agentDir,
+		projectTrustOverride: trustOverride,
+		useSavedProjectTrustOnly: true,
+		extensionFactories: runtimeOptions.extensionFactories,
+	});
+	reportProjectTrustWarnings(projectTrustWarnings);
+	reportSettingsErrors(settingsManager, "resources command");
+
+	const packageManager = new DefaultPackageManager({ cwd: options.cwd, agentDir, settingsManager });
+
+	try {
+		switch (options.command) {
+			case "resolve": {
+				const resolved = await packageManager.resolve();
+				if (options.json) {
+					console.log(resourcesJsonResponse(resolved));
+				}
+				return true;
+			}
+			case "list": {
+				const packages = packageManager.listConfiguredPackages();
+				if (options.json) {
+					console.log(resourcesJsonResponse(packages));
+				}
+				return true;
+			}
+			case "install": {
+				if (!options.source) {
+					console.log(resourcesJsonError("Missing --source"));
+					process.exitCode = 1;
+					return true;
+				}
+				await packageManager.installAndPersist(options.source, { local: options.local });
+				console.log(resourcesJsonResponse({ installed: options.source, local: options.local ?? false }));
+				return true;
+			}
+			case "remove": {
+				if (!options.source) {
+					console.log(resourcesJsonError("Missing --source"));
+					process.exitCode = 1;
+					return true;
+				}
+				const removed = await packageManager.removeAndPersist(options.source, { local: options.local });
+				console.log(
+					resourcesJsonResponse({ removed: removed, source: options.source, local: options.local ?? false }),
+				);
+				return true;
+			}
+			case "update": {
+				await packageManager.update(options.source);
+				console.log(resourcesJsonResponse({ updated: options.source ?? "all" }));
+				return true;
+			}
+			case "toggle": {
+				if (
+					!options.resourceType ||
+					!options.path ||
+					options.enabled === undefined ||
+					!options.scope ||
+					!options.origin
+				) {
+					console.log(resourcesJsonError("toggle requires --type, --path, --enabled, --scope, and --origin"));
+					process.exitCode = 1;
+					return true;
+				}
+				if (options.origin === "top-level") {
+					toggleTopLevelResource(
+						settingsManager,
+						options.cwd,
+						agentDir,
+						options.resourceType,
+						options.path,
+						options.enabled,
+						options.scope,
+						options.baseDir,
+					);
+				} else {
+					if (!options.source) {
+						console.log(resourcesJsonError("toggle package resource requires --source"));
+						process.exitCode = 1;
+						return true;
+					}
+					togglePackageResource(
+						settingsManager,
+						options.resourceType,
+						options.path,
+						options.enabled,
+						options.source,
+						options.baseDir,
+					);
+				}
+				await settingsManager.flush();
+				console.log(resourcesJsonResponse({ toggled: true }));
+				return true;
+			}
+		}
+	} catch (error: unknown) {
+		const message = error instanceof Error ? error.message : String(error);
+		console.log(resourcesJsonError(message));
 		process.exitCode = 1;
 		return true;
 	}

@@ -1,6 +1,6 @@
 # Quickstart
 
-This page gets you from install to a useful first pi session.
+This page gets you from install to a useful first a-coder-cli session.
 
 ## Install
 
@@ -30,9 +30,9 @@ yarn global remove @earendil-works/pi-coding-agent
 bun uninstall -g @earendil-works/pi-coding-agent
 ```
 
-Uninstalling pi leaves settings, credentials, sessions, and installed pi packages in `~/.pi/agent/`.
+Uninstalling a-coder-cli leaves settings, credentials, sessions, and installed pi packages in `~/.a-coder-cli/agent/`.
 
-Then start pi in the project directory you want it to work on:
+Then start a-coder-cli in the project directory you want it to work on:
 
 ```bash
 cd /path/to/project
@@ -45,7 +45,7 @@ Pi can use subscription providers through `/login`, or API-key providers through
 
 ### Option 1: subscription login
 
-Start pi and run:
+Start a-coder-cli and run:
 
 ```text
 /login
@@ -62,19 +62,19 @@ export ANTHROPIC_API_KEY=sk-ant-...
 pi
 ```
 
-You can also run `/login` and select an API-key provider to store the key in `~/.pi/agent/auth.json`.
+You can also run `/login` and select an API-key provider to store the key in `~/.a-coder-cli/agent/auth.json`.
 
 See [Providers](providers.md) for all supported providers, environment variables, and cloud-provider setup.
 
 ## First session
 
-Once pi starts, type a request and press Enter:
+Once a-coder-cli starts, type a request and press Enter:
 
 ```text
 Summarize this repository and tell me how to run its checks.
 ```
 
-By default, pi gives the model four tools:
+By default, a-coder-cli gives the model four tools:
 
 - `read` - read files
 - `write` - create or overwrite files
@@ -83,7 +83,7 @@ By default, pi gives the model four tools:
 
 Additional built-in read-only tools (`grep`, `find`, `ls`) are available through tool options. Pi runs in your current working directory and can modify files there. Use git or another checkpointing workflow if you want easy rollback.
 
-## Give pi project instructions
+## Give a-coder-cli project instructions
 
 Pi loads context files at startup. Add an `AGENTS.md` file to tell it how to work in a project:
 
@@ -97,7 +97,7 @@ Pi loads context files at startup. Add an `AGENTS.md` file to tell it how to wor
 
 Pi loads:
 
-- `~/.pi/agent/AGENTS.md` for global instructions
+- `~/.a-coder-cli/agent/AGENTS.md` for global instructions
 - `AGENTS.md` or `CLAUDE.md` from parent directories and the current directory
 
 Restart pi, or run `/reload`, after changing context files.
@@ -136,8 +136,8 @@ Sessions are saved automatically:
 ```bash
 pi -c                  # Continue most recent session
 pi -r                  # Browse previous sessions
-pi --name "my task"    # Set session display name at startup
-pi --session <path|id> # Open a specific session
+a-coder-cli --name "my task"    # Set session display name at startup
+a-coder-cli --session <path|id> # Open a specific session
 ```
 
 Inside pi, use `/resume`, `/new`, `/tree`, `/fork`, and `/clone` to manage sessions.

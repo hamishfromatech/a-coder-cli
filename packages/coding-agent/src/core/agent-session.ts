@@ -84,11 +84,12 @@ import {
 import { emitSessionShutdownEvent } from "./extensions/runner.ts";
 import type { BashExecutionMessage, CustomMessage } from "./messages.ts";
 import type { ModelRegistry } from "./model-registry.ts";
+import { type PermissionDecisionResult, resolvePermissionDecision } from "./permission-policy.ts";
 import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.ts";
 import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.ts";
 import type { BranchSummaryEntry, CompactionEntry, SessionEntry, SessionManager } from "./session-manager.ts";
 import { CURRENT_SESSION_VERSION, getLatestCompactionEntry, type SessionHeader } from "./session-manager.ts";
-import type { SettingsManager } from "./settings-manager.ts";
+import type { PermissionMode, PermissionPolicyConfig, SettingsManager } from "./settings-manager.ts";
 import type { SlashCommandInfo } from "./slash-commands.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
 import { type BuildSystemPromptOptions, buildSystemPrompt } from "./system-prompt.ts";
@@ -149,7 +150,8 @@ export type AgentSessionEvent =
 			errorMessage?: string;
 	  }
 	| { type: "auto_retry_start"; attempt: number; maxAttempts: number; delayMs: number; errorMessage: string }
-	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string };
+	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string }
+	| SessionStartEvent;
 
 /** Listener function for agent session events */
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
@@ -184,6 +186,14 @@ export interface AgentSessionConfig {
 	 * a definition-first registry even when callers provide plain AgentTool instances.
 	 */
 	baseToolsOverride?: Record<string, AgentTool>;
+	/**
+	 * Optional default tool suppression mode.
+	 *
+	 * - "all": start with no tools enabled
+	 * - "builtin": disable the default built-in tools (read, bash, edit, write)
+	 *   but keep extension/custom tools enabled
+	 */
+	noTools?: "all" | "builtin";
 	/** Mutable ref used by Agent to access the current ExtensionRunner */
 	extensionRunnerRef?: { current?: ExtensionRunner };
 	/** Session start event metadata emitted when extensions bind to this runtime. */
@@ -196,6 +206,7 @@ export interface ExtensionBindings {
 	commandContextActions?: ExtensionCommandContextActions;
 	abortHandler?: () => void;
 	shutdownHandler?: ShutdownHandler;
+	permissionPromptHandler?: (toolName: string, reason: string) => Promise<boolean>;
 	onError?: ExtensionErrorListener;
 }
 
@@ -295,6 +306,10 @@ export class AgentSession {
 	private _retryAbortController: AbortController | undefined = undefined;
 	private _retryAttempt = 0;
 
+	// Auto-continue state: prevents the harness from idling after the assistant
+	// describes a plan but fails to emit tool calls (e.g., 'Let me build that now').
+	private _autoContinuedForCurrentPrompt = false;
+
 	// Bash execution state
 	private _bashAbortController: AbortController | undefined = undefined;
 	private _pendingBashMessages: BashExecutionMessage[] = [];
@@ -320,6 +335,13 @@ export class AgentSession {
 	private _extensionShutdownHandler?: ShutdownHandler;
 	private _extensionErrorListener?: ExtensionErrorListener;
 	private _extensionErrorUnsubscriber?: () => void;
+
+	// Permission mode state
+	private _permissionMode: PermissionMode;
+	private _permissionPromptHandler?: (toolName: string, reason: string) => Promise<boolean>;
+
+	// Default tool suppression from session options
+	private _noTools?: "all" | "builtin";
 
 	// Model registry for API key resolution
 	private _modelRegistry: ModelRegistry;
@@ -350,6 +372,8 @@ export class AgentSession {
 		this._excludedToolNames = config.excludedToolNames ? new Set(config.excludedToolNames) : undefined;
 		this._baseToolsOverride = config.baseToolsOverride;
 		this._sessionStartEvent = config.sessionStartEvent ?? { type: "session_start", reason: "startup" };
+		this._permissionMode = this.settingsManager.getPermissionMode();
+		this._noTools = config.noTools;
 
 		// Always subscribe to agent events for internal handling
 		// (session persistence, extensions, auto-compaction, retry logic)
@@ -359,13 +383,55 @@ export class AgentSession {
 
 		this._buildRuntime({
 			activeToolNames: this._initialActiveToolNames,
-			includeAllExtensionTools: true,
+			includeAllExtensionTools: !this._noTools,
+			autoEnableExtensionTools: true,
 		});
 	}
 
 	/** Model registry for API key resolution and model discovery */
 	get modelRegistry(): ModelRegistry {
 		return this._modelRegistry;
+	}
+
+	/** Current permission mode for this session. */
+	get permissionMode(): PermissionMode {
+		return this._permissionMode;
+	}
+
+	setPermissionMode(mode: PermissionMode): void {
+		this._permissionMode = mode;
+		this.settingsManager.setPermissionMode(mode);
+	}
+
+	/**
+	 * Register a handler used to prompt the user when a tool call needs approval.
+	 * If no handler is set, "ask" mode falls back to allowing tool calls so that
+	 * non-interactive sessions, SDK consumers, and test harnesses keep working.
+	 */
+	setPermissionPromptHandler(handler: ((toolName: string, reason: string) => Promise<boolean>) | undefined): void {
+		this._permissionPromptHandler = handler;
+	}
+
+	private _resolvePermissionDecision(toolName: string): PermissionDecisionResult {
+		const isInteractive = this._permissionPromptHandler !== undefined;
+		const policies: PermissionPolicyConfig | undefined = this.settingsManager.getPermissionPolicies();
+		// "ask" without a prompt handler cannot actually ask, so treat it as "allow"
+		// rather than silently denying every tool call.
+		if (this._permissionMode === "ask" && !isInteractive) {
+			return { decision: "approve" };
+		}
+		return resolvePermissionDecision(this._permissionMode, toolName, policies, isInteractive);
+	}
+
+	private async _maybePromptForPermission(toolName: string, reason?: string): Promise<boolean> {
+		if (!this._permissionPromptHandler) {
+			return false;
+		}
+		try {
+			return await this._permissionPromptHandler(toolName, reason ?? `Approval required for "${toolName}"`);
+		} catch {
+			return false;
+		}
 	}
 
 	private async _getRequiredRequestAuth(model: Model<any>): Promise<{
@@ -418,6 +484,20 @@ export class AgentSession {
 	 */
 	private _installAgentToolHooks(): void {
 		this.agent.beforeToolCall = async ({ toolCall, args }) => {
+			const permission = this._resolvePermissionDecision(toolCall.name);
+			if (permission.decision === "deny") {
+				return { block: true, reason: permission.reason };
+			}
+			if (permission.decision === "prompt") {
+				const approved = await this._maybePromptForPermission(toolCall.name, permission.reason);
+				if (!approved) {
+					return {
+						block: true,
+						reason: permission.reason ?? `Permission denied for "${toolCall.name}"`,
+					};
+				}
+			}
+
 			const runner = this._extensionRunner;
 			if (!runner.hasHandlers("tool_call")) {
 				return undefined;
@@ -444,25 +524,37 @@ export class AgentSession {
 				return undefined;
 			}
 
-			const hookResult = await runner.emitToolResult({
-				type: "tool_result",
-				toolName: toolCall.name,
-				toolCallId: toolCall.id,
-				input: args as Record<string, unknown>,
-				content: result.content,
-				details: result.details,
-				isError,
-			});
+			try {
+				const hookResult = await runner.emitToolResult({
+					type: "tool_result",
+					toolName: toolCall.name,
+					toolCallId: toolCall.id,
+					input: args as Record<string, unknown>,
+					content: result.content,
+					details: result.details,
+					isError,
+				});
 
-			if (!hookResult) {
+				if (!hookResult) {
+					return undefined;
+				}
+
+				return {
+					content: hookResult.content,
+					details: hookResult.details,
+					isError: hookResult.isError ?? isError,
+				};
+			} catch (err) {
+				// A throwing tool_result handler must not turn a successful tool
+				// result into an error: the engine contract is that afterToolCall
+				// must not throw. Log the failure and preserve the original result.
+				runner.emitError({
+					extensionPath: `tool_result:${toolCall.name}`,
+					event: "tool_result",
+					error: err instanceof Error ? err.message : String(err),
+				});
 				return undefined;
 			}
-
-			return {
-				content: hookResult.content,
-				details: hookResult.details,
-				isError: hookResult.isError ?? isError,
-			};
 		};
 	}
 
@@ -498,6 +590,12 @@ export class AgentSession {
 		for (const l of this._eventListeners) {
 			l(event);
 		}
+	}
+
+	/** Re-emit the stored session_start event to all listeners. Called after a
+	 *  session replacement once listeners have been re-attached. */
+	emitSessionStartEvent(): void {
+		this._emit(this._sessionStartEvent);
 	}
 
 	private _emitQueueUpdate(): void {
@@ -607,6 +705,170 @@ export class AgentSession {
 		if (typeof content === "string") return content;
 		const textBlocks = content.filter((c) => c.type === "text");
 		return textBlocks.map((c) => (c as TextContent).text).join("");
+	}
+
+	/** Extract text from the most recent user message in agent state. */
+	private _getLastUserMessageText(): string {
+		const messages = this.agent.state.messages;
+		for (let i = messages.length - 1; i >= 0; i--) {
+			const msg = messages[i];
+			if (msg.role === "user") {
+				return this._getUserMessageText(msg);
+			}
+		}
+		return "";
+	}
+
+	/** Extract text blocks from an assistant message. */
+	private _getAssistantText(message: AssistantMessage): string {
+		return message.content
+			.filter((c): c is TextContent => c.type === "text")
+			.map((c) => c.text)
+			.join(" ");
+	}
+
+	/**
+	 * Detect when the model hit the output token limit mid-generation.
+	 * This happens with local/small models that have constrained output windows.
+	 * We auto-continue with a nudge to complete the truncated response.
+	 */
+	private _shouldAutoContinueAfterLengthStop(message: AssistantMessage): boolean {
+		// Only trigger on length stops
+		if (message.stopReason !== "length") {
+			return false;
+		}
+		// Don't double-continue
+		if (this._autoContinuedForCurrentPrompt) {
+			return false;
+		}
+		return true;
+	}
+
+	/** Whether the user message implies they want the agent to take action. */
+	private _userMessageImpliesAction(text: string): boolean {
+		const actionKeywords = [
+			"create",
+			"build",
+			"write",
+			"edit",
+			"add",
+			"implement",
+			"fix",
+			"update",
+			"generate",
+			"make",
+			"modify",
+			"change",
+			"delete",
+			"remove",
+			"refactor",
+			"scaffold",
+			"produce",
+			"construct",
+			"develop",
+			"set up",
+		];
+		const lower = text.toLowerCase();
+		return actionKeywords.some((keyword) => lower.includes(keyword));
+	}
+
+	/**
+	 * Whether the user message contains enough coding/file context to justify a tool-use
+	 * nudge. This prevents us from badgering the model after casual questions like
+	 * "write me a poem".
+	 */
+	private _userMessageHasCodingContext(text: string): boolean {
+		const contextKeywords = [
+			"file",
+			"files",
+			"code",
+			"codes",
+			"project",
+			"projects",
+			"app",
+			"apps",
+			"page",
+			"pages",
+			"html",
+			"css",
+			"js",
+			"javascript",
+			"typescript",
+			"component",
+			"components",
+			"function",
+			"functions",
+			"class",
+			"classes",
+			"module",
+			"modules",
+			"script",
+			"scripts",
+			"directory",
+			"folder",
+			"repo",
+			"repository",
+			"website",
+			"web site",
+			"site",
+			"ui",
+			"interface",
+			"layout",
+			"navigation",
+			"route",
+			"routes",
+		];
+		const lower = text.toLowerCase();
+		return contextKeywords.some((keyword) => lower.includes(keyword));
+	}
+
+	/** Whether the assistant message contains language indicating it intends to act. */
+	private _assistantPromisedAction(text: string): boolean {
+		const phrases = [
+			"let me",
+			"i'll",
+			"i will",
+			"here's what i'll do",
+			"here is what i'll do",
+			"i am going to",
+			"i'm going to",
+			"i shall",
+			"i intend to",
+			"i plan to",
+		];
+		const lower = text.toLowerCase();
+		return phrases.some((phrase) => lower.includes(phrase));
+	}
+
+	/**
+	 * Detect the "plans but doesn't act" failure mode: the assistant emitted a normal
+	 * text response promising action, but included no tool calls. When this happens
+	 * after a user request that implies action in a coding/file context, we auto-continue
+	 * with a nudge so the harness doesn't idle.
+	 */
+	private _shouldAutoContinueAfterPlanning(message: AssistantMessage): boolean {
+		if (this._autoContinuedForCurrentPrompt) {
+			return false;
+		}
+		if (message.stopReason !== "stop") {
+			return false;
+		}
+		const toolCalls = message.content.filter((c) => c.type === "toolCall");
+		if (toolCalls.length > 0) {
+			return false;
+		}
+		const assistantText = this._getAssistantText(message);
+		if (!this._assistantPromisedAction(assistantText)) {
+			return false;
+		}
+		const userText = this._getLastUserMessageText();
+		if (!this._userMessageImpliesAction(userText)) {
+			return false;
+		}
+		if (!this._userMessageHasCodingContext(userText)) {
+			return false;
+		}
+		return true;
 	}
 
 	/** Find the last assistant message in agent state (including aborted ones) */
@@ -765,7 +1027,7 @@ export class AgentSession {
 		}
 
 		this._extensionRunner.invalidate(
-			"This extension ctx is stale after session replacement or reload. Do not use a captured pi or command ctx after ctx.newSession(), ctx.fork(), ctx.switchSession(), or ctx.reload(). For newSession, fork, and switchSession, move post-replacement work into withSession and use the ctx passed to withSession. For reload, do not use the old ctx after await ctx.reload().",
+			"This extension ctx is stale after session replacement or reload. Do not use a captured extension or command ctx after ctx.newSession(), ctx.fork(), ctx.switchSession(), or ctx.reload(). For newSession, fork, and switchSession, move post-replacement work into withSession and use the ctx passed to withSession. For reload, do not use the old ctx after await ctx.reload().",
 		);
 		this._disconnectFromAgent();
 		this._eventListeners = [];
@@ -1009,6 +1271,25 @@ export class AgentSession {
 			return true;
 		}
 
+		// If the assistant described a plan but emitted no tool calls, nudge it to
+		// actually execute the work instead of idling. This fixes models that say
+		// things like "Let me build that now" and then stop.
+		if (this._shouldAutoContinueAfterPlanning(msg)) {
+			this._autoContinuedForCurrentPrompt = true;
+			await this._queueFollowUp("Please proceed with the planned changes using the available tools.");
+			return true;
+		}
+
+		// If the model hit the output token limit, auto-continue to finish the response.
+		// This is common with local/small models that have constrained output windows.
+		if (this._shouldAutoContinueAfterLengthStop(msg)) {
+			this._autoContinuedForCurrentPrompt = true;
+			await this._queueFollowUp(
+				"You were cut off due to the output token limit. Please continue exactly where you left off. Do not repeat what you already wrote.",
+			);
+			return true;
+		}
+
 		// The agent loop drains both queues before emitting agent_end. Any messages
 		// here were queued by agent_end extension handlers and need a continuation.
 		return this.agent.hasQueuedMessages();
@@ -1024,6 +1305,9 @@ export class AgentSession {
 	 * @throws Error if no model selected or no API key available (when not streaming)
 	 */
 	async prompt(text: string, options?: PromptOptions): Promise<void> {
+		// Reset per-prompt auto-continue state so a fresh user request can be nudged once.
+		this._autoContinuedForCurrentPrompt = false;
+
 		const expandPromptTemplates = options?.expandPromptTemplates ?? true;
 		const preflightResult = options?.preflightResult;
 		let messages: AgentMessage[] | undefined;
@@ -1489,6 +1773,7 @@ export class AgentSession {
 		// Re-clamp thinking level for new model's capabilities
 		this.setThinkingLevel(thinkingLevel);
 
+		await this._maybeResolveContextWindow(model);
 		await this._emitModelSelect(model, previousModel, "set");
 	}
 
@@ -1529,13 +1814,15 @@ export class AgentSession {
 		// setThinkingLevel clamps to model capabilities.
 		this.setThinkingLevel(thinkingLevel);
 
+		await this._maybeResolveContextWindow(next.model);
 		await this._emitModelSelect(next.model, currentModel, "cycle");
 
 		return { model: next.model, thinkingLevel: this.thinkingLevel, isScoped: true };
 	}
 
 	private async _cycleAvailableModel(direction: "forward" | "backward"): Promise<ModelCycleResult | undefined> {
-		const availableModels = await this._modelRegistry.getAvailable();
+		await this._modelRegistry.refreshDynamicModels();
+		const availableModels = this._modelRegistry.getAvailable();
 		if (availableModels.length <= 1) return undefined;
 
 		const currentModel = this.model;
@@ -1554,6 +1841,7 @@ export class AgentSession {
 		// Re-clamp thinking level for new model's capabilities
 		this.setThinkingLevel(thinkingLevel);
 
+		await this._maybeResolveContextWindow(nextModel);
 		await this._emitModelSelect(nextModel, currentModel, "cycle");
 
 		return { model: nextModel, thinkingLevel: this.thinkingLevel, isScoped: false };
@@ -1828,6 +2116,37 @@ export class AgentSession {
 	}
 
 	/**
+	 * Check if the resumed session is large and auto-compact if needed.
+	 * Called on startup after session is loaded but before first prompt.
+	 * Prevents the "hang on first message" when resuming a large session
+	 * to a local model that has to re-read the entire context.
+	 *
+	 * @returns true if compaction ran, false otherwise
+	 */
+	async compactOnStartup(): Promise<boolean> {
+		const settings = this.settingsManager.getCompactionSettings();
+		if (!settings.enabled) return false;
+
+		const contextWindow = this.model?.contextWindow ?? 0;
+		if (contextWindow <= 0) return false;
+
+		// Build the session context (compaction-aware) and estimate tokens
+		const messages = this.sessionManager.buildSessionContext().messages;
+		const estimate = estimateContextTokens(messages);
+		const contextTokens = estimate.tokens;
+
+		// Only compact if we're over the threshold
+		if (!shouldCompact(contextTokens, contextWindow, settings)) {
+			return false;
+		}
+
+		// Emit event and run compaction
+		this._emit({ type: "compaction_start", reason: "threshold" });
+		const result = await this._runAutoCompaction("threshold", false);
+		return result;
+	}
+
+	/**
 	 * Check if compaction is needed and run it.
 	 * Called after agent_end and before prompt submission.
 	 *
@@ -2080,7 +2399,22 @@ export class AgentSession {
 
 			// Auto-compaction can complete while follow-up/steering/custom messages are waiting.
 			// Continue once so queued messages are delivered.
-			return this.agent.hasQueuedMessages();
+			if (this.agent.hasQueuedMessages()) {
+				return true;
+			}
+
+			// When enabled, automatically continue after threshold/successful-overflow compaction
+			// by queueing a follow-up user message.
+			if (!willRetry && settings.autoContinue) {
+				this.agent.followUp({
+					role: "user",
+					content: [{ type: "text", text: "continue" }],
+					timestamp: Date.now(),
+				});
+				return true;
+			}
+
+			return false;
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.message : "compaction failed";
 			if (started) {
@@ -2114,6 +2448,18 @@ export class AgentSession {
 		return this.settingsManager.getCompactionEnabled();
 	}
 
+	/**
+	 * Toggle auto-continue after auto-compaction setting.
+	 */
+	setCompactionAutoContinue(enabled: boolean): void {
+		this.settingsManager.setCompactionAutoContinue(enabled);
+	}
+
+	/** Whether to automatically continue after threshold compaction */
+	get compactionAutoContinue(): boolean {
+		return this.settingsManager.getCompactionAutoContinue();
+	}
+
 	async bindExtensions(bindings: ExtensionBindings): Promise<void> {
 		if (bindings.uiContext !== undefined) {
 			this._extensionUIContext = bindings.uiContext;
@@ -2129,6 +2475,9 @@ export class AgentSession {
 		}
 		if (bindings.shutdownHandler !== undefined) {
 			this._extensionShutdownHandler = bindings.shutdownHandler;
+		}
+		if (bindings.permissionPromptHandler !== undefined) {
+			this.setPermissionPromptHandler(bindings.permissionPromptHandler);
 		}
 		if (bindings.onError !== undefined) {
 			this._extensionErrorListener = bindings.onError;
@@ -2214,6 +2563,35 @@ export class AgentSession {
 		}
 
 		this.agent.state.model = refreshedModel;
+	}
+
+	/**
+	 * Discover the active model's real context window from its provider
+	 * (Ollama /api/show) and adopt it when it differs from the catalog value.
+	 * Best-effort and non-throwing: network/parse failures keep the existing
+	 * contextWindow. Safe to call on every model activation; the registry caches
+	 * lookups per model.
+	 */
+	private async _maybeResolveContextWindow(model: Model<any>): Promise<void> {
+		try {
+			const updated = await this._modelRegistry.resolveDynamicContextWindow(model);
+			if (updated && this.model === model) {
+				this.agent.state.model = updated;
+			}
+		} catch (error) {
+			console.error("Failed to resolve dynamic context window:", error);
+		}
+	}
+
+	/**
+	 * Resolve the context window for whatever model is currently active. Used
+	 * at startup, before the first prompt, so compaction thresholds and the
+	 * usage bar reflect the real model from the first turn.
+	 */
+	async resolveActiveModelContextWindow(): Promise<void> {
+		const model = this.model;
+		if (!model) return;
+		await this._maybeResolveContextWindow(model);
 	}
 
 	private _bindExtensionCore(runner: ExtensionRunner): void {
@@ -2335,13 +2713,30 @@ export class AgentSession {
 		);
 	}
 
-	private _refreshToolRegistry(options?: { activeToolNames?: string[]; includeAllExtensionTools?: boolean }): void {
+	private _refreshToolRegistry(options?: {
+		activeToolNames?: string[];
+		includeAllExtensionTools?: boolean;
+		autoEnableExtensionTools?: boolean;
+	}): void {
+		// "no tools at all" suppresses every tool, including built-ins and extensions.
+		if (this._noTools === "all") {
+			this._toolDefinitions = new Map();
+			this._toolRegistry = new Map();
+			this._toolPromptSnippets = new Map();
+			this._toolPromptGuidelines = new Map();
+			this.setActiveToolsByName([]);
+			return;
+		}
+
 		const previousRegistryNames = new Set(this._toolRegistry.keys());
 		const previousActiveToolNames = this.getActiveToolNames();
 		const allowedToolNames = this._allowedToolNames;
 		const excludedToolNames = this._excludedToolNames;
+		const defaultBuiltIns = new Set(["read", "bash", "edit", "write", "todo"]);
 		const isAllowedTool = (name: string): boolean =>
 			(!allowedToolNames || allowedToolNames.has(name)) && !excludedToolNames?.has(name);
+		const isAutoEnabledBuiltIn = (name: string): boolean =>
+			this._noTools === "builtin" ? false : defaultBuiltIns.has(name);
 
 		const registeredTools = this._extensionRunner.getAllRegisteredTools();
 		const allCustomTools = [
@@ -2418,8 +2813,16 @@ export class AgentSession {
 				nextActiveToolNames.push(tool.name);
 			}
 		} else if (!options?.activeToolNames) {
+			// When no explicit active tool names are provided, keep previously active tools.
+			// Newly discovered extension tools are auto-enabled by default (e.g. a tool
+			// registered during session_start), unless the caller explicitly disables it.
+			// Built-in defaults are only auto-enabled when noTools is not "builtin".
 			for (const toolName of this._toolRegistry.keys()) {
 				if (!previousRegistryNames.has(toolName)) {
+					if (options?.autoEnableExtensionTools !== false) {
+						nextActiveToolNames.push(toolName);
+					}
+				} else if (previousActiveToolNames.includes(toolName) || isAutoEnabledBuiltIn(toolName)) {
 					nextActiveToolNames.push(toolName);
 				}
 			}
@@ -2432,6 +2835,7 @@ export class AgentSession {
 		activeToolNames?: string[];
 		flagValues?: Map<string, boolean | string>;
 		includeAllExtensionTools?: boolean;
+		autoEnableExtensionTools?: boolean;
 	}): void {
 		const autoResizeImages = this.settingsManager.getImageAutoResize();
 		const shellCommandPrefix = this.settingsManager.getShellCommandPrefix();
@@ -2474,11 +2878,12 @@ export class AgentSession {
 
 		const defaultActiveToolNames = this._baseToolsOverride
 			? Object.keys(this._baseToolsOverride)
-			: ["read", "bash", "edit", "write"];
+			: ["read", "bash", "edit", "write", "todo", "memory"];
 		const baseActiveToolNames = options.activeToolNames ?? defaultActiveToolNames;
 		this._refreshToolRegistry({
 			activeToolNames: baseActiveToolNames,
 			includeAllExtensionTools: options.includeAllExtensionTools,
+			autoEnableExtensionTools: options.autoEnableExtensionTools,
 		});
 	}
 
@@ -2492,7 +2897,8 @@ export class AgentSession {
 		this._buildRuntime({
 			activeToolNames: this.getActiveToolNames(),
 			flagValues: previousFlagValues,
-			includeAllExtensionTools: true,
+			autoEnableExtensionTools: false,
+			includeAllExtensionTools: !this._noTools,
 		});
 
 		const hasBindings =

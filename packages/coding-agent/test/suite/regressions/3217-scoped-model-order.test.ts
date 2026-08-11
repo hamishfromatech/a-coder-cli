@@ -79,17 +79,17 @@ describe("issue #3217 scoped model ordering", () => {
 		const modelOne = harness.getModel("faux-1")!;
 		const modelTwo = harness.getModel("faux-2")!;
 		const modelThree = harness.getModel("faux-3")!;
-		const selector = new ModelSelectorComponent(
-			createFakeTui(),
-			modelOne,
-			harness.settingsManager,
-			harness.session.modelRegistry,
-			[{ model: modelTwo }, { model: modelOne }, { model: modelThree }],
-			() => {},
-			() => {},
+		const selector = new ScopedModelsSelectorComponent(
+			{
+				allModels: [modelOne, modelTwo, modelThree],
+				enabledModelIds: [`${modelTwo.provider}/${modelTwo.id}`, `${modelOne.provider}/${modelOne.id}`, `${modelThree.provider}/${modelThree.id}`],
+			},
+			{
+				onChange: () => {},
+				onPersist: () => {},
+				onCancel: () => {},
+			},
 		);
-
-		await waitForAsyncRender();
 
 		const renderedLines = stripAnsi(selector.render(120).join("\n"))
 			.split("\n")

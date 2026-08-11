@@ -185,6 +185,8 @@ export class AgentSessionRuntime {
 		if (this.rebindSession) {
 			await this.rebindSession(this.session);
 		}
+		// Listeners are now re-attached; tell the UI the session context changed.
+		this.session.emitSessionStartEvent();
 		if (withSession) {
 			await withSession(this.session.createReplacedSessionContext());
 		}

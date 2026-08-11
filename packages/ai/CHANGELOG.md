@@ -14,6 +14,7 @@
 
 - Added Claude Sonnet 5 to the GitHub Copilot model catalog ([#6200](https://github.com/earendil-works/pi/issues/6200)).
 - Added zstd request-body compression for the OpenAI Codex Responses SSE transport. Requests are sent with `Content-Encoding: zstd` when Node/Bun zstd support is available; the WebSocket transport is unchanged.
+- Added `ollama-context` helpers (`ollamaNativeOrigin`, `looksLikeOllama`, `parseOllamaContextLength`, `fetchOllamaContextWindow`) that discover a model's effective context window from the native Ollama `/api/show` endpoint.
 
 ## [0.80.3] - 2026-06-30
 

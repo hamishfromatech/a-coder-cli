@@ -11,12 +11,29 @@ import { resolveToCwd } from "./path-utils.ts";
 import { normalizeDisplayText, renderToolPath, replaceTabs, str } from "./render-utils.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 
-const writeSchema = Type.Object({
-	path: Type.String({ description: "Path to the file to write (relative or absolute)" }),
-	content: Type.String({ description: "Content to write to the file" }),
-});
+const writeSchema = Type.Object(
+	{
+		path: Type.String({ description: "Path to the file to write (relative or absolute)" }),
+		content: Type.String({ description: "Content to write to the file" }),
+	},
+	{ additionalProperties: false },
+);
 
 export type WriteToolInput = Static<typeof writeSchema>;
+
+function prepareWriteArguments(input: unknown): WriteToolInput {
+	if (!input || typeof input !== "object") {
+		return input as WriteToolInput;
+	}
+
+	const args = input as Record<string, unknown>;
+	if (typeof args.path === "string" || typeof args.file_path !== "string") {
+		return args as WriteToolInput;
+	}
+
+	const { file_path, ...rest } = args;
+	return { ...rest, path: file_path } as WriteToolInput;
+}
 
 /**
  * Pluggable operations for the write tool.
@@ -191,13 +208,19 @@ export function createWriteToolDefinition(
 		promptSnippet: "Create or overwrite files",
 		promptGuidelines: ["Use write only for new files or complete rewrites."],
 		parameters: writeSchema,
+		prepareArguments: prepareWriteArguments,
 		async execute(
 			_toolCallId,
-			{ path, content }: { path: string; content: string },
+			params: { path: string; content: string },
 			signal?: AbortSignal,
 			_onUpdate?,
 			_ctx?,
 		) {
+			// Defensive fallback for direct callers that bypass prepareArguments.
+			const path = params.path ?? (params as unknown as { file_path?: string }).file_path;
+			if (typeof path !== "string" || typeof params.content !== "string") {
+				throw new Error("Invalid write tool arguments");
+			}
 			const absolutePath = resolveToCwd(path, cwd);
 			const dir = dirname(absolutePath);
 			return withFileMutationQueue(absolutePath, async () => {
@@ -215,11 +238,16 @@ export function createWriteToolDefinition(
 				throwIfAborted();
 
 				// Write the file contents.
-				await ops.writeFile(absolutePath, content);
+				await ops.writeFile(absolutePath, params.content);
 				throwIfAborted();
 
 				return {
-					content: [{ type: "text", text: `Successfully wrote ${content.length} bytes to ${path}` }],
+					content: [
+						{
+							type: "text",
+							text: `Successfully wrote ${Buffer.byteLength(params.content, "utf-8")} bytes to ${path}`,
+						},
+					],
 					details: undefined,
 				};
 			});

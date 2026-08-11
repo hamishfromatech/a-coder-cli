@@ -214,6 +214,7 @@ describe("resolveModelScopeWithDiagnostics", () => {
 		try {
 			const registry = {
 				getAvailable: () => allModels,
+				refreshDynamicModels: vi.fn(async () => undefined),
 			} as unknown as Parameters<typeof resolveModelScopeWithDiagnostics>[1];
 
 			const result = await resolveModelScopeWithDiagnostics(["sonnet:high", "gpt-4o:invalid", "missing"], registry);
@@ -244,6 +245,7 @@ describe("resolveModelScopeWithDiagnostics", () => {
 		try {
 			const registry = {
 				getAvailable: () => allModels,
+				refreshDynamicModels: vi.fn(async () => undefined),
 			} as unknown as Parameters<typeof resolveModelScope>[1];
 
 			const scopedModels = await resolveModelScope(["missing"], registry);
@@ -636,7 +638,8 @@ describe("default model selection", () => {
 		};
 
 		const registry = {
-			getAvailable: async () => [aiGatewayModel],
+			getAvailable: () => [aiGatewayModel],
+			refreshDynamicModels: vi.fn(async () => undefined),
 		} as unknown as Parameters<typeof findInitialModel>[0]["modelRegistry"];
 
 		const result = await findInitialModel({
@@ -673,7 +676,8 @@ describe("default model selection", () => {
 					? savedDeepSeekModel
 					: undefined,
 			hasConfiguredAuth: (model: Model<"anthropic-messages">) => model.provider === "spark-two",
-			getAvailable: async () => [localDeepSeekModel],
+			getAvailable: () => [localDeepSeekModel],
+			refreshDynamicModels: vi.fn(async () => undefined),
 		} as unknown as Parameters<typeof findInitialModel>[0]["modelRegistry"];
 
 		const result = await findInitialModel({

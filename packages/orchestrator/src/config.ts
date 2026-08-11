@@ -3,8 +3,8 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const CONFIG_DIR_NAME = ".pi";
-const ENV_ORCHESTRATOR_DIR = "PI_ORCHESTRATOR_DIR";
+const CONFIG_DIR_NAME = ".a-coder";
+const ENV_ORCHESTRATOR_DIR = "A_CODER_CLI_ORCHESTRATOR_DIR";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -48,8 +48,8 @@ export function getOrchestratorDir(): string {
 		return envDir;
 	}
 
-	const piDir = process.env.PI_CONFIG_DIR || join(homedir(), CONFIG_DIR_NAME);
-	return join(piDir, "orchestrator");
+	const configDir = process.env.A_CODER_CLI_CONFIG_DIR || join(homedir(), CONFIG_DIR_NAME);
+	return join(configDir, "orchestrator");
 }
 
 export function getAuthPath(): string {

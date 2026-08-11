@@ -257,6 +257,16 @@ describe("Coding Agent Tools", () => {
 
 			expect(getTextOutput(result)).toContain("Successfully wrote");
 		});
+
+		it("should accept the file_path alias", async () => {
+			const testFile = join(testDir, "write-file-path-alias.txt");
+			const content = "Alias content";
+
+			const result = await writeTool.execute("test-call-file-path-alias", { file_path: testFile, content } as any);
+
+			expect(getTextOutput(result)).toContain("Successfully wrote");
+			expect(readFileSync(testFile, "utf-8")).toBe(content);
+		});
 	});
 
 	describe("edit tool", () => {
@@ -277,10 +287,24 @@ describe("Coding Agent Tools", () => {
 			expect(result.details.diff).toContain("testing");
 			expect(result.details.patch).toContain("--- ");
 			expect(result.details.patch).toContain("+++ ");
+		});
+
+		it("should accept the file_path alias", async () => {
+			const testFile = join(testDir, "edit-file-path-alias.txt");
+			const originalContent = "Hello, world!";
+			writeFileSync(testFile, originalContent);
+
+			const result = await editTool.execute("test-call-file-path-alias", {
+				file_path: testFile,
+				edits: [{ oldText: "world", newText: "universe" }],
+			} as any);
+
+			expect(getTextOutput(result)).toContain("Successfully replaced");
+			expect(readFileSync(testFile, "utf-8")).toBe("Hello, universe!");
 			expect(result.details.patch).toContain("@@");
 			expect(result.details.patch).toContain("-Hello, world!");
-			expect(result.details.patch).toContain("+Hello, testing!");
-			expect(applyPatch(originalContent, result.details.patch)).toBe("Hello, testing!");
+			expect(result.details.patch).toContain("+Hello, universe!");
+			expect(applyPatch(originalContent, result.details.patch)).toBe("Hello, universe!");
 		});
 
 		it("should fail if text not found", async () => {

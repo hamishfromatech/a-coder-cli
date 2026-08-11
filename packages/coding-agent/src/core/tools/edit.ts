@@ -98,6 +98,12 @@ function prepareEditArguments(input: unknown): EditToolInput {
 
 	const args = input as Record<string, unknown>;
 
+	// Some tool callers and older transcripts use the `file_path` alias for `path`.
+	if (typeof args.path !== "string" && typeof args.file_path === "string") {
+		args.path = args.file_path;
+		delete args.file_path;
+	}
+
 	// Some models (Opus 4.6, GLM-5.1) send edits as a JSON string instead of an array
 	if (typeof args.edits === "string") {
 		try {
@@ -305,7 +311,14 @@ export function createEditToolDefinition(
 		parameters: editSchema,
 		renderShell: "self",
 		prepareArguments: prepareEditArguments,
-		async execute(_toolCallId, input: EditToolInput, signal?: AbortSignal, _onUpdate?, _ctx?) {
+		async execute(_toolCallId, rawInput: EditToolInput, signal?: AbortSignal, _onUpdate?, _ctx?) {
+			// Defensive fallback for direct callers that bypass prepareArguments.
+			const filePath =
+				rawInput.path ?? (rawInput as unknown as { file_path?: string }).file_path;
+			if (typeof filePath !== "string") {
+				throw new Error("Missing path argument for edit tool");
+			}
+			const input: EditToolInput = { ...rawInput, path: filePath };
 			const { path, edits } = validateEditInput(input);
 			const absolutePath = resolveToCwd(path, cwd);
 

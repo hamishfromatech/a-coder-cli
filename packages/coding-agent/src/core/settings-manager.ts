@@ -6,11 +6,13 @@ import lockfile from "proper-lockfile";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.ts";
 import { normalizePath, resolvePath } from "../utils/paths.ts";
 import { DEFAULT_HTTP_IDLE_TIMEOUT_MS, parseHttpIdleTimeoutMs } from "./http-dispatcher.ts";
+import type { McpServerConfig } from "./mcp/types.ts";
 
 export interface CompactionSettings {
 	enabled?: boolean; // default: true
 	reserveTokens?: number; // default: 16384
 	keepRecentTokens?: number; // default: 20000
+	autoContinue?: boolean; // default: false
 }
 
 export interface BranchSummarySettings {
@@ -58,7 +60,23 @@ export interface WarningSettings {
 	anthropicExtraUsage?: boolean; // default: true
 }
 
+export type McpServerSettings = McpServerConfig;
+
 export type DefaultProjectTrust = "ask" | "always" | "never";
+
+export type PermissionMode = "ask" | "allow" | "read-only" | "auto";
+
+/** Rule matching a tool name. Supports exact names, "namespace:*" globs, and "$defaults". */
+export type PermissionRule = string;
+
+export interface PermissionPolicyConfig {
+	/** Tools automatically approved unless matched by a deny rule. */
+	allow?: PermissionRule[];
+	/** Tools that prompt in interactive mode; denied in non-interactive mode. */
+	softDeny?: PermissionRule[];
+	/** Tools always denied. Takes precedence over softDeny and allow. */
+	hardDeny?: PermissionRule[];
+}
 
 export type TransportSetting = Transport;
 
@@ -117,8 +135,11 @@ export interface Settings {
 	autocompleteMaxVisible?: number; // Max visible items in autocomplete dropdown (default: 5)
 	showHardwareCursor?: boolean; // Show terminal cursor while still positioning it for IME
 	markdown?: MarkdownSettings;
+	mcpServers?: McpServerSettings[];
 	warnings?: WarningSettings;
 	sessionDir?: string; // Custom session storage directory (same format as --session-dir CLI flag)
+	permissionMode?: PermissionMode; // default: "ask"
+	permissionPolicies?: PermissionPolicyConfig; // policy rules for "auto" mode
 	httpProxy?: string; // Proxy URL applied as HTTP_PROXY and HTTPS_PROXY for Pi-managed HTTP clients
 	httpIdleTimeoutMs?: number; // HTTP header/body idle timeout in milliseconds; 0 disables it
 	websocketConnectTimeoutMs?: number; // WebSocket connect/open handshake timeout in milliseconds; 0 disables it
@@ -430,6 +451,14 @@ export class SettingsManager {
 				};
 			}
 			delete retrySettings.maxDelayMs;
+		}
+
+		// Seed default permission policies when auto mode is used without explicit rules.
+		if (
+			settings.permissionMode === "auto" &&
+			(settings.permissionPolicies === undefined || settings.permissionPolicies === null)
+		) {
+			settings.permissionPolicies = { softDeny: ["$defaults"] };
 		}
 
 		return settings as Settings;
@@ -774,11 +803,30 @@ export class SettingsManager {
 		return this.settings.compaction?.keepRecentTokens ?? 20000;
 	}
 
-	getCompactionSettings(): { enabled: boolean; reserveTokens: number; keepRecentTokens: number } {
+	getCompactionAutoContinue(): boolean {
+		return this.settings.compaction?.autoContinue ?? false;
+	}
+
+	setCompactionAutoContinue(enabled: boolean): void {
+		if (!this.globalSettings.compaction) {
+			this.globalSettings.compaction = {};
+		}
+		this.globalSettings.compaction.autoContinue = enabled;
+		this.markModified("compaction", "autoContinue");
+		this.save();
+	}
+
+	getCompactionSettings(): {
+		enabled: boolean;
+		reserveTokens: number;
+		keepRecentTokens: number;
+		autoContinue: boolean;
+	} {
 		return {
 			enabled: this.getCompactionEnabled(),
 			reserveTokens: this.getCompactionReserveTokens(),
 			keepRecentTokens: this.getCompactionKeepRecentTokens(),
+			autoContinue: this.getCompactionAutoContinue(),
 		};
 	}
 
@@ -889,6 +937,39 @@ export class SettingsManager {
 	setDefaultProjectTrust(defaultProjectTrust: DefaultProjectTrust): void {
 		this.globalSettings.defaultProjectTrust = defaultProjectTrust;
 		this.markModified("defaultProjectTrust");
+		this.save();
+	}
+
+	getPermissionMode(): PermissionMode {
+		const value = this.settings.permissionMode;
+		if (value === "allow" || value === "read-only" || value === "auto") {
+			return value;
+		}
+		return "ask";
+	}
+
+	setPermissionMode(mode: PermissionMode): void {
+		this.globalSettings.permissionMode = mode;
+		this.markModified("permissionMode");
+		this.save();
+	}
+
+	getPermissionPolicies(): PermissionPolicyConfig {
+		const policies = this.settings.permissionPolicies;
+		return {
+			allow: policies?.allow ? [...policies.allow] : undefined,
+			softDeny: policies?.softDeny ? [...policies.softDeny] : undefined,
+			hardDeny: policies?.hardDeny ? [...policies.hardDeny] : undefined,
+		};
+	}
+
+	setPermissionPolicies(policies: PermissionPolicyConfig): void {
+		this.globalSettings.permissionPolicies = {
+			allow: policies.allow ? [...policies.allow] : undefined,
+			softDeny: policies.softDeny ? [...policies.softDeny] : undefined,
+			hardDeny: policies.hardDeny ? [...policies.hardDeny] : undefined,
+		};
+		this.markModified("permissionPolicies");
 		this.save();
 	}
 
@@ -1031,6 +1112,16 @@ export class SettingsManager {
 		});
 	}
 
+	getMcpServers(): McpServerConfig[] {
+		return [...(this.settings.mcpServers ?? [])];
+	}
+
+	setMcpServers(servers: McpServerConfig[]): void {
+		this.globalSettings.mcpServers = servers;
+		this.markModified("mcpServers");
+		this.save();
+	}
+
 	getEnableSkillCommands(): boolean {
 		return this.settings.enableSkillCommands ?? true;
 	}
@@ -1080,7 +1171,7 @@ export class SettingsManager {
 		if (this.settings.terminal?.clearOnShrink !== undefined) {
 			return this.settings.terminal.clearOnShrink;
 		}
-		return process.env.PI_CLEAR_ON_SHRINK === "1";
+		return process.env.A_CODER_CLI_CLEAR_ON_SHRINK === "1";
 	}
 
 	setClearOnShrink(enabled: boolean): void {
@@ -1164,7 +1255,7 @@ export class SettingsManager {
 	}
 
 	getShowHardwareCursor(): boolean {
-		return this.settings.showHardwareCursor ?? process.env.PI_HARDWARE_CURSOR === "1";
+		return this.settings.showHardwareCursor ?? process.env.A_CODER_CLI_HARDWARE_CURSOR === "1";
 	}
 
 	setShowHardwareCursor(enabled: boolean): void {

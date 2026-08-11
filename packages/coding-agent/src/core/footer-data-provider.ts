@@ -115,6 +115,7 @@ export class FooterDataProvider {
 	private gitWatcherRetryTimer: ReturnType<typeof setTimeout> | null = null;
 	private refreshInFlight = false;
 	private refreshPending = false;
+	private lastRefreshRequestAt = 0;
 	private disposed = false;
 
 	constructor(cwd: string) {
@@ -199,6 +200,7 @@ export class FooterDataProvider {
 	}
 
 	private scheduleRefresh(): void {
+		this.lastRefreshRequestAt = Date.now();
 		if (this.disposed || this.refreshTimer) return;
 		if (this.refreshInFlight) {
 			this.refreshPending = true;
@@ -217,6 +219,7 @@ export class FooterDataProvider {
 			return;
 		}
 
+		const refreshStartedAt = Date.now();
 		this.refreshInFlight = true;
 		try {
 			const nextBranch = await this.resolveGitBranchAsync();
@@ -231,7 +234,12 @@ export class FooterDataProvider {
 			this.refreshInFlight = false;
 			if (this.refreshPending && !this.disposed) {
 				this.refreshPending = false;
-				this.scheduleRefresh();
+				// Only schedule a follow-up refresh if new events arrived after this
+				// refresh started. Events that triggered the pending flag before the
+				// refresh began were already covered by this refresh.
+				if (this.lastRefreshRequestAt > refreshStartedAt) {
+					this.scheduleRefresh();
+				}
 			}
 		}
 	}

@@ -1,5 +1,5 @@
 import { realpath } from "node:fs/promises";
-import { resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 const fileMutationQueues = new Map<string, Promise<void>>();
 let registrationQueue = Promise.resolve();
@@ -18,10 +18,20 @@ async function getMutationQueueKey(filePath: string): Promise<string> {
 	try {
 		return await realpath(resolvedPath);
 	} catch (error) {
-		if (isMissingPathError(error)) {
+		if (!isMissingPathError(error)) {
+			throw error;
+		}
+		// The file does not exist yet (e.g. a write creating it). Resolve the
+		// parent directory instead — which usually exists, even through symlinks —
+		// and rejoin the basename. Without this, a write creating a new file inside
+		// a symlinked directory and a later edit of that same path would resolve to
+		// different keys (resolved path vs. realpath once the file exists) and fail
+		// to serialize.
+		try {
+			return join(await realpath(dirname(resolvedPath)), basename(resolvedPath));
+		} catch {
 			return resolvedPath;
 		}
-		throw error;
 	}
 }
 

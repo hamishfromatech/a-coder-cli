@@ -11,12 +11,29 @@ import { getTextOutput, renderToolPath, str } from "./render-utils.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 import { DEFAULT_MAX_BYTES, formatSize, type TruncationResult, truncateHead } from "./truncate.ts";
 
-const lsSchema = Type.Object({
-	path: Type.Optional(Type.String({ description: "Directory to list (default: current directory)" })),
-	limit: Type.Optional(Type.Number({ description: "Maximum number of entries to return (default: 500)" })),
-});
+const lsSchema = Type.Object(
+	{
+		path: Type.Optional(Type.String({ description: "Directory to list (default: current directory)" })),
+		limit: Type.Optional(Type.Number({ description: "Maximum number of entries to return (default: 500)" })),
+	},
+	{ additionalProperties: false },
+);
 
 export type LsToolInput = Static<typeof lsSchema>;
+
+function prepareLsArguments(input: unknown): LsToolInput {
+	if (!input || typeof input !== "object") {
+		return input as LsToolInput;
+	}
+
+	const args = input as Record<string, unknown>;
+	if (typeof args.path === "string" || typeof args.file_path !== "string") {
+		return args as LsToolInput;
+	}
+
+	const { file_path, ...rest } = args;
+	return { ...rest, path: file_path } as LsToolInput;
+}
 
 const DEFAULT_LIMIT = 500;
 
@@ -103,6 +120,7 @@ export function createLsToolDefinition(
 		description: `List directory contents. Returns entries sorted alphabetically, with '/' suffix for directories. Includes dotfiles. Output is truncated to ${DEFAULT_LIMIT} entries or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first).`,
 		promptSnippet: "List directory contents",
 		parameters: lsSchema,
+		prepareArguments: prepareLsArguments,
 		async execute(
 			_toolCallId,
 			{ path, limit }: { path?: string; limit?: number },
@@ -146,6 +164,11 @@ export function createLsToolDefinition(
 							return;
 						}
 
+						if (signal?.aborted) {
+							signal?.removeEventListener("abort", onAbort);
+							return;
+						}
+
 						// Sort alphabetically, case-insensitive.
 						entries.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
 
@@ -153,6 +176,10 @@ export function createLsToolDefinition(
 						const results: string[] = [];
 						let entryLimitReached = false;
 						for (const entry of entries) {
+							if (signal?.aborted) {
+								signal?.removeEventListener("abort", onAbort);
+								return;
+							}
 							if (results.length >= effectiveLimit) {
 								entryLimitReached = true;
 								break;
@@ -164,8 +191,9 @@ export function createLsToolDefinition(
 								const entryStat = await ops.stat(fullPath);
 								if (entryStat.isDirectory()) suffix = "/";
 							} catch {
-								// Skip entries we cannot stat.
-								continue;
+								// Broken symlink or otherwise inaccessible target. Still
+								// list the entry (without a directory suffix) so dangling
+								// symlinks remain visible instead of silently vanishing.
 							}
 							results.push(entry + suffix);
 						}

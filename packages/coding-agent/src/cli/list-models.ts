@@ -32,6 +32,7 @@ export async function listModels(modelRegistry: ModelRegistry, searchPattern?: s
 		console.error(chalk.yellow(`Warning: errors loading models.json:\n${loadError}`));
 	}
 
+	await modelRegistry.refreshDynamicModels();
 	const models = modelRegistry.getAvailable();
 
 	if (models.length === 0) {

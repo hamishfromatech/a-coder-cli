@@ -4,7 +4,7 @@ import { envApiKeyAuth } from "../auth/helpers.ts";
 import { createProvider, type Provider } from "../models.ts";
 import { OPENCODE_GO_MODELS } from "./opencode-go.models.ts";
 
-export function opencodeGoProvider(): Provider<"anthropic-messages" | "openai-completions"> {
+export function opencodeGoProvider(): Provider<"anthropic-messages" | "openai-completions" | "openai-responses"> {
 	return createProvider({
 		id: "opencode-go",
 		name: "OpenCode Zen Go",

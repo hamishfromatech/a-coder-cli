@@ -272,5 +272,14 @@ export function truncateLine(
 	if (line.length <= maxChars) {
 		return { text: line, wasTruncated: false };
 	}
-	return { text: `${line.slice(0, maxChars)}... [truncated]`, wasTruncated: true };
+	// Back up if the cut point would split a UTF-16 surrogate pair, so grep
+	// output never contains a lone surrogate that can crash width-based renderers.
+	let cut = maxChars;
+	if (cut > 0) {
+		const code = line.charCodeAt(cut - 1);
+		if (code >= 0xd800 && code <= 0xdbff) {
+			cut -= 1;
+		}
+	}
+	return { text: `${line.slice(0, cut)}... [truncated]`, wasTruncated: true };
 }

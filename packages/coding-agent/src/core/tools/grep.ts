@@ -21,21 +21,40 @@ import {
 	truncateLine,
 } from "./truncate.ts";
 
-const grepSchema = Type.Object({
-	pattern: Type.String({ description: "Search pattern (regex or literal string)" }),
-	path: Type.Optional(Type.String({ description: "Directory or file to search (default: current directory)" })),
-	glob: Type.Optional(Type.String({ description: "Filter files by glob pattern, e.g. '*.ts' or '**/*.spec.ts'" })),
-	ignoreCase: Type.Optional(Type.Boolean({ description: "Case-insensitive search (default: false)" })),
-	literal: Type.Optional(
-		Type.Boolean({ description: "Treat pattern as literal string instead of regex (default: false)" }),
-	),
-	context: Type.Optional(
-		Type.Number({ description: "Number of lines to show before and after each match (default: 0)" }),
-	),
-	limit: Type.Optional(Type.Number({ description: "Maximum number of matches to return (default: 100)" })),
-});
+const grepSchema = Type.Object(
+	{
+		pattern: Type.String({ description: "Search pattern (regex or literal string)" }),
+		path: Type.Optional(Type.String({ description: "Directory or file to search (default: current directory)" })),
+		glob: Type.Optional(Type.String({ description: "Filter files by glob pattern, e.g. '*.ts' or '**/*.spec.ts'" })),
+		ignoreCase: Type.Optional(Type.Boolean({ description: "Case-insensitive search (default: false)" })),
+		literal: Type.Optional(
+			Type.Boolean({ description: "Treat pattern as literal string instead of regex (default: false)" }),
+		),
+		context: Type.Optional(
+			Type.Number({ description: "Number of lines to show before and after each match (default: 0)" }),
+		),
+		limit: Type.Optional(
+			Type.Number({ minimum: 1, description: "Maximum number of matches to return (default: 100)" }),
+		),
+	},
+	{ additionalProperties: false },
+);
 
 export type GrepToolInput = Static<typeof grepSchema>;
+
+function prepareGrepArguments(input: unknown): GrepToolInput {
+	if (!input || typeof input !== "object") {
+		return input as GrepToolInput;
+	}
+
+	const args = input as Record<string, unknown>;
+	if (typeof args.path === "string" || typeof args.file_path !== "string") {
+		return args as GrepToolInput;
+	}
+
+	const { file_path, ...rest } = args;
+	return { ...rest, path: file_path } as GrepToolInput;
+}
 const DEFAULT_LIMIT = 100;
 
 export interface GrepToolDetails {
@@ -131,6 +150,7 @@ export function createGrepToolDefinition(
 		description: `Search file contents for a pattern. Returns matching lines with file paths and line numbers. Respects .gitignore. Output is truncated to ${DEFAULT_LIMIT} matches or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Long lines are truncated to ${GREP_MAX_LINE_LENGTH} chars.`,
 		promptSnippet: "Search file contents for patterns (respects .gitignore)",
 		parameters: grepSchema,
+		prepareArguments: prepareGrepArguments,
 		async execute(
 			_toolCallId,
 			{

@@ -9,9 +9,9 @@ import { CONFIG_DIR_NAME, getAgentDir, getBinDir } from "./config.ts";
 import { migrateKeybindingsConfig } from "./core/keybindings.ts";
 
 const MIGRATION_GUIDE_URL =
-	"https://github.com/earendil-works/pi-mono/blob/main/packages/coding-agent/CHANGELOG.md#extensions-migration";
+	"https://github.com/hamishfromatech/pi-mono/blob/main/packages/coding-agent/CHANGELOG.md#extensions-migration";
 const EXTENSIONS_DOC_URL =
-	"https://github.com/earendil-works/pi-mono/blob/main/packages/coding-agent/docs/extensions.md";
+	"https://github.com/hamishfromatech/pi-mono/blob/main/packages/coding-agent/docs/extensions.md";
 
 /**
  * Migrate legacy oauth.json and settings.json apiKeys to auth.json.
@@ -73,13 +73,13 @@ export function migrateAuthToAuthJson(): string[] {
 }
 
 /**
- * Migrate sessions from ~/.pi/agent/*.jsonl to proper session directories.
+ * Migrate sessions from ~/.a-coder-cli/agent/*.jsonl to proper session directories.
  *
- * Bug in v0.30.0: Sessions were saved to ~/.pi/agent/ instead of
- * ~/.pi/agent/sessions/<encoded-cwd>/. This migration moves them
+ * Bug in v0.30.0: Sessions were saved to ~/.a-coder-cli/agent/ instead of
+ * ~/.a-coder-cli/agent/sessions/<encoded-cwd>/. This migration moves them
  * to the correct location based on the cwd in their session header.
  *
- * See: https://github.com/earendil-works/pi-mono/issues/320
+ * See: https://github.com/hamishfromatech/pi-mono/issues/320
  */
 export function migrateSessionsFromAgentRoot(): void {
 	const agentDir = getAgentDir();
@@ -298,6 +298,73 @@ export async function showDeprecationWarnings(warnings: string[]): Promise<void>
 }
 
 /**
+ * Migrate a single legacy config directory (global or project-local)
+ * from `.a-coder` to `.a-coder-cli`. Returns true if any entry was moved.
+ *
+ * Used both for the global `~/.a-coder-cli/agent` directory and any project-local
+ * `.a-coder-cli/` directory under `cwd`.
+ */
+function migrateOneConfigDir(oldDir: string, newDir: string, label: string): boolean {
+	if (!existsSync(oldDir)) return false;
+	if (existsSync(join(newDir, "settings.json"))) return false;
+
+	try {
+		mkdirSync(newDir, { recursive: true });
+	} catch {
+		return false;
+	}
+
+	let movedAny = false;
+	try {
+		for (const entry of readdirSync(oldDir)) {
+			const from = join(oldDir, entry);
+			const to = join(newDir, entry);
+			if (existsSync(to)) continue;
+			try {
+				renameSync(from, to);
+				movedAny = true;
+			} catch {
+				// Skip entries that can't be moved (permissions, locks, etc.).
+			}
+		}
+	} catch {
+		// Ignore readdir errors.
+	}
+
+	if (movedAny) {
+		console.log(chalk.green(`Migrated ${label} ${oldDir} → ${newDir}`));
+	}
+	return movedAny;
+}
+
+/**
+ * Migrate the legacy config directory `~/.a-coder` to `~/.a-coder-cli`.
+ *
+ * The config dir was renamed from `.a-coder` to `.a-coder-cli` to avoid
+ * collisions with other tools. This migration moves the entire `agent/`
+ * subdirectory contents (settings.json, auth.json, models.json, sessions/,
+ * etc.) from the old location to the new one if the new location is empty
+ * or doesn't exist yet. Also migrates project-local `.a-coder-cli/` under `cwd`
+ * to `.a-coder-cli/` if one exists.
+ *
+ * Skips silently if the old dir doesn't exist or the new dir already has
+ * a settings.json (already migrated or user started fresh).
+ */
+export function migrateConfigDir(cwd: string): void {
+	// Only migrate when running under the official config dir name.
+	if (CONFIG_DIR_NAME !== ".a-coder-cli") return;
+
+	const home = process.env.HOME || process.env.USERPROFILE;
+	if (home) {
+		migrateOneConfigDir(join(home, ".a-coder", "agent"), getAgentDir(), "global");
+	}
+
+	if (cwd && cwd !== ".") {
+		migrateOneConfigDir(join(cwd, ".a-coder"), join(cwd, ".a-coder-cli"), "project-local");
+	}
+}
+
+/**
  * Run all migrations. Called once on startup.
  *
  * @returns Object with migration results and deprecation warnings
@@ -306,6 +373,7 @@ export function runMigrations(cwd: string): {
 	migratedAuthProviders: string[];
 	deprecationWarnings: string[];
 } {
+	migrateConfigDir(cwd);
 	const migratedAuthProviders = migrateAuthToAuthJson();
 	migrateSessionsFromAgentRoot();
 	migrateToolsToBin();

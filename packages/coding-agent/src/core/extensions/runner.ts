@@ -528,7 +528,7 @@ export class ExtensionRunner {
 	}
 
 	invalidate(
-		message = "This extension ctx is stale after session replacement or reload. Do not use a captured pi or command ctx after ctx.newSession(), ctx.fork(), ctx.switchSession(), or ctx.reload(). For newSession, fork, and switchSession, move post-replacement work into withSession and use the ctx passed to withSession. For reload, do not use the old ctx after await ctx.reload().",
+		message = "This extension ctx is stale after session replacement or reload. Do not use a captured extension or command ctx after ctx.newSession(), ctx.fork(), ctx.switchSession(), or ctx.reload(). For newSession, fork, and switchSession, move post-replacement work into withSession and use the ctx passed to withSession. For reload, do not use the old ctx after await ctx.reload().",
 	): void {
 		if (!this.staleMessage) {
 			this.staleMessage = message;
@@ -944,7 +944,27 @@ export class ExtensionRunner {
 	async emitContext(messages: AgentMessage[]): Promise<AgentMessage[]> {
 		const ctx = this.createContext();
 		const signal = ctx.signal;
-		let currentMessages = structuredClone(messages);
+
+		// Only deep-clone when at least one extension actually handles
+		// `context`, and guard the clone: a non-cloneable value in any message
+		// (e.g. a class instance or Map in a tool result's details) would otherwise
+		// throw straight out of transformContext and crash the turn, bricking the
+		// session until the offending message is removed. The engine contract
+		// requires transformContext to never throw.
+		const hasContextHandlers = this.extensions.some((ext) => {
+			const handlers = ext.handlers.get("context");
+			return !!handlers && handlers.length > 0;
+		});
+		let currentMessages = messages;
+		if (hasContextHandlers) {
+			try {
+				currentMessages = structuredClone(messages);
+			} catch {
+				// Fall back to the original messages; handlers must treat them
+				// as read-only and return replacements rather than mutating.
+				currentMessages = messages;
+			}
+		}
 
 		for (const ext of this.extensions) {
 			const handlers = ext.handlers.get("context");
