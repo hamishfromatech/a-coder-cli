@@ -127,17 +127,27 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
       - name: Set macOS signing env
-        # Only set APPLE_SIGNING_IDENTITY when the secret is configured. If the
-        # secret is absent the env var would be "" and Tauri tries to codesign
-        # with an empty identity ("no identity found" -> bundle fails). Skipping
-        # it builds an unsigned .app, which is fine for testing / when no Apple
-        # cert is configured.
-        if: matrix.platform == 'macos-latest' && secrets.APPLE_SIGNING_IDENTITY != ''
+        # Only export APPLE_SIGNING_IDENTITY when the secret is configured. If it's
+        # absent, Tauri would codesign with an empty identity ("no identity found"
+        # -> bundle fails). With no identity exported, Tauri skips codesigning and
+        # builds an unsigned .app (fine for testing / no Apple cert).
+        # NOTE: the `secrets` context can't be used in a step `if:`, so the
+        # non-empty check is done in the shell via env vars.
+        if: matrix.platform == 'macos-latest'
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          echo "APPLE_SIGNING_IDENTITY=${{ secrets.APPLE_SIGNING_IDENTITY }}" >> "$GITHUB_ENV"
-          echo "APPLE_ID=${{ secrets.APPLE_ID }}" >> "$GITHUB_ENV"
-          echo "APPLE_PASSWORD=${{ secrets.APPLE_PASSWORD }}" >> "$GITHUB_ENV"
-          echo "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}" >> "$GITHUB_ENV"
+          if [ -n "$APPLE_SIGNING_IDENTITY" ]; then
+            echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY" >> "$GITHUB_ENV"
+            echo "APPLE_ID=$APPLE_ID" >> "$GITHUB_ENV"
+            echo "APPLE_PASSWORD=$APPLE_PASSWORD" >> "$GITHUB_ENV"
+            echo "APPLE_TEAM_ID=$APPLE_TEAM_ID" >> "$GITHUB_ENV"
+          else
+            echo "No APPLE_SIGNING_IDENTITY secret — building unsigned .app"
+          fi
 
       - name: Build desktop app (macOS)
         if: matrix.platform == 'macos-latest'
