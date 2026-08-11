@@ -1,0 +1,176 @@
+#Requires -Version 5.1
+# ============================================================================
+# Install-A-Coder.ps1 — One-shot installer for A-Coder CLI on Windows
+# Copyright (c) The A-Tech Corporation PTY LTD
+# Usage:
+#   powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/<org>/<repo>/main/Install-A-Coder.ps1 | iex"
+#   or   .\Install-A-Coder.ps1 [-Version latest] [-InstallDir "$env:USERPROFILE\.a-coder"]
+# ============================================================================
+[CmdletBinding()]
+param(
+    [string]$Version = "latest",
+    [string]$InstallDir = "",
+    [switch]$Force
+)
+
+$ErrorActionPreference = "Stop"
+
+# Defaults
+if ([string]::IsNullOrEmpty($InstallDir)) {
+    $InstallDir = Join-Path $env:USERPROFILE ".a-coder"
+}
+
+$BinDir = Join-Path $InstallDir "bin"
+$LibDir = Join-Path $InstallDir "lib\a-coder-cli"
+$BinShim = Join-Path $BinDir "a-coder-cli.cmd"
+$BinExe = Join-Path $BinDir "a-coder-cli.exe"
+$Repo = "hamishfromatech/pi-mono"
+
+function Write-Header {
+    Write-Host "Installing A-Coder CLI v$Version for Windows ..." -ForegroundColor Cyan
+}
+
+function Test-CommandAvailable {
+    param([string]$Name)
+    return [bool](Get-Command -Name $Name -ErrorAction SilentlyContinue)
+}
+
+function Invoke-Download {
+    param(
+        [string]$Url,
+        [string]$OutFile
+    )
+    if (Test-CommandAvailable "curl") {
+        curl.exe -sSL --connect-timeout 5 --max-time 60 -o "$OutFile" "$Url"
+    } elseif (Test-CommandAvailable "wget") {
+        wget.exe -qO "$OutFile" "$Url"
+    } else {
+        try {
+            Invoke-WebRequest -Uri "$Url" -OutFile "$OutFile" -UseBasicParsing -MaximumRedirection 10
+        } catch {
+            throw "Download failed: $($_.Exception.Message)"
+        }
+    }
+}
+
+function Resolve-Version {
+    param([string]$Version)
+    if ($Version -ne "latest") { return $Version }
+    $Api = "https://api.github.com/repos/$Repo/releases/latest"
+    try {
+        $Rel = Invoke-WebRequest -Uri $Api -UseBasicParsing -MaximumRedirection 10 | ConvertFrom-Json
+        return $Rel.tag_name
+    } catch {
+        throw "Could not resolve latest release tag from GitHub. Pass -Version <tag> explicitly."
+    }
+}
+
+function Install-FromReleases {
+    $Tag = Resolve-Version -Version $Version
+    $Arch = if ([Environment]::Is64BitOperatingSystem) { "x64" } else { "arm64" }
+    # build-binaries.sh produces pi-windows-<arch>.zip containing pi.exe
+    $AssetName = "pi-windows-$Arch.zip"
+    $Url = "https://github.com/$Repo/releases/download/$Tag/$AssetName"
+    $TempArchive = Join-Path $env:TEMP "pi-windows-$Arch.zip"
+    $TempExtract = Join-Path $env:TEMP ("ac-extract-" + [Guid]::NewGuid().ToString("N").Substring(0,8))
+
+    try {
+        Invoke-Download -Url $Url -OutFile $TempArchive
+        if (-not (Test-Path $TempArchive)) {
+            throw "Download did not produce an archive."
+        }
+
+        New-Item -ItemType Directory -Force -Path $TempExtract | Out-Null
+        Expand-Archive -Path $TempArchive -DestinationPath $TempExtract -Force
+
+        # Find pi.exe inside the archive (matches build-binaries.sh output)
+        $Src = Get-ChildItem -Path $TempExtract -Filter "pi.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $Src) {
+            # Fall back to a-coder-cli.exe if a future release renames it
+            $Src = Get-ChildItem -Path $TempExtract -Filter "a-coder-cli.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        }
+        if (-not $Src) {
+            throw "No pi.exe or a-coder-cli.exe found inside the release archive."
+        }
+
+        # Install the binary into lib/a-coder-cli/ and shim a-coder-cli.cmd -> pi.exe
+        New-Item -ItemType Directory -Force -Path $LibDir | Out-Null
+        Copy-Item -Path $Src.FullName -Destination (Join-Path $LibDir "pi.exe") -Force
+
+        New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
+        # A .cmd shim avoids duplicating the large binary and preserves argv.
+        $ShimContent = '@"%~dp0..\lib\a-coder-cli\pi.exe" %*'
+        Set-Content -Path $BinShim -Value $ShimContent -Encoding ASCII -NoNewline
+        Add-Content -Path $BinShim -Value "`r`n" -Encoding ASCII
+
+        Write-Host "Downloaded $AssetName and installed a-coder-cli." -ForegroundColor Green
+        return $true
+    } catch {
+        Write-Host "Release download failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        return $false
+    } finally {
+        Remove-Item -Path $TempArchive -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path $TempExtract -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Add-ToPath {
+    param(
+        [string]$Dir
+    )
+    $env:Path = "$Dir;$env:Path"
+    $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    if ($UserPath -notlike "*$Dir*") {
+        [Environment]::SetEnvironmentVariable("Path", "$UserPath;$Dir", "User")
+        Write-Host "Added $Dir to your user PATH. Restart your terminal to use it everywhere." -ForegroundColor Green
+    } else {
+        Write-Host "$Dir is already in your user PATH." -ForegroundColor DarkGray
+    }
+}
+
+# --- main ---------------------------------------------------------------------
+Write-Header
+
+if ((Test-Path $BinShim) -and (-not $Force)) {
+    Write-Host "A-Coder CLI already installed at $BinShim." -ForegroundColor Cyan
+    Write-Host "Re-run with -Force to reinstall, or run:" -ForegroundColor Cyan
+    Write-Host "  a-coder-cli update --self" -ForegroundColor White
+    exit 0
+}
+
+$Installed = Install-FromReleases
+if (-not $Installed) {
+    Write-Host ""
+    Write-Host "Could not install from a GitHub release." -ForegroundColor Red
+    Write-Host "This usually means no release exists for '$Version' yet." -ForegroundColor Yellow
+    Write-Host "Push a v* tag to create a release, or build from source:" -ForegroundColor Yellow
+    Write-Host "  git clone -b feat/desktop-unified-release https://github.com/$Repo.git" -ForegroundColor White
+    Write-Host "  cd pi-mono && npm install --ignore-scripts && npm run build" -ForegroundColor White
+    Write-Host "  cd packages/coding-agent && npm link" -ForegroundColor White
+    throw "No release asset found for $Version."
+}
+
+if (-not (Test-Path $BinShim)) {
+    throw "Could not find the a-coder-cli shim after install."
+}
+
+Add-ToPath -Dir $BinDir
+
+Write-Host ""
+Write-Host "==================================================" -ForegroundColor Cyan
+Write-Host "A-Coder CLI installed successfully!" -ForegroundColor Green
+Write-Host ""
+Write-Host "  Binary:     $BinShim"
+Write-Host "  Config dir: $(Join-Path $env:USERPROFILE '.a-coder')"
+try {
+    $Ver = & $BinShim --version 2>$null
+    Write-Host "  Version:    $Ver"
+} catch {
+    Write-Host "  Version:    ?"
+}
+Write-Host ""
+Write-Host "To start:" -ForegroundColor Cyan
+Write-Host "  a-coder-cli" -ForegroundColor White
+Write-Host ""
+Write-Host "If the command is not found, restart your terminal or run:" -ForegroundColor DarkGray
+Write-Host "  `$env:Path = `"$BinDir;`$env:Path`"" -ForegroundColor White
