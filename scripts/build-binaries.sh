@@ -109,6 +109,11 @@ fi
 
 if [[ "$SKIP_BUILD" == "false" ]]; then
     echo "==> Building all packages..."
+    # Release builds use the committed model catalogs instead of re-fetching
+    # upstream (which can fail on CI network/rate-limits). The committed
+    # .models.ts are already valid; generate-models/generate-image-models
+    # honor PI_SKIP_GENERATE=1 and exit early.
+    export PI_SKIP_GENERATE=1
     npm run build
 else
     echo "==> Skipping package build (--skip-build)"

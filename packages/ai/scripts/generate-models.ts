@@ -13,6 +13,13 @@ import type { AnthropicMessagesCompat, Api, KnownProvider, Model, OpenAICompleti
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+// Release builds set PI_SKIP_GENERATE=1 to use the committed catalogs
+// instead of re-fetching upstream (which can fail on CI network).
+if (process.env.PI_SKIP_GENERATE === "1") {
+	console.log("==> PI_SKIP_GENERATE=1: skipping model generation (using committed catalogs)");
+	process.exit(0);
+}
 const packageRoot = join(__dirname, "..");
 
 interface ModelsDevModel {

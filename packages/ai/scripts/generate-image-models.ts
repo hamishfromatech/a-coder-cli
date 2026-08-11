@@ -8,6 +8,11 @@ import type { ImagesModel } from "../src/types.ts";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const packageRoot = join(__dirname, "..");
+
+if (process.env.PI_SKIP_GENERATE === "1") {
+	console.log("==> PI_SKIP_GENERATE=1: skipping image-model generation (using committed catalogs)");
+	process.exit(0);
+}
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
 interface OpenRouterModelRecord {
