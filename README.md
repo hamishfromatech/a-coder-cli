@@ -41,10 +41,10 @@ One-line install (downloads the self-contained binary for your platform):
 
 ```bash
 # macOS / Linux
-curl -sSf https://raw.githubusercontent.com/hamishfromatech/pi-mono/main/install-a-coder.sh | bash
+curl -sSf https://raw.githubusercontent.com/hamishfromatech/pi-mono/feat/desktop-unified-release/install-a-coder.sh | bash
 
 # Windows (PowerShell)
-powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/hamishfromatech/pi-mono/main/Install-A-Coder.ps1 | iex"
+powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/hamishfromatech/pi-mono/feat/desktop-unified-release/Install-A-Coder.ps1 | iex"
 ```
 
 This installs the `a-coder-cli` command (symlinked onto your `PATH`). Run `a-coder-cli` in any project folder to start chatting; `a-coder-cli --help` lists all flags.
