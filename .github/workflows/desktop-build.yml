@@ -126,13 +126,22 @@ jobs:
           security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
+      - name: Set macOS signing env
+        # Only set APPLE_SIGNING_IDENTITY when the secret is configured. If the
+        # secret is absent the env var would be "" and Tauri tries to codesign
+        # with an empty identity ("no identity found" -> bundle fails). Skipping
+        # it builds an unsigned .app, which is fine for testing / when no Apple
+        # cert is configured.
+        if: matrix.platform == 'macos-latest' && secrets.APPLE_SIGNING_IDENTITY != ''
+        run: |
+          echo "APPLE_SIGNING_IDENTITY=${{ secrets.APPLE_SIGNING_IDENTITY }}" >> "$GITHUB_ENV"
+          echo "APPLE_ID=${{ secrets.APPLE_ID }}" >> "$GITHUB_ENV"
+          echo "APPLE_PASSWORD=${{ secrets.APPLE_PASSWORD }}" >> "$GITHUB_ENV"
+          echo "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}" >> "$GITHUB_ENV"
+
       - name: Build desktop app (macOS)
         if: matrix.platform == 'macos-latest'
         env:
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           # Updater signing key (for the .tar.gz.sig artifacts). Optional but
           # required if the updater plugin is enabled.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
