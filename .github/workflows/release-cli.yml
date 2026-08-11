@@ -50,6 +50,13 @@ jobs:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Upgrade npm to v11 (avoid npm 10 edgesOut bug)
+        # build-binaries.sh installs cross-platform optional native bindings
+        # with `npm install --force --package-lock=false`, which hits an npm 10
+        # internal bug ("Cannot read properties of null (reading 'edgesOut')").
+        # npm 11 (bundled with Node 24, or upgraded here) handles it.
+        run: npm install -g npm@11
+
       # npm install (not ci) re-resolves and tolerates a stale root lockfile,
       # which npm ci would reject. build-binaries.sh then builds with --skip-install.
       - name: Install dependencies
