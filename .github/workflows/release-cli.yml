@@ -1,0 +1,109 @@
+# Release CLI — build the self-contained a-coder-cli binaries (pi-* archives)
+# and publish a GitHub Release so the install scripts (install-a-coder.sh /
+# Install-A-Coder.ps1) can download them. This is CLI-only (no desktop, no npm
+# publish) so the installers work independently of the desktop build status.
+#
+# Trigger: push a v* tag (from any branch, incl. feat/desktop-unified-release),
+# or run manually via workflow_dispatch with a tag.
+#   git tag v0.80.4-test1 && git push origin v0.80.4-test1
+# Then:  install-a-coder.sh v0.80.4-test1   (or Install-A-Coder.ps1 -Version v0.80.4-test1)
+name: Release CLI
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build and publish (e.g. v0.80.4-test1)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-cli-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          persist-credentials: false
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      # npm install (not ci) re-resolves and tolerates a stale root lockfile,
+      # which npm ci would reject. build-binaries.sh then builds with --skip-install.
+      - name: Install dependencies
+        run: npm install --ignore-scripts --no-audit --no-fund
+
+      - name: Build CLI binaries
+        run: ./scripts/build-binaries.sh --skip-install
+
+      - name: Prepare release payload
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          VERSION="${RELEASE_TAG#v}"
+          # Release notes are best-effort; fall back to a simple note if extraction fails.
+          if ! node scripts/release-notes.mjs extract --version "${VERSION}" --tag "${RELEASE_TAG}" --out release-assets/RELEASE_NOTES.md 2>/dev/null; then
+            echo "A-Coder CLI ${RELEASE_TAG}" > release-assets/RELEASE_NOTES.md
+          fi
+
+          cd packages/coding-agent/binaries
+          binary_assets=(
+            pi-darwin-arm64.tar.gz
+            pi-darwin-x64.tar.gz
+            pi-linux-x64.tar.gz
+            pi-linux-arm64.tar.gz
+            pi-windows-x64.zip
+            pi-windows-arm64.zip
+          )
+          for asset in "${binary_assets[@]}"; do
+            test -f "${asset}"
+          done
+          cp "${binary_assets[@]}" "${GITHUB_WORKSPACE}/release-assets/"
+
+          cd "${GITHUB_WORKSPACE}/release-assets"
+          sha256sum "${binary_assets[@]}" > SHA256SUMS
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          TAG="${RELEASE_TAG}"
+          # If the release already exists (re-run), upload/replace assets; else create.
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "Release ${TAG} already exists; uploading assets."
+            gh release upload "${TAG}" release-assets/* --clobber
+          else
+            gh release create "${TAG}" release-assets/* \
+              --title "A-Coder CLI ${TAG}" \
+              --notes-file release-assets/RELEASE_NOTES.md
+          fi
+
+      - name: Summary
+        run: |
+          echo "::notice::Release ${RELEASE_TAG} published. Install with:"
+          echo "::notice::  curl -sSf https://raw.githubusercontent.com/${{ github.repository }}/main/install-a-coder.sh | bash -s ${RELEASE_TAG}"
+          echo "::notice::  (Windows) Install-A-Coder.ps1 -Version ${RELEASE_TAG}"
