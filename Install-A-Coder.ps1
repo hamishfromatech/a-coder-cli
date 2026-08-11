@@ -93,9 +93,12 @@ function Install-FromReleases {
             throw "No pi.exe or a-coder-cli.exe found inside the release archive."
         }
 
-        # Install the binary into lib/a-coder-cli/ and shim a-coder-cli.cmd -> pi.exe
+        # Install the whole archive (pi.exe + theme/ + docs/ + examples/) into
+        # lib/a-coder-cli/. pi.exe is bun-compiled (JS embedded) but it loads
+        # theme/*.json and docs at runtime via fs.readFileSync, so those must
+        # be on disk next to the binary.
         New-Item -ItemType Directory -Force -Path $LibDir | Out-Null
-        Copy-Item -Path $Src.FullName -Destination (Join-Path $LibDir "pi.exe") -Force
+        Copy-Item -Path "$TempExtract\*" -Destination $LibDir -Recurse -Force
 
         New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
         # A .cmd shim avoids duplicating the large binary and preserves argv.
