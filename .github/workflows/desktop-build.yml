@@ -78,7 +78,10 @@ jobs:
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - name: Install dependencies
-        run: npm ci --ignore-scripts
+        # --no-workspaces: install desktop-app's deps standalone (the repo root is
+        # a workspace root, so plain npm ci would hoist/skip desktop deps and tsc
+        # can't resolve @earendil-works/pi-ai). The lockfile is standalone.
+        run: npm ci --no-workspaces --ignore-scripts
 
       # ──────────────────────────────────────────────────────────────────────
       # macOS: import Developer ID certificate into a temporary keychain.
