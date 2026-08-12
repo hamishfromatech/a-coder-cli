@@ -10,7 +10,8 @@
 param(
     [string]$Version = "latest",
     [string]$InstallDir = "",
-    [switch]$Force
+    [switch]$Force,
+    [switch]$NoDesktop
 )
 
 $ErrorActionPreference = "Stop"
@@ -131,6 +132,47 @@ function Add-ToPath {
     }
 }
 
+function Install-Desktop {
+    if ($NoDesktop) { return }
+    $Tag = Resolve-Version -Version $Version
+    $Arch = if ([Environment]::Is64BitOperatingSystem) { "x64" } else { "arm64" }
+    # Query the release assets (asset names embed the Tauri bundle version,
+    # not the tag) and find the Windows desktop installer by pattern.
+    $Api = "https://api.github.com/repos/$Repo/releases/tags/$Tag"
+    try {
+        $Rel = Invoke-WebRequest -Uri $Api -UseBasicParsing -MaximumRedirection 10 | ConvertFrom-Json
+    } catch {
+        Write-Host "  (could not fetch release assets — skipping desktop install)" -ForegroundColor DarkGray
+        return
+    }
+    $Asset = $Rel.assets | Where-Object { $_.name -match "A-Coder.Desktop_${Arch}-setup.exe$" } | Select-Object -First 1
+    if (-not $Asset) {
+        $Asset = $Rel.assets | Where-Object { $_.name -match "A-Coder.Desktop_${Arch}_en-US.msi$" } | Select-Object -First 1
+    }
+    if (-not $Asset) {
+        Write-Host "  (no Windows desktop installer in release $Tag — skipping)" -ForegroundColor DarkGray
+        return
+    }
+    $Url = "https://github.com/$Repo/releases/download/$Tag/$($Asset.name)"
+    $TempInstaller = Join-Path $env:TEMP $Asset.name
+    Write-Host "Installing A-Coder Desktop from $($Asset.name) ..." -ForegroundColor Cyan
+    try {
+        Invoke-Download -Url $Url -OutFile $TempInstaller
+        # Run the NSIS installer silently (/S). If silent mode is unsupported,
+        # fall back to an interactive install.
+        $proc = Start-Process -FilePath $TempInstaller -ArgumentList "/S" -Wait -PassThru -ErrorAction SilentlyContinue
+        if ($null -eq $proc -or $proc.ExitCode -ne 0) {
+            Write-Host "  (silent install returned non-zero, launching interactive installer)" -ForegroundColor DarkGray
+            Start-Process -FilePath $TempInstaller -Wait
+        }
+        Write-Host "  Installed A-Coder Desktop." -ForegroundColor Green
+    } catch {
+        Write-Host "  (desktop install failed: $($_.Exception.Message))" -ForegroundColor DarkGray
+    } finally {
+        Remove-Item -Path $TempInstaller -Force -ErrorAction SilentlyContinue
+    }
+}
+
 # --- main ---------------------------------------------------------------------
 Write-Header
 
@@ -177,3 +219,7 @@ Write-Host "  a-coder-cli" -ForegroundColor White
 Write-Host ""
 Write-Host "If the command is not found, restart your terminal or run:" -ForegroundColor DarkGray
 Write-Host "  `$env:Path = `"$BinDir;`$env:Path`"" -ForegroundColor White
+
+# --- install the desktop app from the same release (best-effort) -------------
+Install-Desktop
+Write-Host "=================================================="
