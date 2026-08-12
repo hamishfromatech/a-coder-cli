@@ -2,6 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- Publisher / copyright shown in the macOS About box. -->
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright © 2026 The A-Tech Corporation PTY LTD</string>
 	<!-- Voice mode: microphone access for speech-to-text. -->
 	<key>NSMicrophoneUsageDescription</key>
 	<string>A-Coder Desktop uses the microphone for voice mode (speech-to-text).</string>

@@ -2,6 +2,7 @@
 	"name": "@earendil-works/a-coder-desktop",
 	"version": "0.80.4",
 	"private": true,
+	"author": "The A-Tech Corporation PTY LTD",
 	"type": "module",
 	"scripts": {
 		"dev": "vite",
