@@ -10,9 +10,8 @@
 name: Release CLI
 
 on:
-  push:
-    tags:
-      - 'v*'
+  # CLI-only releases via manual trigger. For unified releases (CLI + desktop),
+  # push a v* tag to trigger build-binaries.yml instead.
   workflow_dispatch:
     inputs:
       tag:
