@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useRef, useState } from "react";
 import { useSessionStore } from "../stores/session-store";
@@ -127,6 +128,10 @@ export function ConnectingOverlay({ pickerOpen = false }: { pickerOpen?: boolean
 }
 
 function BootFailureCard({ message }: { message: string }) {
+	const [bootstrapping, setBootstrapping] = useState(false);
+	const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+	const needsEngine = message.toLowerCase().includes("not found in path");
+
 	const pickWorkspace = async () => {
 		try {
 			const path = await open({ directory: true });
@@ -137,7 +142,22 @@ function BootFailureCard({ message }: { message: string }) {
 				);
 			}
 		} catch (e) {
-			console.error("Failed to pick workspace", e);
+				console.error("Failed to pick workspace", e);
+			}
+		};
+
+	const installEngine = async () => {
+		setBootstrapping(true);
+		setBootstrapError(null);
+		try {
+			await invoke<string>("bootstrap_cli");
+			triggerHaptic("crisp");
+			// The engine is now installed — retry the connect.
+			window.location.reload();
+		} catch (e) {
+			console.error("CLI bootstrap failed", e);
+			setBootstrapError(typeof e === "string" ? e : "Failed to install the CLI engine.");
+			setBootstrapping(false);
 		}
 	};
 	return (
@@ -166,6 +186,21 @@ function BootFailureCard({ message }: { message: string }) {
 						>
 							Retry
 						</button>
+						{needsEngine ? (
+							<button
+								type="button"
+								disabled={bootstrapping}
+								className="inline-flex items-center gap-1.5 rounded-lg bg-pi-accent px-3 py-2 text-[12px] font-medium text-white transition-smooth hover:bg-pi-accent-hover focus-visible:shadow-focus focus-visible:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+								onClick={installEngine}
+							>
+								{bootstrapping ? "Installing engine…" : "Install the CLI engine"}
+							</button>
+						) : null}
+						{bootstrapError ? (
+							<div className="w-full rounded-xl border border-pi-error/30 bg-pi-error-soft px-4 py-3 text-xs text-pi-error font-mono break-all">
+								{bootstrapError}
+							</div>
+						) : null}
 						<button
 							type="button"
 							className="inline-flex items-center gap-1.5 rounded-lg border border-pi-border bg-transparent px-3 py-2 text-[12px] font-medium text-pi-text-secondary transition-smooth hover:border-pi-border/80 hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"

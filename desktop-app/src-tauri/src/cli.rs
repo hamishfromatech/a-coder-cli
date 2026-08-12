@@ -42,6 +42,26 @@ pub fn resolve_cli_path(override_path: Option<String>) -> Result<PathBuf, String
         }
     }
 
+    // Bootstrap fallback: the desktop app's first-launch CLI installer (and the
+    // curl install-a-coder.sh / Install-A-Coder.ps1 scripts) place the binary at
+    // ~/.a-coder/lib/a-coder-cli/pi and a shim at ~/.a-coder/bin/a-coder-cli.
+    // Check both so a fresh install (CLI bootstrapped by the desktop app itself)
+    // is found without a terminal restart.
+    let suffix = std::env::consts::EXE_SUFFIX;
+    if let Some(a_coder_dir) = a_coder_install_dir() {
+        let lib_bin = a_coder_dir
+            .join("lib")
+            .join("a-coder-cli")
+            .join(format!("pi{}", suffix));
+        if lib_bin.is_file() {
+            return Ok(lib_bin);
+        }
+        let shim_bin = a_coder_dir.join("bin").join(format!("a-coder-cli{}", suffix));
+        if shim_bin.is_file() {
+            return Ok(shim_bin);
+        }
+    }
+
     // Development fallback: when the desktop app is run from inside the monorepo,
     // a-coder-cli lives at <parent-of-cwd>/packages/coding-agent/dist/cli.js.
     // This lets `npm run tauri:dev` and direct binary launches find the local
@@ -95,6 +115,7 @@ pub fn reconstructed_path() -> String {
         "~/.config/npm/node_global/bin",
         "~/.local/bin",
         "~/.yarn/bin",
+        "~/.a-coder/bin",
         "~/.config/yarn/global/node_modules/.bin",
         "/usr/local/lib/node_modules/.bin",
         "/opt/homebrew/lib/node_modules/.bin",
@@ -174,6 +195,21 @@ fn sibling_workspace_cli_path() -> Option<PathBuf> {
     let cwd = std::env::current_dir().ok()?;
     let workspace_root = cwd.parent()?;
     Some(workspace_root.join("packages").join("coding-agent").join("dist").join("cli.js"))
+}
+
+/// The ~/.a-coder install dir used by install-a-coder.sh / Install-A-Coder.ps1
+/// and the desktop app's own first-launch bootstrap. Returns None if the home
+/// dir can't be determined.
+fn a_coder_install_dir() -> Option<PathBuf> {
+	let home = (if cfg!(windows) {
+		std::env::var("USERPROFILE").ok()
+	} else {
+		std::env::var("HOME").ok()
+	})?;
+	if home.is_empty() {
+		return None;
+	}
+	Some(PathBuf::from(home).join(".a-coder"))
 }
 
 /// Expand a leading `~` to the user's home directory.

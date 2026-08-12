@@ -1,6 +1,7 @@
 // Prevents additional console window on Windows in release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod bootstrap;
 mod cli;
 mod fs;
 mod git;
@@ -25,6 +26,7 @@ fn main() {
 		.manage(AppState::default())
 		.invoke_handler(tauri::generate_handler![
 			cli::get_initial_workspace,
+		bootstrap::bootstrap_cli,
 			voice::voice_transcribe,
 			voice::voice_synthesize,
 			rpc_commands::connect,
