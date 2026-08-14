@@ -185,7 +185,7 @@ if ((Test-Path $BinShim) -and (-not $Force)) {
     $VersionFile = Join-Path $InstallDir "VERSION"
     if (Test-Path $VersionFile) { $InstalledTag = ((Get-Content $VersionFile -ErrorAction SilentlyContinue | Select-Object -First 1) -replace '\s','') }
     $LatestTag = Resolve-Version -Version $Version
-    if ($InstalledTag -and $LatestTag -and ($InstalledTag -ne $LatestTag)) {
+    if ($LatestTag -and ($InstalledTag -ne $LatestTag)) {
         Write-Host "A-Coder CLI $InstalledTag installed; updating to $LatestTag ..." -ForegroundColor Cyan
     } else {
         Write-Host "A-Coder CLI already installed at $BinShim ($InstalledTag)." -ForegroundColor Cyan

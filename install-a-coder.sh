@@ -88,7 +88,7 @@ mkdir -p "$INSTALL_DIR" "$LIB_DIR" "$BIN_DIR"
 if [[ -e "$LIB_DIR/bin" || -e "$COMMAND" ]] && [[ "$FORCE" == "false" ]]; then
   installed_tag="$(cat "$INSTALL_DIR/VERSION" 2>/dev/null | tr -d '[:space:]')"
   latest_tag="$(resolve_tag "$VERSION")"
-  if [[ -n "$installed_tag" && -n "$latest_tag" && "$installed_tag" != "$latest_tag" ]]; then
+  if [[ -n "$latest_tag" && "$installed_tag" != "$latest_tag" ]]; then
     echo "A-Coder CLI $installed_tag installed; updating to $latest_tag ..."
   else
     echo "A-Coder CLI already installed in $INSTALL_DIR (${installed_tag:-unknown})."
