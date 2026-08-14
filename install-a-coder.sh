@@ -82,11 +82,19 @@ COMMAND="$BIN_DIR/a-coder-cli"
 mkdir -p "$INSTALL_DIR" "$LIB_DIR" "$BIN_DIR"
 
 # --- check for existing install ---------------------------------------------
+# Auto-update: when an install exists and isn't forced, compare the installed
+# version marker to the latest release tag. If they differ, reinstall to
+# latest so `curl ... | bash` upgrades in place; if they match, skip.
 if [[ -e "$LIB_DIR/bin" || -e "$COMMAND" ]] && [[ "$FORCE" == "false" ]]; then
-  echo "A-Coder CLI already installed in $INSTALL_DIR."
-  echo "Re-run with --force to reinstall, or use the built-in update command:"
-  echo "  a-coder-cli update --self"
-  exit 0
+  installed_tag="$(cat "$INSTALL_DIR/VERSION" 2>/dev/null | tr -d '[:space:]')"
+  latest_tag="$(resolve_tag "$VERSION")"
+  if [[ -n "$installed_tag" && -n "$latest_tag" && "$installed_tag" != "$latest_tag" ]]; then
+    echo "A-Coder CLI $installed_tag installed; updating to $latest_tag ..."
+  else
+    echo "A-Coder CLI already installed in $INSTALL_DIR (${installed_tag:-unknown})."
+    echo "Re-run with --force to reinstall."
+    exit 0
+  fi
 fi
 
 # --- downloader --------------------------------------------------------------

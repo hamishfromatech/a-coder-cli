@@ -108,6 +108,7 @@ function Install-FromReleases {
         Add-Content -Path $BinShim -Value "`r`n" -Encoding ASCII
 
         Write-Host "Downloaded $AssetName and installed a-coder-cli." -ForegroundColor Green
+        Set-Content -Path (Join-Path $InstallDir "VERSION") -Value $Tag -NoNewline
         return $true
     } catch {
         Write-Host "Release download failed: $($_.Exception.Message)" -ForegroundColor Yellow
@@ -176,11 +177,21 @@ function Install-Desktop {
 # --- main ---------------------------------------------------------------------
 Write-Header
 
+# Auto-update: when an install exists and isn't forced, compare the installed
+# version marker to the latest release tag. If they differ, reinstall to latest
+# so `irm ... | iex` upgrades in place; if they match, skip.
 if ((Test-Path $BinShim) -and (-not $Force)) {
-    Write-Host "A-Coder CLI already installed at $BinShim." -ForegroundColor Cyan
-    Write-Host "Re-run with -Force to reinstall, or run:" -ForegroundColor Cyan
-    Write-Host "  a-coder-cli update --self" -ForegroundColor White
-    exit 0
+    $InstalledTag = ""
+    $VersionFile = Join-Path $InstallDir "VERSION"
+    if (Test-Path $VersionFile) { $InstalledTag = ((Get-Content $VersionFile -ErrorAction SilentlyContinue | Select-Object -First 1) -replace '\s','') }
+    $LatestTag = Resolve-Version -Version $Version
+    if ($InstalledTag -and $LatestTag -and ($InstalledTag -ne $LatestTag)) {
+        Write-Host "A-Coder CLI $InstalledTag installed; updating to $LatestTag ..." -ForegroundColor Cyan
+    } else {
+        Write-Host "A-Coder CLI already installed at $BinShim ($InstalledTag)." -ForegroundColor Cyan
+        Write-Host "Re-run with -Force to reinstall." -ForegroundColor Cyan
+        exit 0
+    }
 }
 
 $Installed = Install-FromReleases
