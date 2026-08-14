@@ -1,7 +1,11 @@
 import { compare, valid } from "semver";
 import { getPiUserAgent } from "./pi-user-agent.ts";
 
-const LATEST_VERSION_URL = "https://a-coder-cli.dev/api/latest-version";
+// This fork publishes releases via GitHub, so the latest-version check
+// queries the repo's releases/latest API (tag_name) rather than the
+// upstream a-coder-cli.dev endpoint. Override with A_CODER_LATEST_VERSION_URL.
+const LATEST_VERSION_URL =
+	process.env.A_CODER_LATEST_VERSION_URL ?? "https://api.github.com/repos/hamishfromatech/pi-mono/releases/latest";
 const DEFAULT_VERSION_CHECK_TIMEOUT_MS = 10000;
 
 export interface LatestPiRelease {
@@ -36,25 +40,31 @@ export async function getLatestPiRelease(
 	const response = await fetch(LATEST_VERSION_URL, {
 		headers: {
 			"User-Agent": getPiUserAgent(currentVersion),
-			accept: "application/json",
+			accept: "application/vnd.github+json",
 		},
 		signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_VERSION_CHECK_TIMEOUT_MS),
 	});
 	if (!response.ok) return undefined;
 
 	const data = (await response.json()) as {
-		packageName?: unknown;
+		tag_name?: unknown;
+		// Fall back fields for the legacy a-coder-cli.dev shape, in case
+		// A_CODER_LATEST_VERSION_URL points at an endpoint that returns it.
 		version?: unknown;
+		packageName?: unknown;
 		note?: unknown;
 	};
-	if (typeof data.version !== "string" || !data.version.trim()) {
-		return undefined;
-	}
+	// GitHub releases/latest returns tag_name ("vX.Y.Z"); strip the leading v.
+	const fromTag =
+		typeof data.tag_name === "string" && data.tag_name.trim() ? data.tag_name.trim().replace(/^v/, "") : undefined;
+	const fromField = typeof data.version === "string" && data.version.trim() ? data.version.trim() : undefined;
+	const version = fromTag ?? fromField;
+	if (!version) return undefined;
 	const packageName =
 		typeof data.packageName === "string" && data.packageName.trim() ? data.packageName.trim() : undefined;
 	const note = typeof data.note === "string" && data.note.trim() ? data.note.trim() : undefined;
 	return {
-		version: data.version.trim(),
+		version,
 		packageName,
 		...(note ? { note } : {}),
 	};
