@@ -146,9 +146,9 @@ function Install-Desktop {
         Write-Host "  (could not fetch release assets — skipping desktop install)" -ForegroundColor DarkGray
         return
     }
-    $Asset = $Rel.assets | Where-Object { $_.name -match "A-Coder.Desktop_${Arch}-setup.exe$" } | Select-Object -First 1
+    $Asset = $Rel.assets | Where-Object { $_.name -match "A-Coder\.Desktop_.*_${Arch}-setup\.exe$" } | Select-Object -First 1
     if (-not $Asset) {
-        $Asset = $Rel.assets | Where-Object { $_.name -match "A-Coder.Desktop_${Arch}_en-US.msi$" } | Select-Object -First 1
+        $Asset = $Rel.assets | Where-Object { $_.name -match "A-Coder\.Desktop_.*_${Arch}_en-US\.msi$" } | Select-Object -First 1
     }
     if (-not $Asset) {
         Write-Host "  (no Windows desktop installer in release $Tag — skipping)" -ForegroundColor DarkGray
