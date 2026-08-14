@@ -84,7 +84,9 @@ mkdir -p "$INSTALL_DIR" "$LIB_DIR" "$BIN_DIR"
 # --- check for existing install ---------------------------------------------
 # Auto-update: when an install exists and isn't forced, compare the installed
 # version marker to the latest release tag. If they differ, reinstall to
-# latest so `curl ... | bash` upgrades in place; if they match, skip.
+# latest so `curl ... | bash` upgrades in place; if they match, skip the CLI
+# download but still fall through to the desktop install below.
+CLI_ALREADY_UP_TO_DATE=false
 if [[ -e "$LIB_DIR/bin" || -e "$COMMAND" ]] && [[ "$FORCE" == "false" ]]; then
   installed_tag="$(cat "$INSTALL_DIR/VERSION" 2>/dev/null | tr -d '[:space:]')"
   latest_tag="$(resolve_tag "$VERSION")"
@@ -92,8 +94,8 @@ if [[ -e "$LIB_DIR/bin" || -e "$COMMAND" ]] && [[ "$FORCE" == "false" ]]; then
     echo "A-Coder CLI $installed_tag installed; updating to $latest_tag ..."
   else
     echo "A-Coder CLI already installed in $INSTALL_DIR (${installed_tag:-unknown})."
-    echo "Re-run with --force to reinstall."
-    exit 0
+    echo "Re-run with --force to reinstall the CLI."
+    CLI_ALREADY_UP_TO_DATE=true
   fi
 fi
 
@@ -310,46 +312,48 @@ install_from_npm() {
 }
 
 # --- attempt install ---------------------------------------------------------
-if ! install_from_release; then
-  echo "GitHub release archive unavailable; falling back to npm..." >&2
-  install_from_npm || {
-    echo "" >&2
-    echo "ERROR: Could not install A-Coder CLI." >&2
-    echo "Try: npm install -g @earendil-works/pi-coding-agent@${VERSION#v}" >&2
-    exit 1
-  }
-fi
+if [[ "$CLI_ALREADY_UP_TO_DATE" == "false" ]]; then
+  if ! install_from_release; then
+    echo "GitHub release archive unavailable; falling back to npm..." >&2
+    install_from_npm || {
+      echo "" >&2
+      echo "ERROR: Could not install A-Coder CLI." >&2
+      echo "Try: npm install -g @earendil-works/pi-coding-agent@${VERSION#v}" >&2
+      exit 1
+    }
+  fi
 
-# --- make it available in PATH for current session ---------------------------
-export PATH="$BIN_DIR:$PATH"
+  # --- make it available in PATH for current session ---------------------------
+  export PATH="$BIN_DIR:$PATH"
 
-# --- shell completions hook (bash / zsh) -------------------------------------
-if [[ -x "$COMMAND" || -f "$COMMAND.cmd" ]]; then
-  "$COMMAND" --generate-completion bash > "$INSTALL_DIR/etc/a-coder-cli.sh" 2>/dev/null || true
-  "$COMMAND" --generate-completion zsh > "$INSTALL_DIR/etc/a-coder-cli.zsh" 2>/dev/null || true
-fi
+  # --- shell completions hook (bash / zsh) -------------------------------------
+  if [[ -x "$COMMAND" || -f "$COMMAND.cmd" ]]; then
+    "$COMMAND" --generate-completion bash > "$INSTALL_DIR/etc/a-coder-cli.sh" 2>/dev/null || true
+    "$COMMAND" --generate-completion zsh > "$INSTALL_DIR/etc/a-coder-cli.zsh" 2>/dev/null || true
+  fi
 
-# --- summary -----------------------------------------------------------------
-INSTALLED_VERSION="$("$COMMAND" --version 2>/dev/null || echo '?')"
+  # --- summary -----------------------------------------------------------------
+  INSTALLED_VERSION="$("$COMMAND" --version 2>/dev/null || echo '?')"
 
-echo ""
-echo "=================================================="
-echo "A-Coder CLI installed successfully!"
-echo ""
-echo "  Command:    $COMMAND"
-echo "  Runtime:    $LIB_DIR"
-echo "  Version:    $INSTALLED_VERSION"
-echo ""
-
-if [[ "$QUIET" == "false" ]]; then
-  echo "To start:"
-  echo "  export PATH=\"$BIN_DIR:\$PATH\""
-  echo "  a-coder-cli"
   echo ""
-  echo "Add this to your shell config (~/.bashrc, ~/.zshrc):"
-  echo "  export PATH=\"$BIN_DIR:\$PATH\""
+  echo "=================================================="
+  echo "A-Coder CLI installed successfully!"
+  echo ""
+  echo "  Command:    $COMMAND"
+  echo "  Runtime:    $LIB_DIR"
+  echo "  Version:    $INSTALLED_VERSION"
+  echo ""
+
+  if [[ "$QUIET" == "false" ]]; then
+    echo "To start:"
+    echo "  export PATH=\"$BIN_DIR:\$PATH\""
+    echo "  a-coder-cli"
+    echo ""
+    echo "Add this to your shell config (~/.bashrc, ~/.zshrc):"
+    echo "  export PATH=\"$BIN_DIR:\$PATH\""
+  fi
+  echo "=================================================="
 fi
-echo "=================================================="
 
 # --- install the desktop app from the same release (best-effort) -------------
 if [[ "$NO_DESKTOP" == "false" ]]; then

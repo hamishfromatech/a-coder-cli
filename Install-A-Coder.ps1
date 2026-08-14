@@ -180,6 +180,10 @@ Write-Header
 # Auto-update: when an install exists and isn't forced, compare the installed
 # version marker to the latest release tag. If they differ, reinstall to latest
 # so `irm ... | iex` upgrades in place; if they match, skip.
+# The CLI is already installed and up to date -> skip the CLI download, but
+# still fall through to the desktop install below so a re-run also installs
+# (or updates) A-Coder Desktop without needing -Force.
+$CliAlreadyUpToDate = $false
 if ((Test-Path $BinShim) -and (-not $Force)) {
     $InstalledTag = ""
     $VersionFile = Join-Path $InstallDir "VERSION"
@@ -189,47 +193,48 @@ if ((Test-Path $BinShim) -and (-not $Force)) {
         Write-Host "A-Coder CLI $InstalledTag installed; updating to $LatestTag ..." -ForegroundColor Cyan
     } else {
         Write-Host "A-Coder CLI already installed at $BinShim ($InstalledTag)." -ForegroundColor Cyan
-        Write-Host "Re-run with -Force to reinstall." -ForegroundColor Cyan
-        exit 0
+        $CliAlreadyUpToDate = $true
     }
 }
 
-$Installed = Install-FromReleases
-if (-not $Installed) {
+if (-not $CliAlreadyUpToDate) {
+    $Installed = Install-FromReleases
+    if (-not $Installed) {
+        Write-Host ""
+        Write-Host "Could not install from a GitHub release." -ForegroundColor Red
+        Write-Host "This usually means no release exists for '$Version' yet." -ForegroundColor Yellow
+        Write-Host "Push a v* tag to create a release, or build from source:" -ForegroundColor Yellow
+        Write-Host "  git clone -b feat/desktop-unified-release https://github.com/$Repo.git" -ForegroundColor White
+        Write-Host "  cd pi-mono && npm install --ignore-scripts && npm run build" -ForegroundColor White
+        Write-Host "  cd packages/coding-agent && npm link" -ForegroundColor White
+        throw "No release asset found for $Version."
+    }
+
+    if (-not (Test-Path $BinShim)) {
+        throw "Could not find the a-coder-cli shim after install."
+    }
+
+    Add-ToPath -Dir $BinDir
+
     Write-Host ""
-    Write-Host "Could not install from a GitHub release." -ForegroundColor Red
-    Write-Host "This usually means no release exists for '$Version' yet." -ForegroundColor Yellow
-    Write-Host "Push a v* tag to create a release, or build from source:" -ForegroundColor Yellow
-    Write-Host "  git clone -b feat/desktop-unified-release https://github.com/$Repo.git" -ForegroundColor White
-    Write-Host "  cd pi-mono && npm install --ignore-scripts && npm run build" -ForegroundColor White
-    Write-Host "  cd packages/coding-agent && npm link" -ForegroundColor White
-    throw "No release asset found for $Version."
+    Write-Host "==================================================" -ForegroundColor Cyan
+    Write-Host "A-Coder CLI installed successfully!" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "  Binary:     $BinShim"
+    Write-Host "  Config dir: $(Join-Path $env:USERPROFILE '.a-coder')"
+    try {
+        $Ver = & $BinShim --version 2>$null
+        Write-Host "  Version:    $Ver"
+    } catch {
+        Write-Host "  Version:    ?"
+    }
+    Write-Host ""
+    Write-Host "To start:" -ForegroundColor Cyan
+    Write-Host "  a-coder-cli" -ForegroundColor White
+    Write-Host ""
+    Write-Host "If the command is not found, restart your terminal or run:" -ForegroundColor DarkGray
+    Write-Host "  `$env:Path = `"$BinDir;`$env:Path`"" -ForegroundColor White
 }
-
-if (-not (Test-Path $BinShim)) {
-    throw "Could not find the a-coder-cli shim after install."
-}
-
-Add-ToPath -Dir $BinDir
-
-Write-Host ""
-Write-Host "==================================================" -ForegroundColor Cyan
-Write-Host "A-Coder CLI installed successfully!" -ForegroundColor Green
-Write-Host ""
-Write-Host "  Binary:     $BinShim"
-Write-Host "  Config dir: $(Join-Path $env:USERPROFILE '.a-coder')"
-try {
-    $Ver = & $BinShim --version 2>$null
-    Write-Host "  Version:    $Ver"
-} catch {
-    Write-Host "  Version:    ?"
-}
-Write-Host ""
-Write-Host "To start:" -ForegroundColor Cyan
-Write-Host "  a-coder-cli" -ForegroundColor White
-Write-Host ""
-Write-Host "If the command is not found, restart your terminal or run:" -ForegroundColor DarkGray
-Write-Host "  `$env:Path = `"$BinDir;`$env:Path`"" -ForegroundColor White
 
 # --- install the desktop app from the same release (best-effort) -------------
 Install-Desktop
