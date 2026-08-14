@@ -78,6 +78,18 @@ export interface WarningSettings {
 	anthropicExtraUsage?: boolean;
 }
 
+/** Optional Composio (https://composio.dev) integration. The API key may also
+ * be supplied via the COMPOSIO_API_KEY env var (env takes precedence). */
+export interface ComposioSettings {
+	enabled?: boolean;
+	apiKey?: string;
+	userId?: string;
+	toolkits?: string[] | string;
+	sandbox?: boolean;
+	includeWorkbenchTools?: boolean;
+	callbackUrl?: string;
+}
+
 export interface McpServerSettings {
 	name?: string;
 	command?: string;
@@ -154,6 +166,7 @@ export interface CliSettings {
 	sessionDir?: string;
 	permissionMode?: PermissionMode;
 	permissionPolicies?: PermissionPolicyConfig;
+	composio?: ComposioSettings;
 	httpProxy?: string;
 	httpIdleTimeoutMs?: number;
 	websocketConnectTimeoutMs?: number;

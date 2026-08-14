@@ -9,9 +9,9 @@ import { createInterface } from "node:readline";
 import { type ImageContent, modelsAreEqual } from "@earendil-works/pi-ai";
 import chalk from "chalk";
 import { type Args, type Mode, parseArgs, printHelp } from "./cli/args.ts";
+import { launchDesktop } from "./cli/desktop.ts";
 import { processFileArguments } from "./cli/file-processor.ts";
 import { buildInitialMessage } from "./cli/initial-message.ts";
-import { launchDesktop } from "./cli/desktop.ts";
 import { listModels } from "./cli/list-models.ts";
 import { createProjectTrustContext } from "./cli/project-trust.ts";
 import { selectSession } from "./cli/session-picker.ts";
@@ -25,6 +25,7 @@ import {
 } from "./core/agent-session-services.ts";
 import { formatNoModelsAvailableMessage } from "./core/auth-guidance.ts";
 import { AuthStorage } from "./core/auth-storage.ts";
+import { type ComposioIntegration, createComposioIntegration, resolveComposioConfig } from "./core/composio.ts";
 import { exportFromFile } from "./core/export-html/index.ts";
 import type { ExtensionFactory } from "./core/extensions/types.ts";
 import { applyHttpProxySettings, configureHttpDispatcher } from "./core/http-dispatcher.ts";
@@ -642,6 +643,24 @@ export async function main(args: string[], options?: MainOptions) {
 		if (parsed.permissionMode) {
 			runtimeSettingsManager.applyOverrides({ permissionMode: parsed.permissionMode });
 		}
+
+		// Composio integration (opt-in). Resolve the config from settings + env
+		// before building the resource loader so the Composio system-prompt
+		// section can be appended to the base prompt at load time. The session
+		// is cached per process, so project switches / resumes don't recreate it.
+		const composioConfig = resolveComposioConfig(runtimeSettingsManager.getComposioSettings());
+		let composioIntegration: ComposioIntegration | null = null;
+		if (composioConfig) {
+			try {
+				composioIntegration = await createComposioIntegration(composioConfig, agentDir);
+			} catch (error) {
+				projectTrustDiagnostics.push({
+					type: "warning",
+					message: `Composio integration disabled: ${error instanceof Error ? error.message : String(error)}`,
+				});
+			}
+		}
+
 		const services = await createAgentSessionServices({
 			cwd,
 			agentDir,
@@ -683,7 +702,10 @@ export async function main(args: string[], options?: MainOptions) {
 				noThemes: parsed.noThemes,
 				noContextFiles: parsed.noContextFiles,
 				systemPrompt: parsed.systemPrompt,
-				appendSystemPrompt: parsed.appendSystemPrompt,
+				appendSystemPrompt: [
+					...(parsed.appendSystemPrompt ?? []),
+					...(composioIntegration ? [composioIntegration.systemPrompt] : []),
+				],
 				extensionFactories: options?.extensionFactories,
 			},
 		});
@@ -723,6 +745,14 @@ export async function main(args: string[], options?: MainOptions) {
 			} else {
 				authStorage.setRuntimeApiKey(sessionOptions.model.provider, parsed.apiKey);
 			}
+		}
+
+		// Merge the Composio helper tools into the session allow-list + custom
+		// tools. The tools are ToolDefinitions from @composio/experimental's
+		// PiProvider, built against this package's own ToolDefinition type.
+		if (composioIntegration) {
+			sessionOptions.tools = [...(sessionOptions.tools ?? []), ...composioIntegration.toolNames];
+			sessionOptions.customTools = [...(sessionOptions.customTools ?? []), ...composioIntegration.tools];
 		}
 
 		const created = await createAgentSessionFromServices({

@@ -66,6 +66,22 @@ export type DefaultProjectTrust = "ask" | "always" | "never";
 
 export type PermissionMode = "ask" | "allow" | "read-only" | "auto";
 
+/** Optional Composio (https://composio.dev) integration. When enabled, the
+ * agent gets `composio_search_tools`, `composio_manage_connections`,
+ * `composio_execute_tool` (+ optional sandbox workbench/bash) tools and a
+ * Composio system-prompt section, via the native `PiProvider` from
+ * `@composio/experimental`. The API key may also be supplied via the
+ * `COMPOSIO_API_KEY` environment variable (env takes precedence). */
+export interface ComposioSettings {
+	enabled?: boolean; // default: false — opt-in
+	apiKey?: string; // or COMPOSIO_API_KEY env
+	userId?: string; // Composio user id; defaults to a stable per-install id
+	toolkits?: string[] | string; // restrict to these toolkits; default: all discoverable
+	sandbox?: boolean; // default: false — enable the remote sandbox
+	includeWorkbenchTools?: boolean; // default: false — include remote python/bash helpers
+	callbackUrl?: string; // OAuth redirect URL for manage-connections
+}
+
 /** Rule matching a tool name. Supports exact names, "namespace:*" globs, and "$defaults". */
 export type PermissionRule = string;
 
@@ -137,6 +153,7 @@ export interface Settings {
 	markdown?: MarkdownSettings;
 	mcpServers?: McpServerSettings[];
 	warnings?: WarningSettings;
+	composio?: ComposioSettings;
 	sessionDir?: string; // Custom session storage directory (same format as --session-dir CLI flag)
 	permissionMode?: PermissionMode; // default: "ask"
 	permissionPolicies?: PermissionPolicyConfig; // policy rules for "auto" mode
@@ -1224,6 +1241,16 @@ export class SettingsManager {
 
 	getEnabledModels(): string[] | undefined {
 		return this.settings.enabledModels;
+	}
+
+	getComposioSettings(): ComposioSettings | undefined {
+		return this.settings.composio;
+	}
+
+	setComposioSettings(settings: ComposioSettings | undefined): void {
+		this.globalSettings.composio = settings;
+		this.markModified("composio");
+		this.save();
 	}
 
 	setEnabledModels(patterns: string[] | undefined): void {

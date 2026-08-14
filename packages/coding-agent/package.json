@@ -40,6 +40,8 @@
 		"prepublishOnly": "npm run clean && npm run build && npm run shrinkwrap"
 	},
 	"dependencies": {
+		"@composio/core": "0.16.0",
+		"@composio/experimental": "0.2.2",
 		"@earendil-works/pi-agent-core": "^0.80.4",
 		"@earendil-works/pi-ai": "^0.80.4",
 		"@earendil-works/pi-tui": "^0.80.4",
