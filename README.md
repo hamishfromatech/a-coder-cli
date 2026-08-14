@@ -80,6 +80,47 @@ npm run tauri:dev
 
 A-Coder Desktop supports voice I/O through your own OpenAI-compatible endpoints. Open **Settings → Voice**, enter your speech-to-text and text-to-speech base URLs (STT uses `/v1/audio/transcriptions`, TTS uses `/v1/audio/speech`), enable voice mode, and use the mic button in the composer. Any OpenAI-compatible provider works.
 
+## Composio integration
+
+A-Coder ships an optional [Composio](https://composio.dev) integration that gives the agent access to ~1,000 external apps (GitHub, Gmail, Slack, Linear, Notion, …) via the native `PiProvider` from `@composio/experimental` — built against this package's own `createAgentSession`, so the tools are first-class `ToolDefinition`s, not MCP-proxied.
+
+When enabled, the agent gets five tools:
+
+| Tool | Purpose |
+|------|---------|
+| `composio_search_tools` | Discover exact Composio tool slugs + input schemas from a natural-language query |
+| `composio_manage_connections` | Check which toolkits are connected and initiate OAuth for missing ones |
+| `composio_execute_tool` | Execute an exact Composio tool slug with arguments |
+| `composio_remote_workbench` | Run Python in Composio's hosted sandbox (opt-in) |
+| `composio_remote_bash` | Run short bash commands in the sandbox filesystem (opt-in) |
+
+plus a Composio system-prompt section that teaches the model the discover → connect → execute loop. Auth links come back as tool results in the chat, so the user authorizes accounts inline.
+
+### Enabling it
+
+Composio is opt-in. Provide a Composio API key (create one at [composio.dev](https://composio.dev)) any of these ways:
+
+- **Environment variable** (takes precedence): `export COMPOSIO_API_KEY=...`
+- **CLI settings** — `~/.a-coder-cli/settings.json`:
+
+  ```json
+  { "composio": { "enabled": true, "apiKey": "ck_..." } }
+  ```
+
+  Optional fields: `toolkits` (restrict to e.g. `["github","gmail"]`; accepts a comma-separated string too), `sandbox` / `includeWorkbenchTools` (enable the remote Python/bash helpers), `userId`, `callbackUrl`.
+
+- **A-Coder Desktop** — Settings → **Composio** → toggle Enable and paste the key.
+
+The integration degrades gracefully: with no key, or if the session can't be created, the agent runs normally without Composio. The Composio session is cached per process, so project switches and `--continue` resumes reuse it.
+
+### Example
+
+```
+> Find my open GitHub issues and summarize the blockers.
+```
+
+The agent calls `composio_search_tools` to resolve the right GitHub slugs, `composio_manage_connections` if your GitHub account isn't connected yet (it'll hand you an OAuth link), then `composio_execute_tool` with `GITHUB_LIST_ISSUES` and summarizes the results.
+
 ## Permissions & Containerization
 
 A-Coder does not include a built-in permission system for restricting filesystem, process, network, or credential access. By default, it runs with the permissions of the user and process that launched it.
