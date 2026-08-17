@@ -1640,6 +1640,7 @@ export class InteractiveMode {
 			return await this.showExtensionConfirm(`Allow ${toolName}?`, reason);
 		});
 		this.updatePermissionModeStatus(this.session.permissionMode);
+		this.updatePlanModeStatus(this.session.planMode);
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
 		this.outputPad = this.settingsManager.getOutputPad();
 		this.ui.setShowHardwareCursor(this.settingsManager.getShowHardwareCursor());
@@ -2528,6 +2529,7 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.session.fork", () => this.showUserMessageSelector());
 		this.defaultEditor.onAction("app.session.resume", () => this.showSessionSelector());
 		this.defaultEditor.onAction("app.permissionMode.select", () => this.showPermissionModeSelector());
+		this.defaultEditor.onAction("app.planMode.toggle", () => this.togglePlanMode());
 
 		this.defaultEditor.onChange = (text: string) => {
 			const wasBashMode = this.isBashMode;
@@ -2589,6 +2591,11 @@ export class InteractiveMode {
 			}
 			if (text === "/permission") {
 				this.showPermissionModeSelector();
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/plan") {
+				this.togglePlanMode();
 				this.editor.setText("");
 				return;
 			}
@@ -2828,6 +2835,10 @@ export class InteractiveMode {
 			case "thinking_level_changed":
 				this.footer.invalidate();
 				this.updateEditorBorderColor();
+				break;
+
+			case "plan_mode_changed":
+				this.updatePlanModeStatus(event.enabled);
 				break;
 
 			case "message_start":
@@ -4396,6 +4407,18 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
+	private togglePlanMode(): void {
+		const enabled = !this.session.planMode;
+		this.session.setPlanMode(enabled);
+		this.updatePlanModeStatus(enabled);
+		this.showStatus(`Plan mode ${enabled ? "enabled" : "disabled"}`);
+	}
+
+	private updatePlanModeStatus(enabled: boolean): void {
+		this.footerDataProvider.setExtensionStatus("planMode", enabled ? "Plan mode: on" : undefined);
+		this.ui.requestRender();
+	}
+
 	private async showModelsSelector(): Promise<void> {
 		// Get all available models
 		this.session.modelRegistry.refresh();
@@ -5605,6 +5628,7 @@ export class InteractiveMode {
 		const dequeue = this.getAppKeyDisplay("app.message.dequeue");
 		const pasteImage = this.getAppKeyDisplay("app.clipboard.pasteImage");
 		const selectPermissionMode = this.getAppKeyDisplay("app.permissionMode.select");
+		const togglePlanMode = this.getAppKeyDisplay("app.planMode.toggle");
 
 		let hotkeys = `
 **Navigation**
@@ -5649,6 +5673,7 @@ export class InteractiveMode {
 | \`${dequeue}\` | Restore queued messages |
 | \`${pasteImage}\` | Paste image from clipboard |
 | \`${selectPermissionMode}\` | Open permission mode selector |
+| \`${togglePlanMode}\` | Toggle plan mode |
 | \`/\` | Slash commands |
 | \`!\` | Run bash command |
 | \`!!\` | Run bash command (excluded from context) |

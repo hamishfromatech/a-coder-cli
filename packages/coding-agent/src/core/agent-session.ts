@@ -84,7 +84,11 @@ import {
 import { emitSessionShutdownEvent } from "./extensions/runner.ts";
 import type { BashExecutionMessage, CustomMessage } from "./messages.ts";
 import type { ModelRegistry } from "./model-registry.ts";
-import { type PermissionDecisionResult, resolvePermissionDecision } from "./permission-policy.ts";
+import {
+	DEFAULT_MUTATING_TOOL_NAMES,
+	type PermissionDecisionResult,
+	resolvePermissionDecision,
+} from "./permission-policy.ts";
 import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.ts";
 import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.ts";
 import type { BranchSummaryEntry, CompactionEntry, SessionEntry, SessionManager } from "./session-manager.ts";
@@ -141,6 +145,7 @@ export type AgentSessionEvent =
 	| { type: "entry_appended"; entry: SessionEntry }
 	| { type: "session_info_changed"; name: string | undefined }
 	| { type: "thinking_level_changed"; level: ThinkingLevel }
+	| { type: "plan_mode_changed"; enabled: boolean }
 	| {
 			type: "compaction_end";
 			reason: "manual" | "threshold" | "overflow";
@@ -339,6 +344,7 @@ export class AgentSession {
 	// Permission mode state
 	private _permissionMode: PermissionMode;
 	private _permissionPromptHandler?: (toolName: string, reason: string) => Promise<boolean>;
+	private _planMode = false;
 
 	// Default tool suppression from session options
 	private _noTools?: "all" | "builtin";
@@ -398,9 +404,25 @@ export class AgentSession {
 		return this._permissionMode;
 	}
 
+	/** Whether plan mode is currently active. */
+	get planMode(): boolean {
+		return this._planMode;
+	}
+
 	setPermissionMode(mode: PermissionMode): void {
 		this._permissionMode = mode;
 		this.settingsManager.setPermissionMode(mode);
+	}
+
+	/**
+	 * Enter or exit plan mode. When active, mutating tool calls require explicit
+	 * user approval regardless of the current permission mode. This lets the
+	 * model present a plan and get confirmation before making changes.
+	 */
+	setPlanMode(enabled: boolean): void {
+		if (this._planMode === enabled) return;
+		this._planMode = enabled;
+		this._emit({ type: "plan_mode_changed", enabled });
 	}
 
 	/**
@@ -413,6 +435,21 @@ export class AgentSession {
 	}
 
 	private _resolvePermissionDecision(toolName: string): PermissionDecisionResult {
+		// The plan_mode tool itself must always be callable so the model can
+		// exit plan mode without needing a separate approval step.
+		if (toolName === "plan_mode") {
+			return { decision: "approve" };
+		}
+
+		// When plan mode is active, mutating tools require explicit approval
+		// regardless of the current permission mode.
+		if (this._planMode && DEFAULT_MUTATING_TOOL_NAMES.has(toolName)) {
+			const isInteractive = this._permissionPromptHandler !== undefined;
+			return isInteractive
+				? { decision: "prompt", reason: "Plan mode is active: approval required before making changes" }
+				: { decision: "deny", reason: "Plan mode is active but no TTY is available for approval" };
+		}
+
 		const isInteractive = this._permissionPromptHandler !== undefined;
 		const policies: PermissionPolicyConfig | undefined = this.settingsManager.getPermissionPolicies();
 		// "ask" without a prompt handler cannot actually ask, so treat it as "allow"
@@ -2732,7 +2769,7 @@ export class AgentSession {
 		const previousActiveToolNames = this.getActiveToolNames();
 		const allowedToolNames = this._allowedToolNames;
 		const excludedToolNames = this._excludedToolNames;
-		const defaultBuiltIns = new Set(["read", "bash", "edit", "write", "todo"]);
+		const defaultBuiltIns = new Set(["read", "bash", "edit", "write", "todo", "plan_mode"]);
 		const isAllowedTool = (name: string): boolean =>
 			(!allowedToolNames || allowedToolNames.has(name)) && !excludedToolNames?.has(name);
 		const isAutoEnabledBuiltIn = (name: string): boolean =>
@@ -2850,6 +2887,12 @@ export class AgentSession {
 			: createAllToolDefinitions(this._cwd, {
 					read: { autoResizeImages },
 					bash: { commandPrefix: shellCommandPrefix, shellPath },
+					planMode: {
+						callbacks: {
+							getPlanMode: () => this._planMode,
+							setPlanMode: (enabled) => this.setPlanMode(enabled),
+						},
+					},
 				});
 
 		this._baseToolDefinitions = new Map(
@@ -2878,7 +2921,7 @@ export class AgentSession {
 
 		const defaultActiveToolNames = this._baseToolsOverride
 			? Object.keys(this._baseToolsOverride)
-			: ["read", "bash", "edit", "write", "todo", "memory"];
+			: ["read", "bash", "edit", "write", "todo", "memory", "plan_mode"];
 		const baseActiveToolNames = options.activeToolNames ?? defaultActiveToolNames;
 		this._refreshToolRegistry({
 			activeToolNames: baseActiveToolNames,

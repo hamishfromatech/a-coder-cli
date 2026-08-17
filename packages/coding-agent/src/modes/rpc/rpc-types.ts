@@ -43,6 +43,10 @@ export type RpcCommand =
 	| { id?: string; type: "set_permission_mode"; mode: PermissionMode }
 	| { id?: string; type: "get_permission_mode" }
 
+	// Plan mode
+	| { id?: string; type: "set_plan_mode"; enabled: boolean }
+	| { id?: string; type: "get_plan_mode" }
+
 	// Auth
 	| { id?: string; type: "reload_auth" }
 
@@ -122,6 +126,7 @@ export interface RpcSessionState {
 	model?: Model<any>;
 	thinkingLevel: ThinkingLevel;
 	permissionMode: PermissionMode;
+	planMode: boolean;
 	isStreaming: boolean;
 	isCompacting: boolean;
 	steeringMode: "all" | "one-at-a-time";

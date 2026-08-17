@@ -475,6 +475,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					model: session.model,
 					thinkingLevel: session.thinkingLevel,
 					permissionMode: session.permissionMode,
+					planMode: session.planMode,
 					isStreaming: session.isStreaming,
 					isCompacting: session.isCompacting,
 					steeringMode: session.steeringMode,
@@ -564,6 +565,15 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 			case "get_permission_mode": {
 				return success(id, "get_permission_mode", { mode: session.permissionMode });
+			}
+
+			case "set_plan_mode": {
+				session.setPlanMode(command.enabled);
+				return success(id, "set_plan_mode");
+			}
+
+			case "get_plan_mode": {
+				return success(id, "get_plan_mode", { enabled: session.planMode });
 			}
 
 			// =================================================================

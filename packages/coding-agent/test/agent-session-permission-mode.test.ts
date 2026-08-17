@@ -90,13 +90,93 @@ describe("AgentSession permission mode", () => {
 		session.dispose();
 	});
 
-	it("prompts and approves in ask mode when the handler returns true", async () => {
+	it("allows in ask mode when the handler returns true", async () => {
 		const { session } = await createSessionWithMode("ask");
 		const handler = vi.fn(async () => true);
 		session.setPermissionPromptHandler(handler);
 		const result = await session.agent.beforeToolCall?.(makeToolCall("read"));
 		expect(result).toBeUndefined();
 		expect(handler).toHaveBeenCalledWith("read", 'Permission mode is "ask"');
+		session.dispose();
+	});
+
+	it("allows the plan_mode tool regardless of permission mode", async () => {
+		const { session } = await createSessionWithMode("read-only");
+		const result = await session.agent.beforeToolCall?.(makeToolCall("plan_mode"));
+		expect(result).toBeUndefined();
+		session.dispose();
+	});
+
+	it("prompts for mutating tools in allow mode when plan mode is active", async () => {
+		const { session } = await createSessionWithMode("allow");
+		const handler = vi.fn(async () => false);
+		session.setPermissionPromptHandler(handler);
+
+		// Enter plan mode (the plan_mode tool itself is exempt from prompts).
+		session.setPlanMode(true);
+
+		const bashResult = await session.agent.beforeToolCall?.(makeToolCall("bash"));
+		expect(bashResult).toEqual({
+			block: true,
+			reason: "Plan mode is active: approval required before making changes",
+		});
+		expect(handler).toHaveBeenCalledWith("bash", "Plan mode is active: approval required before making changes");
+
+		const editResult = await session.agent.beforeToolCall?.(makeToolCall("edit"));
+		expect(editResult).toEqual({
+			block: true,
+			reason: "Plan mode is active: approval required before making changes",
+		});
+
+		// Read-only tools remain auto-approved in plan mode.
+		const readResult = await session.agent.beforeToolCall?.(makeToolCall("read"));
+		expect(readResult).toBeUndefined();
+
+		// The plan_mode tool can still be used to exit plan mode.
+		const planResult = await session.agent.beforeToolCall?.(makeToolCall("plan_mode"));
+		expect(planResult).toBeUndefined();
+
+		session.dispose();
+	});
+
+	it("approves mutating tools in plan mode when the prompt handler returns true", async () => {
+		const { session } = await createSessionWithMode("allow");
+		const handler = vi.fn(async () => true);
+		session.setPermissionPromptHandler(handler);
+		session.setPlanMode(true);
+
+		const result = await session.agent.beforeToolCall?.(makeToolCall("write"));
+		expect(result).toBeUndefined();
+		expect(handler).toHaveBeenCalledWith("write", "Plan mode is active: approval required before making changes");
+		session.dispose();
+	});
+
+	it("exits plan mode through setPlanMode", async () => {
+		const { session } = await createSessionWithMode("allow");
+		const handler = vi.fn(async () => false);
+		session.setPermissionPromptHandler(handler);
+		session.setPlanMode(true);
+		session.setPlanMode(false);
+
+		const result = await session.agent.beforeToolCall?.(makeToolCall("bash"));
+		expect(result).toBeUndefined();
+		expect(handler).not.toHaveBeenCalled();
+		session.dispose();
+	});
+
+	it("emits plan_mode_changed events", async () => {
+		const { session } = await createSessionWithMode("allow");
+		const events: boolean[] = [];
+		const unsubscribe = session.subscribe((event) => {
+			if (event.type === "plan_mode_changed") {
+				events.push(event.enabled);
+			}
+		});
+		session.setPlanMode(true);
+		session.setPlanMode(true); // no-op, should not emit
+		session.setPlanMode(false);
+		unsubscribe();
+		expect(events).toEqual([true, false]);
 		session.dispose();
 	});
 

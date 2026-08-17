@@ -27,6 +27,7 @@ export interface AppKeybindings {
 	"app.message.dequeue": true;
 	"app.clipboard.pasteImage": true;
 	"app.permissionMode.select": true;
+	"app.planMode.toggle": true;
 	"app.session.new": true;
 	"app.session.tree": true;
 	"app.session.fork": true;
@@ -111,6 +112,10 @@ export const KEYBINDINGS = {
 	"app.permissionMode.select": {
 		defaultKeys: "shift+tab",
 		description: "Open permission mode selector",
+	},
+	"app.planMode.toggle": {
+		defaultKeys: "ctrl+alt+p",
+		description: "Toggle plan mode",
 	},
 	"app.session.new": { defaultKeys: [], description: "Start a new session" },
 	"app.session.tree": { defaultKeys: [], description: "Open session tree" },
