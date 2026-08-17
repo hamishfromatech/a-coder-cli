@@ -26,6 +26,9 @@ concurrency:
   group: release-cli-${{ github.event.inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
+env:
+  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+
 jobs:
   release:
     runs-on: ubuntu-latest
