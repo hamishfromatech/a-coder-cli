@@ -191,8 +191,12 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	let model = options.model;
 	let modelFallbackMessage: string | undefined;
 
-	// If session has data, try to restore model from it
+	// If session has data, try to restore model from it.
+	// Refresh dynamic model lists first so Ollama Cloud models that were live
+	// when the session was created are available in the registry before we try
+	// to look them up.
 	if (!model && hasExistingSession && existingSession.model) {
+		await modelRegistry.refreshDynamicModels();
 		const restoredModel = modelRegistry.find(existingSession.model.provider, existingSession.model.modelId);
 		if (restoredModel && modelRegistry.hasConfiguredAuth(restoredModel)) {
 			model = restoredModel;
