@@ -34,25 +34,25 @@ const MODE_META: Record<
 > = {
 	ask: {
 		label: "Ask first",
-		description: "The AI asks before editing files or running commands.",
+		description: "Ask for confirmation before every tool call.",
 		icon: Shield,
 		color: "text-pi-warning bg-pi-warning/15",
 	},
 	allow: {
 		label: "Act freely",
-		description: "The AI can edit files and run commands without asking.",
+		description: "Run all tool calls automatically.",
 		icon: Zap,
 		color: "text-pi-success bg-pi-success/15",
 	},
 	"read-only": {
 		label: "Read only",
-		description: "The AI can look at files but cannot make changes.",
+		description: "Only use read and inspect tools; block commands and edits.",
 		icon: Eye,
 		color: "text-pi-text-secondary bg-pi-surface-raised",
 	},
 	auto: {
 		label: "Auto",
-		description: "The AI decides when to ask based on the action.",
+		description: "Use permission policies to decide what needs approval.",
 		icon: Lock,
 		color: "text-pi-accent bg-pi-accent-soft",
 	},

@@ -135,7 +135,7 @@ const trustOptions: FieldOption[] = [
 
 const permissionOptions: FieldOption[] = [
 	{ value: "ask", label: "Ask before doing anything" },
-	{ value: "allow", label: "Just do it" },
+	{ value: "allow", label: "Run tools automatically" },
 	{ value: "read-only", label: "Read files only" },
 	{ value: "auto", label: "Use permission policies" },
 ];
@@ -568,7 +568,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 			{
 				path: "permissionMode",
 				label: "What the AI can do without asking",
-				hint: "Read files only, ask first, or just go ahead.",
+				hint: "Ask first, run tools automatically, read only, or use custom permission policies.",
 				kind: "select",
 				options: permissionOptions,
 			},

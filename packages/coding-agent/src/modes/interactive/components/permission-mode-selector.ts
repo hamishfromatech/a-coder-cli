@@ -15,10 +15,10 @@ const PERMISSION_MODE_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
 };
 
 const MODE_DESCRIPTIONS: Record<PermissionMode, string> = {
-	ask: "Prompt before every tool call",
-	allow: "Approve all tool calls automatically",
-	"read-only": "Block mutating tools (bash, edit, write)",
-	auto: "Prompt only for tools matching policy rules",
+	ask: "Ask for confirmation before every tool call",
+	allow: "Run all tool calls automatically",
+	"read-only": "Only use read and inspect tools; block commands and edits",
+	auto: "Use your permission policies to decide what needs approval",
 };
 
 const MODE_ITEMS: SelectItem[] = [
