@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, Command};
+use tokio::process::Child;
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::task::JoinHandle;
