@@ -14,11 +14,13 @@ mod state;
 mod tray;
 mod voice;
 
+use tauri::{Manager, RunEvent};
+
 use rpc::commands as rpc_commands;
 use state::AppState;
 
 fn main() {
-	tauri::Builder::default()
+	let app = tauri::Builder::default()
 		.plugin(tauri_plugin_shell::init())
 		.plugin(tauri_plugin_dialog::init())
 		.plugin(tauri_plugin_updater::Builder::new().build())
@@ -26,7 +28,7 @@ fn main() {
 		.manage(AppState::default())
 		.invoke_handler(tauri::generate_handler![
 			cli::get_initial_workspace,
-		bootstrap::bootstrap_cli,
+			bootstrap::bootstrap_cli,
 			voice::voice_transcribe,
 			voice::voice_synthesize,
 			rpc_commands::connect,
@@ -61,7 +63,7 @@ fn main() {
 			resources::remove_package,
 			resources::update_package,
 			resources::toggle_resource,
-		share::share_session_gist,
+			share::share_session_gist,
 		])
 		.setup(|app| {
 			let app_handle = app.handle().clone();
@@ -75,6 +77,15 @@ fn main() {
 
 			// Build the system tray.
 			let _tray = tray::build_tray(&app_handle)?;
+
+			// Explicitly show and focus the main window on startup. On macOS with
+			// decorations=false the window can otherwise appear hidden or not
+			// respond to Dock clicks / cmd-tab activation.
+			if let Some(window) = app_handle.get_webview_window("main") {
+				let _ = window.unminimize();
+				let _ = window.show();
+				let _ = window.set_focus();
+			}
 
 			Ok(())
 		})
@@ -90,6 +101,18 @@ fn main() {
 				// Otherwise, let the close proceed normally (app exits).
 			}
 		})
-		.run(tauri::generate_context!())
-		.expect("error while running tauri application");
+		.build(tauri::generate_context!())
+		.expect("error while building tauri application");
+
+	app.run(|app_handle, event| {
+		// On macOS, clicking the Dock icon when the app is running emits Reopen.
+		// Make sure the main window is shown and focused in that case.
+		if let RunEvent::Reopen { .. } = event {
+			if let Some(window) = app_handle.get_webview_window("main") {
+				let _ = window.unminimize();
+				let _ = window.show();
+				let _ = window.set_focus();
+			}
+		}
+	});
 }

@@ -1,7 +1,7 @@
 {
 	"$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
 	"productName": "A-Coder Desktop",
-	"version": "0.80.5",
+	"version": "0.80.6",
 	"identifier": "works.earendil.a-coder-desktop",
 	"build": {
 		"beforeDevCommand": "npm run dev",
@@ -20,7 +20,9 @@
 				"resizable": true,
 				"fullscreen": false,
 				"center": true,
-				"decorations": false
+				"decorations": false,
+				"visible": true,
+				"focus": true
 			}
 		],
 		"security": {
