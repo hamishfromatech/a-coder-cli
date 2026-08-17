@@ -7,9 +7,10 @@
 # ============================================================================
 set -euo pipefail
 
-VERSION="${1:-latest}"       # GitHub release tag (e.g. v0.80.4) or "latest"
-INSTALL_DIR=""               # user-specified install dir
+VERSION="latest"             # GitHub release tag (e.g. v0.80.4) or "latest"
+INSTALL_DIR=""                 # user-specified install dir
 FORCE=false
+NO_DESKTOP=false
 QUIET=false
 
 REPO="hamishfromatech/pi-mono"
@@ -49,6 +50,42 @@ while [[ $# -gt 0 ]]; do
     *) VERSION="$1"; shift ;;
   esac
 done
+
+# Positional argument (if any) is the version/tag.
+if [[ $# -gt 0 ]]; then
+  VERSION="$1"
+fi
+
+# --- downloader -------------------------------------------------------------
+download() {
+  local url="$1" out="$2"
+  if command -v curl &>/dev/null; then
+    curl -sSfL --connect-timeout 5 --max-time 120 -o "$out" "$url"
+  elif command -v wget &>/dev/null; then
+    wget -qO "$out" "$url"
+  else
+    echo "ERROR: Neither curl nor wget found. Install one and retry." >&2
+    exit 1
+  fi
+}
+
+# --- resolve "latest" to a concrete tag via the GitHub API -------------------
+resolve_tag() {
+  local tag="$1"
+  if [[ "$tag" == "latest" ]]; then
+    local api="https://api.github.com/repos/${REPO}/releases/latest"
+    if command -v curl &>/dev/null; then
+      tag="$(curl -sSfL "$api" | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')"
+    else
+      tag="$(wget -qO- "$api" | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')"
+    fi
+    if [[ -z "$tag" ]]; then
+      echo "ERROR: Could not resolve latest release tag from GitHub." >&2
+      exit 1
+    fi
+  fi
+  echo "$tag"
+}
 
 # --- platform detection -------------------------------------------------------
 detect_platform() {
@@ -98,37 +135,6 @@ if [[ -e "$LIB_DIR/bin" || -e "$COMMAND" ]] && [[ "$FORCE" == "false" ]]; then
     CLI_ALREADY_UP_TO_DATE=true
   fi
 fi
-
-# --- downloader --------------------------------------------------------------
-download() {
-  local url="$1" out="$2"
-  if command -v curl &>/dev/null; then
-    curl -sSfL --connect-timeout 5 --max-time 120 -o "$out" "$url"
-  elif command -v wget &>/dev/null; then
-    wget -qO "$out" "$url"
-  else
-    echo "ERROR: Neither curl nor wget found. Install one and retry." >&2
-    exit 1
-  fi
-}
-
-# --- resolve "latest" to a concrete tag via the GitHub API -------------------
-resolve_tag() {
-  local tag="$1"
-  if [[ "$tag" == "latest" ]]; then
-    local api="https://api.github.com/repos/${REPO}/releases/latest"
-    if command -v curl &>/dev/null; then
-      tag="$(curl -sSfL "$api" | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')"
-    else
-      tag="$(wget -qO- "$api" | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')"
-    fi
-    if [[ -z "$tag" ]]; then
-      echo "ERROR: Could not resolve latest release tag from GitHub." >&2
-      exit 1
-    fi
-  fi
-  echo "$tag"
-}
 
 # --- download + extract the self-contained archive --------------------------
 install_from_release() {
@@ -328,6 +334,7 @@ if [[ "$CLI_ALREADY_UP_TO_DATE" == "false" ]]; then
 
   # --- shell completions hook (bash / zsh) -------------------------------------
   if [[ -x "$COMMAND" || -f "$COMMAND.cmd" ]]; then
+    mkdir -p "$INSTALL_DIR/etc"
     "$COMMAND" --generate-completion bash > "$INSTALL_DIR/etc/a-coder-cli.sh" 2>/dev/null || true
     "$COMMAND" --generate-completion zsh > "$INSTALL_DIR/etc/a-coder-cli.zsh" 2>/dev/null || true
   fi
