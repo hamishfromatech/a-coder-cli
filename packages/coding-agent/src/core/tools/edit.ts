@@ -313,8 +313,7 @@ export function createEditToolDefinition(
 		prepareArguments: prepareEditArguments,
 		async execute(_toolCallId, rawInput: EditToolInput, signal?: AbortSignal, _onUpdate?, _ctx?) {
 			// Defensive fallback for direct callers that bypass prepareArguments.
-			const filePath =
-				rawInput.path ?? (rawInput as unknown as { file_path?: string }).file_path;
+			const filePath = rawInput.path ?? (rawInput as unknown as { file_path?: string }).file_path;
 			if (typeof filePath !== "string") {
 				throw new Error("Missing path argument for edit tool");
 			}

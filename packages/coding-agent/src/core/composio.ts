@@ -18,12 +18,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Composio } from "@composio/core";
-import {
-	createPiComposioSystemPrompt,
-	PI_COMPOSIO_SESSION_TOOL_NAMES,
-	PiProvider,
-	type PiToolCollection,
-} from "@composio/experimental";
+import { createPiComposioSystemPrompt, PiProvider, type PiToolCollection } from "@composio/experimental";
 import { getAgentDir } from "../config.ts";
 import type { ToolDefinition } from "./extensions/types.ts";
 import type { ComposioSettings } from "./settings-manager.ts";
@@ -125,8 +120,13 @@ export function resolveComposioConfig(settings: ComposioSettings | undefined): R
 	return { ...settings, apiKey };
 }
 
-/** The five helper tool names, for reference / allow-listing. */
-export const COMPOSIO_TOOL_NAMES = PI_COMPOSIO_SESSION_TOOL_NAMES;
+/** The five helper tool names, for reference / allow-listing.
+ *  Re-exported as a live binding (not a snapshot `const`) because this module
+ *  and `@composio/experimental` are in a dependency cycle (@composio/experimental
+ *  imports `defineTool` from this package). An eager `export const X = imported`
+ *  reads the binding at module-eval time and triggers a TDZ error during the
+ *  cycle; the re-export form is deferred to consumer import access. */
+export { PI_COMPOSIO_SESSION_TOOL_NAMES as COMPOSIO_TOOL_NAMES } from "@composio/experimental";
 
 // --- internal ----------------------------------------------------------------
 

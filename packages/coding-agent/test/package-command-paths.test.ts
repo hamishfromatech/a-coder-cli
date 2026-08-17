@@ -102,7 +102,10 @@ describe("package commands", () => {
 
 	it("skips untrusted project package settings", async () => {
 		mkdirSync(join(projectDir, ".a-coder-cli"), { recursive: true });
-		writeFileSync(join(projectDir, ".a-coder-cli", "settings.json"), JSON.stringify({ packages: ["npm:@project/pkg"] }));
+		writeFileSync(
+			join(projectDir, ".a-coder-cli", "settings.json"),
+			JSON.stringify({ packages: ["npm:@project/pkg"] }),
+		);
 		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
 		try {
@@ -118,7 +121,10 @@ describe("package commands", () => {
 
 	it("uses remembered project trust for list", async () => {
 		mkdirSync(join(projectDir, ".a-coder-cli"), { recursive: true });
-		writeFileSync(join(projectDir, ".a-coder-cli", "settings.json"), JSON.stringify({ packages: ["npm:@project/pkg"] }));
+		writeFileSync(
+			join(projectDir, ".a-coder-cli", "settings.json"),
+			JSON.stringify({ packages: ["npm:@project/pkg"] }),
+		);
 		new ProjectTrustStore(agentDir).set(projectDir, true);
 		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
@@ -137,7 +143,10 @@ describe("package commands", () => {
 
 	it("overrides remembered trust for list with --no-approve", async () => {
 		mkdirSync(join(projectDir, ".a-coder-cli"), { recursive: true });
-		writeFileSync(join(projectDir, ".a-coder-cli", "settings.json"), JSON.stringify({ packages: ["npm:@project/pkg"] }));
+		writeFileSync(
+			join(projectDir, ".a-coder-cli", "settings.json"),
+			JSON.stringify({ packages: ["npm:@project/pkg"] }),
+		);
 		new ProjectTrustStore(agentDir).set(projectDir, true);
 		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
@@ -155,7 +164,10 @@ describe("package commands", () => {
 
 	it("approves project trust for list with --approve", async () => {
 		mkdirSync(join(projectDir, ".a-coder-cli"), { recursive: true });
-		writeFileSync(join(projectDir, ".a-coder-cli", "settings.json"), JSON.stringify({ packages: ["npm:@project/pkg"] }));
+		writeFileSync(
+			join(projectDir, ".a-coder-cli", "settings.json"),
+			JSON.stringify({ packages: ["npm:@project/pkg"] }),
+		);
 		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
 		try {
@@ -174,7 +186,10 @@ describe("package commands", () => {
 	it("uses default project trust for list", async () => {
 		mkdirSync(join(projectDir, ".a-coder-cli"), { recursive: true });
 		writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ defaultProjectTrust: "always" }));
-		writeFileSync(join(projectDir, ".a-coder-cli", "settings.json"), JSON.stringify({ packages: ["npm:@project/pkg"] }));
+		writeFileSync(
+			join(projectDir, ".a-coder-cli", "settings.json"),
+			JSON.stringify({ packages: ["npm:@project/pkg"] }),
+		);
 		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
 		try {
@@ -192,7 +207,10 @@ describe("package commands", () => {
 
 	it("uses project_trust extensions for package commands", async () => {
 		mkdirSync(join(projectDir, ".a-coder-cli"), { recursive: true });
-		writeFileSync(join(projectDir, ".a-coder-cli", "settings.json"), JSON.stringify({ packages: ["npm:@project/pkg"] }));
+		writeFileSync(
+			join(projectDir, ".a-coder-cli", "settings.json"),
+			JSON.stringify({ packages: ["npm:@project/pkg"] }),
+		);
 		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
 		try {
@@ -282,7 +300,10 @@ describe("package commands", () => {
 	it("lets trust.json override default project trust", async () => {
 		mkdirSync(join(projectDir, ".a-coder-cli"), { recursive: true });
 		writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ defaultProjectTrust: "always" }));
-		writeFileSync(join(projectDir, ".a-coder-cli", "settings.json"), JSON.stringify({ packages: ["npm:@project/pkg"] }));
+		writeFileSync(
+			join(projectDir, ".a-coder-cli", "settings.json"),
+			JSON.stringify({ packages: ["npm:@project/pkg"] }),
+		);
 		new ProjectTrustStore(agentDir).set(projectDir, false);
 		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
@@ -351,7 +372,9 @@ describe("package commands", () => {
 
 			const stderr = errorSpy.mock.calls.map(([message]) => String(message)).join("\n");
 			expect(stderr).toContain('Unknown option --unknown for "install".');
-			expect(stderr).toContain('Use "a-coder-cli --help" or "a-coder-cli install <source> [-l] [--approve|--no-approve]".');
+			expect(stderr).toContain(
+				'Use "a-coder-cli --help" or "a-coder-cli install <source> [-l] [--approve|--no-approve]".',
+			);
 			expect(process.exitCode).toBe(1);
 		} finally {
 			errorSpy.mockRestore();

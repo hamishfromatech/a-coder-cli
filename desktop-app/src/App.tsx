@@ -407,19 +407,26 @@ export default function App() {
 									// Best-effort tree refresh after a session switch. The connect-time get_tree
 									// already populated it, so a failure here is non-critical: retry silently
 									// (a lost/delayed response usually succeeds on retry) and never nag.
+									// If every retry fails, clear the stale tree rather than show the
+									// previous session's structure against the new session's messages.
+									let treeLoaded = false;
 									for (let attempt = 0; attempt < 3; attempt++) {
 										try {
 											const treeRes = (await rpc.sendCommand({ type: "get_tree" })) as {
 												tree: rpc.SessionTreeNode[];
 												leafId: string | null;
 											};
-											if (treeRes?.tree) setTree(treeRes.tree, treeRes.leafId);
+											if (treeRes?.tree) {
+												setTree(treeRes.tree, treeRes.leafId);
+												treeLoaded = true;
+											}
 											break;
 										} catch (e) {
 											console.warn("session_start get_tree attempt failed", attempt, e);
 											if (attempt < 2) await new Promise((r) => setTimeout(r, 1500));
 										}
 									}
+									if (!treeLoaded) setTree([], null);
 									try {
 										const msgsRes = (await rpc.sendCommand({ type: "get_messages" })) as {
 											messages: import("@earendil-works/pi-agent-core").AgentMessage[];

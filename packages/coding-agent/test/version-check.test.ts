@@ -42,20 +42,28 @@ describe("version checks", () => {
 		await expect(checkForNewPiVersion("1.2.2")).resolves.toEqual({ version: "1.2.3" });
 	});
 
-	it("uses the pi.dev version check api with a pi user agent", async () => {
+	it("uses the GitHub releases api with a pi user agent", async () => {
 		const fetchMock = vi.fn(async () => Response.json({ version: "1.2.4" }));
 		vi.stubGlobal("fetch", fetchMock);
 
 		await expect(getLatestPiVersion("1.2.3")).resolves.toBe("1.2.4");
 		expect(fetchMock).toHaveBeenCalledWith(
-			"https://a-coder-cli.dev/api/latest-version",
+			"https://api.github.com/repos/hamishfromatech/pi-mono/releases/latest",
 			expect.objectContaining({
 				headers: expect.objectContaining({
 					"User-Agent": expect.stringMatching(/^a-coder-cli\/1\.2\.3 /),
-					accept: "application/json",
+					accept: "application/vnd.github+json",
 				}),
 			}),
 		);
+	});
+
+	it("parses the version from the release tag_name (stripping the leading v)", async () => {
+		const fetchMock = vi.fn(async () => Response.json({ tag_name: "v1.2.5" }));
+		vi.stubGlobal("fetch", fetchMock);
+
+		await expect(getLatestPiRelease("1.2.3")).resolves.toEqual({ version: "1.2.5" });
+		await expect(getLatestPiVersion("1.2.3")).resolves.toBe("1.2.5");
 	});
 
 	it("returns the active package metadata from the version check api", async () => {

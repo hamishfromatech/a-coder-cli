@@ -1,4 +1,4 @@
-import { basename, dirname, join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { Markdown, type MarkdownTheme } from "@earendil-works/pi-tui";
 import chalk from "chalk";
 import { selectConfig } from "./cli/config-selector.ts";
@@ -17,12 +17,7 @@ import {
 	VERSION,
 } from "./config.ts";
 import type { ExtensionFactory } from "./core/extensions/types.ts";
-import {
-	DefaultPackageManager,
-	type PathMetadata,
-	type ResolvedPaths,
-	type ResolvedResource,
-} from "./core/package-manager.ts";
+import { DefaultPackageManager } from "./core/package-manager.ts";
 import { type AppMode, resolveProjectTrusted } from "./core/project-trust.ts";
 import { DefaultResourceLoader } from "./core/resource-loader.ts";
 import { type PackageSource, SettingsManager } from "./core/settings-manager.ts";

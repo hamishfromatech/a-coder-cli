@@ -38,10 +38,15 @@ function candidateBinaries(): string[] {
 	if (plat === "win32") {
 		const localAppData = process.env.LOCALAPPDATA ?? join(home, "AppData", "Local");
 		const programFiles = process.env.ProgramFiles ?? "C:\\Program Files";
-		return [
-			join(localAppData, APP_NAME, `${APP_NAME}.exe`),
-			join(programFiles, APP_NAME, `${APP_NAME}.exe`),
-		];
+		// The NSIS install dir is named after productName, but the installed
+		// executable may be named after either the productName or the Cargo binary
+		// name depending on bundler version. Check both so `--desktop` finds the app
+		// regardless of which form Tauri emitted.
+		const exeNames = [`${APP_NAME}.exe`, `${LINUX_BIN}.exe`];
+		return exeNames.flatMap((exeName) => [
+			join(localAppData, APP_NAME, exeName),
+			join(programFiles, APP_NAME, exeName),
+		]);
 	}
 	// linux and other unix
 	return [
@@ -112,7 +117,9 @@ export async function launchDesktop(cwd: string): Promise<void> {
 			console.error(
 				`Install it from a release (DMG/installer) or set ${chalk.cyan(BINARY_ENV)} to the desktop executable path.`,
 			);
-			console.error(`For monorepo development, set ${chalk.cyan(`${DEV_ENV}=1`)} to run it via \`npm run tauri dev\`.`);
+			console.error(
+				`For monorepo development, set ${chalk.cyan(`${DEV_ENV}=1`)} to run it via \`npm run tauri dev\`.`,
+			);
 			process.exit(1);
 		}
 		// On macOS, launch through `open` so the app activates properly (Dock,

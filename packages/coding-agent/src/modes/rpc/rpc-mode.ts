@@ -719,23 +719,23 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				// Returning full AgentMessages made get_tree ~13MB for large sessions,
 				// which stalled or lost the response over the IPC pipe.
 				const strip = (nodes: typeof fullTree): unknown[] =>
-				nodes.map((n) => {
-					const entry: Record<string, unknown> = {
-						id: n.entry.id,
-						type: n.entry.type,
-						parentId: n.entry.parentId,
-						timestamp: n.entry.timestamp,
-					};
-					if (n.entry.type === "message") {
-						entry.message = { role: n.entry.message.role };
-					}
-					return {
-						entry,
-						children: strip(n.children),
-						label: n.label,
-						labelTimestamp: n.labelTimestamp,
-					};
-				});
+					nodes.map((n) => {
+						const entry: Record<string, unknown> = {
+							id: n.entry.id,
+							type: n.entry.type,
+							parentId: n.entry.parentId,
+							timestamp: n.entry.timestamp,
+						};
+						if (n.entry.type === "message") {
+							entry.message = { role: n.entry.message.role };
+						}
+						return {
+							entry,
+							children: strip(n.children),
+							label: n.label,
+							labelTimestamp: n.labelTimestamp,
+						};
+					});
 				return success(id, "get_tree", { tree: strip(fullTree), leafId: sessionManager.getLeafId() });
 			}
 

@@ -209,13 +209,7 @@ export function createWriteToolDefinition(
 		promptGuidelines: ["Use write only for new files or complete rewrites."],
 		parameters: writeSchema,
 		prepareArguments: prepareWriteArguments,
-		async execute(
-			_toolCallId,
-			params: { path: string; content: string },
-			signal?: AbortSignal,
-			_onUpdate?,
-			_ctx?,
-		) {
+		async execute(_toolCallId, params: { path: string; content: string }, signal?: AbortSignal, _onUpdate?, _ctx?) {
 			// Defensive fallback for direct callers that bypass prepareArguments.
 			const path = params.path ?? (params as unknown as { file_path?: string }).file_path;
 			if (typeof path !== "string" || typeof params.content !== "string") {

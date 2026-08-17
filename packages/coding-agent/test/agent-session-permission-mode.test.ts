@@ -1,6 +1,8 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AgentContext, BeforeToolCallContext } from "@earendil-works/pi-agent-core";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { getModel } from "@earendil-works/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAgentSession } from "../src/core/sdk.ts";
@@ -36,8 +38,26 @@ describe("AgentSession permission mode", () => {
 		return { session, settingsManager };
 	}
 
-	function makeToolCall(name: string, id = "tc-1") {
-		return { toolCall: { name, id, parameters: {} }, args: {} };
+	function makeToolCall(name: string, id = "tc-1"): BeforeToolCallContext {
+		const assistantMessage: AssistantMessage = {
+			role: "assistant",
+			content: [],
+			api: "anthropic",
+			provider: "anthropic",
+			model: "claude-sonnet-4-5",
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "toolUse",
+			timestamp: Date.now(),
+		};
+		const context: AgentContext = { systemPrompt: "", messages: [] };
+		return { assistantMessage, toolCall: { type: "toolCall", name, id, arguments: {} }, args: {}, context };
 	}
 
 	it("allows all tools in allow mode", async () => {

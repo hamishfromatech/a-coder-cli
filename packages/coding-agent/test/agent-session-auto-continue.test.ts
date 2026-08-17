@@ -59,7 +59,9 @@ describe("AgentSession auto-continue after planning", () => {
 		const planningMessage = fauxAssistantMessage(
 			"I can see you already have a strong foundation. The main missing piece is the search page. Let me build that now.",
 		);
-		const doneMessage = fauxAssistantMessage("I have created the organisations.html page and updated the navigation.");
+		const doneMessage = fauxAssistantMessage(
+			"I have created the organisations.html page and updated the navigation.",
+		);
 
 		let callCount = 0;
 		session.agent.streamFn = () => {
@@ -91,12 +93,9 @@ describe("AgentSession auto-continue after planning", () => {
 	it("does not auto-continue when the assistant actually calls tools", async () => {
 		const { session } = await createSession();
 
-		const planningWithTool = fauxAssistantMessage(
-			"I will create the organisations page now.",
-			{
-				stopReason: "toolUse",
-			},
-		);
+		const planningWithTool = fauxAssistantMessage("I will create the organisations page now.", {
+			stopReason: "toolUse",
+		});
 		// fauxAssistantMessage doesn't include a toolCall block, so we append one.
 		const toolCallMessage = {
 			...planningWithTool,
@@ -134,9 +133,7 @@ describe("AgentSession auto-continue after planning", () => {
 	it("does not auto-continue for plain Q&A responses", async () => {
 		const { session } = await createSession();
 
-		const answerMessage = fauxAssistantMessage(
-			"To create a React app, run `npx create-react-app my-app`.",
-		);
+		const answerMessage = fauxAssistantMessage("To create a React app, run `npx create-react-app my-app`.");
 
 		session.agent.streamFn = () => {
 			const stream = createAssistantMessageEventStream();
@@ -181,11 +178,11 @@ describe("AgentSession auto-continue after planning", () => {
 		const { session } = await createSession();
 
 		const truncatedMessage = fauxAssistantMessage(
-			"<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>About the NDIS | Mackay Connect</title>\n  <meta name=\"description\" content=\"Understanding how Mack",
+			'<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n  <title>About the NDIS | Mackay Connect</title>\n  <meta name="description" content="Understanding how Mack',
 			{ stopReason: "length" },
 		);
 		const doneMessage = fauxAssistantMessage(
-			"ay Connect works within the NDIS framework — residential care, provider verification, and participant support in Mackay and beyond.\">\n</head>\n<body>\n</body>\n</html>",
+			'ay Connect works within the NDIS framework — residential care, provider verification, and participant support in Mackay and beyond.">\n</head>\n<body>\n</body>\n</html>',
 		);
 
 		let callCount = 0;
