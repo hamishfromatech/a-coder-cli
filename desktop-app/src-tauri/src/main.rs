@@ -14,12 +14,25 @@ mod state;
 mod tray;
 mod voice;
 
-use tauri::{Manager, RunEvent};
+use tauri::Manager;
 
 use rpc::commands as rpc_commands;
 use state::AppState;
 
 fn main() {
+	// On macOS, make sure the app is a foreground (regular) application before
+	// any windows are created. Without this, launching from certain contexts
+	// (terminal, installer, quarantined DMG) can leave the process running but
+	// its windows hidden from the user because NSApplication is not activated.
+	#[cfg(target_os = "macos")]
+	#[allow(unexpected_cfgs)]
+	unsafe {
+		use objc::{msg_send, sel, sel_impl};
+		let cls = objc::runtime::Class::get("NSApplication").expect("NSApplication");
+		let app: *mut objc::runtime::Object = msg_send![cls, sharedApplication];
+		let _: () = msg_send![app, activateIgnoringOtherApps: true];
+	}
+
 	let app = tauri::Builder::default()
 		.plugin(tauri_plugin_shell::init())
 		.plugin(tauri_plugin_dialog::init())

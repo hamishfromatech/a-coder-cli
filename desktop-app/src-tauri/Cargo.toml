@@ -1,6 +1,6 @@
 [package]
 name = "a-coder-desktop"
-version = "0.80.7"
+version = "0.80.8"
 description = "Desktop wrapper for a-coder-cli"
 authors = ["The A-Tech Corporation PTY LTD"]
 edition = "2021"
@@ -25,6 +25,9 @@ walkdir = "2"
 which = "7"
 base64 = "0.22"
 reqwest = { version = "0.13", features = ["json", "multipart"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc = "0.2"
 
 [dev-dependencies]
 tempfile = "3"

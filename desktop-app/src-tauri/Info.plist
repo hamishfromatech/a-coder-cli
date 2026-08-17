@@ -7,6 +7,12 @@
 	     with the app switcher and the main window can fail to appear. -->
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<!-- Ensure the app is treated as a modern Cocoa application, not a
+	     Carbon/background process. Tauri v2 may inject LSRequiresCarbon;
+	     explicitly disable it so the window is composited and activatable. -->
+	<key>LSRequiresCarbon</key>
+	<false/>
+
 	<!-- Publisher / copyright shown in the macOS About box. -->
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 The A-Tech Corporation PTY LTD</string>
