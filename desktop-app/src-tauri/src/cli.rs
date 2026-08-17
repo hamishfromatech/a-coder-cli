@@ -1,4 +1,125 @@
-use std::path::PathBuf;
+use std::io::Read;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+/// Read the first `len` bytes of a file, returning an empty slice on failure.
+fn read_file_header(path: &Path, len: usize) -> Vec<u8> {
+	let mut buf = vec![0u8; len];
+	if let Ok(mut file) = std::fs::File::open(path) {
+		if let Ok(n) = file.read(&mut buf) {
+			buf.truncate(n);
+			return buf;
+		}
+	}
+	buf.truncate(0);
+	buf
+}
+
+/// Detect native executables by their file header.
+fn is_executable_binary(path: &Path) -> bool {
+	if let Some(ext) = path.extension() {
+		if ext.to_string_lossy().eq_ignore_ascii_case("exe") {
+			return true;
+		}
+	}
+	let header = read_file_header(path, 32);
+	if header.starts_with(b"\x7fELF") || header.starts_with(b"MZ") {
+		return true;
+	}
+	if header.len() >= 4 {
+		let magic = u32::from_ne_bytes([header[0], header[1], header[2], header[3]]);
+		const MH_MAGIC_64: u32 = 0xfeedfacf;
+		const MH_MAGIC: u32 = 0xfeedface;
+		const FAT_MAGIC: u32 = 0xcafebabe;
+		const FAT_MAGIC_64: u32 = 0xbebafeca;
+		if magic == MH_MAGIC_64 || magic == MH_MAGIC || magic == FAT_MAGIC || magic == FAT_MAGIC_64 {
+			return true;
+		}
+		let magic_be = u32::from_be_bytes([header[0], header[1], header[2], header[3]]);
+		if magic_be == FAT_MAGIC || magic_be == FAT_MAGIC_64 {
+			return true;
+		}
+	}
+	false
+}
+
+/// Detect JS/shebang scripts that must be executed through Node.
+fn is_node_script(path: &Path) -> bool {
+	if let Some(ext) = path.extension() {
+		let ext = ext.to_string_lossy().to_lowercase();
+		if matches!(ext.as_str(), "js" | "mjs" | "cjs" | "ts") {
+			return true;
+		}
+	}
+	let header = read_file_header(path, 256);
+	if header.starts_with(b"#!") {
+		if let Ok(line) = std::str::from_utf8(header.split(|&b| b == b'\n').next().unwrap_or(&header)) {
+			return line.contains("node");
+		}
+	}
+	false
+}
+
+/// If `path` is a Windows batch shim that delegates to a release binary next
+/// to it (e.g. `~/.a-coder/bin/a-coder-cli.cmd` -> `../lib/a-coder-cli/pi.exe`),
+/// return the binary path so the desktop can own the process directly.
+fn resolve_windows_release_binary(path: &Path) -> Option<PathBuf> {
+	let ext = path.extension()?.to_string_lossy().to_lowercase();
+	if ext != "cmd" && ext != "bat" {
+		return None;
+	}
+	let shim_dir = path.parent()?;
+	let candidate = shim_dir
+		.join("../lib/a-coder-cli")
+		.join(format!("pi{}", std::env::consts::EXE_SUFFIX));
+	if candidate.is_file() {
+		return Some(candidate);
+	}
+	None
+}
+
+/// Build a `Command` that runs the CLI at `cli_path` with the given arguments.
+///
+/// The unified release ships a compiled Bun binary (`pi` / `pi.exe`) that must
+/// be executed directly, while development/source installs are plain Node
+/// scripts (`dist/cli.js`). Windows batch shims are handled via `cmd /c` or,
+/// when possible, resolved to the underlying binary.
+pub fn build_cli_command(cli_path: &Path, args: &[String]) -> Result<Command, String> {
+	if !cli_path.is_file() {
+		return Err(format!("CLI path is not a file: {}", cli_path.display()));
+	}
+
+	if let Some(ext) = cli_path.extension() {
+		let ext = ext.to_string_lossy().to_lowercase();
+		if ext == "cmd" || ext == "bat" {
+			if let Some(binary) = resolve_windows_release_binary(cli_path) {
+				let mut cmd = Command::new(binary);
+				cmd.args(args);
+				return Ok(cmd);
+			}
+			let mut cmd = Command::new("cmd");
+			cmd.arg("/c").arg(cli_path).args(args);
+			return Ok(cmd);
+		}
+	}
+
+	if is_executable_binary(cli_path) {
+		let mut cmd = Command::new(cli_path);
+		cmd.args(args);
+		return Ok(cmd);
+	}
+
+	if is_node_script(cli_path) {
+		let mut cmd = Command::new("node");
+		cmd.arg(cli_path).args(args);
+		return Ok(cmd);
+	}
+
+	// Fallback: trust the OS to interpret the file (shell scripts, etc.).
+	let mut cmd = Command::new(cli_path);
+	cmd.args(args);
+	Ok(cmd)
+}
 
 /// Workspace path forwarded by the `pi --desktop` CLI launcher via the
 /// `A_CODER_DESKTOP_WORKSPACE` environment variable. Returns `None` when the
@@ -24,6 +145,11 @@ pub fn resolve_cli_path(override_path: Option<String>) -> Result<PathBuf, String
     // Try the canonical command name first, then the npm global binary name.
     for name in ["a-coder-cli", "pi"] {
         if let Ok(path) = which::which(name) {
+            // On Windows, `which` may find the release `.cmd` shim. Run the
+            // underlying binary directly when possible.
+            if let Some(binary) = resolve_windows_release_binary(&path) {
+                return Ok(binary);
+            }
             return Ok(path);
         }
     }

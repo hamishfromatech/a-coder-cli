@@ -1,9 +1,7 @@
-use std::process::Command;
-
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::cli::{reconstructed_path, resolve_cli_path};
+use crate::cli::{build_cli_command, reconstructed_path, resolve_cli_path};
 
 #[derive(Debug, Deserialize)]
 pub struct CwdArgs {
@@ -44,8 +42,7 @@ pub struct ToggleResourceArgs {
 
 fn run_resources_command(cwd: Option<String>, subcommand: Vec<String>) -> Result<Value, String> {
     let cli_path = resolve_cli_path(None)?;
-    let mut args: Vec<String> = vec![cli_path.to_string_lossy().into_owned()];
-    args.push("resources".into());
+    let mut args: Vec<String> = vec!["resources".into()];
     args.extend(subcommand.iter().cloned());
     args.push("--json".into());
     if let Some(c) = cwd.as_ref().filter(|s| !s.is_empty()) {
@@ -53,8 +50,7 @@ fn run_resources_command(cwd: Option<String>, subcommand: Vec<String>) -> Result
         args.push(c.clone());
     }
 
-    let output = Command::new("node")
-        .args(args)
+    let output = build_cli_command(&cli_path, &args)?
         .current_dir(cwd.as_deref().unwrap_or("."))
         .env("PATH", reconstructed_path())
         .output()

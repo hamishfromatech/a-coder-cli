@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
 
-use crate::cli::reconstructed_path;
+use crate::cli::{build_cli_command, reconstructed_path};
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -41,17 +41,13 @@ impl RpcClient {
 		continue_session: bool,
 		app_handle: AppHandle,
 	) -> Result<Self, String> {
-		let mut cmd = Command::new("node");
 		// `--continue` resumes the most recent session for this project's cwd
 		// instead of starting a fresh one, so chat history persists across app
 		// restarts and version upgrades. It is opt-in: the app opens into a fresh
 		// session by default and loads past sessions into the tree in the
 		// background. Project switches / reconnects pass `continue_session = true`
 		// to resume that project's last session.
-		let mut args: Vec<String> = vec![
-			"--mode".into(),
-			"rpc".into(),
-		];
+		let mut args: Vec<String> = vec!["--mode".into(), "rpc".into()];
 		if continue_session {
 			args.push("--continue".into());
 		}
@@ -64,9 +60,7 @@ impl RpcClient {
 			args.push(m);
 		}
 
-		let mut child = cmd
-			.arg(cli_path)
-			.args(args)
+		let mut child = build_cli_command(&cli_path, &args)?
 			.current_dir(cwd.unwrap_or_else(|| ".".into()))
 			.env("PATH", reconstructed_path())
 			.stdin(Stdio::piped())

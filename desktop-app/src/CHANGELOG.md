@@ -24,6 +24,7 @@
 - Fixed split-turn compaction to serialize summary requests so single-concurrency local providers do not fail with 429 errors ([#5536](https://github.com/earendil-works/pi/issues/5536)).
 - Fixed custom session entries appended during assistant streaming to render before the live assistant message, matching persisted session order.
 - Fixed oversized bash tool timeouts to fail with a clear validation error instead of being clamped to an immediate timeout ([#6181](https://github.com/earendil-works/pi/issues/6181)).
+- Fixed the desktop app to launch the a-coder-cli executable directly instead of always invoking `node`, which broke startup for users who installed the unified-release Bun-compiled binary.
 
 ## [0.80.3] - 2026-06-30
 
