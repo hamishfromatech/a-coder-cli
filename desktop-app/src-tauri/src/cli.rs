@@ -338,10 +338,16 @@ fn a_coder_install_dir() -> Option<PathBuf> {
 	Some(PathBuf::from(home).join(".a-coder"))
 }
 
-/// Expand a leading `~` to the user's home directory.
+/// Expand a leading `~` to the user's home directory. On Windows, falls back to
+/// USERPROFILE when HOME is not set.
 fn expand_home(path: &str) -> PathBuf {
     if let Some(rest) = path.strip_prefix("~/") {
-        if let Ok(home) = std::env::var("HOME") {
+        let home = if cfg!(windows) {
+            std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).ok()
+        } else {
+            std::env::var("HOME").ok()
+        };
+        if let Some(home) = home {
             return PathBuf::from(home).join(rest);
         }
     }

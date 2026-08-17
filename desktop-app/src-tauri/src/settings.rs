@@ -7,9 +7,19 @@ use serde_json::Value;
 const CONFIG_DIR_NAME: &str = ".a-coder-cli";
 const AGENT_DIR: &str = "agent";
 
+pub fn home_dir() -> Result<PathBuf, String> {
+    if cfg!(windows) {
+        std::env::var("USERPROFILE")
+            .or_else(|_| std::env::var("HOME"))
+            .map_err(|_| "USERPROFILE or HOME not set".to_string())
+    } else {
+        std::env::var("HOME").map_err(|_| "HOME not set".to_string())
+    }
+    .map(PathBuf::from)
+}
+
 fn agent_dir() -> Result<PathBuf, String> {
-    let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
-    Ok(PathBuf::from(home).join(CONFIG_DIR_NAME).join(AGENT_DIR))
+    Ok(home_dir()?.join(CONFIG_DIR_NAME).join(AGENT_DIR))
 }
 
 pub fn global_settings_path() -> Result<PathBuf, String> {
@@ -35,8 +45,7 @@ pub fn global_keybindings_path() -> Result<PathBuf, String> {
 const MEMORY_FILE_NAME: &str = "MEMORY.md";
 
 pub fn global_memory_path() -> Result<PathBuf, String> {
-    let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
-    Ok(PathBuf::from(home).join(CONFIG_DIR_NAME).join(MEMORY_FILE_NAME))
+    Ok(home_dir()?.join(CONFIG_DIR_NAME).join(MEMORY_FILE_NAME))
 }
 
 pub fn project_settings_path(cwd: &str) -> PathBuf {

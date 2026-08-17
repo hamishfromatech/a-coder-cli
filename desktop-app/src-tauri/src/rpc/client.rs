@@ -116,6 +116,7 @@ impl RpcClient {
 		}
 
 		let line = serde_json::to_string(&command_with_id).map_err(|e| e.to_string())?;
+		tracing::debug!("RPC send: {}", line);
 		stdin_tx
 			.send(line)
 			.await
@@ -123,8 +124,10 @@ impl RpcClient {
 
 		// Bound the wait so a missing response (CLI died, line lost, or an
 		// unhandled command) can never block the caller — and thus never hold the
-		// client lock — forever. On timeout, drop the stale pending entry.
-		match timeout(Duration::from_secs(20), rx).await {
+		// client lock — forever. On timeout, drop the stale pending entry. Long
+		// history fetches (get_messages) can take a while for big sessions, so
+		// allow up to 60 seconds.
+		match timeout(Duration::from_secs(60), rx).await {
 			Ok(Ok(result)) => {
 				result
 			}
@@ -184,6 +187,7 @@ impl RpcClient {
 				de.disable_recursion_limit();
 				match Value::deserialize(serde_stacker::Deserializer::new(&mut de)) {
 					Ok(value) => {
+						tracing::debug!("RPC recv: {}", &line);
 						Self::dispatch_line(value, &pending, &app_handle).await;
 					}
 					Err(e) => {
