@@ -107,7 +107,8 @@ fn main() {
 	app.run(|app_handle, event| {
 		// On macOS, clicking the Dock icon when the app is running emits Reopen.
 		// Make sure the main window is shown and focused in that case.
-		if let RunEvent::Reopen { .. } = event {
+		#[cfg(target_os = "macos")]
+		if let tauri::RunEvent::Reopen { .. } = event {
 			if let Some(window) = app_handle.get_webview_window("main") {
 				let _ = window.unminimize();
 				let _ = window.show();

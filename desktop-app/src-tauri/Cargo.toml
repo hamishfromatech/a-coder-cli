@@ -1,6 +1,6 @@
 [package]
 name = "a-coder-desktop"
-version = "0.80.6"
+version = "0.80.7"
 description = "Desktop wrapper for a-coder-cli"
 authors = ["The A-Tech Corporation PTY LTD"]
 edition = "2021"

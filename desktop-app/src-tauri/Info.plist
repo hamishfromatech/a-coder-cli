@@ -2,6 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- Principal class: required for the app to become a foreground-capable
+	     Cocoa application on macOS. Without this the bundle may not register
+	     with the app switcher and the main window can fail to appear. -->
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
 	<!-- Publisher / copyright shown in the macOS About box. -->
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 The A-Tech Corporation PTY LTD</string>

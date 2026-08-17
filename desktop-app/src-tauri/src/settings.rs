@@ -109,7 +109,7 @@ fn write_json(path: &Path, value: &Value) -> Result<(), String> {
     }
     // Preserve auth.json's 0600 permissions by writing then chmod'ing if the
     // file already exists.
-    let existed = path.exists();
+    let _existed = path.exists();
     let serialized = serde_json::to_string_pretty(value)
         .map_err(|e| format!("serialize: {e}"))?;
     std::fs::write(path, serialized).map_err(|e| format!("write {}: {e}", path.display()))?;
@@ -117,7 +117,7 @@ fn write_json(path: &Path, value: &Value) -> Result<(), String> {
     // a-coder-cli writes auth.json with 0600 (user read/write only). Mirror
     // that when the file already had restricted perms so secrets don't leak.
     #[cfg(unix)]
-    if existed && path.ends_with("auth.json") {
+    if _existed && path.ends_with("auth.json") {
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
     }
