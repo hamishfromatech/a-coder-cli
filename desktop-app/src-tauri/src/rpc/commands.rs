@@ -1,7 +1,8 @@
+use std::path::PathBuf;
+
 use serde_json::Value;
 use tauri::{command, State};
 
-use crate::cli::resolve_cli_path;
 use crate::rpc::RpcClient;
 use crate::state::AppState;
 
@@ -23,7 +24,14 @@ pub async fn connect(
 	state: State<'_, AppState>,
 	args: ConnectArgs,
 ) -> Result<String, String> {
-	let cli_path = resolve_cli_path(args.cli_path)?;
+	// If the user supplied an explicit CLI override, honor it without updating.
+	// Otherwise make sure the globally installed CLI matches the desktop app's
+	// version so resumed sessions don't run against a stale engine.
+	let cli_path = if let Some(override_path) = args.cli_path {
+		PathBuf::from(override_path)
+	} else {
+		crate::bootstrap::ensure_cli_version_matches().await?
+	};
 	let client = RpcClient::spawn(
 		cli_path,
 		Some(args.cwd),

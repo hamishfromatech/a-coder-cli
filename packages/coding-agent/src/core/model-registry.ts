@@ -848,8 +848,9 @@ export class ModelRegistry {
 	private applyCachedContextWindow(model: Model<Api>, value: number | undefined): Model<Api> | undefined {
 		if (value === undefined || value <= 0 || value === model.contextWindow) return undefined;
 		const idx = this.models.findIndex((m) => m.provider === model.provider && m.id === model.id);
-		const updated: Model<Api> = { ...model, contextWindow: value };
-		if (idx >= 0) this.models[idx] = { ...this.models[idx]!, contextWindow: value };
+		const maxTokens = Math.min(value, model.maxTokens ?? value);
+		const updated: Model<Api> = { ...model, contextWindow: value, maxTokens };
+		if (idx >= 0) this.models[idx] = { ...this.models[idx]!, contextWindow: value, maxTokens };
 		return updated;
 	}
 

@@ -108,6 +108,8 @@ export interface FetchOllamaContextWindowOptions {
 	fetch?: typeof fetch;
 	/** Per-request timeout. Defaults to 6s — Ollama /api/show is fast and local. */
 	timeoutMs?: number;
+	/** Optional API key for authenticated Ollama Cloud /api/show requests. */
+	apiKey?: string;
 }
 
 /**
@@ -128,10 +130,14 @@ export async function fetchOllamaContextWindow(
 	const timer = setTimeout(() => controller.abort(), timeoutMs);
 	const onParentAbort = () => controller.abort();
 	options.signal?.addEventListener("abort", onParentAbort, { once: true });
+	const headers: Record<string, string> = { "content-type": "application/json" };
+	if (options.apiKey) {
+		headers.authorization = `Bearer ${options.apiKey}`;
+	}
 	try {
 		const res = await doFetch(`${origin}/api/show`, {
 			method: "POST",
-			headers: { "content-type": "application/json" },
+			headers,
 			body: JSON.stringify({ model: modelId, verbose: true }),
 			signal: controller.signal,
 		});
