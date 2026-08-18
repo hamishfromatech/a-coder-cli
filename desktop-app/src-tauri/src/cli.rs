@@ -84,10 +84,23 @@ fn resolve_windows_release_binary(path: &Path) -> Option<PathBuf> {
 /// be executed directly, while development/source installs are plain Node
 /// scripts (`dist/cli.js`). Windows batch shims are handled via `cmd /c` or,
 /// when possible, resolved to the underlying binary.
+///
+/// GUI apps on macOS and some Linux desktops inherit a minimal `PATH`, so the
+/// returned command is always given a reconstructed `PATH` that includes the
+/// user's shell PATH, common npm/nvm locations, and the bootstrap install
+/// directories. This ensures wrapper scripts that delegate to `node` (or other
+/// tools) can resolve the interpreter they need.
 pub fn build_cli_command(cli_path: &Path, args: &[String]) -> Result<Command, String> {
 	if !cli_path.is_file() {
 		return Err(format!("CLI path is not a file: {}", cli_path.display()));
 	}
+
+	let mut cmd = build_cli_command_inner(cli_path, args)?;
+	cmd.env("PATH", reconstructed_path());
+	Ok(cmd)
+}
+
+fn build_cli_command_inner(cli_path: &Path, args: &[String]) -> Result<Command, String> {
 
 	if let Some(ext) = cli_path.extension() {
 		let ext = ext.to_string_lossy().to_lowercase();
@@ -142,6 +155,25 @@ pub fn resolve_cli_path(override_path: Option<String>) -> Result<PathBuf, String
         return Err(format!("Configured CLI path does not exist: {}", p.display()));
     }
 
+    // Prefer the unified-release Bun binary installed by the desktop bootstrap
+    // or the official installer. It lives at ~/.a-coder/lib/a-coder-cli/pi and
+    // does not depend on Node, so it is more reliable than PATH-resolved shims
+    // (e.g. the ~/.local/bin/a-coder-cli wrapper left by older installs).
+    let suffix = std::env::consts::EXE_SUFFIX;
+    if let Some(a_coder_dir) = a_coder_install_dir() {
+        let lib_bin = a_coder_dir
+            .join("lib")
+            .join("a-coder-cli")
+            .join(format!("pi{}", suffix));
+        if lib_bin.is_file() {
+            return Ok(lib_bin);
+        }
+        let shim_bin = a_coder_dir.join("bin").join(format!("a-coder-cli{}", suffix));
+        if shim_bin.is_file() {
+            return Ok(shim_bin);
+        }
+    }
+
     // Try the canonical command name first, then the npm global binary name.
     for name in ["a-coder-cli", "pi"] {
         if let Ok(path) = which::which(name) {
@@ -165,26 +197,6 @@ pub fn resolve_cli_path(override_path: Option<String>) -> Result<PathBuf, String
             if candidate.is_file() {
                 return Ok(candidate);
             }
-        }
-    }
-
-    // Bootstrap fallback: the desktop app's first-launch CLI installer (and the
-    // curl install-a-coder.sh / Install-A-Coder.ps1 scripts) place the binary at
-    // ~/.a-coder/lib/a-coder-cli/pi and a shim at ~/.a-coder/bin/a-coder-cli.
-    // Check both so a fresh install (CLI bootstrapped by the desktop app itself)
-    // is found without a terminal restart.
-    let suffix = std::env::consts::EXE_SUFFIX;
-    if let Some(a_coder_dir) = a_coder_install_dir() {
-        let lib_bin = a_coder_dir
-            .join("lib")
-            .join("a-coder-cli")
-            .join(format!("pi{}", suffix));
-        if lib_bin.is_file() {
-            return Ok(lib_bin);
-        }
-        let shim_bin = a_coder_dir.join("bin").join(format!("a-coder-cli{}", suffix));
-        if shim_bin.is_file() {
-            return Ok(shim_bin);
         }
     }
 
@@ -391,6 +403,72 @@ mod tests {
         let result = resolve_cli_path(Some("/nonexistent/path/to/cli".to_string()));
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Configured CLI path does not exist"));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_build_cli_command_injects_reconstructed_path() {
+        let dir = tempdir().expect("Failed to create temp dir");
+        let script = dir.path().join("print-path.sh");
+        std::fs::write(
+            &script,
+            "#!/bin/sh\necho \"$PATH\"",
+        )
+        .expect("Failed to write script");
+        let mut perms = std::fs::metadata(&script).expect("Failed to read metadata").permissions();
+        use std::os::unix::fs::PermissionsExt;
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&script, perms).expect("Failed to set permissions");
+
+        let mut cmd = build_cli_command(&script, &[]).expect("build_cli_command failed");
+        let output = cmd.output().expect("Failed to run script");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let reconstructed = reconstructed_path();
+        for part in reconstructed.split(':') {
+            if part.is_empty() {
+                continue;
+            }
+            assert!(
+                stdout.contains(part),
+                "child PATH missing expected segment {part}\nchild={stdout}\nreconstructed={reconstructed}"
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_resolve_cli_path_prefers_bootstrap_binary() {
+        use std::env;
+        let dir = tempdir().expect("Failed to create temp dir");
+        let home = dir.path().join("home");
+        std::fs::create_dir_all(home.join(".a-coder").join("lib").join("a-coder-cli"))
+            .expect("Failed to create bootstrap dirs");
+        std::fs::create_dir_all(home.join(".local").join("bin")).expect("Failed to create local/bin");
+
+        let bootstrap_bin = home.join(".a-coder").join("lib").join("a-coder-cli").join("pi");
+        let shim = home.join(".local").join("bin").join("a-coder-cli");
+        std::fs::write(
+            &bootstrap_bin,
+            b"",
+        )
+        .expect("Failed to write bootstrap binary");
+        std::fs::write(
+            &shim,
+            b"#!/bin/sh\n",
+        )
+        .expect("Failed to write shim");
+
+        let previous_home = env::var("HOME").ok();
+        env::set_var("HOME", home.to_string_lossy().to_string());
+        let result = resolve_cli_path(None);
+        if let Some(prev) = previous_home {
+            env::set_var("HOME", prev);
+        } else {
+            env::remove_var("HOME");
+        }
+
+        assert!(result.is_ok(), "{}", result.unwrap_err());
+        assert_eq!(result.unwrap(), bootstrap_bin);
     }
 
     #[test]

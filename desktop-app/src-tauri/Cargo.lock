@@ -4,7 +4,7 @@ version = 3
 
 [[package]]
 name = "a-coder-desktop"
-version = "0.80.19"
+version = "0.80.20"
 dependencies = [
  "base64 0.22.1",
  "objc",
