@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- Backported from main: Anthropic refusal errors now use server-side refusal fallbacks when the model metadata permits them, avoiding some "refusal" stop-reason failures during summarization and normal turns.
+- Backported from main: OpenAI Responses incomplete stops are now classified correctly (`max_output_tokens` => recoverable length stop, other reasons => error), and recoverable length stops trigger one compact-and-retry attempt.
+- Backported from main: Summarization requests now force `toolChoice: "none"` and reject any tool-call responses, preventing accidental tool calls during compaction.
+- Backported from main: Project-local subagent confirmation prompts are skipped in trusted projects.
+- Backported from main: Package-manager version comparison now uses `semver.gt` so locally newer installed versions are not incorrectly flagged for downgrade/reinstall.
 - Fixed the desktop app failing to start when the resolved a-coder-cli was a
   shell wrapper that delegated to Node (e.g. `~/.local/bin/a-coder-cli`). GUI
   apps on macOS and some Linux desktops inherit a minimal `PATH`, so the
@@ -13,10 +18,11 @@
   - Prefers the unified-release Bun binary at `~/.a-coder/lib/a-coder-cli/pi`
     over PATH-resolved shims.
 - Fixed Ollama Cloud models requesting `max_tokens` equal to the full context-window size discovered from `/api/show`. `context_length` is an input+output budget, not the model's per-request output cap, so requests to models like `deepseek-v4-flash:preview` were rejected with `max_tokens exceeds model's maximum output tokens`. The model now keeps a fixed `maxTokens` default of 131,072 and only updates `contextWindow` from `/api/show`.
-- Fixed the `a-coder-cli update` self-update message for bun-binary installs so it explicitly tells Windows users to re-run the installer with `-Force` when the version check would otherwise skip. The PowerShell installer now also prints a `-Force` hint when it detects the CLI is already up to date.
+- Fixed the `a-coder-cli update` self-update message for bun-binary installs so it explicitly tells Windows users to re-run the installer with `-Force` when the version check would otherwise skip.
 
 ### Added
 
+- Backported from main: provider-neutral `toolChoice: "auto" | "none"` simple option is now forwarded through all provider `streamSimple` paths.
 - Added **scoped persistent memory** to the `memory` tool. It now supports three scopes:
   - `global`: the existing `~/.a-coder-cli/MEMORY.md` shared across all workspaces and sessions.
   - `workspace`: a `MEMORY.md` stored in the current project's session directory, shared across every session opened in the same project.

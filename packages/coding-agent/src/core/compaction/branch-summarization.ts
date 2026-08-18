@@ -350,6 +350,9 @@ export async function generateBranchSummary(
 	if (response.stopReason === "error") {
 		return { error: response.errorMessage || "Summarization failed" };
 	}
+	if (response.content.some((block) => block.type === "toolCall")) {
+		return { error: "Branch summarization attempted to call a tool" };
+	}
 
 	let summary = response.content
 		.filter((c): c is { type: "text"; text: string } => c.type === "text")

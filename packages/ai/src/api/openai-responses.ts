@@ -80,6 +80,7 @@ export interface OpenAIResponsesOptions extends StreamOptions {
 	reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
 	reasoningSummary?: "auto" | "detailed" | "concise" | null;
 	serviceTier?: ResponseCreateParamsStreaming["service_tier"];
+	toolChoice?: "auto" | "none" | "required" | { type: "function"; function: { name: string } };
 }
 
 /**
@@ -142,7 +143,7 @@ export const stream: StreamFunction<"openai-responses", OpenAIResponsesOptions> 
 			}
 
 			if (output.stopReason === "aborted" || output.stopReason === "error") {
-				throw new Error("An unknown error occurred");
+				throw new Error(output.errorMessage || "An unknown error occurred");
 			}
 
 			stream.push({ type: "done", reason: output.stopReason, message: output });
@@ -170,7 +171,10 @@ export const streamSimple: StreamFunction<"openai-responses", SimpleStreamOption
 ): AssistantMessageEventStream => {
 	getClientApiKey(model.provider, options?.apiKey, options?.headers);
 
-	const base = buildBaseOptions(model, context, options, options?.apiKey);
+	const base = {
+		...buildBaseOptions(model, context, options, options?.apiKey),
+		toolChoice: options?.toolChoice,
+	} satisfies OpenAIResponsesOptions; 
 	const clampedReasoning = options?.reasoning ? clampThinkingLevel(model, options.reasoning) : undefined;
 	const reasoningEffort = clampedReasoning === "off" ? undefined : clampedReasoning;
 

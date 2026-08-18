@@ -70,8 +70,7 @@ describe("AssistantMessageComponent", () => {
 		const rendered = component.render(80).join("\n");
 
 		expect(rendered).toContain("Thinking...");
-		expect(rendered).toContain("maximum output token limit");
-		expect(rendered).toContain("response may be incomplete");
+		expect(rendered).toContain("Response was truncated before completion.");
 	});
 
 	test("uses configured output padding for text and thinking", () => {

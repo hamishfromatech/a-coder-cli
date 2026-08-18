@@ -30,6 +30,7 @@ import {
 	cleanupSessionResources,
 	getSupportedThinkingLevels,
 	isContextOverflow,
+	isRecoverableLength,
 	isRetryableAssistantError,
 	modelsAreEqual,
 	resetApiProviders,
@@ -702,7 +703,7 @@ export class AgentSession {
 				this._lastAssistantMessage = event.message;
 
 				const assistantMsg = event.message as AssistantMessage;
-				if (assistantMsg.stopReason !== "error") {
+				if (assistantMsg.stopReason !== "error" && assistantMsg.stopReason !== "length") {
 					this._overflowRecoveryAttempted = false;
 				}
 
@@ -2220,11 +2221,13 @@ export class AgentSession {
 			return false;
 		}
 
-		// Case 1: Overflow - LLM returned context overflow error, or reported usage exceeded
-		// the configured window. A successful response over the configured window should compact
-		// but must not retry: the assistant answer already completed and agent.continue() cannot
-		// continue from an assistant message.
-		if (sameModel && isContextOverflow(assistantMessage, contextWindow)) {
+		// Case 1: Recoverable failure. Explicit/silent context overflow still uses context metadata.
+		// A length stop is recoverable when output ended below the model's original desired limit,
+		// independent of the configured context size or any context-clamped provider request limit.
+		// A successful response over the configured window should compact but must not retry: the
+		// assistant answer already completed and agent.continue() cannot continue from an assistant.
+		const recoverableLength = sameModel && isRecoverableLength(assistantMessage, this.model?.maxTokens ?? 0);
+		if (sameModel && (isContextOverflow(assistantMessage, contextWindow) || recoverableLength)) {
 			const willRetry = assistantMessage.stopReason !== "stop";
 
 			if (!willRetry) {

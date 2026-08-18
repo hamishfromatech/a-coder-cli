@@ -73,6 +73,7 @@ export type KnownImagesProvider = "openrouter";
 
 export type ImagesProviderId = KnownImagesProvider | string;
 
+export type ToolChoice = "auto" | "none";
 export type ThinkingLevel = "minimal" | "low" | "medium" | "high" | "xhigh";
 export type ModelThinkingLevel = "off" | ThinkingLevel;
 export type ThinkingLevelMap = Partial<Record<ModelThinkingLevel, string | null>>;
@@ -289,8 +290,14 @@ export interface ImagesOptions {
 export type ProviderImagesOptions = ImagesOptions & Record<string, unknown>;
 
 // Unified options with reasoning passed to streamSimple() and completeSimple()
+export type AnthropicRefusalFallback = "default" | readonly { model: string }[];
+
 export interface SimpleStreamOptions extends StreamOptions {
+	/** Provider-neutral tool selection for simple requests. Default: "auto". */
+	toolChoice?: ToolChoice;
 	reasoning?: ThinkingLevel;
+	/** Anthropic server-side fallback for eligible refusal stop reasons. Anthropic providers only. */
+	refusalFallbacks?: AnthropicRefusalFallback;
 	/** Custom token budgets for thinking levels (token-based providers only) */
 	thinkingBudgets?: ThinkingBudgets;
 }
@@ -390,6 +397,7 @@ export interface AssistantMessage {
 	model: string;
 	responseModel?: string; // Concrete `chunk.model` when different from the requested `model` (e.g. OpenRouter `auto` -> `anthropic/...`)
 	responseId?: string; // Provider-specific response/message identifier when the upstream API exposes one
+	rawStopReason?: string; // Provider-specific stop reason before pi's normalized mapping.
 	diagnostics?: AssistantMessageDiagnostic[]; // Redacted provider/runtime diagnostics for failures and recoveries.
 	usage: Usage;
 	stopReason: StopReason;
@@ -577,6 +585,12 @@ export interface AnthropicMessagesCompat {
 	forceAdaptiveThinking?: boolean;
 	/** Whether to replay empty thinking signatures as `signature: ""` instead of converting thinking to text. Default: false. */
 	allowEmptySignature?: boolean;
+	/**
+	 * Model ids Anthropic accepts in `fallbacks` for server-side refusal fallback.
+	 * When absent or empty, callers must omit `fallbacks`; Anthropic rejects the
+	 * field for models with no permitted fallback targets.
+	 */
+	allowedFallbackModels?: string[];
 }
 
 /**

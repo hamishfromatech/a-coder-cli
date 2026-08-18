@@ -56,6 +56,7 @@ export interface AzureOpenAIResponsesOptions extends StreamOptions {
 	azureResourceName?: string;
 	azureBaseUrl?: string;
 	azureDeploymentName?: string;
+	toolChoice?: "auto" | "none" | "required" | { type: "function"; function: { name: string } };
 }
 
 /**
@@ -118,7 +119,7 @@ export const stream: StreamFunction<"azure-openai-responses", AzureOpenAIRespons
 			}
 
 			if (output.stopReason === "aborted" || output.stopReason === "error") {
-				throw new Error("An unknown error occurred");
+				throw new Error(output.errorMessage || "An unknown error occurred");
 			}
 
 			stream.push({ type: "done", reason: output.stopReason, message: output });
@@ -149,7 +150,10 @@ export const streamSimple: StreamFunction<"azure-openai-responses", SimpleStream
 		throw new Error(`No API key for provider: ${model.provider}`);
 	}
 
-	const base = buildBaseOptions(model, context, options, apiKey);
+	const base = {
+		...buildBaseOptions(model, context, options, apiKey),
+		toolChoice: options?.toolChoice,
+	} satisfies AzureOpenAIResponsesOptions; 
 	const clampedReasoning = options?.reasoning ? clampThinkingLevel(model, options.reasoning) : undefined;
 	const reasoningEffort = clampedReasoning === "off" ? undefined : clampedReasoning;
 

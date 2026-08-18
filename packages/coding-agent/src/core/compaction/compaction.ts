@@ -6,6 +6,7 @@
  */
 
 import type { AgentMessage, StreamFn, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import { uuidv7 } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, Context, Model, SimpleStreamOptions, Usage } from "@earendil-works/pi-ai/compat";
 import { completeSimple } from "@earendil-works/pi-ai/compat";
 import {
@@ -24,6 +25,17 @@ import {
 	SUMMARIZATION_SYSTEM_PROMPT,
 	serializeConversation,
 } from "./utils.ts";
+
+function getAnthropicSummarizationFallback(model: Model<any>): readonly { model: string }[] | undefined {
+	if (model.provider !== "anthropic" || model.api !== "anthropic-messages") {
+		return undefined;
+	}
+
+	const allowedFallbackModels = (model as Model<"anthropic-messages">).compat?.allowedFallbackModels;
+	// Use the primary permitted fallback for now. If future Anthropic models expose
+	// broader fallback behavior, this can become a user/config pick or a full chain.
+	return allowedFallbackModels && allowedFallbackModels.length > 0 ? [{ model: allowedFallbackModels[0] }] : undefined;
+}
 
 // ============================================================================
 // File Operation Tracking
@@ -541,6 +553,10 @@ function createSummarizationOptions(
 	thinkingLevel: ThinkingLevel | undefined,
 ): SimpleStreamOptions {
 	const options: SimpleStreamOptions = { maxTokens, signal, apiKey, headers, env };
+	const refusalFallbacks = getAnthropicSummarizationFallback(model);
+	if (refusalFallbacks) {
+		options.refusalFallbacks = refusalFallbacks;
+	}
 	if (model.reasoning && thinkingLevel && thinkingLevel !== "off") {
 		options.reasoning = thinkingLevel;
 	}
@@ -553,10 +569,16 @@ async function completeSummarization(
 	options: SimpleStreamOptions,
 	streamFn?: StreamFn,
 ): Promise<AssistantMessage> {
+	const summarizationOptions: SimpleStreamOptions = {
+		...options,
+		cacheRetention: "none",
+		sessionId: options.sessionId ?? uuidv7(),
+		toolChoice: "none",
+	};
 	if (!streamFn) {
-		return completeSimple(model, context, options);
+		return completeSimple(model, context, summarizationOptions);
 	}
-	const stream = await streamFn(model, context, options);
+	const stream = await streamFn(model, context, summarizationOptions);
 	return stream.result();
 }
 
@@ -619,6 +641,9 @@ export async function generateSummary(
 
 	if (response.stopReason === "error") {
 		throw new Error(`Summarization failed: ${response.errorMessage || "Unknown error"}`);
+	}
+	if (response.content.some((block) => block.type === "toolCall")) {
+		throw new Error("Summarization attempted to call a tool");
 	}
 
 	const textContent = response.content
@@ -884,6 +909,9 @@ async function generateTurnPrefixSummary(
 
 	if (response.stopReason === "error") {
 		throw new Error(`Turn prefix summarization failed: ${response.errorMessage || "Unknown error"}`);
+	}
+	if (response.content.some((block) => block.type === "toolCall")) {
+		throw new Error("Turn prefix summarization attempted to call a tool");
 	}
 
 	return response.content
