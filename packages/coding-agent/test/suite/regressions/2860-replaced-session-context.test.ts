@@ -2,10 +2,11 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fauxAssistantMessage, registerFauxProvider } from "@earendil-works/pi-ai/compat";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AgentSession } from "../../../src/core/agent-session.ts";
 import {
 	type CreateAgentSessionRuntimeFactory,
+	clearAgentSessionServicesCache,
 	createAgentSessionFromServices,
 	createAgentSessionRuntime,
 	createAgentSessionServices,
@@ -28,6 +29,10 @@ function getText(message: AgentSession["messages"][number]): string {
 
 describe("regression #2860: replaced session callbacks", () => {
 	const cleanups: Array<() => Promise<void> | void> = [];
+
+	beforeEach(() => {
+		clearAgentSessionServicesCache();
+	});
 
 	afterEach(async () => {
 		while (cleanups.length > 0) {

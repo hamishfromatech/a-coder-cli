@@ -16,6 +16,7 @@ import type { AgentSession } from "../src/core/agent-session.ts";
 import {
 	type AgentSessionRuntime,
 	type CreateAgentSessionRuntimeFactory,
+	clearAgentSessionServicesCache,
 	createAgentSessionFromServices,
 	createAgentSessionRuntime,
 	createAgentSessionServices,
@@ -33,6 +34,7 @@ describe.skipIf(!API_KEY)("AgentSession forking", () => {
 	beforeEach(() => {
 		tempDir = join(tmpdir(), `pi-branching-test-${Date.now()}`);
 		mkdirSync(tempDir, { recursive: true });
+		clearAgentSessionServicesCache();
 	});
 
 	afterEach(async () => {

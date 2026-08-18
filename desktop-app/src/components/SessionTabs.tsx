@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, X } from "lucide-react";
+import { Loader2, Plus, X } from "lucide-react";
 import * as rpc from "../lib/rpc";
 import { useTabsStore } from "../stores/tabs-store";
 import { useSessionStore } from "../stores/session-store";
@@ -15,18 +15,21 @@ export function SessionTabs() {
 	const closeTab = useTabsStore((s) => s.closeTab);
 	const setActive = useTabsStore((s) => s.setActive);
 	const isStreaming = useSessionStore((s) => s.isStreaming);
-	const [busy, setBusy] = useState(false);
+	const [pendingPath, setPendingPath] = useState<string | null>(null);
 
 	const switchTo = async (path: string) => {
-		if (path === activePath || busy) return;
-		setBusy(true);
+		if (path === activePath || pendingPath) return;
+		setPendingPath(path);
 		try {
-			await rpc.switchSession(path);
+			// Optimistically show the new tab as active so the UI feels instant.
 			setActive(path);
+			await rpc.switchSession(path);
 		} catch (e) {
+			// Revert on failure.
+			setActive(activePath ?? "");
 			toast.error("Failed to switch session", e instanceof Error ? e.message : String(e));
 		} finally {
-			setBusy(false);
+			setPendingPath((current) => (current === path ? null : current));
 		}
 	};
 
@@ -57,6 +60,7 @@ export function SessionTabs() {
 				{tabs.map((tab) => {
 					const active = tab.path === activePath;
 					const busyTab = active && isStreaming;
+					const switching = pendingPath === tab.path;
 					return (
 						<div
 							key={tab.path}
@@ -69,11 +73,18 @@ export function SessionTabs() {
 							<button
 								type="button"
 								onClick={() => void switchTo(tab.path)}
-								disabled={busy || (isStreaming && !active)}
+								disabled={!!pendingPath || (isStreaming && !active)}
 								className="max-w-[170px] truncate focus-visible:outline-none disabled:cursor-default"
 								title={tab.name}
 							>
-								<span className="truncate">{tab.name || "Untitled session"}</span>
+								{switching ? (
+									<span className="inline-flex items-center gap-1.5">
+										<Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+										<span className="truncate">{tab.name || "Untitled session"}</span>
+									</span>
+								) : (
+									<span className="truncate">{tab.name || "Untitled session"}</span>
+								)}
 							</button>
 							<button
 								type="button"
@@ -87,6 +98,12 @@ export function SessionTabs() {
 							{busyTab && (
 								<span
 									className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-pi-accent"
+									aria-hidden
+								/>
+							)}
+							{switching && !busyTab && (
+								<span
+									className="h-1.5 w-1.5 shrink-0 rounded-full bg-pi-accent"
 									aria-hidden
 								/>
 							)}

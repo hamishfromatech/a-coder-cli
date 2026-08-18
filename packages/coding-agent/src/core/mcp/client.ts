@@ -14,21 +14,28 @@ export interface McpDiscoveredTool {
 export class McpClient {
 	private client: Client;
 	readonly serverName: string;
-	private connected = false;
+	private _connected = false;
+	readonly config: McpServerConfig;
 
 	constructor(config: McpServerConfig) {
 		this.serverName = config.name;
+		this.config = config;
 		this.client = new Client({ name: `a-coder-cli-mcp-${config.name}`, version: "0.80.3" }, { capabilities: {} });
+	}
+
+	/** True once connect() has succeeded and close() has not been called. */
+	get connected(): boolean {
+		return this._connected;
 	}
 
 	async connect(config: McpServerConfig): Promise<void> {
 		const transport = createTransport(config);
 		await this.client.connect(transport);
-		this.connected = true;
+		this._connected = true;
 	}
 
 	async listTools(): Promise<McpDiscoveredTool[]> {
-		if (!this.connected) throw new Error(`MCP server ${this.serverName} is not connected`);
+		if (!this._connected) throw new Error(`MCP server ${this.serverName} is not connected`);
 		const result = await this.client.listTools();
 		return result.tools.map((tool) => ({
 			serverName: this.serverName,
@@ -39,14 +46,14 @@ export class McpClient {
 	}
 
 	async callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
-		if (!this.connected) throw new Error(`MCP server ${this.serverName} is not connected`);
+		if (!this._connected) throw new Error(`MCP server ${this.serverName} is not connected`);
 		const result = await this.client.callTool({ name, arguments: args });
 		return result;
 	}
 
 	async close(): Promise<void> {
 		await this.client.close();
-		this.connected = false;
+		this._connected = false;
 	}
 }
 

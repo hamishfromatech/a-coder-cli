@@ -2,9 +2,10 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	type CreateAgentSessionRuntimeFactory,
+	clearAgentSessionServicesCache,
 	createAgentSessionFromServices,
 	createAgentSessionRuntime,
 	createAgentSessionServices,
@@ -14,6 +15,10 @@ import { SessionManager } from "../../../src/core/session-manager.ts";
 
 describe("issue #2753 reload stale resource settings", () => {
 	const cleanups: Array<() => void> = [];
+
+	beforeEach(() => {
+		clearAgentSessionServicesCache();
+	});
 
 	afterEach(() => {
 		while (cleanups.length > 0) {

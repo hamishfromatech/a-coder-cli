@@ -22,6 +22,7 @@ export {
 	type AgentSessionServices,
 	type CreateAgentSessionFromServicesOptions,
 	type CreateAgentSessionServicesOptions,
+	clearAgentSessionServicesCache,
 	createAgentSessionFromServices,
 	createAgentSessionServices,
 } from "./agent-session-services.ts";
