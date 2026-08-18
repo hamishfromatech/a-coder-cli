@@ -503,7 +503,12 @@ async function playVariant(variantId: number) {
 	tone.type = "lowpass";
 	tone.frequency.setValueAtTime(3800, ac.currentTime);
 	tone.Q.setValueAtTime(0.32, ac.currentTime);
-	master.gain.setValueAtTime(0.48, ac.currentTime);
+
+	// Apply the user-configured UI-sound volume. The final mix stays
+	// conservative (0.48 dry / 0.34 wet) so even 100% is not startling.
+	const { completionSoundVolume } = useSettingsStore.getState();
+	const volume = Math.min(1, Math.max(0, completionSoundVolume ?? 0.8));
+	master.gain.setValueAtTime(0.48 * volume, ac.currentTime);
 	master.connect(tone);
 
 	const dry = ac.createGain();
@@ -513,7 +518,7 @@ async function playVariant(variantId: number) {
 
 	const reverb = makeReverb(ac);
 	const wet = ac.createGain();
-	wet.gain.setValueAtTime(0.34, ac.currentTime);
+	wet.gain.setValueAtTime(0.34 * volume, ac.currentTime);
 	tone.connect(reverb);
 	reverb.connect(wet);
 	wet.connect(ac.destination);

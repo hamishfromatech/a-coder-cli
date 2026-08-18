@@ -19,6 +19,8 @@ export function CompletionSoundPicker() {
 	const setSoundEnabled = useSettingsStore((s) => s.setCompletionSoundEnabled);
 	const variantId = useSettingsStore((s) => s.completionSoundVariantId);
 	const setVariantId = useSettingsStore((s) => s.setCompletionSoundVariantId);
+	const volume = useSettingsStore((s) => s.completionSoundVolume);
+	const setVolume = useSettingsStore((s) => s.setCompletionSoundVolume);
 	const hapticsEnabled = useSettingsStore((s) => s.hapticsEnabled);
 	const setHapticsEnabled = useSettingsStore((s) => s.setHapticsEnabled);
 	const chatBackdrop = useSettingsStore((s) => s.chatBackdrop);
@@ -66,6 +68,25 @@ export function CompletionSoundPicker() {
 				>
 					Preview
 				</button>
+			</div>
+
+			<div className="flex items-center gap-3">
+				<span className="w-12 text-[11px] text-pi-text-muted">Volume</span>
+				<input
+					type="range"
+					min={0}
+					max={1}
+					step={0.01}
+					value={volume}
+					onChange={(e) => {
+						triggerHaptic("selection");
+						setVolume(Number(e.target.value));
+					}}
+					className="h-1 flex-1 cursor-pointer appearance-none rounded-full bg-pi-surface-raised accent-pi-accent"
+				/>
+				<span className="w-10 text-right font-mono text-[11px] text-pi-text-secondary">
+					{Math.round(volume * 100)}%
+				</span>
 			</div>
 
 			<div className="h-px bg-pi-border" />

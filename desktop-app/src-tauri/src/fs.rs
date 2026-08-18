@@ -279,10 +279,23 @@ fn mime_type_from_path(path: &Path) -> String {
         Some("svg") => "image/svg+xml",
         Some("bmp") => "image/bmp",
         Some("ico") => "image/x-icon",
+        // Audio
         Some("mp3") => "audio/mpeg",
         Some("wav") => "audio/wav",
+        Some("aac") => "audio/aac",
+        Some("ogg") => "audio/ogg",
+        Some("oga") => "audio/ogg",
+        Some("opus") => "audio/opus",
+        Some("flac") => "audio/flac",
+        Some("m4a") => "audio/mp4",
+        // Video
         Some("mp4") => "video/mp4",
+        Some("mov") => "video/quicktime",
+        Some("mkv") => "video/x-matroska",
+        Some("avi") => "video/x-msvideo",
         Some("webm") => "video/webm",
+        Some("ogv") => "video/ogg",
+        Some("m4v") => "video/mp4",
         Some("pdf") => "application/pdf",
         _ => "application/octet-stream",
     }

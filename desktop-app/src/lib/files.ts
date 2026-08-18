@@ -4,6 +4,8 @@ export type FileKind =
 	| "mermaid"
 	| "svg"
 	| "image"
+	| "audio"
+	| "video"
 	| "code"
 	| "text"
 	| "binary";
@@ -18,6 +20,28 @@ const IMAGE_EXTENSIONS = new Set([
 	"webp",
 	"bmp",
 	"ico",
+]);
+
+const AUDIO_EXTENSIONS = new Set([
+	"mp3",
+	"wav",
+	"aac",
+	"ogg",
+	"flac",
+	"m4a",
+	"oga",
+	"opus",
+	"webm",
+]);
+
+const VIDEO_EXTENSIONS = new Set([
+	"mp4",
+	"mov",
+	"mkv",
+	"avi",
+	"webm",
+	"ogv",
+	"m4v",
 ]);
 
 const CODE_EXTENSIONS: Record<string, string> = {
@@ -68,6 +92,8 @@ export function getFileKind(path: string): FileKind {
 	if (ext === "mmd" || ext === "mermaid") return "mermaid";
 	if (ext === "svg") return "svg";
 	if (IMAGE_EXTENSIONS.has(ext)) return "image";
+	if (AUDIO_EXTENSIONS.has(ext)) return "audio";
+	if (VIDEO_EXTENSIONS.has(ext)) return "video";
 	if (CODE_EXTENSIONS[ext] || TEXT_EXTENSIONS.has(ext)) return "code";
 	// Treat files without an extension and known text-y names as text.
 	if (ext === "") {
@@ -92,11 +118,19 @@ export function getLanguage(path: string): string | null {
 }
 
 export function canPreview(kind: FileKind): boolean {
-	return kind === "html" || kind === "markdown" || kind === "mermaid" || kind === "svg" || kind === "image";
+	return (
+		kind === "html" ||
+		kind === "markdown" ||
+		kind === "mermaid" ||
+		kind === "svg" ||
+		kind === "image" ||
+		kind === "audio" ||
+		kind === "video"
+	);
 }
 
 export function canShowRaw(kind: FileKind): boolean {
-	return kind !== "image";
+	return kind !== "image" && kind !== "audio" && kind !== "video";
 }
 
 export function getDefaultViewMode(path: string): ArtifactViewMode {
@@ -108,5 +142,5 @@ export function getDefaultViewMode(path: string): ArtifactViewMode {
 }
 
 export function isTextFile(kind: FileKind): boolean {
-	return kind !== "binary" && kind !== "image";
+	return kind !== "binary" && kind !== "image" && kind !== "audio" && kind !== "video";
 }

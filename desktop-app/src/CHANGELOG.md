@@ -10,7 +10,8 @@
 
 ### Added
 
-- Added an inline task-list panel (`TodoPanel`) above the composer that mirrors the built-in `todo` tool — renders a flat checklist with a progress bar and a live "working" indicator, derived from the latest `todo` tool result in the session.
+- Added a **volume slider** for completion sounds in Settings → Look & feel. Volume is a linear gain (0–100%) stored as a local UI preference and applied to the synthesized chime.
+- Added **audio and video file support** to the Files drawer and artifact viewer. `mp3`, `wav`, `aac`, `ogg`, `flac`, `m4a`, `opus`, `webm` audio and `mp4`, `mov`, `mkv`, `avi`, `webm`, `ogv`, `m4v` video files now preview inline with a custom media player (play/pause, seek, volume).
 - Reworked tool-call rendering into a compact disclosure row: a status glyph (spinner while running, check on success, alert on error) looked up from the matching tool result, a one-line argument summary, a hover-revealed caret and copy button, and an expandable args/result body. Tool results now render inside their call row instead of a separate terminal box.
 - Added a hover copy-reply button on assistant messages.
 - Added a centered, type-to-filter session quick-switcher (resume overlay) backed by the new `list_sessions` RPC.

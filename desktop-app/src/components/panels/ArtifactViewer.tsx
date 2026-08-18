@@ -1,13 +1,20 @@
 import {
-	ArrowLeft,
-	ExternalLink,
-	Loader2,
-	RefreshCw,
-} from "lucide-react";
-import { lazy, Suspense, useEffect, useState } from "react";
+	useEffect,
+	useRef,
+	useState,
+} from "react";
 import { PrismLight as SyntaxHighlighter } from "react-syntax-highlighter";
 import oneLight from "react-syntax-highlighter/dist/esm/styles/prism/one-light";
 import vscDarkPlus from "react-syntax-highlighter/dist/esm/styles/prism/vsc-dark-plus";
+import {
+	ArrowLeft,
+	ExternalLink,
+	Loader2,
+	Pause,
+	Play,
+	RefreshCw,
+	Volume2,
+} from "lucide-react";
 import {
 	canPreview,
 	canShowRaw,
@@ -19,6 +26,7 @@ import { openInEditor, readFileBase64, readTextFile } from "../../lib/rpc";
 import { useUiStore } from "../../stores/ui-store";
 import { useDarkMode } from "../../hooks/useDarkMode";
 import { MarkdownTextContent } from "../markdown/MarkdownText";
+import { lazy, Suspense } from "react";
 
 // Lazy: pulls mermaid (~600KB) only when a .mmd/.mermaid file is previewed.
 const MermaidPreview = lazy(() => import("./MermaidPreview"));
@@ -156,7 +164,7 @@ export function ArtifactViewer({ projectPath, path }: Props) {
 				)}
 
 				{!loading && !error && selectedArtifactViewMode === "preview" && (
-					<PreviewBody kind={kind} content={content} dataUrl={dataUrl} />
+					<PreviewBody path={path} kind={kind} content={content} dataUrl={dataUrl} />
 				)}
 
 				{!loading && !error && selectedArtifactViewMode === "raw" && (
@@ -202,10 +210,12 @@ function RawBody({ path, content }: { path: string; content: string | null }) {
 }
 
 function PreviewBody({
+	path,
 	kind,
 	content,
 	dataUrl,
 }: {
+	path: string;
 	kind: ReturnType<typeof getFileKind>;
 	content: string | null;
 	dataUrl: string | null;
@@ -232,6 +242,10 @@ function PreviewBody({
 				/>
 			</div>
 		);
+	}
+
+	if ((kind === "audio" || kind === "video") && dataUrl !== null) {
+		return <MediaPlayer kind={kind} src={dataUrl} title={path} />;
 	}
 
 	if (kind === "mermaid" && content !== null) {
@@ -275,6 +289,110 @@ function HtmlPreview({ html }: { html: string }) {
 			sandbox="allow-scripts allow-forms allow-popups allow-modals allow-downloads"
 			className="h-full w-full border-0 bg-pi-bg"
 		/>
+	);
+}
+
+function MediaPlayer({ kind, src, title }: { kind: "audio" | "video"; src: string; title: string }) {
+	const ref = useRef<HTMLAudioElement | HTMLVideoElement>(null);
+	const [playing, setPlaying] = useState(false);
+	const [volume, setVolume] = useState(1);
+	const [currentTime, setCurrentTime] = useState(0);
+	const [duration, setDuration] = useState(0);
+
+	useEffect(() => {
+		const el = ref.current;
+		if (!el) return;
+
+		const onPlay = () => setPlaying(true);
+		const onPause = () => setPlaying(false);
+		const onEnded = () => setPlaying(false);
+		const onTime = () => setCurrentTime(el.currentTime);
+		const onLoaded = () => setDuration(el.duration || 0);
+
+		el.addEventListener("play", onPlay);
+		el.addEventListener("pause", onPause);
+		el.addEventListener("ended", onEnded);
+		el.addEventListener("timeupdate", onTime);
+		el.addEventListener("loadedmetadata", onLoaded);
+		return () => {
+			el.removeEventListener("play", onPlay);
+			el.removeEventListener("pause", onPause);
+			el.removeEventListener("ended", onEnded);
+			el.removeEventListener("timeupdate", onTime);
+			el.removeEventListener("loadedmetadata", onLoaded);
+		};
+	}, []);
+
+	const toggle = () => {
+		const el = ref.current;
+		if (!el) return;
+		if (el.paused) void el.play();
+		else el.pause();
+	};
+
+	const fmt = (n: number) => {
+		if (!Number.isFinite(n)) return "0:00";
+		const m = Math.floor(n / 60);
+		const s = Math.floor(n % 60)
+			.toString()
+			.padStart(2, "0");
+		return `${m}:${s}`;
+	};
+
+	return (
+		<div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-pi-bg p-4">
+			{kind === "video" ? (
+				<video
+					ref={ref as React.RefObject<HTMLVideoElement>}
+					src={src}
+					title={title}
+					controls={false}
+					className="max-h-[70%] max-w-full rounded-lg border border-pi-border bg-black"
+					preload="metadata"
+				/>
+			) : (
+				<audio ref={ref as React.RefObject<HTMLAudioElement>} src={src} preload="metadata" />
+			)}
+			<div className="flex w-full max-w-md items-center gap-2 rounded-lg border border-pi-border bg-pi-surface p-2">
+				<button
+					onClick={toggle}
+					className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-pi-accent-soft text-pi-accent transition-hover hover:bg-pi-accent hover:text-white"
+					aria-label={playing ? "Pause" : "Play"}
+				>
+					{playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+				</button>
+				<span className="w-16 text-center font-mono text-[11px] text-pi-text-secondary">
+					{fmt(currentTime)} / {fmt(duration)}
+				</span>
+				<input
+					type="range"
+					min={0}
+					max={duration || 1}
+					step={0.1}
+					value={Math.min(currentTime, duration || 0)}
+					onChange={(e) => {
+						const el = ref.current;
+						if (!el) return;
+						el.currentTime = Number(e.target.value);
+					}}
+					className="h-1 flex-1 cursor-pointer appearance-none rounded-full bg-pi-surface-raised accent-pi-accent"
+				/>
+				<Volume2 className="h-3.5 w-3.5 text-pi-text-muted" />
+				<input
+					type="range"
+					min={0}
+					max={1}
+					step={0.01}
+					value={volume}
+					onChange={(e) => {
+						const v = Number(e.target.value);
+						setVolume(v);
+						if (ref.current) ref.current.volume = v;
+					}}
+					className="h-1 w-20 cursor-pointer appearance-none rounded-full bg-pi-surface-raised accent-pi-accent"
+				/>
+			</div>
+		</div>
 	);
 }
 

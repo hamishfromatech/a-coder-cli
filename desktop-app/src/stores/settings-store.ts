@@ -46,6 +46,13 @@ export interface SettingsState {
 	/** Which chime preset to play (1..COMPLETION_SOUND_VARIANT_COUNT). */
 	completionSoundVariantId: number;
 	setCompletionSoundVariantId: (variantId: number) => void;
+	/**
+	 * Master volume for completion chimes and other synthesized UI sounds.
+	 * Stored as a linear gain 0..1. Defaults to 0.8 so the sound is clearly
+	 * audible without surprising the user on first launch.
+	 */
+	completionSoundVolume: number;
+	setCompletionSoundVolume: (volume: number) => void;
 
 	// ---- chat backdrop (local UI pref; persisted) ----
 	/** Whether the faint background image renders behind the chat surface. */
@@ -151,6 +158,9 @@ export const useSettingsStore = create<SettingsState>()(
 					completionSoundVariantId:
 						Number.isInteger(variantId) && variantId >= 1 && variantId <= 14 ? variantId : 1,
 				}),
+			completionSoundVolume: 0.8,
+			setCompletionSoundVolume: (volume) =>
+				set({ completionSoundVolume: Math.min(1, Math.max(0, Number.isNaN(volume) ? 0.8 : volume)) }),
 
 			hapticsEnabled: true,
 			setHapticsEnabled: (hapticsEnabled) => set({ hapticsEnabled }),

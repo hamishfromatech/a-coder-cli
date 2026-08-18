@@ -1,17 +1,34 @@
 import {
 	ChevronDown,
 	ChevronRight,
+	FileAudio,
 	FileText,
+	FileVideo,
 	Folder,
 	FolderOpen,
+	Image as ImageIcon,
 	Loader2,
 	RefreshCw,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { listDirectory, type DirEntry } from "../../lib/rpc";
-import { getDefaultViewMode } from "../../lib/files";
+import { getDefaultViewMode, getFileKind } from "../../lib/files";
 import { useUiStore } from "../../stores/ui-store";
 import { triggerHaptic } from "../../lib/haptics";
+
+function fileIcon(path: string) {
+	const kind = getFileKind(path);
+	switch (kind) {
+		case "image":
+			return ImageIcon;
+		case "audio":
+			return FileAudio;
+		case "video":
+			return FileVideo;
+		default:
+			return FileText;
+	}
+}
 
 interface Props {
 	projectPath: string | null;
@@ -194,6 +211,7 @@ function TreeItem({ entry, depth, expanded, toggle, onFileClick }: TreeItemProps
 		);
 	}
 
+	const Icon = fileIcon(entry.path);
 	return (
 		<button
 			onClick={() => onFileClick(entry.path)}
@@ -202,7 +220,7 @@ function TreeItem({ entry, depth, expanded, toggle, onFileClick }: TreeItemProps
 			title={entry.path}
 		>
 			<span className="w-3.5 shrink-0" />
-			<FileText className="h-3.5 w-3.5 shrink-0 text-pi-text-muted" />
+			<Icon className="h-3.5 w-3.5 shrink-0 text-pi-text-muted" />
 			<span className="truncate">{entry.name}</span>
 		</button>
 	);
