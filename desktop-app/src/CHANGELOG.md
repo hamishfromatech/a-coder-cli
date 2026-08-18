@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Fixed Ollama Cloud model discovery to use the native `/api/tags` endpoint for the live public catalog and `/api/show` for each model's real `context_window` and `max_tokens`, instead of the OpenAI-compatible `/v1/models` list which omitted both values.
+- Fixed the desktop app silently leaving a stale a-coder-cli engine installed. On connect, the desktop app now verifies the installed CLI version matches its own and automatically downloads the matching GitHub release tag into `~/.a-coder` when skew is detected.
+- Fixed a trailing-space typo in the desktop CLI bootstrap asset name that would have caused a 404 when auto-updating the installed engine.
 - Fixed the desktop app showing duplicate window controls (custom traffic lights and minimize/maximize/close buttons layered on top of the native OS titlebar). The custom titlebar is now a compact toolbar; drag, minimize, maximize/restore, and close are handled by the native titlebar.
 - Fixed the footer context-usage bar not updating after compaction. The periodic stats refresh and the `compaction_end` event now both re-derive tokens / context window / percent from `get_session_stats`.
 - Fixed browser audio APIs (completion chimes, haptic click synthesis, voice-mode TTS playback) not working reliably in the Tauri desktop build. Audio is now primed on the first user gesture at app startup, the `Info.plist` declares arbitrary-load / audio-playback permission, and haptics fire a priming event when they run ahead of a prior gesture.
