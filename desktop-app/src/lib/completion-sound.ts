@@ -66,7 +66,11 @@ function getCtx(): AudioContext | null {
  */
 export function primeAudio(): void {
 	const ac = getCtx();
-	if (ac && ac.state === "suspended") {
+	if (!ac) return;
+	// Create + resume the AudioContext inside a user gesture. WKWebView/Tauri
+	// may only unlock web audio when the context is both created and resumed
+	// from within the gesture handler, so we touch it synchronously here.
+	if (ac.state === "suspended") {
 		void ac.resume().catch(() => undefined);
 	}
 }
@@ -463,7 +467,7 @@ export const COMPLETION_SOUND_VARIANTS: readonly CompletionSoundVariant[] = [
 	},
 ] as const;
 
-function playVariant(variantId: number) {
+async function playVariant(variantId: number) {
 	const variant = COMPLETION_SOUND_VARIANTS.find((v) => v.id === variantId);
 
 	if (!variant) {
@@ -473,6 +477,23 @@ function playVariant(variantId: number) {
 	const ac = getCtx();
 
 	if (!ac) {
+		console.warn("[completion-sound] no AudioContext");
+		return;
+	}
+
+	// WKWebView/Tauri often leaves the AudioContext suspended until a user
+	// gesture unlocks it. If this fires outside a gesture, resume() is a
+	// no-op until the next gesture, but we still attempt it.
+	if (ac.state === "suspended") {
+		try {
+			await ac.resume();
+		} catch {
+			console.warn("[completion-sound] AudioContext resume failed");
+		}
+	}
+
+	if (ac.state !== "running") {
+		console.warn("[completion-sound] AudioContext not running, state:", ac.state);
 		return;
 	}
 
@@ -504,7 +525,7 @@ function playVariant(variantId: number) {
 // be compared even when turn-end cues are switched off.
 export function previewCompletionSound(variantId?: number) {
 	const { completionSoundVariantId } = useSettingsStore.getState();
-	playVariant(resolveCompletionSoundVariantId(variantId ?? completionSoundVariantId));
+	void playVariant(resolveCompletionSoundVariantId(variantId ?? completionSoundVariantId));
 }
 
 // Plays the selected completion cue at the end of an agent turn. Respects the
@@ -516,7 +537,7 @@ export function playCompletionSound() {
 		return;
 	}
 
-	playVariant(resolveCompletionSoundVariantId(completionSoundVariantId));
+	void playVariant(resolveCompletionSoundVariantId(completionSoundVariantId));
 }
 
 interface AirPuffSpec {

@@ -182,6 +182,24 @@ export default function App() {
 	const sessionFile = useSessionStore((s) => s.sessionFile);
 	const sessionName = useSessionStore((s) => s.sessionName);
 	const { setStats } = useStatsStore();
+
+	// Apply a get_session_stats response to both the stats store and the
+	// session store's context-usage bar. The engine reports contextUsage as
+	// tokens/contextWindow/percent, and after compaction it may report
+	// tokens/percent as null until the next assistant response.
+	const applySessionStats = useCallback(
+		(stats: SessionStats & { contextUsage?: { tokens: number | null; contextWindow: number; percent: number | null } }) => {
+			setStats(stats);
+			if (stats.contextUsage && stats.contextUsage.contextWindow > 0) {
+				setContextUsage({
+					tokens: stats.contextUsage.tokens ?? null,
+					contextWindow: stats.contextUsage.contextWindow,
+					percent: stats.contextUsage.percent ?? null,
+				});
+			}
+		},
+		[setStats, setContextUsage],
+	);
 	const { leftSidebarOpen, setLeftSidebarOpen, rightSidebarOpen, rightSidebarWidth } = useUiStore();
 	const effectiveCwd = projectPath || FALLBACK_CWD;
 
@@ -258,16 +276,7 @@ export default function App() {
 				const stats = (await rpc.sendCommand({ type: "get_session_stats" })) as SessionStats & {
 					contextUsage?: { tokens: number | null; contextWindow: number; percent: number | null };
 				};
-				if (stats) {
-					setStats(stats);
-					if (stats.contextUsage && stats.contextUsage.contextWindow > 0) {
-						setContextUsage({
-							tokens: stats.contextUsage.tokens ?? null,
-							contextWindow: stats.contextUsage.contextWindow,
-							percent: stats.contextUsage.percent ?? null,
-						});
-					}
-				}
+				if (stats) applySessionStats(stats);
 			} catch {
 				// stats are best-effort
 			}
@@ -287,8 +296,7 @@ export default function App() {
 		setFollowUpMode,
 		setMessageCount,
 		setPendingMessageCount,
-		setContextUsage,
-		setStats,
+		applySessionStats,
 	]);
 
 	const connectEngine = useCallback(
@@ -392,6 +400,20 @@ export default function App() {
 							if (!event.success && event.finalError) {
 								toast.error("Model request failed", event.finalError);
 							}
+							break;
+						case "compaction_end":
+							// Compaction changes the context size. Refresh stats and the
+							// footer context-usage bar immediately so it doesn't stay stale.
+							void (async () => {
+								try {
+									const statsRes = (await rpc.sendCommand({ type: "get_session_stats" })) as SessionStats & {
+										contextUsage?: { tokens: number | null; contextWindow: number; percent: number | null };
+									};
+									if (statsRes) applySessionStats(statsRes);
+								} catch (e) {
+									console.error("Failed to refresh stats after compaction", e);
+								}
+							})();
 							break;
 						case "session_start": {
 							// The engine switched to a new or resumed session. Clear local state
@@ -568,8 +590,10 @@ export default function App() {
 				// Refresh stats periodically.
 				const statsInterval = setInterval(async () => {
 					try {
-						const statsRes = (await rpc.sendCommand({ type: "get_session_stats" })) as SessionStats;
-						if (statsRes) setStats(statsRes);
+						const statsRes = (await rpc.sendCommand({ type: "get_session_stats" })) as SessionStats & {
+							contextUsage?: { tokens: number | null; contextWindow: number; percent: number | null };
+						};
+						if (statsRes) applySessionStats(statsRes);
 					} catch (e) {
 						console.error("Failed to refresh stats", e);
 					}

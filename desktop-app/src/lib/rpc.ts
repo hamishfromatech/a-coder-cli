@@ -16,7 +16,8 @@ export type RpcEvent =
 	| ExtensionUiRequestEvent
 	| QueueUpdateEvent
 	| AutoRetryStartEvent
-	| AutoRetryEndEvent;
+	| AutoRetryEndEvent
+	| CompactionEndEvent;
 
 /** The engine re-emits agent_end with a retry hint after a retryable failure. */
 export interface AgentEndWillRetry {
@@ -38,6 +39,21 @@ export interface AutoRetryEndEvent {
 	success: boolean;
 	attempt: number;
 	finalError?: string;
+}
+
+export interface CompactionEndEvent {
+	type: "compaction_end";
+	reason: "manual" | "threshold" | "overflow";
+	result?: {
+		summary: string;
+		firstKeptEntryId: string;
+		tokensBefore: number;
+		estimatedTokensAfter: number;
+		details?: unknown;
+	};
+	aborted: boolean;
+	willRetry: boolean;
+	errorMessage?: string;
 }
 
 export interface QueueUpdateEvent {
