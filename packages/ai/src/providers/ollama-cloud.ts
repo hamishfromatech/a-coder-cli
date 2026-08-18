@@ -46,21 +46,27 @@ export async function resolveOllamaCloudModelCaps(
 	id: string,
 	apiKey: string,
 	signal?: AbortSignal,
-): Promise<Pick<Model<"openai-completions">, "contextWindow" | "maxTokens"> | undefined> {
+): Promise<Pick<Model<"openai-completions">, "contextWindow"> | undefined> {
 	const contextWindow = await fetchOllamaContextWindow("https://ollama.com/v1", id, {
 		apiKey,
 		signal,
 		timeoutMs: 8000,
 	});
 	if (!contextWindow || contextWindow <= 0) return undefined;
-	return { contextWindow, maxTokens: contextWindow };
+	return { contextWindow };
 }
 
 export function createOllamaCloudModel(id: string, caps?: { contextWindow?: number; maxTokens?: number; vision?: boolean }): Model<"openai-completions"> {
 	const isKimi = id.toLowerCase().includes("kimi");
 	const defaultContextWindow = isKimi ? 1048576 : 128000;
 	const contextWindow = caps?.contextWindow && caps.contextWindow > 0 ? caps.contextWindow : defaultContextWindow;
-	const maxTokens = caps?.maxTokens && caps.maxTokens > 0 ? caps.maxTokens : contextWindow;
+	// Ollama Cloud's /api/show returns context_length (input + output budget),
+	// not the model's output-token cap. Keep a generous default maxTokens and
+	// only let an explicit cap override it.
+	const defaultMaxTokens = isKimi ? 131072 : 131072;
+	const maxTokens = caps?.maxTokens && caps.maxTokens > 0 && caps.maxTokens <= contextWindow
+		? caps.maxTokens
+		: defaultMaxTokens;
 	return {
 		id,
 		name: `Ollama Cloud: ${id}`,
@@ -116,7 +122,6 @@ export async function fetchOllamaCloudModels(apiKey: string, signal?: AbortSigna
 		const vision = tag.capabilities?.includes("vision") ?? false;
 		const base = createOllamaCloudModel(name, {
 			contextWindow,
-			maxTokens: contextWindow,
 			vision,
 		});
 
@@ -126,7 +131,6 @@ export async function fetchOllamaCloudModels(apiKey: string, signal?: AbortSigna
 			const caps = await resolveOllamaCloudModelCaps(name, apiKey, signal);
 			if (caps) {
 				base.contextWindow = caps.contextWindow;
-				base.maxTokens = caps.maxTokens;
 			}
 		}
 

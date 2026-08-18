@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Fixed Ollama Cloud models requesting `max_tokens` equal to the full context-window size discovered from `/api/show`. `context_length` is an input+output budget, not the model's per-request output cap, so requests to models like `deepseek-v4-flash:preview` were rejected with `max_tokens exceeds model's maximum output tokens`. The model now keeps a fixed `maxTokens` default of 131,072 and only updates `contextWindow` from `/api/show`.
 - Fixed the `a-coder-cli update` self-update message for bun-binary installs so it explicitly tells Windows users to re-run the installer with `-Force` when the version check would otherwise skip. The PowerShell installer now also prints a `-Force` hint when it detects the CLI is already up to date.
 
 ### Added

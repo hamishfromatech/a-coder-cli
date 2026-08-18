@@ -54,7 +54,9 @@ describe("Ollama Cloud", () => {
 		expect(fetchMock).toHaveBeenCalledTimes(3); // 1 tags + 2 show
 		expect(refreshed.map((m) => m.id)).toEqual(["llama3.3", "qwen2.5-coder"]);
 		expect(refreshed[0]?.contextWindow).toBe(128000);
+		expect(refreshed[0]?.maxTokens).toBe(131072);
 		expect(refreshed[1]?.contextWindow).toBe(32768);
+		expect(refreshed[1]?.maxTokens).toBe(131072);
 		for (const model of refreshed) {
 			expect(model.baseUrl).toBe("https://ollama.com/v1");
 			expect(model.provider).toBe("ollama-cloud");
