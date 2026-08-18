@@ -133,6 +133,13 @@ export function triggerHaptic(intent: HapticIntent = "selection") {
 
 	const config = HAPTIC_INTENTS[intent];
 
+	// Ensure the web-haptics AudioContext has been primed from a user gesture
+	// before firing. Without this, the very first haptic on a fresh Tauri
+	// webview can fail because the audio service isn't yet unlocked.
+	if (typeof document !== "undefined") {
+		document.dispatchEvent(new CustomEvent("a-coder:prime-audio", { bubbles: true }));
+	}
+
 	void registeredTrigger(config.pattern, config.options)?.catch(() => undefined);
 }
 
@@ -145,6 +152,10 @@ export function previewHaptic(intent: HapticIntent = "streamDone") {
 	}
 
 	const config = HAPTIC_INTENTS[intent];
+
+	if (typeof document !== "undefined") {
+		document.dispatchEvent(new CustomEvent("a-coder:prime-audio", { bubbles: true }));
+	}
 
 	void registeredTrigger(config.pattern, config.options)?.catch(() => undefined);
 }

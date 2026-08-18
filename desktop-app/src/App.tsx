@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronsUpDown, FolderGit2, MessageSquare, Plus, Settings, Sparkles, X } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import * as rpc from "./lib/rpc";
-import { installFirstGestureAudioPrime, playCompletionSound } from "./lib/completion-sound";
+import { playCompletionSound } from "./lib/completion-sound";
 import { triggerHaptic } from "./lib/haptics";
 import { rafCoalesce } from "./lib/raf-coalesce";
 import { synthesize, playAudioBlob, type VoiceSettings } from "./lib/voice";
@@ -230,11 +230,8 @@ export default function App() {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
-	// Prime the completion-sound AudioContext on the first user gesture so the
-	// async agent_end chime isn't muted by WKWebView's autoplay policy.
-	useEffect(() => {
-		installFirstGestureAudioPrime();
-	}, []);
+	// AudioContext priming is now handled in main.tsx on the first user gesture
+	// so completion chimes and haptic click synthesis can fire automatically.
 
 	// Reusable: pull the authoritative engine state into the session store.
 	// Covers model, thinking, permission, compaction, queue modes, counts, and

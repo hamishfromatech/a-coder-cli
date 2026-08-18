@@ -21,5 +21,13 @@
 	<string>A-Coder Desktop uses the microphone for voice mode (speech-to-text).</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>A-Coder Desktop transcribes your speech to send as a prompt.</string>
+	<!-- Allow the embedded webview to play audio without requiring a user
+	     gesture. Required for completion chimes, haptic click synthesis, and
+	     voice-mode TTS playback to fire automatically in the Tauri desktop app. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
 </dict>
 </plist>

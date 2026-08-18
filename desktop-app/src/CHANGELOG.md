@@ -6,7 +6,7 @@
 
 - Fixed the desktop app showing duplicate window controls (custom traffic lights and minimize/maximize/close buttons layered on top of the native OS titlebar). The custom titlebar is now a compact toolbar; drag, minimize, maximize/restore, and close are handled by the native titlebar.
 - Fixed the footer context-usage bar not updating after compaction. The periodic stats refresh and the `compaction_end` event now both re-derive tokens / context window / percent from `get_session_stats`.
-- Fixed the completion sound not playing in the Tauri desktop build by creating/resuming the `AudioContext` inside the first user gesture and awaiting resume before scheduling the turn-end chime.
+- Fixed browser audio APIs (completion chimes, haptic click synthesis, voice-mode TTS playback) not working reliably in the Tauri desktop build. Audio is now primed on the first user gesture at app startup, the `Info.plist` declares arbitrary-load / audio-playback permission, and haptics fire a priming event when they run ahead of a prior gesture.
 
 ### Added
 
