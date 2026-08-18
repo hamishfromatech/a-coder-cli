@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed the `a-coder-cli update` self-update message for bun-binary installs so it explicitly tells Windows users to re-run the installer with `-Force` when the version check would otherwise skip. The PowerShell installer now also prints a `-Force` hint when it detects the CLI is already up to date.
+
 ### Added
 
 - Added **scoped persistent memory** to the `memory` tool. It now supports three scopes:

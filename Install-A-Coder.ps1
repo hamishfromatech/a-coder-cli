@@ -75,6 +75,7 @@ function Install-FromReleases {
     $TempArchive = Join-Path $env:TEMP "pi-windows-$Arch.zip"
     $TempExtract = Join-Path $env:TEMP ("ac-extract-" + [Guid]::NewGuid().ToString("N").Substring(0,8))
 
+    Write-Host "Downloading $AssetName from $Tag ..." -ForegroundColor Cyan
     try {
         Invoke-Download -Url $Url -OutFile $TempArchive
         if (-not (Test-Path $TempArchive)) {
@@ -193,6 +194,7 @@ if ((Test-Path $BinShim) -and (-not $Force)) {
         Write-Host "A-Coder CLI $InstalledTag installed; updating to $LatestTag ..." -ForegroundColor Cyan
     } else {
         Write-Host "A-Coder CLI already installed at $BinShim ($InstalledTag)." -ForegroundColor Cyan
+        Write-Host "Use -Force to reinstall or downgrade anyway." -ForegroundColor DarkGray
         $CliAlreadyUpToDate = $true
     }
 }

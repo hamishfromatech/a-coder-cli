@@ -739,19 +739,19 @@ export async function handlePackageCommand(
 							chalk.yellow(`${APP_NAME} self-update is not supported for this install type (${installMethod}).`),
 						);
 						if (process.platform === "win32") {
-							console.error(chalk.dim(`Re-run the installer to update:`));
+							console.error(chalk.dim(`Re-run the installer to update (use -Force to force a reinstall):`));
 							console.error(
 								chalk.cyan(
-									`  powershell -ExecutionPolicy Bypass -c "irm ${installerUrl}/Install-A-Coder.ps1 | iex"`,
+									`  powershell -ExecutionPolicy Bypass -c "irm ${installerUrl}/Install-A-Coder.ps1 | iex -Force"`,
 								),
 							);
 						} else {
-							console.error(chalk.dim(`Re-run the installer to update:`));
-							console.error(chalk.cyan(`  curl -sSf ${installerUrl}/install-a-coder.sh | bash`));
+							console.error(chalk.dim(`Re-run the installer to update (use --force to force a reinstall):`));
+							console.error(chalk.cyan(`  curl -sSf ${installerUrl}/install-a-coder.sh | bash -s -- --force`));
 						}
 						process.exitCode = 1;
 						return true;
-					}
+						}
 					if (process.platform === "win32" && installMethod !== "npm" && installMethod !== "pnpm") {
 						console.error(
 							chalk.red(`${APP_NAME} self-update on Windows is only supported for npm and pnpm installs.`),
