@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added **scoped persistent memory** to the `memory` tool. It now supports three scopes:
+  - `global`: the existing `~/.a-coder-cli/MEMORY.md` shared across all workspaces and sessions.
+  - `workspace`: a `MEMORY.md` stored in the current project's session directory, shared across every session opened in the same project.
+  - `session`: a per-session memory file stored under the project's session directory, keyed by session id. Session memories are not destroyed when the session ends; they persist for reconnects and reloads of the same session.
+  Use the narrowest scope that fits the information.
+
 ### Fixed
 
 - Fixed Ollama Cloud model discovery to use the native `/api/tags` endpoint for the live public catalog and `/api/show` for each model's real `context_window` and `max_tokens`, instead of the OpenAI-compatible `/v1/models` list which omitted both values.

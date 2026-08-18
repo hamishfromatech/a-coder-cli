@@ -120,6 +120,7 @@ export interface ToolsOptions {
 	find?: FindToolOptions;
 	ls?: LsToolOptions;
 	planMode?: { callbacks: PlanModeToolCallbacks };
+	memory?: { sessionDir: string; sessionId: string };
 }
 
 export function createToolDefinition(toolName: ToolName, cwd: string, options?: ToolsOptions): ToolDef {
@@ -168,7 +169,7 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 		case "ls":
 			return createLsTool(cwd, options?.ls);
 		case "memory":
-			return createMemoryTool();
+			return createMemoryTool(options?.memory);
 		case "plan_mode":
 			return createPlanModeTool(options?.planMode?.callbacks ?? { getPlanMode: () => false, setPlanMode: () => {} });
 		case "todo":
@@ -196,6 +197,7 @@ export function createReadOnlyToolDefinitions(cwd: string, options?: ToolsOption
 		createGrepToolDefinition(cwd, options?.grep),
 		createFindToolDefinition(cwd, options?.find),
 		createLsToolDefinition(cwd, options?.ls),
+		createMemoryToolDefinition(),
 	];
 }
 
@@ -224,7 +226,7 @@ export function createCodingTools(cwd: string, options?: ToolsOptions): Tool[] {
 		createWriteTool(cwd, options?.write),
 		createPlanModeTool(options?.planMode?.callbacks ?? { getPlanMode: () => false, setPlanMode: () => {} }),
 		createTodoTool(),
-		createMemoryTool(),
+		createMemoryTool(options?.memory),
 	];
 }
 
@@ -234,7 +236,7 @@ export function createReadOnlyTools(cwd: string, options?: ToolsOptions): Tool[]
 		createGrepTool(cwd, options?.grep),
 		createFindTool(cwd, options?.find),
 		createLsTool(cwd, options?.ls),
-		createPlanModeTool(options?.planMode?.callbacks ?? { getPlanMode: () => false, setPlanMode: () => {} }),
+		createMemoryTool(options?.memory),
 	];
 }
 
@@ -251,6 +253,6 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 			options?.planMode?.callbacks ?? { getPlanMode: () => false, setPlanMode: () => {} },
 		),
 		todo: createTodoTool(),
-		memory: createMemoryTool(),
+		memory: createMemoryTool(options?.memory),
 	};
 }

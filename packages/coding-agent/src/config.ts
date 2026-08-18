@@ -525,6 +525,16 @@ export function getMemoryPath(): string {
 	return join(homedir(), CONFIG_DIR_NAME, "MEMORY.md");
 }
 
+/** Get path to the workspace-scoped MEMORY.md inside the session directory. */
+export function getWorkspaceMemoryPath(sessionDir: string): string {
+	return join(sessionDir, "MEMORY.md");
+}
+
+/** Get path to the session-scoped MEMORY.md for a specific session id. */
+export function getSessionMemoryPath(sessionDir: string, sessionId: string): string {
+	return join(sessionDir, "memories", `${sessionId}.md`);
+}
+
 /** Get path to user's custom themes directory */
 export function getCustomThemesDir(): string {
 	return join(getAgentDir(), "themes");

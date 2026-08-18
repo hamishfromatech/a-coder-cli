@@ -2893,6 +2893,10 @@ export class AgentSession {
 							setPlanMode: (enabled) => this.setPlanMode(enabled),
 						},
 					},
+					memory: {
+						sessionDir: this.sessionManager.getSessionDir(),
+						sessionId: this.sessionManager.getSessionId(),
+					},
 				});
 
 		this._baseToolDefinitions = new Map(
