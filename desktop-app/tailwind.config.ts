@@ -72,6 +72,26 @@ const config: Config = {
 				xl: "10px",
 				"2xl": "12px",
 			},
+			maxWidth: {
+				// Modal / panel widths.
+				xs: "20rem",
+				sm: "24rem",
+				md: "28rem",
+				lg: "32rem",
+				xl: "40rem",
+				"2xl": "48rem",
+				"3xl": "56rem",
+				"4xl": "64rem",
+				chat: "48rem",
+				toast: "24rem",
+			},
+			maxHeight: {
+				overlay: "min(80vh, 48rem)",
+				"overlay-sm": "min(60vh, 24rem)",
+			},
+			minHeight: {
+				"git-empty": "7.5rem",
+			},
 		},
 	},
 	plugins: [require("@tailwindcss/typography")],

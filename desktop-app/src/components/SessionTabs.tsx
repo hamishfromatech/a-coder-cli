@@ -74,7 +74,7 @@ export function SessionTabs() {
 								type="button"
 								onClick={() => void switchTo(tab.path)}
 								disabled={!!pendingPath || (isStreaming && !active)}
-								className="max-w-[170px] truncate focus-visible:outline-none disabled:cursor-default"
+								className="max-w-40 truncate focus-visible:outline-none disabled:cursor-default"
 								title={tab.name}
 							>
 								{switching ? (

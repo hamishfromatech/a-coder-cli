@@ -66,7 +66,7 @@ export function MemoryModal({ open, onClose }: MemoryModalProps) {
 				if (e.target === modalRef.current) onClose();
 			}}
 		>
-			<div className="flex h-[min(80vh,48rem)] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-pi-border bg-pi-surface-overlay shadow-overlay">
+			<div className="flex h-overlay w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-pi-border bg-pi-surface-overlay shadow-overlay">
 				{/* Header */}
 				<div className="flex items-center justify-between border-b border-pi-border px-4 py-3">
 					<div className="flex items-center gap-2.5">

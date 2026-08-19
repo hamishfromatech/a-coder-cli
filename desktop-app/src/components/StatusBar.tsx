@@ -136,7 +136,7 @@ export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
 						title="Click to reconnect" aria-label="Reconnect"
 					>
 						<AlertCircle className="h-3 w-3" />
-						<span className="max-w-[200px] truncate font-medium">
+						<span className="max-w-48 truncate font-medium">
 							{error ?? "Engine error"}
 						</span>
 						<RefreshCw className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100" />

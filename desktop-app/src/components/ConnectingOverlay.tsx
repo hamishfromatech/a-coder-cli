@@ -162,7 +162,7 @@ function BootFailureCard({ message }: { message: string }) {
 	};
 	return (
 		<div className="fixed inset-0 z-[1200] grid place-items-center bg-pi-bg p-6">
-			<div className="w-full max-w-[40rem] overflow-hidden rounded-xl border border-pi-error/30 bg-pi-surface-overlay shadow-overlay">
+			<div className="w-full max-w-xl overflow-hidden rounded-xl border border-pi-error/30 bg-pi-surface-overlay shadow-overlay">
 				<div className="flex items-start gap-3 px-5 py-4">
 					<div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-pi-error/15 text-pi-error">
 						<span className="text-[1rem] leading-none">!</span>

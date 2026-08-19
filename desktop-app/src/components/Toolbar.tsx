@@ -128,7 +128,7 @@ export function Toolbar({ onShowModelPicker, onShowMemory }: ToolbarProps) {
 					title="Change model" aria-label="Change model"
 				>
 					<Cpu className="h-3.5 w-3.5 transition-smooth text-pi-accent" />
-					<span className="max-w-[180px] truncate">
+					<span className="max-w-44 truncate">
 						{model?.name ?? "Select model"}
 					</span>
 				</button>

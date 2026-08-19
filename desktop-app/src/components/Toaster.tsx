@@ -19,7 +19,7 @@ export function Toaster() {
 			{toasts.map((t) => (
 				<div
 					key={t.id}
-					className={`flex min-w-[16rem] max-w-[24rem] items-start gap-2 rounded-lg border border-pi-border border-l-4 p-3 shadow-overlay ${kindClasses[t.kind] ?? kindClasses.info}`}
+					className={`flex min-w-xs max-w-toast items-start gap-2 rounded-lg border border-pi-border border-l-4 p-3 shadow-overlay ${kindClasses[t.kind] ?? kindClasses.info}`}
 				>
 					<div className="min-w-0 flex-1">
 						<div className="text-xs font-semibold text-pi-text">{t.title}</div>

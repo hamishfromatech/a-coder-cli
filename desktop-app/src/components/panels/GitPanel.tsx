@@ -122,7 +122,7 @@ export function GitPanel({ projectPath }: Props) {
 			{/* Body: stacked list + detail below a min-height */}
 			<div className="flex min-h-0 flex-1 flex-col">
 				{/* File list */}
-				<div className="flex min-h-[120px] shrink-0 flex-col border-b border-pi-border">
+				<div className="flex min-h-git-empty shrink-0 flex-col border-b border-pi-border">
 					<div className="flex-1 overflow-y-auto">
 						{totalChanges === 0 && !loading && (
 							<EmptyMessage>Working tree clean</EmptyMessage>

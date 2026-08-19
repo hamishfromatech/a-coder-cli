@@ -133,7 +133,7 @@ export function SessionPicker({ onClose, onResume }: SessionPickerProps) {
 						<X className="h-4 w-4" />
 					</button>
 				</div>
-				<div className="max-h-[min(24rem,60vh)] overflow-auto py-1">
+				<div className="max-h-overlay-sm overflow-auto py-1">
 					{loading ? (
 						<div className="px-3 py-6 text-center text-xs text-pi-text-faint">Loading sessions…</div>
 					) : filtered.length === 0 ? (

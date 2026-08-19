@@ -216,7 +216,7 @@ function SkinPreview({ skin, mode }: { skin: string; mode: ResolvedMode }) {
 	const palette = useMemo(() => getSkinPalette(normalizeSkin(skin), mode), [skin, mode]);
 	return (
 		<div
-			className="flex h-5 w-full max-w-[5.5rem] items-center gap-1 overflow-hidden rounded-sm transition-smooth group-hover:scale-[1.03]"
+			className="flex h-5 w-full max-w-24 items-center gap-1 overflow-hidden rounded-sm transition-smooth group-hover:scale-[1.03]"
 			style={{ background: palette.bg, border: `1px solid ${palette.textFaint}33` }}
 			aria-hidden
 		>

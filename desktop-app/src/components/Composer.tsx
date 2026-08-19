@@ -527,7 +527,7 @@ export function Composer() {
 							className="group flex items-center gap-2 rounded-md border border-pi-border bg-pi-surface px-2 py-1"
 						>
 							<ImageIcon className="h-3.5 w-3.5 text-pi-text-muted" />
-							<span className="max-w-[8rem] truncate text-2xs text-pi-text-secondary">
+							<span className="max-w-32 truncate text-2xs text-pi-text-secondary">
 								Image {idx + 1}
 							</span>
 							<button

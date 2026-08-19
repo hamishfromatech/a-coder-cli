@@ -969,7 +969,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 			onClick={onClose}
 		>
 			<div
-				className={`flex h-[82vh] w-full max-w-4xl overflow-hidden rounded-xl bg-pi-surface shadow-overlay transition-opacity duration-300`}
+				className={`flex h-overlay w-full max-w-4xl overflow-hidden rounded-xl bg-pi-surface shadow-overlay transition-opacity duration-300`}
 				onClick={(e) => e.stopPropagation()}
 			>
 				{/* =================== Left nav =================== */}

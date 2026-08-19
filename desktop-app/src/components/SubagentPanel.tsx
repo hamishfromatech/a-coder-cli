@@ -68,7 +68,7 @@ export function SubagentPanel({ open, onClose }: SubagentPanelProps) {
 			onClick={onClose}
 		>
 			<div
-				className="flex w-full max-w-lg max-h-[80vh] flex-col overflow-hidden rounded-xl bg-pi-surface-overlay shadow-overlay"
+				className="flex w-full max-w-lg max-h-overlay flex-col overflow-hidden rounded-xl bg-pi-surface-overlay shadow-overlay"
 				onClick={(e) => e.stopPropagation()}
 			>
 				<div className="flex items-center justify-between border-b border-pi-border px-4 py-3">

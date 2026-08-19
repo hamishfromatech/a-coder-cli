@@ -76,7 +76,7 @@ export function ComposerBreadcrumb() {
 						triggerHaptic("selection");
 						setOpen((v) => !v);
 					}}
-					className="flex h-6 max-w-[180px] items-center gap-1.5 rounded-md px-1.5 text-pi-text-secondary transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+					className="flex h-6 max-w-44 items-center gap-1.5 rounded-md px-1.5 text-pi-text-secondary transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
 					title={current || "No project"}
 				>
 					<FolderGit2 className="h-3.5 w-3.5 shrink-0 text-pi-text-faint" />
@@ -138,7 +138,7 @@ export function ComposerBreadcrumb() {
 				<>
 					<span className="select-none opacity-40">/</span>
 					<div
-						className="flex h-6 max-w-[200px] items-center gap-1.5 px-1.5 text-pi-text-muted"
+						className="flex h-6 max-w-48 items-center gap-1.5 px-1.5 text-pi-text-muted"
 						title={`Git branch: ${branch}`}
 					>
 						<GitBranch className="h-3 w-3 shrink-0 text-pi-text-faint" />
