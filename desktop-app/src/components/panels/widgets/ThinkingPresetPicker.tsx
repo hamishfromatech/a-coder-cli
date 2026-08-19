@@ -95,7 +95,7 @@ export function ThinkingPresetPicker({ value, onChange }: Props) {
 							role="radio"
 							aria-checked={active}
 							onClick={() => void choose(preset)}
-							className={`flex h-9 items-center justify-center rounded-md text-[11.5px] font-semibold transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
+							className={`flex h-9 items-center justify-center rounded-md text-2xs font-semibold transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
 								active
 									? "bg-pi-surface text-pi-text shadow-sm hover:bg-pi-surface-overlay"
 									: "text-pi-text-muted hover:text-pi-text hover:bg-pi-surface-raised/50"
@@ -106,7 +106,7 @@ export function ThinkingPresetPicker({ value, onChange }: Props) {
 					);
 				})}
 			</div>
-			<p className="text-[11px] leading-relaxed text-pi-text-muted">
+			<p className="text-2xs leading-relaxed text-pi-text-muted">
 				<span className="font-medium text-pi-text">{current.label}.</span>{" "}
 				{current.caption}
 			</p>

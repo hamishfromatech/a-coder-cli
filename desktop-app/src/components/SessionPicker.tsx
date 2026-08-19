@@ -135,9 +135,9 @@ export function SessionPicker({ onClose, onResume }: SessionPickerProps) {
 				</div>
 				<div className="max-h-[min(24rem,60vh)] overflow-auto py-1">
 					{loading ? (
-						<div className="px-3 py-6 text-center text-[12px] text-pi-text-faint">Loading sessions…</div>
+						<div className="px-3 py-6 text-center text-xs text-pi-text-faint">Loading sessions…</div>
 					) : filtered.length === 0 ? (
-						<div className="px-3 py-6 text-center text-[12px] text-pi-text-faint">
+						<div className="px-3 py-6 text-center text-xs text-pi-text-faint">
 							{sessions.length === 0 ? "No sessions found." : "No matches."}
 						</div>
 					) : (
@@ -155,14 +155,14 @@ export function SessionPicker({ onClose, onResume }: SessionPickerProps) {
 								>
 									<MessageCircle className="h-4 w-4 shrink-0 text-pi-text-faint" />
 									<span className="flex min-w-0 flex-1 flex-col leading-snug">
-										<span className="truncate text-[12.5px] text-pi-text">{title}</span>
+										<span className="truncate text-xs text-pi-text">{title}</span>
 										{s.cwd && (
-											<span className="truncate font-mono text-[10.5px] text-pi-text-faint">
+											<span className="truncate font-mono text-3xs text-pi-text-faint">
 												{s.cwd.split(/[/\\]/).filter(Boolean).at(-1) ?? s.cwd}
 											</span>
 										)}
 									</span>
-									<span className="shrink-0 font-mono pi-tabular text-[10px] text-pi-text-faint">
+									<span className="shrink-0 font-mono pi-tabular text-3xs text-pi-text-faint">
 										{s.messageCount}m · {relativeTime(s.modified)}
 									</span>
 									<Check className={`h-3.5 w-3.5 shrink-0 text-pi-accent ${active ? "opacity-100" : "opacity-0"}`} />

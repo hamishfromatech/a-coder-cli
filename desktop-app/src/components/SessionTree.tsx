@@ -202,7 +202,7 @@ export function SessionTree() {
 
 	if (tree.length === 0) {
 		return (
-			<p className="px-2 py-1 text-[11.5px] text-pi-text-faint">
+			<p className="px-2 py-1 text-2xs text-pi-text-faint">
 				Branches will appear once the engine reports them.
 			</p>
 		);
@@ -212,7 +212,7 @@ export function SessionTree() {
 		<div className="flex flex-col gap-1">
 			{/* Metadata header + filter + collapse/expand-all */}
 			<div className="flex items-center justify-between px-2.5 py-0.5">
-				<div className="flex items-center gap-2 text-[10.5px] uppercase tracking-wide text-pi-text-faint">
+				<div className="flex items-center gap-2 text-3xs uppercase tracking-wide text-pi-text-faint">
 					<span>
 						{messages.length} msg{messages.length === 1 ? "" : "s"}
 					</span>
@@ -300,7 +300,7 @@ function FilterMenu({
 		<div className="relative">
 			<button
 				onClick={() => setOpen((v) => !v)}
-				className="flex items-center gap-1 rounded p-1 text-[10.5px] text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+				className="flex items-center gap-1 rounded p-1 text-3xs text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
 				title="Filter tree"
 			>
 				<Filter className="h-3 w-3" />
@@ -323,7 +323,7 @@ function FilterMenu({
 									onChange(m.value);
 									setOpen(false);
 								}}
-								className={`flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-left text-[11px] transition-hover focus-visible:shadow-focus focus-visible:outline-none ${
+								className={`flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-left text-2xs transition-hover focus-visible:shadow-focus focus-visible:outline-none ${
 									mode === m.value
 										? "bg-pi-surface-raised text-pi-text"
 										: "text-pi-text-secondary hover:bg-pi-surface-raised"
@@ -409,7 +409,7 @@ function TreeItem({
 				role="treeitem"
 				aria-expanded={hasChildren ? isExpanded : undefined}
 				aria-selected={isLeaf}
-				className={`group flex h-7 items-center gap-1 rounded-md pr-1 text-[12px] transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
+				className={`group flex h-7 items-center gap-1 rounded-md pr-1 text-xs transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
 					isLeaf
 						? "bg-pi-accent-soft text-pi-accent"
 						: "text-pi-text-secondary hover:bg-pi-surface-raised hover:text-pi-text"
@@ -461,7 +461,7 @@ function TreeItem({
 					>
 						<span className="truncate">{node.label ?? node.id.slice(0, 8)}</span>
 						{isMultiBranch && (
-							<span className="flex shrink-0 items-center gap-0.5 rounded px-1 text-[9.5px] font-medium text-pi-text-faint bg-pi-surface-overlay">
+							<span className="flex shrink-0 items-center gap-0.5 rounded px-1 text-4xs font-medium text-pi-text-faint bg-pi-surface-overlay">
 								<GitBranch className="h-2.5 w-2.5" />
 								{branchCount}
 							</span>
@@ -567,7 +567,7 @@ function MenuItem({
 	return (
 		<button
 			onClick={onClick}
-			className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[11.5px] text-pi-text-secondary transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+			className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-2xs text-pi-text-secondary transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
 		>
 			<IconCmp className="h-3.5 w-3.5 shrink-0 text-pi-text-muted" />
 			{label}
@@ -602,7 +602,7 @@ function RenameInput({
 				}
 			}}
 			onBlur={() => onCommit(value)}
-			className="min-w-0 flex-1 rounded border border-pi-border bg-pi-surface px-1.5 py-0.5 text-[12px] text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+			className="min-w-0 flex-1 rounded border border-pi-border bg-pi-surface px-1.5 py-0.5 text-xs text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
 			placeholder="Branch label"
 		/>
 	);

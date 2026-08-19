@@ -103,7 +103,7 @@ function SelectInput({
 					onChange(e.target.value);
 				}}
 				disabled={disabled}
-				className={`appearance-none rounded-md bg-pi-surface-raised px-3 py-1.5 pr-7 text-[12px] font-medium text-pi-text shadow-ring transition-smooth focus:shadow-focus ${
+				className={`appearance-none rounded-md bg-pi-surface-raised px-3 py-1.5 pr-7 text-xs font-medium text-pi-text shadow-ring transition-smooth focus:shadow-focus ${
 					disabled ? "opacity-50" : ""
 				}`}
 			>
@@ -145,7 +145,7 @@ function NumberInput({
 				const next = Number(e.target.value);
 				onChange(Number.isFinite(next) ? next : 0);
 			}}
-			className={`w-28 rounded-md bg-pi-surface-raised px-3 py-1.5 text-right text-[12px] font-medium text-pi-text shadow-ring transition-smooth focus:shadow-focus ${
+			className={`w-28 rounded-md bg-pi-surface-raised px-3 py-1.5 text-right text-xs font-medium text-pi-text shadow-ring transition-smooth focus:shadow-focus ${
 				disabled ? "opacity-50" : ""
 			}`}
 		/>
@@ -170,7 +170,7 @@ function TextInput({
 			onChange={(e) => onChange(e.target.value)}
 			placeholder={placeholder}
 			disabled={disabled}
-			className={`w-72 max-w-full rounded-md bg-pi-surface-raised px-3 py-1.5 text-[12px] font-medium text-pi-text placeholder:text-pi-text-faint shadow-ring transition-smooth focus:shadow-focus ${
+			className={`w-72 max-w-full rounded-md bg-pi-surface-raised px-3 py-1.5 text-xs font-medium text-pi-text placeholder:text-pi-text-faint shadow-ring transition-smooth focus:shadow-focus ${
 				disabled ? "opacity-50" : ""
 			}`}
 		/>
@@ -197,7 +197,7 @@ function TextareaInput({
 			placeholder={placeholder}
 			disabled={disabled}
 			rows={rows}
-			className={`w-full rounded-md bg-pi-surface-raised px-3 py-1.5 font-mono text-[12px] text-pi-text placeholder:text-pi-text-faint shadow-ring transition-smooth focus:shadow-focus ${
+			className={`w-full rounded-md bg-pi-surface-raised px-3 py-1.5 font-mono text-xs text-pi-text placeholder:text-pi-text-faint shadow-ring transition-smooth focus:shadow-focus ${
 				disabled ? "opacity-50" : ""
 			}`}
 		/>
@@ -271,13 +271,13 @@ function JsonInput({
 				onBlur={() => commit(text)}
 				disabled={disabled}
 				rows={4}
-				className={`w-full rounded-md bg-pi-bg p-2 font-mono text-[11.5px] text-pi-text transition-smooth focus:outline-none ${
+				className={`w-full rounded-md bg-pi-bg p-2 font-mono text-2xs text-pi-text transition-smooth focus:outline-none ${
 					error ? "shadow-ring-error" : "shadow-ring"
 				}`}
 				spellCheck={false}
 			/>
 			{error && (
-				<p className="text-[10.5px] text-pi-error">Invalid JSON: {error}</p>
+				<p className="text-3xs text-pi-error">Invalid JSON: {error}</p>
 			)}
 		</div>
 	);
@@ -387,11 +387,11 @@ function FieldRow({
 		return (
 			<div className="py-2.5 transition-smooth">
 				<div className="mb-2">
-					<label className="text-[12.5px] font-medium text-pi-text">
+					<label className="text-xs font-medium text-pi-text">
 						{spec.label}
 					</label>
 					{spec.hint && (
-						<p className="mt-0.5 text-[11px] leading-relaxed text-pi-text-muted">
+						<p className="mt-0.5 text-2xs leading-relaxed text-pi-text-muted">
 							{spec.hint}
 						</p>
 					)}
@@ -404,11 +404,11 @@ function FieldRow({
 	return (
 		<div className="flex items-start justify-between gap-4 py-2.5 transition-smooth">
 			<div className="min-w-0 flex-1">
-				<label className="text-[12.5px] font-medium text-pi-text">
+				<label className="text-xs font-medium text-pi-text">
 					{spec.label}
 				</label>
 				{spec.hint && (
-					<p className="mt-0.5 text-[11px] leading-relaxed text-pi-text-muted">
+					<p className="mt-0.5 text-2xs leading-relaxed text-pi-text-muted">
 						{spec.hint}
 					</p>
 				)}
@@ -527,9 +527,9 @@ function CardView({
 	return (
 		<section className="overflow-hidden rounded-lg bg-pi-surface-raised shadow-ring transition-smooth hover:shadow-card-hover">
 			<div className="border-b border-pi-border px-4 py-3">
-				<h3 className="text-[12.5px] font-semibold text-pi-text">{card.title}</h3>
+				<h3 className="text-xs font-semibold text-pi-text">{card.title}</h3>
 				{card.description && (
-					<p className="mt-0.5 text-[11px] leading-relaxed text-pi-text-muted">
+					<p className="mt-0.5 text-2xs leading-relaxed text-pi-text-muted">
 						{card.description}
 					</p>
 				)}
@@ -567,7 +567,7 @@ function CardView({
 					<button
 						type="button"
 						onClick={() => setShowAdvanced((v) => !v)}
-						className={`flex w-full items-center gap-1.5 border-t border-pi-border px-4 py-2 text-left text-[11px] font-medium text-pi-text-muted transition-hover active-press hover:bg-pi-surface-overlay hover:text-pi-text`}
+						className={`flex w-full items-center gap-1.5 border-t border-pi-border px-4 py-2 text-left text-2xs font-medium text-pi-text-muted transition-hover active-press hover:bg-pi-surface-overlay hover:text-pi-text`}
 					>
 						<ChevronDown
 							className={`h-3 w-3 transition-transform ${
@@ -575,7 +575,7 @@ function CardView({
 							}`}
 						/>
 						{showAdvanced ? "Hide advanced" : "Show advanced"}
-						<span className="ml-1 text-[10px] text-pi-text-faint">
+						<span className="ml-1 text-3xs text-pi-text-faint">
 							{advanced.length} setting{advanced.length === 1 ? "" : "s"}
 						</span>
 					</button>
@@ -660,7 +660,7 @@ function SectionView({
 					<button
 						type="button"
 						onClick={() => setShowAdvanced((v) => !v)}
-						className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium text-pi-text-muted transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text`}
+						className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-2xs font-medium text-pi-text-muted transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text`}
 					>
 						<ChevronDown
 							className={`h-3 w-3 transition-transform ${
@@ -668,7 +668,7 @@ function SectionView({
 							}`}
 						/>
 						{showAdvanced ? "Hide advanced" : "Show advanced"}
-						<span className="ml-1 text-[10px] text-pi-text-faint">
+						<span className="ml-1 text-3xs text-pi-text-faint">
 							{advanced.length} setting{advanced.length === 1 ? "" : "s"}
 						</span>
 					</button>
@@ -733,13 +733,13 @@ function AdvancedJsonEditor({
 						validate(e.target.value);
 					}}
 					onBlur={() => validate(text)}
-					className="h-64 w-full resize-none bg-transparent p-3 font-mono text-[12px] leading-relaxed text-pi-text focus:outline-none"
+					className="h-64 w-full resize-none bg-transparent p-3 font-mono text-xs leading-relaxed text-pi-text focus:outline-none"
 					spellCheck={false}
 				/>
 			</div>
 
 			{error && (
-				<div className="rounded-md bg-pi-error/10 px-3 py-1.5 text-[11px] font-medium text-pi-error">
+				<div className="rounded-md bg-pi-error/10 px-3 py-1.5 text-2xs font-medium text-pi-error">
 					Invalid JSON: {error}
 				</div>
 			)}
@@ -748,7 +748,7 @@ function AdvancedJsonEditor({
 				<button
 					type="button"
 					onClick={() => void save()}
-					className={`inline-flex items-center gap-1.5 rounded-md bg-pi-accent px-3 py-1.5 text-[12px] font-medium text-white shadow-ring-accent transition-hover active-press hover:bg-pi-accent-hover`}
+					className={`inline-flex items-center gap-1.5 rounded-md bg-pi-accent px-3 py-1.5 text-xs font-medium text-white shadow-ring-accent transition-hover active-press hover:bg-pi-accent-hover`}
 				>
 					Save raw JSON
 					<ChevronRight className="h-3 w-3" />
@@ -757,7 +757,7 @@ function AdvancedJsonEditor({
 				<button
 					type="button"
 					onClick={() => void persistCliSettings(scope, {}).then(onSaved)}
-					className={`inline-flex items-center gap-1.5 rounded-md bg-pi-surface-raised px-3 py-1.5 text-[12px] font-medium text-pi-text shadow-ring transition-hover active-press hover:bg-pi-surface-overlay`}
+					className={`inline-flex items-center gap-1.5 rounded-md bg-pi-surface-raised px-3 py-1.5 text-xs font-medium text-pi-text shadow-ring transition-hover active-press hover:bg-pi-surface-overlay`}
 				>
 					Reset to defaults
 					<RotateCcw className="h-3 w-3" />
@@ -774,7 +774,7 @@ function AdvancedJsonEditor({
 							)
 							.catch(() => {})
 					}
-					className={`inline-flex items-center gap-1.5 rounded-md bg-pi-surface-raised px-3 py-1.5 text-[12px] font-medium text-pi-text shadow-ring transition-hover active-press hover:bg-pi-surface-overlay`}
+					className={`inline-flex items-center gap-1.5 rounded-md bg-pi-surface-raised px-3 py-1.5 text-xs font-medium text-pi-text shadow-ring transition-hover active-press hover:bg-pi-surface-overlay`}
 				>
 					Open in editor
 					<FileText className="h-3 w-3" />
@@ -791,7 +791,7 @@ function AdvancedJsonEditor({
 							)
 							.catch(() => {})
 					}
-					className={`inline-flex items-center gap-1.5 rounded-md bg-pi-surface-raised px-3 py-1.5 text-[12px] font-medium text-pi-text shadow-ring transition-hover active-press hover:bg-pi-surface-overlay`}
+					className={`inline-flex items-center gap-1.5 rounded-md bg-pi-surface-raised px-3 py-1.5 text-xs font-medium text-pi-text shadow-ring transition-hover active-press hover:bg-pi-surface-overlay`}
 				>
 					Reveal in Finder
 				</button>
@@ -811,10 +811,10 @@ function FirstLaunchBanner({ onDismiss, onGoToAccount }: { onDismiss: () => void
 				<Sparkles className="h-3.5 w-3.5" />
 			</div>
 			<div className="min-w-0 flex-1">
-				<div className="text-[12.5px] font-semibold text-pi-text">
+				<div className="text-xs font-semibold text-pi-text">
 					Welcome to A-Coder
 				</div>
-				<p className="mt-0.5 text-[11.5px] leading-relaxed text-pi-text-secondary">
+				<p className="mt-0.5 text-2xs leading-relaxed text-pi-text-secondary">
 					Sign in to an AI provider to start chatting. You can do that any time
 					from the Account section.
 				</p>
@@ -823,7 +823,7 @@ function FirstLaunchBanner({ onDismiss, onGoToAccount }: { onDismiss: () => void
 				<button
 					type="button"
 					onClick={onGoToAccount}
-					className={`rounded-md bg-pi-accent px-3 py-1 text-[11.5px] font-semibold text-white transition-hover active-press hover:bg-pi-accent-hover`}
+					className={`rounded-md bg-pi-accent px-3 py-1 text-2xs font-semibold text-white transition-hover active-press hover:bg-pi-accent-hover`}
 				>
 					Sign in
 				</button>
@@ -984,7 +984,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 			>
 				{/* =================== Left nav =================== */}
 				<nav className="w-56 shrink-0 overflow-y-auto border-r border-pi-border px-3 py-5">
-					<div className="mb-4 px-1 text-[11px] font-semibold uppercase tracking-wider text-pi-text-faint">
+					<div className="mb-4 px-1 text-2xs font-semibold uppercase tracking-wider text-pi-text-faint">
 						Settings
 					</div>
 
@@ -995,7 +995,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 								key={s}
 								type="button"
 								onClick={() => setScope(s)}
-								className={`flex h-6 flex-1 items-center justify-center rounded text-[10.5px] font-semibold uppercase tracking-wider transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
+								className={`flex h-6 flex-1 items-center justify-center rounded text-3xs font-semibold uppercase tracking-wider transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
 									scope === s
 										? "bg-pi-accent text-white shadow-sm hover:bg-pi-accent-hover"
 										: "text-pi-text-muted hover:bg-pi-surface-overlay hover:text-pi-text"
@@ -1028,14 +1028,14 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 											active ? "text-pi-accent" : "text-pi-text-muted"
 										}`}
 									/>
-									<div className="text-[12px] font-medium">{label}</div>
+									<div className="text-xs font-medium">{label}</div>
 								</button>
 							);
 						})}
 					</div>
 
 					{savedAt && (
-						<div className="mt-4 px-1 text-[11px] font-medium text-pi-text-faint">
+						<div className="mt-4 px-1 text-2xs font-medium text-pi-text-faint">
 							Saved
 						</div>
 					)}
@@ -1050,7 +1050,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 								{section?.label ?? "Settings"}
 							</h2>
 							{section?.description && (
-								<p className="mt-0.5 text-[11.5px] leading-relaxed text-pi-text-muted">
+								<p className="mt-0.5 text-2xs leading-relaxed text-pi-text-muted">
 									{section.description}
 								</p>
 							)}
@@ -1066,7 +1066,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 										if (e.key === "Escape") setSearch("");
 									}}
 									placeholder="Search…"
-									className={`w-44 rounded-md bg-pi-surface-raised py-1.5 pl-8 pr-3 text-[12px] text-pi-text placeholder:text-pi-text-faint shadow-ring transition-smooth focus:shadow-focus focus:outline-none`}
+									className={`w-44 rounded-md bg-pi-surface-raised py-1.5 pl-8 pr-3 text-xs text-pi-text placeholder:text-pi-text-faint shadow-ring transition-smooth focus:shadow-focus focus:outline-none`}
 								/>
 							</div>
 							<button
@@ -1083,7 +1083,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 					{/* Body */}
 					<div className="flex-1 space-y-6 overflow-auto p-6">
 						{!cliSettingsLoaded ? (
-							<div className="flex h-full items-center justify-center text-[12px] text-pi-text-muted">
+							<div className="flex h-full items-center justify-center text-xs text-pi-text-muted">
 								Loading settings…
 							</div>
 						) : (
@@ -1110,7 +1110,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 											<h2 className="text-[15px] font-semibold tracking-tight">
 												Advanced
 											</h2>
-											<p className="mt-0.5 text-[11.5px] text-pi-text-muted">
+											<p className="mt-0.5 text-2xs text-pi-text-muted">
 												Edit settings.json directly. Most people won't need to touch this.
 											</p>
 										</header>
@@ -1142,13 +1142,13 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
 					{/* Footer */}
 					<div className="flex shrink-0 items-center justify-between gap-2 border-t border-pi-border bg-pi-surface/40 px-5 py-3">
-						<span className="text-[11px] text-pi-text-faint">
+						<span className="text-2xs text-pi-text-faint">
 							Changes save automatically.
 						</span>
 						<button
 							type="button"
 							onClick={onClose}
-							className={`rounded-md px-3 py-1.5 text-[12px] text-pi-text-muted transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text`}
+							className={`rounded-md px-3 py-1.5 text-xs text-pi-text-muted transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text`}
 						>
 							Close
 						</button>

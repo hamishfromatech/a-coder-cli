@@ -130,11 +130,11 @@ export function RichToolCall({ toolCall, approvalRequest }: RichToolCallProps) {
 				className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-hover"
 			>
 				{statusGlyph}
-				<span className="font-mono text-[11.5px] font-medium text-pi-text-secondary">
+				<span className="font-mono text-2xs font-medium text-pi-text-secondary">
 					{toolCall.name}
 				</span>
 				{summary && (
-					<span className="min-w-0 flex-1 truncate font-mono text-[11px] text-pi-text-faint">
+					<span className="min-w-0 flex-1 truncate font-mono text-2xs text-pi-text-faint">
 						{summary}
 					</span>
 				)}
@@ -142,7 +142,7 @@ export function RichToolCall({ toolCall, approvalRequest }: RichToolCallProps) {
 					onClick={onCopy}
 					role="button"
 					tabIndex={0}
-					className="ml-auto flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-pi-text-faint opacity-0 transition-hover hover:bg-pi-surface-overlay hover:text-pi-text group-hover/tool:opacity-100 focus-visible:shadow-focus focus-visible:outline-none"
+					className="ml-auto flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-3xs text-pi-text-faint opacity-0 transition-hover hover:bg-pi-surface-overlay hover:text-pi-text group-hover/tool:opacity-100 focus-visible:shadow-focus focus-visible:outline-none"
 					title="Copy arguments"
 					onKeyDown={(e) => {
 						if (e.key === "Enter" || e.key === " ") {
@@ -163,21 +163,21 @@ export function RichToolCall({ toolCall, approvalRequest }: RichToolCallProps) {
 				<div className="border-t border-pi-border bg-pi-bg/40">
 					{argsJson && (
 						<div>
-							<div className="px-2.5 pt-1.5 text-[9.5px] font-medium uppercase tracking-[0.08em] text-pi-text-faint">
+							<div className="px-2.5 pt-1.5 text-4xs font-medium uppercase tracking-[0.08em] text-pi-text-faint">
 								Args
 							</div>
-							<pre className="max-h-48 overflow-auto px-2.5 py-1.5 font-mono text-[11px] leading-relaxed text-pi-text-secondary">
+							<pre className="max-h-48 overflow-auto px-2.5 py-1.5 font-mono text-2xs leading-relaxed text-pi-text-secondary">
 								{argsJson}
 							</pre>
 						</div>
 					)}
 					{output && (
 						<div>
-							<div className="px-2.5 pt-1.5 text-[9.5px] font-medium uppercase tracking-[0.08em] text-pi-text-faint">
+							<div className="px-2.5 pt-1.5 text-4xs font-medium uppercase tracking-[0.08em] text-pi-text-faint">
 								{result?.isError ? "Error" : "Result"}
 							</div>
 							<pre
-								className={`max-h-64 overflow-auto px-2.5 py-1.5 font-mono text-[11px] leading-relaxed ${
+								className={`max-h-64 overflow-auto px-2.5 py-1.5 font-mono text-2xs leading-relaxed ${
 									result?.isError ? "text-pi-error" : "text-pi-text-secondary"
 								}`}
 							>

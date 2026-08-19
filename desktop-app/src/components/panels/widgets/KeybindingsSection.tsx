@@ -55,7 +55,7 @@ export function KeybindingsSection() {
 				<h2 className="text-[15px] font-semibold tracking-tight transition-smooth hover:text-pi-text-secondary">
 					Keybindings
 				</h2>
-				<p className="mt-0.5 text-[11.5px] leading-relaxed text-pi-text-muted">
+				<p className="mt-0.5 text-2xs leading-relaxed text-pi-text-muted">
 					Edit keyboard shortcuts stored in{" "}
 					<code className="font-mono text-pi-text">~/.a-coder-cli/agent/keybindings.json</code>.
 					Changes take effect the next time you start a-coder-cli in a new session.
@@ -63,7 +63,7 @@ export function KeybindingsSection() {
 			</div>
 
 			{loadError && (
-				<div className="rounded-md bg-pi-error-soft px-3 py-2 text-[11.5px] text-pi-error">
+				<div className="rounded-md bg-pi-error-soft px-3 py-2 text-2xs text-pi-error">
 					Couldn't read keybindings.json: {loadError}
 				</div>
 			)}
@@ -74,9 +74,9 @@ export function KeybindingsSection() {
 					onChange={(e) => commit(e.target.value)}
 					rows={16}
 					spellCheck={false}
-					className={`w-full rounded-md bg-pi-surface-raised p-3 font-mono text-[11.5px] text-pi-text shadow-ring focus:shadow-focus focus:outline-none ${error ? "shadow-ring-error" : ""}`}
+					className={`w-full rounded-md bg-pi-surface-raised p-3 font-mono text-2xs text-pi-text shadow-ring focus:shadow-focus focus:outline-none ${error ? "shadow-ring-error" : ""}`}
 				/>
-				{error && <p className="text-[11px] text-pi-error">Invalid JSON: {error}</p>}
+				{error && <p className="text-2xs text-pi-error">Invalid JSON: {error}</p>}
 			</div>
 
 			<div className="flex items-center gap-2">
@@ -84,7 +84,7 @@ export function KeybindingsSection() {
 					type="button"
 					onClick={save}
 					disabled={Boolean(error)}
-					className="inline-flex h-8 items-center gap-1.5 rounded-md bg-pi-accent px-3 text-[12px] font-semibold text-white transition-hover active-press hover:bg-pi-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+					className="inline-flex h-8 items-center gap-1.5 rounded-md bg-pi-accent px-3 text-xs font-semibold text-white transition-hover active-press hover:bg-pi-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
 				>
 					<Save className="h-3.5 w-3.5" />
 					Save keybindings
@@ -92,19 +92,19 @@ export function KeybindingsSection() {
 				<button
 					type="button"
 					onClick={() => void reload()}
-					className="inline-flex h-8 items-center gap-1.5 rounded-md bg-pi-surface-overlay px-3 text-[12px] font-medium text-pi-text transition-hover active-press hover:bg-pi-surface-raised"
+					className="inline-flex h-8 items-center gap-1.5 rounded-md bg-pi-surface-overlay px-3 text-xs font-medium text-pi-text transition-hover active-press hover:bg-pi-surface-raised"
 				>
 					<RotateCcw className="h-3.5 w-3.5" />
 					Revert
 				</button>
 				{saved && (
-					<span className="text-[11px] font-medium text-pi-success">Saved</span>
+					<span className="text-2xs font-medium text-pi-success">Saved</span>
 				)}
 			</div>
 
-			<div className="rounded-md bg-pi-surface-raised px-3 py-2.5 text-[11px] text-pi-text-muted shadow-ring">
+			<div className="rounded-md bg-pi-surface-raised px-3 py-2.5 text-2xs text-pi-text-muted shadow-ring">
 				<p className="mb-1 font-medium text-pi-text">Common keybinding format</p>
-				<pre className="overflow-auto rounded bg-pi-bg p-2 font-mono text-[10.5px] text-pi-text">
+				<pre className="overflow-auto rounded bg-pi-bg p-2 font-mono text-3xs text-pi-text">
 					{`{
   "app.model.cycleForward": { "key": "c", "ctrl": true },
   "app.session.tree": { "key": "t", "ctrl": true },

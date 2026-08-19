@@ -283,7 +283,7 @@ export function ResourcesSection() {
 	return (
 		<div className="space-y-6">
 			{error && (
-				<div className="rounded-md bg-pi-error/10 px-3 py-2 text-[11.5px] text-pi-error">
+				<div className="rounded-md bg-pi-error/10 px-3 py-2 text-2xs text-pi-error">
 					{error}
 				</div>
 			)}
@@ -291,17 +291,17 @@ export function ResourcesSection() {
 			{/* ---- Skills gallery ----------------------------------------------- */}
 			<section className="space-y-3">
 				<div className="flex items-center justify-between">
-					<h3 className="text-[12.5px] font-semibold text-pi-text">
+					<h3 className="text-xs font-semibold text-pi-text">
 						Skills
 						{totalSkills > 0 && (
-							<span className="ml-1 text-[10px] font-normal text-pi-text-muted">{totalSkills}</span>
+							<span className="ml-1 text-3xs font-normal text-pi-text-muted">{totalSkills}</span>
 						)}
 					</h3>
 					<button
 						type="button"
 						onClick={() => void load()}
 						disabled={loading}
-						className="inline-flex h-6 items-center gap-1 rounded-md bg-pi-surface-overlay px-2 text-[10.5px] font-medium text-pi-text transition-hover active-press hover:bg-pi-surface-raised disabled:opacity-50"
+						className="inline-flex h-6 items-center gap-1 rounded-md bg-pi-surface-overlay px-2 text-3xs font-medium text-pi-text transition-hover active-press hover:bg-pi-surface-raised disabled:opacity-50"
 					>
 						<RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
 						Refresh
@@ -313,8 +313,8 @@ export function ResourcesSection() {
 						<div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-pi-accent-soft text-pi-accent">
 							<Brain className="h-5 w-5" />
 						</div>
-						<h4 className="text-[12.5px] font-medium text-pi-text">No skills yet</h4>
-						<p className="mx-auto mt-1 max-w-xs text-[11px] leading-relaxed text-pi-text-muted">
+						<h4 className="text-xs font-medium text-pi-text">No skills yet</h4>
+						<p className="mx-auto mt-1 max-w-xs text-2xs leading-relaxed text-pi-text-muted">
 							Skills teach the assistant how to help with specific tasks. Add a skill pack below, or ask the assistant to make one for you.
 						</p>
 					</div>
@@ -334,8 +334,8 @@ export function ResourcesSection() {
 
 			{/* ---- Add a skill pack --------------------------------------------- */}
 			<section className="rounded-lg bg-pi-surface-raised p-4 shadow-ring">
-				<h3 className="mb-1 text-[12.5px] font-semibold text-pi-text">Add a skill pack</h3>
-				<p className="mb-3 text-[11px] leading-relaxed text-pi-text-muted">
+				<h3 className="mb-1 text-xs font-semibold text-pi-text">Add a skill pack</h3>
+				<p className="mb-3 text-2xs leading-relaxed text-pi-text-muted">
 					Skill packs are bundles of skills shared by the community. Paste a link or package name to install one.
 				</p>
 
@@ -347,10 +347,10 @@ export function ResourcesSection() {
 								className="flex items-center justify-between rounded-md bg-pi-bg px-3 py-2"
 							>
 								<div className="min-w-0">
-									<div className="truncate text-[12px] font-medium text-pi-text">
+									<div className="truncate text-xs font-medium text-pi-text">
 										{packageDisplayName(pkg.source)}
 									</div>
-									<div className="text-[10.5px] text-pi-text-muted">
+									<div className="text-3xs text-pi-text-muted">
 										{pkg.scope === "project" ? "Only for this project" : "Available in all projects"}
 									</div>
 								</div>
@@ -385,9 +385,9 @@ export function ResourcesSection() {
 							value={newSource}
 							onChange={(e) => setNewSource(e.target.value)}
 							placeholder="e.g. github.com/earendil-works/pi-skills"
-							className="min-w-[16rem] flex-1 rounded-md bg-pi-bg px-3 py-1.5 text-[11.5px] text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none"
+							className="min-w-[16rem] flex-1 rounded-md bg-pi-bg px-3 py-1.5 text-2xs text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none"
 						/>
-						<label className="flex items-center gap-1.5 text-[11px] text-pi-text-muted">
+						<label className="flex items-center gap-1.5 text-2xs text-pi-text-muted">
 							<input
 								type="checkbox"
 								checked={newLocal}
@@ -400,7 +400,7 @@ export function ResourcesSection() {
 							type="button"
 							onClick={() => void handleInstall()}
 							disabled={working?.startsWith("install") || !newSource.trim()}
-							className="inline-flex h-7 items-center gap-1 rounded-md bg-pi-accent px-2.5 text-[11px] font-medium text-white transition-hover active-press hover:bg-pi-accent-hover disabled:opacity-50"
+							className="inline-flex h-7 items-center gap-1 rounded-md bg-pi-accent px-2.5 text-2xs font-medium text-white transition-hover active-press hover:bg-pi-accent-hover disabled:opacity-50"
 						>
 							<Plus className="h-3 w-3" />
 							Add
@@ -413,7 +413,7 @@ export function ResourcesSection() {
 				<button
 					type="button"
 					onClick={() => setShowAdvanced((v) => !v)}
-					className="flex w-full items-center gap-1.5 text-[11px] font-medium text-pi-text-muted transition-hover active-press hover:text-pi-text"
+					className="flex w-full items-center gap-1.5 text-2xs font-medium text-pi-text-muted transition-hover active-press hover:text-pi-text"
 				>
 					<ChevronDown
 						className={`h-3 w-3 transition-transform ${showAdvanced ? "rotate-180" : ""}`}
@@ -424,7 +424,7 @@ export function ResourcesSection() {
 				{showAdvanced && (
 					<div className="space-y-3">
 						{builtInGroups.length === 0 && packGroups.length === 0 && !loading && (
-							<p className="text-[11px] text-pi-text-muted">
+							<p className="text-2xs text-pi-text-muted">
 								No extensions, prompt styles, or themes found.
 							</p>
 						)}
@@ -446,8 +446,8 @@ export function ResourcesSection() {
 									}
 									className="flex w-full items-center justify-between px-3 py-2 text-left transition-hover hover:bg-pi-surface-overlay"
 								>
-									<span className="text-[12px] font-medium text-pi-text">{group.label}</span>
-									<span className="text-[10px] text-pi-text-faint">
+									<span className="text-xs font-medium text-pi-text">{group.label}</span>
+									<span className="text-3xs text-pi-text-faint">
 										{expandedGroups.has(group.label) ? "Hide" : "Show"}
 									</span>
 								</button>
@@ -458,7 +458,7 @@ export function ResourcesSection() {
 											const Icon = KIND_ICONS[subgroup.type];
 											return (
 												<div key={subgroup.type} className="py-2 first:pt-0 last:pb-0">
-													<div className="mb-1.5 flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-pi-text-faint">
+													<div className="mb-1.5 flex items-center gap-1.5 text-3xs font-semibold uppercase tracking-wider text-pi-text-faint">
 														<Icon className="h-3 w-3" />
 														{subgroup.label}
 													</div>
@@ -512,10 +512,10 @@ function SkillCard({
 						ariaLabel={`Toggle ${item.displayName}`}
 					/>
 				</div>
-				<div className="mt-1.5 truncate text-[12px] font-medium text-pi-text">{item.displayName}</div>
-				<div className="text-[10px] text-pi-text-muted">{item.groupLabel}</div>
+				<div className="mt-1.5 truncate text-xs font-medium text-pi-text">{item.displayName}</div>
+				<div className="text-3xs text-pi-text-muted">{item.groupLabel}</div>
 			</div>
-			<div className="flex items-center gap-1.5 text-[10px] text-pi-text-muted">
+			<div className="flex items-center gap-1.5 text-3xs text-pi-text-muted">
 				{item.enabled ? (
 					<>
 						<span className="h-1.5 w-1.5 rounded-full bg-pi-accent" />
@@ -544,7 +544,7 @@ function ResourceRow({
 	return (
 		<div className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 transition-hover hover:bg-pi-bg">
 			<div className="min-w-0">
-				<div className="truncate text-[11.5px] font-medium text-pi-text">{item.displayName}</div>
+				<div className="truncate text-2xs font-medium text-pi-text">{item.displayName}</div>
 			</div>
 			<Switch
 				size="sm"

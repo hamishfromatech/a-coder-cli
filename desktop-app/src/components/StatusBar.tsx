@@ -67,7 +67,7 @@ export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
 		: "No project";
 
 	return (
-		<div className="flex h-7 shrink-0 items-center justify-between gap-3 border-t border-pi-border bg-pi-surface/60 px-3 text-[10.5px] backdrop-blur">
+		<div className="flex h-7 shrink-0 items-center justify-between gap-3 border-t border-pi-border bg-pi-surface/60 px-3 text-3xs backdrop-blur">
 			{/* Left: project + thinking + permission */}
 			<div className="flex min-w-0 items-center gap-1.5">
 				<span
@@ -172,7 +172,7 @@ function ContextUsageBar({
 		percent > 90 ? "bg-pi-error" : percent > 70 ? "bg-pi-warning" : "bg-pi-accent";
 	return (
 		<div className="mr-2 flex w-24 flex-col gap-0.5" title={`${tokens.toLocaleString()} / ${window.toLocaleString()} tokens`}>
-			<div className="flex justify-between text-[9.5px] text-pi-text-faint">
+			<div className="flex justify-between text-4xs text-pi-text-faint">
 				<span>Context</span>
 				<span>{Math.round(percent)}%</span>
 			</div>
@@ -267,13 +267,13 @@ function PermissionModePicker({ mode }: { mode: PermissionMode }) {
 									<OptionIcon className="h-3 w-3" />
 								</div>
 								<div className="flex-1">
-									<div className="flex items-center justify-between text-[11px]">
+									<div className="flex items-center justify-between text-2xs">
 										<span className="font-semibold text-pi-text">
 											{meta.label}
 										</span>
 										{active && <Check className="h-3 w-3 text-pi-accent" />}
 									</div>
-									<div className="mt-0.5 text-[10px] leading-snug text-pi-text-muted">
+									<div className="mt-0.5 text-3xs leading-snug text-pi-text-muted">
 										{meta.description}
 									</div>
 								</div>

@@ -168,18 +168,18 @@ export function ModelPicker({
 				{/* List */}
 				<div ref={listRef} className="max-h-[60vh] overflow-y-auto p-1.5">
 					{loading ? (
-						<div className="px-3 py-6 text-center text-[12px] text-pi-text-muted">
+						<div className="px-3 py-6 text-center text-xs text-pi-text-muted">
 							Loading models…
 						</div>
 					) : refreshError ? (
-						<div className="px-3 py-5 text-center text-[12px]">
+						<div className="px-3 py-5 text-center text-xs">
 							<p className="text-pi-error">
 								Couldn’t refresh models. The list below may be outdated.
 							</p>
 							<p className="mt-1 text-pi-text-muted">{refreshError}</p>
 						</div>
 					) : filtered.length === 0 ? (
-						<div className="px-3 py-6 text-center text-[12px] text-pi-text-muted">
+						<div className="px-3 py-6 text-center text-xs text-pi-text-muted">
 							No models found.
 						</div>
 					) : (
@@ -209,16 +209,16 @@ export function ModelPicker({
 									/>
 									<div className="min-w-0 flex-1">
 										<div className="flex items-center gap-2">
-											<span className="truncate text-[12.5px] font-medium text-pi-text">
+											<span className="truncate text-xs font-medium text-pi-text">
 												{model.name}
 											</span>
 											{isActive && (
-												<span className="rounded bg-pi-accent-soft px-1 py-0.5 font-mono text-[9.5px] font-semibold uppercase tracking-wide text-pi-accent">
+												<span className="rounded bg-pi-accent-soft px-1 py-0.5 font-mono text-4xs font-semibold uppercase tracking-wide text-pi-accent">
 													active
 												</span>
 											)}
 										</div>
-										<div className="mt-0.5 truncate font-mono text-[10.5px] text-pi-text-muted">
+										<div className="mt-0.5 truncate font-mono text-3xs text-pi-text-muted">
 											{model.provider} · {model.contextWindow.toLocaleString()} ctx
 										</div>
 									</div>
@@ -229,7 +229,7 @@ export function ModelPicker({
 				</div>
 
 				{/* Footer */}
-				<div className="flex items-center justify-between border-t border-pi-border bg-pi-surface/40 px-3 py-1.5 text-[10.5px] text-pi-text-faint">
+				<div className="flex items-center justify-between border-t border-pi-border bg-pi-surface/40 px-3 py-1.5 text-3xs text-pi-text-faint">
 					<div className="flex items-center gap-2">
 						<Kbd>↑↓</Kbd>
 						<span>navigate</span>
@@ -249,7 +249,7 @@ export function ModelPicker({
 
 function Kbd({ children }: { children: React.ReactNode }) {
 	return (
-		<kbd className="rounded border border-pi-border bg-pi-surface-raised px-1 font-mono text-[9.5px] text-pi-text-muted">
+		<kbd className="rounded border border-pi-border bg-pi-surface-raised px-1 font-mono text-4xs text-pi-text-muted">
 			{children}
 		</kbd>
 	);

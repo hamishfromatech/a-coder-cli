@@ -17,7 +17,7 @@ export function EmbedFacade({ descriptor, onLoad }: { descriptor: EmbedDescripto
 			style={style}
 		>
 			<button
-				className="flex items-center gap-1.5 rounded-md bg-pi-accent px-2.5 py-1 text-[11px] font-medium text-white transition-smooth hover:bg-pi-accent-hover focus-visible:shadow-focus focus-visible:outline-none"
+				className="flex items-center gap-1.5 rounded-md bg-pi-accent px-2.5 py-1 text-2xs font-medium text-white transition-smooth hover:bg-pi-accent-hover focus-visible:shadow-focus focus-visible:outline-none"
 				onClick={onLoad}
 				type="button"
 			>

@@ -27,7 +27,7 @@ export function CopyButton({ text, label = "Copy", className, iconClassName }: C
 	return (
 		<button
 			className={cn(
-				"flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-pi-text-muted transition-smooth hover:bg-pi-surface-overlay hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none",
+				"flex items-center gap-1 rounded-md px-1.5 py-0.5 text-2xs text-pi-text-muted transition-smooth hover:bg-pi-surface-overlay hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none",
 				className,
 			)}
 			onClick={onCopy}

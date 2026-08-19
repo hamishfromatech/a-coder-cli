@@ -100,7 +100,7 @@ export function ArtifactViewer({ projectPath, path }: Props) {
 					<ArrowLeft className="h-3.5 w-3.5" />
 				</button>
 
-				<div className="min-w-0 flex-1 truncate font-mono text-[11px] text-pi-text">
+				<div className="min-w-0 flex-1 truncate font-mono text-2xs text-pi-text">
 					{path}
 				</div>
 
@@ -144,18 +144,18 @@ export function ArtifactViewer({ projectPath, path }: Props) {
 			{/* Body */}
 			<div className="flex-1 min-h-0 overflow-hidden bg-pi-bg">
 				{loading && (
-					<div className="flex h-full items-center justify-center gap-2 text-[11.5px] text-pi-text-muted">
+					<div className="flex h-full items-center justify-center gap-2 text-2xs text-pi-text-muted">
 						<Loader2 className="h-3 w-3 animate-spin" /> Loading file…
 					</div>
 				)}
 
 				{!loading && error && (
 					<div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-						<p className="text-[11.5px] text-pi-error">{error}</p>
+						<p className="text-2xs text-pi-error">{error}</p>
 						{fullPath && (
 							<button
 								onClick={() => void openInEditor(fullPath)}
-								className="text-[11px] text-pi-accent underline underline-offset-2 hover:text-pi-accent-hover"
+								className="text-2xs text-pi-accent underline underline-offset-2 hover:text-pi-accent-hover"
 							>
 								Open in editor
 							</button>
@@ -187,7 +187,7 @@ function ToggleButton({
 	return (
 		<button
 			onClick={onClick}
-			className={`rounded px-2 py-0.5 text-[10.5px] font-medium transition-hover focus-visible:shadow-focus focus-visible:outline-none ${
+			className={`rounded px-2 py-0.5 text-3xs font-medium transition-hover focus-visible:shadow-focus focus-visible:outline-none ${
 				active
 					? "bg-pi-accent text-white shadow-sm"
 					: "text-pi-text-muted hover:bg-pi-surface-overlay hover:text-pi-text"
@@ -201,7 +201,7 @@ function ToggleButton({
 function RawBody({ path, content }: { path: string; content: string | null }) {
 	if (content === null) {
 		return (
-			<div className="flex h-full items-center justify-center text-[11.5px] text-pi-text-faint">
+			<div className="flex h-full items-center justify-center text-2xs text-pi-text-faint">
 				No content.
 			</div>
 		);
@@ -252,7 +252,7 @@ function PreviewBody({
 		return (
 			<Suspense
 				fallback={
-					<div className="flex h-full items-center justify-center gap-2 text-[11.5px] text-pi-text-muted">
+					<div className="flex h-full items-center justify-center gap-2 text-2xs text-pi-text-muted">
 						<Loader2 className="h-3 w-3 animate-spin" /> Loading…
 					</div>
 				}
@@ -263,7 +263,7 @@ function PreviewBody({
 	}
 
 	return (
-		<div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-[11.5px] text-pi-text-faint">
+		<div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-2xs text-pi-text-faint">
 			<p>No preview available for this file type.</p>
 		</div>
 	);
@@ -361,7 +361,7 @@ function MediaPlayer({ kind, src, title }: { kind: "audio" | "video"; src: strin
 				>
 					{playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
 				</button>
-				<span className="w-16 text-center font-mono text-[11px] text-pi-text-secondary">
+				<span className="w-16 text-center font-mono text-2xs text-pi-text-secondary">
 					{fmt(currentTime)} / {fmt(duration)}
 				</span>
 				<input
@@ -403,7 +403,7 @@ function CodeFileView({ path, content }: { path: string; content: string }) {
 
 	if (!language) {
 		return (
-			<pre className="h-full overflow-auto p-4 font-mono text-[12px] leading-relaxed text-pi-text">
+			<pre className="h-full overflow-auto p-4 font-mono text-xs leading-relaxed text-pi-text">
 				{content}
 			</pre>
 		);

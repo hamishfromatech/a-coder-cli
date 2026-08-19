@@ -57,10 +57,10 @@ export function TodoPanel() {
 				<div className={`rounded-xl border border-pi-border bg-pi-surface/70 px-3 py-2 backdrop-blur transition-smooth ${highlight ? "ring-2 ring-pi-accent" : ""}`}>
 					<div className="mb-1.5 flex items-center gap-2">
 						<ListTodo className="h-3.5 w-3.5 shrink-0 text-pi-accent" />
-						<span className="text-[11px] font-semibold uppercase tracking-wide text-pi-text-secondary">
+						<span className="text-2xs font-semibold uppercase tracking-wide text-pi-text-secondary">
 							Tasks
 						</span>
-						<span className="font-mono pi-tabular text-[10px] text-pi-text-faint">
+						<span className="font-mono pi-tabular text-3xs text-pi-text-faint">
 							{done}/{todos.length}
 						</span>
 						<div className="ml-auto h-1 w-16 overflow-hidden rounded-full border border-pi-border bg-pi-surface-raised">
@@ -72,7 +72,7 @@ export function TodoPanel() {
 					</div>
 					<ul className="flex flex-col gap-0.5">
 						{todos.map((t, i) => (
-							<li key={i} className="flex items-start gap-2 text-[12px] leading-snug">
+							<li key={i} className="flex items-start gap-2 text-xs leading-snug">
 								{t.status === "completed" ? (
 									<Check className="mt-0.5 h-3 w-3 shrink-0 text-pi-success" />
 								) : t.status === "in_progress" ? (
@@ -98,7 +98,7 @@ export function TodoPanel() {
 						))}
 					</ul>
 					{inProgress && (
-						<div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-pi-text-faint">
+						<div className="mt-1.5 flex items-center gap-1.5 text-3xs text-pi-text-faint">
 							<span className="pi-dot h-1 w-1 rounded-full bg-pi-accent" />
 							<span className="truncate">
 								Working: {inProgress.activeForm ?? inProgress.text}

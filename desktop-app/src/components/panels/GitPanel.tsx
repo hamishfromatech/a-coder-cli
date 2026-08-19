@@ -86,7 +86,7 @@ export function GitPanel({ projectPath }: Props) {
 
 	if (!projectPath) {
 		return (
-			<div className="flex flex-1 items-center justify-center p-6 text-center text-[11.5px] text-pi-text-faint">
+			<div className="flex flex-1 items-center justify-center p-6 text-center text-2xs text-pi-text-faint">
 				No project open.
 			</div>
 		);
@@ -97,7 +97,7 @@ export function GitPanel({ projectPath }: Props) {
 	return (
 		<div className="flex h-full w-full min-w-0 flex-col">
 			{error && !status && (
-				<div className="m-2 rounded-md bg-pi-error-soft px-3 py-2 text-[11px] text-pi-error">
+				<div className="m-2 rounded-md bg-pi-error-soft px-3 py-2 text-2xs text-pi-error">
 					{error}
 				</div>
 			)}
@@ -105,8 +105,8 @@ export function GitPanel({ projectPath }: Props) {
 			{/* Header */}
 			<div className="flex items-center justify-between border-b border-pi-border px-3 py-2">
 				<div className="flex items-center gap-2">
-					<span className="text-[11.5px] font-semibold tracking-tight">Git</span>
-					<span className="rounded bg-pi-surface-overlay px-1.5 py-0.5 font-mono text-[10px] text-pi-text-muted">
+					<span className="text-2xs font-semibold tracking-tight">Git</span>
+					<span className="rounded bg-pi-surface-overlay px-1.5 py-0.5 font-mono text-3xs text-pi-text-muted">
 						{totalChanges}
 					</span>
 				</div>
@@ -174,7 +174,7 @@ export function GitPanel({ projectPath }: Props) {
 					)}
 					{hasSelection && (
 						<>
-							<div className="border-b border-pi-border px-2.5 py-1.5 font-mono text-[10.5px] text-pi-text-muted">
+							<div className="border-b border-pi-border px-2.5 py-1.5 font-mono text-3xs text-pi-text-muted">
 								<div className="truncate" title={selectedGitFile}>
 									{selectedGitFile}
 								</div>
@@ -182,7 +182,7 @@ export function GitPanel({ projectPath }: Props) {
 									{selectedGitStaged ? "staged" : "working tree"}
 								</div>
 							</div>
-							<div className="flex-1 overflow-auto p-2 font-mono text-[10.5px] leading-relaxed">
+							<div className="flex-1 overflow-auto p-2 font-mono text-3xs leading-relaxed">
 								{diffLoading && (
 									<div className="flex items-center gap-1.5 text-pi-text-muted">
 										<Loader2 className="h-3 w-3 animate-spin" />
@@ -215,7 +215,7 @@ function Group({
 }) {
 	return (
 		<div className="py-1">
-			<div className="flex items-center justify-between px-3 py-1 text-[9.5px] font-semibold uppercase tracking-wider text-pi-text-faint">
+			<div className="flex items-center justify-between px-3 py-1 text-4xs font-semibold uppercase tracking-wider text-pi-text-faint">
 				<span>{label}</span>
 				<span>{count}</span>
 			</div>
@@ -236,14 +236,14 @@ function FileRow({
 	return (
 		<button
 			onClick={onClick}
-			className={`flex w-full items-center gap-1.5 px-3 py-1 text-left font-mono text-[10.5px] transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
+			className={`flex w-full items-center gap-1.5 px-3 py-1 text-left font-mono text-3xs transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
 				selected
 					? "bg-pi-accent-soft text-pi-accent"
 					: "text-pi-text-secondary hover:bg-pi-surface-raised hover:text-pi-text"
 			}`}
 		>
 			<span
-				className={`flex h-4 w-4 shrink-0 items-center justify-center rounded font-mono text-[9.5px] font-bold ${STATUS_COLOR[change.status]}`}
+				className={`flex h-4 w-4 shrink-0 items-center justify-center rounded font-mono text-4xs font-bold ${STATUS_COLOR[change.status]}`}
 			>
 				{change.status === "added" ? (
 					<Plus className="h-2.5 w-2.5" />
@@ -293,7 +293,7 @@ function DiffView({ diff }: { diff: string }) {
 
 function EmptyMessage({ children }: { children: React.ReactNode }) {
 	return (
-		<div className="flex items-center justify-center p-6 text-center text-[11.5px] text-pi-text-faint">
+		<div className="flex items-center justify-center p-6 text-center text-2xs text-pi-text-faint">
 			{children}
 		</div>
 	);

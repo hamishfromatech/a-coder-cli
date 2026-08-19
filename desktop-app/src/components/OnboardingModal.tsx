@@ -54,7 +54,7 @@ export function OnboardingModal({ onComplete }: OnboardingModalProps) {
 					<div className="flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-pi-accent to-pi-accent-hover text-white shadow-lg">
 						<Sparkles className="h-7 w-7" />
 					</div>
-					<h2 className="mt-4 text-[18px] font-semibold tracking-tight text-pi-text">
+					<h2 className="mt-4 text-lg font-semibold tracking-tight text-pi-text">
 						Welcome to A-Coder
 					</h2>
 					<p className="mt-2 text-center text-[13px] leading-relaxed text-pi-text-secondary">
@@ -74,14 +74,14 @@ export function OnboardingModal({ onComplete }: OnboardingModalProps) {
 
 					{selectedPath && (
 						<div className="mt-4 rounded-lg bg-pi-surface-raised p-3">
-							<div className="text-[10px] font-semibold uppercase tracking-wider text-pi-text-faint">
+							<div className="text-3xs font-semibold uppercase tracking-wider text-pi-text-faint">
 								Selected folder
 							</div>
 							<div className="mt-1 truncate text-[13px] font-medium text-pi-text">
 								{displayName(selectedPath)}
 							</div>
 							<div
-								className="truncate font-mono text-[11px] text-pi-text-muted"
+								className="truncate font-mono text-2xs text-pi-text-muted"
 								title={selectedPath}
 							>
 								{selectedPath}
@@ -90,12 +90,12 @@ export function OnboardingModal({ onComplete }: OnboardingModalProps) {
 					)}
 
 					{error && (
-						<p className="mt-3 text-[12px] text-pi-error">
+						<p className="mt-3 text-xs text-pi-error">
 							{error}
 						</p>
 					)}
 
-					<p className="mt-4 text-[11px] leading-relaxed text-pi-text-faint">
+					<p className="mt-4 text-2xs leading-relaxed text-pi-text-faint">
 						You can change this later from the sidebar. Pick any folder where your project files live.
 					</p>
 				</div>
@@ -105,7 +105,7 @@ export function OnboardingModal({ onComplete }: OnboardingModalProps) {
 					<button
 						onClick={handleContinue}
 						disabled={!selectedPath}
-						className="rounded-lg bg-pi-accent px-4 py-2 text-[12px] font-medium text-white transition-hover hover:bg-pi-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+						className="rounded-lg bg-pi-accent px-4 py-2 text-xs font-medium text-white transition-hover hover:bg-pi-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
 					>
 						Get started
 					</button>

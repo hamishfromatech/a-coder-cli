@@ -93,10 +93,10 @@ export function ThemePicker() {
 			{/* ─── Skin ─────────────────────────────────────────── */}
 			<section>
 				<div className="mb-2 flex items-baseline justify-between">
-					<h4 className="text-[11px] font-semibold uppercase tracking-wider text-pi-text-muted">
+					<h4 className="text-2xs font-semibold uppercase tracking-wider text-pi-text-muted">
 						Skin
 					</h4>
-					<span className="text-[10.5px] text-pi-text-faint">
+					<span className="text-3xs text-pi-text-faint">
 						{SKIN_LIST.length} themes
 					</span>
 				</div>
@@ -128,13 +128,13 @@ export function ThemePicker() {
 								</div>
 								<div>
 									<div
-										className={`text-[12px] font-semibold transition-smooth ${
+										className={`text-xs font-semibold transition-smooth ${
 											active ? "text-pi-accent" : "text-pi-text"
 										}`}
 									>
 										{opt.label}
 									</div>
-									<div className="mt-0.5 text-[10.5px] leading-snug text-pi-text-muted">
+									<div className="mt-0.5 text-3xs leading-snug text-pi-text-muted">
 										{opt.description}
 									</div>
 								</div>
@@ -146,7 +146,7 @@ export function ThemePicker() {
 
 			{/* ─── Mode ─────────────────────────────────────────── */}
 			<section>
-				<h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-pi-text-muted">
+				<h4 className="mb-2 text-2xs font-semibold uppercase tracking-wider text-pi-text-muted">
 					Mode
 				</h4>
 				<div
@@ -179,7 +179,7 @@ export function ThemePicker() {
 										}`}
 									/>
 									<span
-										className={`text-[10.5px] font-semibold uppercase tracking-wider transition-smooth ${
+										className={`text-3xs font-semibold uppercase tracking-wider transition-smooth ${
 											active ? "text-pi-accent" : "text-pi-text-faint opacity-0 group-hover:opacity-100"
 										}`}
 									>
@@ -188,13 +188,13 @@ export function ThemePicker() {
 								</div>
 								<div>
 									<div
-										className={`text-[12.5px] font-semibold transition-smooth ${
+										className={`text-xs font-semibold transition-smooth ${
 											active ? "text-pi-text" : "text-pi-text group-hover:text-pi-text-secondary"
 										}`}
 									>
 										{opt.label}
 									</div>
-									<div className="mt-0.5 text-[11px] leading-snug text-pi-text-muted">
+									<div className="mt-0.5 text-2xs leading-snug text-pi-text-muted">
 										{opt.description}
 									</div>
 								</div>

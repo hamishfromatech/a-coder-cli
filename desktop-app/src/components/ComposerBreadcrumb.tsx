@@ -68,7 +68,7 @@ export function ComposerBreadcrumb() {
 	};
 
 	return (
-		<div className="flex items-center gap-1.5 px-2 pb-1.5 text-[11px] text-pi-text-muted">
+		<div className="flex items-center gap-1.5 px-2 pb-1.5 text-2xs text-pi-text-muted">
 			<div className="relative" ref={menuRef}>
 				<button
 					type="button"
@@ -87,7 +87,7 @@ export function ComposerBreadcrumb() {
 					<div className="absolute left-0 top-full z-30 mt-1 w-60 overflow-hidden rounded-lg border border-pi-border bg-pi-surface shadow-card">
 						<div className="max-h-72 overflow-auto py-1">
 							{recentProjects.length === 0 ? (
-								<div className="px-2.5 py-2 text-[11px] text-pi-text-faint">
+								<div className="px-2.5 py-2 text-2xs text-pi-text-faint">
 									No recent projects.
 								</div>
 							) : (
@@ -100,7 +100,7 @@ export function ComposerBreadcrumb() {
 											type="button"
 											onClick={() => switchTo(path)}
 											title={path}
-											className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px] transition-hover ${
+											className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs transition-hover ${
 												active
 													? "bg-pi-accent-soft text-pi-accent"
 													: "text-pi-text-secondary hover:bg-pi-surface-raised hover:text-pi-text"
@@ -124,7 +124,7 @@ export function ComposerBreadcrumb() {
 							<button
 								type="button"
 								onClick={addFolder}
-								className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] text-pi-text-secondary transition-hover hover:bg-pi-surface-raised hover:text-pi-text"
+								className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-pi-text-secondary transition-hover hover:bg-pi-surface-raised hover:text-pi-text"
 							>
 								<Plus className="h-3.5 w-3.5 shrink-0 text-pi-text-muted" />
 								Add folder…

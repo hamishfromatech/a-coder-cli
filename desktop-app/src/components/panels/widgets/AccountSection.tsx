@@ -148,7 +148,7 @@ export function AccountSection() {
 		<div className="space-y-5">
 			<div>
 				<h2 className="text-[15px] font-semibold tracking-tight transition-smooth hover:text-pi-text-secondary">Account</h2>
-				<p className="mt-0.5 text-[11.5px] leading-relaxed text-pi-text-muted">
+				<p className="mt-0.5 text-2xs leading-relaxed text-pi-text-muted">
 					Sign in to an AI provider so the assistant can talk to it. OAuth
 					opens the provider's website; API keys stay on your machine. Some
 					providers also accept environment variables.
@@ -156,7 +156,7 @@ export function AccountSection() {
 			</div>
 
 			{loadError && (
-				<div className="rounded-md bg-pi-error-soft px-3 py-2 text-[11.5px] text-pi-error transition-smooth">
+				<div className="rounded-md bg-pi-error-soft px-3 py-2 text-2xs text-pi-error transition-smooth">
 					Couldn't read auth.json: {loadError}
 				</div>
 			)}
@@ -164,10 +164,10 @@ export function AccountSection() {
 			{groups.map(({ group, providers }) => (
 				<section key={group} className="space-y-2">
 					<header className="flex items-baseline gap-2 px-1 transition-smooth hover:text-pi-text-secondary">
-						<h3 className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-pi-text-faint">
+						<h3 className="text-3xs font-semibold uppercase tracking-[0.08em] text-pi-text-faint">
 							{group}
 						</h3>
-						<span className="text-[10.5px] text-pi-text-faint">
+						<span className="text-3xs text-pi-text-faint">
 							{providers.length} provider{providers.length === 1 ? "" : "s"}
 						</span>
 					</header>
@@ -188,7 +188,7 @@ export function AccountSection() {
 				</section>
 			))}
 
-			<div className="rounded-md bg-pi-surface-raised px-3 py-2.5 text-[11px] text-pi-text-muted shadow-ring transition-smooth hover:bg-pi-surface-overlay">
+			<div className="rounded-md bg-pi-surface-raised px-3 py-2.5 text-2xs text-pi-text-muted shadow-ring transition-smooth hover:bg-pi-surface-overlay">
 				Many providers accept environment variables too (e.g.{" "}
 				<code className="font-mono text-pi-text">ANTHROPIC_API_KEY</code>,
 				{" "}<code className="font-mono text-pi-text">OPENAI_API_KEY</code>) —
@@ -234,7 +234,7 @@ function ProviderCard({
 	return (
 		<div className={`overflow-hidden rounded-lg bg-pi-surface-raised shadow-ring transition-smooth hover:shadow-card-hover`}>
 			<div className="flex items-start gap-3 px-4 py-3">
-				<div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-pi-accent to-pi-accent-hover font-semibold text-[12px] text-white active-press transition-smooth group-hover:opacity-80">
+				<div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-pi-accent to-pi-accent-hover font-semibold text-xs text-white active-press transition-smooth group-hover:opacity-80">
 					{provider.label
 						.replace(/\(.*?\)/g, "")
 						.trim()
@@ -243,24 +243,24 @@ function ProviderCard({
 				</div>
 				<div className="min-w-0 flex-1">
 					<div className="flex flex-wrap items-center gap-2">
-						<span className="text-[12.5px] font-semibold text-pi-text transition-smooth hover:text-pi-text-secondary">
+						<span className="text-xs font-semibold text-pi-text transition-smooth hover:text-pi-text-secondary">
 							{provider.label}
 						</span>
 						{signedIn ? (
-							<span className="inline-flex items-center gap-1 rounded-full bg-pi-success/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-pi-success transition-smooth hover:bg-pi-success/20">
+							<span className="inline-flex items-center gap-1 rounded-full bg-pi-success/15 px-1.5 py-0.5 text-3xs font-semibold uppercase tracking-wider text-pi-success transition-smooth hover:bg-pi-success/20">
 								<Check className="h-2.5 w-2.5" />
 								Connected
 							</span>
 						) : (
-							<span className="inline-flex items-center gap-1 rounded-full bg-pi-surface-overlay px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-pi-text-muted transition-smooth hover:bg-pi-surface-raised">
+							<span className="inline-flex items-center gap-1 rounded-full bg-pi-surface-overlay px-1.5 py-0.5 text-3xs font-semibold uppercase tracking-wider text-pi-text-muted transition-smooth hover:bg-pi-surface-raised">
 								Not connected
 							</span>
 						)}
 					</div>
-					<div className="mt-0.5 text-[11.5px] text-pi-text-muted transition-smooth">
+					<div className="mt-0.5 text-2xs text-pi-text-muted transition-smooth">
 						{provider.hint}
 					</div>
-					<div className="mt-0.5 truncate text-[10.5px] font-mono text-pi-text-faint">
+					<div className="mt-0.5 truncate text-3xs font-mono text-pi-text-faint">
 						{statusLabel}
 					</div>
 				</div>
@@ -269,7 +269,7 @@ function ProviderCard({
 						<button
 							type="button"
 							onClick={onSignOut}
-							className={`inline-flex h-7 items-center gap-1 rounded-md bg-pi-surface-overlay px-2.5 text-[11.5px] font-medium transition-hover active-press hover:bg-pi-error-soft hover:text-pi-error`}
+							className={`inline-flex h-7 items-center gap-1 rounded-md bg-pi-surface-overlay px-2.5 text-2xs font-medium transition-hover active-press hover:bg-pi-error-soft hover:text-pi-error`}
 						>
 							<LogOut className="h-3 w-3" />
 							Sign out
@@ -279,7 +279,7 @@ function ProviderCard({
 							href={provider.consoleUrl}
 							target="_blank"
 							rel="noopener noreferrer"
-							className={`inline-flex h-7 items-center gap-1 rounded-md bg-pi-surface-overlay px-2.5 text-[11.5px] font-medium transition-hover active-press hover:bg-pi-surface-overlay hover:text-pi-text`}
+							className={`inline-flex h-7 items-center gap-1 rounded-md bg-pi-surface-overlay px-2.5 text-2xs font-medium transition-hover active-press hover:bg-pi-surface-overlay hover:text-pi-text`}
 						>
 							Set up
 						</a>
@@ -289,7 +289,7 @@ function ProviderCard({
 								<button
 									type="button"
 									onClick={onOAuth}
-									className={`inline-flex h-7 items-center gap-1 rounded-md bg-pi-accent px-2.5 text-[11.5px] font-semibold text-white transition-hover active-press hover:bg-pi-accent-hover`}
+									className={`inline-flex h-7 items-center gap-1 rounded-md bg-pi-accent px-2.5 text-2xs font-semibold text-white transition-hover active-press hover:bg-pi-accent-hover`}
 								>
 									<KeyRound className="h-3 w-3" />
 									Sign in
@@ -298,7 +298,7 @@ function ProviderCard({
 							<button
 								type="button"
 								onClick={() => setExpanded((v) => !v)}
-								className={`inline-flex h-7 items-center gap-1 rounded-md bg-pi-surface-overlay px-2.5 text-[11.5px] font-medium transition-hover active-press hover:bg-pi-surface-overlay hover:text-pi-text`}
+								className={`inline-flex h-7 items-center gap-1 rounded-md bg-pi-surface-overlay px-2.5 text-2xs font-medium transition-hover active-press hover:bg-pi-surface-overlay hover:text-pi-text`}
 							>
 								Use API key
 								<ChevronDown
@@ -312,14 +312,14 @@ function ProviderCard({
 
 			{!signedIn && provider.complex && provider.envVars.length > 0 && (
 				<div className="space-y-1.5 border-t border-pi-border bg-pi-bg/50 px-4 py-2.5 transition-smooth hover:bg-pi-bg/60">
-					<p className="text-[11px] text-pi-text-muted">
+					<p className="text-2xs text-pi-text-muted">
 						This provider reads from environment variables. Set one of:
 					</p>
 					<div className="flex flex-wrap gap-1.5">
 						{provider.envVars.map((v) => (
 							<code
 								key={v}
-								className={`rounded bg-pi-surface-overlay px-1.5 py-0.5 font-mono text-[10.5px] text-pi-text transition-smooth hover:bg-pi-surface-raised`}
+								className={`rounded bg-pi-surface-overlay px-1.5 py-0.5 font-mono text-3xs text-pi-text transition-smooth hover:bg-pi-surface-raised`}
 							>
 								{v}
 							</code>
@@ -330,7 +330,7 @@ function ProviderCard({
 
 			{!signedIn && expanded && !provider.complex && (
 				<div className="space-y-2 border-t border-pi-border bg-pi-bg/50 px-4 py-3 transition-smooth">
-					<p className="text-[11px] text-pi-text-muted">
+					<p className="text-2xs text-pi-text-muted">
 						Get an API key from{" "}
 						<a
 							href={provider.consoleUrl}
@@ -361,7 +361,7 @@ function ProviderCard({
 								placeholder="Paste API key…"
 								spellCheck={false}
 								autoComplete="off"
-								className={`w-full rounded-md bg-pi-surface-raised py-1.5 pl-3 pr-9 text-[12px] font-mono text-pi-text placeholder:text-pi-text-faint shadow-ring transition-smooth focus:shadow-focus focus:outline-none`}
+								className={`w-full rounded-md bg-pi-surface-raised py-1.5 pl-3 pr-9 text-xs font-mono text-pi-text placeholder:text-pi-text-faint shadow-ring transition-smooth focus:shadow-focus focus:outline-none`}
 							/>
 							<button
 								type="button"
@@ -384,7 +384,7 @@ function ProviderCard({
 								setApiKey("");
 								setExpanded(false);
 							}}
-							className={`inline-flex h-8 items-center gap-1 rounded-md bg-pi-accent px-3 text-[12px] font-semibold text-white transition-hover active-press hover:bg-pi-accent-hover disabled:cursor-not-allowed disabled:opacity-50`}
+							className={`inline-flex h-8 items-center gap-1 rounded-md bg-pi-accent px-3 text-xs font-semibold text-white transition-hover active-press hover:bg-pi-accent-hover disabled:cursor-not-allowed disabled:opacity-50`}
 						>
 							Save key
 						</button>
@@ -401,7 +401,7 @@ function ProviderCard({
 					</div>
 					{saveStatus && (
 						<div
-							className={`rounded-md px-3 py-2 text-[11.5px] transition-smooth ${
+							className={`rounded-md px-3 py-2 text-2xs transition-smooth ${
 								saveStatus.kind === "success"
 									? "bg-pi-success/15 text-pi-success"
 									: "bg-pi-error-soft text-pi-error"

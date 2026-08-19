@@ -98,7 +98,7 @@ export function UpdateModal({ update, onDismiss }: UpdateModalProps) {
 						<h2 className="text-[13px] font-semibold tracking-tight text-pi-text">
 							Update available
 						</h2>
-						<p className="mt-0.5 text-[11px] text-pi-text-muted">
+						<p className="mt-0.5 text-2xs text-pi-text-muted">
 							A new version of A-Coder is ready to install
 						</p>
 					</div>
@@ -115,7 +115,7 @@ export function UpdateModal({ update, onDismiss }: UpdateModalProps) {
 				{/* Body */}
 				<div className="px-4 py-4">
 					{/* Version badge row */}
-					<div className="flex items-center gap-3 text-[12px]">
+					<div className="flex items-center gap-3 text-xs">
 						<span className="rounded bg-pi-accent-soft px-2 py-0.5 font-mono text-pi-accent">
 							{versionLabel}
 						</span>
@@ -125,7 +125,7 @@ export function UpdateModal({ update, onDismiss }: UpdateModalProps) {
 					{/* Download progress bar */}
 					{isDownloading && (
 						<div className="mt-4">
-							<div className="flex items-center justify-between text-[11px] text-pi-text-muted mb-1.5">
+							<div className="flex items-center justify-between text-2xs text-pi-text-muted mb-1.5">
 								<span>Downloading update...</span>
 								{progressPercent !== null && (
 									<span>{Math.round(progressPercent)}%</span>
@@ -144,14 +144,14 @@ export function UpdateModal({ update, onDismiss }: UpdateModalProps) {
 					{isReady && (
 						<div className="mt-4 flex items-center gap-2 rounded-lg bg-pi-success/10 px-3 py-2 text-pi-success">
 							<Check className="h-3.5 w-3.5 shrink-0" />
-							<span className="text-[12px]">Update downloaded. Restart to install.</span>
+							<span className="text-xs">Update downloaded. Restart to install.</span>
 						</div>
 					)}
 
 					{/* Error state */}
 					{hasError && (
 						<div className="mt-4 rounded-lg border border-pi-error/20 bg-pi-error-soft px-3 py-2">
-							<p className="text-[12px] text-pi-error">
+							<p className="text-xs text-pi-error">
 								Update failed. Check your internet connection and try again.
 							</p>
 						</div>
@@ -160,11 +160,11 @@ export function UpdateModal({ update, onDismiss }: UpdateModalProps) {
 					{/* Release notes (collapsed by default, optional) */}
 					{update.body && !isDownloading && !isReady && (
 						<details className="mt-4">
-							<summary className="cursor-pointer text-[12px] text-pi-text-muted transition-hover hover:text-pi-text-secondary focus-visible:shadow-focus focus-visible:outline-none">
+							<summary className="cursor-pointer text-xs text-pi-text-muted transition-hover hover:text-pi-text-secondary focus-visible:shadow-focus focus-visible:outline-none">
 								View release notes
 							</summary>
 							<div className="mt-2 max-h-48 overflow-y-auto rounded-lg bg-pi-surface-raised p-3">
-								<p className="text-[12px] leading-relaxed text-pi-text-secondary whitespace-pre-wrap">
+								<p className="text-xs leading-relaxed text-pi-text-secondary whitespace-pre-wrap">
 									{update.body}
 								</p>
 							</div>
@@ -176,14 +176,14 @@ export function UpdateModal({ update, onDismiss }: UpdateModalProps) {
 				<div className="flex items-center justify-end gap-2 border-t border-pi-border px-4 py-3">
 					<button
 						onClick={handleDismiss}
-						className="rounded-lg px-3 py-2 text-[12px] font-medium text-pi-text-secondary transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+						className="rounded-lg px-3 py-2 text-xs font-medium text-pi-text-secondary transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
 					>
 						Later
 					</button>
 					{isReady ? (
 						<button
 							onClick={handleRelaunch}
-							className="inline-flex items-center gap-1.5 rounded-lg bg-pi-accent px-3 py-2 text-[12px] font-medium text-white shadow-ring-accent transition-hover active-press hover:bg-pi-accent-hover focus-visible:shadow-focus focus-visible:outline-none"
+							className="inline-flex items-center gap-1.5 rounded-lg bg-pi-accent px-3 py-2 text-xs font-medium text-white shadow-ring-accent transition-hover active-press hover:bg-pi-accent-hover focus-visible:shadow-focus focus-visible:outline-none"
 						>
 							<RefreshCw className="h-3.5 w-3.5" />
 							Restart to install
@@ -191,7 +191,7 @@ export function UpdateModal({ update, onDismiss }: UpdateModalProps) {
 					) : hasError ? (
 						<button
 							onClick={handleDownload}
-							className="inline-flex items-center gap-1.5 rounded-lg bg-pi-accent px-3 py-2 text-[12px] font-medium text-white shadow-ring-accent transition-hover active-press hover:bg-pi-accent-hover focus-visible:shadow-focus focus-visible:outline-none"
+							className="inline-flex items-center gap-1.5 rounded-lg bg-pi-accent px-3 py-2 text-xs font-medium text-white shadow-ring-accent transition-hover active-press hover:bg-pi-accent-hover focus-visible:shadow-focus focus-visible:outline-none"
 						>
 							<Download className="h-3.5 w-3.5" />
 							Try again
@@ -200,7 +200,7 @@ export function UpdateModal({ update, onDismiss }: UpdateModalProps) {
 						<button
 							onClick={handleDownload}
 							disabled={isDownloading}
-							className="inline-flex items-center gap-1.5 rounded-lg bg-pi-accent px-3 py-2 text-[12px] font-medium text-white shadow-ring-accent transition-hover active-press hover:bg-pi-accent-hover focus-visible:shadow-focus focus-visible:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+							className="inline-flex items-center gap-1.5 rounded-lg bg-pi-accent px-3 py-2 text-xs font-medium text-white shadow-ring-accent transition-hover active-press hover:bg-pi-accent-hover focus-visible:shadow-focus focus-visible:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
 						>
 							<Download className="h-3.5 w-3.5" />
 							{isDownloading ? "Downloading..." : "Download update"}

@@ -162,7 +162,7 @@ export function McpServersEditor({ value, onChange }: Props) {
 	return (
 		<div className="w-full space-y-3">
 			{servers.length === 0 && (
-				<p className="text-[11px] text-pi-text-muted">
+				<p className="text-2xs text-pi-text-muted">
 					No MCP servers configured. Add one to let the AI talk to external
 					tools and data sources.
 				</p>
@@ -179,11 +179,11 @@ export function McpServersEditor({ value, onChange }: Props) {
 						className="flex w-full items-center gap-3 px-3 py-2 text-left transition-hover hover:bg-pi-surface-overlay"
 					>
 						<Server className="h-3.5 w-3.5 text-pi-accent" />
-						<span className="min-w-0 flex-1 truncate text-[12px] font-medium text-pi-text">
+						<span className="min-w-0 flex-1 truncate text-xs font-medium text-pi-text">
 							{server.name || `Server ${idx + 1}`}
 						</span>
 						{server.disabled && (
-							<span className="rounded bg-pi-surface-overlay px-1.5 py-0.5 text-[10px] text-pi-text-muted">
+							<span className="rounded bg-pi-surface-overlay px-1.5 py-0.5 text-3xs text-pi-text-muted">
 								disabled
 							</span>
 						)}
@@ -227,7 +227,7 @@ export function McpServersEditor({ value, onChange }: Props) {
 											}
 											className="h-3.5 w-3.5 accent-pi-accent"
 										/>
-										<span className="text-[11.5px] text-pi-text">Enabled</span>
+										<span className="text-2xs text-pi-text">Enabled</span>
 									</label>
 								</div>
 							</div>
@@ -293,7 +293,7 @@ export function McpServersEditor({ value, onChange }: Props) {
 			<button
 				type="button"
 				onClick={addServer}
-				className="inline-flex h-7 items-center gap-1.5 rounded-md bg-pi-surface-overlay px-2.5 text-[11.5px] font-medium text-pi-text transition-hover active-press hover:bg-pi-surface-raised"
+				className="inline-flex h-7 items-center gap-1.5 rounded-md bg-pi-surface-overlay px-2.5 text-2xs font-medium text-pi-text transition-hover active-press hover:bg-pi-surface-raised"
 			>
 				<Plus className="h-3 w-3" />
 				Add MCP server
@@ -315,7 +315,7 @@ function LabeledInput({
 }) {
 	return (
 		<div className="space-y-1">
-			<label className="text-[10.5px] font-semibold uppercase tracking-wider text-pi-text-faint">
+			<label className="text-3xs font-semibold uppercase tracking-wider text-pi-text-faint">
 				{label}
 			</label>
 			<input
@@ -325,7 +325,7 @@ function LabeledInput({
 				onChange={(e) => onChange(e.target.value)}
 				spellCheck={false}
 				autoComplete="off"
-				className="w-full rounded-md bg-pi-bg px-2.5 py-1.5 text-[11.5px] text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none"
+				className="w-full rounded-md bg-pi-bg px-2.5 py-1.5 text-2xs text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none"
 			/>
 		</div>
 	);
@@ -344,13 +344,13 @@ function LabeledSelect<T extends string>({
 }) {
 	return (
 		<div className="space-y-1">
-			<label className="text-[10.5px] font-semibold uppercase tracking-wider text-pi-text-faint">
+			<label className="text-3xs font-semibold uppercase tracking-wider text-pi-text-faint">
 				{label}
 			</label>
 			<select
 				value={value}
 				onChange={(e) => onChange(e.target.value as T)}
-				className="w-full rounded-md bg-pi-bg px-2.5 py-1.5 text-[11.5px] text-pi-text shadow-ring focus:shadow-focus focus:outline-none"
+				className="w-full rounded-md bg-pi-bg px-2.5 py-1.5 text-2xs text-pi-text shadow-ring focus:shadow-focus focus:outline-none"
 			>
 				{options.map((o) => (
 					<option key={o.value} value={o.value}>
@@ -389,7 +389,7 @@ function StringListEditor({
 
 	return (
 		<div className="space-y-1">
-			<label className="text-[10.5px] font-semibold uppercase tracking-wider text-pi-text-faint">
+			<label className="text-3xs font-semibold uppercase tracking-wider text-pi-text-faint">
 				{label}
 			</label>
 			<textarea
@@ -398,7 +398,7 @@ function StringListEditor({
 				onChange={(e) => commit(e.target.value)}
 				rows={Math.max(2, Math.min(values.length + 1, 4))}
 				spellCheck={false}
-				className="w-full rounded-md bg-pi-bg p-2 font-mono text-[11px] text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none"
+				className="w-full rounded-md bg-pi-bg p-2 font-mono text-2xs text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none"
 			/>
 		</div>
 	);
@@ -428,11 +428,11 @@ function KeyValueEditor({
 
 	return (
 		<div className="space-y-1.5">
-			<label className="text-[10.5px] font-semibold uppercase tracking-wider text-pi-text-faint">
+			<label className="text-3xs font-semibold uppercase tracking-wider text-pi-text-faint">
 				{label}
 			</label>
 			{pairs.length === 0 && (
-				<p className="text-[11px] text-pi-text-faint">No entries.</p>
+				<p className="text-2xs text-pi-text-faint">No entries.</p>
 			)}
 			{pairs.map(([k, v], i) => (
 				<div key={i} className="flex gap-2">
@@ -445,7 +445,7 @@ function KeyValueEditor({
 							update(next);
 						}}
 						placeholder="KEY"
-						className="min-w-0 flex-1 rounded-md bg-pi-bg px-2.5 py-1.5 font-mono text-[11px] text-pi-text shadow-ring focus:shadow-focus focus:outline-none"
+						className="min-w-0 flex-1 rounded-md bg-pi-bg px-2.5 py-1.5 font-mono text-2xs text-pi-text shadow-ring focus:shadow-focus focus:outline-none"
 					/>
 					<input
 						type="text"
@@ -456,7 +456,7 @@ function KeyValueEditor({
 							update(next);
 						}}
 						placeholder="value"
-						className="min-w-0 flex-1 rounded-md bg-pi-bg px-2.5 py-1.5 text-[11px] text-pi-text shadow-ring focus:shadow-focus focus:outline-none"
+						className="min-w-0 flex-1 rounded-md bg-pi-bg px-2.5 py-1.5 text-2xs text-pi-text shadow-ring focus:shadow-focus focus:outline-none"
 					/>
 					<button
 						type="button"
@@ -470,7 +470,7 @@ function KeyValueEditor({
 			<button
 				type="button"
 				onClick={() => update([...pairs, ["", ""]])}
-				className="inline-flex h-6 items-center gap-1 rounded bg-pi-surface-overlay px-2 text-[10.5px] font-medium text-pi-text transition-hover active-press hover:bg-pi-surface-raised"
+				className="inline-flex h-6 items-center gap-1 rounded bg-pi-surface-overlay px-2 text-3xs font-medium text-pi-text transition-hover active-press hover:bg-pi-surface-raised"
 			>
 				<Plus className="h-3 w-3" />
 				Add
@@ -519,7 +519,7 @@ function RawJsonEditor({
 
 	return (
 		<div className="space-y-1">
-			<label className="text-[10.5px] font-semibold uppercase tracking-wider text-pi-text-faint">
+			<label className="text-3xs font-semibold uppercase tracking-wider text-pi-text-faint">
 				{label}
 			</label>
 			<textarea
@@ -528,9 +528,9 @@ function RawJsonEditor({
 				onBlur={() => commit(text)}
 				rows={3}
 				spellCheck={false}
-				className={`w-full rounded-md bg-pi-bg p-2 font-mono text-[11px] text-pi-text shadow-ring focus:shadow-focus focus:outline-none ${error ? "shadow-ring-error" : ""}`}
+				className={`w-full rounded-md bg-pi-bg p-2 font-mono text-2xs text-pi-text shadow-ring focus:shadow-focus focus:outline-none ${error ? "shadow-ring-error" : ""}`}
 			/>
-			{error && <p className="text-[10px] text-pi-error">{error}</p>}
+			{error && <p className="text-3xs text-pi-error">{error}</p>}
 		</div>
 	);
 }

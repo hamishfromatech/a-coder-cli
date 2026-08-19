@@ -59,7 +59,7 @@ export function PathListInput({
 	return (
 		<div className="w-full space-y-2">
 			{value.length === 0 && (
-				<p className="text-[11px] text-pi-text-faint">No paths configured.</p>
+				<p className="text-2xs text-pi-text-faint">No paths configured.</p>
 			)}
 
 			{value.map((path, idx) => (
@@ -68,7 +68,7 @@ export function PathListInput({
 					className="flex items-center gap-2 rounded-md bg-pi-bg px-2 py-1 shadow-ring"
 				>
 					<Folder className="h-3 w-3 shrink-0 text-pi-text-faint" />
-					<span className="min-w-0 flex-1 truncate font-mono text-[11px] text-pi-text" title={path}>
+					<span className="min-w-0 flex-1 truncate font-mono text-2xs text-pi-text" title={path}>
 						{path}
 					</span>
 					<button
@@ -96,7 +96,7 @@ export function PathListInput({
 					placeholder={placeholder ?? "Type a path, or use the picker"}
 					disabled={disabled}
 					rows={1}
-					className="min-w-0 flex-1 resize-none rounded-md bg-pi-bg px-2.5 py-1.5 font-mono text-[11px] text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none"
+					className="min-w-0 flex-1 resize-none rounded-md bg-pi-bg px-2.5 py-1.5 font-mono text-2xs text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none"
 					spellCheck={false}
 				/>
 				<button
@@ -112,7 +112,7 @@ export function PathListInput({
 				<button
 					type="submit"
 					disabled={disabled || !draft.trim()}
-					className="inline-flex h-8 items-center gap-1 rounded-md bg-pi-surface-overlay px-2 text-[11px] font-medium text-pi-text transition-hover active-press hover:bg-pi-surface-raised disabled:opacity-50"
+					className="inline-flex h-8 items-center gap-1 rounded-md bg-pi-surface-overlay px-2 text-2xs font-medium text-pi-text transition-hover active-press hover:bg-pi-surface-raised disabled:opacity-50"
 				>
 					<Plus className="h-3 w-3" />
 					Add

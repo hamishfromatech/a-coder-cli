@@ -97,16 +97,16 @@ export function SubagentPanel({ open, onClose }: SubagentPanelProps) {
 
 				<div className="flex-1 overflow-auto px-4 py-3">
 					{loading && agents.length === 0 ? (
-						<div className="flex h-24 items-center justify-center text-[12px] text-pi-text-muted">
+						<div className="flex h-24 items-center justify-center text-xs text-pi-text-muted">
 							<Loader2 className="mr-2 h-4 w-4 animate-spin" />
 							Loading subagents…
 						</div>
 					) : error ? (
-						<p className="py-6 text-center text-[12px] text-pi-error">{error}</p>
+						<p className="py-6 text-center text-xs text-pi-error">{error}</p>
 					) : agents.length === 0 ? (
 						<div className="py-10 text-center">
 							<p className="text-[13px] font-medium text-pi-text-secondary">No subagents yet</p>
-							<p className="mt-2 text-[11px] leading-relaxed text-pi-text-muted">
+							<p className="mt-2 text-2xs leading-relaxed text-pi-text-muted">
 								Subagents are background helpers that work on tasks in parallel.
 								Ask the assistant to delegate a task and it will show up here.
 							</p>
@@ -122,30 +122,30 @@ export function SubagentPanel({ open, onClose }: SubagentPanelProps) {
 										<div className="min-w-0 flex-1">
 											<div className="flex items-center gap-2">
 												<span
-													className={`inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-[10px] font-semibold ${STATUS_TONE[agent.status]}`}
+													className={`inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-3xs font-semibold ${STATUS_TONE[agent.status]}`}
 												>
 													{STATUS_LABEL[agent.status]}
 												</span>
-												<span className="truncate text-[12px] font-medium text-pi-text">
+												<span className="truncate text-xs font-medium text-pi-text">
 													{agent.config.id}
 												</span>
 											</div>
-											<p className="mt-1.5 text-[11.5px] leading-relaxed text-pi-text-secondary">
+											<p className="mt-1.5 text-2xs leading-relaxed text-pi-text-secondary">
 												{agent.config.task}
 											</p>
 											{(agent.config.model || agent.config.provider) && (
-												<p className="mt-1 font-mono text-[10.5px] text-pi-text-muted">
+												<p className="mt-1 font-mono text-3xs text-pi-text-muted">
 													{agent.config.provider ? `${agent.config.provider}/` : ""}
 													{agent.config.model ?? ""}
 												</p>
 											)}
 											{agent.error && (
-												<p className="mt-1.5 rounded bg-pi-error/10 px-2 py-1 text-[11px] text-pi-error">
+												<p className="mt-1.5 rounded bg-pi-error/10 px-2 py-1 text-2xs text-pi-error">
 													{agent.error}
 												</p>
 											)}
 											{agent.lastOutput && agent.status === "running" && (
-												<pre className="mt-2 max-h-24 overflow-auto rounded bg-pi-bg p-2 font-mono text-[10.5px] leading-relaxed text-pi-text-muted whitespace-pre-wrap">
+												<pre className="mt-2 max-h-24 overflow-auto rounded bg-pi-bg p-2 font-mono text-3xs leading-relaxed text-pi-text-muted whitespace-pre-wrap">
 													{agent.lastOutput}
 												</pre>
 											)}
@@ -158,7 +158,7 @@ export function SubagentPanel({ open, onClose }: SubagentPanelProps) {
 				</div>
 
 				<div className="flex shrink-0 items-center justify-between border-t border-pi-border px-4 py-3">
-					<span className="text-[11px] text-pi-text-faint">
+					<span className="text-2xs text-pi-text-faint">
 						{running.length > 0
 							? `${running.length} active`
 							: `${agents.length} total`}
@@ -166,7 +166,7 @@ export function SubagentPanel({ open, onClose }: SubagentPanelProps) {
 					<button
 						type="button"
 						onClick={onClose}
-						className="rounded-md px-3 py-1.5 text-[12px] text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text"
+						className="rounded-md px-3 py-1.5 text-xs text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text"
 					>
 						Close
 					</button>

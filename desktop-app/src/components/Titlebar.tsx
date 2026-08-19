@@ -66,7 +66,7 @@ export function Titlebar() {
 				<div className="flex h-5 w-5 items-center justify-center rounded-md bg-pi-accent-soft text-pi-accent transition-smooth">
 					<PanelLeft className="h-3 w-3" />
 				</div>
-				<div className="flex items-center gap-1.5 truncate text-[12px]">
+				<div className="flex items-center gap-1.5 truncate text-xs">
 					<span className="font-semibold tracking-tight text-pi-text">A-Coder</span>
 					{editingName ? (
 						<input
@@ -84,7 +84,7 @@ export function Titlebar() {
 								}
 							}}
 							placeholder="Untitled session"
-							className="w-48 rounded-md border border-pi-border bg-pi-surface-raised px-1.5 py-0.5 text-[12px] text-pi-text transition-smooth focus:shadow-focus focus:outline-none"
+							className="w-48 rounded-md border border-pi-border bg-pi-surface-raised px-1.5 py-0.5 text-xs text-pi-text transition-smooth focus:shadow-focus focus:outline-none"
 						/>
 					) : (
 						<button

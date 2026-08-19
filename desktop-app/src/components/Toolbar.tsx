@@ -100,7 +100,7 @@ export function Toolbar({ onShowModelPicker, onShowMemory }: ToolbarProps) {
 			{/* New session — primary pill */}
 			<button
 				onClick={() => void handleNewSession()}
-				className="inline-flex h-7 items-center gap-1.5 rounded-md bg-pi-surface-raised px-2.5 text-[12px] font-medium text-pi-text-secondary transition-hover active-press hover:bg-pi-surface-overlay hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+				className="inline-flex h-7 items-center gap-1.5 rounded-md bg-pi-surface-raised px-2.5 text-xs font-medium text-pi-text-secondary transition-hover active-press hover:bg-pi-surface-overlay hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
 				title="New session (⌘N)" aria-label="New session"
 			>
 				<Plus className="h-3.5 w-3.5 transition-smooth" />
@@ -113,7 +113,7 @@ export function Toolbar({ onShowModelPicker, onShowMemory }: ToolbarProps) {
 					triggerHaptic("selection");
 					onShowMemory();
 				}}
-				className="inline-flex h-7 items-center gap-1.5 rounded-md bg-pi-surface-raised px-2.5 text-[12px] font-medium text-pi-text-secondary transition-hover active-press hover:bg-pi-surface-overlay hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+				className="inline-flex h-7 items-center gap-1.5 rounded-md bg-pi-surface-raised px-2.5 text-xs font-medium text-pi-text-secondary transition-hover active-press hover:bg-pi-surface-overlay hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
 				title="Memory" aria-label="Memory"
 			>
 				<Brain className="h-3.5 w-3.5 transition-smooth text-pi-accent" />
@@ -124,7 +124,7 @@ export function Toolbar({ onShowModelPicker, onShowMemory }: ToolbarProps) {
 			<div className="inline-flex h-7 items-stretch overflow-hidden rounded-md border border-pi-border bg-pi-surface-raised transition-smooth">
 				<button
 					onClick={onShowModelPicker}
-					className="flex items-center gap-1.5 px-2.5 text-[12px] font-medium text-pi-text-secondary transition-hover active-press hover:bg-pi-surface-overlay hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+					className="flex items-center gap-1.5 px-2.5 text-xs font-medium text-pi-text-secondary transition-hover active-press hover:bg-pi-surface-overlay hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
 					title="Change model" aria-label="Change model"
 				>
 					<Cpu className="h-3.5 w-3.5 transition-smooth text-pi-accent" />
@@ -143,7 +143,7 @@ export function Toolbar({ onShowModelPicker, onShowMemory }: ToolbarProps) {
 
 			{/* Thinking level — segmented */}
 			<div className="flex h-7 items-center gap-0.5 rounded-md border border-pi-border bg-pi-surface-raised p-0.5 transition-smooth">
-				<span className="px-1.5 text-[10px] font-semibold uppercase tracking-wider text-pi-text-faint">
+				<span className="px-1.5 text-3xs font-semibold uppercase tracking-wider text-pi-text-faint">
 					Think
 				</span>
 				{THINKING_LEVELS.map((level) => {
@@ -152,7 +152,7 @@ export function Toolbar({ onShowModelPicker, onShowMemory }: ToolbarProps) {
 						<button
 							key={level}
 							onClick={() => void handleSetThinkingLevel(level)}
-							className={`h-5 rounded px-1.5 font-mono text-[10.5px] uppercase tracking-wide transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
+							className={`h-5 rounded px-1.5 font-mono text-3xs uppercase tracking-wide transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
 								active
 									? "bg-pi-accent-soft text-pi-accent hover:bg-pi-accent-soft"
 									: "text-pi-text-muted hover:bg-pi-surface-overlay hover:text-pi-text"
@@ -177,7 +177,7 @@ export function Toolbar({ onShowModelPicker, onShowMemory }: ToolbarProps) {
 			<button
 				onClick={() => void handleCompact()}
 				disabled={isCompacting || isStreaming}
-				className="inline-flex h-7 items-center gap-1.5 rounded-md bg-pi-surface-raised px-2.5 text-[12px] font-medium text-pi-text-secondary transition-hover active-press hover:bg-pi-surface-overlay hover:text-pi-text disabled:opacity-50"
+				className="inline-flex h-7 items-center gap-1.5 rounded-md bg-pi-surface-raised px-2.5 text-xs font-medium text-pi-text-secondary transition-hover active-press hover:bg-pi-surface-overlay hover:text-pi-text disabled:opacity-50"
 				title="Compact context (⌘K)" aria-label="Compact context"
 			>
 				<Sparkles
@@ -190,7 +190,7 @@ export function Toolbar({ onShowModelPicker, onShowMemory }: ToolbarProps) {
 			{isStreaming && (
 				<button
 					onClick={() => void handleAbort()}
-					className="inline-flex h-7 items-center gap-1.5 rounded-md bg-pi-error-soft px-2.5 text-[12px] font-medium text-pi-error transition-hover active-press hover:bg-pi-error hover:text-white"
+					className="inline-flex h-7 items-center gap-1.5 rounded-md bg-pi-error-soft px-2.5 text-xs font-medium text-pi-error transition-hover active-press hover:bg-pi-error hover:text-white"
 					title="Abort generation (⌘.)" aria-label="Abort generation"
 				>
 					<CircleStop className="h-3.5 w-3.5 transition-smooth" />
@@ -271,7 +271,7 @@ function ActionButton({
 	return (
 		<button
 			onClick={() => void onClick()}
-			className="group flex h-7 items-center gap-2 rounded-md px-2.5 text-left text-[12px] text-pi-text-secondary transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+			className="group flex h-7 items-center gap-2 rounded-md px-2.5 text-left text-xs text-pi-text-secondary transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
 			title={label}
 		>
 			<Icon className="h-3.5 w-3.5 text-pi-text-muted transition-smooth group-hover:text-pi-text-secondary" />

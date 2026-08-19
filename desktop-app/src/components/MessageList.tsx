@@ -428,11 +428,11 @@ function AssistantMessageItem({
 
 function AssistantErrorBlock({ message, aborted }: { message: string; aborted: boolean }) {
 	return (
-		<div className="flex items-start gap-2 rounded-lg border border-pi-error/30 bg-pi-error-soft px-3 py-2 text-[12px] text-pi-error">
+		<div className="flex items-start gap-2 rounded-lg border border-pi-error/30 bg-pi-error-soft px-3 py-2 text-xs text-pi-error">
 			<AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
 			<div className="min-w-0 flex-1">
 				<div className="font-medium">{aborted ? "Generation aborted" : "Model request failed"}</div>
-				<p className="mt-0.5 break-words font-mono text-[11px] leading-relaxed text-pi-error/80">{message}</p>
+				<p className="mt-0.5 break-words font-mono text-2xs leading-relaxed text-pi-error/80">{message}</p>
 			</div>
 		</div>
 	);
@@ -448,11 +448,11 @@ function ThinkingBlocks({
 		<div className="group/think overflow-hidden rounded-lg border border-pi-border bg-pi-surface/50">
 			<button
 				onClick={() => setOpen((o) => !o)}
-				className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left text-[11px] text-pi-text-faint transition-hover hover:text-pi-text-muted focus-visible:shadow-focus focus-visible:outline-none"
+				className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left text-2xs text-pi-text-faint transition-hover hover:text-pi-text-muted focus-visible:shadow-focus focus-visible:outline-none"
 			>
 				<Sparkles className="h-3 w-3 shrink-0 text-pi-accent" />
 				<span className="font-medium uppercase tracking-wide">Thinking</span>
-				<span className="font-mono text-[10px] text-pi-text-faint">
+				<span className="font-mono text-3xs text-pi-text-faint">
 					{thinking.length} {thinking.length === 1 ? "block" : "blocks"}
 				</span>
 				<ChevronRight
@@ -460,7 +460,7 @@ function ThinkingBlocks({
 				/>
 			</button>
 			{open && (
-				<div className="border-t border-pi-border px-2.5 py-2 font-mono text-[11px] leading-relaxed text-pi-text-muted">
+				<div className="border-t border-pi-border px-2.5 py-2 font-mono text-2xs leading-relaxed text-pi-text-muted">
 					{thinking.map((t, i) => (
 						<pre key={i} className="m-0 whitespace-pre-wrap">
 							{t.thinking}
@@ -489,7 +489,7 @@ function CopyReplyButton({ text }: { text: string }) {
 			onClick={onCopy}
 			title="Copy reply"
 			aria-label="Copy reply"
-			className="absolute -top-1 right-0 z-10 flex items-center gap-1 rounded-md border border-pi-border bg-pi-surface px-1.5 py-0.5 text-[10px] text-pi-text-muted opacity-0 transition-hover hover:bg-pi-surface-overlay hover:text-pi-text group-hover/msg:opacity-100 focus-visible:shadow-focus focus-visible:outline-none"
+			className="absolute -top-1 right-0 z-10 flex items-center gap-1 rounded-md border border-pi-border bg-pi-surface px-1.5 py-0.5 text-3xs text-pi-text-muted opacity-0 transition-hover hover:bg-pi-surface-overlay hover:text-pi-text group-hover/msg:opacity-100 focus-visible:shadow-focus focus-visible:outline-none"
 		>
 			{copied ? <Check className="h-3 w-3 text-pi-success" /> : <Copy className="h-3 w-3" />}
 			{copied && <span>Copied</span>}

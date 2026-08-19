@@ -126,7 +126,7 @@ export function ModelsPicker({ enabled, onChange }: Props) {
 						value={query}
 						onChange={(e) => setQuery(e.target.value)}
 						placeholder="Search models…"
-						className={`w-full rounded-md bg-pi-surface-raised py-1.5 pl-8 pr-3 text-[12px] text-pi-text placeholder:text-pi-text-faint shadow-ring transition-smooth focus:shadow-focus focus:outline-none`}
+						className={`w-full rounded-md bg-pi-surface-raised py-1.5 pl-8 pr-3 text-xs text-pi-text placeholder:text-pi-text-faint shadow-ring transition-smooth focus:shadow-focus focus:outline-none`}
 					/>
 					{query && (
 						<button
@@ -138,7 +138,7 @@ export function ModelsPicker({ enabled, onChange }: Props) {
 						</button>
 					)}
 				</div>
-				<label className={`flex cursor-pointer items-center gap-1.5 text-[11.5px] text-pi-text-muted transition-hover hover:text-pi-text-secondary`}>
+				<label className={`flex cursor-pointer items-center gap-1.5 text-2xs text-pi-text-muted transition-hover hover:text-pi-text-secondary`}>
 					<input
 						type="checkbox"
 						checked={showAll}
@@ -149,7 +149,7 @@ export function ModelsPicker({ enabled, onChange }: Props) {
 				</label>
 			</div>
 
-			<div className="flex items-center justify-between text-[11px] text-pi-text-muted">
+			<div className="flex items-center justify-between text-2xs text-pi-text-muted">
 				<span>
 					{enabledSet.size} of {models.length} enabled
 				</span>
@@ -157,7 +157,7 @@ export function ModelsPicker({ enabled, onChange }: Props) {
 					<button
 						type="button"
 						onClick={enableAll}
-						className={`rounded px-1.5 py-0.5 text-[10.5px] font-medium transition-hover active-press hover:bg-pi-accent-soft ${
+						className={`rounded px-1.5 py-0.5 text-3xs font-medium transition-hover active-press hover:bg-pi-accent-soft ${
 							models.length === 0 ? "opacity-40" : ""
 						}`}
 					>
@@ -166,7 +166,7 @@ export function ModelsPicker({ enabled, onChange }: Props) {
 					<button
 						type="button"
 						onClick={disableAll}
-						className={`rounded px-1.5 py-0.5 text-[10.5px] font-medium transition-hover active-press hover:bg-pi-surface-raised ${
+						className={`rounded px-1.5 py-0.5 text-3xs font-medium transition-hover active-press hover:bg-pi-surface-raised ${
 							models.length === 0 ? "opacity-40" : ""
 						}`}
 					>
@@ -176,11 +176,11 @@ export function ModelsPicker({ enabled, onChange }: Props) {
 			</div>
 
 			{loadError ? (
-				<div className="rounded-md bg-pi-error-soft px-3 py-2 text-[11.5px] text-pi-error transition-smooth">
+				<div className="rounded-md bg-pi-error-soft px-3 py-2 text-2xs text-pi-error transition-smooth">
 					Couldn't load models: {loadError}
 				</div>
 			) : visible.length === 0 ? (
-				<div className={`rounded-md bg-pi-surface-raised px-3 py-3 text-center text-[11.5px] text-pi-text-muted shadow-ring transition-smooth`}>
+				<div className={`rounded-md bg-pi-surface-raised px-3 py-3 text-center text-2xs text-pi-text-muted shadow-ring transition-smooth`}>
 					{models.length === 0
 						? "No models found. Sign in to a provider first."
 						: "No models match your search."}
@@ -211,10 +211,10 @@ export function ModelsPicker({ enabled, onChange }: Props) {
 										<Check className="h-2.5 w-2.5" />
 									</span>
 									<div className="min-w-0 flex-1">
-										<div className="truncate text-[12px] font-medium text-pi-text transition-smooth hover:text-pi-text-secondary">
+										<div className="truncate text-xs font-medium text-pi-text transition-smooth hover:text-pi-text-secondary">
 											{m.name ?? m.id}
 										</div>
-										<div className="truncate font-mono text-[10px] text-pi-text-muted">
+										<div className="truncate font-mono text-3xs text-pi-text-muted">
 											{m.provider} · {m.id}
 										</div>
 									</div>

@@ -52,7 +52,7 @@ export function ProjectPicker({ onClose, onSelect }: ProjectPickerProps) {
 						<h2 className="text-[13px] font-semibold tracking-tight">
 							Switch project
 						</h2>
-						<p className="mt-0.5 text-[11px] text-pi-text-muted">
+						<p className="mt-0.5 text-2xs text-pi-text-muted">
 							Pick a folder to load into A-Coder.
 						</p>
 					</div>
@@ -68,7 +68,7 @@ export function ProjectPicker({ onClose, onSelect }: ProjectPickerProps) {
 
 				{/* Current project */}
 				<div className="border-b border-pi-border p-3">
-					<div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-pi-text-faint">
+					<div className="mb-1 text-3xs font-semibold uppercase tracking-wider text-pi-text-faint">
 						Current
 					</div>
 					<div className="flex items-center gap-2.5 rounded-md bg-pi-surface-raised p-2.5">
@@ -76,12 +76,12 @@ export function ProjectPicker({ onClose, onSelect }: ProjectPickerProps) {
 							<Folder className="h-3.5 w-3.5" />
 						</div>
 						<div className="min-w-0 flex-1">
-							<div className="truncate text-[12.5px] font-medium text-pi-text">
+							<div className="truncate text-xs font-medium text-pi-text">
 								{displayName(current)}
 							</div>
 							{current && (
 								<div
-									className="truncate font-mono text-[10.5px] text-pi-text-muted"
+									className="truncate font-mono text-3xs text-pi-text-muted"
 									title={current}
 								>
 									{current}
@@ -95,7 +95,7 @@ export function ProjectPicker({ onClose, onSelect }: ProjectPickerProps) {
 				<div className="border-b border-pi-border p-3">
 					<button
 						onClick={() => void handlePickFolder()}
-						className="flex w-full items-center justify-center gap-2 rounded-md bg-pi-accent px-3 py-2 text-[12.5px] font-medium text-white shadow-ring-accent transition-hover active-press hover:bg-pi-accent-hover"
+						className="flex w-full items-center justify-center gap-2 rounded-md bg-pi-accent px-3 py-2 text-xs font-medium text-white shadow-ring-accent transition-hover active-press hover:bg-pi-accent-hover"
 					>
 						<FolderOpen className="h-3.5 w-3.5" />
 						Choose folder…
@@ -105,14 +105,14 @@ export function ProjectPicker({ onClose, onSelect }: ProjectPickerProps) {
 				{/* Recent projects */}
 				<div className="flex-1 overflow-hidden p-3">
 					<div className="mb-2 flex items-center justify-between">
-						<span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-pi-text-faint">
+						<span className="flex items-center gap-1.5 text-3xs font-semibold uppercase tracking-wider text-pi-text-faint">
 							<Clock className="h-3 w-3" />
 							Recent
 						</span>
 						{recentProjects.length > 0 && (
 							<button
 								onClick={clearRecent}
-								className="text-[10.5px] text-pi-text-muted transition-hover active-press hover:text-pi-error"
+								className="text-3xs text-pi-text-muted transition-hover active-press hover:text-pi-error"
 							>
 								Clear all
 							</button>
@@ -121,7 +121,7 @@ export function ProjectPicker({ onClose, onSelect }: ProjectPickerProps) {
 
 					<div className="max-h-48 space-y-0.5 overflow-auto">
 						{recentProjects.length === 0 ? (
-							<p className="px-2 py-3 text-center text-[11.5px] text-pi-text-faint">
+							<p className="px-2 py-3 text-center text-2xs text-pi-text-faint">
 								No recent projects yet.
 							</p>
 						) : (
@@ -152,7 +152,7 @@ export function ProjectPicker({ onClose, onSelect }: ProjectPickerProps) {
 											/>
 											<div className="min-w-0">
 												<div
-													className={`truncate text-[12px] font-medium ${
+													className={`truncate text-xs font-medium ${
 														isActive
 															? "text-pi-accent"
 															: "text-pi-text"
@@ -161,7 +161,7 @@ export function ProjectPicker({ onClose, onSelect }: ProjectPickerProps) {
 													{displayName(path)}
 												</div>
 												<div
-													className="truncate font-mono text-[10px] text-pi-text-faint"
+													className="truncate font-mono text-3xs text-pi-text-faint"
 													title={path}
 												>
 													{path}

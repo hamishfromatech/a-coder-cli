@@ -66,7 +66,7 @@ export function ApprovalModal({ request, onResolve }: ApprovalModalProps) {
 						<h2 className="text-[13px] font-semibold tracking-tight text-pi-text">
 							{title}
 						</h2>
-						<p className="mt-0.5 text-[11px] text-pi-text-muted">
+						<p className="mt-0.5 text-2xs text-pi-text-muted">
 							{isEditor ? "Extension requests text input" : "Permission mode is set to “Ask first”"}
 						</p>
 					</div>
@@ -85,7 +85,7 @@ export function ApprovalModal({ request, onResolve }: ApprovalModalProps) {
 					{request.message && (
 						<div className="flex items-start gap-2.5 rounded-lg bg-pi-surface-raised p-3">
 							<MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0 text-pi-text-muted" />
-							<p className="text-[12px] leading-relaxed text-pi-text-secondary">
+							<p className="text-xs leading-relaxed text-pi-text-secondary">
 								{request.message}
 							</p>
 						</div>
@@ -97,7 +97,7 @@ export function ApprovalModal({ request, onResolve }: ApprovalModalProps) {
 								<button
 									key={option}
 									onClick={() => setSelectedOption(option)}
-									className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[12px] transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
+									className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
 										selectedOption === option
 											? "bg-pi-accent-soft text-pi-accent"
 											: "hover:bg-pi-surface-raised text-pi-text-secondary"
@@ -117,7 +117,7 @@ export function ApprovalModal({ request, onResolve }: ApprovalModalProps) {
 								value={inputValue}
 								onChange={(e) => setInputValue(e.target.value)}
 								placeholder={request.placeholder ?? ""}
-								className="w-full rounded-lg border border-pi-border bg-pi-surface-raised px-3 py-2 text-[12px] text-pi-text placeholder:text-pi-text-faint focus:border-pi-accent focus:outline-none focus:ring-2 focus:ring-pi-accent-ring"
+								className="w-full rounded-lg border border-pi-border bg-pi-surface-raised px-3 py-2 text-xs text-pi-text placeholder:text-pi-text-faint focus:border-pi-accent focus:outline-none focus:ring-2 focus:ring-pi-accent-ring"
 							/>
 						</div>
 					)}
@@ -128,7 +128,7 @@ export function ApprovalModal({ request, onResolve }: ApprovalModalProps) {
 								value={inputValue}
 								onChange={(e) => setInputValue(e.target.value)}
 								rows={10}
-								className="w-full resize-y rounded-lg border border-pi-border bg-pi-surface-raised px-3 py-2 font-mono text-[12px] leading-relaxed text-pi-text placeholder:text-pi-text-faint focus:border-pi-accent focus:outline-none focus:ring-2 focus:ring-pi-accent-ring"
+								className="w-full resize-y rounded-lg border border-pi-border bg-pi-surface-raised px-3 py-2 font-mono text-xs leading-relaxed text-pi-text placeholder:text-pi-text-faint focus:border-pi-accent focus:outline-none focus:ring-2 focus:ring-pi-accent-ring"
 							/>
 						</div>
 					)}
@@ -138,14 +138,14 @@ export function ApprovalModal({ request, onResolve }: ApprovalModalProps) {
 				<div className="flex items-center justify-end gap-2 border-t border-pi-border px-4 py-3">
 					<button
 						onClick={handleDeny}
-						className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-medium text-pi-text-secondary transition-hover active-press hover:bg-pi-error-soft hover:text-pi-error focus-visible:shadow-focus focus-visible:outline-none"
+						className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium text-pi-text-secondary transition-hover active-press hover:bg-pi-error-soft hover:text-pi-error focus-visible:shadow-focus focus-visible:outline-none"
 					>
 						<AlertTriangle className="h-3.5 w-3.5" />
 						Deny
 					</button>
 					<button
 						onClick={handleAllow}
-						className="inline-flex items-center gap-1.5 rounded-lg bg-pi-accent px-3 py-2 text-[12px] font-medium text-white shadow-ring-accent transition-hover active-press hover:bg-pi-accent-hover focus-visible:shadow-focus focus-visible:outline-none"
+						className="inline-flex items-center gap-1.5 rounded-lg bg-pi-accent px-3 py-2 text-xs font-medium text-white shadow-ring-accent transition-hover active-press hover:bg-pi-accent-hover focus-visible:shadow-focus focus-visible:outline-none"
 					>
 						<Check className="h-3.5 w-3.5" />
 						Allow

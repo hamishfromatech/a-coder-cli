@@ -93,7 +93,7 @@ export function FileExplorer({ projectPath }: Props) {
 
 	if (!projectPath) {
 		return (
-			<div className="flex flex-1 items-center justify-center p-6 text-center text-[11.5px] text-pi-text-faint">
+			<div className="flex flex-1 items-center justify-center p-6 text-center text-2xs text-pi-text-faint">
 				No project open.
 			</div>
 		);
@@ -103,7 +103,7 @@ export function FileExplorer({ projectPath }: Props) {
 		<div className="flex h-full w-full min-w-0 flex-col">
 			{/* Header */}
 			<div className="flex items-center justify-between border-b border-pi-border px-3 py-2">
-				<span className="text-[11.5px] font-semibold tracking-tight">Files</span>
+				<span className="text-2xs font-semibold tracking-tight">Files</span>
 				<button
 					onClick={() => {
 					triggerHaptic("crisp");
@@ -124,19 +124,19 @@ export function FileExplorer({ projectPath }: Props) {
 			{/* Body */}
 			<div className="flex-1 min-h-0 overflow-auto p-2">
 				{error && (
-					<div className="mb-2 rounded-md bg-pi-error-soft px-3 py-2 text-[11px] text-pi-error">
+					<div className="mb-2 rounded-md bg-pi-error-soft px-3 py-2 text-2xs text-pi-error">
 						{error}
 					</div>
 				)}
 
 				{loading && entries.length === 0 && (
-					<div className="flex items-center justify-center gap-2 p-6 text-[11.5px] text-pi-text-muted">
+					<div className="flex items-center justify-center gap-2 p-6 text-2xs text-pi-text-muted">
 						<Loader2 className="h-3 w-3 animate-spin" /> Loading files…
 					</div>
 				)}
 
 				{!loading && entries.length === 0 && !error && (
-					<div className="flex items-center justify-center p-6 text-center text-[11.5px] text-pi-text-faint">
+					<div className="flex items-center justify-center p-6 text-center text-2xs text-pi-text-faint">
 						No files found.
 					</div>
 				)}
@@ -175,7 +175,7 @@ function TreeItem({ entry, depth, expanded, toggle, onFileClick }: TreeItemProps
 			<div className="select-none">
 				<button
 					onClick={() => toggle(entry.path)}
-					className="group flex h-7 w-full items-center gap-1 rounded-md px-1.5 text-left text-[12px] text-pi-text-secondary transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+					className="group flex h-7 w-full items-center gap-1 rounded-md px-1.5 text-left text-xs text-pi-text-secondary transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
 					style={{ paddingLeft }}
 				>
 					{isExpanded ? (
@@ -215,7 +215,7 @@ function TreeItem({ entry, depth, expanded, toggle, onFileClick }: TreeItemProps
 	return (
 		<button
 			onClick={() => onFileClick(entry.path)}
-			className="group flex h-7 w-full items-center gap-1.5 rounded-md px-1.5 text-left text-[12px] text-pi-text-secondary transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+			className="group flex h-7 w-full items-center gap-1.5 rounded-md px-1.5 text-left text-xs text-pi-text-secondary transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
 			style={{ paddingLeft }}
 			title={entry.path}
 		>

@@ -47,7 +47,7 @@ export function MermaidPreview({ code }: { code: string }) {
 
 	if (status === "loading") {
 		return (
-			<div className="flex h-full items-center justify-center gap-2 text-[11.5px] text-pi-text-muted">
+			<div className="flex h-full items-center justify-center gap-2 text-2xs text-pi-text-muted">
 				<Loader2 className="h-3 w-3 animate-spin" /> Rendering diagram…
 			</div>
 		);
@@ -56,13 +56,13 @@ export function MermaidPreview({ code }: { code: string }) {
 	if (status === "failed" || !svg) {
 		return (
 			<div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-				<p className="text-[11.5px] text-pi-error">Couldn&apos;t render the diagram.</p>
+				<p className="text-2xs text-pi-error">Couldn&apos;t render the diagram.</p>
 				{error && (
-					<pre className="mt-1 max-h-[40%] w-full overflow-auto rounded-md border border-pi-border bg-pi-surface p-3 text-left font-mono text-[10.5px] leading-relaxed text-pi-text-muted whitespace-pre-wrap wrap-anywhere">
+					<pre className="mt-1 max-h-[40%] w-full overflow-auto rounded-md border border-pi-border bg-pi-surface p-3 text-left font-mono text-3xs leading-relaxed text-pi-text-muted whitespace-pre-wrap wrap-anywhere">
 						{error}
 					</pre>
 				)}
-				<pre className="mt-2 max-h-[45%] w-full overflow-auto rounded-md border border-pi-border bg-pi-surface p-3 text-left font-mono text-[11px] leading-relaxed text-pi-text-secondary whitespace-pre-wrap wrap-anywhere">
+				<pre className="mt-2 max-h-[45%] w-full overflow-auto rounded-md border border-pi-border bg-pi-surface p-3 text-left font-mono text-2xs leading-relaxed text-pi-text-secondary whitespace-pre-wrap wrap-anywhere">
 					{code}
 				</pre>
 			</div>

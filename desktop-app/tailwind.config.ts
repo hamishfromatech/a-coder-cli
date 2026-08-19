@@ -64,9 +64,9 @@ const config: Config = {
 			},
 			fontSize: {
 				// Fine-grained UI sizes below Tailwind's default `xs` (12px).
-				"2xs": ["11px", { lineHeight: "1.4" }],
-				"3xs": ["10.5px", { lineHeight: "1.4" }],
 				"4xs": ["9.5px", { lineHeight: "1.4" }],
+				"3xs": ["10px", { lineHeight: "1.4" }],
+				"2xs": ["11px", { lineHeight: "1.4" }],
 			},
 			borderRadius: {
 				xl: "10px",

@@ -223,7 +223,7 @@ export function CustomProvidersSection() {
 				<h2 className="text-[15px] font-semibold tracking-tight transition-smooth hover:text-pi-text-secondary">
 					Custom AI
 				</h2>
-				<p className="mt-0.5 text-[11.5px] leading-relaxed text-pi-text-muted">
+				<p className="mt-0.5 text-2xs leading-relaxed text-pi-text-muted">
 					Add an AI service that isn't in the built-in list — for example a local
 					model running on this computer, or a private endpoint your workplace set up.
 					After saving, choose it from the AI model panel.
@@ -231,18 +231,18 @@ export function CustomProvidersSection() {
 			</div>
 
 			{loadError && (
-				<div className="rounded-md bg-pi-error-soft px-3 py-2 text-[11.5px] text-pi-error">
+				<div className="rounded-md bg-pi-error-soft px-3 py-2 text-2xs text-pi-error">
 					Couldn't read models.json: {loadError}
 				</div>
 			)}
 			{saveError && (
-				<div className="rounded-md bg-pi-error-soft px-3 py-2 text-[11.5px] text-pi-error">
+				<div className="rounded-md bg-pi-error-soft px-3 py-2 text-2xs text-pi-error">
 					Couldn't save models.json: {saveError}
 				</div>
 			)}
 
 			{providerIds.length === 0 && !loadError && (
-				<div className="rounded-lg bg-pi-surface-raised px-4 py-3 text-[11.5px] text-pi-text-muted shadow-ring">
+				<div className="rounded-lg bg-pi-surface-raised px-4 py-3 text-2xs text-pi-text-muted shadow-ring">
 					No custom AI services yet. Click "Add AI service" to connect a local model or a private endpoint.
 				</div>
 			)}
@@ -275,7 +275,7 @@ export function CustomProvidersSection() {
 				<button
 					type="button"
 					onClick={addProvider}
-					className="inline-flex h-8 items-center gap-1.5 rounded-md bg-pi-surface-overlay px-3 text-[12px] font-medium text-pi-text transition-hover active-press hover:bg-pi-surface-raised"
+					className="inline-flex h-8 items-center gap-1.5 rounded-md bg-pi-surface-overlay px-3 text-xs font-medium text-pi-text transition-hover active-press hover:bg-pi-surface-raised"
 				>
 					<Plus className="h-3.5 w-3.5" />
 					Add AI service
@@ -284,20 +284,20 @@ export function CustomProvidersSection() {
 					type="button"
 					onClick={() => void persist(config)}
 					disabled={!dirty || saving}
-					className="inline-flex h-8 items-center gap-1.5 rounded-md bg-pi-accent px-3 text-[12px] font-semibold text-white transition-hover active-press hover:bg-pi-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+					className="inline-flex h-8 items-center gap-1.5 rounded-md bg-pi-accent px-3 text-xs font-semibold text-white transition-hover active-press hover:bg-pi-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
 				>
 					{saving ? "Saving…" : "Save"}
 				</button>
 				<button
 					type="button"
 					onClick={() => void reload()}
-					className="inline-flex h-8 items-center rounded-md px-2 text-[12px] text-pi-text-muted transition-hover active-press hover:bg-pi-surface-raised"
+					className="inline-flex h-8 items-center rounded-md px-2 text-xs text-pi-text-muted transition-hover active-press hover:bg-pi-surface-raised"
 				>
 					Revert
 				</button>
 			</div>
 
-			<div className="rounded-md bg-pi-surface-raised px-3 py-2.5 text-[11px] text-pi-text-muted shadow-ring">
+			<div className="rounded-md bg-pi-surface-raised px-3 py-2.5 text-2xs text-pi-text-muted shadow-ring">
 				Tip: After saving, open the{" "}
 				<span className="text-pi-text">AI model</span> panel and pick your custom
 				service to make it the default.
@@ -372,18 +372,18 @@ function ProviderEditor({
 	return (
 		<div className="overflow-hidden rounded-lg bg-pi-surface-raised shadow-ring">
 			<div className="flex items-start gap-3 px-4 py-3">
-				<div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-pi-accent to-pi-accent-hover font-mono text-[11px] text-white">
+				<div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-pi-accent to-pi-accent-hover font-mono text-2xs text-white">
 					<Server className="h-4 w-4" />
 				</div>
 				<div className="min-w-0 flex-1">
 					<div className="flex flex-wrap items-center gap-2">
-						<code className="rounded bg-pi-surface-overlay px-1.5 py-0.5 font-mono text-[11.5px] text-pi-text">
+						<code className="rounded bg-pi-surface-overlay px-1.5 py-0.5 font-mono text-2xs text-pi-text">
 							{id}
 						</code>
-						<span className="text-[11.5px] text-pi-text-muted">
+						<span className="text-2xs text-pi-text-muted">
 							{provider.name || provider.baseUrl || "—"}
 						</span>
-						<span className="text-[10.5px] font-mono text-pi-text-faint">
+						<span className="text-3xs font-mono text-pi-text-faint">
 							{(provider.models?.length ?? 0)} AI model{(provider.models?.length ?? 0) === 1 ? "" : "s"}
 						</span>
 					</div>
@@ -392,7 +392,7 @@ function ProviderEditor({
 					<button
 						type="button"
 						onClick={() => setExpanded((v) => !v)}
-						className="inline-flex h-7 items-center gap-1 rounded-md bg-pi-surface-overlay px-2 text-[11.5px] font-medium text-pi-text transition-hover active-press hover:bg-pi-surface-raised"
+						className="inline-flex h-7 items-center gap-1 rounded-md bg-pi-surface-overlay px-2 text-2xs font-medium text-pi-text transition-hover active-press hover:bg-pi-surface-raised"
 					>
 						<ChevronDown
 							className={`h-3 w-3 transition-transform ${expanded ? "rotate-180" : ""}`}
@@ -438,7 +438,7 @@ function ProviderEditor({
 							onChange={(v) => onUpdateProvider({ api: v })}
 						/>
 						<div className="space-y-1">
-							<label className="text-[10.5px] font-semibold uppercase tracking-wider text-pi-text-faint">
+							<label className="text-3xs font-semibold uppercase tracking-wider text-pi-text-faint">
 								API key
 							</label>
 							<div className="relative">
@@ -449,7 +449,7 @@ function ProviderEditor({
 									placeholder="not-needed"
 									spellCheck={false}
 									autoComplete="off"
-									className="w-full rounded-md bg-pi-surface-raised py-1.5 pl-3 pr-9 font-mono text-[11.5px] text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none"
+									className="w-full rounded-md bg-pi-surface-raised py-1.5 pl-3 pr-9 font-mono text-2xs text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none"
 								/>
 								<button
 									type="button"
@@ -474,7 +474,7 @@ function ProviderEditor({
 								className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-smooth ${provider.authHeader ? "translate-x-3.5" : "translate-x-0.5"}`}
 							/>
 						</button>
-						<span className="text-[11.5px] text-pi-text-muted">
+						<span className="text-2xs text-pi-text-muted">
 							Send API key as a secret header
 						</span>
 					</div>
@@ -482,7 +482,7 @@ function ProviderEditor({
 					{/* Models ------------------------------------------------------------- */}
 					<div className="space-y-2">
 						<div className="flex items-center justify-between px-1">
-							<h4 className="text-[10.5px] font-semibold uppercase tracking-wider text-pi-text-faint">
+							<h4 className="text-3xs font-semibold uppercase tracking-wider text-pi-text-faint">
 								AI models
 							</h4>
 							<div className="flex items-center gap-1.5">
@@ -490,7 +490,7 @@ function ProviderEditor({
 									type="button"
 									onClick={fetchModels}
 									disabled={!canFetch || fetchingModels}
-									className="inline-flex h-6 items-center gap-1 rounded bg-pi-surface-overlay px-2 text-[10.5px] font-medium text-pi-text transition-hover active-press hover:bg-pi-surface-raised disabled:cursor-not-allowed disabled:opacity-50"
+									className="inline-flex h-6 items-center gap-1 rounded bg-pi-surface-overlay px-2 text-3xs font-medium text-pi-text transition-hover active-press hover:bg-pi-surface-raised disabled:cursor-not-allowed disabled:opacity-50"
 								>
 									<RefreshCw className={`h-3 w-3 ${fetchingModels ? "animate-spin" : ""}`} />
 									{fetchingModels ? "Fetching…" : "Fetch from endpoint"}
@@ -498,7 +498,7 @@ function ProviderEditor({
 								<button
 									type="button"
 									onClick={onAddModel}
-									className="inline-flex h-6 items-center gap-1 rounded bg-pi-surface-overlay px-2 text-[10.5px] font-medium text-pi-text transition-hover active-press hover:bg-pi-surface-raised"
+									className="inline-flex h-6 items-center gap-1 rounded bg-pi-surface-overlay px-2 text-3xs font-medium text-pi-text transition-hover active-press hover:bg-pi-surface-raised"
 								>
 									<Plus className="h-3 w-3" />
 									Add AI model
@@ -507,13 +507,13 @@ function ProviderEditor({
 						</div>
 
 						{fetchError && (
-							<div className="rounded-md bg-pi-error-soft px-3 py-2 text-[11px] text-pi-error">
+							<div className="rounded-md bg-pi-error-soft px-3 py-2 text-2xs text-pi-error">
 								Couldn't fetch models: {fetchError}
 							</div>
 						)}
 
 						{(provider.models ?? []).length === 0 && (
-							<p className="px-1 text-[11px] text-pi-text-faint">
+							<p className="px-1 text-2xs text-pi-text-faint">
 								No AI models listed. Add at least one so it appears in the AI model picker.
 							</p>
 						)}
@@ -555,11 +555,11 @@ function ModelEditor({
 					<ChevronDown
 						className={`h-3 w-3 shrink-0 text-pi-text-faint transition-transform ${expanded ? "rotate-180" : ""}`}
 					/>
-					<code className="truncate font-mono text-[11.5px] text-pi-text">
+					<code className="truncate font-mono text-2xs text-pi-text">
 						{model.id || "(untitled)"}
 					</code>
 					{model.name && (
-						<span className="truncate text-[11px] text-pi-text-muted">
+						<span className="truncate text-2xs text-pi-text-muted">
 							{model.name}
 						</span>
 					)}
@@ -598,7 +598,7 @@ function ModelEditor({
 						value={model.maxTokens ?? 4096}
 						onChange={(v) => onUpdate({ maxTokens: v })}
 					/>
-					<label className="col-span-2 flex items-center gap-2 px-1 text-[11.5px] text-pi-text-muted">
+					<label className="col-span-2 flex items-center gap-2 px-1 text-2xs text-pi-text-muted">
 						<input
 							type="checkbox"
 							checked={model.reasoning ?? false}
@@ -633,7 +633,7 @@ function LabeledInput({
 	const id = useId();
 	return (
 		<div className="space-y-1">
-			<label htmlFor={id} className="text-[10.5px] font-semibold uppercase tracking-wider text-pi-text-faint">
+			<label htmlFor={id} className="text-3xs font-semibold uppercase tracking-wider text-pi-text-faint">
 				{label}
 			</label>
 			<input
@@ -644,7 +644,7 @@ function LabeledInput({
 				onChange={(e) => onChange(e.target.value)}
 				spellCheck={false}
 				autoComplete="off"
-				className={`w-full rounded-md bg-pi-surface-raised py-1.5 px-3 text-[11.5px] text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none ${mono ? "font-mono" : ""}`}
+				className={`w-full rounded-md bg-pi-surface-raised py-1.5 px-3 text-2xs text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none ${mono ? "font-mono" : ""}`}
 			/>
 		</div>
 	);
@@ -662,7 +662,7 @@ function LabeledNumberInput({
 	const id = useId();
 	return (
 		<div className="space-y-1">
-			<label htmlFor={id} className="text-[10.5px] font-semibold uppercase tracking-wider text-pi-text-faint">
+			<label htmlFor={id} className="text-3xs font-semibold uppercase tracking-wider text-pi-text-faint">
 				{label}
 			</label>
 			<input
@@ -671,7 +671,7 @@ function LabeledNumberInput({
 				value={value}
 				min={1}
 				onChange={(e) => onChange(Number(e.target.value) || 0)}
-				className="w-full rounded-md bg-pi-surface-raised py-1.5 px-3 text-[11.5px] font-mono text-pi-text shadow-ring focus:shadow-focus focus:outline-none"
+				className="w-full rounded-md bg-pi-surface-raised py-1.5 px-3 text-2xs font-mono text-pi-text shadow-ring focus:shadow-focus focus:outline-none"
 			/>
 		</div>
 	);
@@ -691,14 +691,14 @@ function LabeledSelect({
 	const id = useId();
 	return (
 		<div className="space-y-1">
-			<label htmlFor={id} className="text-[10.5px] font-semibold uppercase tracking-wider text-pi-text-faint">
+			<label htmlFor={id} className="text-3xs font-semibold uppercase tracking-wider text-pi-text-faint">
 				{label}
 			</label>
 			<select
 				id={id}
 				value={value}
 				onChange={(e) => onChange(e.target.value)}
-				className="w-full rounded-md bg-pi-surface-raised py-1.5 px-3 text-[11.5px] text-pi-text shadow-ring focus:shadow-focus focus:outline-none"
+				className="w-full rounded-md bg-pi-surface-raised py-1.5 px-3 text-2xs text-pi-text shadow-ring focus:shadow-focus focus:outline-none"
 			>
 				{options.map((o) => (
 					<option key={o.value} value={o.value}>

@@ -22,9 +22,9 @@ export function Toaster() {
 					className={`flex min-w-[16rem] max-w-[24rem] items-start gap-2 rounded-lg border border-pi-border border-l-4 p-3 shadow-overlay ${kindClasses[t.kind] ?? kindClasses.info}`}
 				>
 					<div className="min-w-0 flex-1">
-						<div className="text-[12px] font-semibold text-pi-text">{t.title}</div>
+						<div className="text-xs font-semibold text-pi-text">{t.title}</div>
 						{t.message && (
-							<div className="mt-0.5 text-[11px] text-pi-text-secondary">{t.message}</div>
+							<div className="mt-0.5 text-2xs text-pi-text-secondary">{t.message}</div>
 						)}
 					</div>
 					<button

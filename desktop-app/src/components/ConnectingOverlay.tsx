@@ -181,7 +181,7 @@ function BootFailureCard({ message }: { message: string }) {
 					<div className="flex flex-wrap gap-2">
 						<button
 							type="button"
-							className="inline-flex items-center gap-1.5 rounded-lg bg-pi-accent px-3 py-2 text-[12px] font-medium text-white transition-smooth hover:bg-pi-accent-hover focus-visible:shadow-focus focus-visible:outline-none"
+							className="inline-flex items-center gap-1.5 rounded-lg bg-pi-accent px-3 py-2 text-xs font-medium text-white transition-smooth hover:bg-pi-accent-hover focus-visible:shadow-focus focus-visible:outline-none"
 							onClick={() => window.location.reload()}
 						>
 							Retry
@@ -190,7 +190,7 @@ function BootFailureCard({ message }: { message: string }) {
 							<button
 								type="button"
 								disabled={bootstrapping}
-								className="inline-flex items-center gap-1.5 rounded-lg bg-pi-accent px-3 py-2 text-[12px] font-medium text-white transition-smooth hover:bg-pi-accent-hover focus-visible:shadow-focus focus-visible:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+								className="inline-flex items-center gap-1.5 rounded-lg bg-pi-accent px-3 py-2 text-xs font-medium text-white transition-smooth hover:bg-pi-accent-hover focus-visible:shadow-focus focus-visible:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
 								onClick={installEngine}
 							>
 								{bootstrapping ? "Installing engine…" : "Install the CLI engine"}
@@ -203,7 +203,7 @@ function BootFailureCard({ message }: { message: string }) {
 						) : null}
 						<button
 							type="button"
-							className="inline-flex items-center gap-1.5 rounded-lg border border-pi-border bg-transparent px-3 py-2 text-[12px] font-medium text-pi-text-secondary transition-smooth hover:border-pi-border/80 hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+							className="inline-flex items-center gap-1.5 rounded-lg border border-pi-border bg-transparent px-3 py-2 text-xs font-medium text-pi-text-secondary transition-smooth hover:border-pi-border/80 hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
 							onClick={pickWorkspace}
 						>
 							Select another workspace

@@ -53,12 +53,12 @@ export function CommandPalette({
 		>
 			<div className="flex items-center gap-2 border-b border-pi-border px-3 py-2">
 				<Terminal className="h-3.5 w-3.5 text-pi-text-muted" />
-				<span className="font-mono text-[12px] text-pi-text-muted">/</span>
-				<span className="text-[12px] text-pi-text">{query || <span className="text-pi-text-faint">Type a command…</span>}</span>
+				<span className="font-mono text-xs text-pi-text-muted">/</span>
+				<span className="text-xs text-pi-text">{query || <span className="text-pi-text-faint">Type a command…</span>}</span>
 			</div>
 
 			{entries.length === 0 ? (
-				<div className="px-3 py-3 text-center text-[12px] text-pi-text-muted">
+				<div className="px-3 py-3 text-center text-xs text-pi-text-muted">
 					No matching commands.
 				</div>
 			) : (
@@ -78,18 +78,18 @@ export function CommandPalette({
 						>
 							<div className="min-w-0 flex-1">
 								<div className="flex items-center gap-2">
-									<span className="font-mono text-[12px] font-medium text-pi-text">
+									<span className="font-mono text-xs font-medium text-pi-text">
 										/{entry.name}
 									</span>
 									{entry.description && (
-										<span className="truncate text-[11px] text-pi-text-muted">
+										<span className="truncate text-2xs text-pi-text-muted">
 											{entry.description}
 										</span>
 									)}
 								</div>
 							</div>
 							<span
-								className={`font-mono text-[9.5px] font-semibold uppercase tracking-wide ${SOURCE_COLORS[entry.source]}`}
+								className={`font-mono text-4xs font-semibold uppercase tracking-wide ${SOURCE_COLORS[entry.source]}`}
 							>
 								{SOURCE_LABEL[entry.source]}
 							</span>
@@ -98,7 +98,7 @@ export function CommandPalette({
 				</div>
 			)}
 
-			<div className="flex items-center justify-between border-t border-pi-border bg-pi-surface/40 px-3 py-1.5 text-[10.5px] text-pi-text-faint">
+			<div className="flex items-center justify-between border-t border-pi-border bg-pi-surface/40 px-3 py-1.5 text-3xs text-pi-text-faint">
 				<div className="flex items-center gap-2">
 					<Kbd>↑↓</Kbd>
 					<span>navigate</span>
@@ -107,7 +107,7 @@ export function CommandPalette({
 					<Kbd>esc</Kbd>
 					<span>close</span>
 				</div>
-				<button type="button" onClick={onClose} className="text-[10.5px] text-pi-text-faint hover:text-pi-text-muted">
+				<button type="button" onClick={onClose} className="text-3xs text-pi-text-faint hover:text-pi-text-muted">
 					dismiss
 				</button>
 			</div>
@@ -117,7 +117,7 @@ export function CommandPalette({
 
 function Kbd({ children }: { children: React.ReactNode }) {
 	return (
-		<kbd className="rounded border border-pi-border bg-pi-surface-raised px-1 font-mono text-[9.5px] text-pi-text-muted">
+		<kbd className="rounded border border-pi-border bg-pi-surface-raised px-1 font-mono text-4xs text-pi-text-muted">
 			{children}
 		</kbd>
 	);

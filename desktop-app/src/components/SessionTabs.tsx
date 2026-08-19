@@ -64,7 +64,7 @@ export function SessionTabs() {
 					return (
 						<div
 							key={tab.path}
-							className={`group/tab my-1 flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[12px] transition-hover ${
+							className={`group/tab my-1 flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-xs transition-hover ${
 								active
 									? "bg-pi-surface-raised text-pi-text"
 									: "text-pi-text-muted hover:bg-pi-surface-raised/60 hover:text-pi-text"

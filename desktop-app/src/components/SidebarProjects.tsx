@@ -29,7 +29,7 @@ export function SidebarProjects({
 						triggerHaptic("selection");
 						onAdd();
 					}}
-					className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12px] text-pi-text-muted transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+					className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs text-pi-text-muted transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
 				>
 					<FolderPlus className="h-3.5 w-3.5 shrink-0" />
 					Add folder…
@@ -60,7 +60,7 @@ export function SidebarProjects({
 										}`}
 									/>
 									<span
-										className={`truncate text-[12px] font-medium ${
+										className={`truncate text-xs font-medium ${
 											isActive ? "text-pi-accent" : "text-pi-text"
 										}`}
 									>
@@ -77,7 +77,7 @@ export function SidebarProjects({
 									title="Remove from recent"
 									aria-label="Remove from recent"
 								>
-									<span className="text-[14px] leading-none">×</span>
+									<span className="text-sm leading-none">×</span>
 								</button>
 							</div>
 						);
@@ -88,7 +88,7 @@ export function SidebarProjects({
 							triggerHaptic("selection");
 							onAdd();
 						}}
-						className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12px] text-pi-text-muted transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+						className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs text-pi-text-muted transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
 					>
 						<FolderPlus className="h-3.5 w-3.5 shrink-0" />
 						Add folder…

@@ -25,7 +25,7 @@ export function QueuePanel({ onSend }: QueuePanelProps) {
 					title="Click to send now"
 				>
 					<span
-						className={`rounded px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide ${
+						className={`rounded px-1.5 py-0.5 text-4xs font-semibold uppercase tracking-wide ${
 							item.kind === "steering"
 								? "bg-pi-accent-soft text-pi-accent"
 								: "bg-pi-success/15 text-pi-success"
@@ -33,7 +33,7 @@ export function QueuePanel({ onSend }: QueuePanelProps) {
 					>
 						{item.kind === "steering" ? "steer" : "follow-up"}
 					</span>
-					<span className="min-w-0 flex-1 truncate text-[11.5px] text-pi-text-secondary">
+					<span className="min-w-0 flex-1 truncate text-2xs text-pi-text-secondary">
 						{item.text}
 					</span>
 					<CornerDownLeft className="h-3 w-3 shrink-0 text-pi-text-faint opacity-0 transition-smooth group-hover:opacity-100" />

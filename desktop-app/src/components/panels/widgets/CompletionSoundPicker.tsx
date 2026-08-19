@@ -51,7 +51,7 @@ export function CompletionSoundPicker() {
 							triggerHaptic("selection");
 							setVariantId(Number(e.target.value));
 						}}
-						className="appearance-none rounded-md bg-pi-surface-raised px-3 py-1.5 pr-7 text-[12px] font-medium text-pi-text shadow-ring transition-smooth focus:shadow-focus"
+						className="appearance-none rounded-md bg-pi-surface-raised px-3 py-1.5 pr-7 text-xs font-medium text-pi-text shadow-ring transition-smooth focus:shadow-focus"
 					>
 						{COMPLETION_SOUND_VARIANTS.map((v) => (
 							<option key={v.id} value={String(v.id)}>
@@ -65,14 +65,14 @@ export function CompletionSoundPicker() {
 				<button
 					type="button"
 					onClick={previewSound}
-					className="inline-flex items-center gap-1.5 rounded-md bg-pi-surface-raised px-3 py-1.5 text-[12px] font-medium text-pi-text shadow-ring transition-hover active-press hover:bg-pi-surface-overlay"
+					className="inline-flex items-center gap-1.5 rounded-md bg-pi-surface-raised px-3 py-1.5 text-xs font-medium text-pi-text shadow-ring transition-hover active-press hover:bg-pi-surface-overlay"
 				>
 					Preview
 				</button>
 			</div>
 
 			<div className="flex items-center gap-3">
-				<span className="w-12 text-[11px] text-pi-text-muted">Volume</span>
+				<span className="w-12 text-2xs text-pi-text-muted">Volume</span>
 				<input
 					type="range"
 					min={0}
@@ -85,7 +85,7 @@ export function CompletionSoundPicker() {
 					}}
 					className="h-1 flex-1 pi-range"
 				/>
-				<span className="w-10 text-right font-mono text-[11px] text-pi-text-secondary">
+				<span className="w-10 text-right font-mono text-2xs text-pi-text-secondary">
 					{Math.round(volume * 100)}%
 				</span>
 			</div>
@@ -107,7 +107,7 @@ export function CompletionSoundPicker() {
 						triggerHaptic("crisp");
 						previewHaptic("streamDone");
 					}}
-					className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-pi-surface-raised px-3 py-1.5 text-[12px] font-medium text-pi-text shadow-ring transition-hover active-press hover:bg-pi-surface-overlay"
+					className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-pi-surface-raised px-3 py-1.5 text-xs font-medium text-pi-text shadow-ring transition-hover active-press hover:bg-pi-surface-overlay"
 				>
 					Try it
 				</button>
@@ -121,7 +121,7 @@ export function CompletionSoundPicker() {
 					checked={chatBackdrop}
 					onChange={() => setChatBackdrop(!chatBackdrop)}
 				/>
-				<p className="text-[11px] leading-relaxed text-pi-text-muted">
+				<p className="text-2xs leading-relaxed text-pi-text-muted">
 					The faint image behind the conversation.
 				</p>
 			</div>
@@ -142,7 +142,7 @@ function ToggleRow({
 }) {
 	return (
 		<div className="flex items-center justify-between gap-4">
-			<label htmlFor={id} className="text-[12px] font-medium text-pi-text-secondary">
+			<label htmlFor={id} className="text-xs font-medium text-pi-text-secondary">
 				{label}
 			</label>
 			<Switch id={id} checked={checked} onChange={onChange} />

@@ -527,7 +527,7 @@ export function Composer() {
 							className="group flex items-center gap-2 rounded-md border border-pi-border bg-pi-surface px-2 py-1"
 						>
 							<ImageIcon className="h-3.5 w-3.5 text-pi-text-muted" />
-							<span className="max-w-[8rem] truncate text-[11px] text-pi-text-secondary">
+							<span className="max-w-[8rem] truncate text-2xs text-pi-text-secondary">
 								Image {idx + 1}
 							</span>
 							<button
@@ -543,30 +543,30 @@ export function Composer() {
 			)}
 
 			{/* Hint footer */}
-			<div className="flex items-center justify-between px-2 pt-1.5 text-[10px] text-pi-text-faint">
+			<div className="flex items-center justify-between px-2 pt-1.5 text-3xs text-pi-text-faint">
 				<div className="flex items-center gap-3">
 					<span className="flex items-center gap-1">
-						<kbd className="rounded border border-pi-border bg-pi-surface px-1 font-mono text-[9.5px] text-pi-text-muted">
+						<kbd className="rounded border border-pi-border bg-pi-surface px-1 font-mono text-4xs text-pi-text-muted">
 							↵
 						</kbd>
 						{slashMatch ? "select command" : isStreaming ? "steer" : "send"}
 					</span>
 					<span className="flex items-center gap-1">
-						<kbd className="rounded border border-pi-border bg-pi-surface px-1 font-mono text-[9.5px] text-pi-text-muted">
+						<kbd className="rounded border border-pi-border bg-pi-surface px-1 font-mono text-4xs text-pi-text-muted">
 							⇧↵
 						</kbd>
 						newline
 					</span>
 					{slashMatch && (
 						<span className="flex items-center gap-1">
-							<kbd className="rounded border border-pi-border bg-pi-surface px-1 font-mono text-[9.5px] text-pi-text-muted">
+							<kbd className="rounded border border-pi-border bg-pi-surface px-1 font-mono text-4xs text-pi-text-muted">
 								esc
 							</kbd>
 							cancel
 						</span>
 					)}
 					<span className="flex items-center gap-1">
-						<kbd className="rounded border border-pi-border bg-pi-surface px-1 font-mono text-[9.5px] text-pi-text-muted">
+						<kbd className="rounded border border-pi-border bg-pi-surface px-1 font-mono text-4xs text-pi-text-muted">
 							⌘G
 						</kbd>
 						external editor

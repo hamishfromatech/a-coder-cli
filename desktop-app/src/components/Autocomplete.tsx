@@ -83,7 +83,7 @@ export function Autocomplete({ text, cursor, suggestions, onAccept, onClose }: A
 					type="button"
 					onMouseEnter={() => setHighlight(idx)}
 					onClick={() => accept(m)}
-					className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px] transition-hover ${
+					className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs transition-hover ${
 						idx === highlight ? "bg-pi-surface-raised" : "hover:bg-pi-surface-raised/50"
 					}`}
 				>

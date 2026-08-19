@@ -977,7 +977,7 @@ export default function App() {
 
 			{showHotkeys && (
 				<SimpleModal title="Keyboard shortcuts" onClose={() => setShowHotkeys(false)}>
-					<div className="space-y-2 text-[12px] text-pi-text-secondary">
+					<div className="space-y-2 text-xs text-pi-text-secondary">
 						<div className="flex justify-between"><span>New session</span><kbd className="font-mono">⌘N</kbd></div>
 						<div className="flex justify-between"><span>Abort</span><kbd className="font-mono">⌘.</kbd></div>
 						<div className="flex justify-between"><span>Settings</span><kbd className="font-mono">⌘,</kbd></div>
@@ -1014,7 +1014,7 @@ function SidebarSection({
 	return (
 		<div className={className}>
 			<div className="mb-1.5 flex items-center justify-between px-2.5">
-				<span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-pi-text-faint">
+				<span className="text-3xs font-semibold uppercase tracking-[0.08em] text-pi-text-faint">
 					{title}
 				</span>
 			</div>
@@ -1053,7 +1053,7 @@ function SidebarContent({
 						<div className="truncate text-[13px] font-semibold tracking-tight">
 							A-Coder
 						</div>
-						<div className="flex items-center gap-1 truncate text-[11px] text-pi-text-muted">
+						<div className="flex items-center gap-1 truncate text-2xs text-pi-text-muted">
 							<FolderGit2 className="h-3 w-3 shrink-0 transition-smooth" />
 							<span className="truncate">{projectName}</span>
 						</div>
@@ -1088,12 +1088,12 @@ function SidebarContent({
 			{/* Footer */}
 			<div className="border-t border-pi-border p-2">
 				<button
-					className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[12px] text-pi-text-muted transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+					className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-xs text-pi-text-muted transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
 					onClick={onOpenSettings}
 				>
 					<Settings className="h-3.5 w-3.5 transition-smooth" />
 					Settings
-					<span className="ml-auto font-mono text-[10px] text-pi-text-faint">⌘,</span>
+					<span className="ml-auto font-mono text-3xs text-pi-text-faint">⌘,</span>
 				</button>
 			</div>
 		</>
@@ -1344,22 +1344,22 @@ function TrustModal({
 				<div className="border-b border-pi-border px-4 py-3">
 					<h2 className="text-[13px] font-semibold tracking-tight text-pi-text">Trust project?</h2>
 				</div>
-				<div className="px-4 py-4 text-[12px] text-pi-text-secondary">
+				<div className="px-4 py-4 text-xs text-pi-text-secondary">
 					<p>
 						Allow A-Coder to load settings, resources, and extensions for this project?
 					</p>
-					<p className="mt-2 font-mono text-[11px] text-pi-text-muted">{cwd}</p>
+					<p className="mt-2 font-mono text-2xs text-pi-text-muted">{cwd}</p>
 				</div>
 				<div className="flex items-center justify-end gap-2 border-t border-pi-border px-4 py-3">
 					<button
 						onClick={onDeny}
-						className="rounded-lg px-3 py-2 text-[12px] font-medium text-pi-text-secondary transition-hover hover:bg-pi-error-soft hover:text-pi-error"
+						className="rounded-lg px-3 py-2 text-xs font-medium text-pi-text-secondary transition-hover hover:bg-pi-error-soft hover:text-pi-error"
 					>
 						Don't trust
 					</button>
 					<button
 						onClick={onAccept}
-						className="rounded-lg bg-pi-accent px-3 py-2 text-[12px] font-medium text-white transition-hover hover:bg-pi-accent-hover"
+						className="rounded-lg bg-pi-accent px-3 py-2 text-xs font-medium text-white transition-hover hover:bg-pi-accent-hover"
 					>
 						Trust project
 					</button>

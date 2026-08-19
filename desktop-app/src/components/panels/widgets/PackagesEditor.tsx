@@ -61,7 +61,7 @@ export function PackagesEditor({ value, onChange }: Props) {
 	return (
 		<div className="w-full space-y-3">
 			{packages.length === 0 && (
-				<p className="text-[11px] text-pi-text-muted">
+				<p className="text-2xs text-pi-text-muted">
 					No resource packages. Add npm or git sources that ship extensions,
 					skills, prompts, or themes.
 				</p>
@@ -82,7 +82,7 @@ export function PackagesEditor({ value, onChange }: Props) {
 				<button
 					type="button"
 					onClick={() => addPackage("")}
-					className="inline-flex h-7 items-center gap-1.5 rounded-md bg-pi-surface-overlay px-2.5 text-[11.5px] font-medium text-pi-text transition-hover active-press hover:bg-pi-surface-raised"
+					className="inline-flex h-7 items-center gap-1.5 rounded-md bg-pi-surface-overlay px-2.5 text-2xs font-medium text-pi-text transition-hover active-press hover:bg-pi-surface-raised"
 				>
 					<Plus className="h-3 w-3" />
 					Add package source
@@ -90,7 +90,7 @@ export function PackagesEditor({ value, onChange }: Props) {
 				<button
 					type="button"
 					onClick={() => addPackage({ source: "", extensions: [], skills: [], prompts: [], themes: [] })}
-					className="inline-flex h-7 items-center gap-1.5 rounded-md bg-pi-surface-overlay px-2.5 text-[11.5px] font-medium text-pi-text transition-hover active-press hover:bg-pi-surface-raised"
+					className="inline-flex h-7 items-center gap-1.5 rounded-md bg-pi-surface-overlay px-2.5 text-2xs font-medium text-pi-text transition-hover active-press hover:bg-pi-surface-raised"
 				>
 					<Layers className="h-3 w-3" />
 					Add filtered package
@@ -124,11 +124,11 @@ function PackageCard({
 				className="flex w-full items-center gap-3 px-3 py-2 text-left transition-hover hover:bg-pi-surface-overlay"
 			>
 				<GitBranch className="h-3.5 w-3.5 text-pi-accent" />
-				<span className="min-w-0 flex-1 truncate text-[12px] font-medium text-pi-text">
+				<span className="min-w-0 flex-1 truncate text-xs font-medium text-pi-text">
 					{display}
 				</span>
 				{!isSimple && (
-					<span className="text-[10px] text-pi-text-faint">
+					<span className="text-3xs text-pi-text-faint">
 						filtered
 					</span>
 				)}
@@ -157,7 +157,7 @@ function PackageCard({
 									onUpdate(pkg.source);
 								}
 							}}
-							className={`h-5 rounded px-2 text-[10.5px] font-medium transition-colors ${isSimple ? "bg-pi-accent text-white" : "bg-pi-surface-overlay text-pi-text-muted"}`}
+							className={`h-5 rounded px-2 text-3xs font-medium transition-colors ${isSimple ? "bg-pi-accent text-white" : "bg-pi-surface-overlay text-pi-text-muted"}`}
 						>
 							Simple
 						</button>
@@ -168,7 +168,7 @@ function PackageCard({
 									onUpdate({ source: pkg, extensions: [], skills: [], prompts: [], themes: [] });
 								}
 							}}
-							className={`h-5 rounded px-2 text-[10.5px] font-medium transition-colors ${!isSimple ? "bg-pi-accent text-white" : "bg-pi-surface-overlay text-pi-text-muted"}`}
+							className={`h-5 rounded px-2 text-3xs font-medium transition-colors ${!isSimple ? "bg-pi-accent text-white" : "bg-pi-surface-overlay text-pi-text-muted"}`}
 						>
 							Filtered
 						</button>
@@ -231,7 +231,7 @@ function ResourceFilterEditor({
 
 	return (
 		<div className="space-y-1">
-			<label className="flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-pi-text-faint">
+			<label className="flex items-center gap-1.5 text-3xs font-semibold uppercase tracking-wider text-pi-text-faint">
 				<Icon className="h-3 w-3" />
 				{kind}
 			</label>
@@ -240,7 +240,7 @@ function ResourceFilterEditor({
 				placeholder={`One ${kind.slice(0, -1)} id per line`}
 				onChange={(e) => commit(e.target.value)}
 				rows={Math.max(2, Math.min(values.length + 1, 4))}
-				className="w-full rounded-md bg-pi-bg p-2 font-mono text-[11px] text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none"
+				className="w-full rounded-md bg-pi-bg p-2 font-mono text-2xs text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none"
 			/>
 		</div>
 	);
@@ -259,7 +259,7 @@ function LabeledInput({
 }) {
 	return (
 		<div className="space-y-1">
-			<label className="text-[10.5px] font-semibold uppercase tracking-wider text-pi-text-faint">
+			<label className="text-3xs font-semibold uppercase tracking-wider text-pi-text-faint">
 				{label}
 			</label>
 			<input
@@ -269,7 +269,7 @@ function LabeledInput({
 				onChange={(e) => onChange(e.target.value)}
 				spellCheck={false}
 				autoComplete="off"
-				className="w-full rounded-md bg-pi-bg px-2.5 py-1.5 text-[11.5px] text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none"
+				className="w-full rounded-md bg-pi-bg px-2.5 py-1.5 text-2xs text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none"
 			/>
 		</div>
 	);

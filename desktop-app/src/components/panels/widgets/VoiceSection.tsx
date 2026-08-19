@@ -44,7 +44,7 @@ function LabeledInput({
 	const isPassword = type === "password";
 	return (
 		<label className="block space-y-1">
-			<span className="text-[10.5px] font-semibold uppercase tracking-wider text-pi-text-faint">{label}</span>
+			<span className="text-3xs font-semibold uppercase tracking-wider text-pi-text-faint">{label}</span>
 			<div className="relative">
 				<input
 					type={isPassword && !show ? "password" : "text"}
@@ -53,7 +53,7 @@ function LabeledInput({
 					placeholder={placeholder}
 					spellCheck={false}
 					autoComplete="off"
-					className={`w-full rounded-md bg-pi-surface-raised py-1.5 pl-3 ${isPassword ? "pr-9" : "pr-3"} ${mono ? "font-mono" : ""} text-[11.5px] text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none`}
+					className={`w-full rounded-md bg-pi-surface-raised py-1.5 pl-3 ${isPassword ? "pr-9" : "pr-3"} ${mono ? "font-mono" : ""} text-2xs text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none`}
 				/>
 				{isPassword && (
 					<button
@@ -66,7 +66,7 @@ function LabeledInput({
 					</button>
 				)}
 			</div>
-			{hint && <span className="block text-[10.5px] text-pi-text-faint">{hint}</span>}
+			{hint && <span className="block text-3xs text-pi-text-faint">{hint}</span>}
 		</label>
 	);
 }
@@ -76,7 +76,7 @@ function Card({ title, icon, children }: { title: string; icon: React.ReactNode;
 		<section className="overflow-hidden rounded-lg bg-pi-surface-raised shadow-ring">
 			<header className="flex items-center gap-2 border-b border-pi-border px-4 py-2.5">
 				{icon}
-				<h3 className="text-[12.5px] font-semibold text-pi-text">{title}</h3>
+				<h3 className="text-xs font-semibold text-pi-text">{title}</h3>
 			</header>
 			<div className="space-y-3 px-4 py-3">{children}</div>
 		</section>
@@ -126,7 +126,7 @@ export function VoiceSection() {
 		<section className="space-y-3">
 			<header>
 				<h2 className="text-[15px] font-semibold tracking-tight">Voice</h2>
-				<p className="mt-0.5 text-[11.5px] text-pi-text-muted">
+				<p className="mt-0.5 text-2xs text-pi-text-muted">
 					Bring your own OpenAI-compatible speech endpoints. STT uses{" "}
 					<code className="font-mono text-pi-text">/v1/audio/transcriptions</code>, TTS uses{" "}
 					<code className="font-mono text-pi-text">/v1/audio/speech</code>.
@@ -136,8 +136,8 @@ export function VoiceSection() {
 			{/* Master enable */}
 			<div className="flex items-center justify-between rounded-lg bg-pi-surface-raised px-4 py-3 shadow-ring">
 				<div className="pr-4">
-					<p className="text-[12.5px] font-semibold text-pi-text">Enable voice mode</p>
-					<p className="text-[11px] text-pi-text-muted">Show the mic button and auto-speak replies.</p>
+					<p className="text-xs font-semibold text-pi-text">Enable voice mode</p>
+					<p className="text-2xs text-pi-text-muted">Show the mic button and auto-speak replies.</p>
 				</div>
 				<Toggle checked={s.voiceEnabled} onChange={s.setVoiceEnabled} />
 			</div>
@@ -191,15 +191,15 @@ export function VoiceSection() {
 			<Card title="Behaviour" icon={<Volume2 className="h-4 w-4 text-pi-text-muted" />}>
 				<div className="flex items-center justify-between">
 					<div className="pr-4">
-						<p className="text-[12px] font-medium text-pi-text">Auto-send transcribed text</p>
-						<p className="text-[11px] text-pi-text-muted">Send each transcription as a prompt immediately.</p>
+						<p className="text-xs font-medium text-pi-text">Auto-send transcribed text</p>
+						<p className="text-2xs text-pi-text-muted">Send each transcription as a prompt immediately.</p>
 					</div>
 					<Toggle checked={s.voiceAutoSubmit} onChange={s.setVoiceAutoSubmit} />
 				</div>
 				<div className="flex items-center justify-between">
 					<div className="pr-4">
-						<p className="text-[12px] font-medium text-pi-text">Auto-speak replies</p>
-						<p className="text-[11px] text-pi-text-muted">Read assistant responses aloud automatically.</p>
+						<p className="text-xs font-medium text-pi-text">Auto-speak replies</p>
+						<p className="text-2xs text-pi-text-muted">Read assistant responses aloud automatically.</p>
 					</div>
 					<Toggle checked={s.voiceAutoSpeak} onChange={s.setVoiceAutoSpeak} />
 				</div>
@@ -210,19 +210,19 @@ export function VoiceSection() {
 					type="button"
 					onClick={() => void runTest()}
 					disabled={testing || !s.voiceSttBaseUrl || !s.voiceTtsBaseUrl}
-					className="inline-flex h-8 items-center gap-1.5 rounded-md bg-pi-accent px-3 text-[12px] font-semibold text-white transition-hover active-press hover:bg-pi-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+					className="inline-flex h-8 items-center gap-1.5 rounded-md bg-pi-accent px-3 text-xs font-semibold text-white transition-hover active-press hover:bg-pi-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
 				>
 					{testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mic className="h-3.5 w-3.5" />}
 					{testing ? "Listening…" : "Test voice (2.5s)"}
 				</button>
 				{testStatus.kind === "ok" && (
-					<p className="flex items-start gap-1.5 text-[11px] text-pi-success">
+					<p className="flex items-start gap-1.5 text-2xs text-pi-success">
 						<Check className="mt-0.5 h-3.5 w-3.5 shrink-0" />
 						<span>{testStatus.message}</span>
 					</p>
 				)}
 				{testStatus.kind === "error" && (
-					<p className="flex items-start gap-1.5 text-[11px] text-pi-error">
+					<p className="flex items-start gap-1.5 text-2xs text-pi-error">
 						<AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
 						<span className="break-all">{testStatus.message}</span>
 					</p>

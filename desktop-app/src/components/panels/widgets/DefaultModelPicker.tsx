@@ -89,7 +89,7 @@ export function DefaultModelPicker({
 
 	if (loadError) {
 		return (
-			<div className="rounded-md bg-pi-error-soft px-3 py-2 text-[11.5px] text-pi-error transition-smooth">
+			<div className="rounded-md bg-pi-error-soft px-3 py-2 text-2xs text-pi-error transition-smooth">
 				Couldn't load models: {loadError}
 			</div>
 		);
@@ -97,7 +97,7 @@ export function DefaultModelPicker({
 
 	if (models.length === 0) {
 		return (
-			<div className="rounded-md bg-pi-surface-raised px-3 py-2 text-[11.5px] text-pi-text-muted shadow-ring transition-smooth">
+			<div className="rounded-md bg-pi-surface-raised px-3 py-2 text-2xs text-pi-text-muted shadow-ring transition-smooth">
 				Loading models…
 			</div>
 		);
@@ -119,7 +119,7 @@ export function DefaultModelPicker({
 			<select
 				value={currentValue}
 				onChange={handleChange}
-				className={`w-full appearance-none rounded-md bg-pi-surface-raised px-3 py-1.5 pr-8 text-[12px] font-medium text-pi-text shadow-ring transition-smooth focus:shadow-focus focus:outline-none`}
+				className={`w-full appearance-none rounded-md bg-pi-surface-raised px-3 py-1.5 pr-8 text-xs font-medium text-pi-text shadow-ring transition-smooth focus:shadow-focus focus:outline-none`}
 			>
 				{!currentValue && <option value="">{currentLabel}</option>}
 				{grouped.map(([prov, list]) => (

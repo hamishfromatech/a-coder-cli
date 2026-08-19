@@ -114,7 +114,7 @@ export function ChangelogModal({ open, onClose }: ChangelogModalProps) {
 
 				<div className="flex-1 overflow-auto px-5 py-4">
 					{releases.length === 0 ? (
-						<p className="py-8 text-center text-[12px] text-pi-text-muted">
+						<p className="py-8 text-center text-xs text-pi-text-muted">
 							No changelog entries found.
 						</p>
 					) : (
@@ -122,24 +122,24 @@ export function ChangelogModal({ open, onClose }: ChangelogModalProps) {
 							{releases.map((release) => (
 								<section key={release.version + (release.date ?? "")}>
 									<div className="flex items-baseline gap-2">
-										<h3 className="text-[14px] font-semibold text-pi-text">
+										<h3 className="text-sm font-semibold text-pi-text">
 											{release.version === "Unreleased"
 												? "In progress"
 												: release.version}
 										</h3>
 										{release.date && (
-											<span className="text-[11px] text-pi-text-faint">{release.date}</span>
+											<span className="text-2xs text-pi-text-faint">{release.date}</span>
 										)}
 									</div>
 
 									{release.groups.length === 0 ? (
-										<p className="mt-1.5 text-[11.5px] text-pi-text-muted">No notable changes.</p>
+										<p className="mt-1.5 text-2xs text-pi-text-muted">No notable changes.</p>
 									) : (
 										<div className="mt-2 space-y-3">
 											{release.groups.map((group) => (
 												<div key={group.heading}>
 													<div
-														className={`text-[11px] font-semibold uppercase tracking-wider ${
+														className={`text-2xs font-semibold uppercase tracking-wider ${
 															GROUP_TONE[group.heading] ?? "text-pi-text-secondary"
 														}`}
 													>
@@ -149,7 +149,7 @@ export function ChangelogModal({ open, onClose }: ChangelogModalProps) {
 														{group.items.map((item, idx) => (
 															<li
 																key={idx}
-																className="flex gap-2 text-[12px] leading-relaxed text-pi-text-secondary"
+																className="flex gap-2 text-xs leading-relaxed text-pi-text-secondary"
 															>
 																<span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-pi-text-faint" />
 																<span>{item}</span>
@@ -170,7 +170,7 @@ export function ChangelogModal({ open, onClose }: ChangelogModalProps) {
 					<button
 						type="button"
 						onClick={onClose}
-						className="rounded-md px-3 py-1.5 text-[12px] text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text"
+						className="rounded-md px-3 py-1.5 text-xs text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text"
 					>
 						Close
 					</button>

@@ -77,7 +77,7 @@ export function MemoryModal({ open, onClose }: MemoryModalProps) {
 							<h2 className="text-[15px] font-semibold tracking-tight text-pi-text">
 								Memory
 							</h2>
-							<p className="text-[11px] text-pi-text-muted">
+							<p className="text-2xs text-pi-text-muted">
 								Persistent notes shared across every workspace.
 							</p>
 						</div>
@@ -115,14 +115,14 @@ export function MemoryModal({ open, onClose }: MemoryModalProps) {
 				<div className="flex items-center justify-between border-t border-pi-border px-4 py-3">
 					<div className="min-w-0">
 						{error ? (
-							<span className="text-[12px] text-pi-error">{error}</span>
+							<span className="text-xs text-pi-error">{error}</span>
 						) : saved ? (
-							<span className="flex items-center gap-1 text-[12px] text-pi-success">
+							<span className="flex items-center gap-1 text-xs text-pi-success">
 								<Check className="h-3.5 w-3.5" />
 								Saved
 							</span>
 						) : (
-							<span className="text-[11px] text-pi-text-faint">
+							<span className="text-2xs text-pi-text-faint">
 								Stored in ~/.a-coder-cli/MEMORY.md
 							</span>
 						)}
@@ -130,7 +130,7 @@ export function MemoryModal({ open, onClose }: MemoryModalProps) {
 					<button
 						onClick={() => void handleSave()}
 						disabled={saving || loading}
-						className="inline-flex items-center gap-1.5 rounded-lg bg-pi-accent px-3 py-1.5 text-[12px] font-medium text-white transition-hover hover:bg-pi-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+						className="inline-flex items-center gap-1.5 rounded-lg bg-pi-accent px-3 py-1.5 text-xs font-medium text-white transition-hover hover:bg-pi-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
 					>
 						{saving ? (
 							<span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />

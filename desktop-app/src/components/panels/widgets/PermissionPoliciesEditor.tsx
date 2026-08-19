@@ -62,7 +62,7 @@ export function PermissionPoliciesEditor({ value, onChange }: Props) {
 				onChange={(v) => updateList("hardDeny", v)}
 			/>
 
-			<div className="rounded-md bg-pi-surface-raised px-3 py-2 text-[11px] text-pi-text-muted shadow-ring">
+			<div className="rounded-md bg-pi-surface-raised px-3 py-2 text-2xs text-pi-text-muted shadow-ring">
 				{RULE_HINT} These rules only apply when{" "}
 				<span className="text-pi-text">Permission mode</span> is set to{" "}
 				<span className="font-mono text-pi-text">auto</span>.
@@ -114,21 +114,21 @@ function RuleListEditor({
 			<div className="flex items-center gap-2 border-b border-pi-border px-3 py-2">
 				{icon}
 				<div>
-					<h4 className="text-[12px] font-medium text-pi-text">{title}</h4>
-					<p className="text-[10.5px] text-pi-text-muted">{hint}</p>
+					<h4 className="text-xs font-medium text-pi-text">{title}</h4>
+					<p className="text-3xs text-pi-text-muted">{hint}</p>
 				</div>
 			</div>
 
 			<div className="space-y-2 px-3 py-2.5">
 				{values.length === 0 && (
-					<p className="text-[11px] text-pi-text-faint">No rules yet.</p>
+					<p className="text-2xs text-pi-text-faint">No rules yet.</p>
 				)}
 				{values.map((rule, idx) => (
 					<div
 						key={`${rule}-${idx}`}
 						className="flex items-center justify-between gap-2 rounded-md bg-pi-bg px-2 py-1 shadow-ring"
 					>
-						<code className="truncate text-[11.5px] text-pi-text">{rule}</code>
+						<code className="truncate text-2xs text-pi-text">{rule}</code>
 						<button
 							type="button"
 							onClick={() => removeRule(idx)}
@@ -152,12 +152,12 @@ function RuleListEditor({
 						onChange={(e) => setDraft(e.target.value)}
 						placeholder={placeholder ?? "Add rule"}
 						spellCheck={false}
-						className="min-w-0 flex-1 rounded-md bg-pi-bg px-2.5 py-1.5 text-[11.5px] text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none"
+						className="min-w-0 flex-1 rounded-md bg-pi-bg px-2.5 py-1.5 text-2xs text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none"
 					/>
 					<button
 						type="submit"
 						disabled={!draft.trim()}
-						className="inline-flex h-7 items-center gap-1 rounded-md bg-pi-surface-overlay px-2 text-[11.5px] font-medium text-pi-text transition-hover active-press hover:bg-pi-surface-raised disabled:opacity-50"
+						className="inline-flex h-7 items-center gap-1 rounded-md bg-pi-surface-overlay px-2 text-2xs font-medium text-pi-text transition-hover active-press hover:bg-pi-surface-raised disabled:opacity-50"
 					>
 						<Plus className="h-3 w-3" />
 						Add
