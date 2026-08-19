@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, Api, Model } from "@earendil-works/pi-ai";
 import type { MessageDeliveryMode } from "../lib/settings.types";
+import { pickLoadingVerb } from "../lib/loading-verbs";
 
 export type PermissionMode = "ask" | "allow" | "read-only" | "auto";
 
@@ -55,6 +56,7 @@ export interface SessionState {
 	messages: AgentMessage[];
 	steering: string[];
 	followUp: string[];
+	streamingVerb: string;
 	/** Commands returned by `rpc.getCommands()` — extension/skill/prompt slash commands. */
 	availableCommands: Array<{
 		name: string;
@@ -79,6 +81,7 @@ export interface SessionState {
 	setAutoCompactionEnabled: (enabled: boolean) => void;
 	setSteeringMode: (mode: MessageDeliveryMode) => void;
 	setFollowUpMode: (mode: MessageDeliveryMode) => void;
+	setStreamingVerb: (verb: string) => void;
 	setMessageCount: (n: number) => void;
 	setPendingMessageCount: (n: number) => void;
 	setContextUsage: (usage: ContextUsage | null) => void;
@@ -123,6 +126,7 @@ export const useSessionStore = create<SessionState>((set) => ({
 	messages: [],
 	steering: [],
 	followUp: [],
+	streamingVerb: pickLoadingVerb(),
 	availableCommands: [],
 	setAvailableCommands: (availableCommands) => set({ availableCommands }),
 	setStatus: (status, error = null) => set({ status, error: status === "error" ? error : null }),
@@ -139,6 +143,7 @@ export const useSessionStore = create<SessionState>((set) => ({
 	setAutoCompactionEnabled: (autoCompactionEnabled) => set({ autoCompactionEnabled }),
 	setSteeringMode: (steeringMode) => set({ steeringMode }),
 	setFollowUpMode: (followUpMode) => set({ followUpMode }),
+	setStreamingVerb: (streamingVerb) => set({ streamingVerb }),
 	setMessageCount: (messageCount) => set({ messageCount }),
 	setPendingMessageCount: (pendingMessageCount) => set({ pendingMessageCount }),
 	setContextUsage: (contextUsage) => set({ contextUsage }),
@@ -161,6 +166,7 @@ export const useSessionStore = create<SessionState>((set) => ({
 			messages: [],
 			steering: [],
 			followUp: [],
+			streamingVerb: pickLoadingVerb(),
 			sessionName: null,
 			sessionId: null,
 			sessionFile: null,

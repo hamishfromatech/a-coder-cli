@@ -60,7 +60,7 @@ const MODE_META: Record<
 };
 
 export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
-	const { status, error, isStreaming, thinkingLevel, permissionMode, contextUsage } = useSessionStore();
+	const { status, error, isStreaming, thinkingLevel, permissionMode, contextUsage, streamingVerb } = useSessionStore();
 	const { stats } = useStatsStore();
 
 	const projectName = projectPath
@@ -126,7 +126,7 @@ export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
 							<span className="pi-dot h-1 w-1 rounded-full bg-pi-accent" />
 							<span className="pi-dot h-1 w-1 rounded-full bg-pi-accent" />
 						</span>
-						<span className="font-medium uppercase tracking-wide">Streaming</span>
+						<span className="font-medium uppercase tracking-wide">{streamingVerb}</span>
 					</div>
 				)}
 

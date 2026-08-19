@@ -115,6 +115,7 @@ import { ExtensionInputComponent } from "./components/extension-input.ts";
 import { ExtensionSelectorComponent } from "./components/extension-selector.ts";
 import { FooterComponent } from "./components/footer.ts";
 import { formatKeyText, keyDisplayText, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.ts";
+import { formatLoadingMessage, pickLoadingVerb } from "./components/loading-verbs.ts";
 import { LoginDialogComponent } from "./components/login-dialog.ts";
 import { ModelSelectorComponent } from "./components/model-selector.ts";
 import { type AuthSelectorProvider, OAuthSelectorComponent } from "./components/oauth-selector.ts";
@@ -308,7 +309,7 @@ export class InteractiveMode {
 	private workingMessage: string | undefined = undefined;
 	private workingVisible = true;
 	private workingIndicatorOptions: WorkingIndicatorOptions | undefined = undefined;
-	private readonly defaultWorkingMessage = "Working...";
+	private currentWorkingVerb = pickLoadingVerb();
 	private readonly defaultHiddenThinkingLabel = "Thinking...";
 	private hiddenThinkingLabel = this.defaultHiddenThinkingLabel;
 
@@ -1800,7 +1801,7 @@ export class InteractiveMode {
 			this.showStatusIndicator(
 				new WorkingStatusIndicator(
 					this.ui,
-					this.workingMessage ?? this.defaultWorkingMessage,
+					this.workingMessage ?? this.currentWorkingVerb,
 					this.workingIndicatorOptions,
 				),
 			);
@@ -1912,9 +1913,7 @@ export class InteractiveMode {
 		this.workingVisible = true;
 		this.setWorkingIndicator();
 		if (this.activeStatusIndicator?.kind === "working") {
-			this.activeStatusIndicator.setMessage(
-				`${this.defaultWorkingMessage} (${keyText("app.interrupt")} to interrupt)`,
-			);
+			this.activeStatusIndicator.setMessage(formatLoadingMessage(this.currentWorkingVerb, keyText("app.interrupt")));
 		}
 		this.setHiddenThinkingLabel();
 	}
@@ -2079,7 +2078,7 @@ export class InteractiveMode {
 			setWorkingMessage: (message) => {
 				this.workingMessage = message;
 				if (this.activeStatusIndicator?.kind === "working") {
-					this.activeStatusIndicator.setMessage(message ?? this.defaultWorkingMessage);
+					this.activeStatusIndicator.setMessage(message ?? this.currentWorkingVerb);
 				}
 			},
 			setWorkingVisible: (visible) => this.setWorkingVisible(visible),
@@ -2793,6 +2792,7 @@ export class InteractiveMode {
 		switch (event.type) {
 			case "agent_start":
 				this.pendingTools.clear();
+				this.currentWorkingVerb = pickLoadingVerb();
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(true);
 				}
@@ -2806,7 +2806,7 @@ export class InteractiveMode {
 					this.showStatusIndicator(
 						new WorkingStatusIndicator(
 							this.ui,
-							this.workingMessage ?? this.defaultWorkingMessage,
+							this.workingMessage ?? this.currentWorkingVerb,
 							this.workingIndicatorOptions,
 						),
 					);

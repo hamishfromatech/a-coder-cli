@@ -59,6 +59,7 @@ export function Composer() {
 		cwd,
 		steering,
 		followUp,
+		streamingVerb,
 	} = useSessionStore();
 	const connected = status === "connected";
 	const canSend = text.trim().length > 0 && connected;
@@ -565,7 +566,7 @@ export function Composer() {
 					</span>
 				</div>
 				<span className="font-mono uppercase tracking-wide opacity-70">
-					{isStreaming ? "● streaming" : connected ? "ready" : "offline"}
+					{isStreaming ? `● ${streamingVerb.toLowerCase()}` : connected ? "ready" : "offline"}
 				</span>
 			</div>
 		</div>

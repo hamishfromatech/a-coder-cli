@@ -6,6 +6,7 @@ import { playCompletionSound } from "./lib/completion-sound";
 import { triggerHaptic } from "./lib/haptics";
 import { rafCoalesce } from "./lib/raf-coalesce";
 import { synthesize, playAudioBlob, type VoiceSettings } from "./lib/voice";
+import { pickLoadingVerb } from "./lib/loading-verbs";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { useSessionStore } from "./stores/session-store";
 import { useSettingsStore } from "./stores/settings-store";
@@ -125,6 +126,7 @@ export default function App() {
 		setAutoCompactionEnabled,
 		setSteeringMode,
 		setFollowUpMode,
+		setStreamingVerb,
 		setMessageCount,
 		setPendingMessageCount,
 		setContextUsage,
@@ -362,6 +364,7 @@ export default function App() {
 					switch (event.type) {
 						case "agent_start":
 							setIsStreaming(true);
+							setStreamingVerb(pickLoadingVerb());
 							// A new turn started — forget any abort the user requested
 							// during the previous turn.
 							useSessionStore.getState().setAbortRequested(false);
@@ -465,20 +468,31 @@ export default function App() {
 							})();
 							break;
 						}
+						case "session_info_changed":
+							setSessionName(event.name ?? null);
+							break;
 						case "message_start":
 							if (loadingHistoryRef.current) break;
 							if (event.message.role === "user") {
 								// Avoid double-appending the same user message if the engine echoes it
 								// after it was already injected by the composer.
 								const messages = useSessionStore.getState().messages;
+								const userText = getUserMessageText(
+									event.message as import("@earendil-works/pi-ai").UserMessage,
+								);
 								const isDuplicateUser = messages.some(
 									(m) =>
 										m.role === "user" &&
 										getUserMessageText(m as import("@earendil-works/pi-ai").UserMessage) ===
-											getUserMessageText(event.message as import("@earendil-works/pi-ai").UserMessage),
+											userText,
 								);
 								if (!isDuplicateUser) {
 									appendMessage(event.message);
+									// Name new sessions from the first non-trivial user message.
+									if (!useSessionStore.getState().sessionName) {
+										const autoName = deriveSessionName(userText);
+										if (autoName) void rpc.setSessionName(autoName);
+									}
 								}
 							}
 							// Assistant messages are created on the first content update so we
@@ -617,6 +631,7 @@ export default function App() {
 			setTree,
 			setStats,
 			setIsStreaming,
+			setStreamingVerb,
 			setAvailableCommands,
 			appendMessage,
 			setMessages,
@@ -1179,6 +1194,14 @@ function getUserMessageText(message: import("@earendil-works/pi-ai").UserMessage
 	if (typeof content === "string") return content;
 	if (!Array.isArray(content)) return "";
 	return content.map((c) => (c.type === "text" ? c.text : "")).join("");
+}
+
+/** Generate a concise session name from the first user message. */
+function deriveSessionName(text: string): string | null {
+	const normalized = text.replace(/[\r\n]+/g, " ").trim();
+	if (normalized.length < 3) return null;
+	const maxLen = 50;
+	return normalized.length > maxLen ? `${normalized.slice(0, maxLen).trimEnd()}…` : normalized;
 }
 
 function hasAssistantContent(message: import("@earendil-works/pi-ai").AssistantMessage): boolean {
