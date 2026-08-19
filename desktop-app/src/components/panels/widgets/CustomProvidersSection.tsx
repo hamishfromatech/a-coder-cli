@@ -10,6 +10,10 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useId, useState } from "react";
 import * as rpc from "../../../lib/rpc";
+import { cn } from "../../../lib/cn";
+import { Button, IconButton } from "../../ui/Button";
+import { Input, Select } from "../../ui/Input";
+import { Card } from "../../ui/Card";
 
 // ============================================================================
 // Types — mirror the models.json schema in
@@ -272,29 +276,21 @@ export function CustomProvidersSection() {
 			</div>
 
 			<div className="flex items-center gap-2">
-				<button
-					type="button"
-					onClick={addProvider}
-					className="inline-flex h-8 items-center gap-1.5 rounded-md bg-pi-surface-overlay px-3 text-xs font-medium text-pi-text transition-hover active-press hover:bg-pi-surface-raised"
-				>
-					<Plus className="h-3.5 w-3.5" />
+				<Button variant="secondary" size="md" icon={Plus} onClick={addProvider}>
 					Add AI service
-				</button>
-				<button
-					type="button"
+				</Button>
+				<Button
+					variant="primary"
+					size="md"
+					loading={saving}
 					onClick={() => void persist(config)}
 					disabled={!dirty || saving}
-					className="inline-flex h-8 items-center gap-1.5 rounded-md bg-pi-accent px-3 text-xs font-semibold text-white transition-hover active-press hover:bg-pi-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
 				>
-					{saving ? "Saving…" : "Save"}
-				</button>
-				<button
-					type="button"
-					onClick={() => void reload()}
-					className="inline-flex h-8 items-center rounded-md px-2 text-xs text-pi-text-muted transition-hover active-press hover:bg-pi-surface-raised"
-				>
+					Save
+				</Button>
+				<Button variant="ghost" size="md" onClick={() => void reload()}>
 					Revert
-				</button>
+				</Button>
 			</div>
 
 			<div className="rounded-md bg-pi-surface-raised px-3 py-2.5 text-2xs text-pi-text-muted shadow-ring">
@@ -389,24 +385,27 @@ function ProviderEditor({
 					</div>
 				</div>
 				<div className="flex shrink-0 items-center gap-1.5">
-					<button
-						type="button"
+					<Button
+						variant="secondary"
+						size="sm"
+						icon={ChevronDown}
+						className="gap-1"
 						onClick={() => setExpanded((v) => !v)}
-						className="inline-flex h-7 items-center gap-1 rounded-md bg-pi-surface-overlay px-2 text-2xs font-medium text-pi-text transition-hover active-press hover:bg-pi-surface-raised"
 					>
-						<ChevronDown
-							className={`h-3 w-3 transition-transform ${expanded ? "rotate-180" : ""}`}
-						/>
+						<span className={cn("transition-transform", expanded && "rotate-180")}>
+							<ChevronDown className="h-3 w-3" />
+						</span>
 						{expanded ? "Collapse" : "Edit"}
-					</button>
-					<button
-						type="button"
+					</Button>
+					<IconButton
+						variant="ghost"
+						size="sm"
+						icon={Trash2}
 						onClick={onRemove}
-						className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-pi-surface-overlay text-pi-text-muted transition-hover active-press hover:bg-pi-error-soft hover:text-pi-error"
-						title="Remove service" aria-label="Remove service"
-					>
-						<Trash2 className="h-3.5 w-3.5" />
-					</button>
+						aria-label="Remove service"
+						title="Remove service"
+						className="hover:bg-pi-error-soft hover:text-pi-error"
+					/>
 				</div>
 			</div>
 
@@ -486,23 +485,24 @@ function ProviderEditor({
 								AI models
 							</h4>
 							<div className="flex items-center gap-1.5">
-								<button
-									type="button"
+								<Button
+									variant="secondary"
+									size="sm"
+									icon={RefreshCw}
+									loading={fetchingModels}
 									onClick={fetchModels}
 									disabled={!canFetch || fetchingModels}
-									className="inline-flex h-6 items-center gap-1 rounded bg-pi-surface-overlay px-2 text-3xs font-medium text-pi-text transition-hover active-press hover:bg-pi-surface-raised disabled:cursor-not-allowed disabled:opacity-50"
 								>
-									<RefreshCw className={`h-3 w-3 ${fetchingModels ? "animate-spin" : ""}`} />
 									{fetchingModels ? "Fetching…" : "Fetch from endpoint"}
-								</button>
-								<button
-									type="button"
+								</Button>
+								<Button
+									variant="secondary"
+									size="sm"
+									icon={Plus}
 									onClick={onAddModel}
-									className="inline-flex h-6 items-center gap-1 rounded bg-pi-surface-overlay px-2 text-3xs font-medium text-pi-text transition-hover active-press hover:bg-pi-surface-raised"
 								>
-									<Plus className="h-3 w-3" />
 									Add AI model
-								</button>
+								</Button>
 							</div>
 						</div>
 
@@ -545,7 +545,7 @@ function ModelEditor({
 	const [expanded, setExpanded] = useState(false);
 
 	return (
-		<div className="rounded-md bg-pi-bg/70 shadow-ring">
+		<Card className="rounded-md bg-pi-bg/70">
 			<div className="flex items-center gap-2 px-3 py-2">
 				<button
 					type="button"
@@ -564,14 +564,15 @@ function ModelEditor({
 						</span>
 					)}
 				</button>
-				<button
-					type="button"
+				<IconButton
+					variant="ghost"
+					size="sm"
+					icon={X}
 					onClick={onRemove}
-					className="inline-flex h-6 w-6 items-center justify-center rounded text-pi-text-muted transition-hover hover:bg-pi-error-soft hover:text-pi-error"
-					title="Remove AI model" aria-label="Remove AI model"
-				>
-					<X className="h-3 w-3" />
-				</button>
+					aria-label="Remove AI model"
+					title="Remove AI model"
+					className="hover:bg-pi-error-soft hover:text-pi-error"
+				/>
 			</div>
 			{expanded && (
 				<div className="grid grid-cols-2 gap-2 border-t border-pi-border px-3 py-2.5">
@@ -609,7 +610,7 @@ function ModelEditor({
 					</label>
 				</div>
 			)}
-		</div>
+		</Card>
 	);
 }
 
@@ -636,15 +637,14 @@ function LabeledInput({
 			<label htmlFor={id} className="text-3xs font-semibold uppercase tracking-wider text-pi-text-faint">
 				{label}
 			</label>
-			<input
+			<Input
 				id={id}
 				type="text"
 				value={value}
 				placeholder={placeholder}
+				scale="sm"
+				mono={mono}
 				onChange={(e) => onChange(e.target.value)}
-				spellCheck={false}
-				autoComplete="off"
-				className={`w-full rounded-md bg-pi-surface-raised py-1.5 px-3 text-2xs text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none ${mono ? "font-mono" : ""}`}
 			/>
 		</div>
 	);
@@ -665,13 +665,14 @@ function LabeledNumberInput({
 			<label htmlFor={id} className="text-3xs font-semibold uppercase tracking-wider text-pi-text-faint">
 				{label}
 			</label>
-			<input
+			<Input
 				id={id}
 				type="number"
 				value={value}
 				min={1}
+				scale="sm"
+				mono
 				onChange={(e) => onChange(Number(e.target.value) || 0)}
-				className="w-full rounded-md bg-pi-surface-raised py-1.5 px-3 text-2xs font-mono text-pi-text shadow-ring focus:shadow-focus focus:outline-none"
 			/>
 		</div>
 	);
@@ -694,18 +695,18 @@ function LabeledSelect({
 			<label htmlFor={id} className="text-3xs font-semibold uppercase tracking-wider text-pi-text-faint">
 				{label}
 			</label>
-			<select
+			<Select
 				id={id}
 				value={value}
+				scale="sm"
 				onChange={(e) => onChange(e.target.value)}
-				className="w-full rounded-md bg-pi-surface-raised py-1.5 px-3 text-2xs text-pi-text shadow-ring focus:shadow-focus focus:outline-none"
 			>
 				{options.map((o) => (
 					<option key={o.value} value={o.value}>
 						{o.label}
 					</option>
 				))}
-			</select>
+			</Select>
 		</div>
 	);
 }
