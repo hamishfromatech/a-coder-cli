@@ -2,6 +2,10 @@ import { Mic, Volume2, Eye, EyeOff, Loader2, Check, AlertCircle } from "lucide-r
 import { useState } from "react";
 import { useSettingsStore } from "../../../stores/settings-store";
 import { createMicRecorder, transcribe, synthesize, playAudioBlob, type VoiceSettings } from "../../../lib/voice";
+import { Button } from "../../ui/Button";
+import { IconButton } from "../../ui/Button";
+import { Input } from "../../ui/Input";
+import { Switch } from "../../ui/Switch";
 
 /**
  * Voice mode settings. Users supply OpenAI-compatible STT/TTS endpoints so
@@ -10,16 +14,7 @@ import { createMicRecorder, transcribe, synthesize, playAudioBlob, type VoiceSet
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
 	return (
-		<button
-			type="button"
-			onClick={() => onChange(!checked)}
-			className={`relative h-4 w-7 shrink-0 rounded-full transition-smooth active-press ${checked ? "bg-pi-accent" : "bg-pi-surface-overlay"}`}
-			aria-pressed={checked}
-		>
-			<span
-				className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-smooth ${checked ? "translate-x-3.5" : "translate-x-0.5"}`}
-			/>
-		</button>
+		<Switch size="sm" checked={checked} onChange={() => onChange(!checked)} />
 	);
 }
 
@@ -46,24 +41,27 @@ function LabeledInput({
 		<label className="block space-y-1">
 			<span className="text-3xs font-semibold uppercase tracking-wider text-pi-text-faint">{label}</span>
 			<div className="relative">
-				<input
+				<Input
 					type={isPassword && !show ? "password" : "text"}
 					value={value}
 					onChange={(e) => onChange(e.target.value)}
 					placeholder={placeholder}
 					spellCheck={false}
 					autoComplete="off"
-					className={`w-full rounded-md bg-pi-surface-raised py-1.5 pl-3 ${isPassword ? "pr-9" : "pr-3"} ${mono ? "font-mono" : ""} text-2xs text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none`}
+					scale="sm"
+					mono={mono}
+					className={isPassword ? "pr-9" : undefined}
 				/>
 				{isPassword && (
-					<button
-						type="button"
+					<IconButton
+						variant="ghost"
+						size="sm"
+						icon={show ? EyeOff : Eye}
 						onClick={() => setShow((s) => !s)}
-						className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-pi-text-faint hover:text-pi-text"
 						aria-label={show ? "Hide" : "Show"}
-					>
-						{show ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-					</button>
+						className="absolute right-1 top-1/2 -translate-y-1/2 text-pi-text-faint hover:text-pi-text"
+						style={{ transform: "translateY(-50%)" }}
+					/>
 				)}
 			</div>
 			{hint && <span className="block text-3xs text-pi-text-faint">{hint}</span>}
@@ -71,15 +69,17 @@ function LabeledInput({
 	);
 }
 
-function Card({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
+import { Card, CardHeader, CardBody } from "../../ui/Card";
+
+function SectionCard({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
 	return (
-		<section className="overflow-hidden rounded-lg bg-pi-surface-raised shadow-ring">
-			<header className="flex items-center gap-2 border-b border-pi-border px-4 py-2.5">
+		<Card>
+			<CardHeader className="flex items-center gap-2 py-2.5">
 				{icon}
 				<h3 className="text-xs font-semibold text-pi-text">{title}</h3>
-			</header>
-			<div className="space-y-3 px-4 py-3">{children}</div>
-		</section>
+			</CardHeader>
+			<CardBody className="space-y-3 py-3">{children}</CardBody>
+		</Card>
 	);
 }
 
@@ -142,7 +142,7 @@ export function VoiceSection() {
 				<Toggle checked={s.voiceEnabled} onChange={s.setVoiceEnabled} />
 			</div>
 
-			<Card title="Speech-to-text" icon={<Mic className="h-4 w-4 text-pi-text-muted" />}>
+			<SectionCard title="Speech-to-text" icon={<Mic className="h-4 w-4 text-pi-text-muted" />}>
 				<LabeledInput
 					label="Base URL"
 					value={s.voiceSttBaseUrl}
@@ -164,9 +164,9 @@ export function VoiceSection() {
 					onChange={s.setVoiceSttModel}
 					placeholder="whisper-1"
 				/>
-			</Card>
+			</SectionCard>
 
-			<Card title="Text-to-speech" icon={<Volume2 className="h-4 w-4 text-pi-text-muted" />}>
+			<SectionCard title="Text-to-speech" icon={<Volume2 className="h-4 w-4 text-pi-text-muted" />}>
 				<LabeledInput
 					label="Base URL"
 					value={s.voiceTtsBaseUrl}
@@ -186,9 +186,9 @@ export function VoiceSection() {
 					<LabeledInput label="Model" value={s.voiceTtsModel} onChange={s.setVoiceTtsModel} placeholder="gpt-4o-mini-tts" />
 					<LabeledInput label="Voice" value={s.voiceTtsVoice} onChange={s.setVoiceTtsVoice} placeholder="alloy" />
 				</div>
-			</Card>
+			</SectionCard>
 
-			<Card title="Behaviour" icon={<Volume2 className="h-4 w-4 text-pi-text-muted" />}>
+			<SectionCard title="Behaviour" icon={<Volume2 className="h-4 w-4 text-pi-text-muted" />}>
 				<div className="flex items-center justify-between">
 					<div className="pr-4">
 						<p className="text-xs font-medium text-pi-text">Auto-send transcribed text</p>
@@ -203,18 +203,19 @@ export function VoiceSection() {
 					</div>
 					<Toggle checked={s.voiceAutoSpeak} onChange={s.setVoiceAutoSpeak} />
 				</div>
-			</Card>
+			</SectionCard>
 
 			<div className="space-y-2">
-				<button
-					type="button"
+				<Button
+					variant="primary"
+					size="md"
+					icon={testing ? Loader2 : Mic}
+					loading={testing}
 					onClick={() => void runTest()}
 					disabled={testing || !s.voiceSttBaseUrl || !s.voiceTtsBaseUrl}
-					className="inline-flex h-8 items-center gap-1.5 rounded-md bg-pi-accent px-3 text-xs font-semibold text-white transition-hover active-press hover:bg-pi-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
 				>
-					{testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mic className="h-3.5 w-3.5" />}
 					{testing ? "Listening…" : "Test voice (2.5s)"}
-				</button>
+				</Button>
 				{testStatus.kind === "ok" && (
 					<p className="flex items-start gap-1.5 text-2xs text-pi-success">
 						<Check className="mt-0.5 h-3.5 w-3.5 shrink-0" />
