@@ -55,6 +55,7 @@ import { ResourcesSection } from "./panels/widgets/ResourcesSection";
 import { VoiceSection } from "./panels/widgets/VoiceSection";
 import { CompletionSoundPicker } from "./panels/widgets/CompletionSoundPicker";
 import { Switch } from "./ui/Switch";
+import { Button, IconButton } from "./ui/Button";
 
 // ============================================================================
 // Nav configuration
@@ -745,26 +746,28 @@ function AdvancedJsonEditor({
 			)}
 
 			<div className="flex flex-wrap gap-2">
-				<button
-					type="button"
+				<Button
+					variant="primary"
+					size="sm"
+					icon={ChevronRight}
 					onClick={() => void save()}
-					className={`inline-flex items-center gap-1.5 rounded-md bg-pi-accent px-3 py-1.5 text-xs font-medium text-white shadow-ring-accent transition-hover active-press hover:bg-pi-accent-hover`}
 				>
 					Save raw JSON
-					<ChevronRight className="h-3 w-3" />
-				</button>
+				</Button>
 
-				<button
-					type="button"
+				<Button
+					variant="secondary"
+					size="sm"
+					icon={RotateCcw}
 					onClick={() => void persistCliSettings(scope, {}).then(onSaved)}
-					className={`inline-flex items-center gap-1.5 rounded-md bg-pi-surface-raised px-3 py-1.5 text-xs font-medium text-pi-text shadow-ring transition-hover active-press hover:bg-pi-surface-overlay`}
 				>
 					Reset to defaults
-					<RotateCcw className="h-3 w-3" />
-				</button>
+				</Button>
 
-				<button
-					type="button"
+				<Button
+					variant="secondary"
+					size="sm"
+					icon={FileText}
 					onClick={() =>
 						rpc
 							.openInEditor(
@@ -774,14 +777,13 @@ function AdvancedJsonEditor({
 							)
 							.catch(() => {})
 					}
-					className={`inline-flex items-center gap-1.5 rounded-md bg-pi-surface-raised px-3 py-1.5 text-xs font-medium text-pi-text shadow-ring transition-hover active-press hover:bg-pi-surface-overlay`}
 				>
 					Open in editor
-					<FileText className="h-3 w-3" />
-				</button>
+				</Button>
 
-				<button
-					type="button"
+				<Button
+					variant="secondary"
+					size="sm"
 					onClick={() =>
 						rpc
 							.revealInFileManager(
@@ -791,10 +793,9 @@ function AdvancedJsonEditor({
 							)
 							.catch(() => {})
 					}
-					className={`inline-flex items-center gap-1.5 rounded-md bg-pi-surface-raised px-3 py-1.5 text-xs font-medium text-pi-text shadow-ring transition-hover active-press hover:bg-pi-surface-overlay`}
 				>
 					Reveal in Finder
-				</button>
+				</Button>
 			</div>
 		</div>
 	);
@@ -820,21 +821,20 @@ function FirstLaunchBanner({ onDismiss, onGoToAccount }: { onDismiss: () => void
 				</p>
 			</div>
 			<div className="flex shrink-0 items-center gap-1.5">
-				<button
-					type="button"
+				<Button
+					variant="primary"
+					size="sm"
 					onClick={onGoToAccount}
-					className={`rounded-md bg-pi-accent px-3 py-1 text-2xs font-semibold text-white transition-hover active-press hover:bg-pi-accent-hover`}
 				>
 					Sign in
-				</button>
-				<button
-					type="button"
+				</Button>
+				<IconButton
+					variant="ghost"
+					size="sm"
+					icon={X}
 					onClick={onDismiss}
-					className={`rounded-md p-1 text-pi-text-muted transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text`}
 					aria-label="Dismiss"
-				>
-					<X className="h-3.5 w-3.5" />
-				</button>
+				/>
 			</div>
 		</div>
 	);
@@ -1069,14 +1069,13 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 									className={`w-44 rounded-md bg-pi-surface-raised py-1.5 pl-8 pr-3 text-xs text-pi-text placeholder:text-pi-text-faint shadow-ring transition-smooth focus:shadow-focus focus:outline-none`}
 								/>
 							</div>
-							<button
-								type="button"
+							<IconButton
+								variant="ghost"
+								size="md"
+								icon={X}
 								onClick={onClose}
-								className={`rounded p-1.5 text-pi-text-muted transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none`}
 								aria-label="Close"
-							>
-								<X className="h-4 w-4" />
-							</button>
+							/>
 						</div>
 					</div>
 
@@ -1145,13 +1144,9 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 						<span className="text-2xs text-pi-text-faint">
 							Changes save automatically.
 						</span>
-						<button
-							type="button"
-							onClick={onClose}
-							className={`rounded-md px-3 py-1.5 text-xs text-pi-text-muted transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text`}
-						>
+						<Button variant="ghost" size="md" onClick={onClose}>
 							Close
-						</button>
+						</Button>
 					</div>
 				</div>
 			</div>

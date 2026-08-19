@@ -6,6 +6,7 @@ import {
 } from "../../../lib/completion-sound";
 import { previewHaptic, triggerHaptic } from "../../../lib/haptics";
 import { useSettingsStore } from "../../../stores/settings-store";
+import { Button } from "../../ui/Button";
 import { Switch } from "../../ui/Switch";
 
 /**
@@ -62,13 +63,9 @@ export function CompletionSoundPicker() {
 					<ChevronRight className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 rotate-90 text-pi-text-muted transition-smooth" />
 				</div>
 
-				<button
-					type="button"
-					onClick={previewSound}
-					className="inline-flex items-center gap-1.5 rounded-md bg-pi-surface-raised px-3 py-1.5 text-xs font-medium text-pi-text shadow-ring transition-hover active-press hover:bg-pi-surface-overlay"
-				>
+				<Button variant="secondary" size="sm" onClick={previewSound}>
 					Preview
-				</button>
+				</Button>
 			</div>
 
 			<div className="flex items-center gap-3">
@@ -101,16 +98,16 @@ export function CompletionSoundPicker() {
 						onChange={() => setHapticsEnabled(!hapticsEnabled)}
 					/>
 				</div>
-				<button
-					type="button"
+				<Button
+					variant="secondary"
+					size="sm"
 					onClick={() => {
 						triggerHaptic("crisp");
 						previewHaptic("streamDone");
 					}}
-					className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-pi-surface-raised px-3 py-1.5 text-xs font-medium text-pi-text shadow-ring transition-hover active-press hover:bg-pi-surface-overlay"
 				>
 					Try it
-				</button>
+				</Button>
 			</div>
 			<div className="h-px bg-pi-border" />
 

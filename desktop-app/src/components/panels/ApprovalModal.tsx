@@ -2,6 +2,7 @@ import { Shield, X, Check, AlertTriangle, MessageSquare, FileText } from "lucide
 import { useRef, useState, useEffect } from "react";
 import { useModalA11y } from "../../hooks/useModalA11y";
 import type { UiRequest } from "../../stores/session-store";
+import { Button } from "../ui/Button";
 
 export interface ApprovalModalProps {
 	request: UiRequest;
@@ -136,20 +137,22 @@ export function ApprovalModal({ request, onResolve }: ApprovalModalProps) {
 
 				{/* Footer */}
 				<div className="flex items-center justify-end gap-2 border-t border-pi-border px-4 py-3">
-					<button
+					<Button
+						variant="ghost-danger"
+						size="md"
+						icon={AlertTriangle}
 						onClick={handleDeny}
-						className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium text-pi-text-secondary transition-hover active-press hover:bg-pi-error-soft hover:text-pi-error focus-visible:shadow-focus focus-visible:outline-none"
 					>
-						<AlertTriangle className="h-3.5 w-3.5" />
 						Deny
-					</button>
-					<button
+					</Button>
+					<Button
+						variant="primary"
+						size="md"
+						icon={Check}
 						onClick={handleAllow}
-						className="inline-flex items-center gap-1.5 rounded-lg bg-pi-accent px-3 py-2 text-xs font-medium text-white shadow-ring-accent transition-hover active-press hover:bg-pi-accent-hover focus-visible:shadow-focus focus-visible:outline-none"
 					>
-						<Check className="h-3.5 w-3.5" />
 						Allow
-					</button>
+					</Button>
 				</div>
 			</div>
 		</div>

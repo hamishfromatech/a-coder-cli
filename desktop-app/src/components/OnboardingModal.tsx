@@ -2,6 +2,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { FolderOpen, Sparkles } from "lucide-react";
 import { useRef, useState } from "react";
 import { useModalA11y } from "../hooks/useModalA11y";
+import { Button } from "./ui/Button";
 
 export interface OnboardingModalProps {
 	onComplete: (selectedPath: string) => void;
@@ -64,13 +65,15 @@ export function OnboardingModal({ onComplete }: OnboardingModalProps) {
 
 				{/* Folder selection */}
 				<div className="p-5">
-					<button
+					<Button
+						variant="primary"
+						size="lg"
+						icon={FolderOpen}
+						className="w-full"
 						onClick={() => void handlePickFolder()}
-						className="flex w-full items-center justify-center gap-2.5 rounded-lg bg-pi-accent px-4 py-3 text-[13px] font-medium text-white shadow-ring-accent transition-hover active-press hover:bg-pi-accent-hover"
 					>
-						<FolderOpen className="h-4 w-4" />
 						Choose a folder
-					</button>
+					</Button>
 
 					{selectedPath && (
 						<div className="mt-4 rounded-lg bg-pi-surface-raised p-3">
@@ -102,13 +105,14 @@ export function OnboardingModal({ onComplete }: OnboardingModalProps) {
 
 				{/* Footer */}
 				<div className="flex items-center justify-end border-t border-pi-border px-5 py-4">
-					<button
+					<Button
+						variant="primary"
+						size="md"
 						onClick={handleContinue}
 						disabled={!selectedPath}
-						className="rounded-lg bg-pi-accent px-4 py-2 text-xs font-medium text-white transition-hover hover:bg-pi-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
 					>
 						Get started
-					</button>
+					</Button>
 				</div>
 			</div>
 		</div>

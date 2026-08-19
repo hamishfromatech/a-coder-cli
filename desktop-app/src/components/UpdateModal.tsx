@@ -18,6 +18,7 @@ import {
 	relaunchApp,
 	type UpdateInfo,
 } from "../lib/updater";
+import { Button } from "./ui/Button";
 
 export interface UpdateModalProps {
 	/** Update info from the store. */
@@ -174,37 +175,37 @@ export function UpdateModal({ update, onDismiss }: UpdateModalProps) {
 
 				{/* Footer */}
 				<div className="flex items-center justify-end gap-2 border-t border-pi-border px-4 py-3">
-					<button
-						onClick={handleDismiss}
-						className="rounded-lg px-3 py-2 text-xs font-medium text-pi-text-secondary transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
-					>
+					<Button variant="ghost" size="md" onClick={handleDismiss}>
 						Later
-					</button>
+					</Button>
 					{isReady ? (
-						<button
+						<Button
+							variant="primary"
+							size="md"
+							icon={RefreshCw}
 							onClick={handleRelaunch}
-							className="inline-flex items-center gap-1.5 rounded-lg bg-pi-accent px-3 py-2 text-xs font-medium text-white shadow-ring-accent transition-hover active-press hover:bg-pi-accent-hover focus-visible:shadow-focus focus-visible:outline-none"
 						>
-							<RefreshCw className="h-3.5 w-3.5" />
 							Restart to install
-						</button>
+						</Button>
 					) : hasError ? (
-						<button
+						<Button
+							variant="primary"
+							size="md"
+							icon={Download}
 							onClick={handleDownload}
-							className="inline-flex items-center gap-1.5 rounded-lg bg-pi-accent px-3 py-2 text-xs font-medium text-white shadow-ring-accent transition-hover active-press hover:bg-pi-accent-hover focus-visible:shadow-focus focus-visible:outline-none"
 						>
-							<Download className="h-3.5 w-3.5" />
 							Try again
-						</button>
+						</Button>
 					) : (
-						<button
+						<Button
+							variant="primary"
+							size="md"
+							icon={Download}
+							loading={isDownloading}
 							onClick={handleDownload}
-							disabled={isDownloading}
-							className="inline-flex items-center gap-1.5 rounded-lg bg-pi-accent px-3 py-2 text-xs font-medium text-white shadow-ring-accent transition-hover active-press hover:bg-pi-accent-hover focus-visible:shadow-focus focus-visible:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
 						>
-							<Download className="h-3.5 w-3.5" />
 							{isDownloading ? "Downloading..." : "Download update"}
-						</button>
+						</Button>
 					)}
 				</div>
 			</div>
