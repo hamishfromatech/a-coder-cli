@@ -245,11 +245,16 @@ const BEDROCK_PROVIDER_ID = "amazon-bedrock";
 
 const BUILT_IN_MODEL_PROVIDERS = new Set<string>(getProviders());
 
+const KEYLESS_LOCAL_PROVIDERS = new Set<string>(["lm-studio", "llama-cpp"]);
+
 export function isApiKeyLoginProvider(
 	providerId: string,
 	oauthProviderIds: ReadonlySet<string>,
 	builtInProviderIds: ReadonlySet<string> = BUILT_IN_MODEL_PROVIDERS,
 ): boolean {
+	if (KEYLESS_LOCAL_PROVIDERS.has(providerId)) {
+		return false;
+	}
 	if (BUILT_IN_PROVIDER_DISPLAY_NAMES[providerId]) {
 		return true;
 	}

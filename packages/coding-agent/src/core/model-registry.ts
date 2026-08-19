@@ -34,6 +34,9 @@ import { stripJsonComments } from "../utils/json.ts";
 import { normalizePath } from "../utils/paths.ts";
 import type { AuthStatus, AuthStorage } from "./auth-storage.ts";
 import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "./provider-display-names.ts";
+
+const KEYLESS_LOCAL_PROVIDERS = new Set<string>(["lm-studio", "llama-cpp"]);
+
 import {
 	clearConfigValueCache,
 	getConfigValueEnvVarNames,
@@ -688,10 +691,11 @@ export class ModelRegistry {
 
 	/**
 	 * Get only models that have auth configured.
-	 * This is a fast check that doesn't refresh OAuth tokens.
+	 * Keyless local providers (LM Studio, llama.cpp) are treated as configured
+	 * because their auth resolver always returns a no-key credential.
 	 */
 	getAvailable(): Model<Api>[] {
-		return this.models.filter((m) => this.hasConfiguredAuth(m));
+		return this.models.filter((m) => this.hasConfiguredAuth(m) || KEYLESS_LOCAL_PROVIDERS.has(m.provider));
 	}
 
 	/**
