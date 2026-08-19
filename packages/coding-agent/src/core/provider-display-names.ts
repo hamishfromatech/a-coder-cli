@@ -21,6 +21,8 @@ export const BUILT_IN_PROVIDER_DISPLAY_NAMES: Record<string, string> = {
 	"ollama-cloud": "Ollama Cloud",
 	openadapter: "OpenAdapter",
 	nvidia: "NVIDIA NIM",
+	"lm-studio": "LM Studio",
+	"llama-cpp": "llama.cpp",
 	opencode: "OpenCode Zen",
 	"opencode-go": "OpenCode Go",
 	openai: "OpenAI",

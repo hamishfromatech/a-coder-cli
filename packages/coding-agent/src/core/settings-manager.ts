@@ -8,6 +8,11 @@ import { normalizePath, resolvePath } from "../utils/paths.ts";
 import { DEFAULT_HTTP_IDLE_TIMEOUT_MS, parseHttpIdleTimeoutMs } from "./http-dispatcher.ts";
 import type { McpServerConfig } from "./mcp/types.ts";
 
+export interface LocalProviderSettings {
+	lmStudioBaseUrl?: string;
+	llamaCppBaseUrl?: string;
+}
+
 export interface CompactionSettings {
 	enabled?: boolean; // default: true
 	reserveTokens?: number; // default: 16384
@@ -160,6 +165,7 @@ export interface Settings {
 	httpProxy?: string; // Proxy URL applied as HTTP_PROXY and HTTPS_PROXY for Pi-managed HTTP clients
 	httpIdleTimeoutMs?: number; // HTTP header/body idle timeout in milliseconds; 0 disables it
 	websocketConnectTimeoutMs?: number; // WebSocket connect/open handshake timeout in milliseconds; 0 disables it
+	localProviders?: LocalProviderSettings;
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -337,6 +343,7 @@ export class SettingsManager {
 		this.projectSettingsLoadError = projectLoadError;
 		this.errors = [...initialErrors];
 		this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
+		this.applyLocalProviderEnv();
 	}
 
 	/** Create a SettingsManager that loads from files */
@@ -544,6 +551,20 @@ export class SettingsManager {
 		}
 
 		this.settings = deepMergeSettings(this.globalSettings, this.projectSettings);
+		this.applyLocalProviderEnv();
+	}
+
+	/** Apply local-provider base URLs from settings to process.env so the
+	 * built-in LM Studio and llama.cpp providers pick them up. */
+	private applyLocalProviderEnv(): void {
+		const local = this.settings.localProviders;
+		if (!local) return;
+		if (local.lmStudioBaseUrl) {
+			process.env.LM_STUDIO_BASE_URL = local.lmStudioBaseUrl;
+		}
+		if (local.llamaCppBaseUrl) {
+			process.env.LLAMACPP_BASE_URL = local.llamaCppBaseUrl;
+		}
 	}
 
 	/** Apply additional overrides on top of current settings */

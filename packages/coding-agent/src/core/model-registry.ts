@@ -19,6 +19,8 @@ import {
 	type SimpleStreamOptions,
 } from "@earendil-works/pi-ai/compat";
 import { registerOAuthProvider, resetOAuthProviders } from "@earendil-works/pi-ai/oauth";
+import { fetchLlamaCppModels } from "@earendil-works/pi-ai/providers/llama-cpp";
+import { fetchLMStudioModels } from "@earendil-works/pi-ai/providers/lm-studio";
 import { fetchOllamaCloudModels } from "@earendil-works/pi-ai/providers/ollama-cloud";
 import { fetchOllamaContextWindow, looksLikeOllama } from "@earendil-works/pi-ai/providers/ollama-context";
 import { fetchOpenAdapterModels } from "@earendil-works/pi-ai/providers/openadapter";
@@ -370,6 +372,16 @@ export class ModelRegistry {
 	private openadapterLastAttempt = 0;
 	private static readonly OPENADAPTER_REFRESH_MS = 5 * 60 * 1000;
 	private static readonly OPENADAPTER_FAILURE_RETRY_MS = 30 * 1000;
+	private lmStudioRefreshPromise: Promise<void> | undefined;
+	private lmStudioLastSuccess = 0;
+	private lmStudioLastAttempt = 0;
+	private static readonly LM_STUDIO_REFRESH_MS = 2 * 60 * 1000;
+	private static readonly LM_STUDIO_FAILURE_RETRY_MS = 15 * 1000;
+	private llamaCppRefreshPromise: Promise<void> | undefined;
+	private llamaCppLastSuccess = 0;
+	private llamaCppLastAttempt = 0;
+	private static readonly LLAMA_CPP_REFRESH_MS = 2 * 60 * 1000;
+	private static readonly LLAMA_CPP_FAILURE_RETRY_MS = 15 * 1000;
 	// Dynamic context-window lookups (Ollama /api/show). Cached per model so a
 	// reselect within the TTL reuses the value instead of refetching the server.
 	private contextWindowCache: Map<string, { value: number | undefined; fetchedAt: number }> = new Map();
@@ -417,6 +429,12 @@ export class ModelRegistry {
 		this.openadapterLastSuccess = 0;
 		this.openadapterLastAttempt = 0;
 		this.openadapterRefreshPromise = undefined;
+		this.lmStudioLastSuccess = 0;
+		this.lmStudioLastAttempt = 0;
+		this.lmStudioRefreshPromise = undefined;
+		this.llamaCppLastSuccess = 0;
+		this.llamaCppLastAttempt = 0;
+		this.llamaCppRefreshPromise = undefined;
 		// Reloading models.json can change baseUrl/model ids, so stale
 		// /api/show lookups no longer apply.
 		this.contextWindowCache.clear();
@@ -692,6 +710,10 @@ export class ModelRegistry {
 		if (ollamaError) errors.push(ollamaError);
 		const openadapterError = await this.refreshOpenAdapterModels(force);
 		if (openadapterError) errors.push(openadapterError);
+		const lmStudioError = await this.refreshLMStudioModels(force);
+		if (lmStudioError) errors.push(lmStudioError);
+		const llamaCppError = await this.refreshLlamaCppModels(force);
+		if (llamaCppError) errors.push(llamaCppError);
 		return errors.length > 0 ? errors.join("; ") : undefined;
 	}
 
@@ -805,6 +827,96 @@ export class ModelRegistry {
 			}
 		})();
 		const promise = this.openadapterRefreshPromise;
+
+		if (force) {
+			try {
+				await promise;
+			} catch (error) {
+				return error instanceof Error ? error.message : String(error);
+			}
+		}
+
+		return promise.then(() => undefined);
+	}
+
+	/**
+	 * Refresh LM Studio's model list from the local /v1/models endpoint.
+	 * Keyless local provider: always attempts to reach the server. Best-effort.
+	 */
+	private async refreshLMStudioModels(force = false): Promise<string | undefined> {
+		const now = Date.now();
+		const recentlySucceeded = now - this.lmStudioLastSuccess < ModelRegistry.LM_STUDIO_REFRESH_MS;
+		const recentlyAttempted = now - this.lmStudioLastAttempt < ModelRegistry.LM_STUDIO_FAILURE_RETRY_MS;
+		if (!force && (this.lmStudioRefreshPromise || recentlyAttempted)) {
+			return (this.lmStudioRefreshPromise ?? Promise.resolve()).then(() => undefined);
+		}
+
+		this.lmStudioRefreshPromise = (async () => {
+			this.lmStudioLastAttempt = Date.now();
+			if (!force && recentlySucceeded && this.models.some((m) => m.provider === "lm-studio")) {
+				this.lmStudioRefreshPromise = undefined;
+				return;
+			}
+			try {
+				const refreshed = await fetchLMStudioModels();
+				if (refreshed.length === 0) return;
+				this.models = this.models.filter((m) => m.provider !== "lm-studio");
+				this.models.push(...refreshed);
+				this.lmStudioLastSuccess = Date.now();
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				console.error("Failed to refresh LM Studio models:", error);
+				throw new Error(message);
+			} finally {
+				this.lmStudioRefreshPromise = undefined;
+			}
+		})();
+		const promise = this.lmStudioRefreshPromise;
+
+		if (force) {
+			try {
+				await promise;
+			} catch (error) {
+				return error instanceof Error ? error.message : String(error);
+			}
+		}
+
+		return promise.then(() => undefined);
+	}
+
+	/**
+	 * Refresh llama.cpp's model list from the configured /v1/models endpoint.
+	 * Keyless local provider: always attempts to reach the server. Best-effort.
+	 */
+	private async refreshLlamaCppModels(force = false): Promise<string | undefined> {
+		const now = Date.now();
+		const recentlySucceeded = now - this.llamaCppLastSuccess < ModelRegistry.LLAMA_CPP_REFRESH_MS;
+		const recentlyAttempted = now - this.llamaCppLastAttempt < ModelRegistry.LLAMA_CPP_FAILURE_RETRY_MS;
+		if (!force && (this.llamaCppRefreshPromise || recentlyAttempted)) {
+			return (this.llamaCppRefreshPromise ?? Promise.resolve()).then(() => undefined);
+		}
+
+		this.llamaCppRefreshPromise = (async () => {
+			this.llamaCppLastAttempt = Date.now();
+			if (!force && recentlySucceeded && this.models.some((m) => m.provider === "llama-cpp")) {
+				this.llamaCppRefreshPromise = undefined;
+				return;
+			}
+			try {
+				const refreshed = await fetchLlamaCppModels();
+				if (refreshed.length === 0) return;
+				this.models = this.models.filter((m) => m.provider !== "llama-cpp");
+				this.models.push(...refreshed);
+				this.llamaCppLastSuccess = Date.now();
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				console.error("Failed to refresh llama.cpp models:", error);
+				throw new Error(message);
+			} finally {
+				this.llamaCppRefreshPromise = undefined;
+			}
+		})();
+		const promise = this.llamaCppRefreshPromise;
 
 		if (force) {
 			try {

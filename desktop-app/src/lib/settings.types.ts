@@ -27,6 +27,11 @@ export type TreeFilterMode =
 // Nested setting groups
 // ============================================================================
 
+export interface LocalProviderSettings {
+	lmStudioBaseUrl?: string;
+	llamaCppBaseUrl?: string;
+}
+
 export interface CompactionSettings {
 	enabled?: boolean;
 	reserveTokens?: number;
@@ -172,6 +177,8 @@ export interface CliSettings {
 	websocketConnectTimeoutMs?: number;
 	/** When true, closing the window hides it to the system tray instead of quitting. */
 	minimizeToTray?: boolean;
+	/** Local provider base URLs. */
+	localProviders?: LocalProviderSettings;
 	/** Allow unknown keys so users can hand-edit raw JSON without losing data. */
 	[key: string]: unknown;
 }

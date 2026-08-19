@@ -70,6 +70,7 @@ const NAV_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
 	account: User,
 	"ai-model": Sparkles,
 	"custom-providers": Server,
+	"local-providers": Server,
 	"look-and-feel": ImageIcon,
 	"chat-behaviour": Power,
 	privacy: Shield,

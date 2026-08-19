@@ -80,6 +80,7 @@ export type SettingsSectionId =
 	| "account"
 	| "ai-model"
 	| "custom-providers"
+	| "local-providers"
 	| "look-and-feel"
 	| "chat-behaviour"
 	| "privacy"
@@ -256,6 +257,28 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 		navId: "custom-providers",
 		label: "Custom AI",
 		description: "Connect your own AI model or a service that isn't in the built-in list.",
+	},
+
+	// ---- Local providers --------------------------------------------------
+	{
+		id: "local-providers",
+		navId: "local-providers",
+		label: "Local AI",
+		description: "Point A-Coder at a local model server running on this computer.",
+		fields: [
+			{
+				path: "localProviders.lmStudioBaseUrl",
+				label: "LM Studio address",
+				hint: "Leave blank to use the default http://localhost:1234/v1.",
+				kind: "text",
+			},
+			{
+				path: "localProviders.llamaCppBaseUrl",
+				label: "llama.cpp address",
+				hint: "Leave blank to use the default http://localhost:8080/v1.",
+				kind: "text",
+			},
+		],
 	},
 
 	// ---- Look & feel ------------------------------------------------------
