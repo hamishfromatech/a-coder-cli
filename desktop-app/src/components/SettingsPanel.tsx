@@ -56,6 +56,7 @@ import { VoiceSection } from "./panels/widgets/VoiceSection";
 import { CompletionSoundPicker } from "./panels/widgets/CompletionSoundPicker";
 import { Switch } from "./ui/Switch";
 import { Button, IconButton } from "./ui/Button";
+import { Input, Textarea, Select } from "./ui/Input";
 
 // ============================================================================
 // Nav configuration
@@ -96,26 +97,21 @@ function SelectInput({
 	disabled?: boolean;
 }) {
 	return (
-		<div className="relative">
-			<select
-				value={value}
-				onChange={(e) => {
-					triggerHaptic("selection");
-					onChange(e.target.value);
-				}}
-				disabled={disabled}
-				className={`appearance-none rounded-md bg-pi-surface-raised px-3 py-1.5 pr-7 text-xs font-medium text-pi-text shadow-ring transition-smooth focus:shadow-focus ${
-					disabled ? "opacity-50" : ""
-				}`}
-			>
-				{options.map((o) => (
-					<option key={o.value} value={o.value}>
-						{o.label}
-					</option>
-				))}
-			</select>
-			<ChevronRight className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 rotate-90 text-pi-text-muted transition-smooth" />
-		</div>
+		<Select
+			value={value}
+			onChange={(e) => {
+				triggerHaptic("selection");
+				onChange(e.target.value);
+			}}
+			disabled={disabled}
+			className={disabled ? "opacity-50" : ""}
+		>
+			{options.map((o) => (
+				<option key={o.value} value={o.value}>
+					{o.label}
+				</option>
+			))}
+		</Select>
 	);
 }
 
@@ -135,7 +131,7 @@ function NumberInput({
 	disabled?: boolean;
 }) {
 	return (
-		<input
+		<Input
 			type="number"
 			value={Number.isFinite(value) ? value : ""}
 			min={min}
@@ -146,9 +142,7 @@ function NumberInput({
 				const next = Number(e.target.value);
 				onChange(Number.isFinite(next) ? next : 0);
 			}}
-			className={`w-28 rounded-md bg-pi-surface-raised px-3 py-1.5 text-right text-xs font-medium text-pi-text shadow-ring transition-smooth focus:shadow-focus ${
-				disabled ? "opacity-50" : ""
-			}`}
+			className="w-28 text-right"
 		/>
 	);
 }
@@ -165,15 +159,13 @@ function TextInput({
 	disabled?: boolean;
 }) {
 	return (
-		<input
+		<Input
 			type="text"
 			value={value}
 			onChange={(e) => onChange(e.target.value)}
 			placeholder={placeholder}
 			disabled={disabled}
-			className={`w-72 max-w-full rounded-md bg-pi-surface-raised px-3 py-1.5 text-xs font-medium text-pi-text placeholder:text-pi-text-faint shadow-ring transition-smooth focus:shadow-focus ${
-				disabled ? "opacity-50" : ""
-			}`}
+			className="w-72 max-w-full"
 		/>
 	);
 }
@@ -192,15 +184,13 @@ function TextareaInput({
 	rows?: number;
 }) {
 	return (
-		<textarea
+		<Textarea
 			value={value}
 			onChange={(e) => onChange(e.target.value)}
 			placeholder={placeholder}
 			disabled={disabled}
 			rows={rows}
-			className={`w-full rounded-md bg-pi-surface-raised px-3 py-1.5 font-mono text-xs text-pi-text placeholder:text-pi-text-faint shadow-ring transition-smooth focus:shadow-focus ${
-				disabled ? "opacity-50" : ""
-			}`}
+			mono
 		/>
 	);
 }
