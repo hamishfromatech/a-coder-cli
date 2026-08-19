@@ -13,11 +13,13 @@ export interface ModelAuth {
 
 /**
  * Stored api-key credential. `env` holds provider-scoped environment/config
- * values such as Cloudflare account/gateway ids.
+ * values such as Cloudflare account/gateway ids. `baseUrl` lets keyless local
+ * providers (LM Studio, llama.cpp) persist a custom endpoint from /login.
  */
 export interface ApiKeyCredential {
 	type: "api_key";
 	key?: string;
+	baseUrl?: string;
 	env?: ProviderEnv;
 }
 

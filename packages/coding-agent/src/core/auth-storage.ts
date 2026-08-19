@@ -24,6 +24,7 @@ import { resolveConfigValue } from "./resolve-config-value.ts";
 export type ApiKeyCredential = {
 	type: "api_key";
 	key: string;
+	baseUrl?: string;
 	env?: Record<string, string>;
 };
 

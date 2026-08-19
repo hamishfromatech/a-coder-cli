@@ -252,9 +252,6 @@ export function isApiKeyLoginProvider(
 	oauthProviderIds: ReadonlySet<string>,
 	builtInProviderIds: ReadonlySet<string> = BUILT_IN_MODEL_PROVIDERS,
 ): boolean {
-	if (KEYLESS_LOCAL_PROVIDERS.has(providerId)) {
-		return false;
-	}
 	if (BUILT_IN_PROVIDER_DISPLAY_NAMES[providerId]) {
 		return true;
 	}
@@ -4853,6 +4850,8 @@ export class InteractiveMode {
 						await this.showLoginDialog(providerOption.id, providerOption.name);
 					} else if (providerOption.id === BEDROCK_PROVIDER_ID) {
 						this.showBedrockSetupDialog(providerOption.id, providerOption.name);
+					} else if (KEYLESS_LOCAL_PROVIDERS.has(providerOption.id)) {
+						await this.showBaseUrlLoginDialog(providerOption.id, providerOption.name);
 					} else {
 						await this.showApiKeyLoginDialog(providerOption.id, providerOption.name);
 					}
@@ -5037,6 +5036,54 @@ export class InteractiveMode {
 			const errorMsg = error instanceof Error ? error.message : String(error);
 			if (errorMsg !== "Login cancelled") {
 				this.showError(`Failed to save API key for ${providerName}: ${errorMsg}`);
+			}
+		}
+	}
+
+	private async showBaseUrlLoginDialog(providerId: string, providerName: string): Promise<void> {
+		const previousModel = this.session.model;
+		const envVar = providerId === "lm-studio" ? "LM_STUDIO_BASE_URL" : "LLAMACPP_BASE_URL";
+		const defaultUrl = providerId === "lm-studio" ? "http://localhost:1234/v1" : "http://localhost:8080/v1";
+
+		const dialog = new LoginDialogComponent(
+			this.ui,
+			providerId,
+			(_success, _message) => {
+				// Completion handled below
+			},
+			providerName,
+			`Set ${providerName} base URL`,
+		);
+
+		this.editorContainer.clear();
+		this.editorContainer.addChild(dialog);
+		this.ui.setFocus(dialog);
+		this.ui.requestRender();
+
+		const restoreEditor = () => {
+			this.editorContainer.clear();
+			this.editorContainer.addChild(this.editor);
+			this.ui.setFocus(this.editor);
+			this.ui.requestRender();
+		};
+
+		try {
+			const input = (await dialog.showPrompt(`Enter ${providerName} base URL:`, defaultUrl)).trim();
+			const baseUrl = input || defaultUrl;
+
+			this.session.modelRegistry.authStorage.set(providerId, {
+				type: "api_key",
+				key: "not-needed",
+				env: { [envVar]: baseUrl },
+			});
+
+			restoreEditor();
+			await this.completeProviderAuthentication(providerId, providerName, "api_key", previousModel);
+		} catch (error: unknown) {
+			restoreEditor();
+			const errorMsg = error instanceof Error ? error.message : String(error);
+			if (errorMsg !== "Login cancelled") {
+				this.showError(`Failed to save base URL for ${providerName}: ${errorMsg}`);
 			}
 		}
 	}

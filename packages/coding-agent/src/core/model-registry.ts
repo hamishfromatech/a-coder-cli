@@ -491,6 +491,17 @@ export class ModelRegistry {
 			return models.map((m) => {
 				let model = m;
 
+				// Apply base URL from /login-stored env for keyless local providers.
+				// Provider overrides from models.json take precedence below.
+				if (KEYLESS_LOCAL_PROVIDERS.has(model.provider)) {
+					const env = this.authStorage.getProviderEnv(model.provider);
+					const envVar = model.provider === "lm-studio" ? "LM_STUDIO_BASE_URL" : "LLAMACPP_BASE_URL";
+					const storedBaseUrl = env?.[envVar];
+					if (storedBaseUrl) {
+						model = { ...model, baseUrl: storedBaseUrl };
+					}
+				}
+
 				// Apply provider-level baseUrl/headers/compat override
 				if (providerOverride) {
 					model = {
@@ -845,7 +856,8 @@ export class ModelRegistry {
 
 	/**
 	 * Refresh LM Studio's model list from the local /v1/models endpoint.
-	 * Keyless local provider: always attempts to reach the server. Best-effort.
+	 * Keyless local provider: always attempts to reach the server. A missing
+	 * server is expected and is silently ignored.
 	 */
 	private async refreshLMStudioModels(force = false): Promise<string | undefined> {
 		const now = Date.now();
@@ -862,39 +874,27 @@ export class ModelRegistry {
 				return;
 			}
 			try {
-				const refreshed = await fetchLMStudioModels();
+				const env = this.authStorage.getProviderEnv("lm-studio");
+				const refreshed = await fetchLMStudioModels(env?.LM_STUDIO_BASE_URL);
 				if (refreshed.length === 0) return;
 				this.models = this.models.filter((m) => m.provider !== "lm-studio");
 				this.models.push(...refreshed);
 				this.lmStudioLastSuccess = Date.now();
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				console.error("Failed to refresh LM Studio models:", error);
-				throw new Error(message);
+			} catch {
+				// Server not running is expected for a keyless local provider.
 			} finally {
 				this.lmStudioRefreshPromise = undefined;
 			}
 		})();
-		const promise = this.lmStudioRefreshPromise;
 
-		if (force) {
-			try {
-				await promise;
-			} catch (error) {
-				return error instanceof Error ? error.message : String(error);
-			}
-		}
-
-		return promise
-			.catch((error) => {
-				console.error("Failed to refresh LM Studio models:", error);
-			})
-			.then(() => undefined);
+		await this.lmStudioRefreshPromise;
+		return undefined;
 	}
 
 	/**
 	 * Refresh llama.cpp's model list from the configured /v1/models endpoint.
-	 * Keyless local provider: always attempts to reach the server. Best-effort.
+	 * Keyless local provider: always attempts to reach the server. A missing
+	 * server is expected and is silently ignored.
 	 */
 	private async refreshLlamaCppModels(force = false): Promise<string | undefined> {
 		const now = Date.now();
@@ -911,34 +911,21 @@ export class ModelRegistry {
 				return;
 			}
 			try {
-				const refreshed = await fetchLlamaCppModels();
+				const env = this.authStorage.getProviderEnv("llama-cpp");
+				const refreshed = await fetchLlamaCppModels(env?.LLAMACPP_BASE_URL);
 				if (refreshed.length === 0) return;
 				this.models = this.models.filter((m) => m.provider !== "llama-cpp");
 				this.models.push(...refreshed);
 				this.llamaCppLastSuccess = Date.now();
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				console.error("Failed to refresh llama.cpp models:", error);
-				throw new Error(message);
+			} catch {
+				// Server not running is expected for a keyless local provider.
 			} finally {
 				this.llamaCppRefreshPromise = undefined;
 			}
 		})();
-		const promise = this.llamaCppRefreshPromise;
 
-		if (force) {
-			try {
-				await promise;
-			} catch (error) {
-				return error instanceof Error ? error.message : String(error);
-			}
-		}
-
-		return promise
-			.catch((error) => {
-				console.error("Failed to refresh llama.cpp models:", error);
-			})
-			.then(() => undefined);
+		await this.llamaCppRefreshPromise;
+		return undefined;
 	}
 
 	/**

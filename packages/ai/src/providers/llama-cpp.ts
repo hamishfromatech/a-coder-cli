@@ -33,8 +33,8 @@ const PLACEHOLDER_MODEL: Model<"openai-completions"> = {
 function llamaCppAuth(): ApiKeyAuth {
 	return {
 		name: "llama.cpp",
-		resolve: async ({ ctx }) => {
-			const baseUrl = await ctx.env("LLAMACPP_BASE_URL");
+		resolve: async ({ ctx, credential }) => {
+			const baseUrl = credential?.baseUrl ?? (await ctx.env("LLAMACPP_BASE_URL"));
 			return {
 				auth: { apiKey: "not-needed", baseUrl: baseUrl || undefined },
 				source: "keyless local server",
@@ -55,20 +55,21 @@ export interface LlamaCppModelListResponse {
 
 const DEFAULT_BASE_URL = "http://localhost:8080/v1";
 
-export function resolveLlamaCppBaseUrl(): string {
+export function resolveLlamaCppBaseUrl(override?: string): string {
+	if (override) return override;
 	if (typeof process !== "undefined" && process.env.LLAMACPP_BASE_URL) {
 		return process.env.LLAMACPP_BASE_URL;
 	}
 	return DEFAULT_BASE_URL;
 }
 
-export function createLlamaCppModel(id: string): Model<"openai-completions"> {
+export function createLlamaCppModel(id: string, baseUrl?: string): Model<"openai-completions"> {
 	return {
 		id,
 		name: `llama.cpp: ${id}`,
 		api: "openai-completions",
 		provider: "llama-cpp",
-		baseUrl: resolveLlamaCppBaseUrl(),
+		baseUrl: resolveLlamaCppBaseUrl(baseUrl),
 		compat: {
 			supportsStore: false,
 			supportsDeveloperRole: false,
@@ -90,9 +91,12 @@ export function createLlamaCppModel(id: string): Model<"openai-completions"> {
 	};
 }
 
-export async function fetchLlamaCppModels(signal?: AbortSignal): Promise<Model<"openai-completions">[]> {
-	const baseUrl = resolveLlamaCppBaseUrl().replace(/\/$/, "");
-	const res = await fetch(`${baseUrl}/models`, {
+export async function fetchLlamaCppModels(
+	baseUrl?: string,
+	signal?: AbortSignal,
+): Promise<Model<"openai-completions">[]> {
+	const resolvedBaseUrl = resolveLlamaCppBaseUrl(baseUrl).replace(/\/$/, "");
+	const res = await fetch(`${resolvedBaseUrl}/models`, {
 		headers: { accept: "application/json" },
 		signal,
 	});
@@ -101,7 +105,7 @@ export async function fetchLlamaCppModels(signal?: AbortSignal): Promise<Model<"
 	}
 	const json = (await res.json()) as LlamaCppModelListResponse;
 	const list = json.data ?? [];
-	return list.filter((entry) => entry.id).map((entry) => createLlamaCppModel(entry.id));
+	return list.filter((entry) => entry.id).map((entry) => createLlamaCppModel(entry.id, baseUrl));
 }
 
 export function llamaCppProvider(): Provider<"openai-completions"> {
