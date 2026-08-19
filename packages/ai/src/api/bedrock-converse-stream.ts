@@ -390,7 +390,7 @@ export const streamSimple: StreamFunction<"bedrock-converse-stream", SimpleStrea
 	const base = {
 		...buildBaseOptions(model, context, options, undefined),
 		toolChoice: options?.toolChoice,
-	} satisfies BedrockOptions; 
+	} satisfies BedrockOptions;
 	if (!options?.reasoning) {
 		return stream(model, context, { ...base, reasoning: undefined } satisfies BedrockOptions);
 	}

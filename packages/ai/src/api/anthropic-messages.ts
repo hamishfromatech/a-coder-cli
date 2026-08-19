@@ -788,7 +788,7 @@ export const streamSimple: StreamFunction<"anthropic-messages", SimpleStreamOpti
 	const base = {
 		...buildBaseOptions(model, context, options, options?.apiKey),
 		toolChoice: options?.toolChoice,
-	} satisfies AnthropicOptions; 
+	} satisfies AnthropicOptions;
 	if (!options?.reasoning) {
 		return stream(model, context, {
 			...base,

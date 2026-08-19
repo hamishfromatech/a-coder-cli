@@ -751,7 +751,7 @@ export async function handlePackageCommand(
 						}
 						process.exitCode = 1;
 						return true;
-						}
+					}
 					if (process.platform === "win32" && installMethod !== "npm" && installMethod !== "pnpm") {
 						console.error(
 							chalk.red(`${APP_NAME} self-update on Windows is only supported for npm and pnpm installs.`),

@@ -1,9 +1,9 @@
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { ExtensionFactory } from "../extensions/types.ts";
+import type { McpDiscoveredTool } from "./client.ts";
+import { McpClient } from "./client.ts";
 import { jsonSchemaToTypeBox } from "./schema.ts";
 import type { McpServerConfig } from "./types.ts";
-import { McpClient } from "./client.ts";
-import type { McpDiscoveredTool } from "./client.ts";
 
 export interface McpExtensionFactoryOptions {
 	servers: McpServerConfig[];

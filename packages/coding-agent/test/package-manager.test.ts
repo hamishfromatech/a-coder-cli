@@ -2113,9 +2113,7 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 			writeFileSync(join(installedPath, "package.json"), JSON.stringify({ name: "example", version: "2.0.0" }));
 			settingsManager.setProjectPackages(["npm:example@^1.0.0"]);
 
-			const runCommandCaptureSpy = vi
-				.spyOn(packageManager as any, "runCommandCapture")
-				.mockResolvedValue('"1.9.0"');
+			const runCommandCaptureSpy = vi.spyOn(packageManager as any, "runCommandCapture").mockResolvedValue('"1.9.0"');
 			const runCommandSpy = vi.spyOn(packageManager as any, "runCommand").mockResolvedValue(undefined);
 
 			await packageManager.update("npm:example");

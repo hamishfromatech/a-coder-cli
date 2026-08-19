@@ -120,7 +120,7 @@ export const streamSimple: StreamFunction<"mistral-conversations", SimpleStreamO
 	const base = {
 		...buildBaseOptions(model, context, options, apiKey),
 		toolChoice: options?.toolChoice,
-	} satisfies MistralOptions; 
+	} satisfies MistralOptions;
 	const clampedReasoning = options?.reasoning ? clampThinkingLevel(model, options.reasoning) : undefined;
 	const reasoning = clampedReasoning === "off" ? undefined : clampedReasoning;
 	const shouldUseReasoning = model.reasoning && reasoning !== undefined;

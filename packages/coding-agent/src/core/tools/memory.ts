@@ -161,7 +161,9 @@ export function createMemoryToolDefinition(): ToolDefinition<typeof memorySchema
 		renderCall(args, theme, _context) {
 			const text = new Text("", 0, 0);
 			const scope = args?.scope ?? "global";
-			text.setText(`${theme.fg("toolTitle", theme.bold("memory"))} ${theme.fg("accent", `${args?.action ?? "read"}:${scope}`)}`);
+			text.setText(
+				`${theme.fg("toolTitle", theme.bold("memory"))} ${theme.fg("accent", `${args?.action ?? "read"}:${scope}`)}`,
+			);
 			return text;
 		},
 		renderResult(result, _options, theme, _context) {

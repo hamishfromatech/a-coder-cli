@@ -306,7 +306,7 @@ export const streamSimple: StreamFunction<"google-vertex", SimpleStreamOptions> 
 	const base = {
 		...buildBaseOptions(model, context, options, undefined),
 		toolChoice: options?.toolChoice,
-	} satisfies GoogleVertexOptions; 
+	} satisfies GoogleVertexOptions;
 	if (!options?.reasoning) {
 		return stream(model, context, {
 			...base,

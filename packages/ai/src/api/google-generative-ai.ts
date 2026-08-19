@@ -294,7 +294,7 @@ export const streamSimple: StreamFunction<"google-generative-ai", SimpleStreamOp
 	const base = {
 		...buildBaseOptions(model, context, options, apiKey),
 		toolChoice: options?.toolChoice,
-	} satisfies GoogleOptions; 
+	} satisfies GoogleOptions;
 	if (!options?.reasoning) {
 		return stream(model, context, { ...base, thinking: { enabled: false } } satisfies GoogleOptions);
 	}

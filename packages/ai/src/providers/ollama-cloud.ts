@@ -3,8 +3,8 @@ import { defaultProviderAuthContext } from "../auth/context.ts";
 import { envApiKeyAuth } from "../auth/helpers.ts";
 import { createProvider, type Provider } from "../models.ts";
 import type { Model } from "../types.ts";
-import { fetchOllamaContextWindow } from "./ollama-context.ts";
 import { OLLAMA_CLOUD_MODELS } from "./ollama-cloud.models.ts";
+import { fetchOllamaContextWindow } from "./ollama-context.ts";
 
 export interface OllamaCloudTagsModel {
 	name: string;
@@ -56,7 +56,10 @@ export async function resolveOllamaCloudModelCaps(
 	return { contextWindow };
 }
 
-export function createOllamaCloudModel(id: string, caps?: { contextWindow?: number; maxTokens?: number; vision?: boolean }): Model<"openai-completions"> {
+export function createOllamaCloudModel(
+	id: string,
+	caps?: { contextWindow?: number; maxTokens?: number; vision?: boolean },
+): Model<"openai-completions"> {
 	const isKimi = id.toLowerCase().includes("kimi");
 	const defaultContextWindow = isKimi ? 1048576 : 128000;
 	const contextWindow = caps?.contextWindow && caps.contextWindow > 0 ? caps.contextWindow : defaultContextWindow;
@@ -64,9 +67,8 @@ export function createOllamaCloudModel(id: string, caps?: { contextWindow?: numb
 	// not the model's output-token cap. Keep a generous default maxTokens and
 	// only let an explicit cap override it.
 	const defaultMaxTokens = isKimi ? 131072 : 131072;
-	const maxTokens = caps?.maxTokens && caps.maxTokens > 0 && caps.maxTokens <= contextWindow
-		? caps.maxTokens
-		: defaultMaxTokens;
+	const maxTokens =
+		caps?.maxTokens && caps.maxTokens > 0 && caps.maxTokens <= contextWindow ? caps.maxTokens : defaultMaxTokens;
 	return {
 		id,
 		name: `Ollama Cloud: ${id}`,
@@ -94,7 +96,10 @@ export function createOllamaCloudModel(id: string, caps?: { contextWindow?: numb
 	};
 }
 
-export async function fetchOllamaCloudModels(apiKey: string, signal?: AbortSignal): Promise<Model<"openai-completions">[]> {
+export async function fetchOllamaCloudModels(
+	apiKey: string,
+	signal?: AbortSignal,
+): Promise<Model<"openai-completions">[]> {
 	// Ollama Cloud serves model tags at the native /api/tags endpoint. The
 	// OpenAI-compatible /v1/models list is also available but doesn't carry
 	// context windows, so we prefer /api/tags and fill in details from
