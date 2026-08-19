@@ -171,7 +171,7 @@ export function McpServersEditor({ value, onChange }: Props) {
 			{servers.map((server, idx) => (
 				<div
 					key={idx}
-					className="overflow-hidden rounded-lg bg-pi-surface-raised shadow-[0_0_0_1px_var(--pi-border)]"
+					className="overflow-hidden rounded-lg bg-pi-surface-raised shadow-ring"
 				>
 					<button
 						type="button"
@@ -218,7 +218,7 @@ export function McpServersEditor({ value, onChange }: Props) {
 									onChange={(transport) => updateServer(idx, { transport })}
 								/>
 								<div className="flex items-end">
-									<label className="flex cursor-pointer items-center gap-2 rounded-md bg-pi-bg px-2.5 py-2 shadow-[0_0_0_1px_var(--pi-border)]">
+									<label className="flex cursor-pointer items-center gap-2 rounded-md bg-pi-bg px-2.5 py-2 shadow-ring">
 										<input
 											type="checkbox"
 											checked={!server.disabled}
@@ -325,7 +325,7 @@ function LabeledInput({
 				onChange={(e) => onChange(e.target.value)}
 				spellCheck={false}
 				autoComplete="off"
-				className="w-full rounded-md bg-pi-bg px-2.5 py-1.5 text-[11.5px] text-pi-text placeholder:text-pi-text-faint shadow-[0_0_0_1px_var(--pi-border)] focus:shadow-focus focus:outline-none"
+				className="w-full rounded-md bg-pi-bg px-2.5 py-1.5 text-[11.5px] text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none"
 			/>
 		</div>
 	);
@@ -350,7 +350,7 @@ function LabeledSelect<T extends string>({
 			<select
 				value={value}
 				onChange={(e) => onChange(e.target.value as T)}
-				className="w-full rounded-md bg-pi-bg px-2.5 py-1.5 text-[11.5px] text-pi-text shadow-[0_0_0_1px_var(--pi-border)] focus:shadow-focus focus:outline-none"
+				className="w-full rounded-md bg-pi-bg px-2.5 py-1.5 text-[11.5px] text-pi-text shadow-ring focus:shadow-focus focus:outline-none"
 			>
 				{options.map((o) => (
 					<option key={o.value} value={o.value}>
@@ -398,7 +398,7 @@ function StringListEditor({
 				onChange={(e) => commit(e.target.value)}
 				rows={Math.max(2, Math.min(values.length + 1, 4))}
 				spellCheck={false}
-				className="w-full rounded-md bg-pi-bg p-2 font-mono text-[11px] text-pi-text placeholder:text-pi-text-faint shadow-[0_0_0_1px_var(--pi-border)] focus:shadow-focus focus:outline-none"
+				className="w-full rounded-md bg-pi-bg p-2 font-mono text-[11px] text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none"
 			/>
 		</div>
 	);
@@ -445,7 +445,7 @@ function KeyValueEditor({
 							update(next);
 						}}
 						placeholder="KEY"
-						className="min-w-0 flex-1 rounded-md bg-pi-bg px-2.5 py-1.5 font-mono text-[11px] text-pi-text shadow-[0_0_0_1px_var(--pi-border)] focus:shadow-focus focus:outline-none"
+						className="min-w-0 flex-1 rounded-md bg-pi-bg px-2.5 py-1.5 font-mono text-[11px] text-pi-text shadow-ring focus:shadow-focus focus:outline-none"
 					/>
 					<input
 						type="text"
@@ -456,7 +456,7 @@ function KeyValueEditor({
 							update(next);
 						}}
 						placeholder="value"
-						className="min-w-0 flex-1 rounded-md bg-pi-bg px-2.5 py-1.5 text-[11px] text-pi-text shadow-[0_0_0_1px_var(--pi-border)] focus:shadow-focus focus:outline-none"
+						className="min-w-0 flex-1 rounded-md bg-pi-bg px-2.5 py-1.5 text-[11px] text-pi-text shadow-ring focus:shadow-focus focus:outline-none"
 					/>
 					<button
 						type="button"
@@ -528,7 +528,7 @@ function RawJsonEditor({
 				onBlur={() => commit(text)}
 				rows={3}
 				spellCheck={false}
-				className={`w-full rounded-md bg-pi-bg p-2 font-mono text-[11px] text-pi-text shadow-[0_0_0_1px_var(--pi-border)] focus:shadow-focus focus:outline-none ${error ? "shadow-[0_0_0_1px_var(--pi-error)]" : ""}`}
+				className={`w-full rounded-md bg-pi-bg p-2 font-mono text-[11px] text-pi-text shadow-ring focus:shadow-focus focus:outline-none ${error ? "shadow-ring-error" : ""}`}
 			/>
 			{error && <p className="text-[10px] text-pi-error">{error}</p>}
 		</div>

@@ -54,6 +54,7 @@ import { PermissionPoliciesEditor } from "./panels/widgets/PermissionPoliciesEdi
 import { ResourcesSection } from "./panels/widgets/ResourcesSection";
 import { VoiceSection } from "./panels/widgets/VoiceSection";
 import { CompletionSoundPicker } from "./panels/widgets/CompletionSoundPicker";
+import { Switch } from "./ui/Switch";
 
 // ============================================================================
 // Nav configuration
@@ -82,39 +83,6 @@ const FIRST_LAUNCH_KEY = "a-coder-first-launch-dismissed";
 // Reusable form widgets — upgraded with hover/active states and smooth transitions
 // ============================================================================
 
-function Toggle({
-	checked,
-	onChange,
-	disabled,
-}: {
-	checked: boolean;
-	onChange: () => void;
-	disabled?: boolean;
-}) {
-	return (
-		<button
-			type="button"
-			onClick={() => {
-				triggerHaptic("selection");
-				onChange();
-			}}
-			disabled={disabled}
-			aria-pressed={checked}
-			className={`relative inline-flex h-[20px] w-8 shrink-0 items-center rounded-full active-press transition-smooth disabled:opacity-50 ${
-				checked
-					? "bg-pi-accent hover:bg-pi-accent-hover"
-					: "bg-pi-surface-raised shadow-[0_0_0_1px_var(--pi-border)] hover:bg-pi-surface-overlay"
-			}`}
-		>
-			<span
-				className={`absolute top-0.5 h-4 w-4 rounded-full bg-white/90 shadow-sm transition-transform ${
-					checked ? "translate-x-[12px]" : "translate-x-0.5"
-				}`}
-			/>
-		</button>
-	);
-}
-
 function SelectInput({
 	value,
 	options,
@@ -135,7 +103,7 @@ function SelectInput({
 					onChange(e.target.value);
 				}}
 				disabled={disabled}
-				className={`appearance-none rounded-md bg-pi-surface-raised px-3 py-1.5 pr-7 text-[12px] font-medium text-pi-text shadow-[0_0_0_1px_var(--pi-border)] transition-smooth focus:shadow-focus ${
+				className={`appearance-none rounded-md bg-pi-surface-raised px-3 py-1.5 pr-7 text-[12px] font-medium text-pi-text shadow-ring transition-smooth focus:shadow-focus ${
 					disabled ? "opacity-50" : ""
 				}`}
 			>
@@ -177,7 +145,7 @@ function NumberInput({
 				const next = Number(e.target.value);
 				onChange(Number.isFinite(next) ? next : 0);
 			}}
-			className={`w-28 rounded-md bg-pi-surface-raised px-3 py-1.5 text-right text-[12px] font-medium text-pi-text shadow-[0_0_0_1px_var(--pi-border)] transition-smooth focus:shadow-focus ${
+			className={`w-28 rounded-md bg-pi-surface-raised px-3 py-1.5 text-right text-[12px] font-medium text-pi-text shadow-ring transition-smooth focus:shadow-focus ${
 				disabled ? "opacity-50" : ""
 			}`}
 		/>
@@ -202,7 +170,7 @@ function TextInput({
 			onChange={(e) => onChange(e.target.value)}
 			placeholder={placeholder}
 			disabled={disabled}
-			className={`w-72 max-w-full rounded-md bg-pi-surface-raised px-3 py-1.5 text-[12px] font-medium text-pi-text placeholder:text-pi-text-faint shadow-[0_0_0_1px_var(--pi-border)] transition-smooth focus:shadow-focus ${
+			className={`w-72 max-w-full rounded-md bg-pi-surface-raised px-3 py-1.5 text-[12px] font-medium text-pi-text placeholder:text-pi-text-faint shadow-ring transition-smooth focus:shadow-focus ${
 				disabled ? "opacity-50" : ""
 			}`}
 		/>
@@ -229,7 +197,7 @@ function TextareaInput({
 			placeholder={placeholder}
 			disabled={disabled}
 			rows={rows}
-			className={`w-full rounded-md bg-pi-surface-raised px-3 py-1.5 font-mono text-[12px] text-pi-text placeholder:text-pi-text-faint shadow-[0_0_0_1px_var(--pi-border)] transition-smooth focus:shadow-focus ${
+			className={`w-full rounded-md bg-pi-surface-raised px-3 py-1.5 font-mono text-[12px] text-pi-text placeholder:text-pi-text-faint shadow-ring transition-smooth focus:shadow-focus ${
 				disabled ? "opacity-50" : ""
 			}`}
 		/>
@@ -304,7 +272,7 @@ function JsonInput({
 				disabled={disabled}
 				rows={4}
 				className={`w-full rounded-md bg-pi-bg p-2 font-mono text-[11.5px] text-pi-text transition-smooth focus:outline-none ${
-					error ? "shadow-[0_0_0_1px_var(--pi-error)]" : "shadow-[0_0_0_1px_var(--pi-border)]"
+					error ? "shadow-ring-error" : "shadow-ring"
 				}`}
 				spellCheck={false}
 			/>
@@ -347,7 +315,7 @@ function FieldRow({
 		switch (spec.kind) {
 			case "toggle":
 				return (
-					<Toggle
+					<Switch
 						checked={Boolean(value)}
 						onChange={() => onChange(!Boolean(value))}
 						disabled={disabled}
@@ -557,7 +525,7 @@ function CardView({
 	const needsToggle = advanced.length > 0;
 
 	return (
-		<section className="overflow-hidden rounded-lg bg-pi-surface-raised shadow-[0_0_0_1px_var(--pi-border)] transition-smooth hover:shadow-card-hover">
+		<section className="overflow-hidden rounded-lg bg-pi-surface-raised shadow-ring transition-smooth hover:shadow-card-hover">
 			<div className="border-b border-pi-border px-4 py-3">
 				<h3 className="text-[12.5px] font-semibold text-pi-text">{card.title}</h3>
 				{card.description && (
@@ -659,7 +627,7 @@ function SectionView({
 
 	return (
 		<section className="space-y-2">
-			<div className={`divide-y divide-pi-border rounded-lg bg-pi-surface-raised px-4 shadow-[0_0_0_1px_var(--pi-border)] transition-smooth hover:shadow-card-hover`}>
+			<div className={`divide-y divide-pi-border rounded-lg bg-pi-surface-raised px-4 shadow-ring transition-smooth hover:shadow-card-hover`}>
 				{simple.map((spec) => (
 					<FieldRow
 						key={spec.path}
@@ -675,7 +643,7 @@ function SectionView({
 			{needsToggle && (
 				<>
 					{showAdvanced && (
-						<div className={`divide-y divide-pi-border rounded-lg bg-pi-surface-raised px-4 shadow-[0_0_0_1px_var(--pi-border)] transition-smooth hover:shadow-card-hover`}>
+						<div className={`divide-y divide-pi-border rounded-lg bg-pi-surface-raised px-4 shadow-ring transition-smooth hover:shadow-card-hover`}>
 							{advanced.map((spec) => (
 								<FieldRow
 									key={spec.path}
@@ -780,7 +748,7 @@ function AdvancedJsonEditor({
 				<button
 					type="button"
 					onClick={() => void save()}
-					className={`inline-flex items-center gap-1.5 rounded-md bg-pi-accent px-3 py-1.5 text-[12px] font-medium text-white shadow-[0_0_0_1px_var(--pi-accent)] transition-hover active-press hover:bg-pi-accent-hover`}
+					className={`inline-flex items-center gap-1.5 rounded-md bg-pi-accent px-3 py-1.5 text-[12px] font-medium text-white shadow-ring-accent transition-hover active-press hover:bg-pi-accent-hover`}
 				>
 					Save raw JSON
 					<ChevronRight className="h-3 w-3" />
@@ -789,7 +757,7 @@ function AdvancedJsonEditor({
 				<button
 					type="button"
 					onClick={() => void persistCliSettings(scope, {}).then(onSaved)}
-					className={`inline-flex items-center gap-1.5 rounded-md bg-pi-surface-raised px-3 py-1.5 text-[12px] font-medium text-pi-text shadow-[0_0_0_1px_var(--pi-border)] transition-hover active-press hover:bg-pi-surface-overlay`}
+					className={`inline-flex items-center gap-1.5 rounded-md bg-pi-surface-raised px-3 py-1.5 text-[12px] font-medium text-pi-text shadow-ring transition-hover active-press hover:bg-pi-surface-overlay`}
 				>
 					Reset to defaults
 					<RotateCcw className="h-3 w-3" />
@@ -806,7 +774,7 @@ function AdvancedJsonEditor({
 							)
 							.catch(() => {})
 					}
-					className={`inline-flex items-center gap-1.5 rounded-md bg-pi-surface-raised px-3 py-1.5 text-[12px] font-medium text-pi-text shadow-[0_0_0_1px_var(--pi-border)] transition-hover active-press hover:bg-pi-surface-overlay`}
+					className={`inline-flex items-center gap-1.5 rounded-md bg-pi-surface-raised px-3 py-1.5 text-[12px] font-medium text-pi-text shadow-ring transition-hover active-press hover:bg-pi-surface-overlay`}
 				>
 					Open in editor
 					<FileText className="h-3 w-3" />
@@ -823,7 +791,7 @@ function AdvancedJsonEditor({
 							)
 							.catch(() => {})
 					}
-					className={`inline-flex items-center gap-1.5 rounded-md bg-pi-surface-raised px-3 py-1.5 text-[12px] font-medium text-pi-text shadow-[0_0_0_1px_var(--pi-border)] transition-hover active-press hover:bg-pi-surface-overlay`}
+					className={`inline-flex items-center gap-1.5 rounded-md bg-pi-surface-raised px-3 py-1.5 text-[12px] font-medium text-pi-text shadow-ring transition-hover active-press hover:bg-pi-surface-overlay`}
 				>
 					Reveal in Finder
 				</button>
@@ -1021,7 +989,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 					</div>
 
 					{/* Scope toggle */}
-					<div className="mb-3 flex gap-0.5 rounded-md bg-pi-surface-raised p-0.5 shadow-[0_0_0_1px_var(--pi-border)] transition-smooth hover:shadow-card-hover">
+					<div className="mb-3 flex gap-0.5 rounded-md bg-pi-surface-raised p-0.5 shadow-ring transition-smooth hover:shadow-card-hover">
 						{(["global", "project"] as const).map((s) => (
 							<button
 								key={s}
@@ -1098,7 +1066,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 										if (e.key === "Escape") setSearch("");
 									}}
 									placeholder="Search…"
-									className={`w-44 rounded-md bg-pi-surface-raised py-1.5 pl-8 pr-3 text-[12px] text-pi-text placeholder:text-pi-text-faint shadow-[0_0_0_1px_var(--pi-border)] transition-smooth focus:shadow-focus focus:outline-none`}
+									className={`w-44 rounded-md bg-pi-surface-raised py-1.5 pl-8 pr-3 text-[12px] text-pi-text placeholder:text-pi-text-faint shadow-ring transition-smooth focus:shadow-focus focus:outline-none`}
 								/>
 							</div>
 							<button

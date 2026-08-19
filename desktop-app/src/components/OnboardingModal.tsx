@@ -66,7 +66,7 @@ export function OnboardingModal({ onComplete }: OnboardingModalProps) {
 				<div className="p-5">
 					<button
 						onClick={() => void handlePickFolder()}
-						className="flex w-full items-center justify-center gap-2.5 rounded-lg bg-pi-accent px-4 py-3 text-[13px] font-medium text-white shadow-[0_0_0_1px_var(--pi-accent)] transition-hover active-press hover:bg-pi-accent-hover"
+						className="flex w-full items-center justify-center gap-2.5 rounded-lg bg-pi-accent px-4 py-3 text-[13px] font-medium text-white shadow-ring-accent transition-hover active-press hover:bg-pi-accent-hover"
 					>
 						<FolderOpen className="h-4 w-4" />
 						Choose a folder

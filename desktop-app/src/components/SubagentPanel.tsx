@@ -116,7 +116,7 @@ export function SubagentPanel({ open, onClose }: SubagentPanelProps) {
 							{agents.map((agent) => (
 								<li
 									key={agent.id}
-									className="rounded-lg bg-pi-surface-raised p-3 shadow-[0_0_0_1px_var(--pi-border)]"
+									className="rounded-lg bg-pi-surface-raised p-3 shadow-ring"
 								>
 									<div className="flex items-start justify-between gap-2">
 										<div className="min-w-0 flex-1">

@@ -6,6 +6,7 @@ import {
 } from "../../../lib/completion-sound";
 import { previewHaptic, triggerHaptic } from "../../../lib/haptics";
 import { useSettingsStore } from "../../../stores/settings-store";
+import { Switch } from "../../ui/Switch";
 
 /**
  * Turn-feedback control: a sound toggle + chime picker + Preview, and a trackpad
@@ -50,7 +51,7 @@ export function CompletionSoundPicker() {
 							triggerHaptic("selection");
 							setVariantId(Number(e.target.value));
 						}}
-						className="appearance-none rounded-md bg-pi-surface-raised px-3 py-1.5 pr-7 text-[12px] font-medium text-pi-text shadow-[0_0_0_1px_var(--pi-border)] transition-smooth focus:shadow-focus"
+						className="appearance-none rounded-md bg-pi-surface-raised px-3 py-1.5 pr-7 text-[12px] font-medium text-pi-text shadow-ring transition-smooth focus:shadow-focus"
 					>
 						{COMPLETION_SOUND_VARIANTS.map((v) => (
 							<option key={v.id} value={String(v.id)}>
@@ -64,7 +65,7 @@ export function CompletionSoundPicker() {
 				<button
 					type="button"
 					onClick={previewSound}
-					className="inline-flex items-center gap-1.5 rounded-md bg-pi-surface-raised px-3 py-1.5 text-[12px] font-medium text-pi-text shadow-[0_0_0_1px_var(--pi-border)] transition-hover active-press hover:bg-pi-surface-overlay"
+					className="inline-flex items-center gap-1.5 rounded-md bg-pi-surface-raised px-3 py-1.5 text-[12px] font-medium text-pi-text shadow-ring transition-hover active-press hover:bg-pi-surface-overlay"
 				>
 					Preview
 				</button>
@@ -82,7 +83,7 @@ export function CompletionSoundPicker() {
 						triggerHaptic("selection");
 						setVolume(Number(e.target.value));
 					}}
-					className="h-1 flex-1 cursor-pointer appearance-none rounded-full bg-pi-surface-raised accent-pi-accent"
+					className="h-1 flex-1 pi-range"
 				/>
 				<span className="w-10 text-right font-mono text-[11px] text-pi-text-secondary">
 					{Math.round(volume * 100)}%
@@ -106,7 +107,7 @@ export function CompletionSoundPicker() {
 						triggerHaptic("crisp");
 						previewHaptic("streamDone");
 					}}
-					className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-pi-surface-raised px-3 py-1.5 text-[12px] font-medium text-pi-text shadow-[0_0_0_1px_var(--pi-border)] transition-hover active-press hover:bg-pi-surface-overlay"
+					className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-pi-surface-raised px-3 py-1.5 text-[12px] font-medium text-pi-text shadow-ring transition-hover active-press hover:bg-pi-surface-overlay"
 				>
 					Try it
 				</button>
@@ -144,26 +145,7 @@ function ToggleRow({
 			<label htmlFor={id} className="text-[12px] font-medium text-pi-text-secondary">
 				{label}
 			</label>
-			<button
-				type="button"
-				id={id}
-				onClick={() => {
-					triggerHaptic("selection");
-					onChange();
-				}}
-				aria-pressed={checked}
-				className={`relative inline-flex h-[20px] w-8 shrink-0 items-center rounded-full active-press transition-smooth ${
-					checked
-						? "bg-pi-accent hover:bg-pi-accent-hover"
-						: "bg-pi-surface-raised shadow-[0_0_0_1px_var(--pi-border)] hover:bg-pi-surface-overlay"
-				}`}
-			>
-				<span
-					className={`absolute top-0.5 h-4 w-4 rounded-full bg-white/90 shadow-sm transition-transform ${
-						checked ? "translate-x-[12px]" : "translate-x-0.5"
-					}`}
-				/>
-			</button>
+			<Switch id={id} checked={checked} onChange={onChange} />
 		</div>
 	);
 }

@@ -62,7 +62,7 @@ export function PermissionPoliciesEditor({ value, onChange }: Props) {
 				onChange={(v) => updateList("hardDeny", v)}
 			/>
 
-			<div className="rounded-md bg-pi-surface-raised px-3 py-2 text-[11px] text-pi-text-muted shadow-[0_0_0_1px_var(--pi-border)]">
+			<div className="rounded-md bg-pi-surface-raised px-3 py-2 text-[11px] text-pi-text-muted shadow-ring">
 				{RULE_HINT} These rules only apply when{" "}
 				<span className="text-pi-text">Permission mode</span> is set to{" "}
 				<span className="font-mono text-pi-text">auto</span>.
@@ -110,7 +110,7 @@ function RuleListEditor({
 	);
 
 	return (
-		<div className="rounded-lg bg-pi-surface-raised shadow-[0_0_0_1px_var(--pi-border)]">
+		<div className="rounded-lg bg-pi-surface-raised shadow-ring">
 			<div className="flex items-center gap-2 border-b border-pi-border px-3 py-2">
 				{icon}
 				<div>
@@ -126,7 +126,7 @@ function RuleListEditor({
 				{values.map((rule, idx) => (
 					<div
 						key={`${rule}-${idx}`}
-						className="flex items-center justify-between gap-2 rounded-md bg-pi-bg px-2 py-1 shadow-[0_0_0_1px_var(--pi-border)]"
+						className="flex items-center justify-between gap-2 rounded-md bg-pi-bg px-2 py-1 shadow-ring"
 					>
 						<code className="truncate text-[11.5px] text-pi-text">{rule}</code>
 						<button
@@ -152,7 +152,7 @@ function RuleListEditor({
 						onChange={(e) => setDraft(e.target.value)}
 						placeholder={placeholder ?? "Add rule"}
 						spellCheck={false}
-						className="min-w-0 flex-1 rounded-md bg-pi-bg px-2.5 py-1.5 text-[11.5px] text-pi-text placeholder:text-pi-text-faint shadow-[0_0_0_1px_var(--pi-border)] focus:shadow-focus focus:outline-none"
+						className="min-w-0 flex-1 rounded-md bg-pi-bg px-2.5 py-1.5 text-[11.5px] text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none"
 					/>
 					<button
 						type="submit"

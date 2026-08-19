@@ -187,7 +187,7 @@ function ToggleButton({
 	return (
 		<button
 			onClick={onClick}
-			className={`rounded-[5px] px-2 py-0.5 text-[10.5px] font-medium transition-hover focus-visible:shadow-focus focus-visible:outline-none ${
+			className={`rounded px-2 py-0.5 text-[10.5px] font-medium transition-hover focus-visible:shadow-focus focus-visible:outline-none ${
 				active
 					? "bg-pi-accent text-white shadow-sm"
 					: "text-pi-text-muted hover:bg-pi-surface-overlay hover:text-pi-text"
@@ -375,7 +375,7 @@ function MediaPlayer({ kind, src, title }: { kind: "audio" | "video"; src: strin
 						if (!el) return;
 						el.currentTime = Number(e.target.value);
 					}}
-					className="h-1 flex-1 cursor-pointer appearance-none rounded-full bg-pi-surface-raised accent-pi-accent"
+					className="h-1 flex-1 pi-range"
 				/>
 				<Volume2 className="h-3.5 w-3.5 text-pi-text-muted" />
 				<input
@@ -389,7 +389,7 @@ function MediaPlayer({ kind, src, title }: { kind: "audio" | "video"; src: strin
 						setVolume(v);
 						if (ref.current) ref.current.volume = v;
 					}}
-					className="h-1 w-20 cursor-pointer appearance-none rounded-full bg-pi-surface-raised accent-pi-accent"
+					className="h-1 w-20 pi-range"
 				/>
 			</div>
 		</div>

@@ -149,7 +149,7 @@ export function SessionPicker({ onClose, onResume }: SessionPickerProps) {
 									key={s.path}
 									onClick={() => pick(s)}
 									onMouseEnter={() => setHighlight(i)}
-									className={`flex w-full items-center gap-2.5 px-3 py-2 text-left transition-hover ${
+									className={`flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left transition-hover focus-visible:shadow-focus focus-visible:outline-none ${
 										active ? "bg-pi-accent-soft" : "hover:bg-pi-surface-raised"
 									}`}
 								>

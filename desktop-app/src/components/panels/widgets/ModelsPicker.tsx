@@ -126,7 +126,7 @@ export function ModelsPicker({ enabled, onChange }: Props) {
 						value={query}
 						onChange={(e) => setQuery(e.target.value)}
 						placeholder="Search models…"
-						className={`w-full rounded-md bg-pi-surface-raised py-1.5 pl-8 pr-3 text-[12px] text-pi-text placeholder:text-pi-text-faint shadow-[0_0_0_1px_var(--pi-border)] transition-smooth focus:shadow-focus focus:outline-none`}
+						className={`w-full rounded-md bg-pi-surface-raised py-1.5 pl-8 pr-3 text-[12px] text-pi-text placeholder:text-pi-text-faint shadow-ring transition-smooth focus:shadow-focus focus:outline-none`}
 					/>
 					{query && (
 						<button
@@ -180,13 +180,13 @@ export function ModelsPicker({ enabled, onChange }: Props) {
 					Couldn't load models: {loadError}
 				</div>
 			) : visible.length === 0 ? (
-				<div className={`rounded-md bg-pi-surface-raised px-3 py-3 text-center text-[11.5px] text-pi-text-muted shadow-[0_0_0_1px_var(--pi-border)] transition-smooth`}>
+				<div className={`rounded-md bg-pi-surface-raised px-3 py-3 text-center text-[11.5px] text-pi-text-muted shadow-ring transition-smooth`}>
 					{models.length === 0
 						? "No models found. Sign in to a provider first."
 						: "No models match your search."}
 				</div>
 			) : (
-				<ul className={`max-h-72 space-y-1 overflow-y-auto rounded-md bg-pi-surface-raised p-1 shadow-[0_0_0_1px_var(--pi-border)] transition-smooth hover:shadow-card-hover`}>
+				<ul className={`max-h-72 space-y-1 overflow-y-auto rounded-md bg-pi-surface-raised p-1 shadow-ring transition-smooth hover:shadow-card-hover`}>
 					{visible.map((m) => {
 						const key = `${m.provider}:${m.id}`;
 						const enabled = enabledSet.has(key);

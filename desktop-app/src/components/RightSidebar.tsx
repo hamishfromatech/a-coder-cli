@@ -43,14 +43,14 @@ export function RightSidebar({ projectPath }: Props) {
 							title={label}
 							className={`relative flex h-7 flex-1 items-center justify-center gap-1.5 rounded-md px-2 text-[11px] font-medium transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
 								active
-									? "bg-pi-surface-raised text-pi-text shadow-[0_0_0_1px_var(--pi-border)] hover:shadow-card-hover"
+									? "bg-pi-surface-raised text-pi-text shadow-ring hover:shadow-card-hover"
 									: "text-pi-text-muted hover:bg-pi-surface-raised hover:text-pi-text hover:shadow-card-hover"
 							}`}
 						>
 							<Icon className="h-3.5 w-3.5 transition-smooth" />
 							<span className="truncate">{id === "files" ? "Files" : "Git"}</span>
 							{active && (
-								<span className="absolute inset-x-2 -bottom-px h-px bg-pi-accent shadow-[0_0_0_1px_var(--pi-accent-ring)]" />
+								<span className="absolute inset-x-2 -bottom-px h-px bg-pi-accent shadow-focus-inner" />
 							)}
 						</button>
 					);

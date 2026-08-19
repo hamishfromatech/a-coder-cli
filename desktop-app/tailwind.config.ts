@@ -54,6 +54,19 @@ const config: Config = {
 				// Accent focus ring.
 				focus:
 					"0 0 0 1px var(--pi-accent), 0 0 0 3px var(--pi-accent-ring)",
+				"focus-inner": "0 0 0 1px var(--pi-accent-ring)",
+				// Hairline rings used for controls and in-panel structure.
+				ring: "0 0 0 1px var(--pi-border)",
+				"ring-strong": "0 0 0 1px var(--pi-border-strong)",
+				"ring-accent": "0 0 0 1px var(--pi-accent)",
+				"ring-accent-2": "0 0 0 2px var(--pi-accent)",
+				"ring-error": "0 0 0 1px var(--pi-error)",
+			},
+			fontSize: {
+				// Fine-grained UI sizes below Tailwind's default `xs` (12px).
+				"2xs": ["11px", { lineHeight: "1.4" }],
+				"3xs": ["10.5px", { lineHeight: "1.4" }],
+				"4xs": ["9.5px", { lineHeight: "1.4" }],
 			},
 			borderRadius: {
 				xl: "10px",

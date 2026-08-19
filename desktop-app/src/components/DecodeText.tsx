@@ -110,7 +110,7 @@ export function DecodeText({
 			{cursor && (
 				<span
 					aria-hidden="true"
-					className="ml-1 inline-block size-2 shrink-0 -translate-y-px rounded-[1px] bg-current"
+					className="ml-1 inline-block size-2 shrink-0 -translate-y-px rounded-sm bg-current"
 					style={{ animation: "decode-cursor 1s step-end infinite" }}
 				/>
 			)}

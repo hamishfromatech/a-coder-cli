@@ -41,7 +41,7 @@ function CodeCard({ className, ...props }: React.ComponentProps<"div">) {
 	return (
 		<div
 			className={cn(
-				"min-w-0 max-w-full overflow-hidden rounded-[0.625rem] border border-pi-border text-[length:var(--conversation-tool-font-size)] text-pi-text-muted",
+				"min-w-0 max-w-full overflow-hidden rounded-xl border border-pi-border text-[length:var(--conversation-tool-font-size)] text-pi-text-muted",
 				className,
 			)}
 			data-slot="code-card"

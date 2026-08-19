@@ -84,7 +84,7 @@ export function ThinkingPresetPicker({ value, onChange }: Props) {
 			<div
 				role="radiogroup"
 				aria-label="Reasoning"
-				className={`grid grid-cols-5 gap-1 rounded-lg bg-pi-surface-raised p-1 shadow-[0_0_0_1px_var(--pi-border)] transition-smooth hover:shadow-card-hover`}
+				className={`grid grid-cols-5 gap-1 rounded-lg bg-pi-surface-raised p-1 shadow-ring transition-smooth hover:shadow-card-hover`}
 			>
 				{PRESETS.map((preset) => {
 					const active = current.id === preset.id;

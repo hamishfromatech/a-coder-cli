@@ -53,7 +53,7 @@ function LabeledInput({
 					placeholder={placeholder}
 					spellCheck={false}
 					autoComplete="off"
-					className={`w-full rounded-md bg-pi-surface-raised py-1.5 pl-3 ${isPassword ? "pr-9" : "pr-3"} ${mono ? "font-mono" : ""} text-[11.5px] text-pi-text placeholder:text-pi-text-faint shadow-[0_0_0_1px_var(--pi-border)] focus:shadow-focus focus:outline-none`}
+					className={`w-full rounded-md bg-pi-surface-raised py-1.5 pl-3 ${isPassword ? "pr-9" : "pr-3"} ${mono ? "font-mono" : ""} text-[11.5px] text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none`}
 				/>
 				{isPassword && (
 					<button
@@ -73,7 +73,7 @@ function LabeledInput({
 
 function Card({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
 	return (
-		<section className="overflow-hidden rounded-lg bg-pi-surface-raised shadow-[0_0_0_1px_var(--pi-border)]">
+		<section className="overflow-hidden rounded-lg bg-pi-surface-raised shadow-ring">
 			<header className="flex items-center gap-2 border-b border-pi-border px-4 py-2.5">
 				{icon}
 				<h3 className="text-[12.5px] font-semibold text-pi-text">{title}</h3>
@@ -134,7 +134,7 @@ export function VoiceSection() {
 			</header>
 
 			{/* Master enable */}
-			<div className="flex items-center justify-between rounded-lg bg-pi-surface-raised px-4 py-3 shadow-[0_0_0_1px_var(--pi-border)]">
+			<div className="flex items-center justify-between rounded-lg bg-pi-surface-raised px-4 py-3 shadow-ring">
 				<div className="pr-4">
 					<p className="text-[12.5px] font-semibold text-pi-text">Enable voice mode</p>
 					<p className="text-[11px] text-pi-text-muted">Show the mic button and auto-speak replies.</p>

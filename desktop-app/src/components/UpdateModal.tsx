@@ -183,7 +183,7 @@ export function UpdateModal({ update, onDismiss }: UpdateModalProps) {
 					{isReady ? (
 						<button
 							onClick={handleRelaunch}
-							className="inline-flex items-center gap-1.5 rounded-lg bg-pi-accent px-3 py-2 text-[12px] font-medium text-white shadow-[0_0_0_1px_var(--pi-accent)] transition-hover active-press hover:bg-pi-accent-hover focus-visible:shadow-focus focus-visible:outline-none"
+							className="inline-flex items-center gap-1.5 rounded-lg bg-pi-accent px-3 py-2 text-[12px] font-medium text-white shadow-ring-accent transition-hover active-press hover:bg-pi-accent-hover focus-visible:shadow-focus focus-visible:outline-none"
 						>
 							<RefreshCw className="h-3.5 w-3.5" />
 							Restart to install
@@ -191,7 +191,7 @@ export function UpdateModal({ update, onDismiss }: UpdateModalProps) {
 					) : hasError ? (
 						<button
 							onClick={handleDownload}
-							className="inline-flex items-center gap-1.5 rounded-lg bg-pi-accent px-3 py-2 text-[12px] font-medium text-white shadow-[0_0_0_1px_var(--pi-accent)] transition-hover active-press hover:bg-pi-accent-hover focus-visible:shadow-focus focus-visible:outline-none"
+							className="inline-flex items-center gap-1.5 rounded-lg bg-pi-accent px-3 py-2 text-[12px] font-medium text-white shadow-ring-accent transition-hover active-press hover:bg-pi-accent-hover focus-visible:shadow-focus focus-visible:outline-none"
 						>
 							<Download className="h-3.5 w-3.5" />
 							Try again
@@ -200,7 +200,7 @@ export function UpdateModal({ update, onDismiss }: UpdateModalProps) {
 						<button
 							onClick={handleDownload}
 							disabled={isDownloading}
-							className="inline-flex items-center gap-1.5 rounded-lg bg-pi-accent px-3 py-2 text-[12px] font-medium text-white shadow-[0_0_0_1px_var(--pi-accent)] transition-hover active-press hover:bg-pi-accent-hover focus-visible:shadow-focus focus-visible:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+							className="inline-flex items-center gap-1.5 rounded-lg bg-pi-accent px-3 py-2 text-[12px] font-medium text-white shadow-ring-accent transition-hover active-press hover:bg-pi-accent-hover focus-visible:shadow-focus focus-visible:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
 						>
 							<Download className="h-3.5 w-3.5" />
 							{isDownloading ? "Downloading..." : "Download update"}

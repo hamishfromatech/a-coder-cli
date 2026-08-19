@@ -152,7 +152,7 @@ export function Toolbar({ onShowModelPicker, onShowMemory }: ToolbarProps) {
 						<button
 							key={level}
 							onClick={() => void handleSetThinkingLevel(level)}
-							className={`h-5 rounded-[5px] px-1.5 font-mono text-[10.5px] uppercase tracking-wide transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
+							className={`h-5 rounded px-1.5 font-mono text-[10.5px] uppercase tracking-wide transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
 								active
 									? "bg-pi-accent-soft text-pi-accent hover:bg-pi-accent-soft"
 									: "text-pi-text-muted hover:bg-pi-surface-overlay hover:text-pi-text"

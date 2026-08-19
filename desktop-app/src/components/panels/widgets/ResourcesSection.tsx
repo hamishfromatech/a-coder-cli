@@ -13,6 +13,7 @@ import * as rpc from "../../../lib/rpc";
 import type { PathMetadata, ResolvedResource } from "../../../lib/rpc";
 import { loadCliSettings, useSettingsStore } from "../../../stores/settings-store";
 import { useSessionStore } from "../../../stores/session-store";
+import { Switch } from "../../ui/Switch";
 
 // ============================================================================
 // Types
@@ -308,7 +309,7 @@ export function ResourcesSection() {
 				</div>
 
 				{allSkills.length === 0 && !loading && (
-					<div className="rounded-lg bg-pi-surface-raised px-4 py-6 text-center shadow-[0_0_0_1px_var(--pi-border)]">
+					<div className="rounded-lg bg-pi-surface-raised px-4 py-6 text-center shadow-ring">
 						<div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-pi-accent-soft text-pi-accent">
 							<Brain className="h-5 w-5" />
 						</div>
@@ -332,7 +333,7 @@ export function ResourcesSection() {
 			</section>
 
 			{/* ---- Add a skill pack --------------------------------------------- */}
-			<section className="rounded-lg bg-pi-surface-raised p-4 shadow-[0_0_0_1px_var(--pi-border)]">
+			<section className="rounded-lg bg-pi-surface-raised p-4 shadow-ring">
 				<h3 className="mb-1 text-[12.5px] font-semibold text-pi-text">Add a skill pack</h3>
 				<p className="mb-3 text-[11px] leading-relaxed text-pi-text-muted">
 					Skill packs are bundles of skills shared by the community. Paste a link or package name to install one.
@@ -384,7 +385,7 @@ export function ResourcesSection() {
 							value={newSource}
 							onChange={(e) => setNewSource(e.target.value)}
 							placeholder="e.g. github.com/earendil-works/pi-skills"
-							className="min-w-[16rem] flex-1 rounded-md bg-pi-bg px-3 py-1.5 text-[11.5px] text-pi-text placeholder:text-pi-text-faint shadow-[0_0_0_1px_var(--pi-border)] focus:shadow-focus focus:outline-none"
+							className="min-w-[16rem] flex-1 rounded-md bg-pi-bg px-3 py-1.5 text-[11.5px] text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none"
 						/>
 						<label className="flex items-center gap-1.5 text-[11px] text-pi-text-muted">
 							<input
@@ -431,7 +432,7 @@ export function ResourcesSection() {
 						{[...builtInGroups, ...packGroups].map((group) => (
 							<div
 								key={`${group.origin}:${group.scope}:${group.source}`}
-								className="overflow-hidden rounded-lg bg-pi-surface-raised shadow-[0_0_0_1px_var(--pi-border)]"
+								className="overflow-hidden rounded-lg bg-pi-surface-raised shadow-ring"
 							>
 								<button
 									type="button"
@@ -496,30 +497,20 @@ function SkillCard({
 }) {
 	return (
 		<div
-			className={`flex flex-col justify-between gap-3 rounded-lg bg-pi-surface-raised p-3 shadow-[0_0_0_1px_var(--pi-border)] transition-hover ${disabled ? "opacity-60" : "hover:shadow-card-hover"}`}
+			className={`flex flex-col justify-between gap-3 rounded-lg bg-pi-surface-raised p-3 shadow-ring transition-hover ${disabled ? "opacity-60" : "hover:shadow-card-hover"}`}
 		>
 			<div className="min-w-0">
 				<div className="flex items-start justify-between gap-2">
 					<div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-pi-accent-soft text-pi-accent">
 						<Brain className="h-4 w-4" />
 					</div>
-					<button
-						type="button"
-						onClick={onToggle}
+					<Switch
+						size="sm"
+						checked={item.enabled}
+						onChange={onToggle}
 						disabled={disabled}
-						aria-pressed={item.enabled}
-						className={`relative inline-flex h-[18px] w-7 shrink-0 items-center rounded-full transition-smooth ${
-							item.enabled
-								? "bg-pi-accent hover:bg-pi-accent-hover"
-								: "bg-pi-surface-raised shadow-[0_0_0_1px_var(--pi-border)] hover:bg-pi-surface-overlay"
-						}`}
-					>
-						<span
-							className={`absolute top-0.5 h-3.5 w-3.5 rounded-full bg-white/90 shadow-sm transition-transform ${
-								item.enabled ? "translate-x-3" : "translate-x-0.5"
-							}`}
-						/>
-					</button>
+						ariaLabel={`Toggle ${item.displayName}`}
+					/>
 				</div>
 				<div className="mt-1.5 truncate text-[12px] font-medium text-pi-text">{item.displayName}</div>
 				<div className="text-[10px] text-pi-text-muted">{item.groupLabel}</div>
@@ -555,23 +546,13 @@ function ResourceRow({
 			<div className="min-w-0">
 				<div className="truncate text-[11.5px] font-medium text-pi-text">{item.displayName}</div>
 			</div>
-			<button
-				type="button"
-				onClick={onToggle}
+			<Switch
+				size="sm"
+				checked={item.enabled}
+				onChange={onToggle}
 				disabled={disabled}
-				aria-pressed={item.enabled}
-				className={`relative inline-flex h-[18px] w-7 shrink-0 items-center rounded-full transition-smooth ${
-					item.enabled
-						? "bg-pi-accent hover:bg-pi-accent-hover"
-						: "bg-pi-surface-raised shadow-[0_0_0_1px_var(--pi-border)] hover:bg-pi-surface-overlay"
-				}`}
-			>
-				<span
-					className={`absolute top-0.5 h-3.5 w-3.5 rounded-full bg-white/90 shadow-sm transition-transform ${
-						item.enabled ? "translate-x-3" : "translate-x-0.5"
-					}`}
-				/>
-			</button>
+				ariaLabel={`Toggle ${item.displayName}`}
+			/>
 		</div>
 	);
 }

@@ -65,7 +65,7 @@ export function PathListInput({
 			{value.map((path, idx) => (
 				<div
 					key={`${path}-${idx}`}
-					className="flex items-center gap-2 rounded-md bg-pi-bg px-2 py-1 shadow-[0_0_0_1px_var(--pi-border)]"
+					className="flex items-center gap-2 rounded-md bg-pi-bg px-2 py-1 shadow-ring"
 				>
 					<Folder className="h-3 w-3 shrink-0 text-pi-text-faint" />
 					<span className="min-w-0 flex-1 truncate font-mono text-[11px] text-pi-text" title={path}>
@@ -96,7 +96,7 @@ export function PathListInput({
 					placeholder={placeholder ?? "Type a path, or use the picker"}
 					disabled={disabled}
 					rows={1}
-					className="min-w-0 flex-1 resize-none rounded-md bg-pi-bg px-2.5 py-1.5 font-mono text-[11px] text-pi-text placeholder:text-pi-text-faint shadow-[0_0_0_1px_var(--pi-border)] focus:shadow-focus focus:outline-none"
+					className="min-w-0 flex-1 resize-none rounded-md bg-pi-bg px-2.5 py-1.5 font-mono text-[11px] text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none"
 					spellCheck={false}
 				/>
 				<button

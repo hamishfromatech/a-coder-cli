@@ -21,13 +21,6 @@ import { SettingsManager } from "./settings-manager.ts";
 // Cwd-bound service cache
 // ============================================================================
 
-/** Key that uniquely identifies a set of cwd-bound services. */
-interface ServiceCacheKey {
-	cwd: string;
-	agentDir: string;
-	resourceLoaderOptionsHash: string;
-}
-
 function serviceCacheKey(
 	cwd: string,
 	agentDir: string,

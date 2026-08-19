@@ -92,7 +92,7 @@ const MARKDOWN_CONTAINER_CLASS_NAME = cn(
 	"prose-headings:text-pi-text prose-strong:text-pi-text",
 	"prose-a:break-words prose-p:[overflow-wrap:anywhere]",
 	"prose-li:marker:text-pi-text-muted",
-	"prose-code:rounded-[0.25rem] prose-code:px-[0.1875rem] prose-code:py-px prose-code:font-mono prose-code:text-[0.9em] prose-code:font-normal prose-code:before:content-none prose-code:after:content-none",
+	"prose-code:rounded prose-code:px-[0.1875rem] prose-code:py-px prose-code:font-mono prose-code:text-[0.9em] prose-code:font-normal prose-code:before:content-none prose-code:after:content-none",
 	"[&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&>*+*]:mt-[var(--paragraph-gap)]",
 );
 
@@ -103,7 +103,7 @@ function HugeTextFallback({ containerClassName, text }: { containerClassName?: s
 	return (
 		<div
 			className={cn(
-				"aui-md w-full max-w-none overflow-hidden rounded-[0.625rem] border border-pi-border font-mono text-[0.7rem] leading-relaxed text-pi-text-secondary",
+				"aui-md w-full max-w-none overflow-hidden rounded-xl border border-pi-border font-mono text-[0.7rem] leading-relaxed text-pi-text-secondary",
 				containerClassName,
 			)}
 		>
@@ -176,7 +176,7 @@ function MarkdownTextSurface({
 					<li className={cn("leading-[var(--dt-line-height)]", className)} {...props} />
 				),
 				table: ({ className, ...props }: ComponentProps<"table">) => (
-					<div className="aui-md-table my-2 max-w-full overflow-x-auto rounded-[0.375rem] border border-pi-border">
+					<div className="aui-md-table my-2 max-w-full overflow-x-auto rounded-md border border-pi-border">
 						<table
 							className={cn(
 								"m-0 w-full min-w-[18rem] border-collapse text-[0.8125rem] [&_tr]:border-b [&_tr]:border-pi-border last:[&_tr]:border-0",

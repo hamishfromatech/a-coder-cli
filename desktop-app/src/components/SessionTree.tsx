@@ -300,7 +300,7 @@ function FilterMenu({
 		<div className="relative">
 			<button
 				onClick={() => setOpen((v) => !v)}
-				className="flex items-center gap-1 rounded p-1 text-[10.5px] text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text"
+				className="flex items-center gap-1 rounded p-1 text-[10.5px] text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
 				title="Filter tree"
 			>
 				<Filter className="h-3 w-3" />
@@ -323,7 +323,7 @@ function FilterMenu({
 									onChange(m.value);
 									setOpen(false);
 								}}
-								className={`flex w-full items-center justify-between px-2.5 py-1.5 text-left text-[11px] transition-hover ${
+								className={`flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-left text-[11px] transition-hover focus-visible:shadow-focus focus-visible:outline-none ${
 									mode === m.value
 										? "bg-pi-surface-raised text-pi-text"
 										: "text-pi-text-secondary hover:bg-pi-surface-raised"
@@ -567,7 +567,7 @@ function MenuItem({
 	return (
 		<button
 			onClick={onClick}
-			className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[11.5px] text-pi-text-secondary transition-hover hover:bg-pi-surface-raised hover:text-pi-text"
+			className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[11.5px] text-pi-text-secondary transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
 		>
 			<IconCmp className="h-3.5 w-3.5 shrink-0 text-pi-text-muted" />
 			{label}

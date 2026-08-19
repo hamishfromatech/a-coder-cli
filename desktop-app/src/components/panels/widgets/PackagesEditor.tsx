@@ -117,7 +117,7 @@ function PackageCard({
 	const display = isSimple ? pkg : pkg.source || "(unnamed source)";
 
 	return (
-		<div className="overflow-hidden rounded-lg bg-pi-surface-raised shadow-[0_0_0_1px_var(--pi-border)]">
+		<div className="overflow-hidden rounded-lg bg-pi-surface-raised shadow-ring">
 			<button
 				type="button"
 				onClick={onToggle}
@@ -240,7 +240,7 @@ function ResourceFilterEditor({
 				placeholder={`One ${kind.slice(0, -1)} id per line`}
 				onChange={(e) => commit(e.target.value)}
 				rows={Math.max(2, Math.min(values.length + 1, 4))}
-				className="w-full rounded-md bg-pi-bg p-2 font-mono text-[11px] text-pi-text placeholder:text-pi-text-faint shadow-[0_0_0_1px_var(--pi-border)] focus:shadow-focus focus:outline-none"
+				className="w-full rounded-md bg-pi-bg p-2 font-mono text-[11px] text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none"
 			/>
 		</div>
 	);
@@ -269,7 +269,7 @@ function LabeledInput({
 				onChange={(e) => onChange(e.target.value)}
 				spellCheck={false}
 				autoComplete="off"
-				className="w-full rounded-md bg-pi-bg px-2.5 py-1.5 text-[11.5px] text-pi-text placeholder:text-pi-text-faint shadow-[0_0_0_1px_var(--pi-border)] focus:shadow-focus focus:outline-none"
+				className="w-full rounded-md bg-pi-bg px-2.5 py-1.5 text-[11.5px] text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none"
 			/>
 		</div>
 	);

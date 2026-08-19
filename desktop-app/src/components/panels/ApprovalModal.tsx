@@ -145,7 +145,7 @@ export function ApprovalModal({ request, onResolve }: ApprovalModalProps) {
 					</button>
 					<button
 						onClick={handleAllow}
-						className="inline-flex items-center gap-1.5 rounded-lg bg-pi-accent px-3 py-2 text-[12px] font-medium text-white shadow-[0_0_0_1px_var(--pi-accent)] transition-hover active-press hover:bg-pi-accent-hover focus-visible:shadow-focus focus-visible:outline-none"
+						className="inline-flex items-center gap-1.5 rounded-lg bg-pi-accent px-3 py-2 text-[12px] font-medium text-white shadow-ring-accent transition-hover active-press hover:bg-pi-accent-hover focus-visible:shadow-focus focus-visible:outline-none"
 					>
 						<Check className="h-3.5 w-3.5" />
 						Allow

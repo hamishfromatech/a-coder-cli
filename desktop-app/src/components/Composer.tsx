@@ -478,7 +478,7 @@ export function Composer() {
 						className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-all focus-visible:shadow-focus focus-visible:outline-none disabled:opacity-50 ${
 							recording
 								? "animate-pulse bg-pi-error text-white"
-								: "bg-pi-surface-raised text-pi-text shadow-[0_0_0_1px_var(--pi-border)] hover:bg-pi-surface-overlay"
+								: "bg-pi-surface-raised text-pi-text shadow-ring hover:bg-pi-surface-overlay"
 						}`}
 						title={recording ? "Stop recording" : "Voice input"}
 						aria-label={recording ? "Stop recording" : "Voice input"}

@@ -242,7 +242,7 @@ export function CustomProvidersSection() {
 			)}
 
 			{providerIds.length === 0 && !loadError && (
-				<div className="rounded-lg bg-pi-surface-raised px-4 py-3 text-[11.5px] text-pi-text-muted shadow-[0_0_0_1px_var(--pi-border)]">
+				<div className="rounded-lg bg-pi-surface-raised px-4 py-3 text-[11.5px] text-pi-text-muted shadow-ring">
 					No custom AI services yet. Click "Add AI service" to connect a local model or a private endpoint.
 				</div>
 			)}
@@ -297,7 +297,7 @@ export function CustomProvidersSection() {
 				</button>
 			</div>
 
-			<div className="rounded-md bg-pi-surface-raised px-3 py-2.5 text-[11px] text-pi-text-muted shadow-[0_0_0_1px_var(--pi-border)]">
+			<div className="rounded-md bg-pi-surface-raised px-3 py-2.5 text-[11px] text-pi-text-muted shadow-ring">
 				Tip: After saving, open the{" "}
 				<span className="text-pi-text">AI model</span> panel and pick your custom
 				service to make it the default.
@@ -370,7 +370,7 @@ function ProviderEditor({
 	}, [provider.baseUrl, provider.apiKey, provider.authHeader, provider.api, canFetch, onSetModels]);
 
 	return (
-		<div className="overflow-hidden rounded-lg bg-pi-surface-raised shadow-[0_0_0_1px_var(--pi-border)]">
+		<div className="overflow-hidden rounded-lg bg-pi-surface-raised shadow-ring">
 			<div className="flex items-start gap-3 px-4 py-3">
 				<div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-pi-accent to-pi-accent-hover font-mono text-[11px] text-white">
 					<Server className="h-4 w-4" />
@@ -449,7 +449,7 @@ function ProviderEditor({
 									placeholder="not-needed"
 									spellCheck={false}
 									autoComplete="off"
-									className="w-full rounded-md bg-pi-surface-raised py-1.5 pl-3 pr-9 font-mono text-[11.5px] text-pi-text placeholder:text-pi-text-faint shadow-[0_0_0_1px_var(--pi-border)] focus:shadow-focus focus:outline-none"
+									className="w-full rounded-md bg-pi-surface-raised py-1.5 pl-3 pr-9 font-mono text-[11.5px] text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none"
 								/>
 								<button
 									type="button"
@@ -545,7 +545,7 @@ function ModelEditor({
 	const [expanded, setExpanded] = useState(false);
 
 	return (
-		<div className="rounded-md bg-pi-bg/70 shadow-[0_0_0_1px_var(--pi-border)]">
+		<div className="rounded-md bg-pi-bg/70 shadow-ring">
 			<div className="flex items-center gap-2 px-3 py-2">
 				<button
 					type="button"
@@ -644,7 +644,7 @@ function LabeledInput({
 				onChange={(e) => onChange(e.target.value)}
 				spellCheck={false}
 				autoComplete="off"
-				className={`w-full rounded-md bg-pi-surface-raised py-1.5 px-3 text-[11.5px] text-pi-text placeholder:text-pi-text-faint shadow-[0_0_0_1px_var(--pi-border)] focus:shadow-focus focus:outline-none ${mono ? "font-mono" : ""}`}
+				className={`w-full rounded-md bg-pi-surface-raised py-1.5 px-3 text-[11.5px] text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none ${mono ? "font-mono" : ""}`}
 			/>
 		</div>
 	);
@@ -671,7 +671,7 @@ function LabeledNumberInput({
 				value={value}
 				min={1}
 				onChange={(e) => onChange(Number(e.target.value) || 0)}
-				className="w-full rounded-md bg-pi-surface-raised py-1.5 px-3 text-[11.5px] font-mono text-pi-text shadow-[0_0_0_1px_var(--pi-border)] focus:shadow-focus focus:outline-none"
+				className="w-full rounded-md bg-pi-surface-raised py-1.5 px-3 text-[11.5px] font-mono text-pi-text shadow-ring focus:shadow-focus focus:outline-none"
 			/>
 		</div>
 	);
@@ -698,7 +698,7 @@ function LabeledSelect({
 				id={id}
 				value={value}
 				onChange={(e) => onChange(e.target.value)}
-				className="w-full rounded-md bg-pi-surface-raised py-1.5 px-3 text-[11.5px] text-pi-text shadow-[0_0_0_1px_var(--pi-border)] focus:shadow-focus focus:outline-none"
+				className="w-full rounded-md bg-pi-surface-raised py-1.5 px-3 text-[11.5px] text-pi-text shadow-ring focus:shadow-focus focus:outline-none"
 			>
 				{options.map((o) => (
 					<option key={o.value} value={o.value}>

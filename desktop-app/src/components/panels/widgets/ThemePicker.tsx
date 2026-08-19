@@ -116,8 +116,8 @@ export function ThemePicker() {
 								onClick={() => chooseSkin(opt.name)}
 								className={`group flex flex-col gap-2 rounded-lg p-2.5 text-left transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
 									active
-										? "bg-pi-accent-soft shadow-[0_0_0_2px_var(--pi-accent)] hover:bg-pi-accent-soft"
-										: "bg-pi-surface-raised shadow-[0_0_0_1px_var(--pi-border)] hover:shadow-card-hover hover:bg-pi-surface-overlay"
+										? "bg-pi-accent-soft shadow-ring-accent-2 hover:bg-pi-accent-soft"
+										: "bg-pi-surface-raised shadow-ring hover:shadow-card-hover hover:bg-pi-surface-overlay"
 								}`}
 							>
 								<div className="flex items-center justify-between">
@@ -166,8 +166,8 @@ export function ThemePicker() {
 								onClick={() => chooseMode(opt.value)}
 								className={`group flex flex-col gap-2 rounded-lg p-3 text-left transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
 									active
-										? "bg-pi-accent-soft shadow-[0_0_0_2px_var(--pi-accent)] hover:bg-pi-accent-soft"
-										: "bg-pi-surface-raised shadow-[0_0_0_1px_var(--pi-border)] hover:shadow-card-hover hover:bg-pi-surface-overlay"
+										? "bg-pi-accent-soft shadow-ring-accent-2 hover:bg-pi-accent-soft"
+										: "bg-pi-surface-raised shadow-ring hover:shadow-card-hover hover:bg-pi-surface-overlay"
 								}`}
 							>
 								<div className="flex items-center justify-between">
@@ -221,11 +221,11 @@ function SkinPreview({ skin, mode }: { skin: string; mode: ResolvedMode }) {
 			aria-hidden
 		>
 			<span
-				className="ml-1 h-2.5 w-2.5 rounded-[2px]"
+				className="ml-1 h-2.5 w-2.5 rounded-sm"
 				style={{ background: palette.surface }}
 			/>
 			<span
-				className="h-1.5 flex-1 rounded-[2px]"
+				className="h-1.5 flex-1 rounded-sm"
 				style={{ background: palette.textMuted, opacity: 0.5 }}
 			/>
 			<span

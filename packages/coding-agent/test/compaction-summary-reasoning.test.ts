@@ -126,6 +126,7 @@ describe("generateSummary reasoning options", () => {
 			messages,
 			createModel(true, 8192, { allowedFallbackModels: ["claude-opus-4-8", "claude-opus-5"] }),
 			2000,
+			undefined,
 		);
 
 		expect(completeSimpleMock).toHaveBeenCalledTimes(1);

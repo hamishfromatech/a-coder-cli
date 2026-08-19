@@ -95,7 +95,7 @@ export function ProjectPicker({ onClose, onSelect }: ProjectPickerProps) {
 				<div className="border-b border-pi-border p-3">
 					<button
 						onClick={() => void handlePickFolder()}
-						className="flex w-full items-center justify-center gap-2 rounded-md bg-pi-accent px-3 py-2 text-[12.5px] font-medium text-white shadow-[0_0_0_1px_var(--pi-accent)] transition-hover active-press hover:bg-pi-accent-hover"
+						className="flex w-full items-center justify-center gap-2 rounded-md bg-pi-accent px-3 py-2 text-[12.5px] font-medium text-white shadow-ring-accent transition-hover active-press hover:bg-pi-accent-hover"
 					>
 						<FolderOpen className="h-3.5 w-3.5" />
 						Choose folder…
@@ -141,7 +141,7 @@ export function ProjectPicker({ onClose, onSelect }: ProjectPickerProps) {
 											triggerHaptic("selection");
 											onSelect(path);
 										}}
-											className="flex min-w-0 flex-1 items-center gap-2 text-left"
+											className="flex min-w-0 flex-1 items-center gap-2 rounded-md text-left transition-hover focus-visible:shadow-focus focus-visible:outline-none"
 										>
 											<Folder
 												className={`h-3.5 w-3.5 shrink-0 ${

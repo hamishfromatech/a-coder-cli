@@ -74,7 +74,7 @@ export function KeybindingsSection() {
 					onChange={(e) => commit(e.target.value)}
 					rows={16}
 					spellCheck={false}
-					className={`w-full rounded-md bg-pi-surface-raised p-3 font-mono text-[11.5px] text-pi-text shadow-[0_0_0_1px_var(--pi-border)] focus:shadow-focus focus:outline-none ${error ? "shadow-[0_0_0_1px_var(--pi-error)]" : ""}`}
+					className={`w-full rounded-md bg-pi-surface-raised p-3 font-mono text-[11.5px] text-pi-text shadow-ring focus:shadow-focus focus:outline-none ${error ? "shadow-ring-error" : ""}`}
 				/>
 				{error && <p className="text-[11px] text-pi-error">Invalid JSON: {error}</p>}
 			</div>
@@ -102,7 +102,7 @@ export function KeybindingsSection() {
 				)}
 			</div>
 
-			<div className="rounded-md bg-pi-surface-raised px-3 py-2.5 text-[11px] text-pi-text-muted shadow-[0_0_0_1px_var(--pi-border)]">
+			<div className="rounded-md bg-pi-surface-raised px-3 py-2.5 text-[11px] text-pi-text-muted shadow-ring">
 				<p className="mb-1 font-medium text-pi-text">Common keybinding format</p>
 				<pre className="overflow-auto rounded bg-pi-bg p-2 font-mono text-[10.5px] text-pi-text">
 					{`{

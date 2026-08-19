@@ -188,7 +188,7 @@ export function AccountSection() {
 				</section>
 			))}
 
-			<div className="rounded-md bg-pi-surface-raised px-3 py-2.5 text-[11px] text-pi-text-muted shadow-[0_0_0_1px_var(--pi-border)] transition-smooth hover:bg-pi-surface-overlay">
+			<div className="rounded-md bg-pi-surface-raised px-3 py-2.5 text-[11px] text-pi-text-muted shadow-ring transition-smooth hover:bg-pi-surface-overlay">
 				Many providers accept environment variables too (e.g.{" "}
 				<code className="font-mono text-pi-text">ANTHROPIC_API_KEY</code>,
 				{" "}<code className="font-mono text-pi-text">OPENAI_API_KEY</code>) —
@@ -232,7 +232,7 @@ function ProviderCard({
 		: "Not signed in";
 
 	return (
-		<div className={`overflow-hidden rounded-lg bg-pi-surface-raised shadow-[0_0_0_1px_var(--pi-border)] transition-smooth hover:shadow-card-hover`}>
+		<div className={`overflow-hidden rounded-lg bg-pi-surface-raised shadow-ring transition-smooth hover:shadow-card-hover`}>
 			<div className="flex items-start gap-3 px-4 py-3">
 				<div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-pi-accent to-pi-accent-hover font-semibold text-[12px] text-white active-press transition-smooth group-hover:opacity-80">
 					{provider.label
@@ -361,7 +361,7 @@ function ProviderCard({
 								placeholder="Paste API key…"
 								spellCheck={false}
 								autoComplete="off"
-								className={`w-full rounded-md bg-pi-surface-raised py-1.5 pl-3 pr-9 text-[12px] font-mono text-pi-text placeholder:text-pi-text-faint shadow-[0_0_0_1px_var(--pi-border)] transition-smooth focus:shadow-focus focus:outline-none`}
+								className={`w-full rounded-md bg-pi-surface-raised py-1.5 pl-3 pr-9 text-[12px] font-mono text-pi-text placeholder:text-pi-text-faint shadow-ring transition-smooth focus:shadow-focus focus:outline-none`}
 							/>
 							<button
 								type="button"
