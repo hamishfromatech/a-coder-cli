@@ -1,5 +1,6 @@
 import { Box, GitBranch, Layers, Palette, Plus, Sparkles, Trash2 } from "lucide-react";
 import { useCallback, useState } from "react";
+import { Card } from "../../ui/Card";
 
 export type PackageSource =
 	| string
@@ -117,7 +118,7 @@ function PackageCard({
 	const display = isSimple ? pkg : pkg.source || "(unnamed source)";
 
 	return (
-		<div className="overflow-hidden rounded-lg bg-pi-surface-raised shadow-ring">
+		<Card>
 			<button
 				type="button"
 				onClick={onToggle}
@@ -201,7 +202,7 @@ function PackageCard({
 					)}
 				</div>
 			)}
-		</div>
+		</Card>
 	);
 }
 

@@ -1,5 +1,6 @@
 import { Ban, HelpCircle, Plus, ShieldCheck, X } from "lucide-react";
 import { useCallback, useState } from "react";
+import { Card } from "../../ui/Card";
 
 interface PermissionPolicyConfig {
 	allow?: string[];
@@ -110,7 +111,7 @@ function RuleListEditor({
 	);
 
 	return (
-		<div className="rounded-lg bg-pi-surface-raised shadow-ring">
+		<Card>
 			<div className="flex items-center gap-2 border-b border-pi-border px-3 py-2">
 				{icon}
 				<div>
@@ -164,6 +165,6 @@ function RuleListEditor({
 					</button>
 				</form>
 			</div>
-		</div>
+		</Card>
 	);
 }

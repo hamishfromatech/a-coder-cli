@@ -1,5 +1,6 @@
 import { Check, ChevronDown, Eye, EyeOff, KeyRound, LogOut, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { Card } from "../../ui/Card";
 import * as rpc from "../../../lib/rpc";
 import {
 	groupedProviders,
@@ -232,7 +233,7 @@ function ProviderCard({
 		: "Not signed in";
 
 	return (
-		<div className={`overflow-hidden rounded-lg bg-pi-surface-raised shadow-ring transition-smooth hover:shadow-card-hover`}>
+		<Card className="transition-smooth hover:shadow-card-hover">
 			<div className="flex items-start gap-3 px-4 py-3">
 				<div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-pi-accent to-pi-accent-hover font-semibold text-xs text-white active-press transition-smooth group-hover:opacity-80">
 					{provider.label
@@ -422,6 +423,6 @@ function ProviderCard({
 					)}
 				</div>
 			)}
-		</div>
+			</Card>
 	);
 }

@@ -366,7 +366,7 @@ function ProviderEditor({
 	}, [provider.baseUrl, provider.apiKey, provider.authHeader, provider.api, canFetch, onSetModels]);
 
 	return (
-		<div className="overflow-hidden rounded-lg bg-pi-surface-raised shadow-ring">
+		<Card>
 			<div className="flex items-start gap-3 px-4 py-3">
 				<div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-pi-accent to-pi-accent-hover font-mono text-2xs text-white">
 					<Server className="h-4 w-4" />
@@ -529,7 +529,7 @@ function ProviderEditor({
 					</div>
 				</div>
 			)}
-		</div>
+		</Card>
 	);
 }
 

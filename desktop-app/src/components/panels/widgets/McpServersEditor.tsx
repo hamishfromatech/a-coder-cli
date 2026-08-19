@@ -1,5 +1,6 @@
 import { Plus, Server, Trash2, X } from "lucide-react";
 import { useCallback, useState } from "react";
+import { Card } from "../../ui/Card";
 
 type McpTransport = "stdio" | "sse" | "http";
 
@@ -169,10 +170,7 @@ export function McpServersEditor({ value, onChange }: Props) {
 			)}
 
 			{servers.map((server, idx) => (
-				<div
-					key={idx}
-					className="overflow-hidden rounded-lg bg-pi-surface-raised shadow-ring"
-				>
+				<Card key={idx}>
 					<button
 						type="button"
 						onClick={() => setExpanded((cur) => (cur === idx ? null : idx))}
@@ -287,7 +285,7 @@ export function McpServersEditor({ value, onChange }: Props) {
 							/>
 						</div>
 					)}
-				</div>
+				</Card>
 			))}
 
 			<button
