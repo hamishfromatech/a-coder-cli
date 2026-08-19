@@ -18,6 +18,7 @@ import { useSessionTreeStore } from "../stores/session-tree-store";
 import type { TreeNode } from "../stores/session-tree-store";
 import { useSettingsStore } from "../stores/settings-store";
 import type { TreeFilterMode } from "../lib/settings.types";
+import { IconButton } from "./ui/Button";
 
 const FILTER_MODES: { value: TreeFilterMode; label: string }[] = [
 	{ value: "default", label: "All" },
@@ -227,19 +228,14 @@ export function SessionTree() {
 					)}
 				</div>
 				<div className="flex items-center gap-0.5">
-					<button
-						type="button"
+					<IconButton
+						variant="ghost"
+						size="sm"
+						icon={allExpanded ? ChevronsDownUp : ChevronsUpDown}
 						onClick={() => (allExpanded ? collapseAll() : expandAll())}
-						className="rounded p-1 text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
 						title={allExpanded ? "Collapse all" : "Expand all"}
 						aria-label={allExpanded ? "Collapse all" : "Expand all"}
-					>
-						{allExpanded ? (
-							<ChevronsDownUp className="h-3 w-3" />
-						) : (
-							<ChevronsUpDown className="h-3 w-3" />
-						)}
-					</button>
+					/>
 					<FilterMenu
 						mode={filterMode}
 						onChange={(mode) => {
@@ -424,20 +420,18 @@ function TreeItem({
 				}}
 			>
 				{hasChildren ? (
-					<button
+					<IconButton
+						variant="ghost"
+						size="sm"
+						icon={isExpanded ? ChevronDown : ChevronRight}
 						onClick={() => {
 							toggle(node.id);
 							setFocused(node.id);
 							scrollRowIntoView(node.id);
 						}}
 						className="text-pi-text-muted hover:text-pi-text"
-					>
-						{isExpanded ? (
-							<ChevronDown className="h-3 w-3" />
-						) : (
-							<ChevronRight className="h-3 w-3" />
-						)}
-					</button>
+						aria-label={isExpanded ? "Collapse" : "Expand"}
+					/>
 				) : (
 					<span className="w-3" />
 				)}
@@ -524,14 +518,15 @@ function NodeMenu({
 	};
 	return (
 		<div className="relative shrink-0">
-			<button
+			<IconButton
+				variant="ghost"
+				size="sm"
+				icon={MoreHorizontal}
 				onClick={() => setOpen((v) => !v)}
-				className="flex h-5 w-5 items-center justify-center rounded text-pi-text-faint opacity-0 transition-all hover:bg-pi-surface-overlay hover:text-pi-text focus-visible:opacity-100 focus-visible:bg-pi-surface-overlay focus-visible:text-pi-text group-hover:opacity-100"
 				title="More actions"
 				aria-label="More actions"
-			>
-				<MoreHorizontal className="h-3.5 w-3.5" />
-			</button>
+				className="opacity-0 hover:bg-pi-surface-overlay hover:text-pi-text focus-visible:opacity-100 focus-visible:bg-pi-surface-overlay focus-visible:text-pi-text group-hover:opacity-100"
+			/>
 			{open && (
 				<>
 					<button

@@ -4,6 +4,7 @@ import {
 	Mic,
 	Square,
 	Image as ImageIcon,
+	X,
 } from "lucide-react";
 import { toast } from "../stores/toast-store";
 import { useSettingsStore } from "../stores/settings-store";
@@ -37,6 +38,7 @@ import { QueuePanel } from "./QueuePanel";
 import { ExtensionWidgets } from "./ExtensionWidgets";
 import { Autocomplete } from "./Autocomplete";
 import { ComposerBreadcrumb } from "./ComposerBreadcrumb";
+import { Button, IconButton } from "./ui/Button";
 
 export function Composer() {
 	const [text, setText] = useState("");
@@ -472,49 +474,39 @@ export function Composer() {
 				</div>
 
 				{voiceEnabled && !isStreaming && (
-					<button
+					<Button
+						variant={recording ? "danger" : "secondary"}
+						size="sm"
+						icon={transcribing ? Loader2 : recording ? Square : Mic}
+						loading={transcribing}
 						onClick={() => void handleMic()}
 						disabled={transcribing}
-						className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-all focus-visible:shadow-focus focus-visible:outline-none disabled:opacity-50 ${
-							recording
-								? "animate-pulse bg-pi-error text-white"
-								: "bg-pi-surface-raised text-pi-text shadow-ring hover:bg-pi-surface-overlay"
-						}`}
 						title={recording ? "Stop recording" : "Voice input"}
 						aria-label={recording ? "Stop recording" : "Voice input"}
-					>
-						{transcribing ? (
-							<Loader2 className="h-3.5 w-3.5 animate-spin" />
-						) : recording ? (
-							<Square className="h-3.5 w-3.5 fill-current" />
-						) : (
-							<Mic className="h-3.5 w-3.5" />
-						)}
-					</button>
+						className={`h-8 w-8 !px-0 ${recording ? "animate-pulse" : ""}`}
+					/>
 				)}
 				{isStreaming ? (
-					<button
+					<Button
+						variant="danger"
+						size="sm"
+						icon={Square}
 						onClick={() => void handleAbort()}
-						className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-pi-error text-white transition-hover active-press hover:brightness-110 focus-visible:shadow-focus focus-visible:outline-none"
 						title="Abort (⌘.)"
 						aria-label="Abort"
-					>
-						<Square className="h-3.5 w-3.5 fill-current" />
-					</button>
+						className="h-8 w-8 !px-0"
+					/>
 				) : (
-					<button
+					<Button
+						variant="primary"
+						size="sm"
+						icon={connected ? CornerDownLeft : Loader2}
 						onClick={() => void handleSend()}
 						disabled={!canSend}
-						className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-pi-accent text-white transition-all hover:bg-pi-accent-hover disabled:cursor-not-allowed disabled:bg-pi-surface-raised disabled:text-pi-text-faint focus-visible:shadow-focus focus-visible:outline-none"
 						title="Send (Enter)"
 						aria-label="Send message"
-					>
-						{connected ? (
-							<CornerDownLeft className="h-3.5 w-3.5" />
-						) : (
-							<Loader2 className="h-3.5 w-3.5 animate-spin" />
-						)}
-					</button>
+						className="h-8 w-8 !px-0"
+					/>
 				)}
 			</div>
 
@@ -530,13 +522,13 @@ export function Composer() {
 							<span className="max-w-32 truncate text-2xs text-pi-text-secondary">
 								Image {idx + 1}
 							</span>
-							<button
+							<IconButton
+								variant="ghost"
+								size="sm"
+								icon={X}
 								onClick={() => removeImage(idx)}
-								className="text-pi-text-muted hover:text-pi-error"
 								aria-label="Remove image"
-							>
-								×
-							</button>
+							/>
 						</div>
 					))}
 				</div>

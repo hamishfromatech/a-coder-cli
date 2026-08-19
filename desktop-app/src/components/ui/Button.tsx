@@ -10,7 +10,7 @@ type ButtonProps = {
 	size?: ButtonSize;
 	loading?: boolean;
 	icon?: React.ComponentType<{ className?: string }>;
-	children: React.ReactNode;
+	children?: React.ReactNode;
 } & React.ButtonHTMLAttributes<HTMLButtonElement>;
 
 const variantClasses: Record<ButtonVariant, string> = {

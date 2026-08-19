@@ -2,6 +2,7 @@ import { ChevronLeft, ChevronRight, CircleStop, Copy, Cpu, FileDown, GitBranch, 
 import * as rpc from "../lib/rpc";
 import { triggerHaptic } from "../lib/haptics";
 import { useSessionStore } from "../stores/session-store";
+import { Button } from "./ui/Button";
 
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
 
@@ -98,27 +99,32 @@ export function Toolbar({ onShowModelPicker, onShowMemory }: ToolbarProps) {
 	return (
 		<div className="flex items-center gap-2">
 			{/* New session — primary pill */}
-			<button
+			<Button
+				variant="secondary"
+				size="sm"
+				icon={Plus}
 				onClick={() => void handleNewSession()}
-				className="inline-flex h-7 items-center gap-1.5 rounded-md bg-pi-surface-raised px-2.5 text-xs font-medium text-pi-text-secondary transition-hover active-press hover:bg-pi-surface-overlay hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
-				title="New session (⌘N)" aria-label="New session"
+				title="New session (⌘N)"
+				aria-label="New session"
 			>
-				<Plus className="h-3.5 w-3.5 transition-smooth" />
 				New
-			</button>
+			</Button>
 
 			{/* Memory — cross-workspace notes */}
-			<button
+			<Button
+				variant="secondary"
+				size="sm"
+				icon={Brain}
 				onClick={() => {
 					triggerHaptic("selection");
 					onShowMemory();
 				}}
-				className="inline-flex h-7 items-center gap-1.5 rounded-md bg-pi-surface-raised px-2.5 text-xs font-medium text-pi-text-secondary transition-hover active-press hover:bg-pi-surface-overlay hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
-				title="Memory" aria-label="Memory"
+				title="Memory"
+				aria-label="Memory"
+				className="text-pi-accent"
 			>
-				<Brain className="h-3.5 w-3.5 transition-smooth text-pi-accent" />
 				Memory
-			</button>
+			</Button>
 
 			{/* Model picker + cycle */}
 			<div className="inline-flex h-7 items-stretch overflow-hidden rounded-md border border-pi-border bg-pi-surface-raised transition-smooth">
@@ -174,28 +180,31 @@ export function Toolbar({ onShowModelPicker, onShowMemory }: ToolbarProps) {
 			</div>
 
 			{/* Compact */}
-			<button
+			<Button
+				variant="secondary"
+				size="sm"
+				icon={Sparkles}
 				onClick={() => void handleCompact()}
 				disabled={isCompacting || isStreaming}
-				className="inline-flex h-7 items-center gap-1.5 rounded-md bg-pi-surface-raised px-2.5 text-xs font-medium text-pi-text-secondary transition-hover active-press hover:bg-pi-surface-overlay hover:text-pi-text disabled:opacity-50"
-				title="Compact context (⌘K)" aria-label="Compact context"
+				loading={isCompacting}
+				title="Compact context (⌘K)"
+				aria-label="Compact context"
 			>
-				<Sparkles
-					className={`h-3.5 w-3.5 transition-smooth ${isCompacting ? "animate-spin" : ""}`}
-				/>
 				{isCompacting ? "Compacting…" : "Compact"}
-			</button>
+			</Button>
 
 			{/* Abort — only when streaming */}
 			{isStreaming && (
-				<button
+				<Button
+					variant="danger"
+					size="sm"
+					icon={CircleStop}
 					onClick={() => void handleAbort()}
-					className="inline-flex h-7 items-center gap-1.5 rounded-md bg-pi-error-soft px-2.5 text-xs font-medium text-pi-error transition-hover active-press hover:bg-pi-error hover:text-white"
-					title="Abort generation (⌘.)" aria-label="Abort generation"
+					title="Abort generation (⌘.)"
+					aria-label="Abort generation"
 				>
-					<CircleStop className="h-3.5 w-3.5 transition-smooth" />
 					Abort
-				</button>
+				</Button>
 			)}
 		</div>
 	);
