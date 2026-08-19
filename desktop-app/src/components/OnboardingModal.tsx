@@ -3,6 +3,7 @@ import { FolderOpen, Sparkles } from "lucide-react";
 import { useRef, useState } from "react";
 import { useModalA11y } from "../hooks/useModalA11y";
 import { Button } from "./ui/Button";
+import { ModalBackdrop, ModalPanel } from "./ui/Modal";
 
 export interface OnboardingModalProps {
 	onComplete: (selectedPath: string) => void;
@@ -40,15 +41,14 @@ export function OnboardingModal({ onComplete }: OnboardingModalProps) {
 	};
 
 	return (
-		<div
+		<ModalBackdrop
 			ref={modalRef}
-			role="dialog"
-			aria-modal="true"
 			aria-label="Welcome to A-Coder"
-			className="fixed inset-0 z-50 flex items-center justify-center bg-pi-bg p-4"
+			className="bg-pi-bg"
 		>
-			<div
-				className="flex w-full max-w-md flex-col overflow-hidden rounded-xl bg-pi-surface-overlay shadow-overlay"
+			<ModalPanel
+				className="max-w-md"
+				centered={false}
 			>
 				{/* Header with icon */}
 				<div className="flex flex-col items-center border-b border-pi-border px-6 py-8">
@@ -114,7 +114,7 @@ export function OnboardingModal({ onComplete }: OnboardingModalProps) {
 						Get started
 					</Button>
 				</div>
-			</div>
-		</div>
+			</ModalPanel>
+		</ModalBackdrop>
 	);
 }
