@@ -4,6 +4,7 @@ import { useModalA11y } from "../hooks/useModalA11y";
 import * as rpc from "../lib/rpc";
 import { Button } from "./ui/Button";
 import { IconButton } from "./ui/Button";
+import { Badge, type BadgeVariant } from "./ui/Badge";
 import { ModalBackdrop, ModalPanel } from "./ui/Modal";
 
 export interface SubagentPanelProps {
@@ -21,12 +22,12 @@ const STATUS_LABEL: Record<SubagentStatus, string> = {
 	killed: "Stopped",
 };
 
-const STATUS_TONE: Record<SubagentStatus, string> = {
-	pending: "bg-pi-surface-raised text-pi-text-muted",
-	running: "bg-pi-accent/10 text-pi-accent",
-	completed: "bg-pi-success/10 text-pi-success",
-	failed: "bg-pi-error/10 text-pi-error",
-	killed: "bg-pi-surface-raised text-pi-text-muted",
+const STATUS_VARIANT: Record<SubagentStatus, BadgeVariant> = {
+	pending: "muted",
+	running: "accent",
+	completed: "success",
+	failed: "error",
+	killed: "muted",
 };
 
 export function SubagentPanel({ open, onClose }: SubagentPanelProps) {
@@ -122,11 +123,9 @@ export function SubagentPanel({ open, onClose }: SubagentPanelProps) {
 									<div className="flex items-start justify-between gap-2">
 										<div className="min-w-0 flex-1">
 											<div className="flex items-center gap-2">
-												<span
-													className={`inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-3xs font-semibold ${STATUS_TONE[agent.status]}`}
-												>
+												<Badge variant={STATUS_VARIANT[agent.status]} size="sm">
 													{STATUS_LABEL[agent.status]}
-												</span>
+												</Badge>
 												<span className="truncate text-xs font-medium text-pi-text">
 													{agent.config.id}
 												</span>

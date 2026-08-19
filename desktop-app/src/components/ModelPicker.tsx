@@ -5,6 +5,7 @@ import * as rpc from "../lib/rpc";
 import { useModalA11y } from "../hooks/useModalA11y";
 import { useSessionStore } from "../stores/session-store";
 import { IconButton } from "./ui/Button";
+import { Badge } from "./ui/Badge";
 import { ModalBackdrop, ModalPanel } from "./ui/Modal";
 
 type AnyModel = Model<Api>;
@@ -215,9 +216,7 @@ export function ModelPicker({
 												{model.name}
 											</span>
 											{isActive && (
-												<span className="rounded bg-pi-accent-soft px-1 py-0.5 font-mono text-4xs font-semibold uppercase tracking-wide text-pi-accent">
-													active
-												</span>
+												<Badge variant="accent" size="sm">active</Badge>
 											)}
 										</div>
 										<div className="mt-0.5 truncate font-mono text-3xs text-pi-text-muted">

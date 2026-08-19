@@ -20,6 +20,7 @@ import { useSessionStore } from "../stores/session-store";
 import { useSettingsStore } from "../stores/settings-store";
 import { useStatsStore } from "../stores/stats-store";
 import type { PermissionMode } from "../lib/settings.types";
+import { Badge, type BadgeVariant } from "./ui/Badge";
 
 export interface StatusBarProps {
 	projectPath: string | null;
@@ -30,31 +31,31 @@ const PERMISSION_MODES: PermissionMode[] = ["ask", "allow", "read-only", "auto"]
 
 const MODE_META: Record<
 	PermissionMode,
-	{ label: string; description: string; icon: typeof Shield; color: string }
+	{ label: string; description: string; icon: typeof Shield; variant: BadgeVariant }
 > = {
 	ask: {
 		label: "Ask first",
 		description: "Ask for confirmation before every tool call.",
 		icon: Shield,
-		color: "text-pi-warning bg-pi-warning/15",
+		variant: "warning",
 	},
 	allow: {
 		label: "Act freely",
 		description: "Run all tool calls automatically.",
 		icon: Zap,
-		color: "text-pi-success bg-pi-success/15",
+		variant: "success",
 	},
 	"read-only": {
 		label: "Read only",
 		description: "Only use read and inspect tools; block commands and edits.",
 		icon: Eye,
-		color: "text-pi-text-secondary bg-pi-surface-raised",
+		variant: "muted",
 	},
 	auto: {
 		label: "Auto",
 		description: "Use permission policies to decide what needs approval.",
 		icon: Lock,
-		color: "text-pi-accent bg-pi-accent-soft",
+		variant: "accent",
 	},
 };
 
@@ -232,18 +233,22 @@ function PermissionModePicker({ mode }: { mode: PermissionMode }) {
 
 	return (
 		<div className="relative">
-			<button
-				ref={triggerRef}
+			<Badge
+				ref={triggerRef as unknown as React.Ref<HTMLSpanElement>}
+				variant={current.variant}
+				size="sm"
+				icon={Icon}
+				className="cursor-pointer transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none"
 				onClick={() => setOpen((v) => !v)}
-				className={`flex h-5 items-center gap-1 rounded px-1.5 py-0.5 font-medium transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${current.color}`}
 				title={current.description}
 				aria-haspopup="listbox"
 				aria-expanded={open}
+				role="button"
+				tabIndex={0}
 			>
-				<Icon className="h-3 w-3" />
 				<span className="hidden sm:inline">{current.label}</span>
 				<ChevronDown className={`h-3 w-3 transition-smooth ${open ? "rotate-180" : ""}`} />
-			</button>
+			</Badge>
 
 			{open && (
 				<div
@@ -263,7 +268,7 @@ function PermissionModePicker({ mode }: { mode: PermissionMode }) {
 								aria-selected={active}
 								className={`flex w-full items-start gap-2 px-2.5 py-2 text-left transition-hover focus-visible:shadow-focus focus-visible:outline-none ${active ? "bg-pi-surface-raised" : "hover:bg-pi-surface-raised"}`}
 							>
-								<div className={`mt-0.5 rounded p-1 ${meta.color}`}>
+								<div className={`mt-0.5 rounded p-1 ${meta.variant === "warning" ? "text-pi-warning bg-pi-warning/15" : meta.variant === "success" ? "text-pi-success bg-pi-success/15" : meta.variant === "accent" ? "text-pi-accent bg-pi-accent-soft" : "text-pi-text-secondary bg-pi-surface-raised"}`}>
 									<OptionIcon className="h-3 w-3" />
 								</div>
 								<div className="flex-1">

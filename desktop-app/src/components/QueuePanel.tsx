@@ -1,5 +1,6 @@
 import { useSessionStore } from "../stores/session-store";
 import { X, CornerDownLeft } from "lucide-react";
+import { Badge } from "./ui/Badge";
 
 export interface QueuePanelProps {
 	/** Called when the user clicks a queued item to send it now. */
@@ -24,15 +25,12 @@ export function QueuePanel({ onSend }: QueuePanelProps) {
 					className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-hover hover:bg-pi-surface-raised"
 					title="Click to send now"
 				>
-					<span
-						className={`rounded px-1.5 py-0.5 text-4xs font-semibold uppercase tracking-wide ${
-							item.kind === "steering"
-								? "bg-pi-accent-soft text-pi-accent"
-								: "bg-pi-success/15 text-pi-success"
-						}`}
+					<Badge
+						variant={item.kind === "steering" ? "accent" : "success"}
+						size="sm"
 					>
 						{item.kind === "steering" ? "steer" : "follow-up"}
-					</span>
+					</Badge>
 					<span className="min-w-0 flex-1 truncate text-2xs text-pi-text-secondary">
 						{item.text}
 					</span>
