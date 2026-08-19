@@ -3,6 +3,8 @@ import { Check, MessageCircle, Search, X } from "lucide-react";
 import * as rpc from "../lib/rpc";
 import { useModalA11y } from "../hooks/useModalA11y";
 import { toast } from "../stores/toast-store";
+import { IconButton } from "./ui/Button";
+import { ModalBackdrop, ModalPanel } from "./ui/Modal";
 
 export interface SessionPickerProps {
 	onClose: () => void;
@@ -103,16 +105,16 @@ export function SessionPicker({ onClose, onResume }: SessionPickerProps) {
 	};
 
 	return (
-		<div
+		<ModalBackdrop
 			ref={modalRef}
-			role="dialog"
-			aria-modal="true"
 			aria-label="Resume session"
-			className="fixed inset-0 z-50 flex items-start justify-center bg-black/45 p-4 pt-[14vh] backdrop-blur-sm"
+			position="top"
+			className="bg-black/45"
 			onClick={onClose}
 		>
-			<div
-				className="flex w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-pi-surface-overlay shadow-overlay"
+			<ModalPanel
+				className="max-w-2xl"
+				centered={false}
 				onClick={(e) => e.stopPropagation()}
 			>
 				<div className="flex items-center gap-2 border-b border-pi-border px-3 py-2.5">
@@ -125,13 +127,13 @@ export function SessionPicker({ onClose, onResume }: SessionPickerProps) {
 						placeholder="Search sessions…"
 						className="flex-1 bg-transparent text-[13px] text-pi-text placeholder:text-pi-text-faint focus:outline-none"
 					/>
-					<button
+					<IconButton
+						variant="ghost"
+						size="sm"
+						icon={X}
 						onClick={onClose}
-						className="rounded-md p-1 text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text"
 						aria-label="Close"
-					>
-						<X className="h-4 w-4" />
-					</button>
+					/>
 				</div>
 				<div className="max-h-overlay-sm overflow-auto py-1">
 					{loading ? (
@@ -171,7 +173,7 @@ export function SessionPicker({ onClose, onResume }: SessionPickerProps) {
 						})
 					)}
 				</div>
-			</div>
-		</div>
+			</ModalPanel>
+		</ModalBackdrop>
 	);
 }

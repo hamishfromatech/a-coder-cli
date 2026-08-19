@@ -19,6 +19,8 @@ import {
 	type UpdateInfo,
 } from "../lib/updater";
 import { Button } from "./ui/Button";
+import { IconButton } from "./ui/Button";
+import { ModalBackdrop, ModalPanel } from "./ui/Modal";
 
 export interface UpdateModalProps {
 	/** Update info from the store. */
@@ -78,16 +80,14 @@ export function UpdateModal({ update, onDismiss }: UpdateModalProps) {
 	const currentVersionLabel = `v${update.currentVersion}`;
 
 	return (
-		<div
+		<ModalBackdrop
 			ref={modalRef}
-			role="dialog"
-			aria-modal="true"
 			aria-label="Update available"
-			className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
 			onClick={handleDismiss}
 		>
-			<div
-				className="flex w-full max-w-md flex-col overflow-hidden rounded-xl bg-pi-surface-overlay shadow-overlay"
+			<ModalPanel
+				className="max-w-md"
+				centered={false}
 				onClick={(e) => e.stopPropagation()}
 			>
 				{/* Header */}
@@ -103,14 +103,14 @@ export function UpdateModal({ update, onDismiss }: UpdateModalProps) {
 							A new version of A-Coder is ready to install
 						</p>
 					</div>
-					<button
+					<IconButton
+						variant="ghost"
+						size="sm"
+						icon={X}
 						onClick={handleDismiss}
-						className="rounded p-1 text-pi-text-muted transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
-						title="Dismiss"
 						aria-label="Dismiss"
-					>
-						<X className="h-3.5 w-3.5" />
-					</button>
+						title="Dismiss"
+					/>
 				</div>
 
 				{/* Body */}
@@ -208,7 +208,7 @@ export function UpdateModal({ update, onDismiss }: UpdateModalProps) {
 						</Button>
 					)}
 				</div>
-			</div>
-		</div>
+			</ModalPanel>
+		</ModalBackdrop>
 	);
 }

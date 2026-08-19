@@ -2,6 +2,8 @@ import { useMemo, useRef } from "react";
 import { X } from "lucide-react";
 import { useModalA11y } from "../hooks/useModalA11y";
 import changelogRaw from "../CHANGELOG.md?raw";
+import { IconButton } from "./ui/Button";
+import { ModalBackdrop, ModalPanel } from "./ui/Modal";
 
 export interface ChangelogModalProps {
 	open: boolean;
@@ -89,27 +91,24 @@ export function ChangelogModal({ open, onClose }: ChangelogModalProps) {
 	if (!open) return null;
 
 	return (
-		<div
+		<ModalBackdrop
 			ref={modalRef}
-			role="dialog"
-			aria-modal="true"
 			aria-label="Changelog"
-			className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
 			onClick={onClose}
 		>
-			<div
-				className="flex w-full max-w-2xl max-h-overlay flex-col overflow-hidden rounded-xl bg-pi-surface-overlay shadow-overlay"
+			<ModalPanel
+				className="max-w-2xl"
 				onClick={(e) => e.stopPropagation()}
 			>
 				<div className="flex items-center justify-between border-b border-pi-border px-4 py-3">
 					<h2 className="text-[13px] font-semibold tracking-tight text-pi-text">Changelog</h2>
-					<button
+					<IconButton
+						variant="ghost"
+						size="sm"
+						icon={X}
 						onClick={onClose}
-						className="rounded p-1 text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text"
 						aria-label="Close"
-					>
-						<X className="h-4 w-4" />
-					</button>
+					/>
 				</div>
 
 				<div className="flex-1 overflow-auto px-5 py-4">
@@ -175,7 +174,7 @@ export function ChangelogModal({ open, onClose }: ChangelogModalProps) {
 						Close
 					</button>
 				</div>
-			</div>
-		</div>
+			</ModalPanel>
+		</ModalBackdrop>
 	);
 }

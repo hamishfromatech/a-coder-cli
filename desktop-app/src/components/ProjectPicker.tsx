@@ -4,6 +4,8 @@ import { useRef } from "react";
 import { useModalA11y } from "../hooks/useModalA11y";
 import { useWorkspaceStore } from "../stores/workspace-store";
 import { triggerHaptic } from "../lib/haptics";
+import { ModalBackdrop, ModalPanel } from "./ui/Modal";
+import { IconButton } from "./ui/Button";
 
 export interface ProjectPickerProps {
 	onClose: () => void;
@@ -34,16 +36,14 @@ export function ProjectPicker({ onClose, onSelect }: ProjectPickerProps) {
 	};
 
 	return (
-		<div
+		<ModalBackdrop
 			ref={modalRef}
-			role="dialog"
-			aria-modal="true"
 			aria-label="Switch project"
-			className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
 			onClick={onClose}
 		>
-			<div
-				className="flex w-full max-w-md flex-col overflow-hidden rounded-xl bg-pi-surface-overlay shadow-overlay"
+			<ModalPanel
+				className="max-w-md"
+				centered={false}
 				onClick={(e) => e.stopPropagation()}
 			>
 				{/* Header */}
@@ -56,14 +56,14 @@ export function ProjectPicker({ onClose, onSelect }: ProjectPickerProps) {
 							Pick a folder to load into A-Coder.
 						</p>
 					</div>
-					<button
+					<IconButton
+						variant="ghost"
+						size="sm"
+						icon={X}
 						onClick={onClose}
-						className="rounded p-1 text-pi-text-muted transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
-						title="Close"
 						aria-label="Close"
-					>
-						<X className="h-3.5 w-3.5" />
-					</button>
+						title="Close"
+					/>
 				</div>
 
 				{/* Current project */}
@@ -185,7 +185,7 @@ export function ProjectPicker({ onClose, onSelect }: ProjectPickerProps) {
 						)}
 					</div>
 				</div>
-			</div>
-		</div>
+			</ModalPanel>
+		</ModalBackdrop>
 	);
 }

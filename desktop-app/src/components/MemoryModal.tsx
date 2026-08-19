@@ -3,6 +3,9 @@ import { Brain, Save, X, Check } from "lucide-react";
 import * as rpc from "../lib/rpc";
 import { useModalA11y } from "../hooks/useModalA11y";
 import { triggerHaptic } from "../lib/haptics";
+import { Button } from "./ui/Button";
+import { IconButton } from "./ui/Button";
+import { ModalBackdrop, ModalPanel } from "./ui/Modal";
 
 export interface MemoryModalProps {
 	open: boolean;
@@ -56,17 +59,18 @@ export function MemoryModal({ open, onClose }: MemoryModalProps) {
 	if (!open) return null;
 
 	return (
-		<div
+		<ModalBackdrop
 			ref={modalRef}
-			role="dialog"
-			aria-modal="true"
 			aria-label="Persistent memory"
-			className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+			className="bg-black/40"
 			onClick={(e) => {
 				if (e.target === modalRef.current) onClose();
 			}}
 		>
-			<div className="flex h-overlay w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-pi-border bg-pi-surface-overlay shadow-overlay">
+			<ModalPanel
+				className="h-overlay max-w-2xl border border-pi-border"
+				centered={false}
+			>
 				{/* Header */}
 				<div className="flex items-center justify-between border-b border-pi-border px-4 py-3">
 					<div className="flex items-center gap-2.5">
@@ -82,14 +86,14 @@ export function MemoryModal({ open, onClose }: MemoryModalProps) {
 							</p>
 						</div>
 					</div>
-					<button
+					<IconButton
+						variant="ghost"
+						size="sm"
+						icon={X}
 						onClick={onClose}
-						className="flex h-7 w-7 items-center justify-center rounded-md text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text"
 						aria-label="Close memory panel"
 						title="Close"
-					>
-						<X className="h-4 w-4" />
-					</button>
+					/>
 				</div>
 
 				{/* Body */}
@@ -127,22 +131,18 @@ export function MemoryModal({ open, onClose }: MemoryModalProps) {
 							</span>
 						)}
 					</div>
-					<button
+					<Button
+						variant="primary"
+						size="sm"
+						icon={saving ? undefined : saved ? Check : Save}
+						loading={saving}
 						onClick={() => void handleSave()}
 						disabled={saving || loading}
-						className="inline-flex items-center gap-1.5 rounded-lg bg-pi-accent px-3 py-1.5 text-xs font-medium text-white transition-hover hover:bg-pi-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
 					>
-						{saving ? (
-							<span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-						) : saved ? (
-							<Check className="h-3.5 w-3.5" />
-						) : (
-							<Save className="h-3.5 w-3.5" />
-						)}
 						{saving ? "Saving…" : saved ? "Saved" : "Save memory"}
-					</button>
+					</Button>
 				</div>
-			</div>
-		</div>
+			</ModalPanel>
+		</ModalBackdrop>
 	);
 }

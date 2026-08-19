@@ -8,6 +8,7 @@ import type {
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { useSessionStore, type UiRequest } from "../stores/session-store";
 import { useSettingsStore } from "../stores/settings-store";
+import { ModalBackdrop } from "./ui/Modal";
 import {
 	Bot,
 	Check,
@@ -341,8 +342,9 @@ function ImageBlock({ image }: { image: ImageContent }) {
 				</div>
 			</button>
 			{open && (
-				<div
-					className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+				<ModalBackdrop
+					aria-label="Image preview"
+					className="bg-black/80"
 					onClick={() => setOpen(false)}
 				>
 					<img
@@ -351,7 +353,7 @@ function ImageBlock({ image }: { image: ImageContent }) {
 						className="max-h-full max-w-full rounded-lg shadow-overlay"
 						onClick={(e) => e.stopPropagation()}
 					/>
-				</div>
+				</ModalBackdrop>
 			)}
 		</>
 	);

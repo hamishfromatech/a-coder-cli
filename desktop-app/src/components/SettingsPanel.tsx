@@ -57,6 +57,7 @@ import { CompletionSoundPicker } from "./panels/widgets/CompletionSoundPicker";
 import { Switch } from "./ui/Switch";
 import { Button, IconButton } from "./ui/Button";
 import { Input, Textarea, Select } from "./ui/Input";
+import { ModalBackdrop, ModalPanel } from "./ui/Modal";
 
 // ============================================================================
 // Nav configuration
@@ -960,16 +961,13 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 	const showBanner = showFirstLaunch && authEmpty === true && !search.trim();
 
 	return (
-		<div
+		<ModalBackdrop
 			ref={modalRef}
-			role="dialog"
-			aria-modal="true"
 			aria-label="Settings"
-			className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
 			onClick={onClose}
 		>
-			<div
-				className={`flex h-overlay w-full max-w-4xl overflow-hidden rounded-xl bg-pi-surface shadow-overlay transition-opacity duration-300`}
+			<ModalPanel
+				className="max-w-4xl bg-pi-surface"
 				onClick={(e) => e.stopPropagation()}
 			>
 				{/* =================== Left nav =================== */}
@@ -1139,8 +1137,8 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 						</Button>
 					</div>
 				</div>
-			</div>
-		</div>
+			</ModalPanel>
+		</ModalBackdrop>
 	);
 }
 

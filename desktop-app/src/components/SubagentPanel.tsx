@@ -2,6 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, RefreshCw, Sparkles, X } from "lucide-react";
 import { useModalA11y } from "../hooks/useModalA11y";
 import * as rpc from "../lib/rpc";
+import { Button } from "./ui/Button";
+import { IconButton } from "./ui/Button";
+import { ModalBackdrop, ModalPanel } from "./ui/Modal";
 
 export interface SubagentPanelProps {
 	open: boolean;
@@ -59,16 +62,14 @@ export function SubagentPanel({ open, onClose }: SubagentPanelProps) {
 	const running = agents.filter((a) => a.status === "running" || a.status === "pending");
 
 	return (
-		<div
+		<ModalBackdrop
 			ref={modalRef}
-			role="dialog"
-			aria-modal="true"
 			aria-label="Subagents"
-			className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
 			onClick={onClose}
 		>
-			<div
-				className="flex w-full max-w-lg max-h-overlay flex-col overflow-hidden rounded-xl bg-pi-surface-overlay shadow-overlay"
+			<ModalPanel
+				className="max-w-lg"
+				centered={false}
 				onClick={(e) => e.stopPropagation()}
 			>
 				<div className="flex items-center justify-between border-b border-pi-border px-4 py-3">
@@ -77,21 +78,21 @@ export function SubagentPanel({ open, onClose }: SubagentPanelProps) {
 						<h2 className="text-[13px] font-semibold tracking-tight text-pi-text">Subagents</h2>
 					</div>
 					<div className="flex items-center gap-2">
-						<button
+						<IconButton
+							variant="ghost"
+							size="sm"
+							icon={RefreshCw}
+							loading={loading}
 							onClick={() => void load()}
-							disabled={loading}
-							className="rounded p-1 text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text disabled:opacity-50"
 							aria-label="Refresh"
-						>
-							<RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-						</button>
-						<button
+						/>
+						<IconButton
+							variant="ghost"
+							size="sm"
+							icon={X}
 							onClick={onClose}
-							className="rounded p-1 text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text"
 							aria-label="Close"
-						>
-							<X className="h-4 w-4" />
-						</button>
+						/>
 					</div>
 				</div>
 
@@ -163,15 +164,11 @@ export function SubagentPanel({ open, onClose }: SubagentPanelProps) {
 							? `${running.length} active`
 							: `${agents.length} total`}
 					</span>
-					<button
-						type="button"
-						onClick={onClose}
-						className="rounded-md px-3 py-1.5 text-xs text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text"
-					>
+					<Button variant="ghost" size="md" onClick={onClose}>
 						Close
-					</button>
+					</Button>
 				</div>
-			</div>
-		</div>
+			</ModalPanel>
+		</ModalBackdrop>
 	);
 }

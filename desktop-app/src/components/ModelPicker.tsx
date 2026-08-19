@@ -4,6 +4,8 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import * as rpc from "../lib/rpc";
 import { useModalA11y } from "../hooks/useModalA11y";
 import { useSessionStore } from "../stores/session-store";
+import { IconButton } from "./ui/Button";
+import { ModalBackdrop, ModalPanel } from "./ui/Modal";
 
 type AnyModel = Model<Api>;
 
@@ -123,16 +125,15 @@ export function ModelPicker({
 	}, [highlight]);
 
 	return (
-		<div
+		<ModalBackdrop
 			ref={modalRef}
-			role="dialog"
-			aria-modal="true"
 			aria-label="Choose a model"
-			className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 pt-[14vh] backdrop-blur-sm"
+			position="top"
 			onClick={onClose}
 		>
-			<div
-				className="flex w-full max-w-xl flex-col overflow-hidden rounded-xl bg-pi-surface-overlay shadow-overlay"
+			<ModalPanel
+				className="max-w-xl"
+				centered={false}
 				onClick={(e) => e.stopPropagation()}
 			>
 				{/* Search header */}
@@ -146,23 +147,24 @@ export function ModelPicker({
 						onChange={(e) => setFilter(e.target.value)}
 						className="flex-1 bg-transparent text-[13px] text-pi-text placeholder:text-pi-text-faint focus:outline-none"
 					/>
-					<button
+					<IconButton
+						variant="ghost"
+						size="sm"
+						icon={RefreshCw}
+						loading={refreshing}
 						onClick={() => void loadModels(true)}
-						className={`rounded p-1 text-pi-text-muted transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none ${refreshing ? "animate-spin" : ""}`}
-						title="Refresh models"
 						aria-label="Refresh models"
-						disabled={refreshing}
-					>
-						<RefreshCw className="h-3.5 w-3.5" />
-					</button>
-					<button
+						title="Refresh models"
+						className={refreshing ? "animate-spin" : ""}
+					/>
+					<IconButton
+						variant="ghost"
+						size="sm"
+						icon={X}
 						onClick={onClose}
-						className="rounded p-1 text-pi-text-muted transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
-						title="Close"
 						aria-label="Close"
-					>
-						<X className="h-3.5 w-3.5" />
-					</button>
+						title="Close"
+					/>
 				</div>
 
 				{/* List */}
@@ -242,8 +244,8 @@ export function ModelPicker({
 						{filtered.length}/{models.length}
 					</span>
 				</div>
-			</div>
-		</div>
+			</ModalPanel>
+		</ModalBackdrop>
 	);
 }
 

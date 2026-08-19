@@ -6,9 +6,10 @@ export const ModalBackdrop = forwardRef<
 	{
 		children: React.ReactNode;
 		className?: string;
+		position?: "center" | "top";
 		onClick?: (e: React.MouseEvent) => void;
 	}
->(function ModalBackdrop({ children, className, onClick }, ref) {
+>(function ModalBackdrop({ children, className, position = "center", onClick }, ref) {
 	return (
 		<div
 			ref={ref}
@@ -16,7 +17,8 @@ export const ModalBackdrop = forwardRef<
 			aria-modal="true"
 			onClick={onClick}
 			className={cn(
-				"fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm transition-opacity duration-300 ease-out",
+				"fixed inset-0 z-50 flex bg-black/60 p-4 backdrop-blur-sm transition-opacity duration-300 ease-out",
+				position === "center" ? "items-center justify-center" : "items-start justify-center",
 				className,
 			)}
 		>
