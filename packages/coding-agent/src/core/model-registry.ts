@@ -881,7 +881,11 @@ export class ModelRegistry {
 			}
 		}
 
-		return promise.then(() => undefined);
+		return promise
+			.catch((error) => {
+				console.error("Failed to refresh LM Studio models:", error);
+			})
+			.then(() => undefined);
 	}
 
 	/**
@@ -926,7 +930,11 @@ export class ModelRegistry {
 			}
 		}
 
-		return promise.then(() => undefined);
+		return promise
+			.catch((error) => {
+				console.error("Failed to refresh llama.cpp models:", error);
+			})
+			.then(() => undefined);
 	}
 
 	/**
