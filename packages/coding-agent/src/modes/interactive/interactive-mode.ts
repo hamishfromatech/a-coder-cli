@@ -2816,6 +2816,17 @@ export class InteractiveMode {
 				this.ui.requestRender();
 				break;
 
+			case "session_start":
+				this.chatContainer.clear();
+				this.pendingMessagesContainer.clear();
+				this.compactionQueuedMessages = [];
+				this.streamingComponent = undefined;
+				this.streamingMessage = undefined;
+				this.pendingTools.clear();
+				this.renderInitialMessages();
+				this.ui.requestRender();
+				break;
+
 			case "queue_update":
 				this.updatePendingMessagesDisplay();
 				this.ui.requestRender();
