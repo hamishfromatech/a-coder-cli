@@ -482,4 +482,39 @@ describe("SettingsManager", () => {
 			expect(manager.getSessionDir()).toBe(join(homedir(), "sessions"));
 		});
 	});
+
+	describe("applies local-provider base URLs to process.env", () => {
+		const envVars = ["LM_STUDIO_BASE_URL", "LLAMACPP_BASE_URL", "OLLAMA_BASE_URL"] as const;
+
+		beforeEach(() => {
+			for (const v of envVars) delete process.env[v];
+		});
+		afterEach(() => {
+			for (const v of envVars) delete process.env[v];
+		});
+
+		it("applies lmStudioBaseUrl, llamaCppBaseUrl, and ollamaBaseUrl to env", () => {
+			writeFileSync(
+				join(agentDir, "settings.json"),
+				JSON.stringify({
+					localProviders: {
+						lmStudioBaseUrl: "http://lm:1234/v1",
+						llamaCppBaseUrl: "http://llama:8080/v1",
+						ollamaBaseUrl: "http://ollama:11434/v1",
+					},
+				}),
+			);
+			SettingsManager.create(projectDir, agentDir);
+			expect(process.env.LM_STUDIO_BASE_URL).toBe("http://lm:1234/v1");
+			expect(process.env.LLAMACPP_BASE_URL).toBe("http://llama:8080/v1");
+			expect(process.env.OLLAMA_BASE_URL).toBe("http://ollama:11434/v1");
+		});
+
+		it("leaves a shell-exported env var intact when the setting is absent", () => {
+			process.env.OLLAMA_BASE_URL = "http://shell:11434/v1";
+			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({}));
+			SettingsManager.create(projectDir, agentDir);
+			expect(process.env.OLLAMA_BASE_URL).toBe("http://shell:11434/v1");
+		});
+	});
 });

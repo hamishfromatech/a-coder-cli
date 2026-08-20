@@ -19,6 +19,7 @@ export const BUILT_IN_PROVIDER_DISPLAY_NAMES: Record<string, string> = {
 	moonshotai: "Moonshot AI",
 	"moonshotai-cn": "Moonshot AI (China)",
 	"ollama-cloud": "Ollama Cloud",
+	ollama: "Ollama",
 	openadapter: "OpenAdapter",
 	nvidia: "NVIDIA NIM",
 	"lm-studio": "LM Studio",

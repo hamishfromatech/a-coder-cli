@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { builtinModels } from "../src/providers/all.ts";
-import { fetchOllamaCloudModels } from "../src/providers/ollama-cloud.ts";
+import { createOllamaCloudModel, fetchOllamaCloudModels } from "../src/providers/ollama-cloud.ts";
 
 function jsonResponse(body: unknown): Response {
 	return new Response(JSON.stringify(body), {
@@ -61,5 +61,17 @@ describe("Ollama Cloud", () => {
 			expect(model.baseUrl).toBe("https://ollama.com/v1");
 			expect(model.provider).toBe("ollama-cloud");
 		}
+	});
+
+	it("caps DeepSeek models' maxTokens at the Ollama Cloud output limit", () => {
+		// Ollama Cloud rejects max_tokens above the model's output cap with 400
+		// "max_tokens exceeds model's maximum output tokens". DeepSeek caps at 65536.
+		const deepseek = createOllamaCloudModel("deepseek-v4-flash:0731");
+		expect(deepseek.maxTokens).toBe(65536);
+		const deepseekPro = createOllamaCloudModel("deepseek-v4-pro:cloud");
+		expect(deepseekPro.maxTokens).toBe(65536);
+		// Non-DeepSeek models keep the generous default.
+		const other = createOllamaCloudModel("llama3.3");
+		expect(other.maxTokens).toBe(131072);
 	});
 });

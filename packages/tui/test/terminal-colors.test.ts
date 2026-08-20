@@ -30,6 +30,8 @@ class TestTerminal implements Terminal {
 		this.resizeHandler = undefined;
 	}
 
+	ensureRawMode(): void {}
+
 	async drainInput(_maxMs?: number, _idleMs?: number): Promise<void> {}
 
 	write(data: string): void {

@@ -40,6 +40,10 @@ export class VirtualTerminal implements Terminal {
 		// No-op for virtual terminal - no stdin to drain
 	}
 
+	ensureRawMode(): void {
+		// No-op for virtual terminal - no real TTY to re-assert
+	}
+
 	stop(): void {
 		// Disable bracketed paste mode
 		this.xterm.write("\x1b[?2004l");

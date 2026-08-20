@@ -11,6 +11,7 @@ import type { McpServerConfig } from "./mcp/types.ts";
 export interface LocalProviderSettings {
 	lmStudioBaseUrl?: string;
 	llamaCppBaseUrl?: string;
+	ollamaBaseUrl?: string;
 }
 
 export interface CompactionSettings {
@@ -555,7 +556,9 @@ export class SettingsManager {
 	}
 
 	/** Apply local-provider base URLs from settings to process.env so the
-	 * built-in LM Studio and llama.cpp providers pick them up. */
+	 * built-in LM Studio, llama.cpp, and Ollama providers pick them up. Only
+	 * sets env vars when the setting is present; a shell-exported value is left
+	 * intact when the setting is absent. */
 	private applyLocalProviderEnv(): void {
 		const local = this.settings.localProviders;
 		if (!local) return;
@@ -564,6 +567,9 @@ export class SettingsManager {
 		}
 		if (local.llamaCppBaseUrl) {
 			process.env.LLAMACPP_BASE_URL = local.llamaCppBaseUrl;
+		}
+		if (local.ollamaBaseUrl) {
+			process.env.OLLAMA_BASE_URL = local.ollamaBaseUrl;
 		}
 	}
 

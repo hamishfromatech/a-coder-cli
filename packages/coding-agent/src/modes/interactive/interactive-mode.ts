@@ -75,6 +75,7 @@ import type {
 import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/footer-data-provider.ts";
 import { configureHttpDispatcher, formatHttpIdleTimeoutMs } from "../../core/http-dispatcher.ts";
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.ts";
+import { KEYLESS_LOCAL_PROVIDER_ENV, KEYLESS_LOCAL_PROVIDERS } from "../../core/local-providers.ts";
 import { createCompactionSummaryMessage } from "../../core/messages.ts";
 import { defaultModelPerProvider, findExactModelReferenceMatch, resolveModelScope } from "../../core/model-resolver.ts";
 import { DefaultPackageManager } from "../../core/package-manager.ts";
@@ -246,7 +247,12 @@ const BEDROCK_PROVIDER_ID = "amazon-bedrock";
 
 const BUILT_IN_MODEL_PROVIDERS = new Set<string>(getProviders());
 
-const KEYLESS_LOCAL_PROVIDERS = new Set<string>(["lm-studio", "llama-cpp"]);
+/** Default base URL shown in the /login base-URL dialog per keyless provider. */
+const KEYLESS_LOGIN_DEFAULT_URLS: Record<string, string> = {
+	"lm-studio": "http://localhost:1234/v1",
+	"llama-cpp": "http://localhost:8080/v1",
+	ollama: "http://localhost:11434/v1",
+};
 
 export function isApiKeyLoginProvider(
 	providerId: string,
@@ -2825,6 +2831,14 @@ export class InteractiveMode {
 				this.pendingTools.clear();
 				this.renderInitialMessages();
 				this.ui.requestRender();
+				// A child process spawned during the session replacement (e.g. by an
+				// extension hook) may have reset the TTY line discipline, re-enabling
+				// ICRNL so Enter arrives as "\n" (which the editor treats as a newline
+				// instead of submit). Re-assert raw mode on the next tick — after any
+				// synchronous session-start hooks have run — to restore "\r" for Enter.
+				setImmediate(() => {
+					this.ui.terminal.ensureRawMode();
+				});
 				break;
 
 			case "queue_update":
@@ -5053,8 +5067,9 @@ export class InteractiveMode {
 
 	private async showBaseUrlLoginDialog(providerId: string, providerName: string): Promise<void> {
 		const previousModel = this.session.model;
-		const envVar = providerId === "lm-studio" ? "LM_STUDIO_BASE_URL" : "LLAMACPP_BASE_URL";
-		const defaultUrl = providerId === "lm-studio" ? "http://localhost:1234/v1" : "http://localhost:8080/v1";
+		const envVar =
+			KEYLESS_LOCAL_PROVIDER_ENV[providerId] ?? `${providerId.toUpperCase().replace(/-/g, "_")}_BASE_URL`;
+		const defaultUrl = KEYLESS_LOGIN_DEFAULT_URLS[providerId] ?? "http://localhost:8080/v1";
 
 		const dialog = new LoginDialogComponent(
 			this.ui,

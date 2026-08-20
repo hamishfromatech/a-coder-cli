@@ -13,13 +13,13 @@ export interface ModelAuth {
 
 /**
  * Stored api-key credential. `env` holds provider-scoped environment/config
- * values such as Cloudflare account/gateway ids. `baseUrl` lets keyless local
- * providers (LM Studio, llama.cpp) persist a custom endpoint from /login.
+ * values such as Cloudflare account/gateway ids, or a keyless local provider's
+ * base URL (e.g. `OLLAMA_BASE_URL`) set via /login and read by the provider's
+ * auth resolver through the auth context.
  */
 export interface ApiKeyCredential {
 	type: "api_key";
 	key?: string;
-	baseUrl?: string;
 	env?: ProviderEnv;
 }
 

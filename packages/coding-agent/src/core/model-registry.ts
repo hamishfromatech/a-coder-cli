@@ -21,6 +21,7 @@ import {
 import { registerOAuthProvider, resetOAuthProviders } from "@earendil-works/pi-ai/oauth";
 import { fetchLlamaCppModels } from "@earendil-works/pi-ai/providers/llama-cpp";
 import { fetchLMStudioModels } from "@earendil-works/pi-ai/providers/lm-studio";
+import { fetchOllamaModels } from "@earendil-works/pi-ai/providers/ollama";
 import { fetchOllamaCloudModels } from "@earendil-works/pi-ai/providers/ollama-cloud";
 import { fetchOllamaContextWindow, looksLikeOllama } from "@earendil-works/pi-ai/providers/ollama-context";
 import { fetchOpenAdapterModels } from "@earendil-works/pi-ai/providers/openadapter";
@@ -33,9 +34,8 @@ import { getAgentDir } from "../config.ts";
 import { stripJsonComments } from "../utils/json.ts";
 import { normalizePath } from "../utils/paths.ts";
 import type { AuthStatus, AuthStorage } from "./auth-storage.ts";
+import { KEYLESS_LOCAL_PROVIDERS } from "./local-providers.ts";
 import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "./provider-display-names.ts";
-
-const KEYLESS_LOCAL_PROVIDERS = new Set<string>(["lm-studio", "llama-cpp"]);
 
 import {
 	clearConfigValueCache,
@@ -385,6 +385,11 @@ export class ModelRegistry {
 	private llamaCppLastAttempt = 0;
 	private static readonly LLAMA_CPP_REFRESH_MS = 2 * 60 * 1000;
 	private static readonly LLAMA_CPP_FAILURE_RETRY_MS = 15 * 1000;
+	private ollamaRefreshPromise: Promise<void> | undefined;
+	private ollamaLastSuccess = 0;
+	private ollamaLastAttempt = 0;
+	private static readonly OLLAMA_REFRESH_MS = 2 * 60 * 1000;
+	private static readonly OLLAMA_FAILURE_RETRY_MS = 15 * 1000;
 	// Dynamic context-window lookups (Ollama /api/show). Cached per model so a
 	// reselect within the TTL reuses the value instead of refetching the server.
 	private contextWindowCache: Map<string, { value: number | undefined; fetchedAt: number }> = new Map();
@@ -438,6 +443,9 @@ export class ModelRegistry {
 		this.llamaCppLastSuccess = 0;
 		this.llamaCppLastAttempt = 0;
 		this.llamaCppRefreshPromise = undefined;
+		this.ollamaLastSuccess = 0;
+		this.ollamaLastAttempt = 0;
+		this.ollamaRefreshPromise = undefined;
 		// Reloading models.json can change baseUrl/model ids, so stale
 		// /api/show lookups no longer apply.
 		this.contextWindowCache.clear();
@@ -490,17 +498,6 @@ export class ModelRegistry {
 
 			return models.map((m) => {
 				let model = m;
-
-				// Apply base URL from /login-stored env for keyless local providers.
-				// Provider overrides from models.json take precedence below.
-				if (KEYLESS_LOCAL_PROVIDERS.has(model.provider)) {
-					const env = this.authStorage.getProviderEnv(model.provider);
-					const envVar = model.provider === "lm-studio" ? "LM_STUDIO_BASE_URL" : "LLAMACPP_BASE_URL";
-					const storedBaseUrl = env?.[envVar];
-					if (storedBaseUrl) {
-						model = { ...model, baseUrl: storedBaseUrl };
-					}
-				}
 
 				// Apply provider-level baseUrl/headers/compat override
 				if (providerOverride) {
@@ -729,6 +726,8 @@ export class ModelRegistry {
 		if (lmStudioError) errors.push(lmStudioError);
 		const llamaCppError = await this.refreshLlamaCppModels(force);
 		if (llamaCppError) errors.push(llamaCppError);
+		const ollamaLocalError = await this.refreshOllamaModels(force);
+		if (ollamaLocalError) errors.push(ollamaLocalError);
 		return errors.length > 0 ? errors.join("; ") : undefined;
 	}
 
@@ -925,6 +924,44 @@ export class ModelRegistry {
 		})();
 
 		await this.llamaCppRefreshPromise;
+		return undefined;
+	}
+
+	/**
+	 * Refresh the local Ollama server's model list from /v1/models.
+	 * Keyless local provider: always attempts to reach the server. A missing
+	 * server is expected and is silently ignored. Real context windows are
+	 * discovered separately via {@link resolveDynamicContextWindow} (/api/show).
+	 */
+	private async refreshOllamaModels(force = false): Promise<string | undefined> {
+		const now = Date.now();
+		const recentlySucceeded = now - this.ollamaLastSuccess < ModelRegistry.OLLAMA_REFRESH_MS;
+		const recentlyAttempted = now - this.ollamaLastAttempt < ModelRegistry.OLLAMA_FAILURE_RETRY_MS;
+		if (!force && (this.ollamaRefreshPromise || recentlyAttempted)) {
+			return (this.ollamaRefreshPromise ?? Promise.resolve()).then(() => undefined);
+		}
+
+		this.ollamaRefreshPromise = (async () => {
+			this.ollamaLastAttempt = Date.now();
+			if (!force && recentlySucceeded && this.models.some((m) => m.provider === "ollama")) {
+				this.ollamaRefreshPromise = undefined;
+				return;
+			}
+			try {
+				const env = this.authStorage.getProviderEnv("ollama");
+				const refreshed = await fetchOllamaModels(env?.OLLAMA_BASE_URL);
+				if (refreshed.length === 0) return;
+				this.models = this.models.filter((m) => m.provider !== "ollama");
+				this.models.push(...refreshed);
+				this.ollamaLastSuccess = Date.now();
+			} catch {
+				// Server not running is expected for a keyless local provider.
+			} finally {
+				this.ollamaRefreshPromise = undefined;
+			}
+		})();
+
+		await this.ollamaRefreshPromise;
 		return undefined;
 	}
 

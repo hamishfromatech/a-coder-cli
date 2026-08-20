@@ -5,10 +5,10 @@ import type { Model } from "../types.ts";
 
 const PLACEHOLDER_MODEL: Model<"openai-completions"> = {
 	id: "local",
-	name: "LM Studio: local model",
+	name: "Ollama: local model",
 	api: "openai-completions",
-	provider: "lm-studio",
-	baseUrl: "http://localhost:1234/v1",
+	provider: "ollama",
+	baseUrl: "http://localhost:11434/v1",
 	compat: {
 		supportsStore: false,
 		supportsDeveloperRole: false,
@@ -29,11 +29,11 @@ const PLACEHOLDER_MODEL: Model<"openai-completions"> = {
 	maxTokens: 4096,
 };
 
-function lmStudioAuth(): ApiKeyAuth {
+function ollamaAuth(): ApiKeyAuth {
 	return {
-		name: "LM Studio",
+		name: "Ollama",
 		resolve: async ({ ctx }) => {
-			const baseUrl = await ctx.env("LM_STUDIO_BASE_URL");
+			const baseUrl = await ctx.env("OLLAMA_BASE_URL");
 			return {
 				auth: { apiKey: "not-needed", baseUrl: baseUrl || undefined },
 				source: "keyless local server",
@@ -42,33 +42,33 @@ function lmStudioAuth(): ApiKeyAuth {
 	};
 }
 
-export interface LMStudioModelListItem {
+export interface OllamaModelListItem {
 	id: string;
 	object?: string;
 }
 
-export interface LMStudioModelListResponse {
+export interface OllamaModelListResponse {
 	object: "list";
-	data: LMStudioModelListItem[];
+	data: OllamaModelListItem[];
 }
 
-const DEFAULT_BASE_URL = "http://localhost:1234/v1";
+const DEFAULT_BASE_URL = "http://localhost:11434/v1";
 
-export function resolveLMStudioBaseUrl(override?: string): string {
+export function resolveOllamaBaseUrl(override?: string): string {
 	if (override) return override;
-	if (typeof process !== "undefined" && process.env.LM_STUDIO_BASE_URL) {
-		return process.env.LM_STUDIO_BASE_URL;
+	if (typeof process !== "undefined" && process.env.OLLAMA_BASE_URL) {
+		return process.env.OLLAMA_BASE_URL;
 	}
 	return DEFAULT_BASE_URL;
 }
 
-export function createLMStudioModel(id: string, baseUrl?: string): Model<"openai-completions"> {
+export function createOllamaModel(id: string, baseUrl?: string): Model<"openai-completions"> {
 	return {
 		id,
-		name: `LM Studio: ${id}`,
+		name: `Ollama: ${id}`,
 		api: "openai-completions",
-		provider: "lm-studio",
-		baseUrl: resolveLMStudioBaseUrl(baseUrl),
+		provider: "ollama",
+		baseUrl: resolveOllamaBaseUrl(baseUrl),
 		compat: {
 			supportsStore: false,
 			supportsDeveloperRole: false,
@@ -90,33 +90,33 @@ export function createLMStudioModel(id: string, baseUrl?: string): Model<"openai
 	};
 }
 
-export async function fetchLMStudioModels(
+export async function fetchOllamaModels(
 	baseUrl?: string,
 	signal?: AbortSignal,
 ): Promise<Model<"openai-completions">[]> {
-	const resolvedBaseUrl = resolveLMStudioBaseUrl(baseUrl).replace(/\/$/, "");
+	const resolvedBaseUrl = resolveOllamaBaseUrl(baseUrl).replace(/\/$/, "");
 	const res = await fetch(`${resolvedBaseUrl}/models`, {
 		headers: { accept: "application/json" },
 		signal,
 	});
 	if (!res.ok) {
-		throw new Error(`LM Studio model refresh failed: ${res.status} ${res.statusText}`);
+		throw new Error(`Ollama model refresh failed: ${res.status} ${res.statusText}`);
 	}
-	const json = (await res.json()) as LMStudioModelListResponse;
+	const json = (await res.json()) as OllamaModelListResponse;
 	const list = json.data ?? [];
-	return list.filter((entry) => entry.id).map((entry) => createLMStudioModel(entry.id, baseUrl));
+	return list.filter((entry) => entry.id).map((entry) => createOllamaModel(entry.id, baseUrl));
 }
 
-export function lmStudioProvider(): Provider<"openai-completions"> {
-	const auth = { apiKey: lmStudioAuth() };
+export function ollamaProvider(): Provider<"openai-completions"> {
+	const auth = { apiKey: ollamaAuth() };
 
 	return createProvider({
-		id: "lm-studio",
-		name: "LM Studio",
-		baseUrl: resolveLMStudioBaseUrl(),
+		id: "ollama",
+		name: "Ollama",
+		baseUrl: resolveOllamaBaseUrl(),
 		auth,
 		models: [PLACEHOLDER_MODEL],
 		api: openAICompletionsApi(),
-		refreshModels: async () => fetchLMStudioModels(),
+		refreshModels: async () => fetchOllamaModels(),
 	});
 }

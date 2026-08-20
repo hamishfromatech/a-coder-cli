@@ -30,6 +30,7 @@ export type TreeFilterMode =
 export interface LocalProviderSettings {
 	lmStudioBaseUrl?: string;
 	llamaCppBaseUrl?: string;
+	ollamaBaseUrl?: string;
 }
 
 export interface CompactionSettings {

@@ -278,6 +278,12 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 				hint: "Leave blank to use the default http://localhost:8080/v1.",
 				kind: "text",
 			},
+			{
+				path: "localProviders.ollamaBaseUrl",
+				label: "Ollama address",
+				hint: "Leave blank to use the default http://localhost:11434/v1.",
+				kind: "text",
+			},
 		],
 	},
 

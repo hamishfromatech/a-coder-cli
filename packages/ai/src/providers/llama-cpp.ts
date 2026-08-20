@@ -1,5 +1,4 @@
 import { openAICompletionsApi } from "../api/openai-completions.lazy.ts";
-import { defaultProviderAuthContext } from "../auth/context.ts";
 import type { ApiKeyAuth } from "../auth/types.ts";
 import { createProvider, type Provider } from "../models.ts";
 import type { Model } from "../types.ts";
@@ -33,8 +32,8 @@ const PLACEHOLDER_MODEL: Model<"openai-completions"> = {
 function llamaCppAuth(): ApiKeyAuth {
 	return {
 		name: "llama.cpp",
-		resolve: async ({ ctx, credential }) => {
-			const baseUrl = credential?.baseUrl ?? (await ctx.env("LLAMACPP_BASE_URL"));
+		resolve: async ({ ctx }) => {
+			const baseUrl = await ctx.env("LLAMACPP_BASE_URL");
 			return {
 				auth: { apiKey: "not-needed", baseUrl: baseUrl || undefined },
 				source: "keyless local server",
@@ -110,7 +109,6 @@ export async function fetchLlamaCppModels(
 
 export function llamaCppProvider(): Provider<"openai-completions"> {
 	const auth = { apiKey: llamaCppAuth() };
-	const baseModel = PLACEHOLDER_MODEL;
 
 	return createProvider({
 		id: "llama-cpp",
@@ -119,11 +117,6 @@ export function llamaCppProvider(): Provider<"openai-completions"> {
 		auth,
 		models: [PLACEHOLDER_MODEL],
 		api: openAICompletionsApi(),
-		refreshModels: async () => {
-			// llama.cpp is keyless; auth always resolves, so this just validates the
-			// local server is reachable before we try to fetch models.
-			await auth.apiKey.resolve({ ctx: defaultProviderAuthContext(), model: baseModel });
-			return fetchLlamaCppModels();
-		},
+		refreshModels: async () => fetchLlamaCppModels(),
 	});
 }

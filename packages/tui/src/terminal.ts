@@ -57,6 +57,18 @@ export interface Terminal {
 	stop(): void;
 
 	/**
+	 * Re-assert raw input mode on the controlling terminal.
+	 *
+	 * A child process spawned during a session replacement (e.g. by an
+	 * extension hook or tool) can reset the TTY line discipline, re-enabling
+	 * ICRNL so the Enter key arrives as "\n" instead of "\r". Node's cached
+	 * `isRaw` flag does not reflect such external resets, so this cannot be
+	 * detected from the editor. Re-issuing setRawMode(true) applies raw mode
+	 * to the kernel TTY again, restoring "\r" for Enter.
+	 */
+	ensureRawMode(): void;
+
+	/**
 	 * Drain stdin before exiting to prevent Kitty key release events from
 	 * leaking to the parent shell over slow SSH connections.
 	 * @param maxMs - Maximum time to drain (default: 1000ms)
@@ -164,6 +176,15 @@ export class ProcessTerminal implements Terminal {
 		// Query Kitty keyboard protocol and fall back to modifyOtherKeys when DA confirms no Kitty response.
 		// See: https://sw.kovidgoyal.net/kitty/keyboard-protocol/
 		this.queryAndEnableKittyProtocol();
+	}
+
+	ensureRawMode(): void {
+		if (process.stdin.setRawMode) {
+			process.stdin.setRawMode(true);
+		}
+		// A child may also have disabled bracketed paste mode; re-enable it so
+		// pastes are still detected correctly.
+		process.stdout.write("\x1b[?2004h");
 	}
 
 	/**

@@ -60,13 +60,16 @@ export function createOllamaCloudModel(
 	id: string,
 	caps?: { contextWindow?: number; maxTokens?: number; vision?: boolean },
 ): Model<"openai-completions"> {
-	const isKimi = id.toLowerCase().includes("kimi");
+	const idLower = id.toLowerCase();
+	const isKimi = idLower.includes("kimi");
 	const defaultContextWindow = isKimi ? 1048576 : 128000;
 	const contextWindow = caps?.contextWindow && caps.contextWindow > 0 ? caps.contextWindow : defaultContextWindow;
 	// Ollama Cloud's /api/show returns context_length (input + output budget),
-	// not the model's output-token cap. Keep a generous default maxTokens and
-	// only let an explicit cap override it.
-	const defaultMaxTokens = isKimi ? 131072 : 131072;
+	// not the model's output-token cap, which the server enforces per model.
+	// Requesting more than the cap is rejected with 400
+	// "max_tokens exceeds model's maximum output tokens". DeepSeek models cap at
+	// 65536; keep a generous default for the rest and let an explicit cap win.
+	const defaultMaxTokens = isKimi ? 131072 : idLower.includes("deepseek") ? 65536 : 131072;
 	const maxTokens =
 		caps?.maxTokens && caps.maxTokens > 0 && caps.maxTokens <= contextWindow ? caps.maxTokens : defaultMaxTokens;
 	return {
