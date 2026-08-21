@@ -3,10 +3,10 @@
 	"compilerOptions": {
 		"noEmit": true,
 		"paths": {
-			"@theatechcorporation/pi-coding-agent": ["./src/index.ts"],
-			"@theatechcorporation/pi-coding-agent/hooks": ["./src/core/hooks/index.ts"],
-			"@theatechcorporation/pi-tui": ["../tui/src/index.ts"],
-			"@theatechcorporation/pi-ai": ["../ai/src/index.ts"],
+			"@earendil-works/pi-coding-agent": ["./src/index.ts"],
+			"@earendil-works/pi-coding-agent/hooks": ["./src/core/hooks/index.ts"],
+			"@earendil-works/pi-tui": ["../tui/src/index.ts"],
+			"@earendil-works/pi-ai": ["../ai/src/index.ts"],
 			"typebox": ["../../node_modules/typebox"]
 		},
 		"skipLibCheck": true

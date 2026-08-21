@@ -1,9 +1,9 @@
 import { existsSync } from "node:fs";
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { AgentTool } from "@theatechcorporation/pi-agent-core";
-import type { TextContent } from "@theatechcorporation/pi-ai";
-import { Text } from "@theatechcorporation/pi-tui";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { TextContent } from "@earendil-works/pi-ai";
+import { Text } from "@earendil-works/pi-tui";
 import { type Static, Type } from "typebox";
 import { getMemoryPath, getSessionMemoryPath, getWorkspaceMemoryPath } from "../../config.ts";
 import type { ExtensionContext, ToolDefinition } from "../extensions/types.ts";

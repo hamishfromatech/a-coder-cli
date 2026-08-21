@@ -4,8 +4,8 @@ import type {
 	ImageContent,
 	ToolResultMessage,
 	UserMessage,
-} from "@theatechcorporation/pi-ai";
-import type { AgentMessage } from "@theatechcorporation/pi-agent-core";
+} from "@earendil-works/pi-ai";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { useSessionStore, type UiRequest } from "../stores/session-store";
 import { useSettingsStore } from "../stores/settings-store";
 import { ModalBackdrop } from "./ui/Modal";

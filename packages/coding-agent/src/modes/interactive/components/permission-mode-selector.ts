@@ -4,7 +4,7 @@
  * Lets the user switch between ask / allow / read-only / auto permission modes.
  */
 
-import { Container, type SelectItem, SelectList, type SelectListLayoutOptions } from "@theatechcorporation/pi-tui";
+import { Container, type SelectItem, SelectList, type SelectListLayoutOptions } from "@earendil-works/pi-tui";
 import type { PermissionMode } from "../../../core/settings-manager.ts";
 import { getSelectListTheme } from "../theme/theme.ts";
 import { DynamicBorder } from "./dynamic-border.ts";
