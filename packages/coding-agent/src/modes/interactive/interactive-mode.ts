@@ -2789,6 +2789,15 @@ export class InteractiveMode {
 			// First, move any pending bash components to chat
 			this.flushPendingBashComponents();
 
+			// Inject any pending background sub-agent completion notifications
+			// (easy-agent's <task-notification>) into the user's next message so
+			// the model sees them without polling. Commands and bash-mode input
+			// return earlier, so this only touches plain chat submits.
+			const notes = this.session.drainPendingNotifications();
+			if (notes.length > 0) {
+				text = `${notes.join("\n\n")}\n\n${text}`;
+			}
+
 			if (this.onInputCallback) {
 				this.onInputCallback(text);
 			} else {

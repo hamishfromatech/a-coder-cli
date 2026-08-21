@@ -350,6 +350,8 @@ export interface InProcessSubAgentRecord {
 export interface RunSubAgentBackgroundParams extends RunSubAgentParams {
 	/** Unique id for the background sub-agent task. */
 	id: string;
+	/** Suppress the completion notification injected into the parent's next turn. Set by foreground-awaited runs (which return the result inline) to avoid a redundant "done" message. */
+	notifyOnComplete?: boolean;
 }
 
 export interface ExtensionContext {

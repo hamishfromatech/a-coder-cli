@@ -69,14 +69,35 @@ export function createSubagentExtensionFactory(_options: SubagentToolOptions = {
 					: undefined;
 
 				if (!detached) {
-					// Foreground: run in-process and return the final output.
-					const result = await ctx.runSubAgent({
+					// Foreground: run in-process via the background machinery so the
+					// live progress card (subscribeSubAgents) is also active for
+					// awaited sub-agents — mirrors easy-agent's seed-at-tool_use_start
+					// + onProgress→store bridge. Returns the final output once done.
+					ctx.runSubAgentBackground({
+						id: params.id as string,
 						agentType: subagentType ?? "general-purpose",
 						prompt: task,
 						systemPrompt: params.system_prompt as string | undefined,
 						model: modelObj,
 						maxTurns: def?.maxTurns,
 					});
+					const record = await ctx.waitSubAgent(
+						params.id as string,
+						(params.timeout_ms as number | undefined) ?? undefined,
+					);
+					if (!record) {
+						return {
+							content: [{ type: "text", text: `Subagent "${params.id}" not found.` }],
+							details: null,
+						};
+					}
+					const result: SubAgentRunResult = {
+						agentType: record.agentType,
+						finalText: record.finalText ?? record.error ?? "",
+						toolUseCount: record.toolUseCount,
+						turnCount: record.turnCount,
+						...(record.error ? { warnings: [record.error] } : {}),
+					};
 					return {
 						content: [{ type: "text", text: formatRunResult(result) }],
 						details: result,
@@ -91,6 +112,7 @@ export function createSubagentExtensionFactory(_options: SubagentToolOptions = {
 					systemPrompt: params.system_prompt as string | undefined,
 					model: modelObj,
 					maxTurns: def?.maxTurns,
+					notifyOnComplete: false,
 				});
 				const record = ctx.getSubAgent(id);
 				return {

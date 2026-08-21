@@ -3598,6 +3598,7 @@ export class AgentSession {
 	private _subAgents = new Map<string, InProcessSubAgentRecord>();
 	private _subAgentHandles = new Map<string, { abort: () => void; done: Promise<void> }>();
 	private _subAgentListeners = new Set<(records: InProcessSubAgentRecord[]) => void>();
+	private _pendingNotifications: string[] = [];
 
 	private _extractAssistantText(msg: AgentMessage | undefined): string {
 		if (!msg || (msg as { role?: string }).role !== "assistant") return "";
@@ -3769,6 +3770,9 @@ export class AgentSession {
 				record.timeline.push(completedEvent);
 				unsub();
 				this._notifySubAgents();
+				if (params.notifyOnComplete !== false) {
+					this._enqueueSubAgentNotification(record);
+				}
 			});
 		this._subAgentHandles.set(id, { abort: () => subAgent.abort(), done });
 		return { id };
@@ -3841,6 +3845,33 @@ export class AgentSession {
 		for (const listener of this._subAgentListeners) {
 			listener(records);
 		}
+	}
+
+	drainPendingNotifications(): string[] {
+		const notes = this._pendingNotifications;
+		this._pendingNotifications = [];
+		return notes;
+	}
+
+	private _enqueueSubAgentNotification(record: InProcessSubAgentRecord): void {
+		this._pendingNotifications.push(this._formatSubAgentNotification(record));
+	}
+
+	private _formatSubAgentNotification(record: InProcessSubAgentRecord): string {
+		const ms = Date.now() - record.startedAt;
+		let elapsed: string;
+		if (ms < 1000) elapsed = `${Math.max(0, Math.round(ms))}ms`;
+		else {
+			const sec = ms / 1000;
+			elapsed =
+				sec < 60 ? `${sec.toFixed(1)}s` : `${Math.floor(sec / 60)}m${Math.round(sec - Math.floor(sec / 60) * 60)}s`;
+		}
+		const parts: string[] = [`Background subagent "${record.id}" (${record.agentType}) ${record.status}`];
+		if (record.toolUseCount > 0) parts.push(`${record.toolUseCount} tool uses`);
+		if (record.turnCount > 0) parts.push(`${record.turnCount} turns`);
+		parts.push(elapsed);
+		const body = record.finalText ? record.finalText.slice(0, 2000).trim() : record.error;
+		return `[${parts.join(", ")}]\n${body ?? ""}`;
 	}
 
 	getContextUsage(): ContextUsage | undefined {

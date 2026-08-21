@@ -151,4 +151,20 @@ describe("AgentSession background sub-agents (in-process store)", () => {
 		expect(done?.finalText).toContain("live reply");
 		expect(done?.timeline.map((e) => e.type)).toEqual(expect.arrayContaining(["text", "turn_complete", "completed"]));
 	});
+
+	it("enqueues a completion notification for a background sub-agent", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+
+		harness.setResponses([fauxAssistantMessage("bg done")]);
+		const { id } = harness.session.runSubAgentBackground({
+			id: "bg-notif",
+			prompt: "x",
+			maxTurns: 5,
+		});
+		await harness.session.waitSubAgent(id);
+
+		const notes = harness.session.drainPendingNotifications();
+		expect(notes.some((n) => n.includes("bg-notif") && n.includes("completed"))).toBe(true);
+	});
 });
