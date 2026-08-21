@@ -1,5 +1,5 @@
 {
-	"name": "@earendil-works/pi-orchestrator",
+	"name": "@theatechcorporation/pi-orchestrator",
 	"version": "0.80.21",
 	"description": "experimental orchestrator package for pi",
 	"type": "module",
@@ -37,7 +37,7 @@
 		"node": ">=22.19.0"
 	},
 	"dependencies": {
-		"@earendil-works/pi-coding-agent": "^0.80.21"
+		"@theatechcorporation/pi-coding-agent": "^0.80.21"
 	},
 	"devDependencies": {
 		"shx": "0.4.0"

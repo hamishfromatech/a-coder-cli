@@ -17,14 +17,14 @@ import {
 	registerApiProvider,
 	resetApiProviders,
 	type SimpleStreamOptions,
-} from "@earendil-works/pi-ai/compat";
-import { registerOAuthProvider, resetOAuthProviders } from "@earendil-works/pi-ai/oauth";
-import { fetchLlamaCppModels } from "@earendil-works/pi-ai/providers/llama-cpp";
-import { fetchLMStudioModels } from "@earendil-works/pi-ai/providers/lm-studio";
-import { fetchOllamaModels } from "@earendil-works/pi-ai/providers/ollama";
-import { fetchOllamaCloudModels } from "@earendil-works/pi-ai/providers/ollama-cloud";
-import { fetchOllamaContextWindow, looksLikeOllama } from "@earendil-works/pi-ai/providers/ollama-context";
-import { fetchOpenAdapterModels } from "@earendil-works/pi-ai/providers/openadapter";
+} from "@theatechcorporation/pi-ai/compat";
+import { registerOAuthProvider, resetOAuthProviders } from "@theatechcorporation/pi-ai/oauth";
+import { fetchLlamaCppModels } from "@theatechcorporation/pi-ai/providers/llama-cpp";
+import { fetchLMStudioModels } from "@theatechcorporation/pi-ai/providers/lm-studio";
+import { fetchOllamaModels } from "@theatechcorporation/pi-ai/providers/ollama";
+import { fetchOllamaCloudModels } from "@theatechcorporation/pi-ai/providers/ollama-cloud";
+import { fetchOllamaContextWindow, looksLikeOllama } from "@theatechcorporation/pi-ai/providers/ollama-context";
+import { fetchOpenAdapterModels } from "@theatechcorporation/pi-ai/providers/openadapter";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { type Static, Type } from "typebox";

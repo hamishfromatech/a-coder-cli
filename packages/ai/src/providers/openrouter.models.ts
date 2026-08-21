@@ -2518,7 +2518,7 @@ export const OPENROUTER_MODELS = {
 			cacheWrite: 0,
 		},
 		contextWindow: 262144,
-		maxTokens: 262144,
+		maxTokens: 4096,
 	} satisfies Model<"openai-completions">,
 	"moonshotai/kimi-k2.6": {
 		id: "moonshotai/kimi-k2.6",
@@ -2530,9 +2530,9 @@ export const OPENROUTER_MODELS = {
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
-			input: 0.95,
-			output: 4,
-			cacheRead: 0.16,
+			input: 0.9405,
+			output: 3.96,
+			cacheRead: 0.1584,
 			cacheWrite: 0,
 		},
 		contextWindow: 262144,

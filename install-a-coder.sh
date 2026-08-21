@@ -307,7 +307,7 @@ install_desktop() {
 
 # --- npm fallback ------------------------------------------------------------
 install_from_npm() {
-  local pkg="@earendil-works/pi-coding-agent@${VERSION#v}"
+  local pkg="@theatechcorporation/pi-coding-agent@${VERSION#v}"
   if ! command -v npm &>/dev/null; then
     echo "ERROR: npm not found. Install Node.js first." >&2
     return 1
@@ -324,7 +324,7 @@ if [[ "$CLI_ALREADY_UP_TO_DATE" == "false" ]]; then
     install_from_npm || {
       echo "" >&2
       echo "ERROR: Could not install A-Coder CLI." >&2
-      echo "Try: npm install -g @earendil-works/pi-coding-agent@${VERSION#v}" >&2
+      echo "Try: npm install -g @theatechcorporation/pi-coding-agent@${VERSION#v}" >&2
       exit 1
     }
   fi

@@ -4,8 +4,8 @@ import type {
 	ImageContent,
 	ToolResultMessage,
 	UserMessage,
-} from "@earendil-works/pi-ai";
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
+} from "@theatechcorporation/pi-ai";
+import type { AgentMessage } from "@theatechcorporation/pi-agent-core";
 import { useSessionStore, type UiRequest } from "../stores/session-store";
 import { useSettingsStore } from "../stores/settings-store";
 import { ModalBackdrop } from "./ui/Modal";
@@ -38,7 +38,7 @@ function usePendingApprovalToolCallId(): string | undefined {
 			const m = messages[i];
 			if (m.role !== "assistant") continue;
 			const parts = Array.isArray(m.content) ? m.content : [];
-			const calls = parts.filter((p) => p.type === "toolCall") as Array<{
+			const calls = parts.filter((p: { type: string }) => p.type === "toolCall") as Array<{
 				type: "toolCall";
 				id?: string;
 				name: string;

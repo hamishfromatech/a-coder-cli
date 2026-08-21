@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createAssistantMessageEventStream, fauxAssistantMessage } from "@earendil-works/pi-ai";
-import { getModel } from "@earendil-works/pi-ai/compat";
+import { createAssistantMessageEventStream, fauxAssistantMessage } from "@theatechcorporation/pi-ai";
+import { getModel } from "@theatechcorporation/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import { DefaultResourceLoader } from "../src/core/resource-loader.ts";

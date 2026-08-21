@@ -1,7 +1,7 @@
 // Composio (https://composio.dev) integration for a-coder-cli.
 //
 // Uses the native `PiProvider` from `@composio/experimental`, which is built
-// against `@earendil-works/pi-coding-agent` (this package): the tools it
+// against `@theatechcorporation/pi-coding-agent` (this package): the tools it
 // returns are `ToolDefinition[]` and drop straight into `createAgentSession`'s
 // `customTools`. When enabled, the agent gets:
 //   - composio_search_tools        (discover exact Composio tool slugs + schemas)

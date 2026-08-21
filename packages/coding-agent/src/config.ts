@@ -485,7 +485,7 @@ try {
 }
 
 const piConfigName: string | undefined = pkg.piConfig?.name;
-export const PACKAGE_NAME: string = pkg.name || "@earendil-works/pi-coding-agent";
+export const PACKAGE_NAME: string = pkg.name || "@theatechcorporation/pi-coding-agent";
 export const APP_NAME: string = piConfigName || "a-coder-cli";
 export const APP_TITLE: string = piConfigName ? APP_NAME : "A-Coder CLI";
 export const CONFIG_DIR_NAME: string = pkg.piConfig?.configDir || ".a-coder-cli";

@@ -91,7 +91,7 @@ npm --prefix desktop-app run tauri dev
 **Problem:** The app fails to launch because it cannot find `a-coder-cli`.
 
 **Solution:**
-1. Install `a-coder-cli` globally: `npm install -g --ignore-scripts @earendil-works/pi-coding-agent`
+1. Install `a-coder-cli` globally: `npm install -g --ignore-scripts @theatechcorporation/pi-coding-agent`
 2. Ensure it's on your `PATH`: run `a-coder-cli --version` in a terminal
 3. Restart the desktop app
 

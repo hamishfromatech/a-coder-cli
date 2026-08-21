@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { AgentEvent } from "@earendil-works/pi-agent-core";
+import type { AgentEvent } from "@theatechcorporation/pi-agent-core";
 import type { PermissionMode } from "../stores/session-store";
 
 // Events emitted by the engine include standard AgentEvents plus extension UI requests and queue updates.
@@ -191,8 +191,8 @@ export async function sendUiResponse(response: ExtensionUiResponse): Promise<voi
 // Typed engine command surface (mirrors packages/coding-agent/src/modes/rpc/rpc-types.ts)
 // ============================================================================
 
-import type { ImageContent, Model } from "@earendil-works/pi-ai";
-import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { ImageContent, Model } from "@theatechcorporation/pi-ai";
+import type { AgentMessage, ThinkingLevel } from "@theatechcorporation/pi-agent-core";
 
 export type { ThinkingLevel };
 

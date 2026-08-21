@@ -7,7 +7,7 @@ import { triggerHaptic } from "./lib/haptics";
 import { rafCoalesce } from "./lib/raf-coalesce";
 import { synthesize, playAudioBlob, type VoiceSettings } from "./lib/voice";
 import { pickLoadingVerb } from "./lib/loading-verbs";
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { AgentMessage } from "@theatechcorporation/pi-agent-core";
 import { useSessionStore } from "./stores/session-store";
 import { useSettingsStore } from "./stores/settings-store";
 import { useWorkspaceStore } from "./stores/workspace-store";
@@ -340,7 +340,7 @@ export default function App() {
 				loadingHistoryRef.current = true;
 				try {
 					const msgsRes = (await rpc.sendCommand({ type: "get_messages" })) as {
-						messages: import("@earendil-works/pi-agent-core").AgentMessage[];
+						messages: import("@theatechcorporation/pi-agent-core").AgentMessage[];
 					};
 					if (msgsRes?.messages) {
 						setMessages(msgsRes.messages);
@@ -451,7 +451,7 @@ export default function App() {
 									if (!treeLoaded) setTree([], null);
 									try {
 										const msgsRes = (await rpc.sendCommand({ type: "get_messages" })) as {
-											messages: import("@earendil-works/pi-agent-core").AgentMessage[];
+											messages: import("@theatechcorporation/pi-agent-core").AgentMessage[];
 										};
 										if (msgsRes?.messages) {
 											setMessages(msgsRes.messages);
@@ -478,12 +478,12 @@ export default function App() {
 								// after it was already injected by the composer.
 								const messages = useSessionStore.getState().messages;
 								const userText = getUserMessageText(
-									event.message as import("@earendil-works/pi-ai").UserMessage,
+									event.message as import("@theatechcorporation/pi-ai").UserMessage,
 								);
 								const isDuplicateUser = messages.some(
 									(m) =>
 										m.role === "user" &&
-										getUserMessageText(m as import("@earendil-works/pi-ai").UserMessage) ===
+										getUserMessageText(m as import("@theatechcorporation/pi-ai").UserMessage) ===
 											userText,
 								);
 								if (!isDuplicateUser) {
@@ -513,9 +513,9 @@ export default function App() {
 								// Append or replace an existing tool result with the same id so streaming
 								// tool output stays visible without duplicating final results.
 								const messages = useSessionStore.getState().messages;
-								const id = (event.message as import("@earendil-works/pi-ai").ToolResultMessage).toolCallId;
+								const id = (event.message as import("@theatechcorporation/pi-ai").ToolResultMessage).toolCallId;
 								const existingIndex = messages.findLastIndex(
-									(m) => m.role === "toolResult" && (m as import("@earendil-works/pi-ai").ToolResultMessage).toolCallId === id,
+									(m) => m.role === "toolResult" && (m as import("@theatechcorporation/pi-ai").ToolResultMessage).toolCallId === id,
 								);
 								if (existingIndex >= 0) {
 									setMessages([
@@ -1189,7 +1189,7 @@ function RailIcon({
 	);
 }
 
-function getUserMessageText(message: import("@earendil-works/pi-ai").UserMessage): string {
+function getUserMessageText(message: import("@theatechcorporation/pi-ai").UserMessage): string {
 	const content = message.content;
 	if (typeof content === "string") return content;
 	if (!Array.isArray(content)) return "";
@@ -1204,7 +1204,7 @@ function deriveSessionName(text: string): string | null {
 	return normalized.length > maxLen ? `${normalized.slice(0, maxLen).trimEnd()}…` : normalized;
 }
 
-function hasAssistantContent(message: import("@earendil-works/pi-ai").AssistantMessage): boolean {
+function hasAssistantContent(message: import("@theatechcorporation/pi-ai").AssistantMessage): boolean {
 	const content = message.content;
 	if (!Array.isArray(content)) return false;
 	return content.some(

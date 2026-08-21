@@ -1,4 +1,4 @@
-import type { AgentEvent } from "@earendil-works/pi-agent-core";
+import type { AgentEvent } from "@theatechcorporation/pi-agent-core";
 
 export type SubagentStatus = "pending" | "running" | "completed" | "failed" | "killed";
 

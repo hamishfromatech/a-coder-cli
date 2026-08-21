@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { ThinkingLevel } from "@theatechcorporation/pi-agent-core";
 import * as rpc from "../../../lib/rpc";
 import { triggerHaptic } from "../../../lib/haptics";
 

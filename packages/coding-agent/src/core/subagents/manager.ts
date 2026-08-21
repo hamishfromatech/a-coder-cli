@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { AgentEvent } from "@earendil-works/pi-agent-core";
+import type { AgentEvent } from "@theatechcorporation/pi-agent-core";
 import { getAgentDir } from "../../config.ts";
 import type { SubagentConfig, SubagentRecord } from "./types.ts";
 

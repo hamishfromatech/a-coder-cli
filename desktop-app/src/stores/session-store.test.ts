@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
 
 // Mock the modules before importing the store
-vi.mock("@earendil-works/pi-agent-core", () => ({
+vi.mock("@theatechcorporation/pi-agent-core", () => ({
 	AgentMessage: {},
 }));
 
-vi.mock("@earendil-works/pi-ai", () => ({
+vi.mock("@theatechcorporation/pi-ai", () => ({
 	AssistantMessage: {},
 	Api: {},
 	Model: {},

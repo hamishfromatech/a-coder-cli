@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Cpu, RefreshCw, Search, X } from "lucide-react";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Api, Model } from "@theatechcorporation/pi-ai";
 import * as rpc from "../lib/rpc";
 import { useModalA11y } from "../hooks/useModalA11y";
 import { useSessionStore } from "../stores/session-store";

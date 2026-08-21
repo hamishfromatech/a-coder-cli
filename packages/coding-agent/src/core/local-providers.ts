@@ -7,7 +7,7 @@
  *     base-URL dialog.
  *
  * Keep this list in sync with the built-in providers registered in
- * `@earendil-works/pi-ai` (`lm-studio`, `llama-cpp`, `ollama`).
+ * `@theatechcorporation/pi-ai` (`lm-studio`, `llama-cpp`, `ollama`).
  */
 export const KEYLESS_LOCAL_PROVIDERS: ReadonlySet<string> = new Set(["lm-studio", "llama-cpp", "ollama"]);
 

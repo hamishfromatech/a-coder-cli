@@ -1,9 +1,9 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentContext, BeforeToolCallContext } from "@earendil-works/pi-agent-core";
-import type { AssistantMessage } from "@earendil-works/pi-ai";
-import { getModel } from "@earendil-works/pi-ai/compat";
+import type { AgentContext, BeforeToolCallContext } from "@theatechcorporation/pi-agent-core";
+import type { AssistantMessage } from "@theatechcorporation/pi-ai";
+import { getModel } from "@theatechcorporation/pi-ai/compat";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAgentSession } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";

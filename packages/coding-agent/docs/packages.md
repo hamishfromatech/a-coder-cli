@@ -165,7 +165,7 @@ If no `a-coder-cli` manifest is present, a-coder-cli auto-discovers resources fr
 
 Third party runtime dependencies belong in `dependencies` in `package.json`. Dependencies that do not register extensions, skills, prompt templates, or themes also belong in `dependencies`. When a-coder-cli installs a package from npm or git, it runs `npm install`, so those dependencies are installed automatically.
 
-Core packages are bundled for extensions and skills. If you import any of these, list them in `peerDependencies` with a `"*"` range and do not bundle them: `@earendil-works/pi-ai`, `@earendil-works/pi-agent-core`, `@earendil-works/pi-coding-agent`, `@earendil-works/pi-tui`, `typebox`.
+Core packages are bundled for extensions and skills. If you import any of these, list them in `peerDependencies` with a `"*"` range and do not bundle them: `@theatechcorporation/pi-ai`, `@theatechcorporation/pi-agent-core`, `@theatechcorporation/pi-coding-agent`, `@theatechcorporation/pi-tui`, `typebox`.
 
 Other packages must be bundled in your tarball. Add them to `dependencies` and `bundledDependencies`, then reference their resources through `node_modules/` paths. Packages are loaded with separate module roots, so separate installs do not collide or share modules.
 

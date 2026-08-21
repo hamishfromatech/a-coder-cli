@@ -1,5 +1,5 @@
 {
-	"name": "@earendil-works/pi-ai",
+	"name": "@theatechcorporation/pi-ai",
 	"version": "0.80.23",
 	"description": "Unified LLM API with automatic model discovery and provider configuration",
 	"type": "module",
