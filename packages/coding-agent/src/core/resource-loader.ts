@@ -8,6 +8,7 @@ import type { ResourceDiagnostic } from "./diagnostics.ts";
 export type { ResourceCollision, ResourceDiagnostic } from "./diagnostics.ts";
 
 import { canonicalizePath, isLocalPath, resolvePath } from "../utils/paths.ts";
+import { type AgentDefinition, getBuiltInAgents, loadAllCustomAgents, setAgents } from "./agents/index.ts";
 import { createEventBus, type EventBus } from "./event-bus.ts";
 import {
 	clearExtensionCache,
@@ -40,6 +41,7 @@ export interface ResourceLoaderReloadOptions {
 export interface ResourceLoader {
 	getExtensions(): LoadExtensionsResult;
 	getSkills(): { skills: Skill[]; diagnostics: ResourceDiagnostic[] };
+	getSubAgents(): AgentDefinition[];
 	getPrompts(): { prompts: PromptTemplate[]; diagnostics: ResourceDiagnostic[] };
 	getThemes(): { themes: Theme[]; diagnostics: ResourceDiagnostic[] };
 	getAgentsFiles(): { agentsFiles: Array<{ path: string; content: string }> };
@@ -136,6 +138,7 @@ export interface DefaultResourceLoaderOptions {
 	extensionFactories?: ExtensionFactory[];
 	noExtensions?: boolean;
 	noSkills?: boolean;
+	noSubAgents?: boolean;
 	noPromptTemplates?: boolean;
 	noThemes?: boolean;
 	noContextFiles?: boolean;
@@ -146,6 +149,7 @@ export interface DefaultResourceLoaderOptions {
 		skills: Skill[];
 		diagnostics: ResourceDiagnostic[];
 	};
+	subAgentsOverride?: (base: AgentDefinition[]) => AgentDefinition[];
 	promptsOverride?: (base: { prompts: PromptTemplate[]; diagnostics: ResourceDiagnostic[] }) => {
 		prompts: PromptTemplate[];
 		diagnostics: ResourceDiagnostic[];
@@ -174,6 +178,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private extensionFactories: ExtensionFactory[];
 	private noExtensions: boolean;
 	private noSkills: boolean;
+	private noSubAgents: boolean;
 	private noPromptTemplates: boolean;
 	private noThemes: boolean;
 	private noContextFiles: boolean;
@@ -184,6 +189,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		skills: Skill[];
 		diagnostics: ResourceDiagnostic[];
 	};
+	private subAgentsOverride?: (base: AgentDefinition[]) => AgentDefinition[];
 	private promptsOverride?: (base: { prompts: PromptTemplate[]; diagnostics: ResourceDiagnostic[] }) => {
 		prompts: PromptTemplate[];
 		diagnostics: ResourceDiagnostic[];
@@ -200,6 +206,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 	private extensionsResult: LoadExtensionsResult;
 	private skills: Skill[];
+	private subAgents: AgentDefinition[];
 	private skillDiagnostics: ResourceDiagnostic[];
 	private prompts: PromptTemplate[];
 	private promptDiagnostics: ResourceDiagnostic[];
@@ -238,6 +245,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		];
 		this.noExtensions = options.noExtensions ?? false;
 		this.noSkills = options.noSkills ?? false;
+		this.noSubAgents = options.noSubAgents ?? false;
 		this.noPromptTemplates = options.noPromptTemplates ?? false;
 		this.noThemes = options.noThemes ?? false;
 		this.noContextFiles = options.noContextFiles ?? false;
@@ -245,6 +253,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.appendSystemPromptSource = options.appendSystemPrompt;
 		this.extensionsOverride = options.extensionsOverride;
 		this.skillsOverride = options.skillsOverride;
+		this.subAgentsOverride = options.subAgentsOverride;
 		this.promptsOverride = options.promptsOverride;
 		this.themesOverride = options.themesOverride;
 		this.agentsFilesOverride = options.agentsFilesOverride;
@@ -253,6 +262,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 		this.extensionsResult = { extensions: [], errors: [], runtime: createExtensionRuntime() };
 		this.skills = [];
+		this.subAgents = [];
 		this.skillDiagnostics = [];
 		this.prompts = [];
 		this.promptDiagnostics = [];
@@ -267,6 +277,23 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.lastPromptPaths = [];
 		this.lastThemePaths = [];
 		this.loaded = false;
+
+		// Sub-agents are independent of extensions and loaded synchronously, so
+		// load them up front (also populates the global agent registry for the
+		// spawn_subagent tool to resolve `subagent_type` against). Honors
+		// noSubAgents / subAgentsOverride.
+		if (this.noSubAgents) {
+			this.subAgents = [];
+			setAgents([]);
+		} else {
+			const { agents: custom, warnings } = loadAllCustomAgents(this.cwd);
+			for (const w of warnings) console.warn(chalk.yellow(w));
+			const list = this.subAgentsOverride
+				? this.subAgentsOverride([...getBuiltInAgents(), ...custom])
+				: [...getBuiltInAgents(), ...custom];
+			this.subAgents = list;
+			setAgents(list);
+		}
 	}
 
 	getExtensions(): LoadExtensionsResult {
@@ -275,6 +302,10 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 	getSkills(): { skills: Skill[]; diagnostics: ResourceDiagnostic[] } {
 		return { skills: this.skills, diagnostics: this.skillDiagnostics };
+	}
+
+	getSubAgents(): AgentDefinition[] {
+		return this.subAgents;
 	}
 
 	getPrompts(): { prompts: PromptTemplate[]; diagnostics: ResourceDiagnostic[] } {

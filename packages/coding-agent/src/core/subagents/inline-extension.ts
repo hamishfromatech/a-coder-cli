@@ -1,5 +1,6 @@
 import type { AgentToolResult } from "@theatechcorporation/pi-agent-core";
 import { Type } from "typebox";
+import { findAgent } from "../agents/index.ts";
 import type { ExtensionFactory } from "../extensions/types.ts";
 import { createSubagentManager } from "./manager.ts";
 import type { SubagentConfig } from "./types.ts";
@@ -22,7 +23,15 @@ export function createSubagentExtensionFactory(options: SubagentToolOptions): Ex
 			parameters: Type.Object({
 				id: Type.String({ description: "Unique identifier for this subagent task. Use a short kebab-case slug." }),
 				task: Type.String({ description: "The task prompt to send to the subagent." }),
-				system_prompt: Type.Optional(Type.String({ description: "Optional system prompt override." })),
+				subagent_type: Type.Optional(
+					Type.String({
+						description:
+							"Named sub-agent type to invoke (e.g. general-purpose, Explore, or a custom agent from .a-coder-cli/agents/*.md). When set, the agent's system prompt and model override are applied. Available types are listed in the system prompt.",
+					}),
+				),
+				system_prompt: Type.Optional(
+					Type.String({ description: "Optional system prompt override (takes precedence over subagent_type)." }),
+				),
 				provider: Type.Optional(
 					Type.String({ description: "Provider name (defaults to current session provider)." }),
 				),
@@ -35,12 +44,27 @@ export function createSubagentExtensionFactory(options: SubagentToolOptions): Ex
 				),
 			}),
 			async execute(_toolCallId, params, _signal): Promise<AgentToolResult<unknown>> {
+				// Resolve a named sub-agent type (if any) to its system prompt + model override.
+				// An explicit system_prompt/model param takes precedence over the agent definition.
+				const subagentType = params.subagent_type as string | undefined;
+				const def = subagentType ? findAgent(subagentType) : undefined;
+				if (subagentType && !def) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: `Unknown subagent_type "${subagentType}". Available types are listed in the system prompt.`,
+							},
+						],
+						details: null,
+					};
+				}
 				const config: SubagentConfig = {
 					id: params.id as string,
 					task: params.task as string,
-					systemPrompt: (params.system_prompt as string | undefined) ?? undefined,
+					systemPrompt: (params.system_prompt as string | undefined) ?? def?.getSystemPrompt(),
 					provider: (params.provider as string | undefined) ?? options.defaultProvider,
-					model: (params.model as string | undefined) ?? options.defaultModel,
+					model: (params.model as string | undefined) ?? def?.model ?? options.defaultModel,
 					timeoutMs: (params.timeout_ms as number | undefined) ?? undefined,
 					detached: (params.detached as boolean | undefined) ?? false,
 				};

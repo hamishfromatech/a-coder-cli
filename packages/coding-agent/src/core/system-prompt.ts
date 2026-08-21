@@ -3,6 +3,7 @@
  */
 
 import { getDocsPath, getExamplesPath, getReadmePath } from "../config.ts";
+import { type AgentDefinition, formatAgentsSystemReminder } from "./agents/index.ts";
 import { formatSkillsForPrompt, type Skill } from "./skills.ts";
 
 export interface BuildSystemPromptOptions {
@@ -22,6 +23,8 @@ export interface BuildSystemPromptOptions {
 	contextFiles?: Array<{ path: string; content: string }>;
 	/** Pre-loaded skills. */
 	skills?: Skill[];
+	/** Pre-loaded sub-agent definitions (for the available-sub-agents system reminder). */
+	agents?: AgentDefinition[];
 }
 
 /** Build the system prompt with tools, guidelines, and context */
@@ -35,6 +38,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 		cwd,
 		contextFiles: providedContextFiles,
 		skills: providedSkills,
+		agents: providedAgents,
 	} = options;
 	const resolvedCwd = cwd;
 	const promptCwd = resolvedCwd.replace(/\\/g, "/");
@@ -49,6 +53,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
 	const contextFiles = providedContextFiles ?? [];
 	const skills = providedSkills ?? [];
+	const agents = providedAgents ?? [];
 
 	if (customPrompt) {
 		let prompt = customPrompt;
@@ -65,6 +70,12 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 				prompt += `<project_instructions path="${filePath}">\n${content}\n</project_instructions>\n\n`;
 			}
 			prompt += "</project_context>\n";
+		}
+
+		// Append sub-agents section (available whenever the spawn_subagent tool is present)
+		const customPromptHasSubagent = !selectedTools || selectedTools.includes("spawn_subagent");
+		if (customPromptHasSubagent && agents.length > 0) {
+			prompt += formatAgentsSystemReminder(agents);
 		}
 
 		// Append skills section (only if read tool is available)
@@ -161,6 +172,12 @@ A-Coder CLI documentation (read only when the user asks about a-coder-cli itself
 			prompt += `<project_instructions path="${filePath}">\n${content}\n</project_instructions>\n\n`;
 		}
 		prompt += "</project_context>\n";
+	}
+
+	// Append sub-agents section (available whenever the spawn_subagent tool is present)
+	const hasSubagent = tools.includes("spawn_subagent");
+	if (hasSubagent && agents.length > 0) {
+		prompt += formatAgentsSystemReminder(agents);
 	}
 
 	// Append skills section (only if read tool is available)
