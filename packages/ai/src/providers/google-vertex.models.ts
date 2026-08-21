@@ -173,9 +173,9 @@ export const GOOGLE_VERTEX_MODELS = {
 		thinkingLevelMap: {"off":null},
 		input: ["text", "image"],
 		cost: {
-			input: 1.5,
-			output: 7.5,
-			cacheRead: 0.15,
+			input: 0.75,
+			output: 3.75,
+			cacheRead: 0.075,
 			cacheWrite: 0,
 		},
 		contextWindow: 1048576,
