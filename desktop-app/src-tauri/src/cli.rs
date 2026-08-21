@@ -2,6 +2,19 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// On Windows, prevent a console window from flashing up when the GUI app
+/// spawns the CLI (and the CLI's child MCP servers / skill CLIs). On other
+/// platforms this is a no-op.
+#[cfg(windows)]
+fn suppress_console(cmd: &mut Command) {
+	use std::os::windows::process::CommandExt;
+	const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+	cmd.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(windows))]
+fn suppress_console(_cmd: &mut Command) {}
+
 /// Read the first `len` bytes of a file, returning an empty slice on failure.
 fn read_file_header(path: &Path, len: usize) -> Vec<u8> {
 	let mut buf = vec![0u8; len];
@@ -96,6 +109,7 @@ pub fn build_cli_command(cli_path: &Path, args: &[String]) -> Result<Command, St
 	}
 
 	let mut cmd = build_cli_command_inner(cli_path, args)?;
+	suppress_console(&mut cmd);
 	cmd.env("PATH", reconstructed_path());
 	Ok(cmd)
 }

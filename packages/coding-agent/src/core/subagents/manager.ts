@@ -108,6 +108,7 @@ export class SubagentManager {
 		const child = spawn(command, commandArgs, {
 			stdio: ["pipe", "pipe", "pipe"],
 			env: { ...process.env, A_CODER_CLI_OFFLINE: process.env.A_CODER_CLI_OFFLINE ?? "1" },
+			windowsHide: true,
 		});
 
 		let buffer = "";
