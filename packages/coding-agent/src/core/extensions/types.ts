@@ -343,6 +343,10 @@ export interface InProcessSubAgentRecord {
 	timeline: SubAgentProgressEvent[];
 	/** Name of the most recently finished tool, for the "last:" badge. */
 	lastToolName?: string;
+	/** Worktree path when the sub-agent ran with worktree isolation and the worktree was kept (dirty). */
+	worktreePath?: string;
+	/** Branch name of the kept worktree, if any. */
+	worktreeBranch?: string;
 	error?: string;
 }
 
@@ -352,6 +356,8 @@ export interface RunSubAgentBackgroundParams extends RunSubAgentParams {
 	id: string;
 	/** Suppress the completion notification injected into the parent's next turn. Set by foreground-awaited runs (which return the result inline) to avoid a redundant "done" message. */
 	notifyOnComplete?: boolean;
+	/** Filesystem isolation. "worktree" runs the sub-agent inside a fresh git worktree (builtin tools rebuilt against it) and removes it on completion unless it has changes. Falls back to no isolation with a warning outside a git repo. */
+	isolation?: "none" | "worktree";
 }
 
 export interface ExtensionContext {

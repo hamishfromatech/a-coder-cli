@@ -107,8 +107,9 @@ import type { SlashCommandInfo } from "./slash-commands.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
 import { type BuildSystemPromptOptions, buildSystemPrompt } from "./system-prompt.ts";
 import { type BashOperations, createLocalBashOperations } from "./tools/bash.ts";
-import { createAllToolDefinitions } from "./tools/index.ts";
+import { allToolNames, createAllToolDefinitions, createTool, type ToolName } from "./tools/index.ts";
 import { createToolDefinitionFromAgentTool } from "./tools/tool-definition-wrapper.ts";
+import { createAgentWorktree, hasWorktreeChanges, removeAgentWorktree, type WorktreeInfo } from "./worktree.ts";
 
 // ============================================================================
 // Skill Block Parsing
@@ -3615,6 +3616,12 @@ export class AgentSession {
 	 * agent the same way as {@link runSubAgent}, kicks off the run without awaiting,
 	 * and returns the sub-agent id immediately. Progress is recorded for
 	 * getSubAgent/listSubAgents/waitSubAgent/killSubAgent.
+	 *
+	 * With `isolation: "worktree"` the sub-agent runs inside a fresh git worktree
+	 * (builtin tools are rebuilt against it; extension/MCP tools keep the parent
+	 * cwd) and the worktree is removed on completion unless it has changes worth
+	 * keeping, in which case record.worktreePath stays set so the completion
+	 * notification surfaces where the work lives.
 	 */
 	runSubAgentBackground(params: RunSubAgentBackgroundParams): { id: string } {
 		const { id } = params;
@@ -3647,7 +3654,7 @@ export class AgentSession {
 			{ tools: params.tools ?? def?.tools, disallowedTools: params.disallowedTools ?? def?.disallowedTools },
 			availableNames,
 		);
-		const filteredTools = resolved.resolvedToolNames
+		const registryTools = resolved.resolvedToolNames
 			.map((name) => this._toolRegistry.get(name))
 			.filter((t): t is AgentTool => t !== undefined);
 		if (resolved.invalidTools.length) record.error = `invalid tools: ${resolved.invalidTools.join(", ")}`;
@@ -3666,88 +3673,143 @@ export class AgentSession {
 
 		const maxTurns = params.maxTurns ?? def?.maxTurns ?? 25;
 		const parent = this.agent;
-		const subAgent = new Agent({
-			initialState: {
-				systemPrompt,
-				model: subModel,
-				thinkingLevel: this.thinkingLevel,
-				tools: filteredTools,
-			},
-			convertToLlm: parent.convertToLlm,
-			transformContext: parent.transformContext,
-			streamFn: parent.streamFn,
-			getApiKey: parent.getApiKey,
-			onPayload: parent.onPayload,
-			onResponse: parent.onResponse,
-			beforeToolCall: parent.beforeToolCall,
-			afterToolCall: parent.afterToolCall,
-			transport: parent.transport,
-			toolExecution: parent.toolExecution,
-		});
+		this._subAgents.set(id, record);
+		this._notifySubAgents();
 
-		let turnCount = 0;
-		let toolUseCount = 0;
 		const onProgress = params.onProgress;
 		const pushEvent = (ev: SubAgentProgressEvent) => {
 			record.timeline.push(ev);
 			record.updatedAt = Date.now();
 			this._notifySubAgents();
 		};
-		const unsub = subAgent.subscribe((event) => {
-			switch (event.type) {
-				case "tool_execution_start":
-					toolUseCount++;
-					{
-						const ev: SubAgentProgressEvent = { type: "tool_use_start", toolName: event.toolName };
-						onProgress?.(ev);
-						pushEvent(ev);
-					}
-					break;
-				case "tool_execution_end":
-					record.lastToolName = event.toolName;
-					{
-						const ev: SubAgentProgressEvent = {
-							type: "tool_use_done",
-							toolName: event.toolName,
-							isError: event.isError,
-						};
-						onProgress?.(ev);
-						pushEvent(ev);
-					}
-					break;
-				case "turn_end":
-					turnCount++;
-					{
-						const ev: SubAgentProgressEvent = { type: "turn_complete", turnCount };
-						onProgress?.(ev);
-						pushEvent(ev);
-						if (turnCount >= maxTurns) subAgent.abort();
-					}
-					break;
-				case "message_end":
-					if ((event.message as { role?: string }).role === "assistant") {
-						const text = this._extractAssistantText(event.message);
-						if (text) {
-							const ev: SubAgentProgressEvent = { type: "text", text };
+		let turnCount = 0;
+		let toolUseCount = 0;
+		let subAgentRef: Agent | undefined;
+
+		const done = (async () => {
+			// Worktree isolation (easy-agent stage 20): create a fresh git worktree
+			// and rebuild the builtin tools against it so the sub-agent's file
+			// edits stay off the main working copy. Extension/MCP tools keep the
+			// parent cwd (they capture it at registration). Falls back to no
+			// isolation with a warning when outside a git repo or on failure.
+			let worktreeInfo: WorktreeInfo | undefined;
+			let filteredTools = registryTools;
+			if (params.isolation === "worktree") {
+				const baseCwd = this._cwd;
+				try {
+					worktreeInfo = await createAgentWorktree(`agent-${id}`, baseCwd);
+					const worktreeCwd = worktreeInfo.worktreePath;
+					record.worktreePath = worktreeInfo.worktreePath;
+					record.worktreeBranch = worktreeInfo.worktreeBranch;
+					record.updatedAt = Date.now();
+					this._notifySubAgents();
+					filteredTools = resolved.resolvedToolNames
+						.map((name) => {
+							if (allToolNames.has(name as ToolName)) {
+								try {
+									return createTool(name as ToolName, worktreeCwd);
+								} catch {
+									// Fall back to the registry tool below.
+								}
+							}
+							return this._toolRegistry.get(name);
+						})
+						.filter((t): t is AgentTool => t !== undefined);
+				} catch (error) {
+					const message = error instanceof Error ? error.message : String(error);
+					record.error = record.error
+						? `${record.error}; worktree isolation failed (${message}); running without isolation`
+						: `worktree isolation failed (${message}); running without isolation`;
+					worktreeInfo = undefined;
+					record.worktreePath = undefined;
+					record.worktreeBranch = undefined;
+					record.updatedAt = Date.now();
+					this._notifySubAgents();
+				}
+			}
+
+			// Killed while the worktree was being set up — stop before running.
+			if (record.status !== "running") {
+				if (worktreeInfo) {
+					await this._cleanupSubAgentWorktree(record, worktreeInfo);
+					this._notifySubAgents();
+				}
+				return;
+			}
+
+			const subAgent = new Agent({
+				initialState: {
+					systemPrompt,
+					model: subModel,
+					thinkingLevel: this.thinkingLevel,
+					tools: filteredTools,
+				},
+				convertToLlm: parent.convertToLlm,
+				transformContext: parent.transformContext,
+				streamFn: parent.streamFn,
+				getApiKey: parent.getApiKey,
+				onPayload: parent.onPayload,
+				onResponse: parent.onResponse,
+				beforeToolCall: parent.beforeToolCall,
+				afterToolCall: parent.afterToolCall,
+				transport: parent.transport,
+				toolExecution: parent.toolExecution,
+			});
+			subAgentRef = subAgent;
+			const unsub = subAgent.subscribe((event) => {
+				switch (event.type) {
+					case "tool_execution_start":
+						toolUseCount++;
+						{
+							const ev: SubAgentProgressEvent = { type: "tool_use_start", toolName: event.toolName };
 							onProgress?.(ev);
 							pushEvent(ev);
 						}
-					}
-					break;
-			}
-		});
+						break;
+					case "tool_execution_end":
+						record.lastToolName = event.toolName;
+						{
+							const ev: SubAgentProgressEvent = {
+								type: "tool_use_done",
+								toolName: event.toolName,
+								isError: event.isError,
+							};
+							onProgress?.(ev);
+							pushEvent(ev);
+						}
+						break;
+					case "turn_end":
+						turnCount++;
+						{
+							const ev: SubAgentProgressEvent = { type: "turn_complete", turnCount };
+							onProgress?.(ev);
+							pushEvent(ev);
+							if (turnCount >= maxTurns) subAgent.abort();
+						}
+						break;
+					case "message_end":
+						if ((event.message as { role?: string }).role === "assistant") {
+							const text = this._extractAssistantText(event.message);
+							if (text) {
+								const ev: SubAgentProgressEvent = { type: "text", text };
+								onProgress?.(ev);
+								pushEvent(ev);
+							}
+						}
+						break;
+				}
+			});
 
-		this._subAgents.set(id, record);
-		this._notifySubAgents();
-		const done = subAgent
-			.prompt([{ role: "user", content: params.prompt, timestamp: Date.now() }])
-			.then(() => {
+			try {
+				await subAgent.prompt([{ role: "user", content: params.prompt, timestamp: Date.now() }]);
 				record.status = "completed";
-			})
-			.catch(() => {
-				record.status = record.status === "killed" ? "killed" : "failed";
-			})
-			.finally(() => {
+			} catch {
+				// killSubAgent pushes an `aborted` timeline event before aborting the
+				// prompt, so detect a killed run that way (record.status is narrowed
+				// to "running" here by the earlier early-return guard).
+				const wasKilled = record.timeline.some((e) => e.type === "aborted");
+				record.status = wasKilled ? "killed" : "failed";
+			} finally {
 				let finalText = "";
 				for (let i = subAgent.state.messages.length - 1; i >= 0; i--) {
 					const text = this._extractAssistantText(subAgent.state.messages[i]);
@@ -3769,13 +3831,35 @@ export class AgentSession {
 				onProgress?.(completedEvent);
 				record.timeline.push(completedEvent);
 				unsub();
+				if (worktreeInfo) {
+					await this._cleanupSubAgentWorktree(record, worktreeInfo);
+				}
 				this._notifySubAgents();
 				if (params.notifyOnComplete !== false) {
 					this._enqueueSubAgentNotification(record);
 				}
-			});
-		this._subAgentHandles.set(id, { abort: () => subAgent.abort(), done });
+			}
+		})();
+		this._subAgentHandles.set(id, { abort: () => subAgentRef?.abort(), done });
 		return { id };
+	}
+
+	/**
+	 * Remove a sub-agent worktree unless it has uncommitted changes or new
+	 * commits worth keeping. Fail-closed: any error keeps the worktree (and
+	 * record.worktreePath) so the work stays recoverable.
+	 */
+	private async _cleanupSubAgentWorktree(record: InProcessSubAgentRecord, info: WorktreeInfo): Promise<void> {
+		try {
+			const dirty = await hasWorktreeChanges(info.worktreePath, info.headCommit);
+			if (!dirty) {
+				await removeAgentWorktree(info);
+				record.worktreePath = undefined;
+				record.worktreeBranch = undefined;
+			}
+		} catch {
+			// Fail-closed: keep the worktree.
+		}
 	}
 
 	/** Get a snapshot of a background sub-agent record by id. */
@@ -3871,7 +3955,10 @@ export class AgentSession {
 		if (record.turnCount > 0) parts.push(`${record.turnCount} turns`);
 		parts.push(elapsed);
 		const body = record.finalText ? record.finalText.slice(0, 2000).trim() : record.error;
-		return `[${parts.join(", ")}]\n${body ?? ""}`;
+		const worktree = record.worktreePath
+			? `\nWorktree kept at: ${record.worktreePath} (${record.worktreeBranch})`
+			: "";
+		return `[${parts.join(", ")}]\n${body ?? ""}${worktree}`;
 	}
 
 	getContextUsage(): ContextUsage | undefined {

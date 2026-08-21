@@ -45,6 +45,12 @@ export function createSubagentExtensionFactory(_options: SubagentToolOptions = {
 				detached: Type.Optional(
 					Type.Boolean({ description: "If true, return immediately without waiting for the subagent to finish." }),
 				),
+				isolation: Type.Optional(
+					Type.Union([Type.Literal("none"), Type.Literal("worktree")], {
+						description:
+							"Filesystem isolation. 'worktree' runs the subagent inside a fresh git worktree so its file edits don't touch the main working copy until reviewed; the worktree is removed on completion unless it has changes (the kept path is then surfaced in the result). Requires the working directory to be a git repository; otherwise the subagent runs without isolation and a warning is returned. Default 'none'.",
+					}),
+				),
 			}),
 			async execute(_toolCallId, params, _signal, _onUpdate, ctx): Promise<AgentToolResult<unknown>> {
 				// Resolve a named sub-agent type (if any) to its system prompt + model override.
@@ -80,6 +86,8 @@ export function createSubagentExtensionFactory(_options: SubagentToolOptions = {
 						systemPrompt: params.system_prompt as string | undefined,
 						model: modelObj,
 						maxTurns: def?.maxTurns,
+						notifyOnComplete: false,
+						isolation: params.isolation as "none" | "worktree" | undefined,
 					});
 					const record = await ctx.waitSubAgent(
 						params.id as string,
@@ -112,7 +120,7 @@ export function createSubagentExtensionFactory(_options: SubagentToolOptions = {
 					systemPrompt: params.system_prompt as string | undefined,
 					model: modelObj,
 					maxTurns: def?.maxTurns,
-					notifyOnComplete: false,
+					isolation: params.isolation as "none" | "worktree" | undefined,
 				});
 				const record = ctx.getSubAgent(id);
 				return {
@@ -237,6 +245,7 @@ function formatRecord(record: InProcessSubAgentRecord): string {
 		`Tool uses: ${record.toolUseCount}`,
 	];
 	if (record.error) lines.push(`Error: ${record.error}`);
+	if (record.worktreePath) lines.push(`Worktree: ${record.worktreePath} (${record.worktreeBranch})`);
 	if (record.finalText) lines.push("Output:", record.finalText.slice(0, 4000));
 	return lines.join("\n");
 }

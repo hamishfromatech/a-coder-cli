@@ -167,4 +167,23 @@ describe("AgentSession background sub-agents (in-process store)", () => {
 		const notes = harness.session.drainPendingNotifications();
 		expect(notes.some((n) => n.includes("bg-notif") && n.includes("completed"))).toBe(true);
 	});
+
+	it("falls back to no isolation when a worktree is requested outside a git repo", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+
+		harness.setResponses([fauxAssistantMessage("wt reply")]);
+		const { id } = harness.session.runSubAgentBackground({
+			id: "bg-wt",
+			prompt: "x",
+			maxTurns: 5,
+			isolation: "worktree",
+		});
+		const record = await harness.session.waitSubAgent(id);
+		expect(record?.status).toBe("completed");
+		expect(record?.finalText).toContain("wt reply");
+		// Harness cwd is a plain temp dir, so the worktree path must be absent and a warning recorded.
+		expect(record?.worktreePath).toBeUndefined();
+		expect(record?.error).toContain("worktree isolation failed");
+	});
 });
