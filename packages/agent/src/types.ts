@@ -11,6 +11,7 @@ import type {
 	TextContent,
 	Tool,
 	ToolResultMessage,
+	Usage,
 } from "@earendil-works/pi-ai";
 import type { Static, TSchema } from "typebox";
 
@@ -416,7 +417,7 @@ export type AgentEvent =
 	| { type: "agent_end"; messages: AgentMessage[] }
 	// Turn lifecycle - a turn is one assistant response + any tool calls/results
 	| { type: "turn_start" }
-	| { type: "turn_end"; message: AgentMessage; toolResults: ToolResultMessage[] }
+	| { type: "turn_end"; message: AgentMessage; toolResults: ToolResultMessage[]; usage?: Usage }
 	// Message lifecycle - emitted for user, assistant, and toolResult messages
 	| { type: "message_start"; message: AgentMessage }
 	// Only emitted for assistant messages during streaming

@@ -16,7 +16,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import type {
-	Agent,
 	AgentEvent,
 	AgentMessage,
 	AgentState,
@@ -24,6 +23,7 @@ import type {
 	PrepareNextTurnContext,
 	ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
+import { Agent } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@earendil-works/pi-ai/compat";
 import {
 	clampThinkingLevel,
@@ -40,6 +40,7 @@ import { getThemeByName, theme } from "../modes/interactive/theme/theme.ts";
 import { stripFrontmatter } from "../utils/frontmatter.ts";
 import { resolvePath } from "../utils/paths.ts";
 import { sleep } from "../utils/sleep.ts";
+import { findAgent, resolveAgentTools } from "./agents/index.ts";
 import { formatNoApiKeyFoundMessage, formatNoModelSelectedMessage } from "./auth-guidance.ts";
 import { type BashResult, executeBashWithOperations } from "./bash-executor.ts";
 import {
@@ -83,6 +84,13 @@ import {
 	wrapRegisteredTools,
 } from "./extensions/index.ts";
 import { emitSessionShutdownEvent } from "./extensions/runner.ts";
+import type {
+	InProcessSubAgentRecord,
+	RunSubAgentBackgroundParams,
+	RunSubAgentParams,
+	SubAgentProgressEvent,
+	SubAgentRunResult,
+} from "./extensions/types.ts";
 import type { BashExecutionMessage, CustomMessage } from "./messages.ts";
 import type { ModelRegistry } from "./model-registry.ts";
 import {
@@ -98,9 +106,13 @@ import type { PermissionMode, PermissionPolicyConfig, SettingsManager } from "./
 import type { SlashCommandInfo } from "./slash-commands.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
 import { type BuildSystemPromptOptions, buildSystemPrompt } from "./system-prompt.ts";
+import { drainUnreadMessages, formatMailboxAttachment } from "./teams/mailbox.ts";
+import { addTeamMember, formatAgentId, setMemberActive } from "./teams/team-file.ts";
 import { type BashOperations, createLocalBashOperations } from "./tools/bash.ts";
-import { createAllToolDefinitions } from "./tools/index.ts";
+import { allToolNames, createAllToolDefinitions, createTool, type ToolName } from "./tools/index.ts";
+import { createSendMessageTool } from "./tools/teams.ts";
 import { createToolDefinitionFromAgentTool } from "./tools/tool-definition-wrapper.ts";
+import { createAgentWorktree, hasWorktreeChanges, removeAgentWorktree, type WorktreeInfo } from "./worktree.ts";
 
 // ============================================================================
 // Skill Block Parsing
@@ -1253,11 +1265,13 @@ export class AgentSession {
 		const appendSystemPrompt =
 			loaderAppendSystemPrompt.length > 0 ? loaderAppendSystemPrompt.join("\n\n") : undefined;
 		const loadedSkills = this._resourceLoader.getSkills().skills;
+		const loadedAgents = this._resourceLoader.getSubAgents();
 		const loadedContextFiles = this._resourceLoader.getAgentsFiles().agentsFiles;
 
 		this._baseSystemPromptOptions = {
 			cwd: this._cwd,
 			skills: loadedSkills,
+			agents: loadedAgents,
 			contextFiles: loadedContextFiles,
 			customPrompt: loaderSystemPrompt,
 			appendSystemPrompt,
@@ -2739,6 +2753,12 @@ export class AgentSession {
 				},
 				getSystemPrompt: () => this.systemPrompt,
 				getSystemPromptOptions: () => this._baseSystemPromptOptions,
+				runSubAgent: (params) => this.runSubAgent(params),
+				runSubAgentBackground: (params) => this.runSubAgentBackground(params),
+				getSubAgent: (id) => this.getSubAgent(id),
+				listSubAgents: () => this.listSubAgents(),
+				waitSubAgent: (id, timeoutMs) => this.waitSubAgent(id, timeoutMs),
+				killSubAgent: (id, reason) => this.killSubAgent(id, reason),
 			},
 			{
 				registerProvider: (name, config) => {
@@ -2928,7 +2948,18 @@ export class AgentSession {
 
 		const defaultActiveToolNames = this._baseToolsOverride
 			? Object.keys(this._baseToolsOverride)
-			: ["read", "bash", "edit", "write", "todo", "memory", "plan_mode"];
+			: [
+					"read",
+					"bash",
+					"edit",
+					"write",
+					"todo",
+					"memory",
+					"plan_mode",
+					"team_create",
+					"team_delete",
+					"send_message",
+				];
 		const baseActiveToolNames = options.activeToolNames ?? defaultActiveToolNames;
 		this._refreshToolRegistry({
 			activeToolNames: baseActiveToolNames,
@@ -3458,6 +3489,546 @@ export class AgentSession {
 			cost: totalCost,
 			contextUsage: this.getContextUsage(),
 		};
+	}
+	/**
+	 * Run a sub-agent in-process (a nested agent loop). See ExtensionContext.runSubAgent.
+	 *
+	 * Builds a child Agent from the session's tool registry, filtered by the agent
+	 * definition's allow/deny lists, with the definition's system prompt + model +
+	 * maxTurns. The parent's stream function, auth, and permission hooks are shared
+	 * by reference so an allow_always decision in the sub-agent persists across the
+	 * parent's turn; prepareNextTurn is deliberately omitted (a sub-agent does not
+	 * compact). maxTurns is enforced by aborting the child on the Nth turn_end.
+	 */
+	async runSubAgent(params: RunSubAgentParams): Promise<SubAgentRunResult> {
+		const agentType = params.agentType ?? "general-purpose";
+		const def = findAgent(agentType);
+		if (params.agentType && !def) {
+			return {
+				agentType,
+				finalText: `Unknown subagent_type "${params.agentType}". Available types are listed in the system prompt.`,
+				toolUseCount: 0,
+				turnCount: 0,
+				warnings: [`unknown subagent_type: ${params.agentType}`],
+			};
+		}
+
+		const systemPrompt = params.systemPrompt ?? def?.getSystemPrompt() ?? "";
+		const availableNames = [...this._toolRegistry.keys()];
+		const resolved = resolveAgentTools(
+			{ tools: params.tools ?? def?.tools, disallowedTools: params.disallowedTools ?? def?.disallowedTools },
+			availableNames,
+		);
+		const filteredTools = resolved.resolvedToolNames
+			.map((name) => this._toolRegistry.get(name))
+			.filter((t): t is AgentTool => t !== undefined);
+		const warnings = resolved.invalidTools.length
+			? [`invalid tools for "${agentType}": ${resolved.invalidTools.join(", ")}`]
+			: undefined;
+
+		const subModel =
+			params.model ??
+			(def?.model ? this._modelRegistry.getAvailable().find((m) => m.id === def.model) : undefined) ??
+			this.model;
+		if (!subModel) {
+			return { agentType, finalText: "No model available for sub-agent.", toolUseCount: 0, turnCount: 0, warnings };
+		}
+
+		const maxTurns = params.maxTurns ?? def?.maxTurns ?? 25;
+		const parent = this.agent;
+		const subAgent = new Agent({
+			initialState: {
+				systemPrompt,
+				model: subModel,
+				thinkingLevel: this.thinkingLevel,
+				tools: filteredTools,
+			},
+			convertToLlm: parent.convertToLlm,
+			transformContext: parent.transformContext,
+			streamFn: parent.streamFn,
+			getApiKey: parent.getApiKey,
+			onPayload: parent.onPayload,
+			onResponse: parent.onResponse,
+			beforeToolCall: parent.beforeToolCall,
+			afterToolCall: parent.afterToolCall,
+			transport: parent.transport,
+			toolExecution: parent.toolExecution,
+		});
+
+		const extractText = (msg: AgentMessage | undefined): string => {
+			if (!msg || (msg as { role?: string }).role !== "assistant") return "";
+			const content = (msg as { content?: unknown }).content;
+			if (typeof content === "string") return content;
+			if (Array.isArray(content)) {
+				return content.map((c) => (typeof c === "string" ? c : ((c as { text?: string }).text ?? ""))).join("");
+			}
+			return "";
+		};
+
+		let turnCount = 0;
+		let toolUseCount = 0;
+		const onProgress = params.onProgress;
+		const unsub = subAgent.subscribe((event) => {
+			switch (event.type) {
+				case "tool_execution_start":
+					toolUseCount++;
+					onProgress?.({ type: "tool_use_start", toolName: event.toolName });
+					break;
+				case "tool_execution_end":
+					onProgress?.({ type: "tool_use_done", toolName: event.toolName, isError: event.isError });
+					break;
+				case "turn_end":
+					turnCount++;
+					onProgress?.({ type: "turn_complete", turnCount });
+					if (turnCount >= maxTurns) subAgent.abort();
+					break;
+				case "message_end":
+					if ((event.message as { role?: string }).role === "assistant") {
+						const text = extractText(event.message);
+						if (text) onProgress?.({ type: "text", text });
+					}
+					break;
+			}
+		});
+
+		try {
+			await subAgent.prompt([{ role: "user", content: params.prompt, timestamp: Date.now() }]);
+		} catch {
+			// maxTurns abort or stream error — fall through and extract whatever text we have
+		} finally {
+			unsub();
+		}
+
+		let finalText = "";
+		for (let i = subAgent.state.messages.length - 1; i >= 0; i--) {
+			const text = extractText(subAgent.state.messages[i]);
+			if (text) {
+				finalText = text;
+				break;
+			}
+		}
+		onProgress?.({ type: "completed", finalText, toolUseCount, turnCount });
+		return { agentType, finalText, toolUseCount, turnCount, warnings };
+	}
+	private _subAgents = new Map<string, InProcessSubAgentRecord>();
+	private _subAgentHandles = new Map<string, { abort: () => void; done: Promise<void> }>();
+	private _subAgentListeners = new Set<(records: InProcessSubAgentRecord[]) => void>();
+	private _pendingNotifications: string[] = [];
+
+	private _extractAssistantText(msg: AgentMessage | undefined): string {
+		if (!msg || (msg as { role?: string }).role !== "assistant") return "";
+		const content = (msg as { content?: unknown }).content;
+		if (typeof content === "string") return content;
+		if (Array.isArray(content)) {
+			return content.map((c) => (typeof c === "string" ? c : ((c as { text?: string }).text ?? ""))).join("");
+		}
+		return "";
+	}
+
+	/**
+	 * Start a sub-agent in the background (in-process, detached). Builds the nested
+	 * agent the same way as {@link runSubAgent}, kicks off the run without awaiting,
+	 * and returns the sub-agent id immediately. Progress is recorded for
+	 * getSubAgent/listSubAgents/waitSubAgent/killSubAgent.
+	 *
+	 * With `isolation: "worktree"` the sub-agent runs inside a fresh git worktree
+	 * (builtin tools are rebuilt against it; extension/MCP tools keep the parent
+	 * cwd) and the worktree is removed on completion unless it has changes worth
+	 * keeping, in which case record.worktreePath stays set so the completion
+	 * notification surfaces where the work lives.
+	 */
+	runSubAgentBackground(params: RunSubAgentBackgroundParams): { id: string } {
+		const { id } = params;
+		const agentType = params.agentType ?? "general-purpose";
+		const teammateName = params.name && params.teamName ? params.name : undefined;
+		const def = findAgent(agentType);
+		const now = Date.now();
+		const record: InProcessSubAgentRecord = {
+			id,
+			agentType,
+			status: "running",
+			createdAt: now,
+			startedAt: now,
+			updatedAt: now,
+			finalText: undefined,
+			toolUseCount: 0,
+			turnCount: 0,
+			timeline: [],
+			...(teammateName ? { teammateName } : {}),
+		};
+		if (params.agentType && !def) {
+			record.status = "failed";
+			record.error = `Unknown subagent_type "${params.agentType}". Available types are listed in the system prompt.`;
+			this._subAgents.set(id, record);
+			this._notifySubAgents();
+			return { id };
+		}
+
+		const systemPrompt = params.systemPrompt ?? def?.getSystemPrompt() ?? "";
+		const availableNames = [...this._toolRegistry.keys()];
+		const resolved = resolveAgentTools(
+			{ tools: params.tools ?? def?.tools, disallowedTools: params.disallowedTools ?? def?.disallowedTools },
+			availableNames,
+		);
+		if (resolved.invalidTools.length) record.error = `invalid tools: ${resolved.invalidTools.join(", ")}`;
+
+		// Team tools: build a SendMessage with the teammate's identity captured,
+		// and keep team_create/team_delete out of a teammate's toolset (nesting
+		// teams is forbidden). `worktree` rebuilds builtin tools against the
+		// worktree cwd; otherwise the parent registry instances are reused.
+		const isTeammate = teammateName !== undefined;
+		const buildTools = (cwd: string, worktree: boolean): AgentTool[] =>
+			resolved.resolvedToolNames
+				.map((name): AgentTool | undefined => {
+					if (name === "send_message") {
+						return createSendMessageTool(teammateName);
+					}
+					if (isTeammate && (name === "team_create" || name === "team_delete")) {
+						return undefined;
+					}
+					if (worktree && allToolNames.has(name as ToolName)) {
+						try {
+							return createTool(name as ToolName, cwd);
+						} catch {
+							// Fall back to the registry tool below.
+						}
+					}
+					return this._toolRegistry.get(name);
+				})
+				.filter((t): t is AgentTool => t !== undefined);
+
+		const subModel =
+			params.model ??
+			(def?.model ? this._modelRegistry.getAvailable().find((m) => m.id === def.model) : undefined) ??
+			this.model;
+		if (!subModel) {
+			record.status = "failed";
+			record.error = record.error ?? "No model available for sub-agent.";
+			this._subAgents.set(id, record);
+			this._notifySubAgents();
+			return { id };
+		}
+
+		const maxTurns = params.maxTurns ?? def?.maxTurns ?? 25;
+		const parent = this.agent;
+		this._subAgents.set(id, record);
+		this._notifySubAgents();
+
+		const onProgress = params.onProgress;
+		const pushEvent = (ev: SubAgentProgressEvent) => {
+			record.timeline.push(ev);
+			record.updatedAt = Date.now();
+			this._notifySubAgents();
+		};
+		let turnCount = 0;
+		let toolUseCount = 0;
+		let totalTokens = 0;
+		let inputTokens = 0;
+		let outputTokens = 0;
+		let subAgentRef: Agent | undefined;
+
+		const done = (async () => {
+			// Agent Teams: register this sub-agent as an active teammate before
+			// any work, so the lead can SendMessage it immediately. If the team
+			// file is gone (deleted mid-flight), fall back to running detached.
+			if (teammateName && params.teamName) {
+				const registered = await addTeamMember(params.teamName, {
+					agentId: formatAgentId(teammateName, params.teamName),
+					name: teammateName,
+					agentType,
+					joinedAt: Date.now(),
+					isActive: true,
+				});
+				if (!registered) {
+					record.error = record.error
+						? `${record.error}; team "${params.teamName}" missing on disk — teammate not registered`
+						: `team "${params.teamName}" missing on disk — teammate not registered`;
+				}
+			}
+
+			// Worktree isolation (easy-agent stage 20): create a fresh git worktree
+			// and rebuild the builtin tools against it so the sub-agent's file
+			// edits stay off the main working copy. Extension/MCP tools keep the
+			// parent cwd (they capture it at registration). Falls back to no
+			// isolation with a warning when outside a git repo or on failure.
+			let worktreeInfo: WorktreeInfo | undefined;
+			let filteredTools = buildTools(this._cwd, false);
+			if (params.isolation === "worktree") {
+				const baseCwd = this._cwd;
+				try {
+					worktreeInfo = await createAgentWorktree(`agent-${id}`, baseCwd);
+					const worktreeCwd = worktreeInfo.worktreePath;
+					record.worktreePath = worktreeInfo.worktreePath;
+					record.worktreeBranch = worktreeInfo.worktreeBranch;
+					record.updatedAt = Date.now();
+					this._notifySubAgents();
+					filteredTools = buildTools(worktreeCwd, true);
+				} catch (error) {
+					const message = error instanceof Error ? error.message : String(error);
+					record.error = record.error
+						? `${record.error}; worktree isolation failed (${message}); running without isolation`
+						: `worktree isolation failed (${message}); running without isolation`;
+					worktreeInfo = undefined;
+					record.worktreePath = undefined;
+					record.worktreeBranch = undefined;
+					record.updatedAt = Date.now();
+					this._notifySubAgents();
+				}
+			}
+
+			// Killed while the worktree was being set up — stop before running.
+			if (record.status !== "running") {
+				if (worktreeInfo) {
+					await this._cleanupSubAgentWorktree(record, worktreeInfo);
+					this._notifySubAgents();
+				}
+				return;
+			}
+
+			const subAgent = new Agent({
+				initialState: {
+					systemPrompt,
+					model: subModel,
+					thinkingLevel: this.thinkingLevel,
+					tools: filteredTools,
+				},
+				convertToLlm: parent.convertToLlm,
+				transformContext: parent.transformContext,
+				streamFn: parent.streamFn,
+				getApiKey: parent.getApiKey,
+				onPayload: parent.onPayload,
+				onResponse: parent.onResponse,
+				beforeToolCall: parent.beforeToolCall,
+				afterToolCall: parent.afterToolCall,
+				transport: parent.transport,
+				toolExecution: parent.toolExecution,
+			});
+			subAgentRef = subAgent;
+			const unsub = subAgent.subscribe((event) => {
+				switch (event.type) {
+					case "tool_execution_start":
+						toolUseCount++;
+						{
+							const ev: SubAgentProgressEvent = { type: "tool_use_start", toolName: event.toolName };
+							onProgress?.(ev);
+							pushEvent(ev);
+						}
+						break;
+					case "tool_execution_end":
+						record.lastToolName = event.toolName;
+						{
+							const ev: SubAgentProgressEvent = {
+								type: "tool_use_done",
+								toolName: event.toolName,
+								isError: event.isError,
+							};
+							onProgress?.(ev);
+							pushEvent(ev);
+						}
+						break;
+					case "turn_end":
+						turnCount++;
+						{
+							const usage = event.usage;
+							if (usage) {
+								totalTokens += usage.totalTokens;
+								inputTokens += usage.input;
+								outputTokens += usage.output;
+								record.totalTokens = totalTokens;
+								record.inputTokens = inputTokens;
+								record.outputTokens = outputTokens;
+							}
+							const ev: SubAgentProgressEvent = { type: "turn_complete", turnCount };
+							onProgress?.(ev);
+							pushEvent(ev);
+							if (turnCount >= maxTurns) subAgent.abort();
+						}
+						break;
+					case "message_end":
+						if ((event.message as { role?: string }).role === "assistant") {
+							const text = this._extractAssistantText(event.message);
+							if (text) {
+								const ev: SubAgentProgressEvent = { type: "text", text };
+								onProgress?.(ev);
+								pushEvent(ev);
+							}
+						}
+						break;
+				}
+			});
+
+			try {
+				let promptText = params.prompt;
+				if (teammateName && params.teamName) {
+					const mailbox = await drainUnreadMessages(teammateName, params.teamName);
+					const attachment = formatMailboxAttachment(mailbox);
+					promptText = attachment ? `${attachment}\n\n${params.prompt}` : params.prompt;
+				}
+				await subAgent.prompt([{ role: "user", content: promptText, timestamp: Date.now() }]);
+				record.status = "completed";
+			} catch {
+				// killSubAgent pushes an `aborted` timeline event before aborting the
+				// prompt, so detect a killed run that way (record.status is narrowed
+				// to "running" here by the earlier early-return guard).
+				const wasKilled = record.timeline.some((e) => e.type === "aborted");
+				record.status = wasKilled ? "killed" : "failed";
+			} finally {
+				let finalText = "";
+				for (let i = subAgent.state.messages.length - 1; i >= 0; i--) {
+					const text = this._extractAssistantText(subAgent.state.messages[i]);
+					if (text) {
+						finalText = text;
+						break;
+					}
+				}
+				record.finalText = finalText;
+				record.turnCount = turnCount;
+				record.toolUseCount = toolUseCount;
+				record.totalTokens = totalTokens;
+				record.inputTokens = inputTokens;
+				record.outputTokens = outputTokens;
+				record.updatedAt = Date.now();
+				const completedEvent: SubAgentProgressEvent = {
+					type: "completed",
+					finalText,
+					toolUseCount,
+					turnCount,
+				};
+				onProgress?.(completedEvent);
+				record.timeline.push(completedEvent);
+				unsub();
+				if (worktreeInfo) {
+					await this._cleanupSubAgentWorktree(record, worktreeInfo);
+				}
+				if (teammateName && params.teamName) {
+					await setMemberActive(params.teamName, teammateName, false).catch(() => {});
+				}
+				this._notifySubAgents();
+				if (params.notifyOnComplete !== false) {
+					this._enqueueSubAgentNotification(record);
+				}
+			}
+		})();
+		this._subAgentHandles.set(id, { abort: () => subAgentRef?.abort(), done });
+		return { id };
+	}
+
+	/**
+	 * Remove a sub-agent worktree unless it has uncommitted changes or new
+	 * commits worth keeping. Fail-closed: any error keeps the worktree (and
+	 * record.worktreePath) so the work stays recoverable.
+	 */
+	private async _cleanupSubAgentWorktree(record: InProcessSubAgentRecord, info: WorktreeInfo): Promise<void> {
+		try {
+			const dirty = await hasWorktreeChanges(info.worktreePath, info.headCommit);
+			if (!dirty) {
+				await removeAgentWorktree(info);
+				record.worktreePath = undefined;
+				record.worktreeBranch = undefined;
+			}
+		} catch {
+			// Fail-closed: keep the worktree.
+		}
+	}
+
+	/** Get a snapshot of a background sub-agent record by id. */
+	getSubAgent(id: string): InProcessSubAgentRecord | undefined {
+		const record = this._subAgents.get(id);
+		return record ? { ...record } : undefined;
+	}
+
+	/** List snapshot records of all background sub-agents. */
+	listSubAgents(): InProcessSubAgentRecord[] {
+		return [...this._subAgents.values()].map((record) => ({ ...record }));
+	}
+
+	/** Block until a background sub-agent settles (or timeout), then return its snapshot. */
+	async waitSubAgent(id: string, timeoutMs?: number): Promise<InProcessSubAgentRecord | undefined> {
+		const handle = this._subAgentHandles.get(id);
+		const record = this._subAgents.get(id);
+		if (!record) return undefined;
+		if (record.status !== "running") return { ...record };
+		if (handle) {
+			if (timeoutMs && timeoutMs > 0) {
+				await Promise.race([handle.done, new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))]);
+			} else {
+				await handle.done;
+			}
+		}
+		const updated = this._subAgents.get(id);
+		return updated ? { ...updated } : undefined;
+	}
+
+	/** Abort a background sub-agent by id. */
+	killSubAgent(id: string, reason?: string): InProcessSubAgentRecord | undefined {
+		const handle = this._subAgentHandles.get(id);
+		const record = this._subAgents.get(id);
+		if (!record) return undefined;
+		if (handle) handle.abort();
+		record.status = "killed";
+		record.error = reason ?? "killed";
+		record.updatedAt = Date.now();
+		record.timeline.push({ type: "aborted" });
+		this._notifySubAgents();
+		return { ...record };
+	}
+
+	/**
+	 * Subscribe to live changes in the in-process sub-agent store.
+	 *
+	 * The listener receives a fresh snapshot of all sub-agent records (with a
+	 * deep-copied `timeline`) on every progress event and status transition,
+	 * including immediately on subscribe. Used by the TUI to render live
+	 * sub-agent progress cards. Returns an unsubscribe function.
+	 */
+	subscribeSubAgents(listener: (records: InProcessSubAgentRecord[]) => void): () => void {
+		this._subAgentListeners.add(listener);
+		this._notifySubAgents();
+		return () => {
+			this._subAgentListeners.delete(listener);
+		};
+	}
+
+	private _notifySubAgents(): void {
+		if (this._subAgentListeners.size === 0) return;
+		const records = [...this._subAgents.values()].map((record) => ({
+			...record,
+			timeline: [...record.timeline],
+		}));
+		for (const listener of this._subAgentListeners) {
+			listener(records);
+		}
+	}
+
+	drainPendingNotifications(): string[] {
+		const notes = this._pendingNotifications;
+		this._pendingNotifications = [];
+		return notes;
+	}
+
+	private _enqueueSubAgentNotification(record: InProcessSubAgentRecord): void {
+		this._pendingNotifications.push(this._formatSubAgentNotification(record));
+	}
+
+	private _formatSubAgentNotification(record: InProcessSubAgentRecord): string {
+		const ms = Date.now() - record.startedAt;
+		let elapsed: string;
+		if (ms < 1000) elapsed = `${Math.max(0, Math.round(ms))}ms`;
+		else {
+			const sec = ms / 1000;
+			elapsed =
+				sec < 60 ? `${sec.toFixed(1)}s` : `${Math.floor(sec / 60)}m${Math.round(sec - Math.floor(sec / 60) * 60)}s`;
+		}
+		const parts: string[] = [`Background subagent "${record.id}" (${record.agentType}) ${record.status}`];
+		if (record.toolUseCount > 0) parts.push(`${record.toolUseCount} tool uses`);
+		if (record.totalTokens && record.totalTokens > 0) parts.push(`${record.totalTokens} tokens`);
+		if (record.turnCount > 0) parts.push(`${record.turnCount} turns`);
+		parts.push(elapsed);
+		const body = record.finalText ? record.finalText.slice(0, 2000).trim() : record.error;
+		const worktree = record.worktreePath
+			? `\nWorktree kept at: ${record.worktreePath} (${record.worktreeBranch})`
+			: "";
+		return `[${parts.join(", ")}]\n${body ?? ""}${worktree}`;
 	}
 
 	getContextUsage(): ContextUsage | undefined {

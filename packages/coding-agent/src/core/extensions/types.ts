@@ -297,6 +297,78 @@ export interface CompactOptions {
  * Context passed to extension event handlers.
  */
 export type ExtensionMode = "tui" | "rpc" | "json" | "print";
+/**
+ * Progress events streamed from an in-process sub-agent run.
+ */
+export type SubAgentProgressEvent =
+	| { type: "tool_use_start"; toolName: string }
+	| { type: "tool_use_done"; toolName: string; isError?: boolean }
+	| { type: "text"; text: string }
+	| { type: "turn_complete"; turnCount: number }
+	| { type: "completed"; finalText: string; toolUseCount: number; turnCount: number }
+	| { type: "aborted" };
+
+/** Result of an in-process sub-agent run. */
+export interface SubAgentRunResult {
+	agentType: string;
+	finalText: string;
+	toolUseCount: number;
+	turnCount: number;
+	warnings?: string[];
+}
+
+/** Parameters for {@link ExtensionContext.runSubAgent}. */
+export interface RunSubAgentParams {
+	agentType?: string;
+	prompt: string;
+	systemPrompt?: string;
+	model?: Model<any>;
+	tools?: string[];
+	disallowedTools?: string[];
+	maxTurns?: number;
+	onProgress?: (event: SubAgentProgressEvent) => void;
+	/** Teammate name for an Agent Teams member (spawned via `name` + `team_name`). */
+	name?: string;
+	/** Team name for an Agent Teams member (paired with `name`). */
+	teamName?: string;
+}
+/** Record for an in-process background sub-agent. */
+export interface InProcessSubAgentRecord {
+	id: string;
+	agentType: string;
+	status: "running" | "completed" | "failed" | "killed";
+	createdAt: number;
+	startedAt: number;
+	updatedAt: number;
+	finalText?: string;
+	toolUseCount: number;
+	turnCount: number;
+	/** Cumulative token totals, accumulated from each turn_end usage delta. */
+	totalTokens?: number;
+	inputTokens?: number;
+	outputTokens?: number;
+	/** Ordered progress events emitted by the nested agent (for live UI). */
+	timeline: SubAgentProgressEvent[];
+	/** Name of the most recently finished tool, for the "last:" badge. */
+	lastToolName?: string;
+	/** Worktree path when the sub-agent ran with worktree isolation and the worktree was kept (dirty). */
+	worktreePath?: string;
+	/** Branch name of the kept worktree, if any. */
+	worktreeBranch?: string;
+	/** Teammate name when this sub-agent was spawned as a named Agent Teams member. */
+	teammateName?: string;
+	error?: string;
+}
+
+/** Parameters for {@link ExtensionContext.runSubAgentBackground}. */
+export interface RunSubAgentBackgroundParams extends RunSubAgentParams {
+	/** Unique id for the background sub-agent task. */
+	id: string;
+	/** Suppress the completion notification injected into the parent's next turn. Set by foreground-awaited runs (which return the result inline) to avoid a redundant "done" message. */
+	notifyOnComplete?: boolean;
+	/** Filesystem isolation. "worktree" runs the sub-agent inside a fresh git worktree (builtin tools rebuilt against it) and removes it on completion unless it has changes. Falls back to no isolation with a warning outside a git repo. */
+	isolation?: "none" | "worktree";
+}
 
 export interface ExtensionContext {
 	/** UI methods for user interaction */
@@ -331,6 +403,24 @@ export interface ExtensionContext {
 	compact(options?: CompactOptions): void;
 	/** Get the current effective system prompt. */
 	getSystemPrompt(): string;
+	/**
+	 * Run a sub-agent in-process: a nested agent loop with its own context window,
+	 * a filtered tool pool (no recursion — the spawn_subagent tool is stripped),
+	 * the agent definition's system prompt + model + maxTurns, and the parent's
+	 * stream function / auth / permission hooks (so an allow_always decision in
+	 * the sub-agent persists across the parent's turn).
+	 */
+	runSubAgent(params: RunSubAgentParams): Promise<SubAgentRunResult>;
+	/** Start a sub-agent in the background (in-process, detached). Returns its id immediately. */
+	runSubAgentBackground(params: RunSubAgentBackgroundParams): { id: string };
+	/** Get the current record for a background sub-agent by id. */
+	getSubAgent(id: string): InProcessSubAgentRecord | undefined;
+	/** List all background sub-agent records. */
+	listSubAgents(): InProcessSubAgentRecord[];
+	/** Block until a background sub-agent completes (or timeout) and return its record. */
+	waitSubAgent(id: string, timeoutMs?: number): Promise<InProcessSubAgentRecord | undefined>;
+	/** Abort a background sub-agent by id. */
+	killSubAgent(id: string, reason?: string): InProcessSubAgentRecord | undefined;
 }
 
 /**
@@ -1570,6 +1660,12 @@ export interface ExtensionContextActions {
 	compact: (options?: CompactOptions) => void;
 	getSystemPrompt: () => string;
 	getSystemPromptOptions?: () => BuildSystemPromptOptions;
+	runSubAgent: (params: RunSubAgentParams) => Promise<SubAgentRunResult>;
+	runSubAgentBackground: (params: RunSubAgentBackgroundParams) => { id: string };
+	getSubAgent: (id: string) => InProcessSubAgentRecord | undefined;
+	listSubAgents: () => InProcessSubAgentRecord[];
+	waitSubAgent: (id: string, timeoutMs?: number) => Promise<InProcessSubAgentRecord | undefined>;
+	killSubAgent: (id: string, reason?: string) => InProcessSubAgentRecord | undefined;
 }
 
 /**

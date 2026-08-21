@@ -72,6 +72,7 @@ import type {
 	ProjectTrustContext,
 	WorkingIndicatorOptions,
 } from "../../core/extensions/index.ts";
+import type { InProcessSubAgentRecord } from "../../core/extensions/types.ts";
 import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/footer-data-provider.ts";
 import { configureHttpDispatcher, formatHttpIdleTimeoutMs } from "../../core/http-dispatcher.ts";
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.ts";
@@ -86,7 +87,6 @@ import { type SessionEntry, SessionManager, sessionEntryToContextMessages } from
 import type { PermissionMode } from "../../core/settings-manager.ts";
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
-import { createSubagentManager } from "../../core/subagents/manager.ts";
 import { isInstallTelemetryEnabled } from "../../core/telemetry.ts";
 import type { TruncationResult } from "../../core/tools/truncate.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../core/trust-manager.ts";
@@ -133,6 +133,7 @@ import {
 	type StatusIndicator,
 	WorkingStatusIndicator,
 } from "./components/status-indicator.ts";
+import { SubAgentCardComponent } from "./components/subagent-card.ts";
 import { readTodosFromBranch, TodoListComponent } from "./components/todo-list.ts";
 import { ToolExecutionComponent } from "./components/tool-execution.ts";
 import { TreeSelectorComponent } from "./components/tree-selector.ts";
@@ -359,6 +360,11 @@ export class InteractiveMode {
 	// Track pending bash components (shown in pending area, moved to chat on submit)
 	private pendingBashComponents: BashExecutionComponent[] = [];
 
+	// In-process sub-agent progress cards (live UI for background sub-agents)
+	private subAgentContainer: Container;
+	private subAgentCards = new Map<string, SubAgentCardComponent>();
+	private unsubscribeSubAgents?: () => void;
+
 	// Auto-compaction state
 	private autoCompactionEscapeHandler?: () => void;
 
@@ -429,6 +435,7 @@ export class InteractiveMode {
 		this.headerContainer = new Container();
 		this.loadedResourcesContainer = new Container();
 		this.chatContainer = new Container();
+		this.subAgentContainer = new Container();
 		this.pendingMessagesContainer = new Container();
 		this.statusContainer = new Container();
 		this.widgetContainerAbove = new Container();
@@ -670,6 +677,7 @@ export class InteractiveMode {
 		this.ui.addChild(this.loadedResourcesContainer);
 
 		this.ui.addChild(this.chatContainer);
+		this.ui.addChild(this.subAgentContainer);
 		this.ui.addChild(this.pendingMessagesContainer);
 		this.ui.addChild(this.statusContainer);
 		this.renderWidgets(); // Initialize with default spacer
@@ -1696,6 +1704,8 @@ export class InteractiveMode {
 	private renderCurrentSessionState(): void {
 		this.loadedResourcesContainer.clear();
 		this.chatContainer.clear();
+		this.subAgentContainer.clear();
+		this.subAgentCards.clear();
 		this.pendingMessagesContainer.clear();
 		this.compactionQueuedMessages = [];
 		this.streamingComponent = undefined;
@@ -1750,6 +1760,12 @@ export class InteractiveMode {
 				})();
 			},
 			getSystemPrompt: () => this.session.systemPrompt,
+			runSubAgent: (params) => this.session.runSubAgent(params),
+			runSubAgentBackground: (params) => this.session.runSubAgentBackground(params),
+			getSubAgent: (id) => this.session.getSubAgent(id),
+			listSubAgents: () => this.session.listSubAgents(),
+			waitSubAgent: (id, timeoutMs) => this.session.waitSubAgent(id, timeoutMs),
+			killSubAgent: (id, reason) => this.session.killSubAgent(id, reason),
 		});
 
 		// Set up the extension shortcut handler on the default editor
@@ -2773,6 +2789,15 @@ export class InteractiveMode {
 			// First, move any pending bash components to chat
 			this.flushPendingBashComponents();
 
+			// Inject any pending background sub-agent completion notifications
+			// (easy-agent's <task-notification>) into the user's next message so
+			// the model sees them without polling. Commands and bash-mode input
+			// return earlier, so this only touches plain chat submits.
+			const notes = this.session.drainPendingNotifications();
+			if (notes.length > 0) {
+				text = `${notes.join("\n\n")}\n\n${text}`;
+			}
+
 			if (this.onInputCallback) {
 				this.onInputCallback(text);
 			} else {
@@ -2786,6 +2811,22 @@ export class InteractiveMode {
 		this.unsubscribe = this.session.subscribe(async (event) => {
 			await this.handleEvent(event);
 		});
+		this.unsubscribeSubAgents?.();
+		this.unsubscribeSubAgents = this.session.subscribeSubAgents((records) => this.syncSubAgentCards(records));
+	}
+
+	private syncSubAgentCards(records: InProcessSubAgentRecord[]): void {
+		for (const record of records) {
+			let card = this.subAgentCards.get(record.id);
+			if (!card) {
+				card = new SubAgentCardComponent(record);
+				this.subAgentContainer.addChild(card);
+				this.subAgentCards.set(record.id, card);
+			} else {
+				card.update(record);
+			}
+		}
+		this.ui.requestRender();
 	}
 
 	private async handleEvent(event: AgentSessionEvent): Promise<void> {
@@ -2824,6 +2865,8 @@ export class InteractiveMode {
 
 			case "session_start":
 				this.chatContainer.clear();
+				this.subAgentContainer.clear();
+				this.subAgentCards.clear();
 				this.pendingMessagesContainer.clear();
 				this.compactionQueuedMessages = [];
 				this.streamingComponent = undefined;
@@ -5345,8 +5388,7 @@ export class InteractiveMode {
 	}
 
 	private async handleSubagentsCommand(): Promise<void> {
-		const manager = createSubagentManager({});
-		const list = manager.list();
+		const list = this.session.listSubAgents();
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new DynamicBorder());
 		this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "Subagents")), 1, 0));
@@ -5355,9 +5397,11 @@ export class InteractiveMode {
 			this.chatContainer.addChild(new Text(theme.fg("muted", "No subagents running."), 1, 0));
 		} else {
 			for (const record of list) {
-				this.chatContainer.addChild(new Text(theme.fg("accent", `- ${record.id}: ${record.status}`), 1, 0));
-				if (record.lastOutput) {
-					this.chatContainer.addChild(new Text(`  ${record.lastOutput.slice(0, 200)}`, 1, 0));
+				this.chatContainer.addChild(
+					new Text(theme.fg("accent", `- ${record.id}: ${record.status} (${record.agentType})`), 1, 0),
+				);
+				if (record.finalText) {
+					this.chatContainer.addChild(new Text(`  ${record.finalText.slice(0, 200)}`, 1, 0));
 				}
 				if (record.error) {
 					this.chatContainer.addChild(new Text(theme.fg("error", `  error: ${record.error}`), 1, 0));
@@ -5962,6 +6006,10 @@ export class InteractiveMode {
 		this.footerDataProvider.dispose();
 		if (this.unsubscribe) {
 			this.unsubscribe();
+		}
+		if (this.unsubscribeSubAgents) {
+			this.unsubscribeSubAgents();
+			this.unsubscribeSubAgents = undefined;
 		}
 		if (this.isInitialized) {
 			this.ui.stop();

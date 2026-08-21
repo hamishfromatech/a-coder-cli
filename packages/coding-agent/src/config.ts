@@ -494,6 +494,7 @@ export const VERSION: string = pkg.version || "0.0.0";
 // e.g., A_CODER_CLI_CODING_AGENT_DIR or TAU_CODING_AGENT_DIR
 export const ENV_AGENT_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_DIR`;
 export const ENV_SESSION_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_SESSION_DIR`;
+export const ENV_TEAMS_DIR = `${APP_NAME.toUpperCase()}_TEAMS_DIR`;
 
 export function expandTildePath(path: string): string {
 	return normalizePath(path);
@@ -578,4 +579,13 @@ export function getSessionsDir(): string {
 /** Get path to debug log file */
 export function getDebugLogPath(): string {
 	return join(getAgentDir(), `${APP_NAME}-debug.log`);
+}
+
+/** Get path to the Agent Teams root directory (e.g., ~/.a-coder-cli/teams). */
+export function getTeamsRoot(): string {
+	const envDir = process.env[ENV_TEAMS_DIR];
+	if (envDir) {
+		return expandTildePath(envDir);
+	}
+	return join(homedir(), CONFIG_DIR_NAME, "teams");
 }

@@ -96,6 +96,7 @@ describe("commandRouter", () => {
 				"resume",
 				"reload",
 				"subagents",
+				"teams",
 				"bash",
 				"quit",
 			];

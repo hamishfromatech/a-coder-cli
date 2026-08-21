@@ -20,6 +20,12 @@ function createContext(tokens: number | null, compact = vi.fn()): ExtensionConte
 		getContextUsage: () => ({ tokens, contextWindow: 200_000, percent: tokens === null ? null : tokens / 2000 }),
 		compact,
 		getSystemPrompt: () => "",
+		runSubAgent: async () => ({ agentType: "", finalText: "", toolUseCount: 0, turnCount: 0 }),
+		runSubAgentBackground: () => ({ id: "" }),
+		getSubAgent: () => undefined,
+		listSubAgents: () => [],
+		waitSubAgent: async () => undefined,
+		killSubAgent: () => undefined,
 	};
 }
 

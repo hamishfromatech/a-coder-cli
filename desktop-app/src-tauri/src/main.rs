@@ -59,6 +59,7 @@ fn main() {
 			settings::write_settings_file,
 			settings::read_auth_file,
 			settings::read_subagents_file,
+			settings::read_teams,
 			settings::get_project_trust,
 			settings::set_project_trust,
 			settings::write_auth_file,

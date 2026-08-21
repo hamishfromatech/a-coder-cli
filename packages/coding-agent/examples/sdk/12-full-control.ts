@@ -40,6 +40,7 @@ const cwd = process.cwd();
 const resourceLoader: ResourceLoader = {
 	getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }),
 	getSkills: () => ({ skills: [], diagnostics: [] }),
+	getSubAgents: () => [],
 	getPrompts: () => ({ prompts: [], diagnostics: [] }),
 	getThemes: () => ({ themes: [], diagnostics: [] }),
 	getAgentsFiles: () => ({ agentsFiles: [] }),
