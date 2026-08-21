@@ -42,7 +42,7 @@ export class SubAgentCardComponent extends Container {
 	private formatLine(): string {
 		const r = this.record;
 		const elapsed = formatDuration(Date.now() - r.startedAt);
-		const label = `Agent[${r.agentType}]`;
+		const label = `Agent[${r.teammateName ? `${r.teammateName} · ` : ""}${r.agentType}]`;
 		const count = formatCount(r.toolUseCount);
 		const tokens = r.totalTokens && r.totalTokens > 0 ? ` · ${formatNumber(r.totalTokens)} tokens` : "";
 		const trail = ` · ${elapsed}`;

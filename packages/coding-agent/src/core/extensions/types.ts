@@ -327,6 +327,10 @@ export interface RunSubAgentParams {
 	disallowedTools?: string[];
 	maxTurns?: number;
 	onProgress?: (event: SubAgentProgressEvent) => void;
+	/** Teammate name for an Agent Teams member (spawned via `name` + `team_name`). */
+	name?: string;
+	/** Team name for an Agent Teams member (paired with `name`). */
+	teamName?: string;
 }
 /** Record for an in-process background sub-agent. */
 export interface InProcessSubAgentRecord {
@@ -351,6 +355,8 @@ export interface InProcessSubAgentRecord {
 	worktreePath?: string;
 	/** Branch name of the kept worktree, if any. */
 	worktreeBranch?: string;
+	/** Teammate name when this sub-agent was spawned as a named Agent Teams member. */
+	teammateName?: string;
 	error?: string;
 }
 

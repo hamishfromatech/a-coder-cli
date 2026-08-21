@@ -43,6 +43,14 @@ export {
 	type LsToolOptions,
 } from "./ls.ts";
 
+import {
+	createSendMessageTool,
+	createSendMessageToolDefinition,
+	createTeamCreateTool,
+	createTeamCreateToolDefinition,
+	createTeamDeleteTool,
+	createTeamDeleteToolDefinition,
+} from "./teams.ts";
 import { createTodoTool, createTodoToolDefinition } from "./todo.ts";
 
 export {
@@ -97,7 +105,20 @@ import { createWriteTool, createWriteToolDefinition, type WriteToolOptions } fro
 
 export type Tool = AgentTool<any>;
 export type ToolDef = ToolDefinition<any, any>;
-export type ToolName = "read" | "bash" | "edit" | "write" | "grep" | "find" | "ls" | "todo" | "memory" | "plan_mode";
+export type ToolName =
+	| "read"
+	| "bash"
+	| "edit"
+	| "write"
+	| "grep"
+	| "find"
+	| "ls"
+	| "todo"
+	| "memory"
+	| "plan_mode"
+	| "team_create"
+	| "team_delete"
+	| "send_message";
 export const allToolNames: Set<ToolName> = new Set([
 	"read",
 	"bash",
@@ -109,6 +130,9 @@ export const allToolNames: Set<ToolName> = new Set([
 	"todo",
 	"memory",
 	"plan_mode",
+	"team_create",
+	"team_delete",
+	"send_message",
 ]);
 
 export interface ToolsOptions {
@@ -147,6 +171,12 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			);
 		case "todo":
 			return createTodoToolDefinition();
+		case "team_create":
+			return createTeamCreateToolDefinition();
+		case "team_delete":
+			return createTeamDeleteToolDefinition();
+		case "send_message":
+			return createSendMessageToolDefinition();
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
@@ -174,6 +204,12 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 			return createPlanModeTool(options?.planMode?.callbacks ?? { getPlanMode: () => false, setPlanMode: () => {} });
 		case "todo":
 			return createTodoTool();
+		case "team_create":
+			return createTeamCreateTool();
+		case "team_delete":
+			return createTeamDeleteTool();
+		case "send_message":
+			return createSendMessageTool();
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
@@ -188,6 +224,9 @@ export function createCodingToolDefinitions(cwd: string, options?: ToolsOptions)
 		createPlanModeToolDefinition(options?.planMode?.callbacks ?? { getPlanMode: () => false, setPlanMode: () => {} }),
 		createTodoToolDefinition(),
 		createMemoryToolDefinition(),
+		createTeamCreateToolDefinition(),
+		createTeamDeleteToolDefinition(),
+		createSendMessageToolDefinition(),
 	];
 }
 
@@ -215,6 +254,9 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 		),
 		todo: createTodoToolDefinition(),
 		memory: createMemoryToolDefinition(),
+		team_create: createTeamCreateToolDefinition(),
+		team_delete: createTeamDeleteToolDefinition(),
+		send_message: createSendMessageToolDefinition(),
 	};
 }
 
@@ -227,6 +269,9 @@ export function createCodingTools(cwd: string, options?: ToolsOptions): Tool[] {
 		createPlanModeTool(options?.planMode?.callbacks ?? { getPlanMode: () => false, setPlanMode: () => {} }),
 		createTodoTool(),
 		createMemoryTool(options?.memory),
+		createTeamCreateTool(),
+		createTeamDeleteTool(),
+		createSendMessageTool(),
 	];
 }
 
@@ -254,5 +299,8 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		),
 		todo: createTodoTool(),
 		memory: createMemoryTool(options?.memory),
+		team_create: createTeamCreateTool(),
+		team_delete: createTeamDeleteTool(),
+		send_message: createSendMessageTool(),
 	};
 }

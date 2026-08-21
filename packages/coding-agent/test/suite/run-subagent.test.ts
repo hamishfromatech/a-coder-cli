@@ -1,6 +1,11 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it } from "vitest";
+import { ENV_TEAMS_DIR } from "../../src/config.ts";
 import type { InProcessSubAgentRecord } from "../../src/core/extensions/types.ts";
+import { readTeamFile, TEAM_LEAD_NAME, writeTeamFile } from "../../src/core/teams/team-file.ts";
 import { createHarness, type Harness } from "./harness.ts";
 
 describe("AgentSession.runSubAgent (in-process)", () => {
@@ -211,5 +216,38 @@ describe("AgentSession background sub-agents (in-process store)", () => {
 		expect(record?.totalTokens).toBeGreaterThan(0);
 		expect(record?.inputTokens).toBeGreaterThan(0);
 		expect(record?.outputTokens).toBeGreaterThan(0);
+	});
+
+	it("registers a named teammate and flips isActive on completion", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+
+		const teamsDir = await mkdtemp(join(tmpdir(), "a-coder-teams-suite-"));
+		process.env[ENV_TEAMS_DIR] = teamsDir;
+		try {
+			await writeTeamFile("t", {
+				name: "t",
+				createdAt: 1,
+				leadAgentId: `${TEAM_LEAD_NAME}@t`,
+				members: [{ agentId: `${TEAM_LEAD_NAME}@t`, name: TEAM_LEAD_NAME, joinedAt: 1, isActive: true }],
+			});
+			harness.setResponses([fauxAssistantMessage("team reply")]);
+			const { id } = harness.session.runSubAgentBackground({
+				id: "bg-team",
+				prompt: "x",
+				maxTurns: 5,
+				name: "backend",
+				teamName: "t",
+			});
+			const record = await harness.session.waitSubAgent(id);
+			expect(record?.teammateName).toBe("backend");
+			const file = await readTeamFile("t");
+			const member = file?.members.find((m) => m.name === "backend");
+			expect(member).toBeDefined();
+			expect(member?.isActive).toBe(false);
+		} finally {
+			delete process.env[ENV_TEAMS_DIR];
+			await rm(teamsDir, { recursive: true, force: true });
+		}
 	});
 });

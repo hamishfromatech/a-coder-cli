@@ -106,8 +106,11 @@ import type { PermissionMode, PermissionPolicyConfig, SettingsManager } from "./
 import type { SlashCommandInfo } from "./slash-commands.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
 import { type BuildSystemPromptOptions, buildSystemPrompt } from "./system-prompt.ts";
+import { drainUnreadMessages, formatMailboxAttachment } from "./teams/mailbox.ts";
+import { addTeamMember, formatAgentId, setMemberActive } from "./teams/team-file.ts";
 import { type BashOperations, createLocalBashOperations } from "./tools/bash.ts";
 import { allToolNames, createAllToolDefinitions, createTool, type ToolName } from "./tools/index.ts";
+import { createSendMessageTool } from "./tools/teams.ts";
 import { createToolDefinitionFromAgentTool } from "./tools/tool-definition-wrapper.ts";
 import { createAgentWorktree, hasWorktreeChanges, removeAgentWorktree, type WorktreeInfo } from "./worktree.ts";
 
@@ -2945,7 +2948,18 @@ export class AgentSession {
 
 		const defaultActiveToolNames = this._baseToolsOverride
 			? Object.keys(this._baseToolsOverride)
-			: ["read", "bash", "edit", "write", "todo", "memory", "plan_mode"];
+			: [
+					"read",
+					"bash",
+					"edit",
+					"write",
+					"todo",
+					"memory",
+					"plan_mode",
+					"team_create",
+					"team_delete",
+					"send_message",
+				];
 		const baseActiveToolNames = options.activeToolNames ?? defaultActiveToolNames;
 		this._refreshToolRegistry({
 			activeToolNames: baseActiveToolNames,
@@ -3626,6 +3640,7 @@ export class AgentSession {
 	runSubAgentBackground(params: RunSubAgentBackgroundParams): { id: string } {
 		const { id } = params;
 		const agentType = params.agentType ?? "general-purpose";
+		const teammateName = params.name && params.teamName ? params.name : undefined;
 		const def = findAgent(agentType);
 		const now = Date.now();
 		const record: InProcessSubAgentRecord = {
@@ -3639,6 +3654,7 @@ export class AgentSession {
 			toolUseCount: 0,
 			turnCount: 0,
 			timeline: [],
+			...(teammateName ? { teammateName } : {}),
 		};
 		if (params.agentType && !def) {
 			record.status = "failed";
@@ -3654,10 +3670,32 @@ export class AgentSession {
 			{ tools: params.tools ?? def?.tools, disallowedTools: params.disallowedTools ?? def?.disallowedTools },
 			availableNames,
 		);
-		const registryTools = resolved.resolvedToolNames
-			.map((name) => this._toolRegistry.get(name))
-			.filter((t): t is AgentTool => t !== undefined);
 		if (resolved.invalidTools.length) record.error = `invalid tools: ${resolved.invalidTools.join(", ")}`;
+
+		// Team tools: build a SendMessage with the teammate's identity captured,
+		// and keep team_create/team_delete out of a teammate's toolset (nesting
+		// teams is forbidden). `worktree` rebuilds builtin tools against the
+		// worktree cwd; otherwise the parent registry instances are reused.
+		const isTeammate = teammateName !== undefined;
+		const buildTools = (cwd: string, worktree: boolean): AgentTool[] =>
+			resolved.resolvedToolNames
+				.map((name): AgentTool | undefined => {
+					if (name === "send_message") {
+						return createSendMessageTool(teammateName);
+					}
+					if (isTeammate && (name === "team_create" || name === "team_delete")) {
+						return undefined;
+					}
+					if (worktree && allToolNames.has(name as ToolName)) {
+						try {
+							return createTool(name as ToolName, cwd);
+						} catch {
+							// Fall back to the registry tool below.
+						}
+					}
+					return this._toolRegistry.get(name);
+				})
+				.filter((t): t is AgentTool => t !== undefined);
 
 		const subModel =
 			params.model ??
@@ -3690,13 +3728,31 @@ export class AgentSession {
 		let subAgentRef: Agent | undefined;
 
 		const done = (async () => {
+			// Agent Teams: register this sub-agent as an active teammate before
+			// any work, so the lead can SendMessage it immediately. If the team
+			// file is gone (deleted mid-flight), fall back to running detached.
+			if (teammateName && params.teamName) {
+				const registered = await addTeamMember(params.teamName, {
+					agentId: formatAgentId(teammateName, params.teamName),
+					name: teammateName,
+					agentType,
+					joinedAt: Date.now(),
+					isActive: true,
+				});
+				if (!registered) {
+					record.error = record.error
+						? `${record.error}; team "${params.teamName}" missing on disk — teammate not registered`
+						: `team "${params.teamName}" missing on disk — teammate not registered`;
+				}
+			}
+
 			// Worktree isolation (easy-agent stage 20): create a fresh git worktree
 			// and rebuild the builtin tools against it so the sub-agent's file
 			// edits stay off the main working copy. Extension/MCP tools keep the
 			// parent cwd (they capture it at registration). Falls back to no
 			// isolation with a warning when outside a git repo or on failure.
 			let worktreeInfo: WorktreeInfo | undefined;
-			let filteredTools = registryTools;
+			let filteredTools = buildTools(this._cwd, false);
 			if (params.isolation === "worktree") {
 				const baseCwd = this._cwd;
 				try {
@@ -3706,18 +3762,7 @@ export class AgentSession {
 					record.worktreeBranch = worktreeInfo.worktreeBranch;
 					record.updatedAt = Date.now();
 					this._notifySubAgents();
-					filteredTools = resolved.resolvedToolNames
-						.map((name) => {
-							if (allToolNames.has(name as ToolName)) {
-								try {
-									return createTool(name as ToolName, worktreeCwd);
-								} catch {
-									// Fall back to the registry tool below.
-								}
-							}
-							return this._toolRegistry.get(name);
-						})
-						.filter((t): t is AgentTool => t !== undefined);
+					filteredTools = buildTools(worktreeCwd, true);
 				} catch (error) {
 					const message = error instanceof Error ? error.message : String(error);
 					record.error = record.error
@@ -3813,7 +3858,13 @@ export class AgentSession {
 			});
 
 			try {
-				await subAgent.prompt([{ role: "user", content: params.prompt, timestamp: Date.now() }]);
+				let promptText = params.prompt;
+				if (teammateName && params.teamName) {
+					const mailbox = await drainUnreadMessages(teammateName, params.teamName);
+					const attachment = formatMailboxAttachment(mailbox);
+					promptText = attachment ? `${attachment}\n\n${params.prompt}` : params.prompt;
+				}
+				await subAgent.prompt([{ role: "user", content: promptText, timestamp: Date.now() }]);
 				record.status = "completed";
 			} catch {
 				// killSubAgent pushes an `aborted` timeline event before aborting the
@@ -3848,6 +3899,9 @@ export class AgentSession {
 				unsub();
 				if (worktreeInfo) {
 					await this._cleanupSubAgentWorktree(record, worktreeInfo);
+				}
+				if (teammateName && params.teamName) {
+					await setMemberActive(params.teamName, teammateName, false).catch(() => {});
 				}
 				this._notifySubAgents();
 				if (params.notifyOnComplete !== false) {

@@ -51,6 +51,18 @@ export function createSubagentExtensionFactory(_options: SubagentToolOptions = {
 							"Filesystem isolation. 'worktree' runs the subagent inside a fresh git worktree so its file edits don't touch the main working copy until reviewed; the worktree is removed on completion unless it has changes (the kept path is then surfaced in the result). Requires the working directory to be a git repository; otherwise the subagent runs without isolation and a warning is returned. Default 'none'.",
 					}),
 				),
+				name: Type.Optional(
+					Type.String({
+						description:
+							"Agent Teams teammate name (e.g. 'backend'). Pair with team_name to join the active team; the teammate is reachable via send_message and visible in the team roster.",
+					}),
+				),
+				team_name: Type.Optional(
+					Type.String({
+						description:
+							"Agent Teams team name (e.g. 'refactor-auth'). Pair with name to register the subagent as a named teammate of that team.",
+					}),
+				),
 			}),
 			async execute(_toolCallId, params, _signal, _onUpdate, ctx): Promise<AgentToolResult<unknown>> {
 				// Resolve a named sub-agent type (if any) to its system prompt + model override.
@@ -88,6 +100,8 @@ export function createSubagentExtensionFactory(_options: SubagentToolOptions = {
 						maxTurns: def?.maxTurns,
 						notifyOnComplete: false,
 						isolation: params.isolation as "none" | "worktree" | undefined,
+						name: params.name as string | undefined,
+						teamName: params.team_name as string | undefined,
 					});
 					const record = await ctx.waitSubAgent(
 						params.id as string,
@@ -121,6 +135,8 @@ export function createSubagentExtensionFactory(_options: SubagentToolOptions = {
 					model: modelObj,
 					maxTurns: def?.maxTurns,
 					isolation: params.isolation as "none" | "worktree" | undefined,
+					name: params.name as string | undefined,
+					teamName: params.team_name as string | undefined,
 				});
 				const record = ctx.getSubAgent(id);
 				return {
