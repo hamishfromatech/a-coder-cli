@@ -44,23 +44,31 @@ export class SubAgentCardComponent extends Container {
 		const elapsed = formatDuration(Date.now() - r.startedAt);
 		const label = `Agent[${r.agentType}]`;
 		const count = formatCount(r.toolUseCount);
+		const tokens = r.totalTokens && r.totalTokens > 0 ? ` · ${formatNumber(r.totalTokens)} tokens` : "";
 		const trail = ` · ${elapsed}`;
 
 		if (r.status === "running") {
 			const last = r.lastToolName ? ` · last: ${r.lastToolName}` : "";
-			const uses = r.toolUseCount > 0 ? `${count} · running${last}` : "starting…";
+			const uses = r.toolUseCount > 0 ? `${count} · running${last}${tokens}` : `starting…${tokens}`;
 			return theme.fg("accent", "⚡ ") + theme.bold(label) + theme.fg("dim", ` · ${uses}${trail}`);
 		}
 		if (r.status === "completed") {
-			return theme.fg("success", "✓ ") + theme.bold(label) + theme.fg("dim", ` · Done · ${count}${trail}`);
+			return theme.fg("success", "✓ ") + theme.bold(label) + theme.fg("dim", ` · Done · ${count}${tokens}${trail}`);
 		}
 		if (r.status === "killed") {
 			const err = r.error ? theme.fg("error", ` · ${r.error}`) : "";
-			return theme.fg("warning", "⊘ ") + theme.bold(label) + theme.fg("dim", ` · Killed · ${count}${trail}`) + err;
+			return (
+				theme.fg("warning", "⊘ ") +
+				theme.bold(label) +
+				theme.fg("dim", ` · Killed · ${count}${tokens}${trail}`) +
+				err
+			);
 		}
 		// failed
 		const err = r.error ? theme.fg("error", ` · ${r.error}`) : "";
-		return theme.fg("error", "✗ ") + theme.bold(label) + theme.fg("dim", ` · Failed · ${count}${trail}`) + err;
+		return (
+			theme.fg("error", "✗ ") + theme.bold(label) + theme.fg("dim", ` · Failed · ${count}${tokens}${trail}`) + err
+		);
 	}
 
 	override invalidate(): void {
@@ -71,6 +79,12 @@ export class SubAgentCardComponent extends Container {
 
 function formatCount(n: number): string {
 	return `${n} tool use${n === 1 ? "" : "s"}`;
+}
+
+function formatNumber(n: number): string {
+	if (n < 1000) return String(n);
+	if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k`;
+	return `${(n / 1_000_000).toFixed(2)}m`;
 }
 
 function formatDuration(ms: number): string {

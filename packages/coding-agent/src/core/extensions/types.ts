@@ -339,6 +339,10 @@ export interface InProcessSubAgentRecord {
 	finalText?: string;
 	toolUseCount: number;
 	turnCount: number;
+	/** Cumulative token totals, accumulated from each turn_end usage delta. */
+	totalTokens?: number;
+	inputTokens?: number;
+	outputTokens?: number;
 	/** Ordered progress events emitted by the nested agent (for live UI). */
 	timeline: SubAgentProgressEvent[];
 	/** Name of the most recently finished tool, for the "last:" badge. */

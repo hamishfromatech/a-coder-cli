@@ -186,4 +186,30 @@ describe("AgentSession background sub-agents (in-process store)", () => {
 		expect(record?.worktreePath).toBeUndefined();
 		expect(record?.error).toContain("worktree isolation failed");
 	});
+
+	it("accumulates token usage from turn_end onto the record", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+
+		harness.setResponses([
+			{
+				...fauxAssistantMessage("token reply"),
+				usage: {
+					input: 100,
+					output: 50,
+					cacheRead: 0,
+					cacheWrite: 0,
+					totalTokens: 150,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+				},
+			},
+		]);
+		const { id } = harness.session.runSubAgentBackground({ id: "bg-tok", prompt: "x", maxTurns: 5 });
+		const record = await harness.session.waitSubAgent(id);
+		// The faux provider computes usage from the serialized context (it ignores
+		// the injected usage), so assert accumulation happened rather than a fixed number.
+		expect(record?.totalTokens).toBeGreaterThan(0);
+		expect(record?.inputTokens).toBeGreaterThan(0);
+		expect(record?.outputTokens).toBeGreaterThan(0);
+	});
 });

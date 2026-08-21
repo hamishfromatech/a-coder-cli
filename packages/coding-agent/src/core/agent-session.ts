@@ -3684,6 +3684,9 @@ export class AgentSession {
 		};
 		let turnCount = 0;
 		let toolUseCount = 0;
+		let totalTokens = 0;
+		let inputTokens = 0;
+		let outputTokens = 0;
 		let subAgentRef: Agent | undefined;
 
 		const done = (async () => {
@@ -3781,6 +3784,15 @@ export class AgentSession {
 					case "turn_end":
 						turnCount++;
 						{
+							const usage = event.usage;
+							if (usage) {
+								totalTokens += usage.totalTokens;
+								inputTokens += usage.input;
+								outputTokens += usage.output;
+								record.totalTokens = totalTokens;
+								record.inputTokens = inputTokens;
+								record.outputTokens = outputTokens;
+							}
 							const ev: SubAgentProgressEvent = { type: "turn_complete", turnCount };
 							onProgress?.(ev);
 							pushEvent(ev);
@@ -3821,6 +3833,9 @@ export class AgentSession {
 				record.finalText = finalText;
 				record.turnCount = turnCount;
 				record.toolUseCount = toolUseCount;
+				record.totalTokens = totalTokens;
+				record.inputTokens = inputTokens;
+				record.outputTokens = outputTokens;
 				record.updatedAt = Date.now();
 				const completedEvent: SubAgentProgressEvent = {
 					type: "completed",
@@ -3952,6 +3967,7 @@ export class AgentSession {
 		}
 		const parts: string[] = [`Background subagent "${record.id}" (${record.agentType}) ${record.status}`];
 		if (record.toolUseCount > 0) parts.push(`${record.toolUseCount} tool uses`);
+		if (record.totalTokens && record.totalTokens > 0) parts.push(`${record.totalTokens} tokens`);
 		if (record.turnCount > 0) parts.push(`${record.turnCount} turns`);
 		parts.push(elapsed);
 		const body = record.finalText ? record.finalText.slice(0, 2000).trim() : record.error;
