@@ -322,6 +322,15 @@ export const BUILTIN_COMMANDS: BuiltinCommand[] = [
 		}),
 	},
 	{
+		name: "teams",
+		description: "Open Agent Teams roster UI",
+		route: () => ({
+			kind: "open",
+			open: () => window.dispatchEvent(new CustomEvent("a-coder:open-teams")),
+			label: "Open Teams",
+		}),
+	},
+	{
 		name: "bash",
 		description: "Run a shell command via the cli",
 		route: (args) => ({

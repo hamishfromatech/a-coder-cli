@@ -34,6 +34,51 @@ pub fn global_subagents_path() -> Result<PathBuf, String> {
     Ok(agent_dir()?.join("subagents.json"))
 }
 
+/// Root directory for Agent Teams state (`~/.a-coder-cli/teams`). Honors the
+/// same `A-CODER-CLI_TEAMS_DIR` override the coding-agent reads so dev/test
+/// installs stay in sync.
+pub fn global_teams_root() -> Result<PathBuf, String> {
+    if let Ok(dir) = std::env::var("A-CODER-CLI_TEAMS_DIR") {
+        if !dir.trim().is_empty() {
+            return Ok(PathBuf::from(dir));
+        }
+    }
+    Ok(home_dir()?.join(CONFIG_DIR_NAME).join("teams"))
+}
+
+fn sanitize_member_name(name: &str) -> String {
+    name.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect()
+}
+
+fn unread_teammate_count(team_dir: &Path, member_name: &str) -> usize {
+    let inbox = team_dir
+        .join("inboxes")
+        .join(format!("{}.json", sanitize_member_name(member_name)));
+    let Ok(bytes) = std::fs::read(&inbox) else {
+        return 0;
+    };
+    let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
+        return 0;
+    };
+    value
+        .as_array()
+        .map(|messages| {
+            messages
+                .iter()
+                .filter(|m| m.get("read").and_then(Value::as_bool) != Some(true))
+                .count()
+        })
+        .unwrap_or(0)
+}
+
 pub fn global_models_path() -> Result<PathBuf, String> {
     Ok(agent_dir()?.join("models.json"))
 }
@@ -184,6 +229,46 @@ pub fn read_auth_file() -> Result<Value, String> {
 pub fn read_subagents_file() -> Result<Value, String> {
     let path = global_subagents_path()?;
     read_json(&path)
+}
+
+#[tauri::command]
+pub fn read_teams() -> Result<Value, String> {
+    let root = global_teams_root()?;
+    let entries = match std::fs::read_dir(&root) {
+        Ok(e) => e,
+        Err(_) => return Ok(Value::Array(Vec::new())),
+    };
+
+    let mut teams: Vec<Value> = Vec::new();
+    for entry in entries.flatten() {
+        let team_dir = entry.path();
+        if !team_dir.is_dir() {
+            continue;
+        }
+        let team_file = team_dir.join("team.json");
+        let Ok(bytes) = std::fs::read(&team_file) else {
+            continue;
+        };
+        let Ok(mut team) = serde_json::from_slice::<Value>(&bytes) else {
+            continue;
+        };
+        if let Some(members) = team.get_mut("members").and_then(Value::as_array_mut) {
+            for member in members.iter_mut() {
+                let name = member
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                let unread = unread_teammate_count(&team_dir, &name);
+                if let Some(obj) = member.as_object_mut() {
+                    obj.insert("unread".to_string(), Value::from(unread));
+                }
+            }
+        }
+        teams.push(team);
+    }
+
+    Ok(Value::Array(teams))
 }
 
 #[derive(Debug, Deserialize)]

@@ -7,6 +7,7 @@ const MENU_ABORT: &str = "abort";
 const MENU_SETTINGS: &str = "settings";
 const MENU_PROJECT: &str = "project";
 const MENU_SUBAGENTS: &str = "subagents";
+const MENU_TEAMS: &str = "teams";
 const MENU_HOTKEYS: &str = "hotkeys";
 const MENU_CHANGELOG: &str = "changelog";
 const MENU_RELOAD: &str = "reload";
@@ -80,6 +81,11 @@ pub fn build_menu<R: Runtime>(app_handle: &AppHandle<R>) -> Result<Menu<R>, Stri
                 .build(app_handle)
                 .map_err(|e| e.to_string())?,
         )
+        .item(
+            &MenuItemBuilder::with_id(MENU_TEAMS, "Teams")
+                .build(app_handle)
+                .map_err(|e| e.to_string())?,
+        )
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -136,6 +142,7 @@ pub fn handle_menu_event<R: Runtime>(app_handle: &AppHandle<R>, event: MenuEvent
         MENU_SETTINGS => Some("settings"),
         MENU_PROJECT => Some("project"),
         MENU_SUBAGENTS => Some("subagents"),
+        MENU_TEAMS => Some("teams"),
         MENU_HOTKEYS => Some("hotkeys"),
         MENU_CHANGELOG => Some("changelog"),
         MENU_RELOAD => Some("reload"),

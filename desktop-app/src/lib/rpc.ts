@@ -577,6 +577,34 @@ export async function readSubagentsFile(): Promise<SubagentRecord[]> {
 	return raw?.agents ?? [];
 }
 
+// Agent Teams: read the on-disk team state (team.json + per-member unread
+// inbox counts), managed by the same a-coder-cli team-file module.
+export interface TeamMember {
+	agentId: string;
+	name: string;
+	agentType?: string;
+	model?: string;
+	joinedAt: number;
+	isActive: boolean;
+	worktreePath?: string;
+	worktreeBranch?: string;
+	gitRoot?: string;
+	unread?: number;
+}
+
+export interface TeamFile {
+	name: string;
+	description?: string;
+	createdAt: number;
+	leadAgentId: string;
+	members: TeamMember[];
+}
+
+export async function readTeams(): Promise<TeamFile[]> {
+	const raw = (await invoke("read_teams")) as TeamFile[] | null;
+	return raw ?? [];
+}
+
 // Project trust markers persisted by the desktop.
 export async function getProjectTrust(cwd: string): Promise<boolean> {
 	return await invoke<boolean>("get_project_trust", { args: { cwd } });

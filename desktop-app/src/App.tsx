@@ -40,6 +40,7 @@ import { SidebarProjects } from "./components/SidebarProjects";
 import { StatusBar } from "./components/StatusBar";
 import { Titlebar } from "./components/Titlebar";
 import { SubagentPanel } from "./components/SubagentPanel";
+import { TeammateViewer } from "./components/TeammateViewer";
 import { Toaster } from "./components/Toaster";
 import { UpdateModal } from "./components/UpdateModal";
 import { ApprovalModal } from "./components/panels/ApprovalModal";
@@ -101,6 +102,7 @@ export default function App() {
 	const [showModelPicker, setShowModelPicker] = useState(false);
 	const [showSettings, setShowSettings] = useState(false);
 	const [showSubagents, setShowSubagents] = useState(false);
+	const [showTeams, setShowTeams] = useState(false);
 	const [showHotkeys, setShowHotkeys] = useState(false);
 	const [showChangelog, setShowChangelog] = useState(false);
 	const [showMemory, setShowMemory] = useState(false);
@@ -697,6 +699,9 @@ export default function App() {
 				case "subagents":
 					setShowSubagents(true);
 					break;
+				case "teams":
+					setShowTeams(true);
+					break;
 				case "hotkeys":
 					setShowHotkeys(true);
 					break;
@@ -744,6 +749,7 @@ export default function App() {
 		};
 		const onOpenResume = () => setShowResume(true);
 		const onOpenSubagents = () => setShowSubagents(true);
+		const onOpenTeams = () => setShowTeams(true);
 		const onShowHotkeys = () => setShowHotkeys(true);
 		const onShowChangelog = () => setShowChangelog(true);
 		const onReload = async () => {
@@ -768,6 +774,7 @@ export default function App() {
 		window.addEventListener("a-coder:switch-project", onSwitchProject as EventListener);
 		window.addEventListener("a-coder:open-resume", onOpenResume);
 		window.addEventListener("a-coder:open-subagents", onOpenSubagents);
+		window.addEventListener("a-coder:open-teams", onOpenTeams);
 		window.addEventListener("a-coder:show-hotkeys", onShowHotkeys);
 		window.addEventListener("a-coder:show-changelog", onShowChangelog);
 		window.addEventListener("a-coder:reload", onReload);
@@ -782,6 +789,7 @@ export default function App() {
 		window.removeEventListener("a-coder:switch-project", onSwitchProject as EventListener);
 		window.removeEventListener("a-coder:open-resume", onOpenResume);
 			window.removeEventListener("a-coder:open-subagents", onOpenSubagents);
+			window.removeEventListener("a-coder:open-teams", onOpenTeams);
 			window.removeEventListener("a-coder:show-hotkeys", onShowHotkeys);
 			window.removeEventListener("a-coder:show-changelog", onShowChangelog);
 			window.removeEventListener("a-coder:reload", onReload);
@@ -980,6 +988,7 @@ export default function App() {
 			)}
 
 			<SubagentPanel open={showSubagents} onClose={() => setShowSubagents(false)} />
+			<TeammateViewer open={showTeams} onClose={() => setShowTeams(false)} />
 
 			{trustPrompt && (
 				<TrustModal
