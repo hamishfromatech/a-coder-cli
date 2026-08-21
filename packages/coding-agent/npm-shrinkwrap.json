@@ -1,19 +1,19 @@
 {
 	"name": "@theatechcorporation/pi-coding-agent",
-	"version": "0.80.23",
+	"version": "0.80.24",
 	"lockfileVersion": 3,
 	"requires": true,
 	"packages": {
 		"": {
 			"name": "@theatechcorporation/pi-coding-agent",
-			"version": "0.80.23",
+			"version": "0.80.24",
 			"license": "MIT",
 			"dependencies": {
 				"@composio/core": "0.17.0",
 				"@composio/experimental": "0.2.2",
-				"@theatechcorporation/pi-agent-core": "^0.80.23",
-				"@theatechcorporation/pi-ai": "^0.80.23",
-				"@theatechcorporation/pi-tui": "^0.80.23",
+				"@theatechcorporation/pi-agent-core": "^0.80.24",
+				"@theatechcorporation/pi-ai": "^0.80.24",
+				"@theatechcorporation/pi-tui": "^0.80.24",
 				"@modelcontextprotocol/sdk": "1.29.0",
 				"@silvia-odwyer/photon-node": "0.3.4",
 				"chalk": "5.6.2",
@@ -1074,11 +1074,11 @@
 			}
 		},
 		"node_modules/@theatechcorporation/pi-agent-core": {
-			"version": "0.80.23",
-			"resolved": "https://registry.npmjs.org/@theatechcorporation/pi-agent-core/-/pi-agent-core-0.80.23.tgz",
+			"version": "0.80.24",
+			"resolved": "https://registry.npmjs.org/@theatechcorporation/pi-agent-core/-/pi-agent-core-0.80.24.tgz",
 			"license": "MIT",
 			"dependencies": {
-				"@theatechcorporation/pi-ai": "^0.80.23",
+				"@theatechcorporation/pi-ai": "^0.80.24",
 				"ignore": "7.0.5",
 				"typebox": "1.1.38",
 				"yaml": "2.9.0"
@@ -1088,8 +1088,8 @@
 			}
 		},
 		"node_modules/@theatechcorporation/pi-ai": {
-			"version": "0.80.23",
-			"resolved": "https://registry.npmjs.org/@theatechcorporation/pi-ai/-/pi-ai-0.80.23.tgz",
+			"version": "0.80.24",
+			"resolved": "https://registry.npmjs.org/@theatechcorporation/pi-ai/-/pi-ai-0.80.24.tgz",
 			"license": "MIT",
 			"dependencies": {
 				"@anthropic-ai/sdk": "0.91.1",
@@ -1112,8 +1112,8 @@
 			}
 		},
 		"node_modules/@theatechcorporation/pi-tui": {
-			"version": "0.80.23",
-			"resolved": "https://registry.npmjs.org/@theatechcorporation/pi-tui/-/pi-tui-0.80.23.tgz",
+			"version": "0.80.24",
+			"resolved": "https://registry.npmjs.org/@theatechcorporation/pi-tui/-/pi-tui-0.80.24.tgz",
 			"license": "MIT",
 			"dependencies": {
 				"get-east-asian-width": "1.6.0",
