@@ -149,6 +149,21 @@ function resolveCacheRetention(cacheRetention?: CacheRetention, env?: ProviderEn
 	return "short";
 }
 
+/**
+ * Detect a 400 where the requested `max_tokens`/`max_completion_tokens` exceeds
+ * the model's actual output cap. Providers enforce a per-model maximum that the
+ * catalog cannot always know (e.g. Ollama Cloud, OpenRouter); rather than fail
+ * the whole request, the caller can retry without the field so the server
+ * picks a valid default.
+ */
+function isMaxTokensExceedsLimitError(error: unknown): boolean {
+	const norm = normalizeProviderError(error);
+	if (norm.status !== 400) return false;
+	const text = `${norm.message} ${norm.body ?? ""}`.toLowerCase();
+	if (!text.includes("max_tokens") && !text.includes("max_completion_tokens")) return false;
+	return /exceed|maximum|too (large|high)|greater than|must be (less|at most|smaller)|\blimit\b/.test(text);
+}
+
 export const stream: StreamFunction<"openai-completions", OpenAICompletionsOptions> = (
 	model: Model<"openai-completions">,
 	context: Context,
@@ -191,9 +206,20 @@ export const stream: StreamFunction<"openai-completions", OpenAICompletionsOptio
 				...(options?.timeoutMs !== undefined ? { timeout: options.timeoutMs } : {}),
 				maxRetries: options?.maxRetries ?? 0,
 			};
-			const { data: openaiStream, response } = await client.chat.completions
-				.create(params, requestOptions)
-				.withResponse();
+			const { data: openaiStream, response } = await (async () => {
+				try {
+					return await client.chat.completions.create(params, requestOptions).withResponse();
+				} catch (error) {
+					// A provider may reject max_tokens as exceeding the model's real output
+					// cap (the catalog value is a best-effort guess). Retry once without it
+					// so the server picks a valid default instead of failing the request.
+					if (!isMaxTokensExceedsLimitError(error)) throw error;
+					const stripped = { ...params } as OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming;
+					delete (stripped as any).max_tokens;
+					delete (stripped as any).max_completion_tokens;
+					return await client.chat.completions.create(stripped, requestOptions).withResponse();
+				}
+			})();
 			await options?.onResponse?.({ status: response.status, headers: headersToRecord(response.headers) }, model);
 			stream.push({ type: "start", partial: output });
 
