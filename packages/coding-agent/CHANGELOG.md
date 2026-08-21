@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added keyless local provider wiring to the model registry and `/login`: LM Studio, llama.cpp, and Ollama can be pointed at a custom base URL via `/login` or `settings.json` `localProviders.*`, with model lists refreshed from the local server.
 - Added a built-in `todo` tool for multi-step task tracking. The model rewrites the full task list on each call and the result snapshots it in `details.todos` (branch-safe, stateless), so the desktop UI and TUI can render a live checklist. Active by default alongside read/bash/edit/write.
 - Added a `/todos` built-in command (TUI) that opens a persistent task-list panel mirroring the latest `todo` tool result on the current branch.
 - Added a `list_sessions` RPC command that returns all stored sessions in the profile, enabling the desktop's session quick-switcher.
@@ -12,10 +13,12 @@
 
 ### Changed
 
+- Renamed the npm package scope from `@earendil-works` to `@theatechcorporation`.
 - Swapped default keybindings: `shift+tab` now opens the permission mode selector, and `shift+ctrl+m` cycles the thinking level.
 
 ### Fixed
 
+- Suppressed child-process console windows on Windows by setting `windowsHide` on the find/grep/exec/subagent/git spawns.
 - Fixed startup model selection to skip unauthenticated saved defaults so configured local custom models can be selected instead ([#6231](https://github.com/earendil-works/pi/issues/6231)).
 - Fixed Escape aborts to clear runs stuck in extension context hooks that ignore abort signals ([#6234](https://github.com/earendil-works/pi/issues/6234)).
 - Fixed the question extension example to run question tool calls sequentially so multiple questions in one assistant turn remain answerable ([#6189](https://github.com/earendil-works/pi/issues/6189)).

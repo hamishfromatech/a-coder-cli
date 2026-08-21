@@ -6,7 +6,12 @@
 
 ### Added
 
+- Added `Terminal.ensureRawMode()` to re-assert raw input mode after a child process resets the TTY line discipline.
 - Added an opt-in Markdown renderer option to preserve source backslash escapes for transcript rendering ([#6105](https://github.com/earendil-works/pi/issues/6105)).
+
+### Changed
+- Renamed the npm package scope from `@earendil-works` to `@theatechcorporation`.
+
 
 ## [0.80.2] - 2026-06-23
 

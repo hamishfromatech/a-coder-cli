@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Fixed Ollama Cloud DeepSeek models to cap `maxTokens` at 65536 (the server's output limit) instead of the 131072 default, avoiding `max_tokens exceeds model's maximum output tokens` 400s.
+- Fixed `moonshotai/kimi-k2.5` (OpenRouter) `maxTokens` (4096 -> 262144, the model's real output cap) so responses are not truncated.
 - Fixed GitHub Copilot device-code login polling to wait before the first token poll, avoiding incorrect device-code failures for some users after browser authorization ([#6187](https://github.com/earendil-works/pi/issues/6187)).
 - Fixed OpenAI Codex user-agent construction to synchronously load Node OS metadata, avoiding a startup race that could report `pi (browser)` in Node/Bun.
 - Fixed Fireworks GLM 5.2 Fast to use the OpenAI-compatible endpoint and `thinkingLevelMap`, aligning it with GLM 5.2 ([#6195](https://github.com/earendil-works/pi/issues/6195)).
@@ -12,9 +14,16 @@
 
 ### Added
 
+- Added built-in keyless local model providers (LM Studio, llama.cpp, Ollama) that list models from each server's OpenAI-compatible `/v1/models` endpoint; Ollama models also discover their real context window from `/api/show`.
+- Added a `max_tokens`-cap retry for OpenAI-completions requests: when a provider rejects `max_tokens` as exceeding the model's real output cap (400), the request is retried once without `max_tokens` so the server picks a valid default.
 - Added Claude Sonnet 5 to the GitHub Copilot model catalog ([#6200](https://github.com/earendil-works/pi/issues/6200)).
 - Added zstd request-body compression for the OpenAI Codex Responses SSE transport. Requests are sent with `Content-Encoding: zstd` when Node/Bun zstd support is available; the WebSocket transport is unchanged.
 - Added `ollama-context` helpers (`ollamaNativeOrigin`, `looksLikeOllama`, `parseOllamaContextLength`, `fetchOllamaContextWindow`) that discover a model's effective context window from the native Ollama `/api/show` endpoint.
+
+### Changed
+- Refreshed upstream model catalogs (OpenRouter, Vercel AI Gateway, OpenCode, OpenCode-Go, NVIDIA, Google, Google Vertex): new models, removals, and price/context/max-output updates; Vercel `xai/grok-*` renamed to `spacexai/grok-*`.
+- Renamed the npm package scope from `@earendil-works` to `@theatechcorporation` across all packages and cross-package imports (external `@earendil-works/gondolin` deps unchanged).
+
 
 ## [0.80.3] - 2026-06-30
 

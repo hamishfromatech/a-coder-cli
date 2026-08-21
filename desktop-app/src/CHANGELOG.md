@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Fixed the desktop build: added `session_info_changed` to the `RpcEvent` union so `tsc` passes.
 - Backported from main: Anthropic refusal errors now use server-side refusal fallbacks when the model metadata permits them, avoiding some "refusal" stop-reason failures during summarization and normal turns.
 - Backported from main: OpenAI Responses incomplete stops are now classified correctly (`max_output_tokens` => recoverable length stop, other reasons => error), and recoverable length stops trigger one compact-and-retry attempt.
 - Backported from main: Summarization requests now force `toolChoice: "none"` and reject any tool-call responses, preventing accidental tool calls during compaction.
@@ -22,6 +23,7 @@
 
 ### Added
 
+- The desktop todo panel now collapses automatically once all tasks are completed (reopens if a new task is added).
 - Backported from main: provider-neutral `toolChoice: "auto" | "none"` simple option is now forwarded through all provider `streamSimple` paths.
 - Added **scoped persistent memory** to the `memory` tool. It now supports three scopes:
   - `global`: the existing `~/.a-coder-cli/MEMORY.md` shared across all workspaces and sessions.
@@ -50,6 +52,7 @@
 
 ### Changed
 
+- Renamed the npm package scope from `@earendil-works` to `@theatechcorporation`.
 - Swapped default keybindings: `shift+tab` now opens the permission mode selector, and `shift+ctrl+m` cycles the thinking level.
 
 ### Fixed
