@@ -85,6 +85,11 @@ describe("ExtensionRunner", () => {
 		compact: () => {},
 		getSystemPrompt: () => "",
 		runSubAgent: async () => ({ agentType: "", finalText: "", toolUseCount: 0, turnCount: 0 }),
+		runSubAgentBackground: () => ({ id: "" }),
+		getSubAgent: () => undefined,
+		listSubAgents: () => [],
+		waitSubAgent: async () => undefined,
+		killSubAgent: () => undefined,
 	};
 
 	describe("project_trust", () => {

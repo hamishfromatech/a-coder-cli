@@ -328,6 +328,24 @@ export interface RunSubAgentParams {
 	maxTurns?: number;
 	onProgress?: (event: SubAgentProgressEvent) => void;
 }
+/** Record for an in-process background sub-agent. */
+export interface InProcessSubAgentRecord {
+	id: string;
+	agentType: string;
+	status: "running" | "completed" | "failed" | "killed";
+	createdAt: number;
+	updatedAt: number;
+	finalText?: string;
+	toolUseCount: number;
+	turnCount: number;
+	error?: string;
+}
+
+/** Parameters for {@link ExtensionContext.runSubAgentBackground}. */
+export interface RunSubAgentBackgroundParams extends RunSubAgentParams {
+	/** Unique id for the background sub-agent task. */
+	id: string;
+}
 
 export interface ExtensionContext {
 	/** UI methods for user interaction */
@@ -370,6 +388,16 @@ export interface ExtensionContext {
 	 * the sub-agent persists across the parent's turn).
 	 */
 	runSubAgent(params: RunSubAgentParams): Promise<SubAgentRunResult>;
+	/** Start a sub-agent in the background (in-process, detached). Returns its id immediately. */
+	runSubAgentBackground(params: RunSubAgentBackgroundParams): { id: string };
+	/** Get the current record for a background sub-agent by id. */
+	getSubAgent(id: string): InProcessSubAgentRecord | undefined;
+	/** List all background sub-agent records. */
+	listSubAgents(): InProcessSubAgentRecord[];
+	/** Block until a background sub-agent completes (or timeout) and return its record. */
+	waitSubAgent(id: string, timeoutMs?: number): Promise<InProcessSubAgentRecord | undefined>;
+	/** Abort a background sub-agent by id. */
+	killSubAgent(id: string, reason?: string): InProcessSubAgentRecord | undefined;
 }
 
 /**
@@ -1610,6 +1638,11 @@ export interface ExtensionContextActions {
 	getSystemPrompt: () => string;
 	getSystemPromptOptions?: () => BuildSystemPromptOptions;
 	runSubAgent: (params: RunSubAgentParams) => Promise<SubAgentRunResult>;
+	runSubAgentBackground: (params: RunSubAgentBackgroundParams) => { id: string };
+	getSubAgent: (id: string) => InProcessSubAgentRecord | undefined;
+	listSubAgents: () => InProcessSubAgentRecord[];
+	waitSubAgent: (id: string, timeoutMs?: number) => Promise<InProcessSubAgentRecord | undefined>;
+	killSubAgent: (id: string, reason?: string) => InProcessSubAgentRecord | undefined;
 }
 
 /**

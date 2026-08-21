@@ -53,3 +53,73 @@ describe("AgentSession.runSubAgent (in-process)", () => {
 		expect(events.some((e) => e.type === "completed")).toBe(true);
 	});
 });
+
+describe("AgentSession background sub-agents (in-process store)", () => {
+	const harnesses: Harness[] = [];
+
+	afterEach(() => {
+		while (harnesses.length > 0) {
+			harnesses.pop()?.cleanup();
+		}
+	});
+
+	it("runs a background sub-agent and exposes it via get/list/wait", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+
+		harness.setResponses([fauxAssistantMessage("background reply")]);
+
+		const { id } = harness.session.runSubAgentBackground({
+			id: "bg-1",
+			prompt: "say ok",
+			maxTurns: 5,
+		});
+		expect(id).toBe("bg-1");
+
+		// Listed immediately while running.
+		expect(harness.session.listSubAgents().some((r) => r.id === id)).toBe(true);
+
+		const record = await harness.session.waitSubAgent(id);
+		expect(record?.status).toBe("completed");
+		expect(record?.finalText).toContain("background reply");
+		expect(record?.turnCount).toBe(1);
+
+		const after = harness.session.getSubAgent(id);
+		expect(after?.status).toBe("completed");
+		expect(after?.finalText).toContain("background reply");
+	});
+
+	it("records a failed background sub-agent for an unknown subagent_type", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+
+		const { id } = harness.session.runSubAgentBackground({
+			id: "bg-bad",
+			agentType: "no-such-agent",
+			prompt: "x",
+		});
+		expect(id).toBe("bg-bad");
+
+		const record = harness.session.getSubAgent(id);
+		expect(record?.status).toBe("failed");
+		expect(record?.error).toContain("Unknown subagent_type");
+	});
+
+	it("kill_subagent aborts a running background sub-agent", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+
+		harness.setResponses([fauxAssistantMessage("never")]);
+
+		const { id } = harness.session.runSubAgentBackground({
+			id: "bg-kill",
+			prompt: "say ok",
+			maxTurns: 5,
+		});
+		const killed = harness.session.killSubAgent(id, "test");
+		expect(killed?.status).toBe("killed");
+
+		const record = await harness.session.waitSubAgent(id);
+		expect(record?.status).toBe("killed");
+	});
+});

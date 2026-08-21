@@ -84,7 +84,12 @@ import {
 	wrapRegisteredTools,
 } from "./extensions/index.ts";
 import { emitSessionShutdownEvent } from "./extensions/runner.ts";
-import type { RunSubAgentParams, SubAgentRunResult } from "./extensions/types.ts";
+import type {
+	InProcessSubAgentRecord,
+	RunSubAgentBackgroundParams,
+	RunSubAgentParams,
+	SubAgentRunResult,
+} from "./extensions/types.ts";
 import type { BashExecutionMessage, CustomMessage } from "./messages.ts";
 import type { ModelRegistry } from "./model-registry.ts";
 import {
@@ -2744,6 +2749,11 @@ export class AgentSession {
 				getSystemPrompt: () => this.systemPrompt,
 				getSystemPromptOptions: () => this._baseSystemPromptOptions,
 				runSubAgent: (params) => this.runSubAgent(params),
+				runSubAgentBackground: (params) => this.runSubAgentBackground(params),
+				getSubAgent: (id) => this.getSubAgent(id),
+				listSubAgents: () => this.listSubAgents(),
+				waitSubAgent: (id, timeoutMs) => this.waitSubAgent(id, timeoutMs),
+				killSubAgent: (id, reason) => this.killSubAgent(id, reason),
 			},
 			{
 				registerProvider: (name, config) => {
@@ -3583,6 +3593,184 @@ export class AgentSession {
 		}
 		onProgress?.({ type: "completed", finalText, toolUseCount, turnCount });
 		return { agentType, finalText, toolUseCount, turnCount, warnings };
+	}
+	private _subAgents = new Map<string, InProcessSubAgentRecord>();
+	private _subAgentHandles = new Map<string, { abort: () => void; done: Promise<void> }>();
+
+	private _extractAssistantText(msg: AgentMessage | undefined): string {
+		if (!msg || (msg as { role?: string }).role !== "assistant") return "";
+		const content = (msg as { content?: unknown }).content;
+		if (typeof content === "string") return content;
+		if (Array.isArray(content)) {
+			return content.map((c) => (typeof c === "string" ? c : ((c as { text?: string }).text ?? ""))).join("");
+		}
+		return "";
+	}
+
+	/**
+	 * Start a sub-agent in the background (in-process, detached). Builds the nested
+	 * agent the same way as {@link runSubAgent}, kicks off the run without awaiting,
+	 * and returns the sub-agent id immediately. Progress is recorded for
+	 * getSubAgent/listSubAgents/waitSubAgent/killSubAgent.
+	 */
+	runSubAgentBackground(params: RunSubAgentBackgroundParams): { id: string } {
+		const { id } = params;
+		const agentType = params.agentType ?? "general-purpose";
+		const def = findAgent(agentType);
+		const now = Date.now();
+		const record: InProcessSubAgentRecord = {
+			id,
+			agentType,
+			status: "running",
+			createdAt: now,
+			updatedAt: now,
+			finalText: undefined,
+			toolUseCount: 0,
+			turnCount: 0,
+		};
+		if (params.agentType && !def) {
+			record.status = "failed";
+			record.error = `Unknown subagent_type "${params.agentType}". Available types are listed in the system prompt.`;
+			this._subAgents.set(id, record);
+			return { id };
+		}
+
+		const systemPrompt = params.systemPrompt ?? def?.getSystemPrompt() ?? "";
+		const availableNames = [...this._toolRegistry.keys()];
+		const resolved = resolveAgentTools(
+			{ tools: params.tools ?? def?.tools, disallowedTools: params.disallowedTools ?? def?.disallowedTools },
+			availableNames,
+		);
+		const filteredTools = resolved.resolvedToolNames
+			.map((name) => this._toolRegistry.get(name))
+			.filter((t): t is AgentTool => t !== undefined);
+		if (resolved.invalidTools.length) record.error = `invalid tools: ${resolved.invalidTools.join(", ")}`;
+
+		const subModel =
+			params.model ??
+			(def?.model ? this._modelRegistry.getAvailable().find((m) => m.id === def.model) : undefined) ??
+			this.model;
+		if (!subModel) {
+			record.status = "failed";
+			record.error = record.error ?? "No model available for sub-agent.";
+			this._subAgents.set(id, record);
+			return { id };
+		}
+
+		const maxTurns = params.maxTurns ?? def?.maxTurns ?? 25;
+		const parent = this.agent;
+		const subAgent = new Agent({
+			initialState: {
+				systemPrompt,
+				model: subModel,
+				thinkingLevel: this.thinkingLevel,
+				tools: filteredTools,
+			},
+			convertToLlm: parent.convertToLlm,
+			transformContext: parent.transformContext,
+			streamFn: parent.streamFn,
+			getApiKey: parent.getApiKey,
+			onPayload: parent.onPayload,
+			onResponse: parent.onResponse,
+			beforeToolCall: parent.beforeToolCall,
+			afterToolCall: parent.afterToolCall,
+			transport: parent.transport,
+			toolExecution: parent.toolExecution,
+		});
+
+		let turnCount = 0;
+		let toolUseCount = 0;
+		const onProgress = params.onProgress;
+		const unsub = subAgent.subscribe((event) => {
+			switch (event.type) {
+				case "tool_execution_start":
+					toolUseCount++;
+					onProgress?.({ type: "tool_use_start", toolName: event.toolName });
+					break;
+				case "tool_execution_end":
+					onProgress?.({ type: "tool_use_done", toolName: event.toolName, isError: event.isError });
+					break;
+				case "turn_end":
+					turnCount++;
+					onProgress?.({ type: "turn_complete", turnCount });
+					if (turnCount >= maxTurns) subAgent.abort();
+					break;
+				case "message_end":
+					if ((event.message as { role?: string }).role === "assistant") {
+						const text = this._extractAssistantText(event.message);
+						if (text) onProgress?.({ type: "text", text });
+					}
+					break;
+			}
+		});
+
+		this._subAgents.set(id, record);
+		const done = subAgent
+			.prompt([{ role: "user", content: params.prompt, timestamp: Date.now() }])
+			.then(() => {
+				record.status = "completed";
+			})
+			.catch(() => {
+				record.status = record.status === "killed" ? "killed" : "failed";
+			})
+			.finally(() => {
+				let finalText = "";
+				for (let i = subAgent.state.messages.length - 1; i >= 0; i--) {
+					const text = this._extractAssistantText(subAgent.state.messages[i]);
+					if (text) {
+						finalText = text;
+						break;
+					}
+				}
+				record.finalText = finalText;
+				record.turnCount = turnCount;
+				record.toolUseCount = toolUseCount;
+				record.updatedAt = Date.now();
+				unsub();
+				onProgress?.({ type: "completed", finalText, toolUseCount, turnCount });
+			});
+		this._subAgentHandles.set(id, { abort: () => subAgent.abort(), done });
+		return { id };
+	}
+
+	/** Get a snapshot of a background sub-agent record by id. */
+	getSubAgent(id: string): InProcessSubAgentRecord | undefined {
+		const record = this._subAgents.get(id);
+		return record ? { ...record } : undefined;
+	}
+
+	/** List snapshot records of all background sub-agents. */
+	listSubAgents(): InProcessSubAgentRecord[] {
+		return [...this._subAgents.values()].map((record) => ({ ...record }));
+	}
+
+	/** Block until a background sub-agent settles (or timeout), then return its snapshot. */
+	async waitSubAgent(id: string, timeoutMs?: number): Promise<InProcessSubAgentRecord | undefined> {
+		const handle = this._subAgentHandles.get(id);
+		const record = this._subAgents.get(id);
+		if (!record) return undefined;
+		if (record.status !== "running") return { ...record };
+		if (handle) {
+			if (timeoutMs && timeoutMs > 0) {
+				await Promise.race([handle.done, new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))]);
+			} else {
+				await handle.done;
+			}
+		}
+		const updated = this._subAgents.get(id);
+		return updated ? { ...updated } : undefined;
+	}
+
+	/** Abort a background sub-agent by id. */
+	killSubAgent(id: string, reason?: string): InProcessSubAgentRecord | undefined {
+		const handle = this._subAgentHandles.get(id);
+		const record = this._subAgents.get(id);
+		if (!record) return undefined;
+		if (handle) handle.abort();
+		record.status = "killed";
+		record.error = reason ?? "killed";
+		record.updatedAt = Date.now();
+		return { ...record };
 	}
 
 	getContextUsage(): ContextUsage | undefined {

@@ -86,7 +86,6 @@ import { type SessionEntry, SessionManager, sessionEntryToContextMessages } from
 import type { PermissionMode } from "../../core/settings-manager.ts";
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
-import { createSubagentManager } from "../../core/subagents/manager.ts";
 import { isInstallTelemetryEnabled } from "../../core/telemetry.ts";
 import type { TruncationResult } from "../../core/tools/truncate.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../core/trust-manager.ts";
@@ -1751,6 +1750,11 @@ export class InteractiveMode {
 			},
 			getSystemPrompt: () => this.session.systemPrompt,
 			runSubAgent: (params) => this.session.runSubAgent(params),
+			runSubAgentBackground: (params) => this.session.runSubAgentBackground(params),
+			getSubAgent: (id) => this.session.getSubAgent(id),
+			listSubAgents: () => this.session.listSubAgents(),
+			waitSubAgent: (id, timeoutMs) => this.session.waitSubAgent(id, timeoutMs),
+			killSubAgent: (id, reason) => this.session.killSubAgent(id, reason),
 		});
 
 		// Set up the extension shortcut handler on the default editor
@@ -5346,8 +5350,7 @@ export class InteractiveMode {
 	}
 
 	private async handleSubagentsCommand(): Promise<void> {
-		const manager = createSubagentManager({});
-		const list = manager.list();
+		const list = this.session.listSubAgents();
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new DynamicBorder());
 		this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "Subagents")), 1, 0));
@@ -5356,9 +5359,11 @@ export class InteractiveMode {
 			this.chatContainer.addChild(new Text(theme.fg("muted", "No subagents running."), 1, 0));
 		} else {
 			for (const record of list) {
-				this.chatContainer.addChild(new Text(theme.fg("accent", `- ${record.id}: ${record.status}`), 1, 0));
-				if (record.lastOutput) {
-					this.chatContainer.addChild(new Text(`  ${record.lastOutput.slice(0, 200)}`, 1, 0));
+				this.chatContainer.addChild(
+					new Text(theme.fg("accent", `- ${record.id}: ${record.status} (${record.agentType})`), 1, 0),
+				);
+				if (record.finalText) {
+					this.chatContainer.addChild(new Text(`  ${record.finalText.slice(0, 200)}`, 1, 0));
 				}
 				if (record.error) {
 					this.chatContainer.addChild(new Text(theme.fg("error", `  error: ${record.error}`), 1, 0));

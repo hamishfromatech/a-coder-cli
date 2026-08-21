@@ -1,9 +1,7 @@
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { findAgent } from "../agents/index.ts";
-import type { ExtensionFactory, SubAgentRunResult } from "../extensions/types.ts";
-import { createSubagentManager } from "./manager.ts";
-import type { SubagentConfig } from "./types.ts";
+import type { ExtensionFactory, InProcessSubAgentRecord, SubAgentRunResult } from "../extensions/types.ts";
 
 export interface SubagentToolOptions {
 	cliPath?: string;
@@ -11,9 +9,14 @@ export interface SubagentToolOptions {
 	defaultModel?: string;
 }
 
-export function createSubagentExtensionFactory(options: SubagentToolOptions): ExtensionFactory {
-	const manager = createSubagentManager(options);
-
+/**
+ * Register the sub-agent tools. Both foreground and background sub-agents run
+ * in-process as nested agent loops (shared stream fn / auth / permission hooks,
+ * filtered tool pool with spawn_subagent stripped — no recursion). Background
+ * sub-agents are managed via the session's in-process store
+ * (getSubAgent / listSubAgents / waitSubAgent / killSubAgent).
+ */
+export function createSubagentExtensionFactory(_options: SubagentToolOptions = {}): ExtensionFactory {
 	return async (pi) => {
 		pi.registerTool({
 			name: "spawn_subagent",
@@ -61,14 +64,12 @@ export function createSubagentExtensionFactory(options: SubagentToolOptions): Ex
 				}
 				const task = params.task as string;
 				const detached = (params.detached as boolean | undefined) ?? false;
+				const modelObj = params.model
+					? ctx.modelRegistry.getAvailable().find((m) => m.id === (params.model as string))
+					: undefined;
 
 				if (!detached) {
-					// Foreground: run in-process as a nested agent with the parent's stream
-					// function / auth / permission hooks and a filtered tool pool (no recursion
-					// — spawn_subagent itself is stripped from the sub-agent's tools).
-					const modelObj = params.model
-						? ctx.modelRegistry.getAvailable().find((m) => m.id === (params.model as string))
-						: undefined;
+					// Foreground: run in-process and return the final output.
 					const result = await ctx.runSubAgent({
 						agentType: subagentType ?? "general-purpose",
 						prompt: task,
@@ -77,26 +78,29 @@ export function createSubagentExtensionFactory(options: SubagentToolOptions): Ex
 						maxTurns: def?.maxTurns,
 					});
 					return {
-						content: [{ type: "text", text: formatInProcessResult(result) }],
+						content: [{ type: "text", text: formatRunResult(result) }],
 						details: result,
 					};
 				}
 
-				// Detached (background): process-based manager. In-process background (with
-				// an in-process subagent store + completion notification) is a follow-up.
-				const config: SubagentConfig = {
+				// Background (detached): run in-process without awaiting; manage via the store.
+				const { id } = ctx.runSubAgentBackground({
 					id: params.id as string,
-					task,
-					systemPrompt: (params.system_prompt as string | undefined) ?? def?.getSystemPrompt(),
-					provider: (params.provider as string | undefined) ?? options.defaultProvider,
-					model: (params.model as string | undefined) ?? def?.model ?? options.defaultModel,
-					timeoutMs: (params.timeout_ms as number | undefined) ?? undefined,
-					detached: true,
-				};
-				const record = manager.spawn(config);
+					agentType: subagentType ?? "general-purpose",
+					prompt: task,
+					systemPrompt: params.system_prompt as string | undefined,
+					model: modelObj,
+					maxTurns: def?.maxTurns,
+				});
+				const record = ctx.getSubAgent(id);
 				return {
-					content: [{ type: "text", text: formatSubagentResult(record) }],
-					details: record,
+					content: [
+						{
+							type: "text",
+							text: `Started background subagent "${id}" (${subagentType ?? "general-purpose"}). Use get_subagent_status or wait_subagent to check on it; kill_subagent to stop it.`,
+						},
+					],
+					details: record ?? null,
 				};
 			},
 		});
@@ -104,11 +108,11 @@ export function createSubagentExtensionFactory(options: SubagentToolOptions): Ex
 		pi.registerTool({
 			name: "list_subagents",
 			label: "List subagents",
-			description: "List all subagents with their current status.",
+			description: "List all background subagents with their current status.",
 			parameters: Type.Object({}),
-			async execute(_toolCallId, _params, _signal): Promise<AgentToolResult<unknown>> {
-				const list = manager.list();
-				const lines = list.map((r) => `- ${r.id}: ${r.status}${r.error ? ` (${r.error})` : ""}`);
+			async execute(_toolCallId, _params, _signal, _onUpdate, ctx): Promise<AgentToolResult<unknown>> {
+				const list = ctx.listSubAgents();
+				const lines = list.map((r) => `- ${r.id}: ${r.status} (${r.agentType})${r.error ? ` — ${r.error}` : ""}`);
 				return {
 					content: [{ type: "text", text: lines.join("\n") || "No subagents." }],
 					details: list,
@@ -119,16 +123,16 @@ export function createSubagentExtensionFactory(options: SubagentToolOptions): Ex
 		pi.registerTool({
 			name: "get_subagent_status",
 			label: "Get subagent status",
-			description: "Get detailed status and latest output for a subagent by id.",
+			description: "Get detailed status and latest output for a background subagent by id.",
 			parameters: Type.Object({
 				id: Type.String({ description: "Subagent id." }),
 				timeout_ms: Type.Optional(
 					Type.Number({ description: "Maximum time to wait in milliseconds (default: 60000)." }),
 				),
 			}),
-			async execute(_toolCallId, params, _signal): Promise<AgentToolResult<unknown>> {
+			async execute(_toolCallId, params, _signal, _onUpdate, ctx): Promise<AgentToolResult<unknown>> {
 				const id = params.id as string;
-				const record = manager.get(id);
+				const record = ctx.getSubAgent(id);
 				if (!record) {
 					return {
 						content: [{ type: "text", text: `Subagent "${id}" not found.` }],
@@ -136,7 +140,7 @@ export function createSubagentExtensionFactory(options: SubagentToolOptions): Ex
 					};
 				}
 				return {
-					content: [{ type: "text", text: formatSubagentResult(record) }],
+					content: [{ type: "text", text: formatRecord(record) }],
 					details: record,
 				};
 			},
@@ -145,17 +149,24 @@ export function createSubagentExtensionFactory(options: SubagentToolOptions): Ex
 		pi.registerTool({
 			name: "wait_subagent",
 			label: "Wait for subagent",
-			description: "Block until a running subagent completes and return its final result.",
+			description: "Block until a background subagent completes and return its final result.",
 			parameters: Type.Object({
 				id: Type.String({ description: "Subagent id." }),
 				timeout_ms: Type.Optional(
 					Type.Number({ description: "Maximum time to wait in milliseconds (default: 60000)." }),
 				),
 			}),
-			async execute(_toolCallId, params, _signal): Promise<AgentToolResult<unknown>> {
-				const record = await manager.wait(params.id as string);
+			async execute(_toolCallId, params, _signal, _onUpdate, ctx): Promise<AgentToolResult<unknown>> {
+				const id = params.id as string;
+				const record = await ctx.waitSubAgent(id, (params.timeout_ms as number | undefined) ?? undefined);
+				if (!record) {
+					return {
+						content: [{ type: "text", text: `Subagent "${id}" not found.` }],
+						details: null,
+					};
+				}
 				return {
-					content: [{ type: "text", text: formatSubagentResult(record) }],
+					content: [{ type: "text", text: formatRecord(record) }],
 					details: record,
 				};
 			},
@@ -164,67 +175,46 @@ export function createSubagentExtensionFactory(options: SubagentToolOptions): Ex
 		pi.registerTool({
 			name: "kill_subagent",
 			label: "Kill subagent",
-			description: "Terminate a running subagent by id.",
+			description: "Terminate a background subagent by id.",
 			parameters: Type.Object({
 				id: Type.String({ description: "Subagent id." }),
 				reason: Type.Optional(Type.String({ description: "Reason for killing the subagent." })),
 			}),
-			async execute(_toolCallId, params, _signal): Promise<AgentToolResult<unknown>> {
-				const record = manager.kill(params.id as string, (params.reason as string | undefined) ?? "tool");
+			async execute(_toolCallId, params, _signal, _onUpdate, ctx): Promise<AgentToolResult<unknown>> {
+				const id = params.id as string;
+				const record = ctx.killSubAgent(id, (params.reason as string | undefined) ?? "tool");
 				return {
 					content: [
 						{
 							type: "text",
-							text: `Killed subagent "${params.id as string}". Status: ${record?.status ?? "not found"}.`,
+							text: record
+								? `Killed subagent "${record.id}". Status: ${record.status}.`
+								: `Subagent "${id}" not found.`,
 						},
 					],
-					details: record,
+					details: record ?? null,
 				};
 			},
 		});
 	};
 }
 
-function formatInProcessResult(result: SubAgentRunResult): string {
+function formatRunResult(result: SubAgentRunResult): string {
 	const lines = [`Subagent: ${result.agentType}`, `Turns: ${result.turnCount}`, `Tool uses: ${result.toolUseCount}`];
 	if (result.warnings?.length) lines.push(`Warnings: ${result.warnings.join("; ")}`);
 	if (result.finalText) lines.push("Output:", result.finalText.slice(0, 4000));
 	return lines.join("\n");
 }
 
-function formatSubagentResult(record: import("./types.ts").SubagentRecord): string {
+function formatRecord(record: InProcessSubAgentRecord): string {
 	const lines = [
 		`Subagent: ${record.id}`,
+		`Type: ${record.agentType}`,
 		`Status: ${record.status}`,
-		`Created: ${record.createdAt}`,
-		`Updated: ${record.updatedAt}`,
+		`Turns: ${record.turnCount}`,
+		`Tool uses: ${record.toolUseCount}`,
 	];
 	if (record.error) lines.push(`Error: ${record.error}`);
-	if (record.exitCode !== undefined && record.exitCode !== null) lines.push(`Exit code: ${record.exitCode}`);
-	if (record.sessionPath) lines.push(`Session: ${record.sessionPath}`);
-	const lastText = getLastAssistantText(record);
-	if (lastText) {
-		lines.push("Output:", lastText.slice(0, 4000));
-	}
+	if (record.finalText) lines.push("Output:", record.finalText.slice(0, 4000));
 	return lines.join("\n");
-}
-
-type LastMessageCandidate = { role?: string; content?: ({ type?: string; text?: string } | string)[] | string };
-
-function getLastAssistantText(record: import("./types.ts").SubagentRecord): string | undefined {
-	for (let i = record.events.length - 1; i >= 0; i--) {
-		const event = record.events[i];
-		if (event?.type === "message_end" || event?.type === "turn_end" || event?.type === "agent_end") {
-			const raw =
-				(event as { messages?: unknown[]; message?: unknown }).messages?.at(-1) ??
-				(event as { message?: unknown }).message;
-			const message = raw as LastMessageCandidate | undefined;
-			if (message?.role === "assistant" && message.content) {
-				const parts = Array.isArray(message.content) ? message.content : [message.content];
-				const text = parts.map((c) => (typeof c === "string" ? c : ((c as { text?: string }).text ?? ""))).join("");
-				if (text) return text;
-			}
-		}
-	}
-	return undefined;
 }

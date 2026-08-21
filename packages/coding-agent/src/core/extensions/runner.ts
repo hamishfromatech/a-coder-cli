@@ -33,6 +33,7 @@ import type {
 	ExtensionRuntime,
 	ExtensionShortcut,
 	ExtensionUIContext,
+	InProcessSubAgentRecord,
 	InputEvent,
 	InputEventResult,
 	InputSource,
@@ -50,6 +51,7 @@ import type {
 	ResolvedCommand,
 	ResourcesDiscoverEvent,
 	ResourcesDiscoverResult,
+	RunSubAgentBackgroundParams,
 	RunSubAgentParams,
 	SessionBeforeCompactResult,
 	SessionBeforeForkResult,
@@ -303,6 +305,12 @@ export class ExtensionRunner {
 	private getSystemPromptOptionsFn: () => BuildSystemPromptOptions = () => ({ cwd: this.cwd });
 	private runSubAgentFn: (params: RunSubAgentParams) => Promise<SubAgentRunResult> = () =>
 		Promise.reject(new Error("runSubAgent not bound"));
+	private runSubAgentBackgroundFn: (params: RunSubAgentBackgroundParams) => { id: string } = () => ({ id: "" });
+	private getSubAgentFn: (id: string) => InProcessSubAgentRecord | undefined = () => undefined;
+	private listSubAgentsFn: () => InProcessSubAgentRecord[] = () => [];
+	private waitSubAgentFn: (id: string, timeoutMs?: number) => Promise<InProcessSubAgentRecord | undefined> =
+		async () => undefined;
+	private killSubAgentFn: (id: string, reason?: string) => InProcessSubAgentRecord | undefined = () => undefined;
 	private newSessionHandler: NewSessionHandler = async () => ({ cancelled: false });
 	private forkHandler: ForkHandler = async () => ({ cancelled: false });
 	private navigateTreeHandler: NavigateTreeHandler = async () => ({ cancelled: false });
@@ -365,6 +373,11 @@ export class ExtensionRunner {
 		this.getSystemPromptFn = contextActions.getSystemPrompt;
 		this.getSystemPromptOptionsFn = contextActions.getSystemPromptOptions ?? (() => ({ cwd: this.cwd }));
 		this.runSubAgentFn = contextActions.runSubAgent;
+		this.runSubAgentBackgroundFn = contextActions.runSubAgentBackground;
+		this.getSubAgentFn = contextActions.getSubAgent;
+		this.listSubAgentsFn = contextActions.listSubAgents;
+		this.waitSubAgentFn = contextActions.waitSubAgent;
+		this.killSubAgentFn = contextActions.killSubAgent;
 
 		// Flush provider registrations queued during extension loading
 		for (const { name, config, extensionPath } of this.runtime.pendingProviderRegistrations) {
@@ -720,6 +733,26 @@ export class ExtensionRunner {
 			runSubAgent: (params) => {
 				runner.assertActive();
 				return runner.runSubAgentFn(params);
+			},
+			runSubAgentBackground: (params) => {
+				runner.assertActive();
+				return runner.runSubAgentBackgroundFn(params);
+			},
+			getSubAgent: (id) => {
+				runner.assertActive();
+				return runner.getSubAgentFn(id);
+			},
+			listSubAgents: () => {
+				runner.assertActive();
+				return runner.listSubAgentsFn();
+			},
+			waitSubAgent: (id, timeoutMs) => {
+				runner.assertActive();
+				return runner.waitSubAgentFn(id, timeoutMs);
+			},
+			killSubAgent: (id, reason) => {
+				runner.assertActive();
+				return runner.killSubAgentFn(id, reason);
 			},
 		};
 	}
