@@ -1,7 +1,7 @@
 import type { AgentToolResult } from "@theatechcorporation/pi-agent-core";
 import { Type } from "typebox";
 import { findAgent } from "../agents/index.ts";
-import type { ExtensionFactory } from "../extensions/types.ts";
+import type { ExtensionFactory, SubAgentRunResult } from "../extensions/types.ts";
 import { createSubagentManager } from "./manager.ts";
 import type { SubagentConfig } from "./types.ts";
 
@@ -19,7 +19,7 @@ export function createSubagentExtensionFactory(options: SubagentToolOptions): Ex
 			name: "spawn_subagent",
 			label: "Spawn subagent",
 			description:
-				"Start a background a-coder-cli subagent to work on an independent task. Returns a subagent id that can be used with wait_subagent, get_subagent_status, and kill_subagent.",
+				"Start a subagent to work on an independent task. If detached is false (default), the subagent runs in-process as a nested agent loop and this call returns its final output. If detached is true, the subagent runs in the background and this call returns immediately with a subagent id usable with wait_subagent, get_subagent_status, and kill_subagent.",
 			parameters: Type.Object({
 				id: Type.String({ description: "Unique identifier for this subagent task. Use a short kebab-case slug." }),
 				task: Type.String({ description: "The task prompt to send to the subagent." }),
@@ -43,7 +43,7 @@ export function createSubagentExtensionFactory(options: SubagentToolOptions): Ex
 					Type.Boolean({ description: "If true, return immediately without waiting for the subagent to finish." }),
 				),
 			}),
-			async execute(_toolCallId, params, _signal): Promise<AgentToolResult<unknown>> {
+			async execute(_toolCallId, params, _signal, _onUpdate, ctx): Promise<AgentToolResult<unknown>> {
 				// Resolve a named sub-agent type (if any) to its system prompt + model override.
 				// An explicit system_prompt/model param takes precedence over the agent definition.
 				const subagentType = params.subagent_type as string | undefined;
@@ -59,23 +59,44 @@ export function createSubagentExtensionFactory(options: SubagentToolOptions): Ex
 						details: null,
 					};
 				}
+				const task = params.task as string;
+				const detached = (params.detached as boolean | undefined) ?? false;
+
+				if (!detached) {
+					// Foreground: run in-process as a nested agent with the parent's stream
+					// function / auth / permission hooks and a filtered tool pool (no recursion
+					// — spawn_subagent itself is stripped from the sub-agent's tools).
+					const modelObj = params.model
+						? ctx.modelRegistry.getAvailable().find((m) => m.id === (params.model as string))
+						: undefined;
+					const result = await ctx.runSubAgent({
+						agentType: subagentType ?? "general-purpose",
+						prompt: task,
+						systemPrompt: params.system_prompt as string | undefined,
+						model: modelObj,
+						maxTurns: def?.maxTurns,
+					});
+					return {
+						content: [{ type: "text", text: formatInProcessResult(result) }],
+						details: result,
+					};
+				}
+
+				// Detached (background): process-based manager. In-process background (with
+				// an in-process subagent store + completion notification) is a follow-up.
 				const config: SubagentConfig = {
 					id: params.id as string,
-					task: params.task as string,
+					task,
 					systemPrompt: (params.system_prompt as string | undefined) ?? def?.getSystemPrompt(),
 					provider: (params.provider as string | undefined) ?? options.defaultProvider,
 					model: (params.model as string | undefined) ?? def?.model ?? options.defaultModel,
 					timeoutMs: (params.timeout_ms as number | undefined) ?? undefined,
-					detached: (params.detached as boolean | undefined) ?? false,
+					detached: true,
 				};
 				const record = manager.spawn(config);
-				if (!config.detached) {
-					await manager.wait(config.id);
-				}
-				const updated = manager.get(config.id) ?? record;
 				return {
-					content: [{ type: "text", text: formatSubagentResult(updated) }],
-					details: updated,
+					content: [{ type: "text", text: formatSubagentResult(record) }],
+					details: record,
 				};
 			},
 		});
@@ -162,6 +183,13 @@ export function createSubagentExtensionFactory(options: SubagentToolOptions): Ex
 			},
 		});
 	};
+}
+
+function formatInProcessResult(result: SubAgentRunResult): string {
+	const lines = [`Subagent: ${result.agentType}`, `Turns: ${result.turnCount}`, `Tool uses: ${result.toolUseCount}`];
+	if (result.warnings?.length) lines.push(`Warnings: ${result.warnings.join("; ")}`);
+	if (result.finalText) lines.push("Output:", result.finalText.slice(0, 4000));
+	return lines.join("\n");
 }
 
 function formatSubagentResult(record: import("./types.ts").SubagentRecord): string {

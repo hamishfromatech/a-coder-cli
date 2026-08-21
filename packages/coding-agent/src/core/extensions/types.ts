@@ -297,6 +297,37 @@ export interface CompactOptions {
  * Context passed to extension event handlers.
  */
 export type ExtensionMode = "tui" | "rpc" | "json" | "print";
+/**
+ * Progress events streamed from an in-process sub-agent run.
+ */
+export type SubAgentProgressEvent =
+	| { type: "tool_use_start"; toolName: string }
+	| { type: "tool_use_done"; toolName: string; isError?: boolean }
+	| { type: "text"; text: string }
+	| { type: "turn_complete"; turnCount: number }
+	| { type: "completed"; finalText: string; toolUseCount: number; turnCount: number }
+	| { type: "aborted" };
+
+/** Result of an in-process sub-agent run. */
+export interface SubAgentRunResult {
+	agentType: string;
+	finalText: string;
+	toolUseCount: number;
+	turnCount: number;
+	warnings?: string[];
+}
+
+/** Parameters for {@link ExtensionContext.runSubAgent}. */
+export interface RunSubAgentParams {
+	agentType?: string;
+	prompt: string;
+	systemPrompt?: string;
+	model?: Model<any>;
+	tools?: string[];
+	disallowedTools?: string[];
+	maxTurns?: number;
+	onProgress?: (event: SubAgentProgressEvent) => void;
+}
 
 export interface ExtensionContext {
 	/** UI methods for user interaction */
@@ -331,6 +362,14 @@ export interface ExtensionContext {
 	compact(options?: CompactOptions): void;
 	/** Get the current effective system prompt. */
 	getSystemPrompt(): string;
+	/**
+	 * Run a sub-agent in-process: a nested agent loop with its own context window,
+	 * a filtered tool pool (no recursion — the spawn_subagent tool is stripped),
+	 * the agent definition's system prompt + model + maxTurns, and the parent's
+	 * stream function / auth / permission hooks (so an allow_always decision in
+	 * the sub-agent persists across the parent's turn).
+	 */
+	runSubAgent(params: RunSubAgentParams): Promise<SubAgentRunResult>;
 }
 
 /**
@@ -1570,6 +1609,7 @@ export interface ExtensionContextActions {
 	compact: (options?: CompactOptions) => void;
 	getSystemPrompt: () => string;
 	getSystemPromptOptions?: () => BuildSystemPromptOptions;
+	runSubAgent: (params: RunSubAgentParams) => Promise<SubAgentRunResult>;
 }
 
 /**

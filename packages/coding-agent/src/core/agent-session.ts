@@ -16,7 +16,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import type {
-	Agent,
 	AgentEvent,
 	AgentMessage,
 	AgentState,
@@ -24,6 +23,7 @@ import type {
 	PrepareNextTurnContext,
 	ThinkingLevel,
 } from "@theatechcorporation/pi-agent-core";
+import { Agent } from "@theatechcorporation/pi-agent-core";
 import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@theatechcorporation/pi-ai/compat";
 import {
 	clampThinkingLevel,
@@ -40,6 +40,7 @@ import { getThemeByName, theme } from "../modes/interactive/theme/theme.ts";
 import { stripFrontmatter } from "../utils/frontmatter.ts";
 import { resolvePath } from "../utils/paths.ts";
 import { sleep } from "../utils/sleep.ts";
+import { findAgent, resolveAgentTools } from "./agents/index.ts";
 import { formatNoApiKeyFoundMessage, formatNoModelSelectedMessage } from "./auth-guidance.ts";
 import { type BashResult, executeBashWithOperations } from "./bash-executor.ts";
 import {
@@ -83,6 +84,7 @@ import {
 	wrapRegisteredTools,
 } from "./extensions/index.ts";
 import { emitSessionShutdownEvent } from "./extensions/runner.ts";
+import type { RunSubAgentParams, SubAgentRunResult } from "./extensions/types.ts";
 import type { BashExecutionMessage, CustomMessage } from "./messages.ts";
 import type { ModelRegistry } from "./model-registry.ts";
 import {
@@ -2741,6 +2743,7 @@ export class AgentSession {
 				},
 				getSystemPrompt: () => this.systemPrompt,
 				getSystemPromptOptions: () => this._baseSystemPromptOptions,
+				runSubAgent: (params) => this.runSubAgent(params),
 			},
 			{
 				registerProvider: (name, config) => {
@@ -3460,6 +3463,126 @@ export class AgentSession {
 			cost: totalCost,
 			contextUsage: this.getContextUsage(),
 		};
+	}
+	/**
+	 * Run a sub-agent in-process (a nested agent loop). See ExtensionContext.runSubAgent.
+	 *
+	 * Builds a child Agent from the session's tool registry, filtered by the agent
+	 * definition's allow/deny lists, with the definition's system prompt + model +
+	 * maxTurns. The parent's stream function, auth, and permission hooks are shared
+	 * by reference so an allow_always decision in the sub-agent persists across the
+	 * parent's turn; prepareNextTurn is deliberately omitted (a sub-agent does not
+	 * compact). maxTurns is enforced by aborting the child on the Nth turn_end.
+	 */
+	async runSubAgent(params: RunSubAgentParams): Promise<SubAgentRunResult> {
+		const agentType = params.agentType ?? "general-purpose";
+		const def = findAgent(agentType);
+		if (params.agentType && !def) {
+			return {
+				agentType,
+				finalText: `Unknown subagent_type "${params.agentType}". Available types are listed in the system prompt.`,
+				toolUseCount: 0,
+				turnCount: 0,
+				warnings: [`unknown subagent_type: ${params.agentType}`],
+			};
+		}
+
+		const systemPrompt = params.systemPrompt ?? def?.getSystemPrompt() ?? "";
+		const availableNames = [...this._toolRegistry.keys()];
+		const resolved = resolveAgentTools(
+			{ tools: params.tools ?? def?.tools, disallowedTools: params.disallowedTools ?? def?.disallowedTools },
+			availableNames,
+		);
+		const filteredTools = resolved.resolvedToolNames
+			.map((name) => this._toolRegistry.get(name))
+			.filter((t): t is AgentTool => t !== undefined);
+		const warnings = resolved.invalidTools.length
+			? [`invalid tools for "${agentType}": ${resolved.invalidTools.join(", ")}`]
+			: undefined;
+
+		const subModel =
+			params.model ??
+			(def?.model ? this._modelRegistry.getAvailable().find((m) => m.id === def.model) : undefined) ??
+			this.model;
+		if (!subModel) {
+			return { agentType, finalText: "No model available for sub-agent.", toolUseCount: 0, turnCount: 0, warnings };
+		}
+
+		const maxTurns = params.maxTurns ?? def?.maxTurns ?? 25;
+		const parent = this.agent;
+		const subAgent = new Agent({
+			initialState: {
+				systemPrompt,
+				model: subModel,
+				thinkingLevel: this.thinkingLevel,
+				tools: filteredTools,
+			},
+			convertToLlm: parent.convertToLlm,
+			transformContext: parent.transformContext,
+			streamFn: parent.streamFn,
+			getApiKey: parent.getApiKey,
+			onPayload: parent.onPayload,
+			onResponse: parent.onResponse,
+			beforeToolCall: parent.beforeToolCall,
+			afterToolCall: parent.afterToolCall,
+			transport: parent.transport,
+			toolExecution: parent.toolExecution,
+		});
+
+		const extractText = (msg: AgentMessage | undefined): string => {
+			if (!msg || (msg as { role?: string }).role !== "assistant") return "";
+			const content = (msg as { content?: unknown }).content;
+			if (typeof content === "string") return content;
+			if (Array.isArray(content)) {
+				return content.map((c) => (typeof c === "string" ? c : ((c as { text?: string }).text ?? ""))).join("");
+			}
+			return "";
+		};
+
+		let turnCount = 0;
+		let toolUseCount = 0;
+		const onProgress = params.onProgress;
+		const unsub = subAgent.subscribe((event) => {
+			switch (event.type) {
+				case "tool_execution_start":
+					toolUseCount++;
+					onProgress?.({ type: "tool_use_start", toolName: event.toolName });
+					break;
+				case "tool_execution_end":
+					onProgress?.({ type: "tool_use_done", toolName: event.toolName, isError: event.isError });
+					break;
+				case "turn_end":
+					turnCount++;
+					onProgress?.({ type: "turn_complete", turnCount });
+					if (turnCount >= maxTurns) subAgent.abort();
+					break;
+				case "message_end":
+					if ((event.message as { role?: string }).role === "assistant") {
+						const text = extractText(event.message);
+						if (text) onProgress?.({ type: "text", text });
+					}
+					break;
+			}
+		});
+
+		try {
+			await subAgent.prompt([{ role: "user", content: params.prompt, timestamp: Date.now() }]);
+		} catch {
+			// maxTurns abort or stream error — fall through and extract whatever text we have
+		} finally {
+			unsub();
+		}
+
+		let finalText = "";
+		for (let i = subAgent.state.messages.length - 1; i >= 0; i--) {
+			const text = extractText(subAgent.state.messages[i]);
+			if (text) {
+				finalText = text;
+				break;
+			}
+		}
+		onProgress?.({ type: "completed", finalText, toolUseCount, turnCount });
+		return { agentType, finalText, toolUseCount, turnCount, warnings };
 	}
 
 	getContextUsage(): ContextUsage | undefined {

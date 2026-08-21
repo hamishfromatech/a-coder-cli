@@ -84,6 +84,7 @@ describe("ExtensionRunner", () => {
 		getContextUsage: () => undefined,
 		compact: () => {},
 		getSystemPrompt: () => "",
+		runSubAgent: async () => ({ agentType: "", finalText: "", toolUseCount: 0, turnCount: 0 }),
 	};
 
 	describe("project_trust", () => {
