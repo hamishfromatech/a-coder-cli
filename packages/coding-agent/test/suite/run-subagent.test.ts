@@ -1,5 +1,6 @@
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it } from "vitest";
+import type { InProcessSubAgentRecord } from "../../src/core/extensions/types.ts";
 import { createHarness, type Harness } from "./harness.ts";
 
 describe("AgentSession.runSubAgent (in-process)", () => {
@@ -121,5 +122,33 @@ describe("AgentSession background sub-agents (in-process store)", () => {
 
 		const record = await harness.session.waitSubAgent(id);
 		expect(record?.status).toBe("killed");
+	});
+
+	it("streams live progress via subscribeSubAgents with a populated timeline", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+
+		harness.setResponses([fauxAssistantMessage("live reply")]);
+
+		const snapshots: InProcessSubAgentRecord[] = [];
+		const unsub = harness.session.subscribeSubAgents((records) => {
+			snapshots.push(...records);
+		});
+
+		const { id } = harness.session.runSubAgentBackground({
+			id: "bg-stream",
+			prompt: "say ok",
+			maxTurns: 5,
+		});
+
+		await harness.session.waitSubAgent(id);
+		unsub();
+
+		const running = snapshots.find((s) => s.id === id && s.status === "running");
+		const done = snapshots.find((s) => s.id === id && s.status === "completed");
+		expect(running).toBeDefined();
+		expect(done).toBeDefined();
+		expect(done?.finalText).toContain("live reply");
+		expect(done?.timeline.map((e) => e.type)).toEqual(expect.arrayContaining(["text", "turn_complete", "completed"]));
 	});
 });

@@ -334,10 +334,15 @@ export interface InProcessSubAgentRecord {
 	agentType: string;
 	status: "running" | "completed" | "failed" | "killed";
 	createdAt: number;
+	startedAt: number;
 	updatedAt: number;
 	finalText?: string;
 	toolUseCount: number;
 	turnCount: number;
+	/** Ordered progress events emitted by the nested agent (for live UI). */
+	timeline: SubAgentProgressEvent[];
+	/** Name of the most recently finished tool, for the "last:" badge. */
+	lastToolName?: string;
 	error?: string;
 }
 

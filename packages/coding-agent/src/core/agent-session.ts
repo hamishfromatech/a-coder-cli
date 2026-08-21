@@ -88,6 +88,7 @@ import type {
 	InProcessSubAgentRecord,
 	RunSubAgentBackgroundParams,
 	RunSubAgentParams,
+	SubAgentProgressEvent,
 	SubAgentRunResult,
 } from "./extensions/types.ts";
 import type { BashExecutionMessage, CustomMessage } from "./messages.ts";
@@ -3596,6 +3597,7 @@ export class AgentSession {
 	}
 	private _subAgents = new Map<string, InProcessSubAgentRecord>();
 	private _subAgentHandles = new Map<string, { abort: () => void; done: Promise<void> }>();
+	private _subAgentListeners = new Set<(records: InProcessSubAgentRecord[]) => void>();
 
 	private _extractAssistantText(msg: AgentMessage | undefined): string {
 		if (!msg || (msg as { role?: string }).role !== "assistant") return "";
@@ -3623,15 +3625,18 @@ export class AgentSession {
 			agentType,
 			status: "running",
 			createdAt: now,
+			startedAt: now,
 			updatedAt: now,
 			finalText: undefined,
 			toolUseCount: 0,
 			turnCount: 0,
+			timeline: [],
 		};
 		if (params.agentType && !def) {
 			record.status = "failed";
 			record.error = `Unknown subagent_type "${params.agentType}". Available types are listed in the system prompt.`;
 			this._subAgents.set(id, record);
+			this._notifySubAgents();
 			return { id };
 		}
 
@@ -3654,6 +3659,7 @@ export class AgentSession {
 			record.status = "failed";
 			record.error = record.error ?? "No model available for sub-agent.";
 			this._subAgents.set(id, record);
+			this._notifySubAgents();
 			return { id };
 		}
 
@@ -3681,30 +3687,57 @@ export class AgentSession {
 		let turnCount = 0;
 		let toolUseCount = 0;
 		const onProgress = params.onProgress;
+		const pushEvent = (ev: SubAgentProgressEvent) => {
+			record.timeline.push(ev);
+			record.updatedAt = Date.now();
+			this._notifySubAgents();
+		};
 		const unsub = subAgent.subscribe((event) => {
 			switch (event.type) {
 				case "tool_execution_start":
 					toolUseCount++;
-					onProgress?.({ type: "tool_use_start", toolName: event.toolName });
+					{
+						const ev: SubAgentProgressEvent = { type: "tool_use_start", toolName: event.toolName };
+						onProgress?.(ev);
+						pushEvent(ev);
+					}
 					break;
 				case "tool_execution_end":
-					onProgress?.({ type: "tool_use_done", toolName: event.toolName, isError: event.isError });
+					record.lastToolName = event.toolName;
+					{
+						const ev: SubAgentProgressEvent = {
+							type: "tool_use_done",
+							toolName: event.toolName,
+							isError: event.isError,
+						};
+						onProgress?.(ev);
+						pushEvent(ev);
+					}
 					break;
 				case "turn_end":
 					turnCount++;
-					onProgress?.({ type: "turn_complete", turnCount });
-					if (turnCount >= maxTurns) subAgent.abort();
+					{
+						const ev: SubAgentProgressEvent = { type: "turn_complete", turnCount };
+						onProgress?.(ev);
+						pushEvent(ev);
+						if (turnCount >= maxTurns) subAgent.abort();
+					}
 					break;
 				case "message_end":
 					if ((event.message as { role?: string }).role === "assistant") {
 						const text = this._extractAssistantText(event.message);
-						if (text) onProgress?.({ type: "text", text });
+						if (text) {
+							const ev: SubAgentProgressEvent = { type: "text", text };
+							onProgress?.(ev);
+							pushEvent(ev);
+						}
 					}
 					break;
 			}
 		});
 
 		this._subAgents.set(id, record);
+		this._notifySubAgents();
 		const done = subAgent
 			.prompt([{ role: "user", content: params.prompt, timestamp: Date.now() }])
 			.then(() => {
@@ -3726,8 +3759,16 @@ export class AgentSession {
 				record.turnCount = turnCount;
 				record.toolUseCount = toolUseCount;
 				record.updatedAt = Date.now();
+				const completedEvent: SubAgentProgressEvent = {
+					type: "completed",
+					finalText,
+					toolUseCount,
+					turnCount,
+				};
+				onProgress?.(completedEvent);
+				record.timeline.push(completedEvent);
 				unsub();
-				onProgress?.({ type: "completed", finalText, toolUseCount, turnCount });
+				this._notifySubAgents();
 			});
 		this._subAgentHandles.set(id, { abort: () => subAgent.abort(), done });
 		return { id };
@@ -3770,7 +3811,36 @@ export class AgentSession {
 		record.status = "killed";
 		record.error = reason ?? "killed";
 		record.updatedAt = Date.now();
+		record.timeline.push({ type: "aborted" });
+		this._notifySubAgents();
 		return { ...record };
+	}
+
+	/**
+	 * Subscribe to live changes in the in-process sub-agent store.
+	 *
+	 * The listener receives a fresh snapshot of all sub-agent records (with a
+	 * deep-copied `timeline`) on every progress event and status transition,
+	 * including immediately on subscribe. Used by the TUI to render live
+	 * sub-agent progress cards. Returns an unsubscribe function.
+	 */
+	subscribeSubAgents(listener: (records: InProcessSubAgentRecord[]) => void): () => void {
+		this._subAgentListeners.add(listener);
+		this._notifySubAgents();
+		return () => {
+			this._subAgentListeners.delete(listener);
+		};
+	}
+
+	private _notifySubAgents(): void {
+		if (this._subAgentListeners.size === 0) return;
+		const records = [...this._subAgents.values()].map((record) => ({
+			...record,
+			timeline: [...record.timeline],
+		}));
+		for (const listener of this._subAgentListeners) {
+			listener(records);
+		}
 	}
 
 	getContextUsage(): ContextUsage | undefined {

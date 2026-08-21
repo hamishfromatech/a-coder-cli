@@ -72,6 +72,7 @@ import type {
 	ProjectTrustContext,
 	WorkingIndicatorOptions,
 } from "../../core/extensions/index.ts";
+import type { InProcessSubAgentRecord } from "../../core/extensions/types.ts";
 import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/footer-data-provider.ts";
 import { configureHttpDispatcher, formatHttpIdleTimeoutMs } from "../../core/http-dispatcher.ts";
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.ts";
@@ -132,6 +133,7 @@ import {
 	type StatusIndicator,
 	WorkingStatusIndicator,
 } from "./components/status-indicator.ts";
+import { SubAgentCardComponent } from "./components/subagent-card.ts";
 import { readTodosFromBranch, TodoListComponent } from "./components/todo-list.ts";
 import { ToolExecutionComponent } from "./components/tool-execution.ts";
 import { TreeSelectorComponent } from "./components/tree-selector.ts";
@@ -358,6 +360,11 @@ export class InteractiveMode {
 	// Track pending bash components (shown in pending area, moved to chat on submit)
 	private pendingBashComponents: BashExecutionComponent[] = [];
 
+	// In-process sub-agent progress cards (live UI for background sub-agents)
+	private subAgentContainer: Container;
+	private subAgentCards = new Map<string, SubAgentCardComponent>();
+	private unsubscribeSubAgents?: () => void;
+
 	// Auto-compaction state
 	private autoCompactionEscapeHandler?: () => void;
 
@@ -428,6 +435,7 @@ export class InteractiveMode {
 		this.headerContainer = new Container();
 		this.loadedResourcesContainer = new Container();
 		this.chatContainer = new Container();
+		this.subAgentContainer = new Container();
 		this.pendingMessagesContainer = new Container();
 		this.statusContainer = new Container();
 		this.widgetContainerAbove = new Container();
@@ -669,6 +677,7 @@ export class InteractiveMode {
 		this.ui.addChild(this.loadedResourcesContainer);
 
 		this.ui.addChild(this.chatContainer);
+		this.ui.addChild(this.subAgentContainer);
 		this.ui.addChild(this.pendingMessagesContainer);
 		this.ui.addChild(this.statusContainer);
 		this.renderWidgets(); // Initialize with default spacer
@@ -1695,6 +1704,8 @@ export class InteractiveMode {
 	private renderCurrentSessionState(): void {
 		this.loadedResourcesContainer.clear();
 		this.chatContainer.clear();
+		this.subAgentContainer.clear();
+		this.subAgentCards.clear();
 		this.pendingMessagesContainer.clear();
 		this.compactionQueuedMessages = [];
 		this.streamingComponent = undefined;
@@ -2791,6 +2802,22 @@ export class InteractiveMode {
 		this.unsubscribe = this.session.subscribe(async (event) => {
 			await this.handleEvent(event);
 		});
+		this.unsubscribeSubAgents?.();
+		this.unsubscribeSubAgents = this.session.subscribeSubAgents((records) => this.syncSubAgentCards(records));
+	}
+
+	private syncSubAgentCards(records: InProcessSubAgentRecord[]): void {
+		for (const record of records) {
+			let card = this.subAgentCards.get(record.id);
+			if (!card) {
+				card = new SubAgentCardComponent(record);
+				this.subAgentContainer.addChild(card);
+				this.subAgentCards.set(record.id, card);
+			} else {
+				card.update(record);
+			}
+		}
+		this.ui.requestRender();
 	}
 
 	private async handleEvent(event: AgentSessionEvent): Promise<void> {
@@ -2829,6 +2856,8 @@ export class InteractiveMode {
 
 			case "session_start":
 				this.chatContainer.clear();
+				this.subAgentContainer.clear();
+				this.subAgentCards.clear();
 				this.pendingMessagesContainer.clear();
 				this.compactionQueuedMessages = [];
 				this.streamingComponent = undefined;
@@ -5968,6 +5997,10 @@ export class InteractiveMode {
 		this.footerDataProvider.dispose();
 		if (this.unsubscribe) {
 			this.unsubscribe();
+		}
+		if (this.unsubscribeSubAgents) {
+			this.unsubscribeSubAgents();
+			this.unsubscribeSubAgents = undefined;
 		}
 		if (this.isInitialized) {
 			this.ui.stop();
