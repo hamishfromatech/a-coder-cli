@@ -83,7 +83,7 @@ jobs:
       - name: Install dependencies
         # --no-workspaces: install desktop-app's deps standalone (the repo root is
         # a workspace root, so plain npm ci would hoist/skip desktop deps and tsc
-        # can't resolve @theatechcorporation/pi-ai). The lockfile is standalone.
+        # can't resolve @earendil-works/pi-ai). The lockfile is standalone.
         run: npm ci --no-workspaces --ignore-scripts
 
       # ──────────────────────────────────────────────────────────────────────

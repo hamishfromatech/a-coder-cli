@@ -1,5 +1,5 @@
-import type { AgentTool } from "@theatechcorporation/pi-agent-core";
-import { Text } from "@theatechcorporation/pi-tui";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
+import { Text } from "@earendil-works/pi-tui";
 import { type Static, Type } from "typebox";
 import type { ToolDefinition } from "../extensions/types.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";

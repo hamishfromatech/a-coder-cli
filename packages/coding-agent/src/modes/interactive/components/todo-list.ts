@@ -1,4 +1,4 @@
-import { type Component, matchesKey, truncateToWidth } from "@theatechcorporation/pi-tui";
+import { type Component, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import type { TodoItem } from "../../../core/tools/todo.ts";
 import { theme } from "../theme/theme.ts";
 

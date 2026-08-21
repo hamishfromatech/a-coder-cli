@@ -5,7 +5,7 @@ import {
 	fauxProvider,
 	fauxToolCall,
 	type StreamOptions,
-} from "@theatechcorporation/pi-ai";
+} from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
 import { AgentHarness } from "../../src/harness/agent-harness.ts";
 import { NodeExecutionEnv } from "../../src/harness/env/nodejs.ts";

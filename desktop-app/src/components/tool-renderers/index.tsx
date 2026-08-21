@@ -7,7 +7,7 @@ import {
 	Hammer,
 	Loader2,
 } from "lucide-react";
-import type { ToolResultMessage } from "@theatechcorporation/pi-ai";
+import type { ToolResultMessage } from "@earendil-works/pi-ai";
 import { useSessionStore, type UiRequest } from "../../stores/session-store";
 import { ToolApprovalBar } from "../ToolApprovalBar";
 

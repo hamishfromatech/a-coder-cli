@@ -1,4 +1,4 @@
-import { ProcessTerminal, setKeybindings, TUI } from "@theatechcorporation/pi-tui";
+import { ProcessTerminal, setKeybindings, TUI } from "@earendil-works/pi-tui";
 import { existsSync } from "fs";
 import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR, getAgentDir, getSettingsPath, PACKAGE_NAME } from "../config.ts";
 import { areExperimentalFeaturesEnabled } from "../core/experimental.ts";
@@ -23,7 +23,7 @@ import {
 	type Theme,
 } from "../modes/interactive/theme/theme.ts";
 
-const OFFICIAL_PACKAGE_NAME = "@theatechcorporation/pi-coding-agent";
+const OFFICIAL_PACKAGE_NAME = "@earendil-works/pi-coding-agent";
 const OFFICIAL_APP_NAME = "a-coder-cli";
 const OFFICIAL_CONFIG_DIR_NAME = ".a-coder-cli";
 

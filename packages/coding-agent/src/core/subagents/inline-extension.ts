@@ -1,4 +1,4 @@
-import type { AgentToolResult } from "@theatechcorporation/pi-agent-core";
+import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { findAgent } from "../agents/index.ts";
 import type { ExtensionFactory, SubAgentRunResult } from "../extensions/types.ts";

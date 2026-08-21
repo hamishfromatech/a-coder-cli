@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, ChevronRight, ListTodo } from "lucide-react";
-import type { ToolResultMessage } from "@theatechcorporation/pi-ai";
+import type { ToolResultMessage } from "@earendil-works/pi-ai";
 import { useSessionStore } from "../stores/session-store";
 
 export interface TodoItem {

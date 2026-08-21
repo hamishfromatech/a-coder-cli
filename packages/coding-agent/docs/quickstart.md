@@ -7,7 +7,7 @@ This page gets you from install to a useful first a-coder-cli session.
 Pi is distributed as an npm package:
 
 ```bash
-npm install -g --ignore-scripts @theatechcorporation/pi-coding-agent
+npm install -g --ignore-scripts @earendil-works/pi-coding-agent
 ```
 
 `--ignore-scripts` disables dependency lifecycle scripts during install. Pi does not require install scripts for normal npm installs.
@@ -18,16 +18,16 @@ Use the package manager that installed pi. The curl installer uses npm globally,
 
 ```bash
 # curl installer or npm install -g
-npm uninstall -g @theatechcorporation/pi-coding-agent
+npm uninstall -g @earendil-works/pi-coding-agent
 
 # pnpm
-pnpm remove -g @theatechcorporation/pi-coding-agent
+pnpm remove -g @earendil-works/pi-coding-agent
 
 # Yarn
-yarn global remove @theatechcorporation/pi-coding-agent
+yarn global remove @earendil-works/pi-coding-agent
 
 # Bun
-bun uninstall -g @theatechcorporation/pi-coding-agent
+bun uninstall -g @earendil-works/pi-coding-agent
 ```
 
 Uninstalling a-coder-cli leaves settings, credentials, sessions, and installed pi packages in `~/.a-coder-cli/agent/`.

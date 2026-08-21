@@ -25,7 +25,7 @@ import {
 import { useSessionStore } from "../stores/session-store";
 import * as rpc from "../lib/rpc";
 import { triggerHaptic } from "../lib/haptics";
-import type { ImageContent } from "@theatechcorporation/pi-ai";
+import type { ImageContent } from "@earendil-works/pi-ai";
 import {
 	BUILTIN_COMMANDS,
 	filterSlashEntries,
