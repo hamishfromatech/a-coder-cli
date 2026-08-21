@@ -10,9 +10,16 @@ export interface SessionStartEvent {
 	previousSessionFile?: string;
 }
 
+/** The engine renamed the active session. Emitted by the CLI's AgentSession. */
+export interface SessionInfoChangedEvent {
+	type: "session_info_changed";
+	name: string | undefined;
+}
+
 export type RpcEvent =
 	| AgentEvent
 	| SessionStartEvent
+	| SessionInfoChangedEvent
 	| ExtensionUiRequestEvent
 	| QueueUpdateEvent
 	| AutoRetryStartEvent
