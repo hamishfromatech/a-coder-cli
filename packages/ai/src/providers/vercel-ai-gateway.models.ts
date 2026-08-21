@@ -1036,6 +1036,23 @@ export const VERCEL_AI_GATEWAY_MODELS = {
 		contextWindow: 1000000,
 		maxTokens: 384000,
 	} satisfies Model<"anthropic-messages">,
+	"deepseek/deepseek-v4-flash-vision-exp": {
+		id: "deepseek/deepseek-v4-flash-vision-exp",
+		name: "DeepSeek V4 Flash Vision Exp",
+		api: "anthropic-messages",
+		provider: "vercel-ai-gateway",
+		baseUrl: "https://ai-gateway.vercel.sh",
+		reasoning: true,
+		input: ["text", "image"],
+		cost: {
+			input: 0.22,
+			output: 0.66,
+			cacheRead: 0.007,
+			cacheWrite: 0,
+		},
+		contextWindow: 1000000,
+		maxTokens: 384000,
+	} satisfies Model<"anthropic-messages">,
 	"deepseek/deepseek-v4-pro": {
 		id: "deepseek/deepseek-v4-pro",
 		name: "DeepSeek V4 Pro",

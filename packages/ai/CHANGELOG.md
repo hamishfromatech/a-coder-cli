@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+- DeepSeek V4 Flash Vision Exp model (OpenCode Go + Vercel AI Gateway providers).
+
+### Changed
+- Updated pricing for `deepseek/deepseek-v4-flash` and `moonshotai/kimi-k2.6` on OpenRouter.
+
 ## [0.80.24] - 2026-08-21
 
 ### Fixed
