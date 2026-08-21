@@ -45,7 +45,20 @@ export function TodoPanel() {
 		return () => window.removeEventListener("a-coder:focus-todos", onFocus);
 	}, []);
 
-	if (todos.length === 0) return null;
+	const allDone = todos.length > 0 && todos.every((t) => t.status === "completed");
+	const [hideCompleted, setHideCompleted] = useState(false);
+	useEffect(() => {
+		// Once every task is completed, let the user briefly see the finished list,
+		// then collapse the panel. Reopens automatically if a new task is added.
+		if (!allDone) {
+			setHideCompleted(false);
+			return;
+		}
+		const timer = setTimeout(() => setHideCompleted(true), 1500);
+		return () => clearTimeout(timer);
+	}, [allDone]);
+
+	if (todos.length === 0 || hideCompleted) return null;
 
 	const done = todos.filter((t) => t.status === "completed").length;
 	const inProgress = todos.find((t) => t.status === "in_progress");
