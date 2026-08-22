@@ -186,7 +186,7 @@ export class SubAgentViewerComponent extends Container {
 			this.bodyContainer.addChild(new Text(theme.fg("error", this.killedNotice), 1, 1));
 		}
 
-		this.hint.setText(keyHint("tui.select.cancel", "back") + "  " + rawKeyHint("k", "kill"));
+		this.hint.setText(`${keyHint("tui.select.cancel", "back")}  ${rawKeyHint("k", "kill")}`);
 	}
 
 	private renderTimelineEvent(event: SubAgentProgressEvent): void {

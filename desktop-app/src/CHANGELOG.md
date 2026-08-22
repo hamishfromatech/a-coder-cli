@@ -26,6 +26,11 @@
 
 - Agent Teams roster viewer: a Session → Teams modal (or `/teams` command) showing the active team's members — lead vs. teammate, working/idle badges, unread inbox counts, and worktree path — backed by a new `read_teams` command that reads the on-disk team files.
 - The desktop todo panel now collapses automatically once all tasks are completed (reopens if a new task is added).
+- Persistent task graph panel (`TaskPanel`) mirroring the latest `task_create`/`task_list`/`task_update` result, mounted after the todo panel.
+- `ask_user_question` modal (`QuestionPrompt`) for structured multiple-choice questions, responding over the `question` extension UI RPC method.
+- Running-agents status chip in the status bar, fed by the new `subagents_update` engine event.
+- Teammate live transcript: `TeammateViewer` member rows are clickable when a live in-process sub-agent record exists, expanding an inline live transcript tail from the `subagents_update` event stream.
+- `/rewind [n]` command (via the command router → `rewind` RPC) that restores tracked files to a previous turn and shows the affected files in a toast.
 - Backported from main: provider-neutral `toolChoice: "auto" | "none"` simple option is now forwarded through all provider `streamSimple` paths.
 - Added **scoped persistent memory** to the `memory` tool. It now supports three scopes:
   - `global`: the existing `~/.a-coder-cli/MEMORY.md` shared across all workspaces and sessions.

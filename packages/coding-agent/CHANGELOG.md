@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- Persistent task graph: `task_create`, `task_get`, `task_list`, and `task_update` tools backed by an on-disk store under `~/.a-coder-cli/tasks`, with high-water-mark ids, bidirectional `blocks`/`blockedBy` dependencies, an `owner` field for Agent Teams, and a `/tasks` command (TUI `TaskListComponent` + desktop `TaskPanel`).
+- `ask_user_question` tool for structured multiple-choice questions (1-4 questions, headers, options, multiSelect) with a TUI `QuestionPromptComponent` and a desktop `QuestionPrompt` modal, wired over RPC via the `question` extension UI method.
+- JSONL output files for background sub-agents: each background run writes a tail-able event log at `<sessionDir>/tasks/<agentId>.output` (started/text/tool_use/tool_result/turn_usage/completed/failed), with the path surfaced in the spawn result and completion notification.
+- Running-agents status bar: a persistent TUI footer line (`BackgroundAgentsBar`) showing live sub-agent tool/token/elapsed summaries while agents run, driven by a new `subagents_update` session event; the desktop status bar shows a matching spinning "N agents" chip.
+- Teammate live transcript navigation: a TUI `SubAgentViewer` (Shift+↓ / `/subagents` picker, Enter to view a live transcript tail, `k` to kill) and a desktop `TeammateViewer` with clickable member rows that expand an inline live transcript panel.
+- File history & rewind: turn-bound pre-edit backups under `~/.a-coder-cli/file-history`, a `/rewind [n]` command (TUI) and a `rewind` RPC command (desktop `/rewind` via the command router) that restore tracked files to a previous user turn, leaving the conversation intact.
+
 ## [0.80.26] - 2026-08-22
 
 ## [0.80.25] - 2026-08-22

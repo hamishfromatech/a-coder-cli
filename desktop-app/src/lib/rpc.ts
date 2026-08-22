@@ -453,6 +453,16 @@ export const setEntryLabel = (entryId: string, label: string | undefined) =>
 export const getMessages = () =>
 	sendCommand({ type: "get_messages" }) as Promise<GetMessagesResult>;
 
+// ---- file history / rewind ----
+export interface RewindResult {
+	steps: number;
+	filesChanged: string[];
+	insertions: number;
+	deletions: number;
+}
+export const rewind = (steps?: number) =>
+	sendCommand({ type: "rewind", steps }) as Promise<RewindResult>;
+
 // ---- session import/export (jsonl) ----
 export const exportJsonl = (outputPath?: string) =>
 	sendCommand({ type: "export_jsonl", outputPath }) as Promise<ExportHtmlResult>;

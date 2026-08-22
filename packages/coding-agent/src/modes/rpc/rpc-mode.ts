@@ -806,6 +806,42 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			// =================================================================
+			// File history
+			// =================================================================
+
+			case "rewind": {
+				const fileHistory = session.fileHistory;
+				if (!fileHistory.isEnabled()) {
+					return error(id, "rewind", "File history is disabled. Nothing to rewind.");
+				}
+				const total = fileHistory.snapshotCount();
+				if (total === 0) {
+					return error(id, "rewind", "No file-history snapshots yet — make an edit first.");
+				}
+				const steps = command.steps ?? 1;
+				if (!Number.isInteger(steps) || steps < 1) {
+					return error(id, "rewind", `Invalid step count: ${steps}. Usage: /rewind [n] where n ≥ 1.`);
+				}
+				const target = fileHistory.getSnapshotByOffset(steps);
+				if (!target) {
+					return error(id, "rewind", `Cannot rewind ${steps} step(s): only ${total} snapshot(s) available.`);
+				}
+				try {
+					const stats = await fileHistory.getDiffStats(target.messageId);
+					const changed = await fileHistory.rewind(target.messageId);
+					return success(id, "rewind", {
+						steps,
+						filesChanged: changed,
+						insertions: stats.insertions,
+						deletions: stats.deletions,
+					});
+				} catch (err) {
+					const msg = err instanceof Error ? err.message : String(err);
+					return error(id, "rewind", `Rewind failed: ${msg}`);
+				}
+			}
+
+			// =================================================================
 			// Commands (available for invocation via prompt)
 			// =================================================================
 

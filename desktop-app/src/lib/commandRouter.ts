@@ -369,6 +369,39 @@ export const BUILTIN_COMMANDS: BuiltinCommand[] = [
 			label: "Quit",
 		}),
 	},
+	{
+		name: "rewind",
+		description: "Restore tracked files to a previous turn (undo file edits)",
+		route: (args, h) => ({
+			kind: "rpc",
+			call: async () => {
+				const stepsArg = args.trim();
+				const steps = stepsArg ? Number(stepsArg) : 1;
+				try {
+					const res = (await rpc.rewind(Number.isFinite(steps) ? steps : undefined)) as rpc.RewindResult;
+					const cwd = h.getCwd();
+					const rel = (p: string): string => {
+						if (!cwd) return p;
+						const r = p.startsWith(cwd) ? p.slice(cwd.length).replace(/^[\\/]+/, "") : p;
+						return r || p;
+					};
+					if (res.filesChanged.length === 0) {
+						toast.info(`/rewind`, `Already at that state \u2014 no files changed (rewound ${res.steps} turn(s)).`);
+					} else {
+						const body = res.filesChanged.map((p) => `  ${rel(p)}`).join("\n");
+						toast.success(
+							`/rewind`,
+							`Rewound ${res.steps} turn(s). Restored ${res.filesChanged.length} file(s) (+${res.insertions} -${res.deletions}):\n${body}`,
+						);
+					}
+				} catch (err) {
+					const msg = err instanceof Error ? err.message : String(err);
+					toast.error("/rewind", msg);
+				}
+			},
+			label: args.trim() ? `Rewind ${args.trim()} turn(s)` : "Rewind last turn",
+		}),
+	},
 ];
 
 // ============================================================================

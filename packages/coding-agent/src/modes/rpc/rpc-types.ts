@@ -86,6 +86,9 @@ export type RpcCommand =
 	// Messages
 	| { id?: string; type: "get_messages" }
 
+	// File history
+	| { id?: string; type: "rewind"; steps?: number }
+
 	// Commands (available for invocation via prompt)
 	| { id?: string; type: "get_commands" };
 

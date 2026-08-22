@@ -2773,6 +2773,12 @@ export class InteractiveMode {
 				void this.showTasksPanel();
 				return;
 			}
+			if (text === "/rewind" || text.startsWith("/rewind ")) {
+				const arg = text.startsWith("/rewind ") ? text.slice("/rewind ".length).trim() : "";
+				this.editor.setText("");
+				void this.handleRewindCommand(arg);
+				return;
+			}
 			if (text === "/debug") {
 				this.handleDebugCommand();
 				this.editor.setText("");
@@ -5490,6 +5496,86 @@ export class InteractiveMode {
 		this.editorContainer.addChild(this.subAgentViewer);
 		this.ui.setFocus(this.subAgentViewer);
 		this.ui.requestRender();
+	}
+
+	/**
+	 * `/rewind [n]` — restore tracked files to the state at the start of the
+	 * n-th-from-last user turn (default 1 = undo the most recent turn's edits).
+	 * Only files are rewound; the conversation log is left intact. Ports
+	 * easy-agent's `/rewind` command.
+	 */
+	private async handleRewindCommand(arg: string): Promise<void> {
+		const fileHistory = this.session.fileHistory;
+		const print = (message: string, kind: "info" | "error" = "info") => {
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new DynamicBorder());
+			this.chatContainer.addChild(
+				new Text(kind === "error" ? theme.fg("error", message) : theme.fg("text", message), 1, 0),
+			);
+			this.chatContainer.addChild(new DynamicBorder());
+			this.chatContainer.addChild(new Spacer(1));
+			this.ui.requestRender();
+		};
+
+		if (!fileHistory.isEnabled()) {
+			print("File history is disabled. Nothing to rewind.");
+			return;
+		}
+
+		const total = fileHistory.snapshotCount();
+		if (total === 0) {
+			print("No file-history snapshots yet — make an edit first.");
+			return;
+		}
+
+		let steps = 1;
+		if (arg) {
+			const parsed = Number(arg);
+			if (!Number.isInteger(parsed) || parsed < 1) {
+				print(`Invalid step count: ${arg}. Usage: /rewind [n] where n ≥ 1.`, "error");
+				return;
+			}
+			steps = parsed;
+		}
+
+		const target = fileHistory.getSnapshotByOffset(steps);
+		if (!target) {
+			print(`Cannot rewind ${steps} step(s): only ${total} snapshot(s) available.`, "error");
+			return;
+		}
+
+		const cwd = this.sessionManager.getCwd();
+		const rel = (p: string): string => {
+			const r = path.relative(cwd, p);
+			return r && !r.startsWith("..") ? r : p;
+		};
+
+		let stats: { insertions: number; deletions: number } | undefined;
+		try {
+			stats = await fileHistory.getDiffStats(target.messageId);
+		} catch {
+			stats = undefined;
+		}
+
+		let changed: string[];
+		try {
+			changed = await fileHistory.rewind(target.messageId);
+		} catch (error) {
+			const msg = error instanceof Error ? error.message : String(error);
+			print(`Rewind failed: ${msg}`, "error");
+			return;
+		}
+
+		if (changed.length === 0) {
+			print(`Already at that state — no files changed (rewound ${steps} turn(s)).`);
+			return;
+		}
+
+		const lines = [
+			`Rewound ${steps} turn(s). Restored ${changed.length} file(s)${stats ? ` (+${stats.insertions} -${stats.deletions})` : ""}:`,
+			...changed.map((p) => `  ${rel(p)}`),
+		];
+		print(lines.join("\n"));
 	}
 
 	private async handleExportCommand(text: string): Promise<void> {

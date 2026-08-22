@@ -99,6 +99,7 @@ describe("commandRouter", () => {
 				"teams",
 				"bash",
 				"quit",
+				"rewind",
 			];
 
 			for (const name of expectedCommands) {

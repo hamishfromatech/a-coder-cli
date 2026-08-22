@@ -41,5 +41,6 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "subagents", description: "Open subagent manager UI" },
 	{ name: "todos", description: "Show the current task list (from the todo tool)" },
 	{ name: "tasks", description: "Show the persistent task graph (from the task tools)" },
+	{ name: "rewind", description: "Restore tracked files to a previous turn (undo file edits)" },
 	{ name: "quit", description: `Quit ${APP_NAME}` },
 ];

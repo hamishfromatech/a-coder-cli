@@ -14,7 +14,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import type {
 	AfterToolCallContext,
 	AgentEvent,
@@ -92,6 +92,7 @@ import type {
 	SubAgentProgressEvent,
 	SubAgentRunResult,
 } from "./extensions/types.ts";
+import { FileHistory } from "./file-history.ts";
 import type { BashExecutionMessage, CustomMessage } from "./messages.ts";
 import type { ModelRegistry } from "./model-registry.ts";
 import {
@@ -422,6 +423,11 @@ export class AgentSession {
 		this._installAgentToolHooks();
 		this._installAgentNextTurnRefresh();
 
+		// Turn-bound file history: bind the checkpoint store to this session's
+		// cwd+id, and prune stale per-session backup directories best-effort.
+		this._fileHistory.configure(this._cwd, this.sessionId);
+		void this._fileHistory.cleanupOldBackups();
+
 		this._buildRuntime({
 			activeToolNames: this._initialActiveToolNames,
 			includeAllExtensionTools: !this._noTools,
@@ -570,6 +576,30 @@ export class AgentSession {
 				}
 			}
 
+			// File-history: back up the pre-edit content of any file Edit/Write is
+			// about to change, so `/rewind` can restore it. Runs before the tool
+			// mutates disk; best-effort and idempotent per turn. Relative paths
+			// resolve against the main session cwd (sub-agent worktree edits land
+			// outside it and are naturally skipped on rewind).
+			if (toolCall.name === "edit" || toolCall.name === "write") {
+				const rawArgs = args as Record<string, unknown> | null;
+				const fp =
+					rawArgs &&
+					(typeof rawArgs.path === "string"
+						? rawArgs.path
+						: typeof rawArgs.file_path === "string"
+							? rawArgs.file_path
+							: null);
+				if (fp) {
+					try {
+						const absPath = isAbsolute(fp) ? fp : join(this._cwd, fp);
+						void this._fileHistory.trackEdit(absPath);
+					} catch {
+						// best-effort: never block a tool call on file history
+					}
+				}
+			}
+
 			const runner = this._extensionRunner;
 			if (!runner.hasHandlers("tool_call")) {
 				return undefined;
@@ -687,6 +717,9 @@ export class AgentSession {
 		// This ensures the UI sees the updated queue state
 		if (event.type === "message_start" && event.message.role === "user") {
 			this._overflowRecoveryAttempted = false;
+			// Snapshot the filesystem at the start of this user turn so `/rewind`
+			// can restore tracked files to their pre-turn state.
+			void this._fileHistory.makeSnapshot(String(event.message.timestamp));
 			const messageText = this._getUserMessageText(event.message);
 			if (messageText) {
 				// Check steering queue first
@@ -1220,6 +1253,11 @@ export class AgentSession {
 	/** Current session ID */
 	get sessionId(): string {
 		return this.sessionManager.getSessionId();
+	}
+
+	/** Turn-bound file-history checkpoints backing `/rewind`. */
+	get fileHistory(): FileHistory {
+		return this._fileHistory;
 	}
 
 	/** Current session display name, if set */
@@ -3640,6 +3678,8 @@ export class AgentSession {
 	private _subAgents = new Map<string, InProcessSubAgentRecord>();
 	private _subAgentHandles = new Map<string, { abort: () => void; done: Promise<void> }>();
 	private _subAgentListeners = new Set<(records: InProcessSubAgentRecord[]) => void>();
+	/** Turn-bound file-history checkpoints backing `/rewind`. */
+	private _fileHistory = new FileHistory();
 	private _pendingNotifications: string[] = [];
 
 	private _extractAssistantText(msg: AgentMessage | undefined): string {
