@@ -81,6 +81,14 @@ export type ExtensionUiRequestEvent =
 	| {
 			type: "extension_ui_request";
 			id: string;
+			method: "question";
+			title: string;
+			questions: UserQuestion[];
+			timeout?: number;
+	  }
+	| {
+			type: "extension_ui_request";
+			id: string;
 			method: "confirm";
 			title: string;
 			message: string;
@@ -141,7 +149,16 @@ export type ExtensionUiRequestEvent =
 export type ExtensionUiResponse =
 	| { type: "extension_ui_response"; id: string; value: string }
 	| { type: "extension_ui_response"; id: string; confirmed: boolean }
+	| { type: "extension_ui_response"; id: string; answers: Record<string, string> }
 	| { type: "extension_ui_response"; id: string; cancelled: true };
+
+/** Structured multiple-choice question (ask_user_question tool). */
+export interface UserQuestion {
+	question: string;
+	header: string;
+	options: Array<{ label: string; description?: string }>;
+	multiSelect?: boolean;
+}
 
 export type AgentRole = "user" | "assistant" | "system" | "tool";
 

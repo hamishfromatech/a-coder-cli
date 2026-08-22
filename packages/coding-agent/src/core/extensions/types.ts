@@ -122,6 +122,28 @@ export type EditorFactory = (tui: TUI, theme: EditorTheme, keybindings: Keybindi
  * UI context for extensions to request interactive UI.
  * Each mode (interactive, RPC, print) provides its own implementation.
  */
+/** One selectable choice in a user question. */
+export interface UserQuestionOption {
+	label: string;
+	description?: string;
+}
+
+/** A structured multiple-choice question posed to the user. */
+export interface UserQuestion {
+	question: string;
+	header: string;
+	options: UserQuestionOption[];
+	multiSelect?: boolean;
+}
+
+/** Present structured multiple-choice questions to the user and wait for answers.
+ * Keys are question texts, values are the selected labels (comma-joined for
+ * multi-select). Returns undefined when the user declines to answer. */
+export type RequestUserQuestion = (
+	payload: { questions: UserQuestion[] },
+	opts?: ExtensionUIDialogOptions,
+) => Promise<{ answers: Record<string, string> } | undefined>;
+
 export interface ExtensionUIContext {
 	/** Show a selector and return the user's choice. */
 	select(title: string, options: string[], opts?: ExtensionUIDialogOptions): Promise<string | undefined>;
@@ -131,6 +153,9 @@ export interface ExtensionUIContext {
 
 	/** Show a text input dialog. */
 	input(title: string, placeholder?: string, opts?: ExtensionUIDialogOptions): Promise<string | undefined>;
+
+	/** Present structured multiple-choice questions (ask_user_question tool). Optional — absent in headless/print mode. */
+	requestUserQuestion?: RequestUserQuestion;
 
 	/** Show a notification to the user. */
 	notify(message: string, type?: "info" | "warning" | "error"): void;

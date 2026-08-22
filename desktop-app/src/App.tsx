@@ -41,6 +41,7 @@ import { SidebarProjects } from "./components/SidebarProjects";
 import { StatusBar } from "./components/StatusBar";
 import { Titlebar } from "./components/Titlebar";
 import { SubagentPanel } from "./components/SubagentPanel";
+import { QuestionPrompt } from "./components/QuestionPrompt";
 import { TeammateViewer } from "./components/TeammateViewer";
 import { Toaster } from "./components/Toaster";
 import { UpdateModal } from "./components/UpdateModal";
@@ -104,6 +105,10 @@ export default function App() {
 	const [showSettings, setShowSettings] = useState(false);
 	const [showSubagents, setShowSubagents] = useState(false);
 	const [showTeams, setShowTeams] = useState(false);
+	const [questionRequest, setQuestionRequest] = useState<{
+		id: string;
+		questions: import("./lib/rpc").UserQuestion[];
+	} | null>(null);
 	const [showHotkeys, setShowHotkeys] = useState(false);
 	const [showChangelog, setShowChangelog] = useState(false);
 	const [showMemory, setShowMemory] = useState(false);
@@ -536,6 +541,15 @@ export default function App() {
 							break;
 						case "extension_ui_request": {
 							const req = event as import("./lib/rpc").ExtensionUiRequestEvent;
+
+							// Structured question dialog (ask_user_question tool).
+							if (req.method === "question" && "questions" in req) {
+								const q = req as import("./lib/rpc").ExtensionUiRequestEvent & {
+									questions: import("./lib/rpc").UserQuestion[];
+								};
+								setQuestionRequest({ id: req.id, questions: q.questions });
+								break;
+							}
 
 							// Fire-and-forget extension UI methods: no response required.
 							if (req.method === "notify") {
@@ -991,6 +1005,28 @@ export default function App() {
 
 			<SubagentPanel open={showSubagents} onClose={() => setShowSubagents(false)} />
 			<TeammateViewer open={showTeams} onClose={() => setShowTeams(false)} />
+			{questionRequest && (
+				<QuestionPrompt
+					questions={questionRequest.questions}
+					onAnswer={(answers) => {
+						const id = questionRequest.id;
+						setQuestionRequest(null);
+						if (answers) {
+								void rpc.sendUiResponse({
+									type: "extension_ui_response",
+									id,
+									answers,
+								});
+							} else {
+								void rpc.sendUiResponse({
+									type: "extension_ui_response",
+									id,
+									cancelled: true as const,
+								});
+							}
+					}}
+				/>
+			)}
 
 			{trustPrompt && (
 				<TrustModal

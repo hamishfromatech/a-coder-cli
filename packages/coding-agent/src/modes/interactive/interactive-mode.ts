@@ -72,7 +72,7 @@ import type {
 	ProjectTrustContext,
 	WorkingIndicatorOptions,
 } from "../../core/extensions/index.ts";
-import type { InProcessSubAgentRecord } from "../../core/extensions/types.ts";
+import type { InProcessSubAgentRecord, UserQuestion } from "../../core/extensions/types.ts";
 import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/footer-data-provider.ts";
 import { configureHttpDispatcher, formatHttpIdleTimeoutMs } from "../../core/http-dispatcher.ts";
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.ts";
@@ -122,6 +122,7 @@ import { LoginDialogComponent } from "./components/login-dialog.ts";
 import { ModelSelectorComponent } from "./components/model-selector.ts";
 import { type AuthSelectorProvider, OAuthSelectorComponent } from "./components/oauth-selector.ts";
 import { PermissionModeSelectorComponent } from "./components/permission-mode-selector.ts";
+import { QuestionPromptComponent } from "./components/question-prompt.ts";
 import { ScopedModelsSelectorComponent } from "./components/scoped-models-selector.ts";
 import { SessionSelectorComponent } from "./components/session-selector.ts";
 import { SettingsSelectorComponent } from "./components/settings-selector.ts";
@@ -2096,6 +2097,7 @@ export class InteractiveMode {
 			select: (title, options, opts) => this.showExtensionSelector(title, options, opts),
 			confirm: (title, message, opts) => this.showExtensionConfirm(title, message, opts),
 			input: (title, placeholder, opts) => this.showExtensionInput(title, placeholder, opts),
+			requestUserQuestion: (payload, opts) => this.showUserQuestionPrompt(payload.questions, opts),
 			notify: (message, type) => this.showExtensionNotify(message, type),
 			onTerminalInput: (handler) => this.addExtensionTerminalInputListener(handler),
 			setStatus: (key, text) => this.setExtensionStatus(key, text),
@@ -2198,6 +2200,40 @@ export class InteractiveMode {
 		this.extensionSelector = undefined;
 		this.ui.setFocus(this.editor);
 		this.ui.requestRender();
+	}
+
+	/**
+	 * Show the structured multiple-choice question prompt (ask_user_question tool).
+	 * Returns the user's answers keyed by question text, or undefined when declined.
+	 */
+	private showUserQuestionPrompt(
+		questions: UserQuestion[],
+		opts?: ExtensionUIDialogOptions,
+	): Promise<{ answers: Record<string, string> } | undefined> {
+		return new Promise((resolve) => {
+			if (opts?.signal?.aborted) {
+				resolve(undefined);
+				return;
+			}
+
+			const onAbort = () => {
+				this.hideExtensionSelector();
+				resolve(undefined);
+			};
+			opts?.signal?.addEventListener("abort", onAbort, { once: true });
+
+			const component = new QuestionPromptComponent(questions, (answers) => {
+				opts?.signal?.removeEventListener("abort", onAbort);
+				this.hideExtensionSelector();
+				resolve(answers ? { answers } : undefined);
+			});
+
+			this.extensionSelector = component as unknown as ExtensionSelectorComponent;
+			this.editorContainer.clear();
+			this.editorContainer.addChild(component);
+			this.ui.setFocus(component);
+			this.ui.requestRender();
+		});
 	}
 
 	/**

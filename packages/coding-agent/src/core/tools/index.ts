@@ -43,6 +43,7 @@ export {
 	type LsToolOptions,
 } from "./ls.ts";
 
+import { createAskUserQuestionTool, createAskUserQuestionToolDefinition } from "./ask-user-question.ts";
 import {
 	createTaskCreateTool,
 	createTaskCreateToolDefinition,
@@ -124,6 +125,7 @@ export type ToolName =
 	| "find"
 	| "ls"
 	| "todo"
+	| "ask_user_question"
 	| "task_create"
 	| "task_get"
 	| "task_list"
@@ -142,6 +144,7 @@ export const allToolNames: Set<ToolName> = new Set([
 	"find",
 	"ls",
 	"todo",
+	"ask_user_question",
 	"task_create",
 	"task_get",
 	"task_list",
@@ -189,6 +192,8 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			);
 		case "todo":
 			return createTodoToolDefinition();
+		case "ask_user_question":
+			return createAskUserQuestionToolDefinition();
 		case "task_create":
 			return createTaskCreateToolDefinition();
 		case "task_get":
@@ -230,6 +235,8 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 			return createPlanModeTool(options?.planMode?.callbacks ?? { getPlanMode: () => false, setPlanMode: () => {} });
 		case "todo":
 			return createTodoTool();
+		case "ask_user_question":
+			return createAskUserQuestionTool();
 		case "task_create":
 			return createTaskCreateTool();
 		case "task_get":
@@ -257,6 +264,7 @@ export function createCodingToolDefinitions(cwd: string, options?: ToolsOptions)
 		createWriteToolDefinition(cwd, options?.write),
 		createPlanModeToolDefinition(options?.planMode?.callbacks ?? { getPlanMode: () => false, setPlanMode: () => {} }),
 		createTodoToolDefinition(),
+		createAskUserQuestionToolDefinition(),
 		createTaskCreateToolDefinition(),
 		createTaskGetToolDefinition(),
 		createTaskListToolDefinition(),
@@ -291,6 +299,7 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 			options?.planMode?.callbacks ?? { getPlanMode: () => false, setPlanMode: () => {} },
 		),
 		todo: createTodoToolDefinition(),
+		ask_user_question: createAskUserQuestionToolDefinition(),
 		task_create: createTaskCreateToolDefinition(),
 		task_get: createTaskGetToolDefinition(),
 		task_list: createTaskListToolDefinition(),
@@ -310,6 +319,7 @@ export function createCodingTools(cwd: string, options?: ToolsOptions): Tool[] {
 		createWriteTool(cwd, options?.write),
 		createPlanModeTool(options?.planMode?.callbacks ?? { getPlanMode: () => false, setPlanMode: () => {} }),
 		createTodoTool(),
+		createAskUserQuestionTool(),
 		createTaskCreateTool(),
 		createTaskGetTool(),
 		createTaskListTool(),
@@ -344,6 +354,7 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 			options?.planMode?.callbacks ?? { getPlanMode: () => false, setPlanMode: () => {} },
 		),
 		todo: createTodoTool(),
+		ask_user_question: createAskUserQuestionTool(),
 		task_create: createTaskCreateTool(),
 		task_get: createTaskGetTool(),
 		task_list: createTaskListTool(),

@@ -291,6 +291,14 @@ export type RpcExtensionUIRequest =
 	| {
 			type: "extension_ui_request";
 			id: string;
+			method: "question";
+			title: string;
+			questions: RpcUserQuestion[];
+			timeout?: number;
+	  }
+	| {
+			type: "extension_ui_request";
+			id: string;
 			method: "confirm";
 			title: string;
 			message: string;
@@ -343,7 +351,16 @@ export type RpcExtensionUIRequest =
 export type RpcExtensionUIResponse =
 	| { type: "extension_ui_response"; id: string; value: string }
 	| { type: "extension_ui_response"; id: string; confirmed: boolean }
+	| { type: "extension_ui_response"; id: string; answers: Record<string, string> }
 	| { type: "extension_ui_response"; id: string; cancelled: true };
+
+/** Structured multiple-choice question (ask_user_question tool). */
+export interface RpcUserQuestion {
+	question: string;
+	header: string;
+	options: Array<{ label: string; description?: string }>;
+	multiSelect?: boolean;
+}
 
 // ============================================================================
 // Helper type for extracting command types

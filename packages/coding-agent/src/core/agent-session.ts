@@ -2954,6 +2954,7 @@ export class AgentSession {
 					"edit",
 					"write",
 					"todo",
+					"ask_user_question",
 					"task_create",
 					"task_get",
 					"task_list",

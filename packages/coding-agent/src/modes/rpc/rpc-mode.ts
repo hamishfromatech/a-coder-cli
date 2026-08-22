@@ -149,6 +149,14 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				"cancelled" in r && r.cancelled ? undefined : "value" in r ? r.value : undefined,
 			),
 
+		requestUserQuestion: (payload, opts) =>
+			createDialogPromise(
+				opts,
+				undefined,
+				{ method: "question", title: "Questions", questions: payload.questions, timeout: opts?.timeout },
+				(r) => ("cancelled" in r && r.cancelled ? undefined : "answers" in r ? { answers: r.answers } : undefined),
+			),
+
 		notify(message: string, type?: "info" | "warning" | "error"): void {
 			// Fire and forget - no response needed
 			output({
