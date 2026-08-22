@@ -61,7 +61,10 @@ const MODE_META: Record<
 
 export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
 	const { status, error, isStreaming, thinkingLevel, permissionMode, contextUsage, streamingVerb } = useSessionStore();
+	const subAgents = useSessionStore((s) => s.subAgents);
 	const { stats } = useStatsStore();
+
+	const runningAgents = subAgents.filter((a) => a.status === "running");
 
 	const projectName = projectPath
 		? projectPath.split(/[/\\]/).filter(Boolean).at(-1) ?? projectPath
@@ -96,6 +99,18 @@ export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
 					<>
 						<Sep />
 						<PermissionModePicker mode={permissionMode} />
+					</>
+				)}
+				{runningAgents.length > 0 && (
+					<>
+						<Sep />
+						<span
+							className="flex items-center gap-1 font-mono pi-tabular text-pi-accent"
+							title={`${runningAgents.length} background sub-agent${runningAgents.length === 1 ? "" : "s"} running: ${runningAgents.map((a) => a.teammateName ?? a.agentType).join(", ")}`}
+						>
+							<Loader2 className="h-3 w-3 animate-spin" />
+							<span className="font-medium">{runningAgents.length} agent{runningAgents.length === 1 ? "" : "s"}</span>
+						</span>
 					</>
 				)}
 			</div>

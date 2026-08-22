@@ -102,6 +102,7 @@ import { ensureTool } from "../../utils/tools-manager.ts";
 import { checkForNewPiVersion, type LatestPiRelease } from "../../utils/version-check.ts";
 import { ArminComponent } from "./components/armin.ts";
 import { AssistantMessageComponent } from "./components/assistant-message.ts";
+import { BackgroundAgentsBarComponent } from "./components/background-agent-bar.ts";
 import { BashExecutionComponent } from "./components/bash-execution.ts";
 import { BorderedLoader } from "./components/bordered-loader.ts";
 import { BranchSummaryMessageComponent } from "./components/branch-summary-message.ts";
@@ -367,6 +368,8 @@ export class InteractiveMode {
 	private subAgentContainer: Container;
 	private subAgentCards = new Map<string, SubAgentCardComponent>();
 	private unsubscribeSubAgents?: () => void;
+	private backgroundAgentsBar = new BackgroundAgentsBarComponent();
+	private backgroundAgentsBarTimer: ReturnType<typeof setInterval> | undefined;
 
 	// Auto-compaction state
 	private autoCompactionEscapeHandler?: () => void;
@@ -683,6 +686,7 @@ export class InteractiveMode {
 		this.ui.addChild(this.subAgentContainer);
 		this.ui.addChild(this.pendingMessagesContainer);
 		this.ui.addChild(this.statusContainer);
+		this.ui.addChild(this.backgroundAgentsBar);
 		this.renderWidgets(); // Initialize with default spacer
 		this.ui.addChild(this.widgetContainerAbove);
 		this.ui.addChild(this.editorContainer);
@@ -1709,6 +1713,11 @@ export class InteractiveMode {
 		this.chatContainer.clear();
 		this.subAgentContainer.clear();
 		this.subAgentCards.clear();
+		this.backgroundAgentsBar.update([]);
+		if (this.backgroundAgentsBarTimer) {
+			clearInterval(this.backgroundAgentsBarTimer);
+			this.backgroundAgentsBarTimer = undefined;
+		}
 		this.pendingMessagesContainer.clear();
 		this.compactionQueuedMessages = [];
 		this.streamingComponent = undefined;
@@ -2869,6 +2878,21 @@ export class InteractiveMode {
 				card.update(record);
 			}
 		}
+
+		// Persistent running-agents bar: show while at least one sub-agent is
+		// running, and tick a 1s timer so elapsed durations stay live.
+		this.backgroundAgentsBar.update(records);
+		const anyRunning = records.some((r) => r.status === "running");
+		if (anyRunning && !this.backgroundAgentsBarTimer) {
+			this.backgroundAgentsBarTimer = setInterval(() => {
+				this.backgroundAgentsBar.invalidate();
+				this.ui.requestRender();
+			}, 1000);
+		} else if (!anyRunning && this.backgroundAgentsBarTimer) {
+			clearInterval(this.backgroundAgentsBarTimer);
+			this.backgroundAgentsBarTimer = undefined;
+		}
+
 		this.ui.requestRender();
 	}
 
@@ -6061,6 +6085,10 @@ export class InteractiveMode {
 		if (this.unsubscribeSubAgents) {
 			this.unsubscribeSubAgents();
 			this.unsubscribeSubAgents = undefined;
+		}
+		if (this.backgroundAgentsBarTimer) {
+			clearInterval(this.backgroundAgentsBarTimer);
+			this.backgroundAgentsBarTimer = undefined;
 		}
 		if (this.isInitialized) {
 			this.ui.stop();

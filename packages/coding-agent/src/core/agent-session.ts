@@ -161,6 +161,7 @@ export type AgentSessionEvent =
 			steering: readonly string[];
 			followUp: readonly string[];
 	  }
+	| { type: "subagents_update"; agents: InProcessSubAgentRecord[] }
 	| { type: "compaction_start"; reason: "manual" | "threshold" | "overflow" }
 	| { type: "entry_appended"; entry: SessionEntry }
 	| { type: "session_info_changed"; name: string | undefined }
@@ -4064,7 +4065,6 @@ export class AgentSession {
 	}
 
 	private _notifySubAgents(): void {
-		if (this._subAgentListeners.size === 0) return;
 		const records = [...this._subAgents.values()].map((record) => ({
 			...record,
 			timeline: [...record.timeline],
@@ -4072,6 +4072,9 @@ export class AgentSession {
 		for (const listener of this._subAgentListeners) {
 			listener(records);
 		}
+		// Mirror the snapshot as a session event so RPC clients (the desktop)
+		// can render live sub-agent state without polling.
+		this._emit({ type: "subagents_update", agents: records });
 	}
 
 	drainPendingNotifications(): string[] {

@@ -56,6 +56,9 @@ export interface SessionState {
 	messages: AgentMessage[];
 	steering: string[];
 	followUp: string[];
+	/** Live snapshot of in-process background sub-agents (from subagents_update events). */
+	subAgents: import("../lib/rpc").SubAgentRecord[];
+	setSubAgents: (agents: import("../lib/rpc").SubAgentRecord[]) => void;
 	streamingVerb: string;
 	/** Commands returned by `rpc.getCommands()` — extension/skill/prompt slash commands. */
 	availableCommands: Array<{
@@ -126,6 +129,8 @@ export const useSessionStore = create<SessionState>((set) => ({
 	messages: [],
 	steering: [],
 	followUp: [],
+	subAgents: [],
+	setSubAgents: (subAgents) => set({ subAgents }),
 	streamingVerb: pickLoadingVerb(),
 	availableCommands: [],
 	setAvailableCommands: (availableCommands) => set({ availableCommands }),
@@ -166,6 +171,7 @@ export const useSessionStore = create<SessionState>((set) => ({
 			messages: [],
 			steering: [],
 			followUp: [],
+			subAgents: [],
 			streamingVerb: pickLoadingVerb(),
 			sessionName: null,
 			sessionId: null,

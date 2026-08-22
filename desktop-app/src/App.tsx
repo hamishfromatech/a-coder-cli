@@ -539,6 +539,11 @@ export default function App() {
 						case "queue_update":
 							updateQueue(event.steering ?? [], event.followUp ?? []);
 							break;
+						case "subagents_update": {
+							const sub = event as import("./lib/rpc").SubagentsUpdateEvent;
+							useSessionStore.getState().setSubAgents(sub.agents ?? []);
+							break;
+						}
 						case "extension_ui_request": {
 							const req = event as import("./lib/rpc").ExtensionUiRequestEvent;
 

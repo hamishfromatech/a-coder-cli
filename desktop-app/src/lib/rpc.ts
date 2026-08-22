@@ -22,6 +22,7 @@ export type RpcEvent =
 	| SessionInfoChangedEvent
 	| ExtensionUiRequestEvent
 	| QueueUpdateEvent
+	| SubagentsUpdateEvent
 	| AutoRetryStartEvent
 	| AutoRetryEndEvent
 	| CompactionEndEvent;
@@ -67,6 +68,33 @@ export interface QueueUpdateEvent {
 	type: "queue_update";
 	steering: string[];
 	followUp: string[];
+}
+
+/** Live snapshot of the in-process sub-agent store (background sub-agents + Agent Teams teammates). */
+export interface SubagentsUpdateEvent {
+	type: "subagents_update";
+	agents: SubAgentRecord[];
+}
+
+export interface SubAgentRecord {
+	id: string;
+	agentType: string;
+	status: "running" | "completed" | "failed" | "killed";
+	createdAt: number;
+	startedAt: number;
+	updatedAt: number;
+	finalText?: string;
+	toolUseCount: number;
+	turnCount: number;
+	totalTokens?: number;
+	inputTokens?: number;
+	outputTokens?: number;
+	lastToolName?: string;
+	worktreePath?: string;
+	worktreeBranch?: string;
+	teammateName?: string;
+	outputFile?: string;
+	error?: string;
 }
 
 export type ExtensionUiRequestEvent =
