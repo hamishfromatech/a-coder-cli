@@ -1,6 +1,15 @@
 # Changelog
 
-## [Unreleased]
+## [0.80.25] - 2026-08-22
+
+### Added
+
+- Named sub-agents: agent definitions as Markdown files (`.a-coder-cli/agents/*.md`, YAML frontmatter for tools/model/maxTurns) loaded from project and user scopes, surfaced to the model via the `subagent_type` parameter.
+- In-process sub-agent execution: `runSubAgent` runs a nested agent with shared permissions and its own tool set, instead of spawning a separate CLI process.
+- In-process background sub-agents: `runSubAgentBackground`, `getSubAgent`, `listSubAgents`, `waitSubAgent`, and `killSubAgent` on `AgentSession`, plus `spawn_subagent` `detached` support.
+- Live sub-agent progress cards in the TUI (running/done/failed/killed, tool-use counts, last tool) plus a formatted `N tokens` line and a completion notification injected into the parent's next turn.
+- Worktree isolation for sub-agents (`isolation: "worktree"`): a fresh git worktree is created for the sub-agent's file edits and removed on completion unless it has changes.
+- Agent Teams: `team_create`, `team_delete`, and `send_message` tools for spawning named teammates and messaging them via per-teammate inboxes under `~/.a-coder-cli/teams`.
 
 ## [0.80.24] - 2026-08-21
 

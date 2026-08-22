@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.80.25] - 2026-08-22
 
 ### Added
 - DeepSeek V4 Flash Vision Exp model (OpenCode Go + Vercel AI Gateway providers).

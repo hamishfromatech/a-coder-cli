@@ -1,6 +1,10 @@
 # Changelog
 
-## [Unreleased]
+## [0.80.25] - 2026-08-22
+
+### Added
+
+- `AgentEvent.turn_end` now carries an optional `usage` field (input/output/cache/total tokens and cost) so sub-agent runners and UIs can surface per-turn token usage.
 
 ## [0.80.24] - 2026-08-21
 

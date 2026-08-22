@@ -23,6 +23,7 @@
 
 ### Added
 
+- Agent Teams roster viewer: a Session → Teams modal (or `/teams` command) showing the active team's members — lead vs. teammate, working/idle badges, unread inbox counts, and worktree path — backed by a new `read_teams` command that reads the on-disk team files.
 - The desktop todo panel now collapses automatically once all tasks are completed (reopens if a new task is added).
 - Backported from main: provider-neutral `toolChoice: "auto" | "none"` simple option is now forwarded through all provider `streamSimple` paths.
 - Added **scoped persistent memory** to the `memory` tool. It now supports three scopes:
