@@ -126,15 +126,22 @@ try {
 const cargoTomlPath = join(process.cwd(), 'desktop-app', 'src-tauri', 'Cargo.toml');
 try {
 	const cargoContent = readFileSync(cargoTomlPath, 'utf8');
-	const updatedCargo = cargoContent.replace(
-		/(^\[package\]\s*\n\s*version\s*=\s*)"[^"]*"/m,
+	// Match the [package] section (up to the next table header) so `version` is
+	// found regardless of field ordering (e.g. `name` before `version`).
+	const packageSection = cargoContent.match(/\[package\][^\[]*/)?.[0];
+	if (!packageSection || !/^version\s*=/m.test(packageSection)) {
+		console.error('\n❌ ERROR: Could not find a `version` field in the [package] section of desktop-app/src-tauri/Cargo.toml');
+		process.exit(1);
+	}
+	const updatedSection = packageSection.replace(
+		/(^version\s*=\s*)"[^"]*"/m,
 		`$1"${lockstepVersion}"`
 	);
-	if (updatedCargo !== cargoContent) {
-		const oldVersion = cargoContent.match(/^\[package\]\s*\n\s*version\s*=\s*"([^"]*)"/m)?.[1];
+	if (updatedSection !== packageSection) {
+		const oldVersion = packageSection.match(/^version\s*=\s*"([^"]*)"/m)?.[1];
 		console.log(`\ndesktop-app/src-tauri/Cargo.toml:`);
 		console.log(`  version: ${oldVersion} → ${lockstepVersion}`);
-		writeFileSync(cargoTomlPath, updatedCargo);
+		writeFileSync(cargoTomlPath, cargoContent.replace(packageSection, updatedSection));
 		desktopUpdates++;
 	}
 } catch {}

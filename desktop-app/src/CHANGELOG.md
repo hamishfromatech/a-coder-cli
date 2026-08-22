@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Fixed the desktop engine failing to start with `Download failed (status 404 Not Found)`: the version-sync script never updated `desktop-app/src-tauri/Cargo.toml` (its pattern required `version` to directly follow `[package]`, but `name` sits between them), so released desktop apps identified themselves by a stale Cargo version and tried to download a nonexistent matching CLI release tag. `Cargo.toml` now tracks the lockstep version and the sync script fails loudly if it cannot find the version field.
 - Fixed the desktop build: added `session_info_changed` to the `RpcEvent` union so `tsc` passes.
 - Backported from main: Anthropic refusal errors now use server-side refusal fallbacks when the model metadata permits them, avoiding some "refusal" stop-reason failures during summarization and normal turns.
 - Backported from main: OpenAI Responses incomplete stops are now classified correctly (`max_output_tokens` => recoverable length stop, other reasons => error), and recoverable length stops trigger one compact-and-retry attempt.
