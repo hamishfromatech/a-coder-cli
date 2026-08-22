@@ -2,6 +2,7 @@ import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { findAgent } from "../agents/index.ts";
 import type { ExtensionFactory, InProcessSubAgentRecord, SubAgentRunResult } from "../extensions/types.ts";
+import { getTaskOutputPath } from "./task-output.ts";
 
 export interface SubagentToolOptions {
 	cliPath?: string;
@@ -143,7 +144,7 @@ export function createSubagentExtensionFactory(_options: SubagentToolOptions = {
 					content: [
 						{
 							type: "text",
-							text: `Started background subagent "${id}" (${subagentType ?? "general-purpose"}). Use get_subagent_status or wait_subagent to check on it; kill_subagent to stop it.`,
+							text: `Started background subagent "${id}" (${subagentType ?? "general-purpose"}). Use get_subagent_status or wait_subagent to check on it; kill_subagent to stop it. Live progress log (Read or Bash tail to watch): ${getTaskOutputPath(ctx.sessionManager.getSessionDir(), id)}`,
 						},
 					],
 					details: record ?? null,

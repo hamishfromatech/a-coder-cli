@@ -382,6 +382,8 @@ export interface InProcessSubAgentRecord {
 	worktreeBranch?: string;
 	/** Teammate name when this sub-agent was spawned as a named Agent Teams member. */
 	teammateName?: string;
+	/** Absolute path to the JSONL event log this sub-agent appends to while running (see subagents/task-output.ts). */
+	outputFile?: string;
 	error?: string;
 }
 

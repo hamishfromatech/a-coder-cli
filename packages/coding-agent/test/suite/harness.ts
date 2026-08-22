@@ -71,6 +71,8 @@ export interface HarnessOptions {
 	resourceLoader?: ResourceLoader;
 	extensionFactories?: Array<ExtensionFactory | CreateTestExtensionsResultInput>;
 	withConfiguredAuth?: boolean;
+	/** When set, the harness uses a real (temp) session directory instead of an in-memory session manager — needed for features that write session-scoped files (e.g. background sub-agent output logs). */
+	sessionDir?: string;
 }
 
 export interface Harness {
@@ -108,7 +110,9 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 	const withConfiguredAuth = options.withConfiguredAuth ?? true;
 	const extensionRunnerRef: { current?: ExtensionRunner } = {};
 
-	const sessionManager = SessionManager.inMemory();
+	const sessionManager = options.sessionDir
+		? SessionManager.create(tempDir, options.sessionDir)
+		: SessionManager.inMemory();
 	const settingsManager = SettingsManager.inMemory(options.settings);
 
 	const authStorage = AuthStorage.inMemory();

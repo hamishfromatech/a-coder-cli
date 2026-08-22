@@ -5,6 +5,7 @@ import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { ENV_TEAMS_DIR } from "../../src/config.ts";
 import type { InProcessSubAgentRecord } from "../../src/core/extensions/types.ts";
+import { readTaskOutputEvents } from "../../src/core/subagents/task-output.ts";
 import { readTeamFile, TEAM_LEAD_NAME, writeTeamFile } from "../../src/core/teams/team-file.ts";
 import { createHarness, type Harness } from "./harness.ts";
 
@@ -109,6 +110,29 @@ describe("AgentSession background sub-agents (in-process store)", () => {
 		const record = harness.session.getSubAgent(id);
 		expect(record?.status).toBe("failed");
 		expect(record?.error).toContain("Unknown subagent_type");
+	});
+
+	it("writes a JSONL output file for background sub-agents", async () => {
+		const sessionDir = join(tmpdir(), `pi-suite-taskout-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		const harness = await createHarness({ sessionDir });
+		harnesses.push(harness);
+
+		harness.setResponses([fauxAssistantMessage("output file reply")]);
+
+		const { id } = harness.session.runSubAgentBackground({
+			id: "bg-output",
+			prompt: "say ok",
+			maxTurns: 5,
+		});
+		await harness.session.waitSubAgent(id);
+
+		const record = harness.session.getSubAgent(id);
+		expect(record?.outputFile).toBeTruthy();
+		const events = await readTaskOutputEvents(record!.outputFile!);
+		const types = events.map((r) => r.event.type);
+		expect(types).toContain("started");
+		expect(types).toContain("text");
+		expect(types).toContain("completed");
 	});
 
 	it("kill_subagent aborts a running background sub-agent", async () => {

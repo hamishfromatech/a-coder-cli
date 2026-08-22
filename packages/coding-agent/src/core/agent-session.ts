@@ -16,6 +16,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import type {
+	AfterToolCallContext,
 	AgentEvent,
 	AgentMessage,
 	AgentState,
@@ -105,6 +106,12 @@ import { CURRENT_SESSION_VERSION, getLatestCompactionEntry, type SessionHeader }
 import type { PermissionMode, PermissionPolicyConfig, SettingsManager } from "./settings-manager.ts";
 import type { SlashCommandInfo } from "./slash-commands.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
+import {
+	appendTaskOutput,
+	ensureTaskOutputFile,
+	getTaskOutputPath,
+	previewToolResult,
+} from "./subagents/task-output.ts";
 import { type BuildSystemPromptOptions, buildSystemPrompt } from "./system-prompt.ts";
 import { drainUnreadMessages, formatMailboxAttachment } from "./teams/mailbox.ts";
 import { addTeamMember, formatAgentId, setMemberActive } from "./teams/team-file.ts";
@@ -289,6 +296,20 @@ function estimateMessagesTokens(messages: AgentMessage[]): number {
 
 /** Standard thinking levels */
 const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high"];
+
+/** Mirror one tool result (truncated preview) into a background sub-agent's .output file. */
+function appendToolResultToOutput(outputFile: string, context: AfterToolCallContext): void {
+	const preview = context.result?.content
+		?.map((c) => (typeof c === "string" || "text" in c ? ((c as { text?: string }).text ?? "") : ""))
+		.join("\n")
+		?.trim();
+	void appendTaskOutput(outputFile, {
+		type: "tool_result",
+		toolName: context.toolCall?.name ?? "unknown",
+		isError: context.isError,
+		preview: previewToolResult(preview ?? "", 2000),
+	});
+}
 
 // ============================================================================
 // AgentSession Class
@@ -3677,6 +3698,13 @@ export class AgentSession {
 		);
 		if (resolved.invalidTools.length) record.error = `invalid tools: ${resolved.invalidTools.join(", ")}`;
 
+		// Background output file: every progress event is appended as JSONL so
+		// the parent (or the user) can Read/tail it mid-flight. Skipped for
+		// in-memory sessions (no session directory on disk).
+		const sessionDir = this.sessionManager.getSessionDir();
+		const outputFile = sessionDir ? getTaskOutputPath(sessionDir, id) : undefined;
+		record.outputFile = outputFile;
+
 		// Team tools: build a SendMessage with the teammate's identity captured,
 		// and keep team_create/team_delete out of a teammate's toolset (nesting
 		// teams is forbidden). `worktree` rebuilds builtin tools against the
@@ -3733,6 +3761,14 @@ export class AgentSession {
 		let subAgentRef: Agent | undefined;
 
 		const done = (async () => {
+			// Best-effort: create the .output file + write the started event. IO
+			// failures never block the sub-agent run itself.
+			if (outputFile) {
+				await ensureTaskOutputFile(sessionDir, id)
+					.then(() => appendTaskOutput(outputFile, { type: "started", agentType, prompt: params.prompt }))
+					.catch(() => {});
+			}
+
 			// Agent Teams: register this sub-agent as an active teammate before
 			// any work, so the lead can SendMessage it immediately. If the team
 			// file is gone (deleted mid-flight), fall back to running detached.
@@ -3790,6 +3826,10 @@ export class AgentSession {
 				return;
 			}
 
+			// Wrap the parent's afterToolCall so each tool result is mirrored into
+			// the .output file (with a truncated preview) while the parent hook
+			// keeps running unchanged (permission decisions etc.).
+			const parentAfterToolCall = parent.afterToolCall;
 			const subAgent = new Agent({
 				initialState: {
 					systemPrompt,
@@ -3804,7 +3844,17 @@ export class AgentSession {
 				onPayload: parent.onPayload,
 				onResponse: parent.onResponse,
 				beforeToolCall: parent.beforeToolCall,
-				afterToolCall: parent.afterToolCall,
+				afterToolCall: outputFile
+					? parentAfterToolCall
+						? async (context: AfterToolCallContext, signal?: AbortSignal) => {
+								void appendToolResultToOutput(outputFile, context);
+								return parentAfterToolCall(context, signal);
+							}
+						: async (context: AfterToolCallContext) => {
+								void appendToolResultToOutput(outputFile, context);
+								return undefined;
+							}
+					: parentAfterToolCall,
 				transport: parent.transport,
 				toolExecution: parent.toolExecution,
 			});
@@ -3817,6 +3867,7 @@ export class AgentSession {
 							const ev: SubAgentProgressEvent = { type: "tool_use_start", toolName: event.toolName };
 							onProgress?.(ev);
 							pushEvent(ev);
+							if (outputFile) void appendTaskOutput(outputFile, { type: "tool_use", toolName: event.toolName });
 						}
 						break;
 					case "tool_execution_end":
@@ -3842,6 +3893,14 @@ export class AgentSession {
 								record.totalTokens = totalTokens;
 								record.inputTokens = inputTokens;
 								record.outputTokens = outputTokens;
+								if (outputFile)
+									void appendTaskOutput(outputFile, {
+										type: "turn_usage",
+										inputTokens: usage.input,
+										outputTokens: usage.output,
+										totalTokens: usage.totalTokens,
+										turn: turnCount,
+									});
 							}
 							const ev: SubAgentProgressEvent = { type: "turn_complete", turnCount };
 							onProgress?.(ev);
@@ -3856,6 +3915,7 @@ export class AgentSession {
 								const ev: SubAgentProgressEvent = { type: "text", text };
 								onProgress?.(ev);
 								pushEvent(ev);
+								if (outputFile) void appendTaskOutput(outputFile, { type: "text", text: text.slice(0, 4000) });
 							}
 						}
 						break;
@@ -3901,6 +3961,15 @@ export class AgentSession {
 				};
 				onProgress?.(completedEvent);
 				record.timeline.push(completedEvent);
+				if (outputFile)
+					void appendTaskOutput(outputFile, {
+						type: "completed",
+						reason: record.status,
+						finalText: finalText.slice(0, 4000),
+						durationMs: Date.now() - record.startedAt,
+						totalTokens,
+						toolUseCount,
+					});
 				unsub();
 				if (worktreeInfo) {
 					await this._cleanupSubAgentWorktree(record, worktreeInfo);
@@ -4033,7 +4102,8 @@ export class AgentSession {
 		const worktree = record.worktreePath
 			? `\nWorktree kept at: ${record.worktreePath} (${record.worktreeBranch})`
 			: "";
-		return `[${parts.join(", ")}]\n${body ?? ""}${worktree}`;
+		const output = record.outputFile ? `\nFull transcript: ${record.outputFile}` : "";
+		return `[${parts.join(", ")}]\n${body ?? ""}${worktree}${output}`;
 	}
 
 	getContextUsage(): ContextUsage | undefined {
