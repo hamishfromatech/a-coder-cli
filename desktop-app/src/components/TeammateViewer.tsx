@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, RefreshCw, Users, X } from "lucide-react";
 import { useModalA11y } from "../hooks/useModalA11y";
+import { useSessionStore } from "../stores/session-store";
 import * as rpc from "../lib/rpc";
 import { Button } from "./ui/Button";
 import { IconButton } from "./ui/Button";
@@ -33,6 +34,9 @@ export function TeammateViewer({ open, onClose }: TeammateViewerProps) {
 	const [teams, setTeams] = useState<rpc.TeamFile[]>([]);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [viewingMember, setViewingMember] = useState<string | null>(null);
+	/** Live in-process sub-agent records (subagents_update events). */
+	const subAgents = useSessionStore((s) => s.subAgents);
 	useModalA11y(modalRef, open, onClose);
 
 	const load = useCallback(async () => {
@@ -52,6 +56,8 @@ export function TeammateViewer({ open, onClose }: TeammateViewerProps) {
 	useEffect(() => {
 		if (open) {
 			void load();
+		} else {
+			setViewingMember(null);
 		}
 	}, [open, load]);
 
@@ -113,10 +119,13 @@ export function TeammateViewer({ open, onClose }: TeammateViewerProps) {
 										{team.members.map((member) => {
 											const isLead = member.name === TEAM_LEAD_NAME;
 											const variant: BadgeVariant = member.isActive ? "accent" : "muted";
+											const live = subAgents.find((a) => a.teammateName === member.name);
+											const isViewing = viewingMember === member.agentId;
 											return (
 												<li
 													key={member.agentId}
-													className="rounded-lg bg-pi-surface-raised p-2.5 shadow-ring"
+													className={`rounded-lg bg-pi-surface-raised p-2.5 shadow-ring ${live ? "cursor-pointer hover:bg-pi-surface-overlay" : ""}`}
+												onClick={live ? () => setViewingMember(isViewing ? null : member.agentId) : undefined}
 												>
 													<div className="flex items-center justify-between gap-2">
 														<div className="flex min-w-0 flex-1 items-center gap-2">
@@ -151,6 +160,38 @@ export function TeammateViewer({ open, onClose }: TeammateViewerProps) {
 															)}
 															<p>joined {formatJoined(member.joinedAt)}</p>
 														</div>
+													)}
+													{live && isViewing && (
+														<div className="mt-2 max-h-48 overflow-y-auto rounded-md border border-pi-border bg-pi-surface px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
+															<div className="mb-1 flex items-center gap-2 font-mono text-3xs text-pi-text-faint">
+																<span>
+																	{live.toolUseCount} tools · {live.turnCount} turns
+																	{live.totalTokens ? ` · ${live.totalTokens} tok` : ""}
+																</span>
+																<span className="ml-auto">live</span>
+															</div>
+															{(live.timeline ?? []).slice(-10).map((event, i) => (
+																<p key={i} className="whitespace-pre-wrap font-mono text-3xs leading-snug">
+																	{event.type === "text"
+																		? event.text.slice(0, 300)
+																		: event.type === "tool_use_start"
+																			? `→ ${event.toolName}`
+																			: event.type === "tool_use_done"
+																				? `${event.isError ? "✗" : "✓"} ${event.toolName}`
+																				: event.type === "turn_complete"
+																					? `— turn ${event.turnCount}`
+																					: event.type === "completed"
+																						? `— completed (${event.toolUseCount} tools)`
+																						: "— aborted"}
+																</p>
+															))}
+															{(live.timeline ?? []).length === 0 && (
+																<p className="font-mono text-3xs text-pi-text-faint">(no events yet)</p>
+															)}
+														</div>
+													)}
+													{live && !isViewing && (
+													<p className="mt-1 text-3xs text-pi-text-faint">click to view live transcript</p>
 													)}
 												</li>
 											);

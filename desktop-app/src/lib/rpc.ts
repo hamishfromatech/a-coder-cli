@@ -71,6 +71,14 @@ export interface QueueUpdateEvent {
 }
 
 /** Live snapshot of the in-process sub-agent store (background sub-agents + Agent Teams teammates). */
+export type SubAgentTimelineEvent =
+	| { type: "tool_use_start"; toolName: string }
+	| { type: "tool_use_done"; toolName: string; isError?: boolean }
+	| { type: "text"; text: string }
+	| { type: "turn_complete"; turnCount: number }
+	| { type: "completed"; finalText: string; toolUseCount: number; turnCount: number }
+	| { type: "aborted" };
+
 export interface SubagentsUpdateEvent {
 	type: "subagents_update";
 	agents: SubAgentRecord[];
@@ -95,6 +103,8 @@ export interface SubAgentRecord {
 	teammateName?: string;
 	outputFile?: string;
 	error?: string;
+	/** Ordered progress events (live transcript tail for the viewer). */
+	timeline?: SubAgentTimelineEvent[];
 }
 
 export type ExtensionUiRequestEvent =

@@ -31,6 +31,7 @@ export interface AppKeybindings {
 	"app.session.new": true;
 	"app.session.tree": true;
 	"app.session.fork": true;
+	"app.subagents.view": true;
 	"app.session.resume": true;
 	"app.tree.foldOrUp": true;
 	"app.tree.unfoldOrDown": true;
@@ -120,6 +121,10 @@ export const KEYBINDINGS = {
 	"app.session.new": { defaultKeys: [], description: "Start a new session" },
 	"app.session.tree": { defaultKeys: [], description: "Open session tree" },
 	"app.session.fork": { defaultKeys: [], description: "Fork current session" },
+	"app.subagents.view": {
+		defaultKeys: "shift+down",
+		description: "Open the background sub-agent viewer",
+	},
 	"app.session.resume": { defaultKeys: [], description: "Resume a session" },
 	"app.tree.foldOrUp": {
 		defaultKeys: ["ctrl+left", "alt+left"],

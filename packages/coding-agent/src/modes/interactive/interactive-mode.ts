@@ -137,6 +137,7 @@ import {
 	WorkingStatusIndicator,
 } from "./components/status-indicator.ts";
 import { SubAgentCardComponent } from "./components/subagent-card.ts";
+import { SubAgentViewerComponent } from "./components/subagent-viewer.ts";
 import { TaskListComponent } from "./components/task-list.ts";
 import { readTodosFromBranch, TodoListComponent } from "./components/todo-list.ts";
 import { ToolExecutionComponent } from "./components/tool-execution.ts";
@@ -370,6 +371,7 @@ export class InteractiveMode {
 	private unsubscribeSubAgents?: () => void;
 	private backgroundAgentsBar = new BackgroundAgentsBarComponent();
 	private backgroundAgentsBarTimer: ReturnType<typeof setInterval> | undefined;
+	private subAgentViewer?: SubAgentViewerComponent;
 
 	// Auto-compaction state
 	private autoCompactionEscapeHandler?: () => void;
@@ -2599,6 +2601,7 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.session.fork", () => this.showUserMessageSelector());
 		this.defaultEditor.onAction("app.session.resume", () => this.showSessionSelector());
 		this.defaultEditor.onAction("app.permissionMode.select", () => this.showPermissionModeSelector());
+		this.defaultEditor.onAction("app.subagents.view", () => this.showSubAgentViewer());
 		this.defaultEditor.onAction("app.planMode.toggle", () => this.togglePlanMode());
 
 		this.defaultEditor.onChange = (text: string) => {
@@ -2882,6 +2885,8 @@ export class InteractiveMode {
 		// Persistent running-agents bar: show while at least one sub-agent is
 		// running, and tick a 1s timer so elapsed durations stay live.
 		this.backgroundAgentsBar.update(records);
+		// Keep the open sub-agent viewer (picker/transcript) live.
+		this.subAgentViewer?.update(records);
 		const anyRunning = records.some((r) => r.status === "running");
 		if (anyRunning && !this.backgroundAgentsBarTimer) {
 			this.backgroundAgentsBarTimer = setInterval(() => {
@@ -5463,28 +5468,27 @@ export class InteractiveMode {
 	}
 
 	private async handleSubagentsCommand(): Promise<void> {
-		const list = this.session.listSubAgents();
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new DynamicBorder());
-		this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "Subagents")), 1, 0));
-		this.chatContainer.addChild(new Spacer(1));
-		if (list.length === 0) {
-			this.chatContainer.addChild(new Text(theme.fg("muted", "No subagents running."), 1, 0));
-		} else {
-			for (const record of list) {
-				this.chatContainer.addChild(
-					new Text(theme.fg("accent", `- ${record.id}: ${record.status} (${record.agentType})`), 1, 0),
-				);
-				if (record.finalText) {
-					this.chatContainer.addChild(new Text(`  ${record.finalText.slice(0, 200)}`, 1, 0));
-				}
-				if (record.error) {
-					this.chatContainer.addChild(new Text(theme.fg("error", `  error: ${record.error}`), 1, 0));
-				}
-			}
-		}
-		this.chatContainer.addChild(new DynamicBorder());
-		this.chatContainer.addChild(new Spacer(1));
+		this.showSubAgentViewer();
+	}
+
+	/**
+	 * Open the sub-agent viewer: a picker over all background sub-agents /
+	 * teammates, Enter opens a live transcript tail, Esc backs out, 'k' kills.
+	 * Ports easy-agent's teammate navigation (Shift+↓ picker).
+	 */
+	private showSubAgentViewer(): void {
+		if (this.subAgentViewer) return; // Already open.
+		this.subAgentViewer = new SubAgentViewerComponent(
+			this.session.listSubAgents(),
+			() => {
+				this.subAgentViewer = undefined;
+				this.hideExtensionSelector();
+			},
+			(id) => this.session.killSubAgent(id, "user"),
+		);
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.subAgentViewer);
+		this.ui.setFocus(this.subAgentViewer);
 		this.ui.requestRender();
 	}
 
