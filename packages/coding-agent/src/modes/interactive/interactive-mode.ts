@@ -87,6 +87,7 @@ import { type SessionEntry, SessionManager, sessionEntryToContextMessages } from
 import type { PermissionMode } from "../../core/settings-manager.ts";
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
+import { getTaskListId, listTasks } from "../../core/tasks/task-store.ts";
 import { isInstallTelemetryEnabled } from "../../core/telemetry.ts";
 import type { TruncationResult } from "../../core/tools/truncate.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../core/trust-manager.ts";
@@ -134,6 +135,7 @@ import {
 	WorkingStatusIndicator,
 } from "./components/status-indicator.ts";
 import { SubAgentCardComponent } from "./components/subagent-card.ts";
+import { TaskListComponent } from "./components/task-list.ts";
 import { readTodosFromBranch, TodoListComponent } from "./components/todo-list.ts";
 import { ToolExecutionComponent } from "./components/tool-execution.ts";
 import { TreeSelectorComponent } from "./components/tree-selector.ts";
@@ -2718,6 +2720,11 @@ export class InteractiveMode {
 				this.showTodosPanel();
 				return;
 			}
+			if (text === "/tasks") {
+				this.editor.setText("");
+				void this.showTasksPanel();
+				return;
+			}
 			if (text === "/debug") {
 				this.handleDebugCommand();
 				this.editor.setText("");
@@ -4104,6 +4111,14 @@ export class InteractiveMode {
 		const todos = readTodosFromBranch(this.sessionManager.getBranch() as Array<{ type: string; message?: unknown }>);
 		this.showSelector((done) => {
 			const component = new TodoListComponent(todos, done);
+			return { component, focus: component };
+		});
+	}
+
+	private async showTasksPanel(): Promise<void> {
+		const tasks = await listTasks(getTaskListId(this.sessionManager.getSessionId()));
+		this.showSelector((done) => {
+			const component = new TaskListComponent(tasks, done);
 			return { component, focus: component };
 		});
 	}

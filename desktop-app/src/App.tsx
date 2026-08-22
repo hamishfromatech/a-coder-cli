@@ -32,6 +32,7 @@ import { ProjectPicker } from "./components/ProjectPicker";
 import { RightSidebar } from "./components/RightSidebar";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { TodoPanel } from "./components/TodoPanel";
+import { TaskPanel } from "./components/TaskPanel";
 import { SessionActions, Toolbar } from "./components/Toolbar";
 import { SessionPicker } from "./components/SessionPicker";
 import { SessionTabs } from "./components/SessionTabs";
@@ -910,6 +911,7 @@ export default function App() {
 						<ChatBackdrop />
 						<MessageList />
 						<TodoPanel />
+						<TaskPanel />
 						{permissionRequest && !approvalInlineVisible && (
 							<ToolApprovalBar request={permissionRequest} surface="floating" />
 						)}

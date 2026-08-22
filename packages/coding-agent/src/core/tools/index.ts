@@ -44,6 +44,16 @@ export {
 } from "./ls.ts";
 
 import {
+	createTaskCreateTool,
+	createTaskCreateToolDefinition,
+	createTaskGetTool,
+	createTaskGetToolDefinition,
+	createTaskListTool,
+	createTaskListToolDefinition,
+	createTaskUpdateTool,
+	createTaskUpdateToolDefinition,
+} from "./tasks.ts";
+import {
 	createSendMessageTool,
 	createSendMessageToolDefinition,
 	createTeamCreateTool,
@@ -114,6 +124,10 @@ export type ToolName =
 	| "find"
 	| "ls"
 	| "todo"
+	| "task_create"
+	| "task_get"
+	| "task_list"
+	| "task_update"
 	| "memory"
 	| "plan_mode"
 	| "team_create"
@@ -128,6 +142,10 @@ export const allToolNames: Set<ToolName> = new Set([
 	"find",
 	"ls",
 	"todo",
+	"task_create",
+	"task_get",
+	"task_list",
+	"task_update",
 	"memory",
 	"plan_mode",
 	"team_create",
@@ -171,6 +189,14 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			);
 		case "todo":
 			return createTodoToolDefinition();
+		case "task_create":
+			return createTaskCreateToolDefinition();
+		case "task_get":
+			return createTaskGetToolDefinition();
+		case "task_list":
+			return createTaskListToolDefinition();
+		case "task_update":
+			return createTaskUpdateToolDefinition();
 		case "team_create":
 			return createTeamCreateToolDefinition();
 		case "team_delete":
@@ -204,6 +230,14 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 			return createPlanModeTool(options?.planMode?.callbacks ?? { getPlanMode: () => false, setPlanMode: () => {} });
 		case "todo":
 			return createTodoTool();
+		case "task_create":
+			return createTaskCreateTool();
+		case "task_get":
+			return createTaskGetTool();
+		case "task_list":
+			return createTaskListTool();
+		case "task_update":
+			return createTaskUpdateTool();
 		case "team_create":
 			return createTeamCreateTool();
 		case "team_delete":
@@ -223,6 +257,10 @@ export function createCodingToolDefinitions(cwd: string, options?: ToolsOptions)
 		createWriteToolDefinition(cwd, options?.write),
 		createPlanModeToolDefinition(options?.planMode?.callbacks ?? { getPlanMode: () => false, setPlanMode: () => {} }),
 		createTodoToolDefinition(),
+		createTaskCreateToolDefinition(),
+		createTaskGetToolDefinition(),
+		createTaskListToolDefinition(),
+		createTaskUpdateToolDefinition(),
 		createMemoryToolDefinition(),
 		createTeamCreateToolDefinition(),
 		createTeamDeleteToolDefinition(),
@@ -253,6 +291,10 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 			options?.planMode?.callbacks ?? { getPlanMode: () => false, setPlanMode: () => {} },
 		),
 		todo: createTodoToolDefinition(),
+		task_create: createTaskCreateToolDefinition(),
+		task_get: createTaskGetToolDefinition(),
+		task_list: createTaskListToolDefinition(),
+		task_update: createTaskUpdateToolDefinition(),
 		memory: createMemoryToolDefinition(),
 		team_create: createTeamCreateToolDefinition(),
 		team_delete: createTeamDeleteToolDefinition(),
@@ -268,6 +310,10 @@ export function createCodingTools(cwd: string, options?: ToolsOptions): Tool[] {
 		createWriteTool(cwd, options?.write),
 		createPlanModeTool(options?.planMode?.callbacks ?? { getPlanMode: () => false, setPlanMode: () => {} }),
 		createTodoTool(),
+		createTaskCreateTool(),
+		createTaskGetTool(),
+		createTaskListTool(),
+		createTaskUpdateTool(),
 		createMemoryTool(options?.memory),
 		createTeamCreateTool(),
 		createTeamDeleteTool(),
@@ -298,6 +344,10 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 			options?.planMode?.callbacks ?? { getPlanMode: () => false, setPlanMode: () => {} },
 		),
 		todo: createTodoTool(),
+		task_create: createTaskCreateTool(),
+		task_get: createTaskGetTool(),
+		task_list: createTaskListTool(),
+		task_update: createTaskUpdateTool(),
 		memory: createMemoryTool(options?.memory),
 		team_create: createTeamCreateTool(),
 		team_delete: createTeamDeleteTool(),

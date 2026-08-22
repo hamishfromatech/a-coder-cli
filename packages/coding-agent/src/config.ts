@@ -495,6 +495,7 @@ export const VERSION: string = pkg.version || "0.0.0";
 export const ENV_AGENT_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_DIR`;
 export const ENV_SESSION_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_SESSION_DIR`;
 export const ENV_TEAMS_DIR = `${APP_NAME.toUpperCase()}_TEAMS_DIR`;
+export const ENV_TASKS_DIR = `${APP_NAME.toUpperCase()}_TASKS_DIR`;
 
 export function expandTildePath(path: string): string {
 	return normalizePath(path);
@@ -588,4 +589,13 @@ export function getTeamsRoot(): string {
 		return expandTildePath(envDir);
 	}
 	return join(homedir(), CONFIG_DIR_NAME, "teams");
+}
+
+/** Get path to the persistent task graph root directory (e.g., ~/.a-coder-cli/tasks). */
+export function getTasksRoot(): string {
+	const envDir = process.env[ENV_TASKS_DIR];
+	if (envDir) {
+		return expandTildePath(envDir);
+	}
+	return join(homedir(), CONFIG_DIR_NAME, "tasks");
 }
