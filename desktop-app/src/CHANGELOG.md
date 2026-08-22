@@ -11,6 +11,7 @@
 - Backported from main: Summarization requests now force `toolChoice: "none"` and reject any tool-call responses, preventing accidental tool calls during compaction.
 - Backported from main: Project-local subagent confirmation prompts are skipped in trusted projects.
 - Backported from main: Package-manager version comparison now uses `semver.gt` so locally newer installed versions are not incorrectly flagged for downgrade/reinstall.
+- Fixed the Settings modal layout: `ModalPanel` is a `flex-col` container, so the settings sidebar (nav) and content stacked vertically instead of side by side since the modal migrated to the shared primitives. The panel now wraps nav and content in a row layout (`flex min-h-0 flex-1`), restoring the two-column sidebar layout.
 - Fixed the desktop app failing to start when the resolved a-coder-cli was a
   shell wrapper that delegated to Node (e.g. `~/.local/bin/a-coder-cli`). GUI
   apps on macOS and some Linux desktops inherit a minimal `PATH`, so the

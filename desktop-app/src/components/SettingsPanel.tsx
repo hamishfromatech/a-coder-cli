@@ -971,6 +971,8 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 				className="max-w-4xl bg-pi-surface"
 				onClick={(e) => e.stopPropagation()}
 			>
+				{/* Row wrapper: ModalPanel is flex-col, the sidebar needs a row */}
+				<div className="flex min-h-0 flex-1">
 				{/* =================== Left nav =================== */}
 				<nav className="w-56 shrink-0 overflow-y-auto border-r border-pi-border px-3 py-5">
 					<div className="mb-4 px-1 text-2xs font-semibold uppercase tracking-wider text-pi-text-faint">
@@ -1137,6 +1139,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 							Close
 						</Button>
 					</div>
+				</div>
 				</div>
 			</ModalPanel>
 		</ModalBackdrop>
