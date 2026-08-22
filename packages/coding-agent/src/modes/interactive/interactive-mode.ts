@@ -89,6 +89,7 @@ import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
 import { getTaskListId, listTasks } from "../../core/tasks/task-store.ts";
 import { isInstallTelemetryEnabled } from "../../core/telemetry.ts";
+import { generateDiffString } from "../../core/tools/edit-diff.ts";
 import type { TruncationResult } from "../../core/tools/truncate.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../core/trust-manager.ts";
 import { getChangelogPath, getNewEntries, normalizeChangelogLinks, parseChangelog } from "../../utils/changelog.ts";
@@ -111,6 +112,7 @@ import { CustomEditor } from "./components/custom-editor.ts";
 import { CustomEntryComponent } from "./components/custom-entry.ts";
 import { CustomMessageComponent } from "./components/custom-message.ts";
 import { DaxnutsComponent } from "./components/daxnuts.ts";
+import { renderDiff } from "./components/diff.ts";
 import { DynamicBorder } from "./components/dynamic-border.ts";
 import { EarendilAnnouncementComponent } from "./components/earendil-announcement.ts";
 import { ExtensionEditorComponent } from "./components/extension-editor.ts";
@@ -141,10 +143,12 @@ import { SubAgentViewerComponent } from "./components/subagent-viewer.ts";
 import { TaskListComponent } from "./components/task-list.ts";
 import { readTodosFromBranch, TodoListComponent } from "./components/todo-list.ts";
 import { ToolExecutionComponent } from "./components/tool-execution.ts";
+import { TranscriptOverlayComponent } from "./components/transcript-overlay.ts";
 import { TreeSelectorComponent } from "./components/tree-selector.ts";
 import { TrustSelectorComponent } from "./components/trust-selector.ts";
 import { UserMessageComponent } from "./components/user-message.ts";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.ts";
+import { WelcomeBannerComponent } from "./components/welcome-banner.ts";
 import { getModelSearchText } from "./model-search.ts";
 import {
 	getAvailableThemes,
@@ -390,6 +394,8 @@ export class InteractiveMode {
 	private extensionInput: ExtensionInputComponent | undefined = undefined;
 	private extensionEditor: ExtensionEditorComponent | undefined = undefined;
 	private extensionTerminalInputUnsubscribers = new Set<() => void>();
+	private transcriptOverlay: TranscriptOverlayComponent | undefined = undefined;
+	private transcriptOverlayHandle: OverlayHandle | undefined = undefined;
 
 	// Extension widgets (components rendered above/below the editor)
 	private extensionWidgetsAbove = new Map<string, Component & { dispose?(): void }>();
@@ -707,7 +713,13 @@ export class InteractiveMode {
 
 		// Add header with keybindings from config (unless silenced)
 		if (this.options.verbose || !this.settingsManager.getQuietStartup()) {
-			const logo = theme.bold(theme.fg("accent", APP_NAME)) + theme.fg("dim", ` v${this.version}`);
+			// Welcome banner: ASCII art wordmark + model/mode/cwd info block
+			const welcomeBanner = new WelcomeBannerComponent({
+				version: this.version,
+				modelId: this.session.model?.id,
+				permissionMode: this.session.permissionMode,
+				cwd: this.sessionManager.getCwd(),
+			});
 
 			// Build startup instructions using keybinding hint helpers
 			const hint = (keybinding: AppKeybinding, description: string) => keyHint(keybinding, description);
@@ -723,6 +735,7 @@ export class InteractiveMode {
 				rawKeyHint(`${keyText("app.model.cycleForward")}/${keyText("app.model.cycleBackward")}`, "to cycle models"),
 				hint("app.model.select", "to select model"),
 				hint("app.tools.expand", "to expand tools"),
+				hint("app.transcript.toggle", "for transcript"),
 				hint("app.thinking.toggle", "to expand thinking"),
 				hint("app.editor.external", "for external editor"),
 				rawKeyHint("/", "for commands"),
@@ -749,14 +762,16 @@ export class InteractiveMode {
 				`${APP_NAME} can explain its own features and look up its docs. Ask it how to use or extend ${APP_NAME}.`,
 			);
 			this.builtInHeader = new ExpandableText(
-				() => `${logo}\n${compactInstructions}\n${compactOnboarding}\n\n${onboarding}`,
-				() => `${logo}\n${expandedInstructions}\n\n${onboarding}`,
+				() => `${compactInstructions}\n${compactOnboarding}\n\n${onboarding}`,
+				() => `${expandedInstructions}\n\n${onboarding}`,
 				this.getStartupExpansionState(),
 				1,
 				0,
 			);
 
 			// Setup UI layout
+			this.headerContainer.addChild(new Spacer(1));
+			this.headerContainer.addChild(welcomeBanner);
 			this.headerContainer.addChild(new Spacer(1));
 			this.headerContainer.addChild(this.builtInHeader);
 			this.headerContainer.addChild(new Spacer(1));
@@ -1662,8 +1677,10 @@ export class InteractiveMode {
 		this.footer.setSession(this.session);
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
 		this.footerDataProvider.setCwd(this.sessionManager.getCwd());
-		this.session.setPermissionPromptHandler(async (toolName, reason) => {
-			return await this.showExtensionConfirm(`Allow ${toolName}?`, reason);
+		this.session.setPermissionPromptHandler(async (toolName, reason, args) => {
+			const preview = this.formatPermissionPreview(toolName, args);
+			const title = preview ? `${preview}\n\nAllow ${toolName}?` : `Allow ${toolName}?`;
+			return await this.showExtensionConfirm(title, reason);
 		});
 		this.updatePermissionModeStatus(this.session.permissionMode);
 		this.updatePlanModeStatus(this.session.planMode);
@@ -1722,6 +1739,7 @@ export class InteractiveMode {
 		}
 		this.pendingMessagesContainer.clear();
 		this.compactionQueuedMessages = [];
+		this.streamingComponent?.dispose();
 		this.streamingComponent = undefined;
 		this.streamingMessage = undefined;
 		this.pendingTools.clear();
@@ -2259,6 +2277,64 @@ export class InteractiveMode {
 		return result === "Yes";
 	}
 
+	/**
+	 * Build a preview string for the permission prompt, showing the actual
+	 * change for Edit (diff), Write (file content), and Bash (command).
+	 * Returns undefined for tools without a preview.
+	 */
+	private formatPermissionPreview(toolName: string, args?: Record<string, unknown>): string | undefined {
+		if (!args) return undefined;
+
+		if (toolName === "edit") {
+			const oldStr = typeof args.old_string === "string" ? args.old_string : undefined;
+			const newStr = typeof args.new_string === "string" ? args.new_string : undefined;
+			const filePath =
+				typeof args.path === "string" ? args.path : typeof args.file_path === "string" ? args.file_path : undefined;
+			if (oldStr === undefined || newStr === undefined) return undefined;
+			const { diff } = generateDiffString(oldStr, newStr, 3);
+			const header = filePath
+				? `${theme.fg("accent", theme.bold("Edit"))} ${theme.fg("muted", filePath)}`
+				: theme.fg("accent", theme.bold("Edit"));
+			return `${header}\n${renderDiff(diff)}`;
+		}
+
+		if (toolName === "write") {
+			const content = typeof args.content === "string" ? args.content : undefined;
+			const filePath =
+				typeof args.path === "string" ? args.path : typeof args.file_path === "string" ? args.file_path : undefined;
+			if (content === undefined) return undefined;
+			const lines = content.split("\n");
+			const maxLines = 20;
+			const shown = lines.slice(0, maxLines);
+			const hidden = lines.length - shown.length;
+			const gutterWidth = String(lines.length).length;
+			const body = shown
+				.map((line, i) => `${theme.fg("muted", String(i + 1).padStart(gutterWidth, " "))}  ${line}`)
+				.join("\n");
+			const footer =
+				hidden > 0 ? `\n${theme.fg("muted", `... +${hidden} more line${hidden === 1 ? "" : "s"}`)}` : "";
+			const header = filePath
+				? `${theme.fg("accent", theme.bold("Write"))} ${theme.fg("muted", filePath)}`
+				: theme.fg("accent", theme.bold("Write"));
+			return `${header}\n${body}${footer}`;
+		}
+
+		if (toolName === "bash") {
+			const command = typeof args.command === "string" ? args.command : undefined;
+			if (command === undefined) return undefined;
+			const lines = command.split("\n");
+			const maxLines = 8;
+			const shown = lines.slice(0, maxLines);
+			const hidden = lines.length - shown.length;
+			const body = shown.map((line) => `${theme.fg("muted", "$")} ${line}`).join("\n");
+			const footer =
+				hidden > 0 ? `\n${theme.fg("muted", `... +${hidden} more line${hidden === 1 ? "" : "s"}`)}` : "";
+			return `${theme.fg("accent", theme.bold("Bash"))}\n${body}${footer}`;
+		}
+
+		return undefined;
+	}
+
 	private async promptForMissingSessionCwd(error: MissingSessionCwdError): Promise<string | undefined> {
 		const confirmed = await this.showExtensionConfirm(
 			"Session cwd not found",
@@ -2592,6 +2668,7 @@ export class InteractiveMode {
 		this.ui.onDebug = () => this.handleDebugCommand();
 		this.defaultEditor.onAction("app.model.select", () => this.showModelSelector());
 		this.defaultEditor.onAction("app.tools.expand", () => this.toggleToolOutputExpansion());
+		this.defaultEditor.onAction("app.transcript.toggle", () => this.toggleTranscriptOverlay());
 		this.defaultEditor.onAction("app.thinking.toggle", () => this.toggleThinkingBlockVisibility());
 		this.defaultEditor.onAction("app.editor.external", () => this.openExternalEditor());
 		this.defaultEditor.onAction("app.message.followUp", () => this.handleFollowUp());
@@ -2882,7 +2959,29 @@ export class InteractiveMode {
 	}
 
 	private syncSubAgentCards(records: InProcessSubAgentRecord[]): void {
+		const liveIds = new Set(records.map((r) => r.id));
+
+		// Remove cards for records no longer in the session, and for completed
+		// foreground (non-detached) sub-agents — their result appears inline in
+		// the conversation as the tool result, so the live card is stale.
+		for (const [id, card] of this.subAgentCards) {
+			if (!liveIds.has(id)) {
+				this.subAgentContainer.removeChild(card);
+				this.subAgentCards.delete(id);
+				continue;
+			}
+			const record = records.find((r) => r.id === id);
+			if (record && !record.detached && record.status !== "running") {
+				this.subAgentContainer.removeChild(card);
+				this.subAgentCards.delete(id);
+			}
+		}
+
 		for (const record of records) {
+			// Skip foreground sub-agents that already completed — their card was
+			// removed above and shouldn't be re-created.
+			if (!record.detached && record.status !== "running") continue;
+
 			let card = this.subAgentCards.get(record.id);
 			if (!card) {
 				card = new SubAgentCardComponent(record);
@@ -2952,6 +3051,7 @@ export class InteractiveMode {
 				this.subAgentCards.clear();
 				this.pendingMessagesContainer.clear();
 				this.compactionQueuedMessages = [];
+				this.streamingComponent?.dispose();
 				this.streamingComponent = undefined;
 				this.streamingMessage = undefined;
 				this.pendingTools.clear();
@@ -3065,7 +3165,9 @@ export class InteractiveMode {
 								: "Operation aborted";
 						this.streamingMessage.errorMessage = errorMessage;
 					}
+					this.streamingComponent.flush();
 					this.streamingComponent.updateContent(this.streamingMessage);
+					this.streamingComponent.flush();
 
 					if (this.streamingMessage.stopReason === "aborted" || this.streamingMessage.stopReason === "error") {
 						if (!errorMessage) {
@@ -3140,6 +3242,8 @@ export class InteractiveMode {
 				}
 				this.clearStatusIndicator("working");
 				if (this.streamingComponent) {
+					this.streamingComponent.flush();
+					this.streamingComponent.dispose();
 					this.chatContainer.removeChild(this.streamingComponent);
 					this.streamingComponent = undefined;
 					this.streamingMessage = undefined;
@@ -3823,6 +3927,43 @@ export class InteractiveMode {
 
 	private toggleToolOutputExpansion(): void {
 		this.setToolsExpanded(!this.toolOutputExpanded);
+	}
+
+	private toggleTranscriptOverlay(): void {
+		if (this.transcriptOverlayHandle) {
+			this.hideTranscriptOverlay();
+			return;
+		}
+
+		// Build transcript lines from the chat container's rendered output.
+		const width = this.ui.terminal.columns;
+		const lines: string[] = [];
+		for (const container of [this.loadedResourcesContainer, this.chatContainer]) {
+			const rendered = container.render(width);
+			lines.push(...rendered);
+		}
+
+		this.transcriptOverlay = new TranscriptOverlayComponent({
+			tui: this.ui,
+			lines,
+			onClose: () => this.hideTranscriptOverlay(),
+		});
+
+		this.transcriptOverlayHandle = this.ui.showOverlay(this.transcriptOverlay, {
+			width: "100%",
+			row: 0,
+			col: 0,
+		});
+		this.ui.setFocus(this.transcriptOverlay);
+		this.ui.requestRender();
+	}
+
+	private hideTranscriptOverlay(): void {
+		this.transcriptOverlayHandle?.hide();
+		this.transcriptOverlayHandle = undefined;
+		this.transcriptOverlay = undefined;
+		this.ui.setFocus(this.editor);
+		this.ui.requestRender();
 	}
 
 	private setToolsExpanded(expanded: boolean): void {
@@ -5941,6 +6082,7 @@ export class InteractiveMode {
 		const pasteImage = this.getAppKeyDisplay("app.clipboard.pasteImage");
 		const selectPermissionMode = this.getAppKeyDisplay("app.permissionMode.select");
 		const togglePlanMode = this.getAppKeyDisplay("app.planMode.toggle");
+		const toggleTranscript = this.getAppKeyDisplay("app.transcript.toggle");
 
 		let hotkeys = `
 **Navigation**
@@ -5979,6 +6121,7 @@ export class InteractiveMode {
 | \`${cycleModelForward}\` / \`${cycleModelBackward}\` | Cycle models |
 | \`${selectModel}\` | Open model selector |
 | \`${expandTools}\` | Toggle tool output expansion |
+| \`${toggleTranscript}\` | Toggle transcript overlay |
 | \`${toggleThinking}\` | Toggle thinking block visibility |
 | \`${externalEditor}\` | Edit message in external editor |
 | \`${followUp}\` | Queue follow-up message |

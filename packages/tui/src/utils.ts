@@ -1186,3 +1186,59 @@ export function extractSegments(
 
 	return { before, beforeWidth, after, afterWidth };
 }
+
+/**
+ * Split streaming markdown content into a stable prefix and a live tail.
+ *
+ * The stable prefix is the portion of the content that won't change as more
+ * tokens arrive — it can be rendered once via Markdown and memoized. Only the
+ * small tail repaints on each chunk, preventing formatting flicker mid-stream.
+ *
+ * Algorithm (mirrors easy-agent's StreamingMarkdown):
+ * - If there's an odd number of code fences (``` or ~~~), a code block is
+ *   open. The prefix ends just before the last fence so the open block stays
+ *   in the tail (its content is still growing).
+ * - Otherwise the prefix ends at the last paragraph break (\n\n). Everything
+ *   after the last break is the tail — the current paragraph being written.
+ * - If there's no paragraph break, everything is the tail.
+ */
+export function splitStablePrefix(content: string): { stable: string; tail: string } {
+	if (!content) return { stable: "", tail: "" };
+
+	// Count code fences (``` or ~~~) at the start of lines.
+	const fenceRegex = /^(`{3,}|~{3,})/gm;
+	let fenceCount = 0;
+	let lastFenceIndex = -1;
+	let match: RegExpExecArray | null;
+	match = fenceRegex.exec(content);
+	while (match !== null) {
+		fenceCount++;
+		lastFenceIndex = match.index;
+		match = fenceRegex.exec(content);
+	}
+
+	// Odd number of fences → a code block is open. Prefix ends before the
+	// last fence so the open block stays in the tail.
+	if (fenceCount % 2 === 1 && lastFenceIndex >= 0) {
+		// Walk back to the start of the fence's line.
+		let lineStart = lastFenceIndex;
+		while (lineStart > 0 && content[lineStart - 1] !== "\n") {
+			lineStart--;
+		}
+		const stable = content.slice(0, lineStart);
+		const tail = content.slice(lineStart);
+		return { stable, tail };
+	}
+
+	// Even fences (or none) → find the last paragraph break.
+	const lastBreak = content.lastIndexOf("\n\n");
+	if (lastBreak >= 0) {
+		// Include the break in the stable prefix.
+		const stable = content.slice(0, lastBreak + 2);
+		const tail = content.slice(lastBreak + 2);
+		return { stable, tail };
+	}
+
+	// No paragraph break → everything is tail.
+	return { stable: "", tail: content };
+}

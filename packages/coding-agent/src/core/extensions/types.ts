@@ -382,6 +382,8 @@ export interface InProcessSubAgentRecord {
 	worktreeBranch?: string;
 	/** Teammate name when this sub-agent was spawned as a named Agent Teams member. */
 	teammateName?: string;
+	/** True for detached background sub-agents (card persists after completion). False for foreground-awaited runs (card removed on completion since the result appears inline). */
+	detached: boolean;
 	/** Absolute path to the JSONL event log this sub-agent appends to while running (see subagents/task-output.ts). */
 	outputFile?: string;
 	error?: string;
@@ -393,6 +395,8 @@ export interface RunSubAgentBackgroundParams extends RunSubAgentParams {
 	id: string;
 	/** Suppress the completion notification injected into the parent's next turn. Set by foreground-awaited runs (which return the result inline) to avoid a redundant "done" message. */
 	notifyOnComplete?: boolean;
+	/** True for detached background sub-agents (persist in the UI after completion so the user can monitor them). False (default) for foreground-awaited runs whose result appears inline in the conversation — their live card is removed once they complete. */
+	detached?: boolean;
 	/** Filesystem isolation. "worktree" runs the sub-agent inside a fresh git worktree (builtin tools rebuilt against it) and removes it on completion unless it has changes. Falls back to no isolation with a warning outside a git repo. */
 	isolation?: "none" | "worktree";
 }

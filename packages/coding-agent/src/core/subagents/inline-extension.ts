@@ -135,6 +135,7 @@ export function createSubagentExtensionFactory(_options: SubagentToolOptions = {
 					systemPrompt: params.system_prompt as string | undefined,
 					model: modelObj,
 					maxTurns: def?.maxTurns,
+					detached: true,
 					isolation: params.isolation as "none" | "worktree" | undefined,
 					name: params.name as string | undefined,
 					teamName: params.team_name as string | undefined,

@@ -2,6 +2,7 @@ import { Box, type Component, Container, getCapabilities, Image, Spacer, Text, t
 import type { ToolDefinition, ToolRenderContext } from "../../../core/extensions/types.ts";
 import { createAllToolDefinitions, type ToolName } from "../../../core/tools/index.ts";
 import { getTextOutput as getRenderedTextOutput } from "../../../core/tools/render-utils.ts";
+import { getToolRendererOverride } from "../../../core/tools/tool-renderer-registry.ts";
 import { convertToPng } from "../../../utils/image-convert.ts";
 import { theme } from "../theme/theme.ts";
 
@@ -79,6 +80,8 @@ export class ToolExecutionComponent extends Container {
 	}
 
 	private getCallRenderer(): ToolDefinition<any, any>["renderCall"] | undefined {
+		const override = getToolRendererOverride(this.toolName);
+		if (override?.renderCall) return override.renderCall as ToolDefinition<any, any>["renderCall"];
 		if (!this.builtInToolDefinition) {
 			return this.toolDefinition?.renderCall;
 		}
@@ -89,6 +92,8 @@ export class ToolExecutionComponent extends Container {
 	}
 
 	private getResultRenderer(): ToolDefinition<any, any>["renderResult"] | undefined {
+		const override = getToolRendererOverride(this.toolName);
+		if (override?.renderResult) return override.renderResult as ToolDefinition<any, any>["renderResult"];
 		if (!this.builtInToolDefinition) {
 			return this.toolDefinition?.renderResult;
 		}
@@ -99,10 +104,14 @@ export class ToolExecutionComponent extends Container {
 	}
 
 	private hasRendererDefinition(): boolean {
+		const override = getToolRendererOverride(this.toolName);
+		if (override) return true;
 		return this.builtInToolDefinition !== undefined || this.toolDefinition !== undefined;
 	}
 
 	private getRenderShell(): "default" | "self" {
+		const override = getToolRendererOverride(this.toolName);
+		if (override?.renderShell) return override.renderShell;
 		if (!this.builtInToolDefinition) {
 			return this.toolDefinition?.renderShell ?? "default";
 		}

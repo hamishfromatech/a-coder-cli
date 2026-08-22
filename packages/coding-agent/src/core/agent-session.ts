@@ -233,7 +233,7 @@ export interface ExtensionBindings {
 	commandContextActions?: ExtensionCommandContextActions;
 	abortHandler?: () => void;
 	shutdownHandler?: ShutdownHandler;
-	permissionPromptHandler?: (toolName: string, reason: string) => Promise<boolean>;
+	permissionPromptHandler?: (toolName: string, reason: string, args?: Record<string, unknown>) => Promise<boolean>;
 	onError?: ExtensionErrorListener;
 }
 
@@ -379,7 +379,11 @@ export class AgentSession {
 
 	// Permission mode state
 	private _permissionMode: PermissionMode;
-	private _permissionPromptHandler?: (toolName: string, reason: string) => Promise<boolean>;
+	private _permissionPromptHandler?: (
+		toolName: string,
+		reason: string,
+		args?: Record<string, unknown>,
+	) => Promise<boolean>;
 	private _planMode = false;
 
 	// Default tool suppression from session options
@@ -471,7 +475,9 @@ export class AgentSession {
 	 * If no handler is set, "ask" mode falls back to allowing tool calls so that
 	 * non-interactive sessions, SDK consumers, and test harnesses keep working.
 	 */
-	setPermissionPromptHandler(handler: ((toolName: string, reason: string) => Promise<boolean>) | undefined): void {
+	setPermissionPromptHandler(
+		handler: ((toolName: string, reason: string, args?: Record<string, unknown>) => Promise<boolean>) | undefined,
+	): void {
 		this._permissionPromptHandler = handler;
 	}
 
@@ -501,12 +507,16 @@ export class AgentSession {
 		return resolvePermissionDecision(this._permissionMode, toolName, policies, isInteractive);
 	}
 
-	private async _maybePromptForPermission(toolName: string, reason?: string): Promise<boolean> {
+	private async _maybePromptForPermission(
+		toolName: string,
+		reason?: string,
+		args?: Record<string, unknown>,
+	): Promise<boolean> {
 		if (!this._permissionPromptHandler) {
 			return false;
 		}
 		try {
-			return await this._permissionPromptHandler(toolName, reason ?? `Approval required for "${toolName}"`);
+			return await this._permissionPromptHandler(toolName, reason ?? `Approval required for "${toolName}"`, args);
 		} catch {
 			return false;
 		}
@@ -567,7 +577,11 @@ export class AgentSession {
 				return { block: true, reason: permission.reason };
 			}
 			if (permission.decision === "prompt") {
-				const approved = await this._maybePromptForPermission(toolCall.name, permission.reason);
+				const approved = await this._maybePromptForPermission(
+					toolCall.name,
+					permission.reason,
+					args as Record<string, unknown> | undefined,
+				);
 				if (!approved) {
 					return {
 						block: true,
@@ -3721,6 +3735,7 @@ export class AgentSession {
 			toolUseCount: 0,
 			turnCount: 0,
 			timeline: [],
+			detached: params.detached ?? false,
 			...(teammateName ? { teammateName } : {}),
 		};
 		if (params.agentType && !def) {

@@ -2,6 +2,7 @@
  * Core modules shared between all run modes.
  */
 
+export { createAgentEventGenerator } from "./agent-event-generator.ts";
 export {
 	AgentSession,
 	type AgentSessionConfig,

@@ -365,3 +365,12 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		send_message: createSendMessageTool(),
 	};
 }
+
+export {
+	clearToolRendererOverrides,
+	getToolRendererOverride,
+	registerToolRendererOverride,
+	subscribeToolRendererOverrides,
+	type ToolRendererOverride,
+	unregisterToolRendererOverride,
+} from "./tool-renderer-registry.ts";

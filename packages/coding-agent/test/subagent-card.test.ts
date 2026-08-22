@@ -18,6 +18,7 @@ function makeRecord(over: Partial<InProcessSubAgentRecord>): InProcessSubAgentRe
 		toolUseCount: 0,
 		turnCount: 0,
 		timeline: [],
+		detached: false,
 		...over,
 	};
 }

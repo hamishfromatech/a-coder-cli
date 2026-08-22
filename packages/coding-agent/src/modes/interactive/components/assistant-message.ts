@@ -6,6 +6,10 @@ const OSC133_ZONE_START = "\x1b]133;A\x07";
 const OSC133_ZONE_END = "\x1b]133;B\x07";
 const OSC133_ZONE_FINAL = "\x1b]133;C\x07";
 
+/** Throttle window for streaming updates (~33fps). Coalesces rapid
+ * updateContent calls so Markdown re-parsing doesn't run on every token. */
+const STREAM_THROTTLE_MS = 30;
+
 /**
  * Component that renders a complete assistant message
  */
@@ -17,6 +21,10 @@ export class AssistantMessageComponent extends Container {
 	private outputPad: number;
 	private lastMessage?: AssistantMessage;
 	private hasToolCalls = false;
+	/** Pending message waiting for the throttle timer to flush. */
+	private pendingMessage?: AssistantMessage;
+	/** Active throttle timer, or undefined if no flush is scheduled. */
+	private flushTimer?: ReturnType<typeof setTimeout>;
 
 	constructor(
 		message?: AssistantMessage,
@@ -41,31 +49,40 @@ export class AssistantMessageComponent extends Container {
 		}
 	}
 
+	/** Cancel any pending throttled update. Call before discarding the component. */
+	dispose(): void {
+		if (this.flushTimer) {
+			clearTimeout(this.flushTimer);
+			this.flushTimer = undefined;
+		}
+		this.pendingMessage = undefined;
+	}
+
 	override invalidate(): void {
 		super.invalidate();
 		if (this.lastMessage) {
-			this.updateContent(this.lastMessage);
+			this.applyUpdate(this.lastMessage);
 		}
 	}
 
 	setHideThinkingBlock(hide: boolean): void {
 		this.hideThinkingBlock = hide;
 		if (this.lastMessage) {
-			this.updateContent(this.lastMessage);
+			this.applyUpdate(this.lastMessage);
 		}
 	}
 
 	setHiddenThinkingLabel(label: string): void {
 		this.hiddenThinkingLabel = label;
 		if (this.lastMessage) {
-			this.updateContent(this.lastMessage);
+			this.applyUpdate(this.lastMessage);
 		}
 	}
 
 	setOutputPad(padding: number): void {
 		this.outputPad = padding;
 		if (this.lastMessage) {
-			this.updateContent(this.lastMessage);
+			this.applyUpdate(this.lastMessage);
 		}
 	}
 
@@ -80,7 +97,35 @@ export class AssistantMessageComponent extends Container {
 		return lines;
 	}
 
+	/**
+	 * Update the message content. During streaming, calls are throttled to
+	 * STREAM_THROTTLE_MS so Markdown re-parsing doesn't run on every token.
+	 * Use flush() to force an immediate update (e.g. on message_end).
+	 */
 	updateContent(message: AssistantMessage): void {
+		this.pendingMessage = message;
+		if (this.flushTimer) return;
+		this.flushTimer = setTimeout(() => {
+			this.flushTimer = undefined;
+			if (this.pendingMessage) {
+				this.applyUpdate(this.pendingMessage);
+			}
+		}, STREAM_THROTTLE_MS);
+	}
+
+	/** Force any pending throttled update to apply immediately. */
+	flush(): void {
+		if (this.flushTimer) {
+			clearTimeout(this.flushTimer);
+			this.flushTimer = undefined;
+		}
+		if (this.pendingMessage) {
+			this.applyUpdate(this.pendingMessage);
+			this.pendingMessage = undefined;
+		}
+	}
+
+	private applyUpdate(message: AssistantMessage): void {
 		this.lastMessage = message;
 
 		// Clear content container

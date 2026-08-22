@@ -1,7 +1,7 @@
 import { Marked, type Token, Tokenizer, type Tokens } from "marked";
 import { getCapabilities, hyperlink, isImageLine } from "../terminal-image.ts";
 import type { Component } from "../tui.ts";
-import { applyBackgroundToLine, visibleWidth, wrapTextWithAnsi } from "../utils.ts";
+import { applyBackgroundToLine, splitStablePrefix, visibleWidth, wrapTextWithAnsi } from "../utils.ts";
 
 const STRICT_STRIKETHROUGH_REGEX = /^(~~)(?=[^\s~])((?:\\.|[^\\])*?(?:\\.|[^\s~\\]))\1(?=[^~]|$)/;
 
@@ -121,6 +121,13 @@ export class Markdown implements Component {
 	private cachedWidth?: number;
 	private cachedLines?: string[];
 
+	// Stable-prefix cache: avoids re-parsing the stable portion of streaming
+	// text on every token. The stable prefix is the part that won't change as
+	// more tokens arrive (everything up to the last paragraph break or code
+	// fence). Only the tail (current paragraph / open code block) is re-parsed.
+	private cachedStableText?: string;
+	private cachedStableRenderedLines?: string[];
+
 	constructor(
 		text: string,
 		paddingX: number,
@@ -146,6 +153,8 @@ export class Markdown implements Component {
 		this.cachedText = undefined;
 		this.cachedWidth = undefined;
 		this.cachedLines = undefined;
+		this.cachedStableText = undefined;
+		this.cachedStableRenderedLines = undefined;
 	}
 
 	render(width: number): string[] {
@@ -170,19 +179,59 @@ export class Markdown implements Component {
 		// Replace tabs with 3 spaces for consistent rendering
 		const normalizedText = this.text.replace(/\t/g, "   ");
 
-		// Parse markdown to HTML-like tokens
-		const tokens = markdownParser.lexer(normalizedText);
-		trimPartialClosingFences(tokens);
+		// Split into stable prefix + live tail. The stable prefix is the part
+		// that won't change as more tokens arrive (up to the last paragraph
+		// break or code fence). We cache its rendered lines so only the tail
+		// is re-parsed on each streaming update.
+		const { stable, tail } = splitStablePrefix(normalizedText);
 
-		// Convert tokens to styled terminal output
-		const renderedLines: string[] = [];
+		let renderedLines: string[];
 
-		for (let i = 0; i < tokens.length; i++) {
-			const token = tokens[i];
-			const nextToken = tokens[i + 1];
-			const tokenLines = this.renderToken(token, contentWidth, nextToken?.type);
-			for (const tokenLine of tokenLines) {
-				renderedLines.push(tokenLine);
+		if (stable && stable === this.cachedStableText && this.cachedStableRenderedLines) {
+			// Stable prefix unchanged — reuse cached rendered lines, only
+			// parse and render the tail.
+			renderedLines = [...this.cachedStableRenderedLines];
+			if (tail) {
+				const tailTokens = markdownParser.lexer(tail);
+				trimPartialClosingFences(tailTokens);
+				for (let i = 0; i < tailTokens.length; i++) {
+					const token = tailTokens[i];
+					const nextToken = tailTokens[i + 1];
+					const tokenLines = this.renderToken(token, contentWidth, nextToken?.type);
+					for (const tokenLine of tokenLines) {
+						renderedLines.push(tokenLine);
+					}
+				}
+			}
+		} else {
+			// Stable prefix changed (or first render) — parse everything.
+			const tokens = markdownParser.lexer(normalizedText);
+			trimPartialClosingFences(tokens);
+
+			renderedLines = [];
+			for (let i = 0; i < tokens.length; i++) {
+				const token = tokens[i];
+				const nextToken = tokens[i + 1];
+				const tokenLines = this.renderToken(token, contentWidth, nextToken?.type);
+				for (const tokenLine of tokenLines) {
+					renderedLines.push(tokenLine);
+				}
+			}
+
+			// Cache the stable prefix's rendered lines for next time.
+			if (stable) {
+				const stableTokens = markdownParser.lexer(stable);
+				trimPartialClosingFences(stableTokens);
+				this.cachedStableText = stable;
+				this.cachedStableRenderedLines = [];
+				for (let i = 0; i < stableTokens.length; i++) {
+					const token = stableTokens[i];
+					const nextToken = stableTokens[i + 1];
+					const tokenLines = this.renderToken(token, contentWidth, nextToken?.type);
+					for (const tokenLine of tokenLines) {
+						this.cachedStableRenderedLines.push(tokenLine);
+					}
+				}
 			}
 		}
 
