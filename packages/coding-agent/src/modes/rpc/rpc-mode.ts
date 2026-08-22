@@ -474,6 +474,14 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				return success(id, "new_session", result);
 			}
 
+			case "clear_conversation": {
+				const result = await runtimeHost.clearConversation();
+				if (!result.cancelled) {
+					await rebindSession();
+				}
+				return success(id, "clear_conversation", result);
+			}
+
 			// =================================================================
 			// State
 			// =================================================================

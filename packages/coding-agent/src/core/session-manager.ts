@@ -847,6 +847,18 @@ export class SessionManager {
 		}
 	}
 
+	/**
+	 * Rebind the session to an existing file path and overwrite it with the
+	 * current in-memory entries, WITHOUT loading the file's old contents.
+	 * Used by `/clear` to reset an existing session file to a fresh header
+	 * (same id, same parent) in place.
+	 */
+	rebindAndOverwriteFile(sessionFile: string): void {
+		this.sessionFile = resolvePath(sessionFile);
+		this._rewriteFile();
+		this.flushed = true;
+	}
+
 	newSession(options?: NewSessionOptions): string | undefined {
 		if (options?.id !== undefined) {
 			assertValidSessionId(options.id);

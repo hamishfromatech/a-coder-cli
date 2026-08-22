@@ -2779,6 +2779,11 @@ export class InteractiveMode {
 				void this.handleRewindCommand(arg);
 				return;
 			}
+			if (text === "/clear") {
+				this.editor.setText("");
+				await this.handleClearConversationCommand();
+				return;
+			}
 			if (text === "/debug") {
 				this.handleDebugCommand();
 				this.editor.setText("");
@@ -5576,6 +5581,26 @@ export class InteractiveMode {
 			...changed.map((p) => `  ${rel(p)}`),
 		];
 		print(lines.join("\n"));
+	}
+
+	/**
+	 * `/clear` — reset the current session in place: drop the conversation but
+	 * keep the same session file/identity. Distinct from `/new`, which starts a
+	 * brand-new session.
+	 */
+	private async handleClearConversationCommand(): Promise<void> {
+		this.clearStatusIndicator();
+		try {
+			const result = await this.runtimeHost.clearConversation();
+			if (result.cancelled) {
+				return;
+			}
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new Text(theme.fg("accent", "✓ Conversation cleared"), 1, 1));
+			this.ui.requestRender();
+		} catch (error: unknown) {
+			await this.handleFatalRuntimeError("Failed to clear conversation", error);
+		}
 	}
 
 	private async handleExportCommand(text: string): Promise<void> {

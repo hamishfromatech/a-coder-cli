@@ -31,6 +31,7 @@
 - Running-agents status chip in the status bar, fed by the new `subagents_update` engine event.
 - Teammate live transcript: `TeammateViewer` member rows are clickable when a live in-process sub-agent record exists, expanding an inline live transcript tail from the `subagents_update` event stream.
 - `/rewind [n]` command (via the command router → `rewind` RPC) that restores tracked files to a previous turn and shows the affected files in a toast.
+- `/clear` command (via the command router → `clear_conversation` RPC) that resets the current session in place, dropping the conversation without forking a new session.
 - Backported from main: provider-neutral `toolChoice: "auto" | "none"` simple option is now forwarded through all provider `streamSimple` paths.
 - Added **scoped persistent memory** to the `memory` tool. It now supports three scopes:
   - `global`: the existing `~/.a-coder-cli/MEMORY.md` shared across all workspaces and sessions.

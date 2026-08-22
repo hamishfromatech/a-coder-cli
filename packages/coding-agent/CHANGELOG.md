@@ -10,6 +10,7 @@
 - Running-agents status bar: a persistent TUI footer line (`BackgroundAgentsBar`) showing live sub-agent tool/token/elapsed summaries while agents run, driven by a new `subagents_update` session event; the desktop status bar shows a matching spinning "N agents" chip.
 - Teammate live transcript navigation: a TUI `SubAgentViewer` (Shift+↓ / `/subagents` picker, Enter to view a live transcript tail, `k` to kill) and a desktop `TeammateViewer` with clickable member rows that expand an inline live transcript panel.
 - File history & rewind: turn-bound pre-edit backups under `~/.a-coder-cli/file-history`, a `/rewind [n]` command (TUI) and a `rewind` RPC command (desktop `/rewind` via the command router) that restore tracked files to a previous user turn, leaving the conversation intact.
+- `/clear` command (TUI) and `clear_conversation` RPC command (desktop `/clear`): reset the current session in place — keep the same session id and file (and its parent link in the session tree) but drop every message entry, so the conversation is cleared without forking a new session. Backed by a new `SessionManager.rebindAndOverwriteFile` and a `clearConversation` runtime-host method, with a new `clear` session-start reason.
 
 ## [0.80.26] - 2026-08-22
 

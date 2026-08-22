@@ -6,7 +6,7 @@ import type { PermissionMode } from "../stores/session-store";
 // Events emitted by the engine include standard AgentEvents plus extension UI requests and queue updates.
 export interface SessionStartEvent {
 	type: "session_start";
-	reason: "startup" | "reload" | "new" | "resume" | "fork";
+		reason: "startup" | "reload" | "new" | "resume" | "fork" | "clear";
 	previousSessionFile?: string;
 }
 
@@ -367,6 +367,8 @@ export const followUp = (message: string, images?: ImageContent[]) =>
 export const abort = () => sendCommand({ type: "abort" });
 export const newSession = (parentSession?: string) =>
 	sendCommand({ type: "new_session", parentSession });
+export const clearConversation = () =>
+	sendCommand({ type: "clear_conversation" }) as Promise<{ cancelled: boolean }>;
 
 // ---- state / model ----
 export const getState = () => sendCommand({ type: "get_state" });

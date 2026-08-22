@@ -92,6 +92,7 @@ describe("commandRouter", () => {
 				"login",
 				"logout",
 				"new",
+				"clear",
 				"compact",
 				"resume",
 				"reload",

@@ -131,7 +131,7 @@ export class AgentSessionRuntime {
 	}
 
 	private async emitBeforeSwitch(
-		reason: "new" | "resume",
+		reason: "new" | "resume" | "clear",
 		targetSessionFile?: string,
 	): Promise<{ cancelled: boolean }> {
 		const runner = this.session.extensionRunner;
@@ -254,6 +254,50 @@ export class AgentSessionRuntime {
 			await options.setup(this.session.sessionManager);
 			this.session.agent.state.messages = this.session.sessionManager.buildSessionContext().messages;
 		}
+		await this.finishSessionReplacement(options?.withSession);
+		return { cancelled: false };
+	}
+
+	/**
+	 * `/clear` — reset the current session in place: keep the same session id
+	 * and file (and its parent link in the session tree) but drop every message
+	 * entry, rewriting the file to a fresh header. The runtime is replaced so
+	 * all in-memory conversation state is reset cleanly. Distinct from
+	 * `newSession`, which starts a brand-new session file.
+	 */
+	async clearConversation(options?: {
+		withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
+	}): Promise<{ cancelled: boolean }> {
+		const beforeResult = await this.emitBeforeSwitch("clear");
+		if (beforeResult.cancelled) {
+			return beforeResult;
+		}
+
+		const previousSessionFile = this.session.sessionFile;
+		const currentFile = this.session.sessionFile;
+		const currentId = this.session.sessionManager.getSessionId();
+		const parentSession = this.session.sessionManager.getHeader()?.parentSession;
+		const sessionDir = this.session.sessionManager.getSessionDir();
+
+		const sessionManager = this.session.sessionManager.isPersisted()
+			? SessionManager.create(this.cwd, sessionDir)
+			: SessionManager.inMemory(this.cwd);
+		// Fresh header with the SAME id + parent, then rebind to the EXISTING file
+		// and overwrite it (drops all prior message entries in place).
+		sessionManager.newSession({ id: currentId, parentSession });
+		if (currentFile) {
+			sessionManager.rebindAndOverwriteFile(currentFile);
+		}
+
+		await this.teardownCurrent("clear", currentFile);
+		this.apply(
+			await this.createRuntime({
+				cwd: this.cwd,
+				agentDir: this.services.agentDir,
+				sessionManager,
+				sessionStartEvent: { type: "session_start", reason: "clear", previousSessionFile },
+			}),
+		);
 		await this.finishSessionReplacement(options?.withSession);
 		return { cancelled: false };
 	}

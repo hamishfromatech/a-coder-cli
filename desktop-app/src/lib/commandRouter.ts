@@ -279,6 +279,18 @@ export const BUILTIN_COMMANDS: BuiltinCommand[] = [
 		}),
 	},
 	{
+		name: "clear",
+		description: "Clear the conversation (reset this session in place)",
+		route: () => ({
+			kind: "rpc",
+			call: async () => {
+				await rpc.clearConversation();
+				toast.success("Conversation cleared");
+			},
+			label: "Clear conversation",
+		}),
+	},
+	{
 		name: "compact",
 		description: "Manually compact the session context",
 		route: (args) => ({
