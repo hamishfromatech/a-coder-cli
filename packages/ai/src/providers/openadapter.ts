@@ -32,8 +32,8 @@ export function createOpenAdapterModel(
 ): Model<"openai-completions"> {
 	const pricing = meta?.pricing;
 	const contextLength = meta?.context_length ?? 128000;
-	// Default maxTokens to ~3% of context window, capped at 16k
-	const maxTokens = Math.min(16384, Math.floor(contextLength * 0.03));
+	// Default maxTokens to ~40% of context window, capped at 32k
+	const maxTokens = Math.min(32768, Math.floor(contextLength * 0.4));
 
 	return {
 		id,
