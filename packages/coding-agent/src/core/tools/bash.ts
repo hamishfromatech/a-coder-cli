@@ -67,10 +67,14 @@ export type BashToolInput = Static<typeof bashSchema>;
 export interface BashToolDetails {
 	truncation?: TruncationResult;
 	fullOutputPath?: string;
+	/** stderr output captured separately for layered rendering (stdout vs stderr). */
+	stderr?: string;
 }
 
 export interface BashExecOptions {
 	onData: (data: Buffer) => void;
+	/** Optional: receives stderr chunks separately (for layered rendering). When provided, stderr still flows to onData so the model sees merged output. */
+	onStderrData?: (data: Buffer) => void;
 	signal?: AbortSignal;
 	timeout?: number;
 	env?: NodeJS.ProcessEnv;
@@ -115,7 +119,7 @@ export interface BashOperations {
  */
 export function createLocalBashOperations(options?: { shellPath?: string }): BashOperations {
 	return {
-		exec: async (command, cwd, { onData, signal, timeout, env, backgroundCheck }) => {
+		exec: async (command, cwd, { onData, onStderrData, signal, timeout, env, backgroundCheck }) => {
 			const timeoutMs = resolveTimeoutMs(timeout);
 			if (signal?.aborted) {
 				throw new Error("aborted");
@@ -156,7 +160,12 @@ export function createLocalBashOperations(options?: { shellPath?: string }): Bas
 				}
 				// Stream stdout and stderr.
 				child.stdout?.on("data", onData);
-				child.stderr?.on("data", onData);
+				child.stderr?.on("data", (data: Buffer) => {
+					// Report stderr separately for layered rendering, and also
+					// merge into onData so the model sees interleaved output.
+					onStderrData?.(data);
+					onData(data);
+				});
 				// Handle abort signal by killing the entire process tree.
 				if (signal) {
 					if (signal.aborted) onAbort();
@@ -341,6 +350,16 @@ function rebuildBashResultRenderComponent(
 		}
 	}
 
+	// Render stderr separately in error color if captured.
+	const stderr = result.details?.stderr;
+	if (stderr) {
+		const styledStderr = stderr
+			.split("\n")
+			.map((line) => theme.fg("error", line))
+			.join("\n");
+		component.addChild(new Text(`\n${theme.fg("muted", "stderr:")}\n${styledStderr}`, 0, 0));
+	}
+
 	if (truncation?.truncated || fullOutputPath) {
 		const warnings: string[] = [];
 		if (fullOutputPath) {
@@ -506,6 +525,13 @@ export function createBashToolDefinition(
 				scheduleOutputUpdate();
 			};
 
+			// Accumulate stderr separately for layered rendering (stdout muted, stderr red).
+			const stderrChunks: Buffer[] = [];
+			const handleStderrData = (data: Buffer) => {
+				if (!acceptingOutput) return;
+				stderrChunks.push(data);
+			};
+
 			const finishOutput = async () => {
 				acceptingOutput = false;
 				output.finish();
@@ -520,17 +546,26 @@ export function createBashToolDefinition(
 				const truncation = snapshot.truncation;
 				let text = snapshot.content || emptyText;
 				let details: BashToolDetails | undefined;
-				if (truncation.truncated) {
-					details = { truncation, fullOutputPath: snapshot.fullOutputPath };
+				// Include stderr if captured.
+				const stderrText =
+					stderrChunks.length > 0 ? Buffer.concat(stderrChunks).toString("utf8").trimEnd() : undefined;
+				if (truncation.truncated || stderrText) {
+					details = {
+						truncation: truncation.truncated ? truncation : undefined,
+						fullOutputPath: snapshot.fullOutputPath,
+						stderr: stderrText,
+					};
 					const startLine = truncation.totalLines - truncation.outputLines + 1;
 					const endLine = truncation.totalLines;
-					if (truncation.lastLinePartial) {
-						const lastLineSize = formatSize(output.getLastLineBytes());
-						text += `\n\n[Showing last ${formatSize(truncation.outputBytes)} of line ${endLine} (line is ${lastLineSize}). Full output: ${snapshot.fullOutputPath}]`;
-					} else if (truncation.truncatedBy === "lines") {
-						text += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines}. Full output: ${snapshot.fullOutputPath}]`;
-					} else {
-						text += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines} (${formatSize(DEFAULT_MAX_BYTES)} limit). Full output: ${snapshot.fullOutputPath}]`;
+					if (truncation.truncated) {
+						if (truncation.lastLinePartial) {
+							const lastLineSize = formatSize(output.getLastLineBytes());
+							text += `\n\n[Showing last ${formatSize(truncation.outputBytes)} of line ${endLine} (line is ${lastLineSize}). Full output: ${snapshot.fullOutputPath}]`;
+						} else if (truncation.truncatedBy === "lines") {
+							text += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines}. Full output: ${snapshot.fullOutputPath}]`;
+						} else {
+							text += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines} (${formatSize(DEFAULT_MAX_BYTES)} limit). Full output: ${snapshot.fullOutputPath}]`;
+						}
 					}
 				}
 				return { text, details };
@@ -543,6 +578,7 @@ export function createBashToolDefinition(
 				try {
 					const result = await ops.exec(spawnContext.command, spawnContext.cwd, {
 						onData: handleData,
+						onStderrData: handleStderrData,
 						signal,
 						timeout,
 						env: spawnContext.env,

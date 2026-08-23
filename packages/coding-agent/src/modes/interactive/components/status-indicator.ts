@@ -4,6 +4,33 @@ import { theme } from "../theme/theme.ts";
 import { CountdownTimer } from "./countdown-timer.ts";
 import { keyText } from "./keybinding-hints.ts";
 
+const SHIMMER_STEP_MS = 100;
+const SHIMMER_HALF_WIDTH = 1; // 3-char shimmer window
+const REST_PADDING = 10; // ticks the shimmer rests off each side
+
+/** Apply a right-to-left shimmer sweep across plain text. */
+function applyShimmer(text: string): string {
+	const len = text.length;
+	if (len === 0) return text;
+
+	const baseColor = theme.getFgAnsi("accent");
+	const shimmerColor = theme.getFgAnsi("text"); // lighter accent
+	const reset = "\x1b[39m";
+
+	const tick = Math.floor(Date.now() / SHIMMER_STEP_MS);
+	const cycleLength = len + REST_PADDING * 2;
+	const glimmerIndex = len + REST_PADDING - (tick % cycleLength);
+	const start = glimmerIndex - SHIMMER_HALF_WIDTH;
+	const endExcl = glimmerIndex + SHIMMER_HALF_WIDTH + 1;
+
+	// Shimmer is off-screen (resting): solid base color.
+	if (start >= len || endExcl <= 0) return `${baseColor}${text}${reset}`;
+
+	const s = Math.max(0, start);
+	const e = Math.min(len, endExcl);
+	return `${baseColor}${text.slice(0, s)}${shimmerColor}${text.slice(s, e)}${baseColor}${text.slice(e)}${reset}`;
+}
+
 export type StatusIndicatorKind = "working" | "retry" | "compaction" | "branchSummary";
 
 export class StatusIndicator extends Loader {
@@ -37,7 +64,7 @@ export class WorkingStatusIndicator extends StatusIndicator {
 			"working",
 			ui,
 			(spinner) => theme.fg("accent", spinner),
-			(text) => theme.fg("muted", text),
+			(text) => applyShimmer(text),
 			message,
 			indicator,
 		);

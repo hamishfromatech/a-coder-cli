@@ -5,6 +5,7 @@ import { getTextOutput as getRenderedTextOutput } from "../../../core/tools/rend
 import { getToolRendererOverride } from "../../../core/tools/tool-renderer-registry.ts";
 import { convertToPng } from "../../../utils/image-convert.ts";
 import { theme } from "../theme/theme.ts";
+import { isBlinkVisible, subscribeBlink } from "./blink-clock.ts";
 
 export interface ToolExecutionOptions {
 	showImages?: boolean;
@@ -40,6 +41,7 @@ export class ToolExecutionComponent extends Container {
 	};
 	private convertedImages: Map<number, { data: string; mimeType: string }> = new Map();
 	private hideComponent = false;
+	private blinkUnsubscribe: (() => void) | undefined;
 
 	constructor(
 		toolName: string,
@@ -161,6 +163,10 @@ export class ToolExecutionComponent extends Container {
 
 	markExecutionStarted(): void {
 		this.executionStarted = true;
+		// Start the shared blink clock so the status dot pulses while running.
+		if (!this.blinkUnsubscribe) {
+			this.blinkUnsubscribe = subscribeBlink(this.ui);
+		}
 		this.updateDisplay();
 		this.ui.requestRender();
 	}
@@ -181,6 +187,11 @@ export class ToolExecutionComponent extends Container {
 	): void {
 		this.result = result;
 		this.isPartial = isPartial;
+		// Stop blinking once the tool has settled (non-partial result).
+		if (!isPartial && this.blinkUnsubscribe) {
+			this.blinkUnsubscribe();
+			this.blinkUnsubscribe = undefined;
+		}
 		this.updateDisplay();
 		this.maybeConvertImagesForKitty();
 	}
@@ -233,13 +244,21 @@ export class ToolExecutionComponent extends Container {
 			return [];
 		}
 
+		const lines: string[] = [];
+
+		// Prepend a status dot line while running — the dot blinks via the shared clock.
+		if (this.isRunning()) {
+			const dotVisible = isBlinkVisible();
+			const dot = dotVisible ? "●" : " ";
+			lines.push(`${theme.fg("accent", dot)} ${theme.fg("toolTitle", theme.bold(this.toolName))}`);
+		}
+
 		if (this.hasRendererDefinition() && this.getRenderShell() === "self") {
 			const contentLines = this.selfRenderContainer.render(width);
 			if (contentLines.length === 0 && this.imageComponents.length === 0) {
-				return [];
+				return lines;
 			}
 
-			const lines: string[] = [];
 			if (contentLines.length > 0) {
 				lines.push("");
 				lines.push(...contentLines);
@@ -257,7 +276,8 @@ export class ToolExecutionComponent extends Container {
 			return lines;
 		}
 
-		return super.render(width);
+		const superLines = super.render(width);
+		return [...lines, ...superLines];
 	}
 
 	private updateDisplay(): void {
@@ -390,6 +410,10 @@ export class ToolExecutionComponent extends Container {
 	 * Called when this component is removed from the chat.
 	 */
 	dispose(): void {
+		if (this.blinkUnsubscribe) {
+			this.blinkUnsubscribe();
+			this.blinkUnsubscribe = undefined;
+		}
 		const state = this.rendererState as { progressComponent?: { dispose?: () => void } };
 		if (state?.progressComponent?.dispose) {
 			state.progressComponent.dispose();
