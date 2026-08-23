@@ -121,6 +121,40 @@ Attribution:
 
 **Lockstep versioning**: all packages share one version; every release updates all together. `patch` = fixes + additions, `minor` = breaking changes. No major releases.
 
+**What triggers a release**: pushing a `v*` tag (e.g. `v0.80.30`) triggers `.github/workflows/build-binaries.yml`, which builds CLI binaries + desktop installers (via `desktop-build.yml` workflow_call), stages a draft GitHub Release, publishes npm packages via OIDC trusted publishing (no local `npm publish`/OTP needed), then publishes the GitHub Release. A bare branch push to `feat/desktop-unified-release` only builds test binaries as artifacts — it does not release.
+
+There are two release flows: a quick manual flow for fast iteration, and the full release script for proper changelog-managed releases.
+
+### Quick release (manual, on `feat/desktop-unified-release`)
+
+Use this for fast iteration when changelog updates aren't needed yet. All commands from the repo root:
+
+1. Bump the version and sync lockfiles:
+   ```bash
+   npm run version:patch
+   ```
+2. Regenerate release artifacts:
+   ```bash
+   npm run shrinkwrap:coding-agent
+   npm run install-lock:coding-agent
+   ```
+3. Stage and commit (lockfile changes need the env var):
+   ```bash
+   git add -u
+   A_CODER_CLI_ALLOW_LOCKFILE_CHANGE=1 git commit -m "chore: version bump to <version>"
+   ```
+4. Push the branch, then create and push the tag:
+   ```bash
+   git push origin feat/desktop-unified-release
+   git tag v<version>
+   git push origin v<version>
+   ```
+   The tag push triggers the full CI release pipeline. Do not rerun for the same version — if CI fails, fix and re-run the tag workflow via the GitHub Actions UI (`workflow_dispatch` with the same tag).
+
+### Full release (via release script, on `main`)
+
+Use this for proper releases with changelog management. Requires a clean working tree on `main`.
+
 1. **Update CHANGELOGs**: ask the user whether they ran the `/cl` prompt on the latest commit on `main`. If not, they must run `/cl` first to audit and update each package's `[Unreleased]` section before releasing.
 
 2. **Local smoke test**: build an unpublished release and smoke test from outside the repo (so it can't resolve workspace files):
@@ -151,11 +185,21 @@ Attribution:
    ```
    Use `npm_config_min_release_age=0` only for the release command. The repo's normal npm age gate can otherwise block the release lockfile refresh when the current workspace package version was published recently. Review any lockfile or shrinkwrap diffs the release creates before push.
 
-   The release script bumps all package versions, updates changelogs, regenerates release artifacts, runs `npm run check`, commits `Release vX.Y.Z`, tags `vX.Y.Z`, adds fresh `## [Unreleased]` changelog sections, commits `Add [Unreleased] section for next cycle`, then pushes `main` and the tag. Do not rerun the release script after a tag was pushed.
+   The release script bumps all package versions, updates changelogs (`[Unreleased]` → `[version] - date`), regenerates release artifacts, runs `npm run check`, commits `Release vX.Y.Z`, tags `vX.Y.Z`, adds fresh `## [Unreleased]` changelog sections, commits `Add [Unreleased] section for next cycle`, then pushes `main` and the tag. Do not rerun the release script after a tag was pushed.
 
-4. **CI publishes npm packages**: pushing the `vX.Y.Z` tag triggers `.github/workflows/build-binaries.yml`. The `publish-npm` job uses npm trusted publishing through GitHub Actions OIDC with environment `npm-publish`; no local `npm publish`, `npm whoami`, OTP, or WebAuthn flow is required.
+### Desktop-only release
 
-5. **If CI publish fails**: inspect the failed `publish-npm` job. The publish helper is idempotent and skips package versions already present on npm, so rerun the tag workflow after fixing CI or transient npm issues. Do not rerun `npm run release:patch` or `npm run release:minor` for the same version.
+Pushing a `desktop-v*` tag (e.g. `desktop-v0.80.30`) triggers `desktop-build.yml`'s release job, which builds and publishes desktop installers as a standalone GitHub Release. Use this when only the desktop app changed and the CLI version is unchanged. The unified `v*` tag flow already includes desktop installers in the same release, so this is only for desktop-only updates.
+
+### After the release
+
+- **CI publishes npm packages**: the `publish-npm` job in `build-binaries.yml` uses npm trusted publishing through GitHub Actions OIDC with environment `npm-publish`; no local `npm publish`, `npm whoami`, OTP, or WebAuthn flow is required.
+- **If CI publish fails**: inspect the failed `publish-npm` job. The publish helper is idempotent and skips package versions already present on npm, so rerun the tag workflow after fixing CI or transient npm issues. Do not rerun `npm run release:patch`/`npm run release:minor` or re-push the tag for the same version.
+- **Install locally** to verify the release:
+   ```bash
+   curl -sSf https://raw.githubusercontent.com/hamishfromatech/pi-mono/feat/desktop-unified-release/install-a-coder.sh | bash
+   a-coder-cli --version
+   ```
 
 ## User Override
 
