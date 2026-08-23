@@ -9,8 +9,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { Badge } from './ui/Badge';
-import { Command, CornerDownLeft, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
 
 export interface CommandItem {
 	id: string;

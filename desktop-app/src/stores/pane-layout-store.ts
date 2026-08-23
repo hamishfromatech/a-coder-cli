@@ -7,7 +7,7 @@
 
 import { create } from "zustand";
 import type { LayoutNode, GroupNode, SplitNode, DropPosition } from "../lib/pane-layout";
-import { group, split, insertAtGroup, removePane, setActivePane, setSplitWeights, normalize } from "../lib/pane-layout";
+import { group, insertAtGroup, removePane, setActivePane, setSplitWeights, normalize } from "../lib/pane-layout";
 
 export type PaneKind =
 	| "chat"

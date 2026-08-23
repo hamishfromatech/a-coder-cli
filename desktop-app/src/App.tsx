@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronsUpDown, FolderGit2, MessageSquare, Plus, Settings, Sparkles, X } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import * as rpc from "./lib/rpc";
@@ -20,6 +20,7 @@ import { useUpdateStore } from "./stores/update-store";
 import { toast } from "./stores/toast-store";
 import { applyNamedTheme } from "./lib/themes";
 import { useGlobalKeybindings } from "./hooks/useGlobalKeybindings";
+import { useClosedTabsStore } from "./stores/closed-tabs-store";
 import { useUpdateCheck } from "./hooks/useUpdateCheck";
 import { ChangelogModal } from "./components/ChangelogModal";
 import { ChatBackdrop } from "./components/ChatBackdrop";
@@ -27,6 +28,7 @@ import { CommandCenter } from "./components/CommandCenter";
 import { CommandPalette, type CommandItem } from "./components/CommandPalette";
 import { Composer } from "./components/Composer";
 import { FindBar } from "./components/FindBar";
+import { HomeDashboard } from "./components/HomeDashboard";
 import { MessageList } from "./components/MessageList";
 import { MemoryModal } from "./components/MemoryModal";
 import { ModelPicker } from "./components/ModelPicker";
@@ -109,6 +111,7 @@ export default function App() {
 	const [showFindBar, setShowFindBar] = useState(false);
 	const [showCommandPalette, setShowCommandPalette] = useState(false);
 	const [showCommandCenter, setShowCommandCenter] = useState(false);
+	const [showHome, setShowHome] = useState(false);
 	const [showSubagents, setShowSubagents] = useState(false);
 	const [showTeams, setShowTeams] = useState(false);
 	const [questionRequest, setQuestionRequest] = useState<{
@@ -764,6 +767,15 @@ export default function App() {
 		const onOpenSettings = () => setShowSettings(true);
 		const onOpenFindBar = () => setShowFindBar(true);
 		const onOpenCommandPalette = () => setShowCommandPalette(true);
+		const onOpenHome = () => setShowHome(true);
+		const onReopenClosedTab = () => {
+			const tab = useClosedTabsStore.getState().take();
+			if (tab) {
+				void rpc.switchSession(tab.sessionId).catch(() => {});
+			}
+			setShowHome(false);
+			setShowResume(false);
+		};
 		const onOpenAccount = () => {
 			setShowSettings(true);
 			// Then navigate to the account section (handled by SettingsPanel via URL hash).
@@ -798,6 +810,8 @@ export default function App() {
 		window.addEventListener("a-coder:open-settings", onOpenSettings);
 		window.addEventListener("a-coder:find-in-page", onOpenFindBar);
 		window.addEventListener("a-coder:command-palette", onOpenCommandPalette);
+		window.addEventListener("a-coder:open-home", onOpenHome);
+		window.addEventListener("a-coder:reopen-closed-tab", onReopenClosedTab);
 		window.addEventListener("a-coder:open-account", onOpenAccount);
 		window.addEventListener("a-coder:open-model-picker", onOpenModel);
 		window.addEventListener("a-coder:open-session-picker", onOpenSession);
@@ -815,6 +829,8 @@ export default function App() {
 			window.removeEventListener("a-coder:open-settings", onOpenSettings);
 			window.removeEventListener("a-coder:find-in-page", onOpenFindBar);
 			window.removeEventListener("a-coder:command-palette", onOpenCommandPalette);
+		window.removeEventListener("a-coder:open-home", onOpenHome);
+		window.removeEventListener("a-coder:reopen-closed-tab", onReopenClosedTab);
 			window.removeEventListener("a-coder:open-account", onOpenAccount);
 			window.removeEventListener("a-coder:open-model-picker", onOpenModel);
 			window.removeEventListener("a-coder:open-session-picker", onOpenSession);
@@ -829,6 +845,19 @@ export default function App() {
 			window.removeEventListener("a-coder:check-updates", onCheckUpdates);
 		};
 	}, [setAvailableCommands]);
+
+	// Push the current session onto the closed-tabs stack before switching.
+	const pushCurrentToClosedTabs = useCallback(() => {
+		const ss = useSessionStore.getState();
+		if (ss.sessionId && ss.sessionName) {
+			useClosedTabsStore.getState().push({
+				sessionId: ss.sessionId,
+				sessionName: ss.sessionName,
+				projectPath: useWorkspaceStore.getState().current,
+				closedAt: Date.now(),
+			});
+		}
+	}, []);
 
 	const handleReconnect = useCallback(async () => {
 		unlistenRef.current?.();
@@ -897,6 +926,8 @@ export default function App() {
 			{ id: "model-picker", label: "Select model", keybinding: "⌘P", group: "navigate", action: () => setShowModelPicker(true) },
 			{ id: "project-picker", label: "Open project", group: "navigate", action: () => setShowProjectPicker(true) },
 			{ id: "find", label: "Find in page", keybinding: "⌘F", group: "navigate", action: () => setShowFindBar(true) },
+			{ id: "home", label: "Open home dashboard", keybinding: "⇧⌘H", group: "navigate", action: () => setShowHome(true) },
+			{ id: "reopen-closed-tab", label: "Reopen closed session", keybinding: "⇧⌘T", group: "session", action: () => window.dispatchEvent(new CustomEvent("a-coder:reopen-closed-tab")) },
 			{ id: "settings", label: "Open settings", keybinding: "⌘,", group: "settings", action: () => setShowSettings(true) },
 			{ id: "hotkeys", label: "Show keyboard shortcuts", group: "settings", action: () => setShowHotkeys(true) },
 			{ id: "changelog", label: "Show changelog", group: "settings", action: () => setShowChangelog(true) },
@@ -920,7 +951,7 @@ export default function App() {
 				if (node.children.length > 0) walk(node.children);
 				if (node.label) {
 					sessions.push({
-						id: node.entry.id,
+						id: node.id,
 						name: node.label,
 						lastActive: 0,
 						messageCount: 0,
@@ -931,6 +962,26 @@ export default function App() {
 		walk(tree.tree);
 		return sessions;
 	}, []);
+
+	// Projects list for the Home Dashboard.
+	const recentProjects = useWorkspaceStore((s) => s.recentProjects);
+	const homeProjects = useMemo(() => {
+		return recentProjects.map((path) => ({
+			path,
+			name: path.split("/").pop() || path,
+		}));
+	}, [recentProjects]);
+
+	// Sessions for the Home Dashboard (GroupableSession[]).
+	const homeSessions = useMemo(() => {
+		return sessionList.map((s) => ({
+			id: s.id,
+			name: s.name,
+			lastActive: s.lastActive || Date.now(),
+			projectPath: useWorkspaceStore.getState().current,
+			projectName: useWorkspaceStore.getState().current.split("/").pop() || undefined,
+		}));
+	}, [sessionList]);
 
 	// Usage stats for the Command Center.
 	const statsState = useStatsStore((s) => s.stats);
@@ -1033,6 +1084,7 @@ export default function App() {
 					onClose={() => setShowResume(false)}
 					onResume={async (sessionPath) => {
 						setShowResume(false);
+						pushCurrentToClosedTabs();
 						try {
 							await rpc.switchSession(sessionPath);
 						} catch (e) {
@@ -1150,6 +1202,31 @@ export default function App() {
 				onClose={() => setShowCommandCenter(false)}
 				sessions={sessionList}
 				stats={usageStats}
+			/>
+
+			{/* ================== Home dashboard (⇧⌘H) ================== */}
+			<HomeDashboard
+				open={showHome}
+				onClose={() => setShowHome(false)}
+				sessions={homeSessions}
+				projects={homeProjects}
+				onOpenSession={async (sessionId) => {
+					setShowHome(false);
+					pushCurrentToClosedTabs();
+					try {
+						await rpc.switchSession(sessionId);
+					} catch (e) {
+						toast.error("Failed to open session", e instanceof Error ? e.message : String(e));
+					}
+				}}
+				onOpenProject={(path) => {
+					setShowHome(false);
+					void switchProject(path);
+				}}
+				onNewSession={() => {
+					setShowHome(false);
+					void rpc.sendCommand({ type: "new" }).catch(() => {});
+				}}
 			/>
 		</div>
 	);

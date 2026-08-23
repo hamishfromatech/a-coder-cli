@@ -10,18 +10,13 @@
  * Inspired by Hermes Desktop's command-center.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { Button } from './ui/Button';
-import { Badge } from './ui/Badge';
 import {
 	Activity,
-	AlertCircle,
 	BarChart3,
-	CheckCircle2,
-	ChevronDown,
-	ChevronUp,
 	Download,
 	MessageCircle,
 	Search,
@@ -58,7 +53,6 @@ interface CommandCenterProps {
 		topModels?: Array<{ model: string; tokens: number }>;
 	};
 	logs?: string[];
-	onRefreshLogs?: () => Promise<void>;
 	onRestartGateway?: () => Promise<void>;
 	onUpdate?: () => Promise<void>;
 }
@@ -79,7 +73,6 @@ export function CommandCenter({
 	onExportSession,
 	stats,
 	logs = [],
-	onRefreshLogs,
 	onRestartGateway,
 	onUpdate,
 }: CommandCenterProps) {
@@ -204,7 +197,6 @@ export function CommandCenter({
 								logLevel={logLevel}
 								onLogQueryChange={setLogQuery}
 								onLogLevelChange={setLogLevel}
-								onRefresh={onRefreshLogs}
 								onRestart={onRestartGateway}
 								onUpdate={onUpdate}
 							/>
@@ -271,13 +263,13 @@ function SessionsSection({
 
 			{/* List */}
 			<div className="min-h-0 flex-1 overflow-auto">
-				{sessions.length === 0 ? (
+				{(sessions?.length ?? 0) === 0 ? (
 					<div className="flex h-32 items-center justify-center text-xs text-[var(--pi-text-muted)]">
 						{query ? 'No sessions found' : 'No sessions yet'}
 					</div>
 				) : (
 					<ul className="space-y-1">
-						{sessions.map((session) => (
+						{sessions?.map((session) => (
 							<li
 								key={session.id}
 								className="group flex items-center gap-3 rounded-md px-2 py-2 hover:bg-[var(--pi-surface-raised)]"
@@ -295,14 +287,14 @@ function SessionsSection({
 								</button>
 								<div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
 									<Button
-										size="icon"
+										size="sm"
 										variant="ghost"
 										onClick={() => onExport?.(session.id)}
 									>
 										<Download className="size-3" />
 									</Button>
 									<Button
-										size="icon"
+										size="sm"
 										variant="ghost"
 										onClick={() => onDelete?.(session.id)}
 									>
@@ -324,7 +316,6 @@ interface SystemSectionProps {
 	logLevel: 'ALL' | 'INFO' | 'WARNING' | 'ERROR';
 	onLogQueryChange: (q: string) => void;
 	onLogLevelChange: (level: 'ALL' | 'INFO' | 'WARNING' | 'ERROR') => void;
-	onRefresh?: () => Promise<void>;
 	onRestart?: () => Promise<void>;
 	onUpdate?: () => Promise<void>;
 }
@@ -335,7 +326,6 @@ function SystemSection({
 	logLevel,
 	onLogQueryChange,
 	onLogLevelChange,
-	onRefresh,
 	onRestart,
 	onUpdate,
 }: SystemSectionProps) {

@@ -12,6 +12,11 @@ import { createPortal } from 'react-dom';
 import { Button } from './ui/Button';
 import { ChevronUp, ChevronDown, X } from 'lucide-react';
 
+interface FindBarProps {
+	open: boolean;
+	onClose: () => void;
+}
+
 export function FindBar({ open, onClose }: FindBarProps) {
 	const [query, setQuery] = useState('');
 	const [matchOrdinal, setMatchOrdinal] = useState(0);
@@ -59,13 +64,13 @@ export function FindBar({ open, onClose }: FindBarProps) {
 
 	function findNext() {
 		if (query) {
-			void performFind(query, 'next');
+			void performFind(query);
 		}
 	}
 
 	function findPrevious() {
 		if (query) {
-			void performFind(query, 'previous');
+			void performFind(query);
 		}
 	}
 
@@ -127,13 +132,13 @@ export function FindBar({ open, onClose }: FindBarProps) {
 					{matchOrdinal} / {matchCount}
 				</span>
 			)}
-			<Button onClick={findPrevious} size="icon" variant="ghost" aria-label="Find previous">
+			<Button onClick={findPrevious} size="sm" variant="ghost" aria-label="Find previous">
 				<ChevronUp className="size-4" />
 			</Button>
-			<Button onClick={findNext} size="icon" variant="ghost" aria-label="Find next">
+			<Button onClick={findNext} size="sm" variant="ghost" aria-label="Find next">
 				<ChevronDown className="size-4" />
 			</Button>
-			<Button onClick={onClose} size="icon" variant="ghost" aria-label="Close">
+			<Button onClick={onClose} size="sm" variant="ghost" aria-label="Close">
 				<X className="size-4" />
 			</Button>
 		</div>,

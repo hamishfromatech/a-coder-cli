@@ -14,6 +14,20 @@ export function useGlobalKeybindings(): void {
 				return;
 			}
 
+			// Cmd/Ctrl+Shift+T — reopen last closed tab.
+			if (e.shiftKey && e.key.toLowerCase() === "t") {
+				e.preventDefault();
+				window.dispatchEvent(new CustomEvent("a-coder:reopen-closed-tab"));
+				return;
+			}
+
+			// Cmd/Ctrl+Shift+H — open home dashboard.
+			if (e.shiftKey && e.key.toLowerCase() === "h") {
+				e.preventDefault();
+				window.dispatchEvent(new CustomEvent("a-coder:open-home"));
+				return;
+			}
+
 			switch (e.key.toLowerCase()) {
 				case ",":
 					e.preventDefault();

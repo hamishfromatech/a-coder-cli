@@ -3,12 +3,12 @@
  * Mirrors OpenCode's NewHome + HomeProjects + HomeSessions pattern.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { Button } from "./ui/Button";
 import { groupSessionsByTime, formatRelativeTime, type GroupableSession, type SessionGroup } from "../lib/session-grouping";
-import { useClosedTabsStore, type ClosedSessionTab } from "../stores/closed-tabs-store";
+import { useClosedTabsStore } from "../stores/closed-tabs-store";
 import {
 	ChevronDown,
 	ChevronRight,
@@ -17,7 +17,6 @@ import {
 	Plus,
 	Search,
 	X,
-	RefreshCw,
 	History,
 } from "lucide-react";
 

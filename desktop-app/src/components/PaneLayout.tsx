@@ -6,12 +6,11 @@
  * Supports minimize/restore, drag-drop, and weight-based resizing.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useCallback, useRef, useState } from 'react';
 
 import type { GroupNode, LayoutNode, SplitNode } from '../lib/pane-layout';
-import { findGroup, setActivePane, setSplitWeights } from '../lib/pane-layout';
-import { ChevronDown, ChevronLeft, X } from 'lucide-react';
+import { setActivePane, setSplitWeights } from '../lib/pane-layout';
+import { ChevronDown, X } from 'lucide-react';
 
 export interface PaneConfig {
 	id: string;
