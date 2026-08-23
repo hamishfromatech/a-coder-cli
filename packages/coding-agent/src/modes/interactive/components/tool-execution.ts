@@ -132,6 +132,7 @@ export class ToolExecutionComponent extends Container {
 			lastComponent,
 			state: this.rendererState,
 			cwd: this.cwd,
+			ui: this.ui,
 			executionStarted: this.executionStarted,
 			argsComplete: this.argsComplete,
 			isPartial: this.isPartial,
@@ -382,5 +383,26 @@ export class ToolExecutionComponent extends Container {
 			text += `\n${output}`;
 		}
 		return text;
+	}
+
+	/**
+	 * Clean up renderer state (e.g. store subscriptions from tool renderers).
+	 * Called when this component is removed from the chat.
+	 */
+	dispose(): void {
+		const state = this.rendererState as { progressComponent?: { dispose?: () => void } };
+		if (state?.progressComponent?.dispose) {
+			state.progressComponent.dispose();
+		}
+	}
+
+	/** The tool name for this execution (e.g. "bash", "read"). */
+	getToolName(): string {
+		return this.toolName;
+	}
+
+	/** True when the tool is still executing (partial result, no final result yet). */
+	isRunning(): boolean {
+		return this.isPartial && this.executionStarted && !this.result?.isError;
 	}
 }

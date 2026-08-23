@@ -29,7 +29,7 @@ export interface WelcomeBannerOptions {
 function prettyCwd(cwd: string): string {
 	const home = os.homedir();
 	if (cwd === home) return "~";
-	if (cwd.startsWith(home + path.sep)) return "~" + cwd.slice(home.length);
+	if (cwd.startsWith(home + path.sep)) return `~${cwd.slice(home.length)}`;
 	return cwd;
 }
 

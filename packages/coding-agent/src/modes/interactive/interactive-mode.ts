@@ -87,6 +87,12 @@ import { type SessionEntry, SessionManager, sessionEntryToContextMessages } from
 import type { PermissionMode } from "../../core/settings-manager.ts";
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
+import {
+	completeBackgroundProcess,
+	getBackgroundProcesses,
+	requestBackground,
+	subscribeBackgroundProcesses,
+} from "../../core/stores/index.ts";
 import { getTaskListId, listTasks } from "../../core/tasks/task-store.ts";
 import { isInstallTelemetryEnabled } from "../../core/telemetry.ts";
 import { generateDiffString } from "../../core/tools/edit-diff.ts";
@@ -98,12 +104,14 @@ import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipb
 import { parseGitUrl } from "../../utils/git.ts";
 import { getCwdRelativePath } from "../../utils/paths.ts";
 import { getPiUserAgent } from "../../utils/pi-user-agent.ts";
-import { killTrackedDetachedChildren } from "../../utils/shell.ts";
+import { killProcessTree, killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { ensureTool } from "../../utils/tools-manager.ts";
 import { checkForNewPiVersion, type LatestPiRelease } from "../../utils/version-check.ts";
 import { ArminComponent } from "./components/armin.ts";
 import { AssistantMessageComponent } from "./components/assistant-message.ts";
 import { BackgroundAgentsBarComponent } from "./components/background-agent-bar.ts";
+import { BackgroundProcessesBarComponent } from "./components/background-process-bar.ts";
+import { BackgroundProcessViewerComponent } from "./components/background-process-viewer.ts";
 import { BashExecutionComponent } from "./components/bash-execution.ts";
 import { BorderedLoader } from "./components/bordered-loader.ts";
 import { BranchSummaryMessageComponent } from "./components/branch-summary-message.ts";
@@ -346,6 +354,14 @@ export class InteractiveMode {
 	// Tool execution tracking: toolCallId -> component
 	private pendingTools = new Map<string, ToolExecutionComponent>();
 
+	/** Dispose all pending tool components and clear the map. */
+	private clearPendingTools(): void {
+		for (const component of this.pendingTools.values()) {
+			component.dispose();
+		}
+		this.pendingTools.clear();
+	}
+
 	// Tool output expansion state
 	private toolOutputExpanded = false;
 
@@ -375,7 +391,11 @@ export class InteractiveMode {
 	private unsubscribeSubAgents?: () => void;
 	private backgroundAgentsBar = new BackgroundAgentsBarComponent();
 	private backgroundAgentsBarTimer: ReturnType<typeof setInterval> | undefined;
+	private backgroundProcessesBar = new BackgroundProcessesBarComponent();
+	private backgroundProcessesBarTimer: ReturnType<typeof setInterval> | undefined;
+	private unsubscribeBackgroundProcesses?: () => void;
 	private subAgentViewer?: SubAgentViewerComponent;
+	private backgroundProcessViewer?: BackgroundProcessViewerComponent;
 
 	// Auto-compaction state
 	private autoCompactionEscapeHandler?: () => void;
@@ -695,6 +715,7 @@ export class InteractiveMode {
 		this.ui.addChild(this.pendingMessagesContainer);
 		this.ui.addChild(this.statusContainer);
 		this.ui.addChild(this.backgroundAgentsBar);
+		this.ui.addChild(this.backgroundProcessesBar);
 		this.renderWidgets(); // Initialize with default spacer
 		this.ui.addChild(this.widgetContainerAbove);
 		this.ui.addChild(this.editorContainer);
@@ -736,6 +757,8 @@ export class InteractiveMode {
 				hint("app.model.select", "to select model"),
 				hint("app.tools.expand", "to expand tools"),
 				hint("app.transcript.toggle", "for transcript"),
+				hint("app.bash.background", "to background bash"),
+				hint("app.backgrounds.view", "for background processes"),
 				hint("app.thinking.toggle", "to expand thinking"),
 				hint("app.editor.external", "for external editor"),
 				rawKeyHint("/", "for commands"),
@@ -1737,12 +1760,17 @@ export class InteractiveMode {
 			clearInterval(this.backgroundAgentsBarTimer);
 			this.backgroundAgentsBarTimer = undefined;
 		}
+		this.backgroundProcessesBar.update([]);
+		if (this.backgroundProcessesBarTimer) {
+			clearInterval(this.backgroundProcessesBarTimer);
+			this.backgroundProcessesBarTimer = undefined;
+		}
 		this.pendingMessagesContainer.clear();
 		this.compactionQueuedMessages = [];
 		this.streamingComponent?.dispose();
 		this.streamingComponent = undefined;
 		this.streamingMessage = undefined;
-		this.pendingTools.clear();
+		this.clearPendingTools();
 		this.renderInitialMessages();
 	}
 
@@ -2679,6 +2707,8 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.session.resume", () => this.showSessionSelector());
 		this.defaultEditor.onAction("app.permissionMode.select", () => this.showPermissionModeSelector());
 		this.defaultEditor.onAction("app.subagents.view", () => this.showSubAgentViewer());
+		this.defaultEditor.onAction("app.backgrounds.view", () => this.showBackgroundProcessViewer());
+		this.defaultEditor.onAction("app.bash.background", () => this.backgroundCurrentBashCommand());
 		this.defaultEditor.onAction("app.planMode.toggle", () => this.togglePlanMode());
 
 		this.defaultEditor.onChange = (text: string) => {
@@ -2956,6 +2986,13 @@ export class InteractiveMode {
 		});
 		this.unsubscribeSubAgents?.();
 		this.unsubscribeSubAgents = this.session.subscribeSubAgents((records) => this.syncSubAgentCards(records));
+
+		// Background processes: subscribe to the store and keep the bar live.
+		this.unsubscribeBackgroundProcesses?.();
+		this.unsubscribeBackgroundProcesses = subscribeBackgroundProcesses(() => {
+			this.syncBackgroundProcessesBar();
+		});
+		this.syncBackgroundProcessesBar();
 	}
 
 	private syncSubAgentCards(records: InProcessSubAgentRecord[]): void {
@@ -3011,6 +3048,24 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
+	/** Sync the background processes bar from the store and manage the 1s tick. */
+	private syncBackgroundProcessesBar(): void {
+		const records = getBackgroundProcesses();
+		this.backgroundProcessesBar.update(records);
+		this.backgroundProcessViewer?.update(records);
+		const anyRunning = records.some((r) => r.status === "running");
+		if (anyRunning && !this.backgroundProcessesBarTimer) {
+			this.backgroundProcessesBarTimer = setInterval(() => {
+				this.backgroundProcessesBar.invalidate();
+				this.ui.requestRender();
+			}, 1000);
+		} else if (!anyRunning && this.backgroundProcessesBarTimer) {
+			clearInterval(this.backgroundProcessesBarTimer);
+			this.backgroundProcessesBarTimer = undefined;
+		}
+		this.ui.requestRender();
+	}
+
 	private async handleEvent(event: AgentSessionEvent): Promise<void> {
 		if (!this.isInitialized) {
 			await this.init();
@@ -3020,7 +3075,7 @@ export class InteractiveMode {
 
 		switch (event.type) {
 			case "agent_start":
-				this.pendingTools.clear();
+				this.clearPendingTools();
 				this.currentWorkingVerb = pickLoadingVerb();
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(true);
@@ -3054,7 +3109,7 @@ export class InteractiveMode {
 				this.streamingComponent?.dispose();
 				this.streamingComponent = undefined;
 				this.streamingMessage = undefined;
-				this.pendingTools.clear();
+				this.clearPendingTools();
 				this.renderInitialMessages();
 				this.ui.requestRender();
 				// A child process spawned during the session replacement (e.g. by an
@@ -3179,7 +3234,7 @@ export class InteractiveMode {
 								isError: true,
 							});
 						}
-						this.pendingTools.clear();
+						this.clearPendingTools();
 					} else {
 						// Args are now complete - trigger diff computation for edit tools
 						for (const [, component] of this.pendingTools.entries()) {
@@ -3248,7 +3303,7 @@ export class InteractiveMode {
 					this.streamingComponent = undefined;
 					this.streamingMessage = undefined;
 				}
-				this.pendingTools.clear();
+				this.clearPendingTools();
 
 				await this.checkShutdownRequested();
 
@@ -3499,7 +3554,7 @@ export class InteractiveMode {
 		items: readonly RenderSessionItem[],
 		options: { updateFooter?: boolean; populateHistory?: boolean } = {},
 	): void {
-		this.pendingTools.clear();
+		this.clearPendingTools();
 		const renderedPendingTools = new Map<string, ToolExecutionComponent>();
 
 		if (options.updateFooter) {
@@ -5645,8 +5700,62 @@ export class InteractiveMode {
 	}
 
 	/**
-	 * `/rewind [n]` — restore tracked files to the state at the start of the
-	 * n-th-from-last user turn (default 1 = undo the most recent turn's edits).
+	 * Background the currently running foreground bash command (Ctrl+B).
+	 * Finds the most recent running bash tool in pendingTools and sets the
+	 * background request flag. The bash tool's execute function polls this
+	 * flag and detaches the process on the next check.
+	 */
+	private backgroundCurrentBashCommand(): void {
+		// Find running bash tools — the last one is the most recent.
+		let bashToolCallId: string | undefined;
+		for (const [id, component] of this.pendingTools) {
+			if (component.getToolName() === "bash" && component.isRunning()) {
+				bashToolCallId = id;
+			}
+		}
+		if (!bashToolCallId) {
+			this.showStatus("No running bash command to background");
+			return;
+		}
+		requestBackground(bashToolCallId);
+		this.showStatus("Backgrounding bash command…");
+	}
+
+	/**
+	 * Open the background process viewer: a picker over all background
+	 * bash processes, Enter opens a live output tail, Esc backs out,
+	 * 'k' kills the process. Mirrors showSubAgentViewer.
+	 */
+	private showBackgroundProcessViewer(): void {
+		if (this.backgroundProcessViewer) return; // Already open.
+		this.backgroundProcessViewer = new BackgroundProcessViewerComponent(
+			getBackgroundProcesses(),
+			() => {
+				this.backgroundProcessViewer = undefined;
+				this.hideExtensionSelector();
+			},
+			(id: string) => this.killBackgroundProcess(id),
+		);
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.backgroundProcessViewer);
+		this.ui.setFocus(this.backgroundProcessViewer);
+		this.ui.requestRender();
+	}
+
+	/** Kill a background process by its tool call id. */
+	private killBackgroundProcess(id: string): void {
+		const record = getBackgroundProcesses().find((r) => r.id === id);
+		if (record?.pid) {
+			try {
+				killProcessTree(record.pid);
+			} catch {
+				// Process may have already exited.
+			}
+		}
+		completeBackgroundProcess(id, undefined, true);
+	}
+
+	/**
 	 * Only files are rewound; the conversation log is left intact. Ports
 	 * easy-agent's `/rewind` command.
 	 */
@@ -6347,6 +6456,14 @@ export class InteractiveMode {
 		if (this.backgroundAgentsBarTimer) {
 			clearInterval(this.backgroundAgentsBarTimer);
 			this.backgroundAgentsBarTimer = undefined;
+		}
+		if (this.unsubscribeBackgroundProcesses) {
+			this.unsubscribeBackgroundProcesses();
+			this.unsubscribeBackgroundProcesses = undefined;
+		}
+		if (this.backgroundProcessesBarTimer) {
+			clearInterval(this.backgroundProcessesBarTimer);
+			this.backgroundProcessesBarTimer = undefined;
 		}
 		if (this.isInitialized) {
 			this.ui.stop();

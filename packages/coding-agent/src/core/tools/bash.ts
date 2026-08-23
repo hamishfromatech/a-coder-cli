@@ -2,12 +2,13 @@ import { constants } from "node:fs";
 import { access as fsAccess } from "node:fs/promises";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Container, Text, truncateToWidth } from "@earendil-works/pi-tui";
+import type { ChildProcess } from "child_process";
 import { spawn } from "child_process";
 import { type Static, Type } from "typebox";
+import { BashProgressComponent } from "../../modes/interactive/components/bash-progress.ts";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.ts";
 import { truncateToVisualLines } from "../../modes/interactive/components/visual-truncate.ts";
 import { theme } from "../../modes/interactive/theme/theme.ts";
-import { waitForChildProcess } from "../../utils/child-process.ts";
 import {
 	getShellConfig,
 	getShellEnv,
@@ -16,6 +17,16 @@ import {
 	untrackDetachedChildPid,
 } from "../../utils/shell.ts";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.ts";
+import {
+	appendBackgroundProcessOutput,
+	appendBashProgress,
+	clearBackgroundRequest,
+	completeBackgroundProcess,
+	completeBashProgress,
+	isBackgroundRequested,
+	startBackgroundProcess,
+	startBashProgress,
+} from "../stores/index.ts";
 import { OutputAccumulator } from "./output-accumulator.ts";
 import { getTextOutput, invalidArgText, str } from "./render-utils.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
@@ -41,6 +52,12 @@ const bashSchema = Type.Object(
 	{
 		command: Type.String({ description: "Bash command to execute" }),
 		timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (optional, no default timeout)" })),
+		background: Type.Optional(
+			Type.Boolean({
+				description:
+					"If true, run the command in the background (detached). The tool returns immediately with a process id and the command continues running. Use for long-running tasks like dev servers, file watchers, or builds you want to monitor while continuing other work. Output is captured to a temp file and shown in the background processes bar.",
+			}),
+		),
 	},
 	{ additionalProperties: false },
 );
@@ -50,6 +67,28 @@ export type BashToolInput = Static<typeof bashSchema>;
 export interface BashToolDetails {
 	truncation?: TruncationResult;
 	fullOutputPath?: string;
+}
+
+export interface BashExecOptions {
+	onData: (data: Buffer) => void;
+	signal?: AbortSignal;
+	timeout?: number;
+	env?: NodeJS.ProcessEnv;
+	/**
+	 * Polled periodically while the command runs. When it returns true,
+	 * exec detaches the child process (stops awaiting, removes listeners,
+	 * does NOT kill) and resolves with `{ backgrounded: true, child }`.
+	 * The caller then takes ownership of the child for background tracking.
+	 */
+	backgroundCheck?: () => boolean;
+}
+
+export interface BashExecResult {
+	exitCode: number | null;
+	/** True when the command was backgrounded mid-flight via `backgroundCheck`. */
+	backgrounded?: boolean;
+	/** The detached child process, only set when `backgrounded` is true. */
+	child?: ChildProcess;
 }
 
 /**
@@ -62,18 +101,10 @@ export interface BashOperations {
 	 * @param command The command to execute
 	 * @param cwd Working directory
 	 * @param options Execution options
-	 * @returns Promise resolving to exit code (null if killed)
+	 * @returns Promise resolving to exit code (null if killed), or
+	 *          `{ backgrounded: true, child }` if backgrounded mid-flight.
 	 */
-	exec: (
-		command: string,
-		cwd: string,
-		options: {
-			onData: (data: Buffer) => void;
-			signal?: AbortSignal;
-			timeout?: number;
-			env?: NodeJS.ProcessEnv;
-		},
-	) => Promise<{ exitCode: number | null }>;
+	exec: (command: string, cwd: string, options: BashExecOptions) => Promise<BashExecResult>;
 }
 
 /**
@@ -84,7 +115,7 @@ export interface BashOperations {
  */
 export function createLocalBashOperations(options?: { shellPath?: string }): BashOperations {
 	return {
-		exec: async (command, cwd, { onData, signal, timeout, env }) => {
+		exec: async (command, cwd, { onData, signal, timeout, env, backgroundCheck }) => {
 			const timeoutMs = resolveTimeoutMs(timeout);
 			if (signal?.aborted) {
 				throw new Error("aborted");
@@ -131,9 +162,51 @@ export function createLocalBashOperations(options?: { shellPath?: string }): Bas
 					if (signal.aborted) onAbort();
 					else signal.addEventListener("abort", onAbort, { once: true });
 				}
-				// Handle shell spawn errors and wait for the process to terminate without hanging
-				// on inherited stdio handles held by detached descendants.
-				const exitCode = await waitForChildProcess(child);
+
+				// Exit promise: resolves when the child closes. We use a plain
+				// `close` listener instead of waitForChildProcess because the
+				// latter destroys stdout/stderr on resolve — which would kill
+				// output for a backgrounded process.
+				const exitPromise = new Promise<number | null>((resolveExit, rejectExit) => {
+					child.once("close", (code: number | null) => resolveExit(code));
+					child.once("error", (err: Error) => rejectExit(err));
+				});
+
+				// Background promise: resolves when backgroundCheck() returns true.
+				// The poller detaches listeners so the child keeps running.
+				let resolveBg: () => void = () => {};
+				const bgPromise = new Promise<void>((r) => {
+					resolveBg = r;
+				});
+				let backgroundPoller: NodeJS.Timeout | undefined;
+				if (backgroundCheck) {
+					backgroundPoller = setInterval(() => {
+						if (backgroundCheck()) {
+							child.stdout?.removeListener("data", onData);
+							child.stderr?.removeListener("data", onData);
+							if (signal) signal.removeEventListener("abort", onAbort);
+							if (child.pid) untrackDetachedChildPid(child.pid);
+							resolveBg();
+						}
+					}, 100);
+					backgroundPoller.unref?.();
+				}
+
+				const raceResult = await Promise.race([
+					exitPromise.then((code) => ({ exited: true as const, code })),
+					bgPromise.then(() => ({ exited: false as const, code: null })),
+				]);
+
+				if (backgroundPoller) clearInterval(backgroundPoller);
+
+				if (!raceResult.exited) {
+					// Background requested — return the child for background tracking.
+					// The finally block clears the timeout (so it won't kill the
+					// process later) and removes the abort listener (already done).
+					return { exitCode: null, backgrounded: true, child };
+				}
+
+				const exitCode = raceResult.code;
 				if (signal?.aborted) {
 					throw new Error("aborted");
 				}
@@ -181,6 +254,7 @@ type BashRenderState = {
 	startedAt: number | undefined;
 	endedAt: number | undefined;
 	interval: NodeJS.Timeout | undefined;
+	progressComponent: BashProgressComponent | undefined;
 };
 
 type BashResultRenderState = {
@@ -301,12 +375,15 @@ export function createBashToolDefinition(
 	return {
 		name: "bash",
 		label: "bash",
-		description: `Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.`,
+		description: `Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds. Set background: true for long-running commands (dev servers, watchers) — the command runs detached and the tool returns immediately.`,
 		promptSnippet: "Execute bash commands (ls, grep, find, etc.)",
+		promptGuidelines: [
+			"Use background: true for long-running commands like dev servers, file watchers, or builds that should keep running while you continue other work. The tool returns immediately and output is captured to a temp file.",
+		],
 		parameters: bashSchema,
 		async execute(
-			_toolCallId,
-			{ command, timeout }: { command: string; timeout?: number },
+			toolCallId,
+			{ command, timeout, background }: { command: string; timeout?: number; background?: boolean },
 			signal?: AbortSignal,
 			onUpdate?,
 			_ctx?,
@@ -318,6 +395,69 @@ export function createBashToolDefinition(
 			let updateTimer: NodeJS.Timeout | undefined;
 			let updateDirty = false;
 			let lastUpdateAt = 0;
+
+			// Live progress side-channel: publish stdout/stderr chunks to the
+			// bash-progress store so the UI can render a live tail while the
+			// command runs. The store handles throttling and a 1s heartbeat.
+			const timeoutMs = timeout !== undefined ? timeout * 1000 : undefined;
+			startBashProgress(toolCallId, timeoutMs);
+
+			// Background mode: spawn detached, return immediately, track in the
+			// background-process store. The agent gets a quick confirmation and
+			// can continue working; the user monitors via the background bar.
+			if (background) {
+				const bgOutput = new OutputAccumulator({ tempFilePrefix: "pi-bash-bg" });
+				const bgShellConfig = getShellConfig(options?.shellPath);
+				const bgCommandFromStdin = bgShellConfig.commandTransport === "stdin";
+				const bgChild = spawn(
+					bgShellConfig.shell,
+					bgCommandFromStdin ? bgShellConfig.args : [...bgShellConfig.args, spawnContext.command],
+					{
+						cwd: spawnContext.cwd,
+						detached: true,
+						env: spawnContext.env,
+						stdio: [bgCommandFromStdin ? "pipe" : "ignore", "pipe", "pipe"],
+						windowsHide: true,
+					},
+				);
+				if (bgCommandFromStdin && bgChild.stdin) {
+					bgChild.stdin.on("error", () => {});
+					bgChild.stdin.end(spawnContext.command);
+				}
+				if (bgChild.pid) trackDetachedChildPid(bgChild.pid);
+
+				const bgSnapshot = bgOutput.snapshot({ persistIfTruncated: true });
+				startBackgroundProcess(toolCallId, command, bgChild.pid, bgSnapshot.fullOutputPath);
+
+				const bgOnData = (data: Buffer) => {
+					bgOutput.append(data);
+					appendBackgroundProcessOutput(toolCallId, data.toString());
+				};
+				bgChild.stdout?.on("data", bgOnData);
+				bgChild.stderr?.on("data", bgOnData);
+
+				bgChild.on("error", () => {
+					completeBackgroundProcess(toolCallId, undefined, false);
+					if (bgChild.pid) untrackDetachedChildPid(bgChild.pid);
+				});
+				bgChild.on("close", (code) => {
+					bgOutput.finish();
+					completeBackgroundProcess(toolCallId, code ?? undefined, false);
+					if (bgChild.pid) untrackDetachedChildPid(bgChild.pid);
+				});
+
+				// Don't wait — return immediately so the agent can continue.
+				completeBashProgress(toolCallId);
+				return {
+					content: [
+						{
+							type: "text",
+							text: `Background process started (pid ${bgChild.pid ?? "unknown"}). Output is being captured. The command will continue running after this tool call returns.`,
+						},
+					],
+					details: undefined,
+				};
+			}
 
 			const emitOutputUpdate = () => {
 				if (!onUpdate || !updateDirty) return;
@@ -362,6 +502,7 @@ export function createBashToolDefinition(
 			const handleData = (data: Buffer) => {
 				if (!acceptingOutput) return;
 				output.append(data);
+				appendBashProgress(toolCallId, data.toString());
 				scheduleOutputUpdate();
 			};
 
@@ -405,7 +546,38 @@ export function createBashToolDefinition(
 						signal,
 						timeout,
 						env: spawnContext.env,
+						backgroundCheck: () => isBackgroundRequested(toolCallId),
 					});
+
+					// If the command was backgrounded mid-flight (Ctrl+B), take
+					// ownership of the child process: attach new listeners that
+					// feed the background-process store, register it, and return
+					// a confirmation to the model.
+					if (result.backgrounded && result.child) {
+						const bgChild = result.child;
+						const bgSnapshot = output.snapshot({ persistIfTruncated: true });
+						startBackgroundProcess(toolCallId, command, bgChild.pid, bgSnapshot.fullOutputPath);
+						const bgOnData = (data: Buffer) => {
+							appendBackgroundProcessOutput(toolCallId, data.toString());
+						};
+						bgChild.stdout?.on("data", bgOnData);
+						bgChild.stderr?.on("data", bgOnData);
+						bgChild.on("close", (code) => {
+							completeBackgroundProcess(toolCallId, code ?? undefined, false);
+						});
+						clearBackgroundRequest(toolCallId);
+						completeBashProgress(toolCallId);
+						const partialOutput = output.snapshot({ persistIfTruncated: true });
+						return {
+							content: [
+								{
+									type: "text",
+									text: `Command backgrounded (pid ${bgChild.pid ?? "unknown"}). The process is still running. Output so far:\n${partialOutput.content || "(no output yet)"}`,
+								},
+							],
+							details: undefined,
+						};
+					}
 					exitCode = result.exitCode;
 				} catch (err) {
 					const snapshot = await finishOutput();
@@ -428,6 +600,7 @@ export function createBashToolDefinition(
 				return { content: [{ type: "text", text: outputText }], details };
 			} finally {
 				clearUpdateTimer();
+				completeBashProgress(toolCallId);
 			}
 		},
 		renderCall(args, _theme, context) {
@@ -451,6 +624,19 @@ export function createBashToolDefinition(
 					clearInterval(state.interval);
 					state.interval = undefined;
 				}
+				// Command finished — dispose the live progress component and
+				// fall through to the normal result renderer.
+				if (state.progressComponent) {
+					state.progressComponent.dispose();
+					state.progressComponent = undefined;
+				}
+			} else if (options.isPartial && !context.isError && context.ui) {
+				// Command still running — render the live tail from the store.
+				// Reuse the existing component if we already created one.
+				if (!state.progressComponent) {
+					state.progressComponent = new BashProgressComponent(context.toolCallId, context.ui);
+				}
+				return state.progressComponent;
 			}
 			const component =
 				(context.lastComponent as BashResultRenderComponent | undefined) ?? new BashResultRenderComponent();

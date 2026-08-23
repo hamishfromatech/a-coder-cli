@@ -168,3 +168,26 @@ export function subscribeBashProgress(listener: Listener): () => void {
 		listeners.delete(listener);
 	};
 }
+
+// --- Background request mechanism ---
+// When the user presses Ctrl+B on a running foreground bash command, we set
+// a flag here. The bash tool's execute function polls this via a
+// `backgroundCheck` callback passed to BashOperations.exec(). When the flag
+// is set, exec detaches the child process (stops awaiting, removes listeners,
+// does NOT kill) and resolves with `{ backgrounded: true, child }`. The tool
+// then registers the process in the background-process store and returns a
+// "backgrounded" result to the model.
+
+const backgroundRequests = new Set<string>();
+
+export function requestBackground(toolCallId: string): void {
+	backgroundRequests.add(toolCallId);
+}
+
+export function isBackgroundRequested(toolCallId: string): boolean {
+	return backgroundRequests.has(toolCallId);
+}
+
+export function clearBackgroundRequest(toolCallId: string): void {
+	backgroundRequests.delete(toolCallId);
+}

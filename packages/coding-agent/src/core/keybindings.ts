@@ -32,6 +32,8 @@ export interface AppKeybindings {
 	"app.session.tree": true;
 	"app.session.fork": true;
 	"app.subagents.view": true;
+	"app.backgrounds.view": true;
+	"app.bash.background": true;
 	"app.session.resume": true;
 	"app.tree.foldOrUp": true;
 	"app.tree.unfoldOrDown": true;
@@ -125,6 +127,14 @@ export const KEYBINDINGS = {
 	"app.subagents.view": {
 		defaultKeys: "shift+down",
 		description: "Open the background sub-agent viewer",
+	},
+	"app.backgrounds.view": {
+		defaultKeys: "ctrl+shift+b",
+		description: "Open the background process viewer",
+	},
+	"app.bash.background": {
+		defaultKeys: "ctrl+b",
+		description: "Background the currently running bash command",
 	},
 	"app.session.resume": { defaultKeys: [], description: "Resume a session" },
 	"app.tree.foldOrUp": {

@@ -537,6 +537,8 @@ export interface ToolRenderContext<TState = any, TArgs = any> {
 	state: TState;
 	/** Working directory for this tool execution. */
 	cwd: string;
+	/** The TUI instance, for components that need to request renders or subscribe to stores. */
+	ui?: TUI;
 	/** Whether the tool execution has started. */
 	executionStarted: boolean;
 	/** Whether the tool call arguments are complete. */
