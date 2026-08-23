@@ -455,7 +455,11 @@ export class InteractiveMode {
 	private shutdownRequested = false;
 
 	// Extension UI state
-	private extensionSelector: ExtensionSelectorComponent | undefined = undefined;
+	// Overlay that temporarily replaces the editor. Either the extension
+	// selector or the ask_user_question prompt; both extend Container.
+	// dispose() is optional — only components holding resources (timers)
+	// implement it.
+	private extensionSelector: (Container & { dispose?(): void }) | undefined = undefined;
 	private extensionInput: ExtensionInputComponent | undefined = undefined;
 	private extensionEditor: ExtensionEditorComponent | undefined = undefined;
 	private extensionTerminalInputUnsubscribers = new Set<() => void>();
@@ -2344,7 +2348,7 @@ export class InteractiveMode {
 	 * Hide the extension selector.
 	 */
 	private hideExtensionSelector(): void {
-		this.extensionSelector?.dispose();
+		this.extensionSelector?.dispose?.();
 		this.editorContainer.clear();
 		this.editorContainer.addChild(this.editor);
 		this.extensionSelector = undefined;
@@ -2378,7 +2382,9 @@ export class InteractiveMode {
 				resolve(answers ? { answers } : undefined);
 			});
 
-			this.extensionSelector = component as unknown as ExtensionSelectorComponent;
+			// Container-compatible overlay; no cast needed since the field accepts
+			// any editor overlay with an optional dispose().
+			this.extensionSelector = component;
 			this.editorContainer.clear();
 			this.editorContainer.addChild(component);
 			this.ui.setFocus(component);
