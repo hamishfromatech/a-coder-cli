@@ -11,7 +11,7 @@
  * the selected/running process.
  */
 
-import { Container, getKeybindings, Spacer, Text } from "@earendil-works/pi-tui";
+import { Container, getKeybindings, Spacer, Text, truncateToWidth } from "@earendil-works/pi-tui";
 import type {
 	BackgroundProcessRecord,
 	BackgroundProcessStatus,
@@ -178,7 +178,7 @@ export class BackgroundProcessViewerComponent extends Container {
 			this.bodyContainer.addChild(new Text(theme.fg("muted", "(no output yet)"), 1, 1));
 		} else {
 			for (const line of tail) {
-				this.bodyContainer.addChild(new Text(theme.fg("text", line), 1, 1));
+				this.bodyContainer.addChild(new Text(truncateToWidth(theme.fg("text", line), 120, "…"), 1, 1));
 			}
 		}
 		if (this.killedNotice) {

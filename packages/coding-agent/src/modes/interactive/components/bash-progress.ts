@@ -12,7 +12,7 @@
  * result renderer.
  */
 
-import { type Component, Container, type TUI } from "@earendil-works/pi-tui";
+import { type Component, Container, type TUI, truncateToWidth } from "@earendil-works/pi-tui";
 import type { BashProgress } from "../../../core/stores/bash-progress-store.ts";
 import { subscribeBashProgress } from "../../../core/stores/bash-progress-store.ts";
 import { formatSize } from "../../../core/tools/truncate.ts";
@@ -63,7 +63,7 @@ export class BashProgressComponent extends Container {
 		}
 	}
 
-	private renderLines(_width: number): string[] {
+	private renderLines(width: number): string[] {
 		const snapshot = this.currentSnapshot;
 		if (!snapshot) {
 			return [theme.fg("muted", "Running…")];
@@ -96,10 +96,12 @@ export class BashProgressComponent extends Container {
 
 		const lines: string[] = [];
 		for (const l of tail) {
-			lines.push(theme.fg("muted", l.length > 0 ? l : " "));
+			const styled = theme.fg("muted", l.length > 0 ? l : " ");
+			lines.push(truncateToWidth(styled, width, "…"));
 		}
 		if (statusBits.length > 0) {
-			lines.push(theme.fg("muted", statusBits.join("  ")));
+			const statusLine = theme.fg("muted", statusBits.join("  "));
+			lines.push(truncateToWidth(statusLine, width, "…"));
 		}
 		return lines;
 	}
