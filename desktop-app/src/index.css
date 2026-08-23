@@ -28,6 +28,17 @@
 	   set this to 0 to keep the image's original colors. */
 	--backdrop-invert-mul: 1;
 
+	/* ---------- Z-index ladder ---------- */
+	--z-base: 0;
+	--z-sticky: 10;
+	--z-sidebar: 20;
+	--z-overlay: 30;
+	--z-modal: 40;
+	--z-toast: 50;
+	--z-top: 60;
+	--z-tooltip: 70;
+	--z-crash: 9999;
+
 	/* ---------- Neutral glass dark theme (default) ---------- */
 
 	/* Neutral near-black chrome. Chat sits on --pi-bg (deepest); sidebar and
