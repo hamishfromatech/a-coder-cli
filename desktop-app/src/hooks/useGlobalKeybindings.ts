@@ -23,6 +23,16 @@ export function useGlobalKeybindings(): void {
 					e.preventDefault();
 					window.dispatchEvent(new CustomEvent("a-coder:open-model-picker"));
 					break;
+				case "f":
+					// Cmd/Ctrl+F — find in page.
+					e.preventDefault();
+					window.dispatchEvent(new CustomEvent("a-coder:find-in-page"));
+					break;
+				case "k":
+					// Cmd/Ctrl+K — command palette.
+					e.preventDefault();
+					window.dispatchEvent(new CustomEvent("a-coder:command-palette"));
+					break;
 					// Other shortcuts are handled by native menus / commandRouter.
 			}
 		};

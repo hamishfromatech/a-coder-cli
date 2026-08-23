@@ -23,7 +23,10 @@ import { useGlobalKeybindings } from "./hooks/useGlobalKeybindings";
 import { useUpdateCheck } from "./hooks/useUpdateCheck";
 import { ChangelogModal } from "./components/ChangelogModal";
 import { ChatBackdrop } from "./components/ChatBackdrop";
+import { CommandCenter } from "./components/CommandCenter";
+import { CommandPalette, type CommandItem } from "./components/CommandPalette";
 import { Composer } from "./components/Composer";
+import { FindBar } from "./components/FindBar";
 import { MessageList } from "./components/MessageList";
 import { MemoryModal } from "./components/MemoryModal";
 import { ModelPicker } from "./components/ModelPicker";
@@ -103,6 +106,9 @@ export default function App() {
 	const [showResume, setShowResume] = useState(false);
 	const [showModelPicker, setShowModelPicker] = useState(false);
 	const [showSettings, setShowSettings] = useState(false);
+	const [showFindBar, setShowFindBar] = useState(false);
+	const [showCommandPalette, setShowCommandPalette] = useState(false);
+	const [showCommandCenter, setShowCommandCenter] = useState(false);
 	const [showSubagents, setShowSubagents] = useState(false);
 	const [showTeams, setShowTeams] = useState(false);
 	const [questionRequest, setQuestionRequest] = useState<{
@@ -210,7 +216,7 @@ export default function App() {
 		},
 		[setStats, setContextUsage],
 	);
-	const { leftSidebarOpen, setLeftSidebarOpen, rightSidebarOpen, rightSidebarWidth } = useUiStore();
+	const { leftSidebarOpen, setLeftSidebarOpen, rightSidebarOpen, setRightSidebarOpen, rightSidebarWidth } = useUiStore();
 	const effectiveCwd = projectPath || FALLBACK_CWD;
 
 	// Apply theme class to the document root.
@@ -756,6 +762,8 @@ export default function App() {
 	// Cross-component coordination for /settings, /reload, /quit, etc.
 	useEffect(() => {
 		const onOpenSettings = () => setShowSettings(true);
+		const onOpenFindBar = () => setShowFindBar(true);
+		const onOpenCommandPalette = () => setShowCommandPalette(true);
 		const onOpenAccount = () => {
 			setShowSettings(true);
 			// Then navigate to the account section (handled by SettingsPanel via URL hash).
@@ -788,6 +796,8 @@ export default function App() {
 		};
 
 		window.addEventListener("a-coder:open-settings", onOpenSettings);
+		window.addEventListener("a-coder:find-in-page", onOpenFindBar);
+		window.addEventListener("a-coder:command-palette", onOpenCommandPalette);
 		window.addEventListener("a-coder:open-account", onOpenAccount);
 		window.addEventListener("a-coder:open-model-picker", onOpenModel);
 		window.addEventListener("a-coder:open-session-picker", onOpenSession);
@@ -803,6 +813,8 @@ export default function App() {
 
 		return () => {
 			window.removeEventListener("a-coder:open-settings", onOpenSettings);
+			window.removeEventListener("a-coder:find-in-page", onOpenFindBar);
+			window.removeEventListener("a-coder:command-palette", onOpenCommandPalette);
 			window.removeEventListener("a-coder:open-account", onOpenAccount);
 			window.removeEventListener("a-coder:open-model-picker", onOpenModel);
 			window.removeEventListener("a-coder:open-session-picker", onOpenSession);
@@ -874,6 +886,62 @@ export default function App() {
 	const projectName = projectPath
 		? (projectPath.split(/[/\\]/).filter(Boolean).at(-1) ?? projectPath)
 		: "No project";
+
+	// Build the command palette items from current app state.
+	const commandItems = useMemo<CommandItem[]>(
+		() => [
+			{ id: "new-session", label: "New session", keybinding: "⌘N", group: "session", action: () => void rpc.sendCommand({ type: "new_session" }) },
+			{ id: "abort", label: "Abort current turn", keybinding: "⌘.", group: "session", action: () => void rpc.sendCommand({ type: "abort" }) },
+			{ id: "compact", label: "Compact context", group: "session", action: () => void rpc.sendCommand({ type: "compact" }) },
+			{ id: "resume", label: "Resume another session", keybinding: "⇧⌘O", group: "session", action: () => setShowResume(true) },
+			{ id: "model-picker", label: "Select model", keybinding: "⌘P", group: "navigate", action: () => setShowModelPicker(true) },
+			{ id: "project-picker", label: "Open project", group: "navigate", action: () => setShowProjectPicker(true) },
+			{ id: "find", label: "Find in page", keybinding: "⌘F", group: "navigate", action: () => setShowFindBar(true) },
+			{ id: "settings", label: "Open settings", keybinding: "⌘,", group: "settings", action: () => setShowSettings(true) },
+			{ id: "hotkeys", label: "Show keyboard shortcuts", group: "settings", action: () => setShowHotkeys(true) },
+			{ id: "changelog", label: "Show changelog", group: "settings", action: () => setShowChangelog(true) },
+			{ id: "check-updates", label: "Check for updates", group: "settings", action: () => window.dispatchEvent(new CustomEvent("a-coder:check-updates")) },
+			{ id: "subagents", label: "View sub-agents", group: "tools", action: () => setShowSubagents(true) },
+			{ id: "teams", label: "View teams", group: "tools", action: () => setShowTeams(true) },
+			{ id: "memory", label: "View memory", group: "tools", action: () => setShowMemory(true) },
+			{ id: "command-center", label: "Open command center", group: "navigate", action: () => setShowCommandCenter(true) },
+			{ id: "toggle-left-sidebar", label: leftSidebarOpen ? "Hide left sidebar" : "Show left sidebar", group: "view", action: () => setLeftSidebarOpen(!leftSidebarOpen) },
+			{ id: "toggle-right-sidebar", label: rightSidebarOpen ? "Hide right sidebar" : "Show right sidebar", group: "view", action: () => setRightSidebarOpen(!rightSidebarOpen) },
+		],
+		[leftSidebarOpen, rightSidebarOpen, setLeftSidebarOpen, setRightSidebarOpen],
+	);
+
+	// Session list for the Command Center.
+	const sessionList = useMemo(() => {
+		const tree = useSessionTreeStore.getState();
+		const sessions: Array<{ id: string; name: string; lastActive: number; messageCount: number }> = [];
+		const walk = (nodes: typeof tree.tree) => {
+			for (const node of nodes) {
+				if (node.children.length > 0) walk(node.children);
+				if (node.label) {
+					sessions.push({
+						id: node.entry.id,
+						name: node.label,
+						lastActive: 0,
+						messageCount: 0,
+					});
+				}
+			}
+		};
+		walk(tree.tree);
+		return sessions;
+	}, []);
+
+	// Usage stats for the Command Center.
+	const statsState = useStatsStore((s) => s.stats);
+	const usageStats = useMemo(() => {
+		return {
+			totalSessions: sessionList.length,
+			totalApiCalls: statsState?.toolCalls ?? 0,
+			totalInputTokens: statsState?.tokens?.input ?? 0,
+			totalOutputTokens: statsState?.tokens?.output ?? 0,
+		};
+	}, [sessionList, statsState]);
 
 	if (!bootReady) {
 		return (
@@ -1065,6 +1133,24 @@ export default function App() {
 					onDismiss={() => dismissUpdate(availableUpdate.version)}
 				/>
 			)}
+
+			{/* ================== Find bar (⌘F) ================== */}
+			<FindBar open={showFindBar} onClose={() => setShowFindBar(false)} />
+
+			{/* ================== Command palette (⌘K) ================== */}
+			<CommandPalette
+				open={showCommandPalette}
+				commands={commandItems}
+				onClose={() => setShowCommandPalette(false)}
+			/>
+
+			{/* ================== Command center (⇧⌘C) ================== */}
+			<CommandCenter
+				open={showCommandCenter}
+				onClose={() => setShowCommandCenter(false)}
+				sessions={sessionList}
+				stats={usageStats}
+			/>
 		</div>
 	);
 }
