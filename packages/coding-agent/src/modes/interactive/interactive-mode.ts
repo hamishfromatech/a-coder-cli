@@ -93,7 +93,7 @@ import {
 	requestBackground,
 	subscribeBackgroundProcesses,
 } from "../../core/stores/index.ts";
-import { getTaskListId, listTasks } from "../../core/tasks/task-store.ts";
+import { getTaskListId, listTasks, subscribeTasks } from "../../core/tasks/task-store.ts";
 import { isInstallTelemetryEnabled } from "../../core/telemetry.ts";
 import { generateDiffString } from "../../core/tools/edit-diff.ts";
 import type { TruncationResult } from "../../core/tools/truncate.ts";
@@ -127,8 +127,14 @@ import { ExtensionEditorComponent } from "./components/extension-editor.ts";
 import { ExtensionInputComponent } from "./components/extension-input.ts";
 import { ExtensionSelectorComponent } from "./components/extension-selector.ts";
 import { FooterComponent } from "./components/footer.ts";
+import {
+	type CollapsedToolInfo,
+	extractToolTarget,
+	GroupedToolCardComponent,
+	isCollapsibleTool,
+} from "./components/grouped-tool-card.ts";
 import { formatKeyText, keyDisplayText, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.ts";
-import { formatLoadingMessage, pickLoadingVerb } from "./components/loading-verbs.ts";
+import { pickLoadingVerb } from "./components/loading-verbs.ts";
 import { LoginDialogComponent } from "./components/login-dialog.ts";
 import { ModelSelectorComponent } from "./components/model-selector.ts";
 import { type AuthSelectorProvider, OAuthSelectorComponent } from "./components/oauth-selector.ts";
@@ -334,6 +340,9 @@ export class InteractiveMode {
 	private workingVisible = true;
 	private workingIndicatorOptions: WorkingIndicatorOptions | undefined = undefined;
 	private currentWorkingVerb = pickLoadingVerb();
+	/** Present-continuous label from the in-progress todo/task, shown in the spinner. */
+	private activeFormLabel: string | undefined = undefined;
+	private taskStoreUnsubscribe: (() => void) | undefined = undefined;
 	private readonly defaultHiddenThinkingLabel = "Thinking...";
 	private hiddenThinkingLabel = this.defaultHiddenThinkingLabel;
 
@@ -360,6 +369,42 @@ export class InteractiveMode {
 			component.dispose();
 		}
 		this.pendingTools.clear();
+	}
+
+	/**
+	 * Scan backwards from the end of the chat container for consecutive
+	 * completed collapsible tool components (read, grep, ls) and replace
+	 * them with a single GroupedToolCardComponent. Mirrors easy-agent's
+	 * GroupedReadSearchCard — a turn that reads 6 files + greps twice
+	 * shouldn't print 8 separate cards.
+	 */
+	private tryCollapseConsecutiveTools(): void {
+		const children = this.chatContainer.children;
+		const collapsible: ToolExecutionComponent[] = [];
+		let i = children.length - 1;
+		while (i >= 0) {
+			const child = children[i];
+			if (child instanceof ToolExecutionComponent && child.isCompleted() && isCollapsibleTool(child.getToolName())) {
+				collapsible.unshift(child);
+				i--;
+			} else if (child instanceof GroupedToolCardComponent) {
+				// Already-grouped card: merge with it if we have collapsible tools.
+				break;
+			} else {
+				break;
+			}
+		}
+		if (collapsible.length < 2) return;
+		// Extract info and remove the individual tool components.
+		const members: CollapsedToolInfo[] = collapsible.map((c) => ({
+			toolName: c.getToolName(),
+			target: extractToolTarget(c.getToolName(), c.getArgs()),
+		}));
+		for (const c of collapsible) {
+			this.chatContainer.removeChild(c);
+		}
+		this.chatContainer.addChild(new GroupedToolCardComponent(members));
+		this.ui.requestRender();
 	}
 
 	// Tool output expansion state
@@ -729,6 +774,12 @@ export class InteractiveMode {
 		// Start the UI before initializing extensions so session_start handlers can use interactive dialogs
 		this.ui.start();
 		this.isInitialized = true;
+
+		// Subscribe to task store updates so the spinner label reflects the
+		// current in-progress task's activeForm.
+		this.taskStoreUnsubscribe = subscribeTasks(() => {
+			this.updateActiveFormLabel();
+		});
 
 		await this.themeController.applyFromSettings();
 
@@ -1883,7 +1934,7 @@ export class InteractiveMode {
 			this.showStatusIndicator(
 				new WorkingStatusIndicator(
 					this.ui,
-					this.workingMessage ?? this.currentWorkingVerb,
+					this.workingMessage ?? this.activeFormLabel ?? this.currentWorkingVerb,
 					this.workingIndicatorOptions,
 				),
 			);
@@ -1897,6 +1948,48 @@ export class InteractiveMode {
 			this.activeStatusIndicator.setIndicator(options);
 		}
 		this.ui.requestRender();
+	}
+
+	/**
+	 * Compute the spinner label from the in-progress todo or task's
+	 * activeForm. Called after todo/task tool calls and on task store
+	 * updates. Mirrors easy-agent's effectiveSpinnerLabel logic.
+	 */
+	private updateActiveFormLabel(): void {
+		const prev = this.activeFormLabel;
+		// Check todos first (synchronous, from conversation branch).
+		const todos = readTodosFromBranch(this.sessionManager.getBranch() as Array<{ type: string; message?: unknown }>);
+		const inProgressTodo = todos.find((t) => t.status === "in_progress" && t.activeForm);
+		this.activeFormLabel = inProgressTodo?.activeForm;
+		// If no in-progress todo, check the task store asynchronously.
+		if (!this.activeFormLabel) {
+			void this.updateActiveFormFromTasks();
+		}
+		if (prev !== this.activeFormLabel) {
+			this.refreshWorkingIndicatorMessage();
+		}
+	}
+
+	private async updateActiveFormFromTasks(): Promise<void> {
+		try {
+			const taskListId = getTaskListId(this.sessionManager.getSessionId());
+			const tasks = await listTasks(taskListId);
+			const inProgress = tasks.find((t) => t.status === "in_progress" && t.activeForm);
+			const newLabel = inProgress?.activeForm;
+			if (newLabel !== this.activeFormLabel) {
+				this.activeFormLabel = newLabel;
+				this.refreshWorkingIndicatorMessage();
+			}
+		} catch {
+			// Task store may not be ready; ignore.
+		}
+	}
+
+	private refreshWorkingIndicatorMessage(): void {
+		if (this.activeStatusIndicator?.kind === "working") {
+			this.activeStatusIndicator.setMessage(this.workingMessage ?? this.activeFormLabel ?? this.currentWorkingVerb);
+			this.ui.requestRender();
+		}
 	}
 
 	private setHiddenThinkingLabel(label?: string): void {
@@ -1995,7 +2088,7 @@ export class InteractiveMode {
 		this.workingVisible = true;
 		this.setWorkingIndicator();
 		if (this.activeStatusIndicator?.kind === "working") {
-			this.activeStatusIndicator.setMessage(formatLoadingMessage(this.currentWorkingVerb, keyText("app.interrupt")));
+			this.activeStatusIndicator.setMessage(this.currentWorkingVerb);
 		}
 		this.setHiddenThinkingLabel();
 	}
@@ -3077,6 +3170,7 @@ export class InteractiveMode {
 			case "agent_start":
 				this.clearPendingTools();
 				this.currentWorkingVerb = pickLoadingVerb();
+				this.updateActiveFormLabel();
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(true);
 				}
@@ -3090,7 +3184,7 @@ export class InteractiveMode {
 					this.showStatusIndicator(
 						new WorkingStatusIndicator(
 							this.ui,
-							this.workingMessage ?? this.currentWorkingVerb,
+							this.workingMessage ?? this.activeFormLabel ?? this.currentWorkingVerb,
 							this.workingIndicatorOptions,
 						),
 					);
@@ -3287,6 +3381,14 @@ export class InteractiveMode {
 					component.updateResult({ ...event.result, isError: event.isError });
 					this.pendingTools.delete(event.toolCallId);
 					this.ui.requestRender();
+				}
+				// Update spinner label from in-progress todo/task activeForm.
+				if (event.toolName === "todo" || event.toolName === "task_create" || event.toolName === "task_update") {
+					this.updateActiveFormLabel();
+				}
+				// Collapse consecutive read-only tool calls into a grouped card.
+				if (isCollapsibleTool(event.toolName) && !event.isError) {
+					this.tryCollapseConsecutiveTools();
 				}
 				break;
 			}
@@ -6464,6 +6566,10 @@ export class InteractiveMode {
 		if (this.backgroundProcessesBarTimer) {
 			clearInterval(this.backgroundProcessesBarTimer);
 			this.backgroundProcessesBarTimer = undefined;
+		}
+		if (this.taskStoreUnsubscribe) {
+			this.taskStoreUnsubscribe();
+			this.taskStoreUnsubscribe = undefined;
 		}
 		if (this.isInitialized) {
 			this.ui.stop();

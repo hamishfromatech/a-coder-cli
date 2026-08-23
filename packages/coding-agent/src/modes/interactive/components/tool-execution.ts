@@ -401,8 +401,18 @@ export class ToolExecutionComponent extends Container {
 		return this.toolName;
 	}
 
+	/** The args passed to this tool call. */
+	getArgs(): Record<string, unknown> {
+		return this.args;
+	}
+
 	/** True when the tool is still executing (partial result, no final result yet). */
 	isRunning(): boolean {
 		return this.isPartial && this.executionStarted && !this.result?.isError;
+	}
+
+	/** True when the tool finished (success or error), false while still running. */
+	isCompleted(): boolean {
+		return !this.isRunning();
 	}
 }

@@ -27,6 +27,11 @@ export class StatusIndicator extends Loader {
 }
 
 export class WorkingStatusIndicator extends StatusIndicator {
+	private elapsedTimer: NodeJS.Timeout | undefined;
+	private startTime = Date.now();
+	private baseMessage: string;
+	private interruptKey: string;
+
 	constructor(ui: TUI, message: string, indicator?: WorkingIndicatorOptions) {
 		super(
 			"working",
@@ -36,6 +41,34 @@ export class WorkingStatusIndicator extends StatusIndicator {
 			message,
 			indicator,
 		);
+		this.baseMessage = message;
+		this.interruptKey = keyText("app.interrupt");
+		this.startElapsedTimer();
+	}
+
+	private startElapsedTimer(): void {
+		this.elapsedTimer = setInterval(() => {
+			this.refreshHint();
+		}, 1000);
+	}
+
+	private refreshHint(): void {
+		const seconds = Math.floor((Date.now() - this.startTime) / 1000);
+		const hint = `(${seconds >= 1 ? `${seconds}s · ` : ""}${this.interruptKey} to interrupt)`;
+		super.setMessage(`${this.baseMessage}  ${hint}`);
+	}
+
+	override setMessage(message: string): void {
+		this.baseMessage = message;
+		this.refreshHint();
+	}
+
+	override dispose(): void {
+		if (this.elapsedTimer) {
+			clearInterval(this.elapsedTimer);
+			this.elapsedTimer = undefined;
+		}
+		super.dispose();
 	}
 }
 
