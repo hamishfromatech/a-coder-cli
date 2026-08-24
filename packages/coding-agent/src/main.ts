@@ -17,6 +17,7 @@ import { createProjectTrustContext } from "./cli/project-trust.ts";
 import { selectSession } from "./cli/session-picker.ts";
 import { shouldRunFirstTimeSetup, showFirstTimeSetup, showStartupSelector } from "./cli/startup-ui.ts";
 import { ENV_SESSION_DIR, expandTildePath, getAgentDir, getPackageDir, VERSION } from "./config.ts";
+import { ACoderOAuthClient } from "./core/acoder-oauth/acoder-oauth-client.ts";
 import { type CreateAgentSessionRuntimeFactory, createAgentSessionRuntime } from "./core/agent-session-runtime.ts";
 import {
 	type AgentSessionRuntimeDiagnostic,
@@ -523,6 +524,24 @@ export async function main(args: string[], options?: MainOptions) {
 		// Launch the A-Coder Desktop app in the current working directory, then exit.
 		// Handled before any runtime/session setup so `pi --desktop` is cheap and fast.
 		await launchDesktop(cwd);
+		process.exit(0);
+	}
+
+	if (parsed.loginAcoder) {
+		// Run the A-Coder OAuth flow (Google/GitHub) and persist the session
+		// token, so the CLI/Desktop can reuse an A-Coder IDE account and its
+		// backend-proxied models. Early-exit: no runtime/session needed.
+		const provider = parsed.loginAcoder === "github" ? "github" : "google";
+		const client = new ACoderOAuthClient();
+		try {
+			console.error(chalk.cyan(`Starting A-Coder ${provider} sign-in...`));
+			const auth = await client.signIn(provider);
+			console.error(chalk.green(`Signed in as ${auth.userEmail}.`));
+			console.error(chalk.gray(`Token stored. The "a-coder" provider is now available.`));
+		} catch (error: unknown) {
+			console.error(chalk.red(`Sign-in failed: ${error instanceof Error ? error.message : String(error)}`));
+			process.exit(1);
+		}
 		process.exit(0);
 	}
 

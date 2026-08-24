@@ -52,6 +52,9 @@ export interface Args {
 	/** Start the ACP (Agent Communication Protocol) server so the A-Coder IDE
 	 *  can discover and call this CLI as a tool. Optionally a port number. */
 	acpServer?: number | true;
+	/** Sign in to an A-Coder account via OAuth (google/github) so the CLI
+	 *  can reuse the IDE account and its backend-proxied models. */
+	loginAcoder?: "google" | "github" | true;
 	projectTrustOverride?: boolean;
 	messages: string[];
 	fileArgs: string[];
@@ -213,6 +216,13 @@ export function parseArgs(args: string[]): Args {
 			} else {
 				result.acpServer = true;
 			}
+		} else if (arg === "--login-acoder" || arg === "--login-a-coder") {
+			// Optional provider: --login-acoder [google|github]
+			if (i + 1 < args.length && (args[i + 1] === "google" || args[i + 1] === "github")) {
+				result.loginAcoder = args[++i] as "google" | "github";
+			} else {
+				result.loginAcoder = true;
+			}
 		} else if (arg.startsWith("@")) {
 			result.fileArgs.push(arg.slice(1)); // Remove @ prefix
 		} else if (arg.startsWith("--")) {
@@ -307,6 +317,7 @@ ${chalk.bold("Options:")}
   --no-approve, -na              Ignore project-local files for this run
   --offline                      Disable startup network operations (same as A_CODER_CLI_OFFLINE=1)
   --acp-server [PORT]           Start the ACP server so the A-Coder IDE can call this CLI as a tool
+  --login-acoder [google|github]  Sign in to an A-Coder account (reuses IDE auth + backend models)
   --help, -h                     Show this help
   --version, -v                  Show version number
 
