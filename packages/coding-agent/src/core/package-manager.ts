@@ -343,7 +343,7 @@ function collectFiles(
 	return files;
 }
 
-type SkillDiscoveryMode = "pi" | "agents";
+type SkillDiscoveryMode = "pi" | "agents" | "a-coder" | "claude";
 
 function collectSkillEntries(
 	dir: string,
@@ -2386,6 +2386,30 @@ export class DefaultPackageManager implements PackageManager {
 			userAgentsMetadata,
 			userOverrides.skills,
 			userAgentsBaseDir,
+		);
+
+		// Cross-product skill roots — read skills installed for sibling products
+		// so a skill written for the A-Coder IDE or Claude Code is usable here
+		// too. Mirrors the A-Coder IDE's skillService discovery order
+		// (~/.a-coder/skills then ~/.claude/skills). Added AFTER the CLI's own
+		// user skills so a same-named CLI skill wins on collision.
+		const aCoderSkillsDir = join(getHomeDir(), ".a-coder", "skills");
+		const aCoderBaseDir = dirname(aCoderSkillsDir);
+		addResources(
+			"skills",
+			collectAutoSkillEntries(aCoderSkillsDir, "a-coder"),
+			{ ...userMetadata, baseDir: aCoderBaseDir },
+			userOverrides.skills,
+			aCoderBaseDir,
+		);
+		const claudeSkillsDir = join(getHomeDir(), ".claude", "skills");
+		const claudeBaseDir = dirname(claudeSkillsDir);
+		addResources(
+			"skills",
+			collectAutoSkillEntries(claudeSkillsDir, "claude"),
+			{ ...userMetadata, baseDir: claudeBaseDir },
+			userOverrides.skills,
+			claudeBaseDir,
 		);
 
 		addResources(
