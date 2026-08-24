@@ -9,6 +9,8 @@ import type { AgentMessage, StreamFn, ThinkingLevel } from "@earendil-works/pi-a
 import { uuidv7 } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, Context, Model, SimpleStreamOptions, Usage } from "@earendil-works/pi-ai/compat";
 import { completeSimple } from "@earendil-works/pi-ai/compat";
+import type { RetryCallbacks, RetryPolicy } from "@earendil-works/pi-ai/utils/retry";
+import { retryAssistantCall } from "@earendil-works/pi-ai/utils/retry";
 import {
 	convertToLlm,
 	createBranchSummaryMessage,
@@ -545,6 +547,16 @@ Use this EXACT format:
 
 Keep each section concise. Preserve exact file paths, function names, and error messages.`;
 
+export function getSummarizationFailure(response: AssistantMessage, label: string): string | undefined {
+	if (response.stopReason === "error") {
+		return `${label} failed: ${response.errorMessage || "Unknown error"}`;
+	}
+	if (response.stopReason === "length") {
+		return `${label} failed: generation hit the token cap and the summary is incomplete`;
+	}
+	return undefined;
+}
+
 function createSummarizationOptions(
 	model: Model<any>,
 	maxTokens: number,
@@ -565,28 +577,32 @@ function createSummarizationOptions(
 	return options;
 }
 
-async function completeSummarization(
-	model: Model<any>,
-	context: Context,
-	options: SimpleStreamOptions,
-	streamFn?: StreamFn,
-): Promise<AssistantMessage> {
-	const summarizationOptions: SimpleStreamOptions = {
-		...options,
-		cacheRetention: "none",
-		sessionId: options.sessionId ?? uuidv7(),
-	};
-	if (!streamFn) {
-		return completeSimple(model, context, summarizationOptions);
-	}
-	const stream = await streamFn(model, context, summarizationOptions);
-	return stream.result();
-}
-
 /**
  * Generate a summary of the conversation using the LLM.
  * If previousSummary is provided, uses the update prompt to merge.
  */
+export async function completeSummarization(
+	model: Model<any>,
+	context: Context,
+	options: SimpleStreamOptions,
+	streamFn?: StreamFn,
+	retry?: RetryPolicy,
+	callbacks?: RetryCallbacks,
+): Promise<AssistantMessage> {
+	// Avoid cache writes for one-off summaries. Reuse caller-supplied routing when available;
+	// callers without a session ID, including branch summaries, receive a fresh routing ID.
+	const requestOptions: SimpleStreamOptions = {
+		...options,
+		cacheRetention: "none",
+		sessionId: options.sessionId ?? uuidv7(),
+	};
+	const produce = async (): Promise<AssistantMessage> =>
+		streamFn
+			? (await streamFn(model, context, requestOptions)).result()
+			: completeSimple(model, context, requestOptions);
+	return retryAssistantCall(produce, retry, requestOptions.signal, callbacks);
+}
+
 export async function generateSummary(
 	currentMessages: AgentMessage[],
 	model: Model<any>,
@@ -640,8 +656,9 @@ export async function generateSummary(
 		streamFn,
 	);
 
-	if (response.stopReason === "error") {
-		throw new Error(`Summarization failed: ${response.errorMessage || "Unknown error"}`);
+	const failure = getSummarizationFailure(response, "Summarization");
+	if (failure) {
+		throw new Error(failure);
 	}
 	if (response.content.some((block) => block.type === "toolCall")) {
 		throw new Error("Summarization attempted to call a tool");
@@ -908,8 +925,9 @@ async function generateTurnPrefixSummary(
 		streamFn,
 	);
 
-	if (response.stopReason === "error") {
-		throw new Error(`Turn prefix summarization failed: ${response.errorMessage || "Unknown error"}`);
+	const failure = getSummarizationFailure(response, "Turn prefix summarization");
+	if (failure) {
+		throw new Error(failure);
 	}
 	if (response.content.some((block) => block.type === "toolCall")) {
 		throw new Error("Turn prefix summarization attempted to call a tool");
