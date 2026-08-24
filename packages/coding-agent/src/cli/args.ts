@@ -49,6 +49,9 @@ export interface Args {
 	listModels?: string | true;
 	offline?: boolean;
 	verbose?: boolean;
+	/** Start the ACP (Agent Communication Protocol) server so the A-Coder IDE
+	 *  can discover and call this CLI as a tool. Optionally a port number. */
+	acpServer?: number | true;
 	projectTrustOverride?: boolean;
 	messages: string[];
 	fileArgs: string[];
@@ -203,6 +206,13 @@ export function parseArgs(args: string[]): Args {
 			result.projectTrustOverride = false;
 		} else if (arg === "--offline") {
 			result.offline = true;
+		} else if (arg === "--acp-server") {
+			// Optional port: --acp-server [PORT]
+			if (i + 1 < args.length && /^\d+$/.test(args[i + 1])) {
+				result.acpServer = Number(args[++i]);
+			} else {
+				result.acpServer = true;
+			}
 		} else if (arg.startsWith("@")) {
 			result.fileArgs.push(arg.slice(1)); // Remove @ prefix
 		} else if (arg.startsWith("--")) {
@@ -296,6 +306,7 @@ ${chalk.bold("Options:")}
   --approve, -a                  Trust project-local files for this run
   --no-approve, -na              Ignore project-local files for this run
   --offline                      Disable startup network operations (same as A_CODER_CLI_OFFLINE=1)
+  --acp-server [PORT]           Start the ACP server so the A-Coder IDE can call this CLI as a tool
   --help, -h                     Show this help
   --version, -v                  Show version number
 
