@@ -9,6 +9,7 @@
  */
 
 import chalk from "chalk";
+import { ensureAcpConfigEntry } from "../core/acp/acp-config-writer.ts";
 import { createAcpRunner, listAcpAgents, MAIN_AGENT_NAME } from "../core/acp/acp-runner.ts";
 import { startAcpServer } from "../core/acp/acp-server.ts";
 import type { AgentSessionRuntime } from "../core/agent-session-runtime.ts";
@@ -33,16 +34,32 @@ export async function runAcpServerMode(
 	const agents = listAcpAgents();
 	const agentNames = agents.map((a) => a.name).join(", ");
 
+	// Auto-register in the A-Coder IDE's acp.json so it picks the server up
+	// with no manual editing. The IDE watches the file for changes.
+	const serverName = MAIN_AGENT_NAME;
+	let registered = false;
+	try {
+		registered = ensureAcpConfigEntry({ name: serverName, url: handle.url });
+	} catch (err: unknown) {
+		// eslint-disable-next-line no-console
+		console.error(
+			chalk.yellow(`Could not write ~/.a-coder/acp.json: ${err instanceof Error ? err.message : String(err)}`),
+		);
+	}
+
 	// eslint-disable-next-line no-console
 	console.error(chalk.cyan("A-Coder CLI ACP server listening at:"), chalk.bold(handle.url));
 	// eslint-disable-next-line no-console
 	console.error(chalk.gray(`Exposed agents: ${agentNames}`));
+	if (registered) {
+		// eslint-disable-next-line no-console
+		console.error(chalk.green(`Registered in ~/.a-coder/acp.json as "${serverName}".`));
+	} else {
+		// eslint-disable-next-line no-console
+		console.error(chalk.gray(`Already registered in ~/.a-coder/acp.json as "${serverName}".`));
+	}
 	// eslint-disable-next-line no-console
-	console.error(
-		chalk.gray(`Add to ~/.a-coder/acp.json: { "acpServers": { "a-coder-cli": { "url": "${handle.url}" } } }`),
-	);
-	// eslint-disable-next-line no-console
-	console.error(chalk.gray(`Main agent name: ${MAIN_AGENT_NAME}. Press Ctrl+C to stop.`));
+	console.error(chalk.gray(`The A-Coder IDE will discover this server automatically. Press Ctrl+C to stop.`));
 
 	// Keep the process alive until interrupted.
 	const shutdown = (signal: string): void => {

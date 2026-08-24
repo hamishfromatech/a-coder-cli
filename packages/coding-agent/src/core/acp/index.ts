@@ -1,4 +1,11 @@
 export {
+	type AcpConfigEntry,
+	type AcpConfigFile,
+	defaultAcpConfigPath,
+	type EnsureAcpConfigEntryOptions,
+	ensureAcpConfigEntry,
+} from "./acp-config-writer.ts";
+export {
 	type AcpAgentProvider,
 	type AcpAgentRunner,
 	type AcpRunResult,
