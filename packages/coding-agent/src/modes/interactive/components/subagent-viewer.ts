@@ -16,6 +16,7 @@
 
 import { Container, getKeybindings, Spacer, Text } from "@earendil-works/pi-tui";
 import type { InProcessSubAgentRecord, SubAgentProgressEvent } from "../../../core/extensions/types.ts";
+import { formatDuration } from "../../../utils/duration.ts";
 import { theme } from "../theme/theme.ts";
 import { keyHint, rawKeyHint } from "./keybinding-hints.ts";
 
@@ -31,14 +32,6 @@ function formatTokens(n: number | undefined): string {
 	if (n < 1000) return `${n} tok`;
 	if (n < 1000000) return `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}k tok`;
 	return `${(n / 1000000).toFixed(1)}M tok`;
-}
-
-function formatDuration(ms: number): string {
-	if (ms < 1000) return `${Math.max(0, Math.round(ms))}ms`;
-	const sec = ms / 1000;
-	if (sec < 60) return `${sec.toFixed(sec < 10 ? 1 : 0)}s`;
-	const min = Math.floor(sec / 60);
-	return `${min}m${Math.round(sec - min * 60)}s`;
 }
 
 export class SubAgentViewerComponent extends Container {

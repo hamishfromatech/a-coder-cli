@@ -1,5 +1,6 @@
 import { Container, Spacer, Text } from "@earendil-works/pi-tui";
 import type { InProcessSubAgentRecord } from "../../../core/extensions/types.ts";
+import { formatDuration } from "../../../utils/duration.ts";
 import { theme } from "../theme/theme.ts";
 
 /**
@@ -85,13 +86,4 @@ function formatNumber(n: number): string {
 	if (n < 1000) return String(n);
 	if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k`;
 	return `${(n / 1_000_000).toFixed(2)}m`;
-}
-
-function formatDuration(ms: number): string {
-	if (ms < 1000) return `${Math.max(0, Math.round(ms))}ms`;
-	const sec = ms / 1000;
-	if (sec < 60) return `${sec.toFixed(1)}s`;
-	const min = Math.floor(sec / 60);
-	const rem = Math.round(sec - min * 60);
-	return `${min}m${rem}s`;
 }

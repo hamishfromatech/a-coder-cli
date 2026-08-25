@@ -11,15 +11,8 @@
 
 import { type Component, truncateToWidth } from "@earendil-works/pi-tui";
 import type { InProcessSubAgentRecord } from "../../../core/extensions/types.ts";
+import { formatDuration } from "../../../utils/duration.ts";
 import { theme } from "../theme/theme.ts";
-
-function formatDuration(ms: number): string {
-	if (ms < 1000) return `${ms}ms`;
-	const sec = ms / 1000;
-	if (sec < 60) return `${sec.toFixed(sec < 10 ? 1 : 0)}s`;
-	const min = Math.floor(sec / 60);
-	return `${min}m${Math.round(sec - min * 60)}s`;
-}
 
 function formatTokens(n: number): string {
 	if (n < 1000) return `${n}`;

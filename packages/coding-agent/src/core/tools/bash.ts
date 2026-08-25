@@ -9,6 +9,7 @@ import { BashProgressComponent } from "../../modes/interactive/components/bash-p
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.ts";
 import { truncateToVisualLines } from "../../modes/interactive/components/visual-truncate.ts";
 import { theme } from "../../modes/interactive/theme/theme.ts";
+import { formatDuration } from "../../utils/duration.ts";
 import {
 	getShellConfig,
 	getShellEnv,
@@ -278,10 +279,6 @@ class BashResultRenderComponent extends Container {
 		cachedLines: undefined,
 		cachedSkipped: undefined,
 	};
-}
-
-function formatDuration(ms: number): string {
-	return `${(ms / 1000).toFixed(1)}s`;
 }
 
 function formatBashCall(args: { command?: string; timeout?: number } | undefined): string {

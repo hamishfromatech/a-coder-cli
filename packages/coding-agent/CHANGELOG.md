@@ -20,6 +20,7 @@
 ### Changed
 
 - MCP server load failures are no longer dumped into the chat via `console.warn` (which interleaved the full, often-verbose error — e.g. a Cloudflare 502 body — with the TUI). They are now recorded in an MCP status store and surfaced as a subtle footer status chip ("⚠ N MCP server(s) down", cleared when all servers are healthy); the full per-server detail is available via the new `/mcp` command.
+- Elapsed-time displays (bash command timing, background processes/sub-agents, the working-spinner turn timer) now escalate through whole units instead of a flat seconds count: sub-second as `ms`, then seconds, `1m`, `1h`, `1d` at each boundary (so a 2-minute command shows `2m`, not `120.0s`). Unified in a single `utils/duration.ts` helper, replacing several duplicated per-component formatters.
 
 ### Fixed
 

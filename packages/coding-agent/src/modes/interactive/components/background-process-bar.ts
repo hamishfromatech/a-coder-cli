@@ -11,14 +11,8 @@
 
 import { type Component, truncateToWidth } from "@earendil-works/pi-tui";
 import type { BackgroundProcessRecord } from "../../../core/stores/background-process-store.ts";
+import { formatDuration } from "../../../utils/duration.ts";
 import { theme } from "../theme/theme.ts";
-
-function formatDuration(ms: number): string {
-	const sec = ms / 1000;
-	if (sec < 60) return `${sec.toFixed(sec < 10 ? 1 : 0)}s`;
-	const min = Math.floor(sec / 60);
-	return `${min}m${Math.round(sec - min * 60)}s`;
-}
 
 function formatBytes(n: number): string {
 	if (n < 1024) return `${n}B`;

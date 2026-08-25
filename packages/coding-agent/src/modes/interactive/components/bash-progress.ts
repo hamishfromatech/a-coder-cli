@@ -16,17 +16,10 @@ import { type Component, Container, type TUI, truncateToWidth } from "@earendil-
 import type { BashProgress } from "../../../core/stores/bash-progress-store.ts";
 import { subscribeBashProgress } from "../../../core/stores/bash-progress-store.ts";
 import { formatSize } from "../../../core/tools/truncate.ts";
+import { formatDuration } from "../../../utils/duration.ts";
 import { theme } from "../theme/theme.ts";
 
 const BASH_TAIL_LINES = 5;
-
-function formatDuration(ms: number): string {
-	const totalSec = Math.floor(ms / 1000);
-	if (totalSec < 60) return `${totalSec}s`;
-	const min = Math.floor(totalSec / 60);
-	const sec = totalSec % 60;
-	return sec > 0 ? `${min}m${sec}s` : `${min}m`;
-}
 
 function shellTimeHint(elapsedMs: number, timeoutMs?: number): string {
 	const timeout = timeoutMs ? formatDuration(timeoutMs) : undefined;

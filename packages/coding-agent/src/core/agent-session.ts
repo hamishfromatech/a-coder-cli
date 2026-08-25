@@ -38,6 +38,7 @@ import {
 	streamSimple,
 } from "@earendil-works/pi-ai/compat";
 import { getThemeByName, theme } from "../modes/interactive/theme/theme.ts";
+import { formatDuration } from "../utils/duration.ts";
 import { stripFrontmatter } from "../utils/frontmatter.ts";
 import { resolvePath } from "../utils/paths.ts";
 import { sleep } from "../utils/sleep.ts";
@@ -4169,14 +4170,7 @@ export class AgentSession {
 	}
 
 	private _formatSubAgentNotification(record: InProcessSubAgentRecord): string {
-		const ms = Date.now() - record.startedAt;
-		let elapsed: string;
-		if (ms < 1000) elapsed = `${Math.max(0, Math.round(ms))}ms`;
-		else {
-			const sec = ms / 1000;
-			elapsed =
-				sec < 60 ? `${sec.toFixed(1)}s` : `${Math.floor(sec / 60)}m${Math.round(sec - Math.floor(sec / 60) * 60)}s`;
-		}
+		const elapsed = formatDuration(Date.now() - record.startedAt);
 		const parts: string[] = [`Background subagent "${record.id}" (${record.agentType}) ${record.status}`];
 		if (record.toolUseCount > 0) parts.push(`${record.toolUseCount} tool uses`);
 		if (record.totalTokens && record.totalTokens > 0) parts.push(`${record.totalTokens} tokens`);

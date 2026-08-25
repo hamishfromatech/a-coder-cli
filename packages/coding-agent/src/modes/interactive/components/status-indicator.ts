@@ -1,5 +1,6 @@
 import { type Component, Loader, type TUI } from "@earendil-works/pi-tui";
 import type { WorkingIndicatorOptions } from "../../../core/extensions/index.ts";
+import { formatDuration } from "../../../utils/duration.ts";
 import { theme } from "../theme/theme.ts";
 import { CountdownTimer } from "./countdown-timer.ts";
 import { keyText } from "./keybinding-hints.ts";
@@ -80,8 +81,9 @@ export class WorkingStatusIndicator extends StatusIndicator {
 	}
 
 	private refreshHint(): void {
-		const seconds = Math.floor((Date.now() - this.startTime) / 1000);
-		const hint = `(${seconds >= 1 ? `${seconds}s · ` : ""}${this.interruptKey} to interrupt)`;
+		const ms = Date.now() - this.startTime;
+		const prefix = ms >= 1000 ? `${formatDuration(ms)} · ` : "";
+		const hint = `(${prefix}${this.interruptKey} to interrupt)`;
 		super.setMessage(`${this.baseMessage}  ${hint}`);
 	}
 
