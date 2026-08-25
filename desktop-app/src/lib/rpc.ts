@@ -23,6 +23,7 @@ export type RpcEvent =
 	| ExtensionUiRequestEvent
 	| QueueUpdateEvent
 	| SubagentsUpdateEvent
+	| BackgroundProcessesUpdateEvent
 	| AutoRetryStartEvent
 	| AutoRetryEndEvent
 	| CompactionEndEvent;
@@ -82,6 +83,27 @@ export type SubAgentTimelineEvent =
 export interface SubagentsUpdateEvent {
 	type: "subagents_update";
 	agents: SubAgentRecord[];
+}
+
+export type BackgroundProcessStatus = "running" | "done" | "error" | "killed";
+
+export interface BackgroundProcessRecord {
+	id: string;
+	command: string;
+	pid: number | undefined;
+	startedAt: number;
+	endedAt: number | undefined;
+	status: BackgroundProcessStatus;
+	exitCode: number | undefined;
+	output: string;
+	totalLines: number;
+	totalBytes: number;
+	fullOutputPath: string | undefined;
+}
+
+export interface BackgroundProcessesUpdateEvent {
+	type: "background_processes_update";
+	processes: BackgroundProcessRecord[];
 }
 
 export interface SubAgentRecord {

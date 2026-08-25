@@ -555,6 +555,11 @@ export default function App() {
 							useSessionStore.getState().setSubAgents(sub.agents ?? []);
 							break;
 						}
+						case "background_processes_update": {
+							const upd = event as import("./lib/rpc").BackgroundProcessesUpdateEvent;
+							useSessionStore.getState().setBackgroundProcesses(upd.processes ?? []);
+							break;
+						}
 						case "extension_ui_request": {
 							const req = event as import("./lib/rpc").ExtensionUiRequestEvent;
 

@@ -26,6 +26,7 @@ import {
 	writeRawStdout,
 } from "../../core/output-guard.ts";
 import { type SessionInfo, SessionManager } from "../../core/session-manager.ts";
+import { getBackgroundProcesses, subscribeBackgroundProcesses } from "../../core/stores/index.ts";
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { type Theme, theme } from "../interactive/theme/theme.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
@@ -56,6 +57,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	let session = runtimeHost.session;
 	let unsubscribe: (() => void) | undefined;
 	let unsubscribeBackpressure: (() => void) | undefined;
+	let unsubscribeBackgroundProcesses: (() => void) | undefined;
 
 	const output = (obj: RpcResponse | RpcExtensionUIRequest | object) => {
 		writeRawStdout(serializeJsonLine(obj));
@@ -386,12 +388,19 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 		unsubscribe?.();
 		unsubscribeBackpressure?.();
+		unsubscribeBackgroundProcesses?.();
 		unsubscribe = session.subscribe((event) => {
 			output(event);
 		});
 		unsubscribeBackpressure = session.agent.subscribe(async () => {
 			await waitForRawStdoutBackpressure();
 		});
+		// Stream background bash-process updates to the desktop (live viewer).
+		unsubscribeBackgroundProcesses = subscribeBackgroundProcesses(() => {
+			output({ type: "background_processes_update", processes: getBackgroundProcesses() });
+		});
+		// Emit an initial snapshot so the desktop has the current state on (re)bind.
+		output({ type: "background_processes_update", processes: getBackgroundProcesses() });
 	};
 
 	const registerSignalHandlers = (): void => {
@@ -909,6 +918,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		}
 		unsubscribe?.();
 		unsubscribeBackpressure?.();
+		unsubscribeBackgroundProcesses?.();
 		await runtimeHost.dispose();
 		detachInput();
 		process.stdin.pause();
