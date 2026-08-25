@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, RefreshCw, Sparkles, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Loader2, Sparkles, X } from "lucide-react";
 import { useModalA11y } from "../hooks/useModalA11y";
-import * as rpc from "../lib/rpc";
-import { Button } from "./ui/Button";
+import { useSessionStore } from "../stores/session-store";
+import type { SubAgentRecord, SubAgentTimelineEvent } from "../lib/rpc";
 import { IconButton } from "./ui/Button";
-import { Badge, type BadgeVariant } from "./ui/Badge";
 import { ModalBackdrop, ModalPanel } from "./ui/Modal";
 
 export interface SubagentPanelProps {
@@ -12,160 +11,183 @@ export interface SubagentPanelProps {
 	onClose: () => void;
 }
 
-type SubagentStatus = "pending" | "running" | "completed" | "failed" | "killed";
+/** Escalating duration: ms -> seconds -> 1m -> 1h -> 1d (whole units). */
+function formatDuration(ms: number): string {
+	const t = Math.max(0, Math.round(ms));
+	if (t < 1000) return `${t}ms`;
+	if (t < 60_000) return `${(t / 1000).toFixed(t < 10_000 ? 1 : 0)}s`;
+	if (t < 3_600_000) return `${Math.floor(t / 60_000)}m`;
+	if (t < 86_400_000) return `${Math.floor(t / 3_600_000)}h`;
+	return `${Math.floor(t / 86_400_000)}d`;
+}
 
-const STATUS_LABEL: Record<SubagentStatus, string> = {
-	pending: "Waiting",
+function formatTokens(n: number | undefined): string {
+	if (!n || n <= 0) return "";
+	if (n < 1000) return `${n} tok`;
+	if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k tok`;
+	return `${(n / 1_000_000).toFixed(1)}M tok`;
+}
+
+function StatusIcon({ status }: { status: SubAgentRecord["status"] }) {
+	if (status === "running") return <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-pi-accent" />;
+	if (status === "completed") return <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-pi-success" />;
+	return <AlertCircle className="h-3.5 w-3.5 shrink-0 text-pi-error" />;
+}
+
+const STATUS_LABEL: Record<SubAgentRecord["status"], string> = {
 	running: "Running",
 	completed: "Done",
 	failed: "Failed",
 	killed: "Stopped",
 };
 
-const STATUS_VARIANT: Record<SubagentStatus, BadgeVariant> = {
-	pending: "muted",
-	running: "accent",
-	completed: "success",
-	failed: "error",
-	killed: "muted",
-};
+function TimelineEntry({ event }: { event: SubAgentTimelineEvent }) {
+	switch (event.type) {
+		case "tool_use_start":
+			return <div className="font-mono text-3xs text-pi-text-muted">→ {event.toolName}</div>;
+		case "tool_use_done":
+			return (
+				<div className={`font-mono text-3xs ${event.isError ? "text-pi-error" : "text-pi-text-muted"}`}>
+					{event.isError ? "✗" : "✓"} {event.toolName}
+				</div>
+			);
+		case "text": {
+			const text = event.text.trim();
+			if (!text) return null;
+			return (
+				<div className="max-h-20 overflow-auto whitespace-pre-wrap text-3xs leading-relaxed text-pi-text-secondary">
+					{text}
+				</div>
+			);
+		}
+		case "turn_complete":
+			return <div className="text-3xs text-pi-text-faint">— turn {event.turnCount}</div>;
+		case "completed":
+			return (
+				<div className="text-3xs text-pi-success">
+					— completed after {event.turnCount} turns, {event.toolUseCount} tools
+				</div>
+			);
+		case "aborted":
+			return <div className="text-3xs text-pi-error">— aborted</div>;
+	}
+}
+
+function SubagentRow({ record, now }: { record: SubAgentRecord; now: number }) {
+	const [open, setOpen] = useState(record.status === "running");
+	const name = record.teammateName ? `${record.teammateName} · ${record.agentType}` : record.agentType;
+	const subtitle = [
+		record.model,
+		record.toolUseCount > 0 ? `${record.toolUseCount} tools` : "",
+		formatTokens(record.totalTokens),
+		formatDuration(now - record.startedAt),
+	]
+		.filter(Boolean)
+		.join(" · ");
+
+	return (
+		<div className="rounded-lg bg-pi-surface-raised shadow-ring">
+			<button
+				type="button"
+				onClick={() => setOpen((v) => !v)}
+				className="flex w-full items-start gap-2 p-3 text-left"
+			>
+				<StatusIcon status={record.status} />
+				<div className="min-w-0 flex-1">
+					<div className="flex items-center gap-2">
+						<span className="truncate text-xs font-medium text-pi-text">{name}</span>
+						<span className="text-3xs text-pi-text-faint">{STATUS_LABEL[record.status]}</span>
+					</div>
+					{record.goal ? (
+						<p className="mt-1 truncate text-2xs text-pi-text-secondary">{record.goal}</p>
+					) : null}
+					{subtitle ? <p className="mt-1 font-mono text-3xs text-pi-text-muted">{subtitle}</p> : null}
+					{record.error ? (
+						<p className="mt-1.5 rounded bg-pi-error/10 px-2 py-1 text-2xs text-pi-error">{record.error}</p>
+					) : null}
+				</div>
+				{open ? (
+					<ChevronDown className="h-3.5 w-3.5 shrink-0 text-pi-text-faint" />
+				) : (
+					<ChevronRight className="h-3.5 w-3.5 shrink-0 text-pi-text-faint" />
+				)}
+			</button>
+			{open ? (
+				<div className="flex flex-col gap-1 border-t border-pi-border px-3 py-2">
+					{record.timeline && record.timeline.length > 0 ? (
+						<>
+							<div className="text-3xs font-medium tracking-wider text-pi-text-faint uppercase">Activity</div>
+							{record.timeline.slice(-12).map((event, i) => (
+								<TimelineEntry event={event} key={i} />
+							))}
+						</>
+					) : (
+						<div className="text-3xs text-pi-text-faint">(no activity yet)</div>
+					)}
+					{record.outputFile ? (
+						<div className="mt-1 truncate font-mono text-3xs text-pi-text-faint">log: {record.outputFile}</div>
+					) : null}
+					{record.worktreePath ? (
+						<div className="truncate font-mono text-3xs text-pi-text-faint">worktree: {record.worktreePath}</div>
+					) : null}
+				</div>
+			) : null}
+		</div>
+	);
+}
 
 export function SubagentPanel({ open, onClose }: SubagentPanelProps) {
 	const modalRef = useRef<HTMLDivElement>(null);
-	const [agents, setAgents] = useState<rpc.SubagentRecord[]>([]);
-	const [loading, setLoading] = useState(false);
-	const [error, setError] = useState<string | null>(null);
 	useModalA11y(modalRef, open, onClose);
-
-	const load = useCallback(async () => {
-		setLoading(true);
-		setError(null);
-		try {
-			const records = await rpc.readSubagentsFile();
-			// Newest first.
-			records.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-			setAgents(records);
-		} catch (e) {
-			setError(e instanceof Error ? e.message : String(e));
-		} finally {
-			setLoading(false);
-		}
-	}, []);
-
+	const subAgents = useSessionStore((s) => s.subAgents);
+	// Tick elapsed times every second while any sub-agent is running.
+	const [now, setNow] = useState(() => Date.now());
 	useEffect(() => {
-		if (open) {
-			void load();
-		}
-	}, [open, load]);
+		if (!open) return;
+		const anyRunning = subAgents.some((a) => a.status === "running");
+		if (!anyRunning) return;
+		const id = window.setInterval(() => setNow(Date.now()), 1000);
+		return () => window.clearInterval(id);
+	}, [open, subAgents]);
+
+	const sorted = useMemo(
+		() => [...subAgents].sort((a, b) => a.startedAt - b.startedAt),
+		[subAgents],
+	);
+	const active = sorted.filter((a) => a.status === "running").length;
 
 	if (!open) return null;
 
-	const running = agents.filter((a) => a.status === "running" || a.status === "pending");
-
 	return (
-		<ModalBackdrop
-			ref={modalRef}
-			aria-label="Subagents"
-			onClick={onClose}
-		>
-			<ModalPanel
-				className="max-w-lg"
-				centered={false}
-				onClick={(e) => e.stopPropagation()}
-			>
+		<ModalBackdrop ref={modalRef} aria-label="Subagents" onClick={onClose}>
+			<ModalPanel className="max-w-lg" centered={false} onClick={(e) => e.stopPropagation()}>
 				<div className="flex items-center justify-between border-b border-pi-border px-4 py-3">
 					<div className="flex items-center gap-2">
 						<Sparkles className="h-4 w-4 text-pi-accent" />
 						<h2 className="text-[13px] font-semibold tracking-tight text-pi-text">Subagents</h2>
+						<span className="text-2xs text-pi-text-faint">
+							{sorted.length} total{active > 0 ? ` · ${active} active` : ""}
+						</span>
 					</div>
-					<div className="flex items-center gap-2">
-						<IconButton
-							variant="ghost"
-							size="sm"
-							icon={RefreshCw}
-							loading={loading}
-							onClick={() => void load()}
-							aria-label="Refresh"
-						/>
-						<IconButton
-							variant="ghost"
-							size="sm"
-							icon={X}
-							onClick={onClose}
-							aria-label="Close"
-						/>
-					</div>
+					<IconButton variant="ghost" size="sm" icon={X} onClick={onClose} aria-label="Close" />
 				</div>
 
 				<div className="flex-1 overflow-auto px-4 py-3">
-					{loading && agents.length === 0 ? (
-						<div className="flex h-24 items-center justify-center text-xs text-pi-text-muted">
-							<Loader2 className="mr-2 h-4 w-4 animate-spin" />
-							Loading subagents…
-						</div>
-					) : error ? (
-						<p className="py-6 text-center text-xs text-pi-error">{error}</p>
-					) : agents.length === 0 ? (
+					{sorted.length === 0 ? (
 						<div className="py-10 text-center">
 							<p className="text-[13px] font-medium text-pi-text-secondary">No subagents yet</p>
 							<p className="mt-2 text-2xs leading-relaxed text-pi-text-muted">
-								Subagents are background helpers that work on tasks in parallel.
-								Ask the assistant to delegate a task and it will show up here.
+								Subagents are background helpers that work on tasks in parallel. Ask the assistant to
+								delegate a task and it will show up here.
 							</p>
 						</div>
 					) : (
-						<ul className="space-y-2">
-							{agents.map((agent) => (
-								<li
-									key={agent.id}
-									className="rounded-lg bg-pi-surface-raised p-3 shadow-ring"
-								>
-									<div className="flex items-start justify-between gap-2">
-										<div className="min-w-0 flex-1">
-											<div className="flex items-center gap-2">
-												<Badge variant={STATUS_VARIANT[agent.status]} size="sm">
-													{STATUS_LABEL[agent.status]}
-												</Badge>
-												<span className="truncate text-xs font-medium text-pi-text">
-													{agent.config.id}
-												</span>
-											</div>
-											<p className="mt-1.5 text-2xs leading-relaxed text-pi-text-secondary">
-												{agent.config.task}
-											</p>
-											{(agent.config.model || agent.config.provider) && (
-												<p className="mt-1 font-mono text-3xs text-pi-text-muted">
-													{agent.config.provider ? `${agent.config.provider}/` : ""}
-													{agent.config.model ?? ""}
-												</p>
-											)}
-											{agent.error && (
-												<p className="mt-1.5 rounded bg-pi-error/10 px-2 py-1 text-2xs text-pi-error">
-													{agent.error}
-												</p>
-											)}
-											{agent.lastOutput && agent.status === "running" && (
-												<pre className="mt-2 max-h-24 overflow-auto rounded bg-pi-bg p-2 font-mono text-3xs leading-relaxed text-pi-text-muted whitespace-pre-wrap">
-													{agent.lastOutput}
-												</pre>
-											)}
-										</div>
-									</div>
-								</li>
+						<div className="flex flex-col gap-2">
+							{sorted.map((agent) => (
+								<SubagentRow key={agent.id} record={agent} now={now} />
 							))}
-						</ul>
+						</div>
 					)}
-				</div>
-
-				<div className="flex shrink-0 items-center justify-between border-t border-pi-border px-4 py-3">
-					<span className="text-2xs text-pi-text-faint">
-						{running.length > 0
-							? `${running.length} active`
-							: `${agents.length} total`}
-					</span>
-					<Button variant="ghost" size="md" onClick={onClose}>
-						Close
-					</Button>
 				</div>
 			</ModalPanel>
 		</ModalBackdrop>
