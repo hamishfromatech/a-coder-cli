@@ -126,6 +126,7 @@ export interface Settings {
 	steeringMode?: "all" | "one-at-a-time";
 	followUpMode?: "all" | "one-at-a-time";
 	theme?: string;
+	outputStyle?: string; // Active output style name (built-in: default/Explanatory/Learning, or a custom style)
 	compaction?: CompactionSettings;
 	branchSummary?: BranchSummarySettings;
 	retry?: RetrySettings;
@@ -803,6 +804,17 @@ export class SettingsManager {
 	setTheme(theme: string): void {
 		this.globalSettings.theme = theme;
 		this.markModified("theme");
+		this.save();
+	}
+
+	getOutputStyleSetting(): string | undefined {
+		const value = this.settings.outputStyle;
+		return typeof value === "string" ? value : undefined;
+	}
+
+	setOutputStyle(name: string): void {
+		this.globalSettings.outputStyle = name;
+		this.markModified("outputStyle");
 		this.save();
 	}
 

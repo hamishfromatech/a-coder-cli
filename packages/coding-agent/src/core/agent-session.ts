@@ -95,6 +95,7 @@ import type {
 import { FileHistory } from "./file-history.ts";
 import type { BashExecutionMessage, CustomMessage } from "./messages.ts";
 import type { ModelRegistry } from "./model-registry.ts";
+import { applyPersistedOutputStyle, getOutputStylePrompt, loadOutputStyles } from "./output-styles.ts";
 import {
 	DEFAULT_MUTATING_TOOL_NAMES,
 	type PermissionDecisionResult,
@@ -420,6 +421,11 @@ export class AgentSession {
 		this._sessionStartEvent = config.sessionStartEvent ?? { type: "session_start", reason: "startup" };
 		this._permissionMode = this.settingsManager.getPermissionMode();
 		this._noTools = config.noTools;
+
+		// Load output styles (built-in + custom files) and apply the persisted
+		// preference so the first prompt reflects the user's chosen style.
+		loadOutputStyles({ cwd: this._cwd });
+		applyPersistedOutputStyle(this.settingsManager.getOutputStyleSetting());
 
 		// Always subscribe to agent events for internal handling
 		// (session persistence, extensions, auto-compaction, retry logic)
@@ -1182,6 +1188,17 @@ export class AgentSession {
 		return this.agent.state.systemPrompt;
 	}
 
+	/** Current working directory the session is rooted in. */
+	get cwd(): string {
+		return this._cwd;
+	}
+
+	/** Rebuild the base system prompt from the current resources, tools, and output style. */
+	rebuildSystemPrompt(): void {
+		this._baseSystemPrompt = this._rebuildSystemPrompt(this.getActiveToolNames());
+		this.agent.state.systemPrompt = this._baseSystemPrompt;
+	}
+
 	/** Current retry attempt (0 if not retrying) */
 	get retryAttempt(): number {
 		return this._retryAttempt;
@@ -1336,8 +1353,11 @@ export class AgentSession {
 
 		const loaderSystemPrompt = this._resourceLoader.getSystemPrompt();
 		const loaderAppendSystemPrompt = this._resourceLoader.getAppendSystemPrompt();
-		const appendSystemPrompt =
-			loaderAppendSystemPrompt.length > 0 ? loaderAppendSystemPrompt.join("\n\n") : undefined;
+		// Fold the active output style's prompt into the append block so a
+		// `/output-style` switch takes effect on the next prompt rebuild.
+		const stylePrompt = getOutputStylePrompt();
+		const appendParts = stylePrompt ? [...loaderAppendSystemPrompt, stylePrompt] : loaderAppendSystemPrompt;
+		const appendSystemPrompt = appendParts.length > 0 ? appendParts.join("\n\n") : undefined;
 		const loadedSkills = this._resourceLoader.getSkills().skills;
 		const loadedAgents = this._resourceLoader.getSubAgents();
 		const loadedContextFiles = this._resourceLoader.getAgentsFiles().agentsFiles;

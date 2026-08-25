@@ -4,6 +4,7 @@
 
 ### Added
 
+- Output styles: switchable system-prompt overlays (`default`/`Explanatory`/`Learning` plus custom `.md` files under `<agentDir>/output-styles/` and `<cwd>/.a-coder-cli/output-styles/`) that reshape how the agent answers without changing its tools. Switch at runtime with `/output-style [name]` (opens a selector with no arg); the choice is persisted to `settings.outputStyle` and applied on the next prompt.
 - Persistent task graph: `task_create`, `task_get`, `task_list`, and `task_update` tools backed by an on-disk store under `~/.a-coder-cli/tasks`, with high-water-mark ids, bidirectional `blocks`/`blockedBy` dependencies, an `owner` field for Agent Teams, and a `/tasks` command (TUI `TaskListComponent` + desktop `TaskPanel`).
 - `ask_user_question` tool for structured multiple-choice questions (1-4 questions, headers, options, multiSelect) with a TUI `QuestionPromptComponent` and a desktop `QuestionPrompt` modal, wired over RPC via the `question` extension UI method.
 - JSONL output files for background sub-agents: each background run writes a tail-able event log at `<sessionDir>/tasks/<agentId>.output` (started/text/tool_use/tool_result/turn_usage/completed/failed), with the path surfaced in the spawn result and completion notification.

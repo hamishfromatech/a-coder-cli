@@ -79,6 +79,13 @@ import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.t
 import { KEYLESS_LOCAL_PROVIDER_ENV, KEYLESS_LOCAL_PROVIDERS } from "../../core/local-providers.ts";
 import { createCompactionSummaryMessage } from "../../core/messages.ts";
 import { defaultModelPerProvider, findExactModelReferenceMatch, resolveModelScope } from "../../core/model-resolver.ts";
+import {
+	getActiveOutputStyleName,
+	getOutputStyle,
+	listOutputStyles,
+	loadOutputStyles,
+	setActiveOutputStyleName,
+} from "../../core/output-styles.ts";
 import { DefaultPackageManager } from "../../core/package-manager.ts";
 import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "../../core/provider-display-names.ts";
 import type { ResourceDiagnostic } from "../../core/resource-loader.ts";
@@ -138,6 +145,7 @@ import { pickLoadingVerb } from "./components/loading-verbs.ts";
 import { LoginDialogComponent } from "./components/login-dialog.ts";
 import { ModelSelectorComponent } from "./components/model-selector.ts";
 import { type AuthSelectorProvider, OAuthSelectorComponent } from "./components/oauth-selector.ts";
+import { OutputStyleSelectorComponent } from "./components/output-style-selector.ts";
 import { PermissionModeSelectorComponent } from "./components/permission-mode-selector.ts";
 import { QuestionPromptComponent } from "./components/question-prompt.ts";
 import { ScopedModelsSelectorComponent } from "./components/scoped-models-selector.ts";
@@ -2873,6 +2881,12 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
+			if (text === "/output-style" || text.startsWith("/output-style ")) {
+				const arg = text.startsWith("/output-style ") ? text.slice("/output-style ".length).trim() : undefined;
+				this.handleOutputStyleCommand(arg);
+				this.editor.setText("");
+				return;
+			}
 			if (text === "/plan") {
 				this.togglePlanMode();
 				this.editor.setText("");
@@ -4870,6 +4884,53 @@ export class InteractiveMode {
 	private updatePermissionModeStatus(mode: PermissionMode): void {
 		this.footerDataProvider.setExtensionStatus("permissionMode", `Permission mode: ${mode}`);
 		this.ui.requestRender();
+	}
+
+	private handleOutputStyleCommand(arg: string | undefined): void {
+		// Re-scan disk so newly added custom styles show up without a full /reload.
+		loadOutputStyles({ cwd: this.session.cwd });
+		if (arg) {
+			this.applyOutputStyle(arg);
+			return;
+		}
+		this.showOutputStyleSelector();
+	}
+
+	private showOutputStyleSelector(): void {
+		const current = getActiveOutputStyleName();
+		this.showSelector((done) => {
+			const selector = new OutputStyleSelectorComponent(
+				current,
+				(styleName) => {
+					this.applyOutputStyle(styleName);
+					done();
+				},
+				() => {
+					done();
+					this.ui.requestRender();
+				},
+			);
+			return { component: selector, focus: selector };
+		});
+	}
+
+	private applyOutputStyle(styleName: string): void {
+		if (!setActiveOutputStyleName(styleName)) {
+			const available = listOutputStyles()
+				.map((s) => s.name)
+				.join(", ");
+			this.showStatus(`Unknown output style "${styleName}". Available: ${available}`);
+			return;
+		}
+		this.settingsManager.setOutputStyle(styleName);
+		// Rebuild the system prompt so the new style applies to the next turn.
+		void this.session.rebuildSystemPrompt();
+		const style = getOutputStyle(styleName);
+		this.showStatus(
+			style && styleName !== "default"
+				? `Output style: ${styleName} — ${style.description}`
+				: `Output style: default`,
+		);
 	}
 
 	private togglePlanMode(): void {
