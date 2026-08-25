@@ -29,7 +29,7 @@ export function RightSidebar({ projectPath }: Props) {
 				aria-label="Right sidebar panels"
 				className="flex h-9 shrink-0 items-center gap-0.5 border-b border-pi-border px-1.5"
 			>
-				{TABS.map(({ id, label, icon: Icon }) => {
+				{TABS.map(({ id, icon: Icon }) => {
 					const active = rightSidebarTab === id;
 					return (
 						<button

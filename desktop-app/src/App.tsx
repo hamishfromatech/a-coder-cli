@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronsUpDown, FolderGit2, MessageSquare, Plus, Settings, Sparkles, X } from "lucide-react";
+import { ChevronsUpDown, FolderGit2, MessageSquare, Plus, Settings, X } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import * as rpc from "./lib/rpc";
 import { playCompletionSound } from "./lib/completion-sound";
@@ -22,6 +22,8 @@ import { applyNamedTheme } from "./lib/themes";
 import { useGlobalKeybindings } from "./hooks/useGlobalKeybindings";
 import { useClosedTabsStore } from "./stores/closed-tabs-store";
 import { useUpdateCheck } from "./hooks/useUpdateCheck";
+import { BrandMark } from "./components/ui/BrandMark";
+import { Loader } from "./components/ui/Loader";
 import { ChangelogModal } from "./components/ChangelogModal";
 import { ChatBackdrop } from "./components/ChatBackdrop";
 import { CommandCenter } from "./components/CommandCenter";

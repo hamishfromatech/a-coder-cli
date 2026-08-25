@@ -9,7 +9,7 @@ const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as 
 
 type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 
-const THINKING_OPTIONS = THINKING_LEVELS.map((level) => ({
+const THINKING_OPTIONS: { value: ThinkingLevel; label: string }[] = THINKING_LEVELS.map((level) => ({
 	value: level,
 	label: level === "xhigh" ? "max" : level.slice(0, 3),
 }));
@@ -158,7 +158,7 @@ aria-label="Cycle model"
 			<SegmentedControl
 				label="Think"
 				options={THINKING_OPTIONS}
-				value={thinkingLevel ?? "off"}
+				value={(thinkingLevel ?? "off") as ThinkingLevel}
 				onChange={(level) => void handleSetThinkingLevel(level)}
 			/>
 			<button
