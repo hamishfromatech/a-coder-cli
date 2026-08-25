@@ -27,6 +27,29 @@ export interface OllamaShowResponse {
 	model_info?: Record<string, unknown>;
 }
 
+/** A model entry in the native `/api/tags` response. */
+export interface OllamaTagsModel {
+	name: string;
+	model: string;
+	modified_at: string;
+	size: number;
+	digest: string;
+	details: {
+		parent_model: string;
+		format: string;
+		family: string;
+		families: string[] | null;
+		parameter_size: string;
+		quantization_level: string;
+	};
+	capabilities?: string[];
+	model_info?: Record<string, unknown>;
+}
+
+export interface OllamaTagsResponse {
+	models: OllamaTagsModel[];
+}
+
 /** A minimal model view for Ollama detection. */
 type OllamaLikeModel = Pick<Model<Api>, "provider" | "baseUrl">;
 
@@ -86,7 +109,8 @@ function parseNumCtxFromParameters(parameters: string | undefined): number | und
 	return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
-function parseContextLengthFromModelInfo(modelInfo: Record<string, unknown> | undefined): number | undefined {
+/** Parse the largest `*.context_length` value from Ollama model_info metadata. */
+export function parseContextLengthFromModelInfo(modelInfo: Record<string, unknown> | undefined): number | undefined {
 	if (!modelInfo) return undefined;
 	// Pick the largest `*.context_length` value (vision/audio sub-models can
 	// carry their own smaller context_length; the text head is what we want).

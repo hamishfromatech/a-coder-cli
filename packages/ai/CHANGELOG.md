@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Changed
+- Local Ollama models now discover their real context window at model-list refresh time (via the native /api/tags model_info.context_length, falling back to /api/show), matching Ollama Cloud, instead of hardcoding 128000 until the model is first activated.
+
 ## [0.80.26] - 2026-08-22
 
 ## [0.80.25] - 2026-08-22

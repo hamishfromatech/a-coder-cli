@@ -4,43 +4,11 @@ import { envApiKeyAuth } from "../auth/helpers.ts";
 import { createProvider, type Provider } from "../models.ts";
 import type { Model } from "../types.ts";
 import { OLLAMA_CLOUD_MODELS } from "./ollama-cloud.models.ts";
-import { fetchOllamaContextWindow } from "./ollama-context.ts";
-
-export interface OllamaCloudTagsModel {
-	name: string;
-	model: string;
-	modified_at: string;
-	size: number;
-	digest: string;
-	details: {
-		parent_model: string;
-		format: string;
-		family: string;
-		families: string[] | null;
-		parameter_size: string;
-		quantization_level: string;
-	};
-	capabilities?: string[];
-	model_info?: Record<string, unknown>;
-}
-
-export interface OllamaCloudTagsResponse {
-	models: OllamaCloudTagsModel[];
-}
-
-/** Parse the largest `*.context_length` value from Ollama model_info metadata. */
-export function parseContextLengthFromModelInfo(modelInfo: Record<string, unknown> | undefined): number | undefined {
-	if (!modelInfo) return undefined;
-	let value: number | undefined;
-	for (const [key, raw] of Object.entries(modelInfo)) {
-		if (!key.endsWith(".context_length")) continue;
-		const n = typeof raw === "number" ? raw : Number(raw);
-		if (Number.isFinite(n) && n > 0 && (value === undefined || n > value)) {
-			value = n;
-		}
-	}
-	return value;
-}
+import {
+	fetchOllamaContextWindow,
+	type OllamaTagsResponse,
+	parseContextLengthFromModelInfo,
+} from "./ollama-context.ts";
 
 export async function resolveOllamaCloudModelCaps(
 	id: string,
@@ -117,7 +85,7 @@ export async function fetchOllamaCloudModels(
 	if (!tagsRes.ok) {
 		throw new Error(`Ollama Cloud model refresh failed: ${tagsRes.status} ${tagsRes.statusText}`);
 	}
-	const tagsJson = (await tagsRes.json()) as OllamaCloudTagsResponse;
+	const tagsJson = (await tagsRes.json()) as OllamaTagsResponse;
 	const tags = tagsJson.models ?? [];
 
 	const models: Model<"openai-completions">[] = [];

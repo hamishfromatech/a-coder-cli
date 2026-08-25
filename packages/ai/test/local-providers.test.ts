@@ -113,30 +113,60 @@ describe("Ollama provider", () => {
 		expect(model.provider).toBe("ollama");
 		expect(model.api).toBe("openai-completions");
 		expect(model.baseUrl).toBe("http://custom:11434/v1");
+		expect(model.contextWindow).toBe(128000);
 		expect(model.input).toContain("image");
 		delete process.env.OLLAMA_BASE_URL;
 	});
 
-	it("fetches models from the local /v1/models endpoint", async () => {
-		const fetchMock = vi.fn().mockResolvedValue({
-			ok: true,
-			json: async () => ({
-				object: "list",
-				data: [{ id: "llama3.2:latest" }, { id: "qwen2.5:7b" }],
-			}),
+	it("fetches models from the native /api/tags endpoint and probes /api/show for context windows", async () => {
+		const fetchMock = vi.fn(async (input: unknown): Promise<Response> => {
+			const url = typeof input === "string" ? input : (input as Request).url;
+			if (url === "http://localhost:11434/api/tags") {
+				return new Response(
+					JSON.stringify({
+						models: [
+							{
+								name: "llama3.2:latest",
+								model: "llama3.2:latest",
+								modified_at: "",
+								size: 0,
+								digest: "",
+								details: {},
+								model_info: { "llama.context_length": 131072 },
+							},
+							{ name: "qwen2.5:7b", model: "qwen2.5:7b", modified_at: "", size: 0, digest: "", details: {} },
+						],
+					}),
+					{ status: 200, headers: { "content-type": "application/json" } },
+				);
+			}
+			if (url === "http://localhost:11434/api/show") {
+				return new Response(JSON.stringify({ model_info: { "llama.context_length": 32768 } }), {
+					status: 200,
+					headers: { "content-type": "application/json" },
+				});
+			}
+			throw new Error(`Unexpected fetch: ${url}`);
 		});
 		vi.stubGlobal("fetch", fetchMock);
 
 		const models = await fetchOllamaModels();
-		expect(models).toHaveLength(2);
-		expect(models[0].id).toBe("llama3.2:latest");
-		expect(models[1].id).toBe("qwen2.5:7b");
+		expect(fetchMock).toHaveBeenCalledTimes(2); // 1 tags + 1 show (only qwen2.5 probed)
+		expect(models.map((m) => m.id)).toEqual(["llama3.2:latest", "qwen2.5:7b"]);
+		expect(models[0]?.contextWindow).toBe(131072); // from /api/tags model_info
+		expect(models[1]?.contextWindow).toBe(32768); // from /api/show probe
 		expect(fetchMock).toHaveBeenCalledWith(
-			"http://localhost:11434/v1/models",
+			"http://localhost:11434/api/tags",
 			expect.objectContaining({ headers: { accept: "application/json" } }),
 		);
 
 		vi.unstubAllGlobals();
+	});
+
+	it("createOllamaModel applies a discovered context window", () => {
+		expect(createOllamaModel("llama3.2:latest", undefined, 32768).contextWindow).toBe(32768);
+		expect(createOllamaModel("x", undefined, 0).contextWindow).toBe(128000);
+		expect(createOllamaModel("x", undefined, -1).contextWindow).toBe(128000);
 	});
 
 	it("provider exposes the placeholder model and dynamic refresh", () => {
