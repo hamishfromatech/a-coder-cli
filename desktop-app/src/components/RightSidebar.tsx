@@ -40,7 +40,7 @@ export function RightSidebar({ projectPath }: Props) {
 					triggerHaptic("selection");
 					setRightSidebarTab(id);
 				}}
-							title={label}
+
 							className={`relative flex h-7 flex-1 items-center justify-center gap-1.5 rounded-md px-2 text-2xs font-medium transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
 								active
 									? "bg-pi-surface-raised text-pi-text shadow-ring hover:shadow-card-hover"

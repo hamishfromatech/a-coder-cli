@@ -31,7 +31,7 @@ export function CopyButton({ text, label = "Copy", className, iconClassName }: C
 				className,
 			)}
 			onClick={onCopy}
-			title={label}
+			aria-label={label}
 			type="button"
 		>
 			{copied ? <Check className={cn("h-3 w-3 text-pi-success", iconClassName)} /> : <Copy className={cn("h-3 w-3", iconClassName)} />}

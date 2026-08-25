@@ -10,6 +10,7 @@ import { useUiStore } from "../stores/ui-store";
 import { useSessionStore } from "../stores/session-store";
 import * as rpc from "../lib/rpc";
 import { triggerHaptic } from "../lib/haptics";
+import { BrandMark } from "./ui/BrandMark";
 
 export function Titlebar() {
 	const [editingName, setEditingName] = useState(false);
@@ -63,9 +64,7 @@ export function Titlebar() {
 					className={`h-1.5 w-1.5 shrink-0 rounded-full ${status === "error" ? "bg-pi-error" : status === "connecting" ? "bg-pi-warning" : "bg-pi-success"}`}
 					aria-hidden
 				/>
-				<div className="flex h-5 w-5 items-center justify-center rounded-md bg-pi-accent-soft text-pi-accent transition-smooth">
-					<PanelLeft className="h-3 w-3" />
-				</div>
+				<BrandMark className="h-5 w-5" />
 				<div className="flex items-center gap-1.5 truncate text-xs">
 					<span className="font-semibold tracking-tight text-pi-text">A-Coder</span>
 					{editingName ? (
@@ -97,9 +96,8 @@ export function Titlebar() {
 								e.stopPropagation();
 								beginEditName();
 							}}
-							title="Click to rename session"
 							aria-label="Rename session"
-							className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-pi-text-muted transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+							className="flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-pi-text-muted transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
 						>
 							<span className="truncate">{sessionName || "Untitled session"}</span>
 							<ChevronDown className="h-3 w-3 shrink-0 text-pi-text-faint transition-smooth" />
@@ -129,12 +127,11 @@ export function Titlebar() {
 								setRightSidebarTab(tab);
 							}
 						}}
-						className={`flex h-7 w-7 items-center justify-center rounded-md text-pi-text-muted transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
+						className={`flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-pi-text-muted transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
 							rightSidebarOpen && rightSidebarTab === tab
 								? "bg-pi-accent-soft text-pi-accent"
 								: "hover:bg-pi-surface-raised hover:text-pi-text"
 						}`}
-						title={label}
 						aria-label={label}
 					>
 						<Icon className="h-3.5 w-3.5 transition-smooth" />
@@ -170,9 +167,8 @@ function SidebarToggle({
 				triggerHaptic("selection");
 				onClick();
 			}}
-			title={label}
 			aria-label={label}
-			className={`flex h-7 w-7 items-center justify-center rounded-md text-pi-text-muted transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
+			className={`flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-pi-text-muted transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
 				active
 					? "bg-pi-surface-raised text-pi-text"
 					: "hover:bg-pi-surface-raised hover:text-pi-text"

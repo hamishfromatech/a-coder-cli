@@ -25,7 +25,7 @@ export function Zoomable({ children, className, overlay, label = "Open" }: Zooma
 			<button
 				className={cn("block w-full cursor-zoom-in", className)}
 				onClick={() => setOpen(true)}
-				title={label}
+				aria-label={label}
 				type="button"
 			>
 				{children}

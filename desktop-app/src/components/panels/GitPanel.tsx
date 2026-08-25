@@ -113,7 +113,7 @@ export function GitPanel({ projectPath }: Props) {
 				<button
 					onClick={() => void load()}
 					className="rounded p-1 text-pi-text-muted transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
-					title="Refresh" aria-label="Refresh"
+aria-label="Refresh"
 				>
 					<RefreshCw className="h-3 w-3" />
 				</button>

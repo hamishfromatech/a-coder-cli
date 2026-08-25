@@ -3,10 +3,17 @@ import * as rpc from "../lib/rpc";
 import { triggerHaptic } from "../lib/haptics";
 import { useSessionStore } from "../stores/session-store";
 import { Button } from "./ui/Button";
+import { SegmentedControl } from "./ui/SegmentedControl";
 
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
 
 type ThinkingLevel = (typeof THINKING_LEVELS)[number];
+
+const THINKING_OPTIONS = THINKING_LEVELS.map((level) => ({
+	value: level,
+	label: level === "xhigh" ? "max" : level.slice(0, 3),
+}));
+
 
 export interface ToolbarProps {
 	onShowModelPicker: () => void;
@@ -104,7 +111,7 @@ export function Toolbar({ onShowModelPicker, onShowMemory }: ToolbarProps) {
 				size="sm"
 				icon={Plus}
 				onClick={() => void handleNewSession()}
-				title="New session (⌘N)"
+
 				aria-label="New session"
 			>
 				New
@@ -119,7 +126,7 @@ export function Toolbar({ onShowModelPicker, onShowMemory }: ToolbarProps) {
 					triggerHaptic("selection");
 					onShowMemory();
 				}}
-				title="Memory"
+
 				aria-label="Memory"
 				className="text-pi-accent"
 			>
@@ -130,8 +137,8 @@ export function Toolbar({ onShowModelPicker, onShowMemory }: ToolbarProps) {
 			<div className="inline-flex h-7 items-stretch overflow-hidden rounded-md border border-pi-border bg-pi-surface-raised transition-smooth">
 				<button
 					onClick={onShowModelPicker}
-					className="flex items-center gap-1.5 px-2.5 text-xs font-medium text-pi-text-secondary transition-hover active-press hover:bg-pi-surface-overlay hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
-					title="Change model" aria-label="Change model"
+					className="flex cursor-pointer items-center gap-1.5 px-2.5 text-xs font-medium text-pi-text-secondary transition-hover active-press hover:bg-pi-surface-overlay hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+aria-label="Change model"
 				>
 					<Cpu className="h-3.5 w-3.5 transition-smooth text-pi-accent" />
 					<span className="max-w-44 truncate">
@@ -140,44 +147,27 @@ export function Toolbar({ onShowModelPicker, onShowMemory }: ToolbarProps) {
 				</button>
 				<button
 					onClick={() => void handleCycleModel()}
-					className="flex w-7 items-center justify-center border-l border-pi-border text-pi-text-muted transition-hover active-press hover:bg-pi-surface-overlay hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
-					title="Cycle model (Ctrl+P)" aria-label="Cycle model"
+					className="flex w-7 cursor-pointer items-center justify-center border-l border-pi-border text-pi-text-muted transition-hover active-press hover:bg-pi-surface-overlay hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+aria-label="Cycle model"
 				>
 					<ChevronRight className="h-3 w-3 transition-smooth" />
 				</button>
 			</div>
 
-			{/* Thinking level — segmented */}
-			<div className="flex h-7 items-center gap-0.5 rounded-md border border-pi-border bg-pi-surface-raised p-0.5 transition-smooth">
-				<span className="px-1.5 text-3xs font-semibold uppercase tracking-wider text-pi-text-faint">
-					Think
-				</span>
-				{THINKING_LEVELS.map((level) => {
-					const active = (thinkingLevel ?? "off") === level;
-					return (
-						<button
-							key={level}
-							onClick={() => void handleSetThinkingLevel(level)}
-							className={`h-5 rounded px-1.5 font-mono text-3xs uppercase tracking-wide transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
-								active
-									? "bg-pi-accent-soft text-pi-accent hover:bg-pi-accent-soft"
-									: "text-pi-text-muted hover:bg-pi-surface-overlay hover:text-pi-text"
-							}`}
-							aria-pressed={active}
-							title={`Thinking: ${level}`}
-						>
-							{level === "xhigh" ? "max" : level.slice(0, 3)}
-						</button>
-					);
-				})}
-				<button
-					onClick={() => void handleCycleThinking()}
-					className="ml-0.5 flex h-5 w-5 items-center justify-center rounded text-pi-text-muted transition-hover active-press hover:bg-pi-surface-overlay hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
-					title="Cycle thinking level" aria-label="Cycle thinking level"
-				>
-					<ChevronLeft className="h-3 w-3 transition-smooth" />
-				</button>
-			</div>
+			{/* Thinking level */}
+			<SegmentedControl
+				label="Think"
+				options={THINKING_OPTIONS}
+				value={thinkingLevel ?? "off"}
+				onChange={(level) => void handleSetThinkingLevel(level)}
+			/>
+			<button
+				onClick={() => void handleCycleThinking()}
+				className="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-pi-text-muted transition-hover active-press hover:bg-pi-surface-overlay hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+				aria-label="Cycle thinking level"
+			>
+				<ChevronLeft className="h-3 w-3 transition-smooth" />
+			</button>
 
 			{/* Compact */}
 			<Button
@@ -187,7 +177,7 @@ export function Toolbar({ onShowModelPicker, onShowMemory }: ToolbarProps) {
 				onClick={() => void handleCompact()}
 				disabled={isCompacting || isStreaming}
 				loading={isCompacting}
-				title="Compact context (⌘K)"
+
 				aria-label="Compact context"
 			>
 				{isCompacting ? "Compacting…" : "Compact"}
@@ -200,7 +190,7 @@ export function Toolbar({ onShowModelPicker, onShowMemory }: ToolbarProps) {
 					size="sm"
 					icon={CircleStop}
 					onClick={() => void handleAbort()}
-					title="Abort generation (⌘.)"
+
 					aria-label="Abort generation"
 				>
 					Abort
@@ -281,7 +271,7 @@ function ActionButton({
 		<button
 			onClick={() => void onClick()}
 			className="group flex h-7 items-center gap-2 rounded-md px-2.5 text-left text-xs text-pi-text-secondary transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
-			title={label}
+
 		>
 			<Icon className="h-3.5 w-3.5 text-pi-text-muted transition-smooth group-hover:text-pi-text-secondary" />
 			<span className="truncate">{label}</span>

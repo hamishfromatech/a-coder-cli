@@ -62,7 +62,7 @@ export function ProjectPicker({ onClose, onSelect }: ProjectPickerProps) {
 						icon={X}
 						onClick={onClose}
 						aria-label="Close"
-						title="Close"
+
 					/>
 				</div>
 
@@ -174,7 +174,7 @@ export function ProjectPicker({ onClose, onSelect }: ProjectPickerProps) {
 												removeRecent(path);
 											}}
 											className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-pi-text-faint opacity-0 transition-all hover:bg-pi-surface-overlay hover:text-pi-error group-hover:opacity-100 focus-visible:opacity-100"
-											title="Remove from recent"
+
 											aria-label="Remove from recent"
 										>
 											<Trash2 className="h-3 w-3" />

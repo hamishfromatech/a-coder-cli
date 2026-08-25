@@ -233,7 +233,7 @@ export function SessionTree() {
 						size="sm"
 						icon={allExpanded ? ChevronsDownUp : ChevronsUpDown}
 						onClick={() => (allExpanded ? collapseAll() : expandAll())}
-						title={allExpanded ? "Collapse all" : "Expand all"}
+
 						aria-label={allExpanded ? "Collapse all" : "Expand all"}
 					/>
 					<FilterMenu
@@ -297,7 +297,7 @@ function FilterMenu({
 			<button
 				onClick={() => setOpen((v) => !v)}
 				className="flex items-center gap-1 rounded p-1 text-3xs text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
-				title="Filter tree"
+
 			>
 				<Filter className="h-3 w-3" />
 				<span className="hidden sm:inline">{current.label}</span>
@@ -451,7 +451,7 @@ function TreeItem({
 						data-node-action
 						onClick={() => onSwitch(node.id)}
 						className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-left"
-						title={node.label ?? node.id}
+
 					>
 						<span className="truncate">{node.label ?? node.id.slice(0, 8)}</span>
 						{isMultiBranch && (
@@ -523,7 +523,7 @@ function NodeMenu({
 				size="sm"
 				icon={MoreHorizontal}
 				onClick={() => setOpen((v) => !v)}
-				title="More actions"
+
 				aria-label="More actions"
 				className="opacity-0 hover:bg-pi-surface-overlay hover:text-pi-text focus-visible:opacity-100 focus-visible:bg-pi-surface-overlay focus-visible:text-pi-text group-hover:opacity-100"
 			/>

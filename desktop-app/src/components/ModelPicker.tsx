@@ -155,7 +155,7 @@ export function ModelPicker({
 						loading={refreshing}
 						onClick={() => void loadModels(true)}
 						aria-label="Refresh models"
-						title="Refresh models"
+
 						className={refreshing ? "animate-spin" : ""}
 					/>
 					<IconButton
@@ -164,7 +164,7 @@ export function ModelPicker({
 						icon={X}
 						onClick={onClose}
 						aria-label="Close"
-						title="Close"
+
 					/>
 				</div>
 

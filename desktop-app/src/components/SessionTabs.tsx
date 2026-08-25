@@ -75,7 +75,7 @@ export function SessionTabs() {
 								onClick={() => void switchTo(tab.path)}
 								disabled={!!pendingPath || (isStreaming && !active)}
 								className="max-w-40 truncate focus-visible:outline-none disabled:cursor-default"
-								title={tab.name}
+
 							>
 								{switching ? (
 									<span className="inline-flex items-center gap-1.5">
@@ -90,7 +90,7 @@ export function SessionTabs() {
 								type="button"
 								onClick={() => void onClose(tab.path)}
 								className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-pi-text-faint opacity-0 transition-all hover:bg-pi-surface-overlay hover:text-pi-text group-hover/tab:opacity-100 focus-visible:opacity-100"
-								title="Close tab"
+
 								aria-label="Close tab"
 							>
 								<X className="h-3 w-3" />
@@ -115,7 +115,7 @@ export function SessionTabs() {
 				type="button"
 				onClick={() => void startNew()}
 				className="my-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
-				title="New session"
+
 				aria-label="New session"
 			>
 				<Plus className="h-3.5 w-3.5" />

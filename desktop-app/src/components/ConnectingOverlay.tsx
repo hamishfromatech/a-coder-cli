@@ -3,6 +3,8 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useRef, useState } from "react";
 import { useSessionStore } from "../stores/session-store";
 import { triggerHaptic } from "../lib/haptics";
+import { Button } from "./ui/Button";
+import { ErrorState } from "./ui/ErrorState";
 import { DecodeText } from "./DecodeText";
 
 // Startup loading screen, ported from Hermes desktop's
@@ -142,9 +144,9 @@ function BootFailureCard({ message }: { message: string }) {
 				);
 			}
 		} catch (e) {
-				console.error("Failed to pick workspace", e);
-			}
-		};
+			console.error("Failed to pick workspace", e);
+		}
+	};
 
 	const installEngine = async () => {
 		setBootstrapping(true);
@@ -152,7 +154,6 @@ function BootFailureCard({ message }: { message: string }) {
 		try {
 			await invoke<string>("bootstrap_cli");
 			triggerHaptic("crisp");
-			// The engine is now installed — retry the connect.
 			window.location.reload();
 		} catch (e) {
 			console.error("CLI bootstrap failed", e);
@@ -160,56 +161,42 @@ function BootFailureCard({ message }: { message: string }) {
 			setBootstrapping(false);
 		}
 	};
+
 	return (
 		<div className="fixed inset-0 z-[1200] grid place-items-center bg-pi-bg p-6">
-			<div className="w-full max-w-xl overflow-hidden rounded-xl border border-pi-error/30 bg-pi-surface-overlay shadow-overlay">
-				<div className="flex items-start gap-3 px-5 py-4">
-					<div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-pi-error/15 text-pi-error">
-						<span className="text-[1rem] leading-none">!</span>
+			<div className="pi-card-overlay w-full max-w-xl overflow-hidden p-6">
+				<ErrorState
+					title="Engine failed to start"
+					description="The coding agent backend could not be reached."
+				>
+					<div className="rounded-xl border border-pi-error/30 bg-pi-error-soft px-4 py-3 text-xs text-pi-error font-mono break-all">
+						{message}
 					</div>
-					<div>
-						<h2 className="text-[0.9375rem] font-semibold tracking-tight text-pi-text">
-							Engine failed to start
-						</h2>
-						<p className="mt-1 text-[0.8125rem] leading-5 text-pi-text-muted">
-							The coding agent backend could not be reached.
-						</p>
-					</div>
-				</div>
-				<div className="grid gap-4 p-5 pt-0">
-					<div className="rounded-xl border border-pi-error/30 bg-pi-error-soft px-4 py-3 text-xs text-pi-error font-mono break-all">{message}</div>
 					<div className="flex flex-wrap gap-2">
-						<button
-							type="button"
-							className="inline-flex items-center gap-1.5 rounded-lg bg-pi-accent px-3 py-2 text-xs font-medium text-white transition-smooth hover:bg-pi-accent-hover focus-visible:shadow-focus focus-visible:outline-none"
-							onClick={() => window.location.reload()}
-						>
+						<Button variant="primary" size="sm" onClick={() => window.location.reload()}>
 							Retry
-						</button>
+						</Button>
 						{needsEngine ? (
-							<button
-								type="button"
+							<Button
+								variant="primary"
+								size="sm"
 								disabled={bootstrapping}
-								className="inline-flex items-center gap-1.5 rounded-lg bg-pi-accent px-3 py-2 text-xs font-medium text-white transition-smooth hover:bg-pi-accent-hover focus-visible:shadow-focus focus-visible:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+								loading={bootstrapping}
 								onClick={installEngine}
 							>
 								{bootstrapping ? "Installing engine…" : "Install the CLI engine"}
-							</button>
+							</Button>
 						) : null}
-						{bootstrapError ? (
-							<div className="w-full rounded-xl border border-pi-error/30 bg-pi-error-soft px-4 py-3 text-xs text-pi-error font-mono break-all">
-								{bootstrapError}
-							</div>
-						) : null}
-						<button
-							type="button"
-							className="inline-flex items-center gap-1.5 rounded-lg border border-pi-border bg-transparent px-3 py-2 text-xs font-medium text-pi-text-secondary transition-smooth hover:border-pi-border/80 hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
-							onClick={pickWorkspace}
-						>
+						<Button variant="outline" size="sm" onClick={pickWorkspace}>
 							Select another workspace
-						</button>
+						</Button>
 					</div>
-				</div>
+					{bootstrapError ? (
+						<div className="w-full rounded-xl border border-pi-error/30 bg-pi-error-soft px-4 py-3 text-xs text-pi-error font-mono break-all">
+							{bootstrapError}
+						</div>
+					) : null}
+				</ErrorState>
 			</div>
 		</div>
 	);

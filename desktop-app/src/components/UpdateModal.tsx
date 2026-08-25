@@ -109,7 +109,7 @@ export function UpdateModal({ update, onDismiss }: UpdateModalProps) {
 						icon={X}
 						onClick={handleDismiss}
 						aria-label="Dismiss"
-						title="Dismiss"
+
 					/>
 				</div>
 

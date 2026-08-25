@@ -477,36 +477,16 @@ export function Composer() {
 				{voiceEnabled && !isStreaming && (
 					<Button
 						variant={recording ? "danger" : "secondary"}
-						size="sm"
-						icon={transcribing ? Loader2 : recording ? Square : Mic}
-						loading={transcribing}
-						onClick={() => void handleMic()}
-						disabled={transcribing}
-						title={recording ? "Stop recording" : "Voice input"}
-						aria-label={recording ? "Stop recording" : "Voice input"}
-						className={`h-8 w-8 !px-0 ${recording ? "animate-pulse" : ""}`}
+						size="icon" icon={transcribing ? Loader2 : recording ? Square : Mic} loading={transcribing} onClick={() => void handleMic()} disabled={transcribing} aria-label={recording ? "Stop recording" : "Voice input"} className={recording ? "animate-pulse" : ""}
 					/>
 				)}
 				{isStreaming ? (
 					<Button
-						variant="danger"
-						size="sm"
-						icon={Square}
-						onClick={() => void handleAbort()}
-						title="Abort (⌘.)"
-						aria-label="Abort"
-						className="h-8 w-8 !px-0"
+						variant="danger" size="icon" icon={Square} onClick={() => void handleAbort()} aria-label="Abort"
 					/>
 				) : (
 					<Button
-						variant="primary"
-						size="sm"
-						icon={connected ? CornerDownLeft : Loader2}
-						onClick={() => void handleSend()}
-						disabled={!canSend}
-						title="Send (Enter)"
-						aria-label="Send message"
-						className="h-8 w-8 !px-0"
+						variant="primary" size="icon" icon={connected ? CornerDownLeft : Loader2} onClick={() => void handleSend()} disabled={!canSend} aria-label="Send message"
 					/>
 				)}
 			</div>

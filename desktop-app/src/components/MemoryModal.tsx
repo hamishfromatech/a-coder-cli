@@ -92,7 +92,7 @@ export function MemoryModal({ open, onClose }: MemoryModalProps) {
 						icon={X}
 						onClick={onClose}
 						aria-label="Close memory panel"
-						title="Close"
+
 					/>
 				</div>
 

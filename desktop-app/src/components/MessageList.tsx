@@ -295,7 +295,7 @@ function UserMessageActions({
 		<div className="mt-0.5 flex items-center gap-0.5 self-start rounded-md border border-transparent opacity-0 transition-hover group-hover/msg:opacity-100 group-focus-within/msg:opacity-100">
 			<button
 				onClick={onRetry}
-				title="Retry from here"
+
 				aria-label="Retry from here"
 				disabled={disabled || busy}
 				className={btn}
@@ -304,7 +304,7 @@ function UserMessageActions({
 			</button>
 			<button
 				onClick={onEdit}
-				title="Edit message"
+
 				aria-label="Edit message"
 				disabled={disabled || busy}
 				className={btn}
@@ -313,7 +313,7 @@ function UserMessageActions({
 			</button>
 			<button
 				onClick={onCopy}
-				title="Copy message"
+
 				aria-label="Copy message"
 				className={btn}
 			>
@@ -489,7 +489,7 @@ function CopyReplyButton({ text }: { text: string }) {
 	return (
 		<button
 			onClick={onCopy}
-			title="Copy reply"
+
 			aria-label="Copy reply"
 			className="absolute -top-1 right-0 z-10 flex items-center gap-1 rounded-md border border-pi-border bg-pi-surface px-1.5 py-0.5 text-3xs text-pi-text-muted opacity-0 transition-hover hover:bg-pi-surface-overlay hover:text-pi-text group-hover/msg:opacity-100 focus-visible:shadow-focus focus-visible:outline-none"
 		>

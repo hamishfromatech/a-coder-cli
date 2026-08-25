@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, ChevronRight, ListTodo } from "lucide-react";
+import { Check, ChevronDown, ListTodo } from "lucide-react";
 import type { ToolResultMessage } from "@earendil-works/pi-ai";
 import { useSessionStore } from "../stores/session-store";
+import { cn } from "../lib/cn";
 
 export interface TodoItem {
 	text: string;
@@ -13,13 +14,9 @@ interface TodoDetails {
 	todos?: TodoItem[];
 }
 
-/**
- * Inline task list that mirrors the built-in `todo` tool. Derives the latest
- * list from the most recent `todo` tool result in the session — the tool result
- * snapshots the full list in `details.todos` on every call, so this stays in
- * sync with the model's plan as it works. Rendered inline above the composer
- * (Hermes-style status stack). Hidden when there is no list.
- */
+// Inline task list that mirrors the built-in `todo` tool. Derives the latest
+// list from the most recent `todo` tool result in the session. Rendered inline
+// above the composer as a Hermes-style collapsible status section.
 export function TodoPanel() {
 	const messages = useSessionStore((s) => s.messages);
 
@@ -48,8 +45,6 @@ export function TodoPanel() {
 	const allDone = todos.length > 0 && todos.every((t) => t.status === "completed");
 	const [hideCompleted, setHideCompleted] = useState(false);
 	useEffect(() => {
-		// Once every task is completed, let the user briefly see the finished list,
-		// then collapse the panel. Reopens automatically if a new task is added.
 		if (!allDone) {
 			setHideCompleted(false);
 			return;
@@ -58,68 +53,91 @@ export function TodoPanel() {
 		return () => clearTimeout(timer);
 	}, [allDone]);
 
+	const [collapsed, setCollapsed] = useState(false);
+
 	if (todos.length === 0 || hideCompleted) return null;
 
 	const done = todos.filter((t) => t.status === "completed").length;
 	const inProgress = todos.find((t) => t.status === "in_progress");
 	const percent = Math.round((done / todos.length) * 100);
+	const running = Boolean(inProgress);
 
 	return (
 		<div className="chat-composer shrink-0 pb-1 pt-2">
 			<div className="chat-column">
-				<div className={`rounded-xl border border-pi-border bg-pi-surface/70 px-3 py-2 backdrop-blur transition-smooth ${highlight ? "ring-2 ring-pi-accent" : ""}`}>
-					<div className="mb-1.5 flex items-center gap-2">
+				<div
+					className={cn(
+						"rounded-xl border border-pi-border bg-pi-surface/70 backdrop-blur transition-smooth",
+						highlight && "ring-2 ring-pi-accent",
+					)}
+				>
+					<button
+						type="button"
+						onClick={() => setCollapsed((v) => !v)}
+						className="flex w-full items-center gap-2 px-3 py-2 text-left transition-hover hover:bg-pi-surface-raised/50"
+					>
 						<ListTodo className="h-3.5 w-3.5 shrink-0 text-pi-accent" />
-						<span className="text-2xs font-semibold uppercase tracking-wide text-pi-text-secondary">
+						<span className="min-w-0 flex-1 truncate text-2xs font-semibold uppercase tracking-wide text-pi-text-secondary">
 							Tasks
 						</span>
 						<span className="font-mono pi-tabular text-3xs text-pi-text-faint">
 							{done}/{todos.length}
 						</span>
-						<div className="ml-auto h-1 w-16 overflow-hidden rounded-full border border-pi-border bg-pi-surface-raised">
+						{running && collapsed && (
+							<span className="pi-dot h-1 w-1 rounded-full bg-pi-accent" />
+						)}
+						<div className="ml-1 h-1 w-16 overflow-hidden rounded-full border border-pi-border bg-pi-surface-raised">
 							<div
 								className="h-full bg-pi-accent transition-all"
 								style={{ width: `${Math.min(100, percent)}%` }}
 							/>
 						</div>
-					</div>
-					<ul className="flex flex-col gap-0.5">
-						{todos.map((t, i) => (
-							<li key={i} className="flex items-start gap-2 text-xs leading-snug">
-								{t.status === "completed" ? (
-									<Check className="mt-0.5 h-3 w-3 shrink-0 text-pi-success" />
-								) : t.status === "in_progress" ? (
-									<ChevronRight
-										className="mt-0.5 h-3 w-3 shrink-0 animate-pulse text-pi-accent"
-										strokeWidth={2.5}
-									/>
-								) : (
-									<span className="mt-1.5 h-2 w-2 shrink-0 rounded-full border border-pi-text-faint" />
-								)}
-								<span
-									className={
-										t.status === "completed"
-											? "text-pi-text-faint line-through"
-											: t.status === "in_progress"
-												? "text-pi-text"
-												: "text-pi-text-muted"
-									}
-								>
-									{t.status === "in_progress" && t.activeForm ? t.activeForm : t.text}
-								</span>
-							</li>
-						))}
-					</ul>
-					{inProgress && (
-						<div className="mt-1.5 flex items-center gap-1.5 text-3xs text-pi-text-faint">
-							<span className="pi-dot h-1 w-1 rounded-full bg-pi-accent" />
-							<span className="truncate">
-								Working: {inProgress.activeForm ?? inProgress.text}
-							</span>
-						</div>
+						<ChevronDown
+							className={cn(
+								"h-3 w-3 shrink-0 text-pi-text-faint transition-smooth",
+								collapsed && "-rotate-90",
+							)}
+						/>
+					</button>
+
+					{!collapsed && (
+						<ul className="flex flex-col gap-0.5 px-3 pb-2">
+							{todos.map((t, i) => (
+								<TodoRow key={i} item={t} />
+							))}
+						</ul>
 					)}
 				</div>
 			</div>
 		</div>
+	);
+}
+
+function TodoRow({ item }: { item: TodoItem }) {
+	return (
+		<li className="group flex min-h-6 items-center gap-2 rounded-md px-1.5 py-1 transition-hover hover:bg-pi-surface-raised/50">
+			<span className="flex size-3.5 shrink-0 items-center justify-center">
+				{item.status === "completed" ? (
+					<Check className="h-3 w-3 text-pi-success" />
+				) : item.status === "in_progress" ? (
+					<span className="pi-dot h-2 w-2 rounded-full bg-pi-accent" />
+				) : (
+					<span className="box-border size-[0.45rem] rounded-full border border-dashed border-pi-text-faint" />
+				)}
+			</span>
+			<span
+				className={cn(
+					"min-w-0 flex-1 truncate text-xs leading-4",
+					item.status === "completed"
+						? "text-pi-text-faint line-through"
+						: item.status === "in_progress"
+							? "text-pi-text"
+							: "text-pi-text-muted",
+					item.status === "in_progress" && item.activeForm && "italic",
+				)}
+			>
+				{item.status === "in_progress" && item.activeForm ? item.activeForm : item.text}
+			</span>
+		</li>
 	);
 }

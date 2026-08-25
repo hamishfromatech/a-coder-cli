@@ -110,7 +110,7 @@ export function FileExplorer({ projectPath }: Props) {
 					void load();
 				}}
 					className="rounded p-1 text-pi-text-muted transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
-					title="Refresh" aria-label="Refresh"
+aria-label="Refresh"
 					disabled={loading}
 				>
 					{loading ? (
@@ -217,7 +217,7 @@ function TreeItem({ entry, depth, expanded, toggle, onFileClick }: TreeItemProps
 			onClick={() => onFileClick(entry.path)}
 			className="group flex h-7 w-full items-center gap-1.5 rounded-md px-1.5 text-left text-xs text-pi-text-secondary transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
 			style={{ paddingLeft }}
-			title={entry.path}
+
 		>
 			<span className="w-3.5 shrink-0" />
 			<Icon className="h-3.5 w-3.5 shrink-0 text-pi-text-muted" />

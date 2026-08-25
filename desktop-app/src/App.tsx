@@ -998,7 +998,7 @@ export default function App() {
 		return (
 			<div className="flex h-full w-full items-center justify-center bg-pi-bg text-pi-text">
 				<div className="flex flex-col items-center gap-3">
-					<div className="size-7 animate-spin rounded-full border-2 border-pi-border border-t-pi-text/70" />
+					<Loader className="size-8" />
 					<p className="text-sm text-pi-muted">Starting A-Coder Desktop…</p>
 				</div>
 			</div>
@@ -1276,9 +1276,7 @@ function SidebarContent({
 					onClick={onOpenPicker}
 					className="group flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-hover active-press hover:bg-pi-surface-raised focus-visible:shadow-focus focus-visible:outline-none"
 				>
-					<div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-pi-accent-soft text-pi-accent">
-						<Sparkles className="h-3.5 w-3.5" />
-					</div>
+					<BrandMark className="h-7 w-7" />
 					<div className="min-w-0 flex-1">
 						<div className="truncate text-[13px] font-semibold tracking-tight">
 							A-Coder
@@ -1293,9 +1291,7 @@ function SidebarContent({
 				{onCollapse && (
 					<button
 						onClick={onCollapse}
-						className="ml-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-pi-text-faint transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
-						title="Collapse sidebar"
-						aria-label="Collapse sidebar"
+						className="ml-1 flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-pi-text-faint transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none" aria-label="Collapse sidebar"
 					>
 						<ChevronsUpDown className="h-3.5 w-3.5 rotate-90" />
 					</button>
@@ -1355,11 +1351,11 @@ function SidebarRail({
 			<aside className="flex w-12 flex-col items-center gap-1 border-r border-pi-border bg-pi-surface py-2">
 				<button
 					onClick={onExpand}
-					className="flex h-8 w-8 items-center justify-center rounded-md bg-pi-accent-soft text-pi-accent transition-hover hover:brightness-105"
-					title="A-Coder — pin sidebar open"
+					className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md bg-pi-accent-soft text-pi-accent transition-hover hover:brightness-105"
+
 					aria-label="Pin sidebar open"
 				>
-					<Sparkles className="h-4 w-4" />
+<BrandMark className="h-6 w-6" />
 				</button>
 				<RailIcon icon={FolderGit2} label="Projects" onClick={onExpand} />
 				<RailIcon icon={Plus} label="New / open project" onClick={onOpenPicker} />
@@ -1395,9 +1391,7 @@ function RailIcon({
 	return (
 		<button
 			onClick={onClick}
-			className="flex h-8 w-8 items-center justify-center rounded-md text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
-			title={label}
-			aria-label={label}
+			className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none" aria-label={label}
 		>
 			<IconCmp className="h-4 w-4" />
 		</button>

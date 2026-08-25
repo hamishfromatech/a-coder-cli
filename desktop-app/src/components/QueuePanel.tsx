@@ -23,7 +23,7 @@ export function QueuePanel({ onSend }: QueuePanelProps) {
 					key={`${item.kind}-${idx}`}
 					onClick={() => onSend?.(item.text)}
 					className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-hover hover:bg-pi-surface-raised"
-					title="Click to send now"
+
 				>
 					<Badge
 						variant={item.kind === "steering" ? "accent" : "success"}

@@ -77,7 +77,7 @@ export function ApprovalModal({ request, onResolve }: ApprovalModalProps) {
 						icon={X}
 						onClick={handleClose}
 						aria-label="Close"
-						title="Close"
+
 					/>
 				</div>
 

@@ -52,7 +52,7 @@ export function SidebarProjects({
 										onSelect(path);
 									}}
 									className="flex min-w-0 flex-1 items-center gap-2 text-left"
-									title={path}
+
 								>
 									<Folder
 										className={`h-3.5 w-3.5 shrink-0 ${
@@ -74,7 +74,7 @@ export function SidebarProjects({
 										removeRecent(path);
 									}}
 									className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-pi-text-faint opacity-0 transition-all hover:bg-pi-surface-overlay hover:text-pi-error group-hover/proj:opacity-100 focus-visible:opacity-100"
-									title="Remove from recent"
+
 									aria-label="Remove from recent"
 								>
 									<span className="text-sm leading-none">×</span>

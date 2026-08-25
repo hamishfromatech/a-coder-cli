@@ -6,7 +6,6 @@ import {
 	Coins,
 	Eye,
 	Hash,
-	Loader2,
 	Lock,
 	MessageSquare,
 	RefreshCw,
@@ -15,6 +14,7 @@ import {
 	Wrench,
 	Zap,
 } from "lucide-react";
+import { Loader } from "./ui/Loader";
 import * as rpc from "../lib/rpc";
 import { useSessionStore } from "../stores/session-store";
 import { useSettingsStore } from "../stores/settings-store";
@@ -108,7 +108,7 @@ export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
 							className="flex items-center gap-1 font-mono pi-tabular text-pi-accent"
 							title={`${runningAgents.length} background sub-agent${runningAgents.length === 1 ? "" : "s"} running: ${runningAgents.map((a) => a.teammateName ?? a.agentType).join(", ")}`}
 						>
-							<Loader2 className="h-3 w-3 animate-spin" />
+							<Loader className="h-4 w-4" />
 							<span className="font-medium">{runningAgents.length} agent{runningAgents.length === 1 ? "" : "s"}</span>
 						</span>
 					</>
@@ -149,7 +149,7 @@ export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
 					<button
 						onClick={() => void onReconnect()}
 						className="group flex items-center gap-1.5 rounded bg-pi-error-soft px-2 py-0.5 text-pi-error transition-hover active-press hover:bg-pi-error hover:text-white"
-						title="Click to reconnect" aria-label="Reconnect"
+aria-label="Reconnect"
 					>
 						<AlertCircle className="h-3 w-3" />
 						<span className="max-w-48 truncate font-medium">
@@ -159,7 +159,7 @@ export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
 					</button>
 				) : status === "connecting" ? (
 					<div className="flex items-center gap-1.5 text-pi-text-muted">
-						<Loader2 className="h-3 w-3 animate-spin" />
+						<Loader className="h-4 w-4" />
 						<span className="font-medium uppercase tracking-wide">Connecting</span>
 					</div>
 				) : (
@@ -255,7 +255,7 @@ function PermissionModePicker({ mode }: { mode: PermissionMode }) {
 				icon={Icon}
 				className="cursor-pointer transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none"
 				onClick={() => setOpen((v) => !v)}
-				title={current.description}
+
 				aria-haspopup="listbox"
 				aria-expanded={open}
 				role="button"

@@ -143,7 +143,7 @@ export function RichToolCall({ toolCall, approvalRequest }: RichToolCallProps) {
 					role="button"
 					tabIndex={0}
 					className="ml-auto flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-3xs text-pi-text-faint opacity-0 transition-hover hover:bg-pi-surface-overlay hover:text-pi-text group-hover/tool:opacity-100 focus-visible:shadow-focus focus-visible:outline-none"
-					title="Copy arguments"
+
 					onKeyDown={(e) => {
 						if (e.key === "Enter" || e.key === " ") {
 							e.preventDefault();

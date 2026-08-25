@@ -66,7 +66,7 @@ export function ModalPanel({
 		<div
 			onClick={onClick}
 			className={cn(
-				"flex w-full flex-col overflow-hidden rounded-xl bg-pi-surface-overlay shadow-overlay transition-all duration-300 ease-out",
+				"pi-card-overlay flex w-full flex-col overflow-hidden transition-all duration-300 ease-out",
 				centered ? "max-h-overlay" : "",
 				visible
 					? "translate-y-0 scale-100 opacity-100"

@@ -95,7 +95,7 @@ export function ArtifactViewer({ projectPath, path }: Props) {
 				<button
 					onClick={() => setSelectedArtifactPath(null)}
 					className="rounded p-1 text-pi-text-muted transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
-					title="Back to files" aria-label="Back to files"
+aria-label="Back to files"
 				>
 					<ArrowLeft className="h-3.5 w-3.5" />
 				</button>
@@ -122,7 +122,7 @@ export function ArtifactViewer({ projectPath, path }: Props) {
 				<button
 					onClick={() => void load()}
 					className="rounded p-1 text-pi-text-muted transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
-					title="Refresh" aria-label="Refresh"
+aria-label="Refresh"
 					disabled={loading}
 				>
 					{loading ? (
@@ -135,7 +135,7 @@ export function ArtifactViewer({ projectPath, path }: Props) {
 				<button
 					onClick={() => fullPath && void openInEditor(fullPath)}
 					className="rounded p-1 text-pi-text-muted transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
-					title="Open in editor" aria-label="Open in editor"
+aria-label="Open in editor"
 				>
 					<ExternalLink className="h-3 w-3" />
 				</button>
