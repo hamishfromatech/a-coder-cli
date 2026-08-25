@@ -2539,7 +2539,13 @@ export class AgentSession {
 			if (willRetry) {
 				const messages = this.agent.state.messages;
 				const lastMsg = messages[messages.length - 1];
-				if (lastMsg?.role === "assistant" && (lastMsg as AssistantMessage).stopReason === "error") {
+				// willRetry is only true when the last assistant stopReason is not "stop"
+				// (e.g. "length" or "error"), so the trailing assistant is a partial/error
+				// response that must be discarded before the retry. Compaction rebuilds
+				// context from the session, which re-adds that assistant; drop it again so
+				// the caller's agent.continue() does not throw
+				// "Cannot continue from message role: assistant".
+				if (lastMsg?.role === "assistant") {
 					this.agent.state.messages = messages.slice(0, -1);
 				}
 				return true;

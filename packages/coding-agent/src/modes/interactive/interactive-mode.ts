@@ -3254,6 +3254,11 @@ export class InteractiveMode {
 				// ICRNL so Enter arrives as "\n" (which the editor treats as a newline
 				// instead of submit). Re-assert raw mode on the next tick — after any
 				// synchronous session-start hooks have run — to restore "\r" for Enter.
+				// A child that resets the TTY asynchronously (after this setImmediate) is
+				// caught by guarding raw mode on input: each stdin event re-asserts it
+				// for a short window, so the user's own keystrokes before Enter restore
+				// "\r" and the submission goes through.
+				this.ui.terminal.guardRawModeOnInput();
 				setImmediate(() => {
 					this.ui.terminal.ensureRawMode();
 				});

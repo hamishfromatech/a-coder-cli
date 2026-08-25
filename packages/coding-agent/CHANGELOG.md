@@ -15,6 +15,10 @@
 - File history & rewind: turn-bound pre-edit backups under `~/.a-coder-cli/file-history`, a `/rewind [n]` command (TUI) and a `rewind` RPC command (desktop `/rewind` via the command router) that restore tracked files to a previous user turn, leaving the conversation intact.
 - `/clear` command (TUI) and `clear_conversation` RPC command (desktop `/clear`): reset the current session in place — keep the same session id and file (and its parent link in the session tree) but drop every message entry, so the conversation is cleared without forking a new session. Backed by a new `SessionManager.rebindAndOverwriteFile` and a `clearConversation` runtime-host method, with a new `clear` session-start reason.
 
+### Fixed
+
+- Fixed the input box not submitting after `/new` (and other session replacements): a child process could reset the TTY line discipline after the one-shot raw-mode re-assertion, so Enter arrived as a newline instead of submitting. Raw mode is now re-asserted on each stdin event for a short window after a session replacement.
+
 ## [0.80.26] - 2026-08-22
 
 ## [0.80.25] - 2026-08-22
