@@ -15,6 +15,11 @@
 - File history & rewind: turn-bound pre-edit backups under `~/.a-coder-cli/file-history`, a `/rewind [n]` command (TUI) and a `rewind` RPC command (desktop `/rewind` via the command router) that restore tracked files to a previous user turn, leaving the conversation intact.
 - `/clear` command (TUI) and `clear_conversation` RPC command (desktop `/clear`): reset the current session in place — keep the same session id and file (and its parent link in the session tree) but drop every message entry, so the conversation is cleared without forking a new session. Backed by a new `SessionManager.rebindAndOverwriteFile` and a `clearConversation` runtime-host method, with a new `clear` session-start reason.
 - Auto self-update on startup: when the interactive TUI starts and a newer GitHub release is available, it runs the one-shot installer in place (`install-a-coder.sh` on macOS/Linux, `Install-A-Coder.ps1` on Windows) with `--no-desktop` (the desktop app updates itself via Tauri) and re-execs the CLI so the user lands on the new version without a manual restart. Guarded by a per-tag 24h cooldown (`~/.a-coder-cli/agent/auto-update.json`) so a failed/looping update doesn't yank the TUI on every startup, and skipped while the agent is mid-response. Controlled by `settings.autoUpdateOnStartup` ("auto" default, "off" to disable). `a-coder update` now also runs the installer for the curl-installed (`~/.a-coder`) layout instead of just printing the command.
+- `/mcp` command (TUI): show per-server MCP connection status (✓ ok / … connecting / ⚠ error with the message / ⊘ disabled) on demand.
+
+### Changed
+
+- MCP server load failures are no longer dumped into the chat via `console.warn` (which interleaved the full, often-verbose error — e.g. a Cloudflare 502 body — with the TUI). They are now recorded in an MCP status store and surfaced as a subtle footer status chip ("⚠ N MCP server(s) down", cleared when all servers are healthy); the full per-server detail is available via the new `/mcp` command.
 
 ### Fixed
 

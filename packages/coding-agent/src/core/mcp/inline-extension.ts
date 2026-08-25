@@ -1,8 +1,9 @@
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
-import type { ExtensionFactory } from "../extensions/types.ts";
+import type { ExtensionFactory, ExtensionUIContext } from "../extensions/types.ts";
 import type { McpDiscoveredTool } from "./client.ts";
 import { McpClient } from "./client.ts";
 import { jsonSchemaToTypeBox } from "./schema.ts";
+import { clearMcpServerStates, countMcpServerErrors, setMcpServerState } from "./status-store.ts";
 import type { McpServerConfig } from "./types.ts";
 
 export interface McpExtensionFactoryOptions {
@@ -11,25 +12,47 @@ export interface McpExtensionFactoryOptions {
 
 export function createMcpExtensionFactory(options: McpExtensionFactoryOptions): ExtensionFactory {
 	return async (pi) => {
+		clearMcpServerStates();
+		// The UI context (footer setStatus) is only available from event handlers
+		// that receive an ExtensionContext; capture it on session_start and use it
+		// to push the subtle footer chip. setStatus is a no-op until then, and
+		// session_start re-renders the chip once it's available.
+		let uiCtx: ExtensionUIContext | undefined;
+		const recomputeMcpChip = (): void => {
+			const down = countMcpServerErrors();
+			uiCtx?.setStatus("mcp", down > 0 ? `⚠ ${down} MCP server${down === 1 ? "" : "s"} down` : undefined);
+		};
+
 		const clients: McpClient[] = [];
 		// Connect to servers lazily. Each tool's execute() ensures its server is
 		// connected and discovered before calling, so a slow or failing MCP
-		// server never blocks session startup/switch.
+		// server never blocks session startup/switch. Load failures are recorded
+		// in the MCP status store and surfaced as a subtle footer chip (see
+		// recomputeMcpChip) instead of console.warn, which would dump the full
+		// (often verbose) error into the TUI.
 		for (const server of options.servers) {
-			if (server.disabled) continue;
+			if (server.disabled) {
+				setMcpServerState(server.name, { status: "disabled" });
+				continue;
+			}
+			setMcpServerState(server.name, { status: "connecting" });
 			const client = new McpClient(server);
 			// Eagerly attempt a lightweight connect in the background so the first
 			// actual tool call is fast, but do not block extension registration on it.
 			void (async () => {
 				try {
 					await client.connect(server);
+					setMcpServerState(server.name, { status: "ok" });
 				} catch (err) {
 					const message = err instanceof Error ? err.message : String(err);
-					console.warn(`Failed to load MCP server "${server.name}": ${message}`);
+					setMcpServerState(server.name, { status: "error", error: message });
+				} finally {
+					recomputeMcpChip();
 				}
 			})();
 			clients.push(client);
 		}
+		recomputeMcpChip();
 
 		// Register a single lazy-discovery stub per server. We don't know the
 		// tool names until the server is connected, so the stub advertises itself
@@ -48,7 +71,8 @@ export function createMcpExtensionFactory(options: McpExtensionFactoryOptions): 
 					return { tools: discoveredTools };
 				} catch (err) {
 					discoveryError = err instanceof Error ? err.message : String(err);
-					console.warn(`MCP server "${client.serverName}" discovery failed: ${discoveryError}`);
+					setMcpServerState(client.serverName, { status: "error", error: discoveryError });
+					recomputeMcpChip();
 					return { tools: [], error: discoveryError };
 				}
 			};
@@ -105,6 +129,13 @@ export function createMcpExtensionFactory(options: McpExtensionFactoryOptions): 
 				},
 			});
 		}
+
+		// Capture the UI context (footer setStatus) once the session starts, then
+		// push the current chip so it appears even if connects resolved earlier.
+		pi.on("session_start", (_event, ctx) => {
+			uiCtx = ctx.ui;
+			recomputeMcpChip();
+		});
 
 		pi.on("session_shutdown", () => {
 			for (const client of clients) {

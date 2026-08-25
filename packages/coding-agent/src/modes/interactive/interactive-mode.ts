@@ -77,6 +77,7 @@ import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/
 import { configureHttpDispatcher, formatHttpIdleTimeoutMs } from "../../core/http-dispatcher.ts";
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.ts";
 import { KEYLESS_LOCAL_PROVIDER_ENV, KEYLESS_LOCAL_PROVIDERS } from "../../core/local-providers.ts";
+import { getMcpServerStates } from "../../core/mcp/status-store.ts";
 import { createCompactionSummaryMessage } from "../../core/messages.ts";
 import { defaultModelPerProvider, findExactModelReferenceMatch, resolveModelScope } from "../../core/model-resolver.ts";
 import {
@@ -3015,6 +3016,11 @@ export class InteractiveMode {
 			if (text === "/subagents" || text.startsWith("/subagents ")) {
 				this.editor.setText("");
 				await this.handleSubagentsCommand();
+				return;
+			}
+			if (text === "/mcp") {
+				this.handleMcpCommand();
+				this.editor.setText("");
 				return;
 			}
 			if (text === "/todos") {
@@ -6385,6 +6391,51 @@ export class InteractiveMode {
 		}
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(theme.fg("dim", `Session name set: ${sessionName ?? name}`), 1, 0));
+		this.ui.requestRender();
+	}
+
+	/**
+	 * `/mcp`: render per-server MCP connection status to the chat. The subtle
+	 * footer chip (set by the MCP extension via setStatus) shows only a combined
+	 * count of failed servers; this command shows the full per-server detail,
+	 * including the error message, on demand.
+	 */
+	private handleMcpCommand(): void {
+		const states = getMcpServerStates();
+		let body = `${theme.bold("MCP Servers")}\n\n`;
+		if (states.length === 0) {
+			body += theme.fg("dim", "No MCP servers configured.");
+		} else {
+			for (const state of states) {
+				let marker: string;
+				let line: string;
+				switch (state.status) {
+					case "ok":
+						marker = theme.fg("success", "✓");
+						line = `${state.name}`;
+						break;
+					case "connecting":
+						marker = theme.fg("dim", "…");
+						line = `${state.name} ${theme.fg("dim", "(connecting)")}`;
+						break;
+					case "disabled":
+						marker = theme.fg("dim", "⊘");
+						line = `${state.name} ${theme.fg("dim", "(disabled)")}`;
+						break;
+					default: {
+						marker = theme.fg("warning", "⚠");
+						const err = state.error ? `: ${state.error}` : "";
+						line = `${state.name}${theme.fg("warning", err)}`;
+						break;
+					}
+				}
+				body += `${marker} ${line}\n`;
+			}
+			body += `\n${theme.fg("dim", "Reconnect: /reload  ·  edit: settings.json")}`;
+		}
+
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(body, 1, 0));
 		this.ui.requestRender();
 	}
 
