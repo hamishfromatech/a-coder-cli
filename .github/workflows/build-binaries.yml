@@ -138,6 +138,10 @@ jobs:
     permissions:
       contents: write
     uses: ./.github/workflows/desktop-build.yml
+    # Reusable workflows don't inherit secrets by default; forward them so
+    # desktop-build gets TAURI_SIGNING_PRIVATE_KEY(_PASSWORD) for signing the
+    # updater artifacts (and any Apple/Windows signing secrets).
+    secrets: inherit
 
   stage-github-release:
     runs-on: ubuntu-latest
