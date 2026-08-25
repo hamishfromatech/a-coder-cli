@@ -421,6 +421,10 @@ export class InteractiveMode {
 	// Thinking block visibility state
 	private hideThinkingBlock = false;
 	private outputPad = 1;
+	/** While in plan mode, auto-accept remaining mutating tools without a
+	 * prompt until plan mode is disabled. Set by the "auto-accept rest of plan"
+	 * permission option so the user doesn't approve every edit one-by-one. */
+	private planAutoAccept = false;
 
 	// Skill commands: command name -> skill file path
 	private skillCommands = new Map<string, string>();
@@ -1766,6 +1770,19 @@ export class InteractiveMode {
 		this.session.setPermissionPromptHandler(async (toolName, reason, args) => {
 			const preview = this.formatPermissionPreview(toolName, args);
 			const title = preview ? `${preview}\n\nAllow ${toolName}?` : `Allow ${toolName}?`;
+			// In plan mode, offer to auto-accept the rest of the plan so the user
+			// doesn't approve every mutating edit one-by-one. The flag resets when
+			// plan mode is disabled (model or user).
+			if (this.session.planMode) {
+				if (this.planAutoAccept) return true;
+				const choice = await this.showExtensionSelector(title, ["Yes", "Yes, auto-accept rest of plan", "No"]);
+				if (choice === "Yes, auto-accept rest of plan") {
+					this.planAutoAccept = true;
+					this.showStatus("Auto-accepting remaining plan edits (until plan mode ends)");
+					return true;
+				}
+				return choice === "Yes";
+			}
 			return await this.showExtensionConfirm(title, reason);
 		});
 		this.updatePermissionModeStatus(this.session.permissionMode);
@@ -4941,6 +4958,7 @@ export class InteractiveMode {
 	}
 
 	private updatePlanModeStatus(enabled: boolean): void {
+		if (!enabled) this.planAutoAccept = false;
 		this.footerDataProvider.setExtensionStatus("planMode", enabled ? "Plan mode: on" : undefined);
 		this.ui.requestRender();
 	}
