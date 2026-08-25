@@ -23,6 +23,7 @@ import { DefaultResourceLoader } from "./core/resource-loader.ts";
 import { type PackageSource, SettingsManager } from "./core/settings-manager.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "./core/trust-manager.ts";
 import { spawnProcess } from "./utils/child-process.ts";
+import { runInstallerSelfUpdate } from "./utils/cli-self-update.ts";
 import { getLatestPiRelease, isNewerPackageVersion } from "./utils/version-check.ts";
 import {
 	cleanupWindowsSelfUpdateQuarantine,
@@ -730,26 +731,17 @@ export async function handlePackageCommand(
 					const installMethod = detectInstallMethod();
 					// The ~/.a-coder install layout (bun-compiled binary) is not managed by an
 					// npm/pnpm/yarn/bun global package manager, so the in-process self-update
-					// cannot run `npm install -g`. Point the user at the one-shot installer,
-					// which auto-updates in place.
+					// cannot run `npm install -g`. Run the one-shot installer in place
+					// instead (curl install scripts are the source of truth for CLI updates).
 					if (installMethod === "bun-binary" || installMethod === "unknown") {
-						const installerUrl =
-							"https://raw.githubusercontent.com/hamishfromatech/pi-mono/feat/desktop-unified-release";
-						console.error(
-							chalk.yellow(`${APP_NAME} self-update is not supported for this install type (${installMethod}).`),
-						);
-						if (process.platform === "win32") {
-							console.error(chalk.dim(`Re-run the installer to update (use -Force to force a reinstall):`));
-							console.error(
-								chalk.cyan(
-									`  powershell -ExecutionPolicy Bypass -c "irm ${installerUrl}/Install-A-Coder.ps1 | iex -Force"`,
-								),
-							);
+						const result = await runInstallerSelfUpdate(selfUpdatePlan.version);
+						if (!result.ok) {
+							console.error(chalk.red(`${APP_NAME} update failed${result.error ? `: ${result.error}` : ""}.`));
+							process.exitCode = 1;
 						} else {
-							console.error(chalk.dim(`Re-run the installer to update (use --force to force a reinstall):`));
-							console.error(chalk.cyan(`  curl -sSf ${installerUrl}/install-a-coder.sh | bash -s -- --force`));
+							console.log(chalk.green(`Updated ${APP_NAME} from ${VERSION} to ${selfUpdatePlan.version}.`));
+							console.log(chalk.dim(`Restart ${APP_NAME} to use the new version.`));
 						}
-						process.exitCode = 1;
 						return true;
 					}
 					if (process.platform === "win32" && installMethod !== "npm" && installMethod !== "pnpm") {

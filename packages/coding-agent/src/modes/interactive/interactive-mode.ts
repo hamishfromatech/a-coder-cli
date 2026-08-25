@@ -106,6 +106,12 @@ import { generateDiffString } from "../../core/tools/edit-diff.ts";
 import type { TruncationResult } from "../../core/tools/truncate.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../core/trust-manager.ts";
 import { getChangelogPath, getNewEntries, normalizeChangelogLinks, parseChangelog } from "../../utils/changelog.ts";
+import {
+	recordAutoUpdateAttempt,
+	relaunchSelf,
+	runInstallerSelfUpdate,
+	shouldAttemptAutoUpdate,
+} from "../../utils/cli-self-update.ts";
 import { copyToClipboard } from "../../utils/clipboard.ts";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.ts";
 import { parseGitUrl } from "../../utils/git.ts";
@@ -915,11 +921,16 @@ export class InteractiveMode {
 	async run(): Promise<void> {
 		await this.init();
 
-		// Start version check asynchronously
-		checkForNewPiVersion(this.version).then((newRelease) => {
-			if (newRelease) {
-				this.showNewVersionNotification(newRelease);
+		// Start version check asynchronously. In "auto" mode (default), a new
+		// release triggers the one-shot installer and a re-exec so the user lands
+		// on the new version without a manual restart. See `cli-self-update.ts`.
+		checkForNewPiVersion(this.version).then(async (newRelease) => {
+			if (!newRelease) return;
+			if (this.settingsManager.getAutoUpdateMode() === "auto") {
+				await this.maybeAutoSelfUpdate(newRelease);
+				return;
 			}
+			this.showNewVersionNotification(newRelease);
 		});
 
 		// Start package update check asynchronously
@@ -4279,6 +4290,57 @@ export class InteractiveMode {
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(theme.fg("warning", `Warning: ${warningMessage}`), 1, 0));
 		this.ui.requestRender();
+	}
+
+	/**
+	 * Auto-update on startup: if a newer release is available and we're not
+	 * mid-response, tear down the TUI, run the one-shot installer, and re-exec
+	 * the CLI. Guarded by a per-tag cooldown (see {@link shouldAttemptAutoUpdate})
+	 * so a failed/partial update doesn't yank the TUI on every startup.
+	 */
+	private async maybeAutoSelfUpdate(release: LatestPiRelease): Promise<void> {
+		// Don't interrupt an active response; defer to the next startup.
+		if (this.streamingComponent) {
+			this.showNewVersionNotification(release);
+			return;
+		}
+		if (!shouldAttemptAutoUpdate(release.version)) {
+			this.showNewVersionNotification(release);
+			return;
+		}
+		await this.performAutoSelfUpdate(release.version);
+	}
+
+	private async performAutoSelfUpdate(version: string): Promise<void> {
+		recordAutoUpdateAttempt(version);
+		// Tear down the TUI so the installer's output renders cleanly in a cooked
+		// terminal and the relaunched child starts from a clean terminal state.
+		this.isShuttingDown = true;
+		try {
+			this.unregisterSignalHandlers();
+		} catch {}
+		try {
+			this.themeController.disableAutoSync();
+		} catch {}
+		try {
+			await this.ui.terminal.drainInput(1000);
+		} catch {}
+		try {
+			this.stop();
+		} catch {}
+		try {
+			await this.runtimeHost.dispose();
+		} catch {}
+
+		process.stdout.write(`\n${chalk.cyan(`Updating ${APP_NAME} to v${version}…`)}\n`);
+		const result = await runInstallerSelfUpdate(version);
+		if (!result.ok) {
+			process.stderr.write(`${chalk.red(`\nAuto-update failed${result.error ? `: ${result.error}` : ""}.`)}\n`);
+			process.stderr.write(`${chalk.dim(`Run \`${APP_NAME} update\` manually.`)}\n`);
+			process.exit(1);
+		}
+		process.stdout.write(`${chalk.green(`\nUpdated to v${version}. Restarting…`)}\n`);
+		relaunchSelf();
 	}
 
 	showNewVersionNotification(release: LatestPiRelease): void {

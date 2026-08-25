@@ -491,6 +491,15 @@ export const APP_TITLE: string = piConfigName ? APP_NAME : "A-Coder CLI";
 export const CONFIG_DIR_NAME: string = pkg.piConfig?.configDir || ".a-coder-cli";
 export const VERSION: string = pkg.version || "0.0.0";
 
+/** GitHub repo that hosts releases + the one-shot install scripts. */
+export const INSTALLER_REPO = "hamishfromatech/pi-mono";
+/** Ref on INSTALLER_REPO whose raw tree hosts install-a-coder.sh / Install-A-Coder.ps1. */
+export const INSTALLER_SCRIPT_REF = "feat/desktop-unified-release";
+/** Raw URL of a one-shot install script in the repo (e.g. "install-a-coder.sh"). */
+export function getInstallerScriptUrl(name: string): string {
+	return `https://raw.githubusercontent.com/${INSTALLER_REPO}/${INSTALLER_SCRIPT_REF}/${name}`;
+}
+
 // e.g., A_CODER_CLI_CODING_AGENT_DIR or TAU_CODING_AGENT_DIR
 export const ENV_AGENT_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_DIR`;
 export const ENV_SESSION_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_SESSION_DIR`;

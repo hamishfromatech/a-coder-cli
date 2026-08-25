@@ -117,6 +117,8 @@ export type PackageSource =
 			themes?: string[];
 	  };
 
+export type AutoUpdateMode = "off" | "auto";
+
 export interface Settings {
 	lastChangelogVersion?: string;
 	defaultProvider?: string;
@@ -137,6 +139,7 @@ export interface Settings {
 	defaultProjectTrust?: DefaultProjectTrust; // default: "ask"; global setting only
 	shellCommandPrefix?: string; // Prefix prepended to every bash command (e.g., "shopt -s expand_aliases" for alias support)
 	npmCommand?: string[]; // Command used for npm package lookup/install operations, argv-style (e.g., ["mise", "exec", "node@20", "--", "npm"])
+	autoUpdateOnStartup?: AutoUpdateMode; // Check for a newer CLI release on startup and auto-run the one-shot installer. Default: "auto" (curl install scripts are the source of truth).
 	collapseChangelog?: boolean; // Show condensed changelog after update (use /changelog for full)
 	enableInstallTelemetry?: boolean; // default: true - anonymous version/update ping after changelog-detected updates
 	enableAnalytics?: boolean; // default: false - opt-in analytics data sharing
@@ -1249,6 +1252,17 @@ export class SettingsManager {
 		}
 		this.globalSettings.terminal.showTerminalProgress = enabled;
 		this.markModified("terminal", "showTerminalProgress");
+		this.save();
+	}
+
+	getAutoUpdateMode(): AutoUpdateMode {
+		const value = this.settings.autoUpdateOnStartup;
+		return value === "off" ? "off" : "auto";
+	}
+
+	setAutoUpdateMode(mode: AutoUpdateMode): void {
+		this.globalSettings.autoUpdateOnStartup = mode;
+		this.markModified("autoUpdateOnStartup");
 		this.save();
 	}
 

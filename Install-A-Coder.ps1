@@ -100,6 +100,20 @@ function Install-FromReleases {
         # theme/*.json and docs at runtime via fs.readFileSync, so those must
         # be on disk next to the binary.
         New-Item -ItemType Directory -Force -Path $LibDir | Out-Null
+        # The running a-coder-cli process holds LibDir\pi.exe open. Windows
+        # won't let us overwrite or delete a running .exe, but it DOES allow
+        # renaming it. Rename the live binary out of the way (the running
+        # process keeps using the renamed file via its open handle), then copy
+        # the new one in. Old backups no longer held by any process are cleaned
+        # up here; the one still in use simply fails to delete (harmless).
+        Get-ChildItem -Path $LibDir -Filter 'pi.exe.old.*' -ErrorAction SilentlyContinue |
+            Remove-Item -Force -ErrorAction SilentlyContinue
+        $LiveExe = Join-Path $LibDir 'pi.exe'
+        if (Test-Path $LiveExe) {
+            $Backup = Join-Path $LibDir ("pi.exe.old." + (Get-Date -Format 'yyyyMMddHHmmss'))
+            try { Move-Item -Path $LiveExe -Destination $Backup -Force -ErrorAction Stop } catch {}
+        }
+
         Copy-Item -Path "$TempExtract\*" -Destination $LibDir -Recurse -Force
 
         New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
