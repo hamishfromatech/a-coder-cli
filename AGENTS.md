@@ -121,7 +121,7 @@ Attribution:
 
 **Lockstep versioning**: all packages share one version; every release updates all together. `patch` = fixes + additions, `minor` = breaking changes. No major releases.
 
-**What triggers a release**: pushing a `v*` tag (e.g. `v0.80.30`) triggers `.github/workflows/build-binaries.yml`, which builds CLI binaries + desktop installers (via `desktop-build.yml` workflow_call), stages a draft GitHub Release, publishes npm packages via OIDC trusted publishing (no local `npm publish`/OTP needed), then publishes the GitHub Release. A bare branch push to `feat/desktop-unified-release` only builds test binaries as artifacts — it does not release.
+**What triggers a release**: pushing a `v*` tag (e.g. `v0.80.30`) triggers `.github/workflows/build-binaries.yml`, which builds CLI binaries + desktop installers (via `desktop-build.yml` workflow_call), stages a draft GitHub Release, runs `build`/`check`/`test`, publishes npm packages via OIDC trusted publishing **only when the `ENABLE_NPM_PUBLISH` repo variable is `true`** (default: off; no local `npm publish`/OTP needed), then publishes the GitHub Release. A bare branch push to `feat/desktop-unified-release` only builds test binaries as artifacts — it does not release.
 
 There are two release flows: a quick manual flow for fast iteration, and the full release script for proper changelog-managed releases.
 
@@ -193,8 +193,8 @@ Pushing a `desktop-v*` tag (e.g. `desktop-v0.80.30`) triggers `desktop-build.yml
 
 ### After the release
 
-- **CI publishes npm packages**: the `publish-npm` job in `build-binaries.yml` uses npm trusted publishing through GitHub Actions OIDC with environment `npm-publish`; no local `npm publish`, `npm whoami`, OTP, or WebAuthn flow is required.
-- **If CI publish fails**: inspect the failed `publish-npm` job. The publish helper is idempotent and skips package versions already present on npm, so rerun the tag workflow after fixing CI or transient npm issues. Do not rerun `npm run release:patch`/`npm run release:minor` or re-push the tag for the same version.
+- **CI publishes npm packages** (opt-in): the `publish-npm` job in `build-binaries.yml` uses npm trusted publishing through GitHub Actions OIDC with environment `npm-publish`. The publish step (and the npm upgrade that supports it) only run when the `ENABLE_NPM_PUBLISH` repo variable is `true` (default: off); `build`/`check`/`test` still run on every release to gate it. No local `npm publish`, `npm whoami`, OTP, or WebAuthn flow is required. The GitHub Release + `latest.json` (used by both auto-updaters) are published by the separate `publish-github-release` job, which does not depend on `publish-npm`, so auto-update works regardless of whether npm publishing is enabled.
+- **If CI publish fails** (when enabled): inspect the failed `publish-npm` job. The publish helper is idempotent and skips package versions already present on npm, so rerun the tag workflow after fixing CI or transient npm issues. Do not rerun `npm run release:patch`/`npm run release:minor` or re-push the tag for the same version.
 - **Install locally** to verify the release:
    ```bash
    curl -sSf https://raw.githubusercontent.com/hamishfromatech/pi-mono/feat/desktop-unified-release/install-a-coder.sh | bash

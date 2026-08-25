@@ -399,11 +399,16 @@ jobs:
         run: npm test
 
       - name: Upgrade npm for trusted publishing
+        if: ${{ vars.ENABLE_NPM_PUBLISH == 'true' }}
         run: |
           npm install -g npm@11.16.0 --ignore-scripts
           npm --version
 
       - name: Publish npm packages
+        # npm publishing is opt-in via the ENABLE_NPM_PUBLISH repo variable
+        # (default: off). build/check/test above still run on every release to
+        # gate it; only the registry publish is skipped.
+        if: ${{ vars.ENABLE_NPM_PUBLISH == 'true' }}
         run: node scripts/publish.mjs
 
   publish-github-release:
