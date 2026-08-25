@@ -33,6 +33,7 @@ export interface AppKeybindings {
 	"app.session.fork": true;
 	"app.subagents.view": true;
 	"app.backgrounds.view": true;
+	"app.tasks.view": true;
 	"app.bash.background": true;
 	"app.session.resume": true;
 	"app.tree.foldOrUp": true;
@@ -131,6 +132,10 @@ export const KEYBINDINGS = {
 	"app.backgrounds.view": {
 		defaultKeys: "ctrl+shift+b",
 		description: "Open the background process viewer",
+	},
+	"app.tasks.view": {
+		defaultKeys: "down",
+		description: "Open the running tasks viewer (background processes and sub-agents)",
 	},
 	"app.bash.background": {
 		defaultKeys: "ctrl+b",

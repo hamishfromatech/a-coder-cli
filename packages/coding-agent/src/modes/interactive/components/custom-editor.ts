@@ -14,6 +14,8 @@ export class CustomEditor extends Editor {
 	public onPasteImage?: () => void;
 	/** Handler for extension-registered shortcuts. Returns true if handled. */
 	public onExtensionShortcut?: (data: string) => boolean;
+	/** Predicate: are there running tasks (sub-agents or background processes) to show in the tasks viewer? Used to decide whether plain Down opens the viewer. */
+	public hasRunningTasks?: () => boolean;
 
 	constructor(tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager, options?: EditorOptions) {
 		super(tui, theme, options);
@@ -66,9 +68,27 @@ export class CustomEditor extends Editor {
 			// Fall through to editor handling for delete-char-forward when not empty
 		}
 
+		// Running tasks viewer (plain Down): only open from an empty editor when
+		// there is something running; otherwise fall through to the editor so Down
+		// keeps its prompt-history / cursor-move behaviour (Claude Code style).
+		if (this.keybindings.matches(data, "app.tasks.view")) {
+			if (this.getText().length === 0 && (this.hasRunningTasks?.() ?? false)) {
+				const handler = this.actionHandlers.get("app.tasks.view");
+				if (handler) {
+					handler();
+					return;
+				}
+			}
+		}
+
 		// Check all other app actions
 		for (const [action, handler] of this.actionHandlers) {
-			if (action !== "app.interrupt" && action !== "app.exit" && this.keybindings.matches(data, action)) {
+			if (
+				action !== "app.interrupt" &&
+				action !== "app.exit" &&
+				action !== "app.tasks.view" &&
+				this.keybindings.matches(data, action)
+			) {
 				handler();
 				return;
 			}

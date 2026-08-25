@@ -365,6 +365,10 @@ export interface InProcessSubAgentRecord {
 	createdAt: number;
 	startedAt: number;
 	updatedAt: number;
+	/** The task/prompt the sub-agent was spawned with (its goal). */
+	goal?: string;
+	/** The model id the sub-agent is running with. */
+	model?: string;
 	finalText?: string;
 	toolUseCount: number;
 	turnCount: number;

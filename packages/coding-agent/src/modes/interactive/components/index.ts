@@ -2,7 +2,6 @@
 export { ArminComponent } from "./armin.ts";
 export { AssistantMessageComponent } from "./assistant-message.ts";
 export { BackgroundProcessesBarComponent } from "./background-process-bar.ts";
-export { BackgroundProcessViewerComponent } from "./background-process-viewer.ts";
 export { BashExecutionComponent } from "./bash-execution.ts";
 export { BashProgressComponent, createBashProgressRenderable } from "./bash-progress.ts";
 export { BorderedLoader } from "./bordered-loader.ts";

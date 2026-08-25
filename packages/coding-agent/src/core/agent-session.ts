@@ -3758,6 +3758,7 @@ export class AgentSession {
 			createdAt: now,
 			startedAt: now,
 			updatedAt: now,
+			goal: params.prompt || undefined,
 			finalText: undefined,
 			toolUseCount: 0,
 			turnCount: 0,
@@ -3817,6 +3818,7 @@ export class AgentSession {
 			params.model ??
 			(def?.model ? this._modelRegistry.getAvailable().find((m) => m.id === def.model) : undefined) ??
 			this.model;
+		record.model = subModel?.id;
 		if (!subModel) {
 			record.status = "failed";
 			record.error = record.error ?? "No model available for sub-agent.";

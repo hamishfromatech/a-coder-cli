@@ -125,7 +125,6 @@ import { ArminComponent } from "./components/armin.ts";
 import { AssistantMessageComponent } from "./components/assistant-message.ts";
 import { BackgroundAgentsBarComponent } from "./components/background-agent-bar.ts";
 import { BackgroundProcessesBarComponent } from "./components/background-process-bar.ts";
-import { BackgroundProcessViewerComponent } from "./components/background-process-viewer.ts";
 import { BashExecutionComponent } from "./components/bash-execution.ts";
 import { BorderedLoader } from "./components/bordered-loader.ts";
 import { BranchSummaryMessageComponent } from "./components/branch-summary-message.ts";
@@ -156,6 +155,7 @@ import { OutputStyleSelectorComponent } from "./components/output-style-selector
 import { PermissionModeSelectorComponent } from "./components/permission-mode-selector.ts";
 import { type PermissionRuleAction, PermissionRulesSelectorComponent } from "./components/permission-rules-selector.ts";
 import { QuestionPromptComponent } from "./components/question-prompt.ts";
+import { RunningTasksViewerComponent } from "./components/running-tasks-viewer.ts";
 import { ScopedModelsSelectorComponent } from "./components/scoped-models-selector.ts";
 import { SessionSelectorComponent } from "./components/session-selector.ts";
 import { SettingsSelectorComponent } from "./components/settings-selector.ts";
@@ -169,7 +169,6 @@ import {
 	WorkingStatusIndicator,
 } from "./components/status-indicator.ts";
 import { SubAgentCardComponent } from "./components/subagent-card.ts";
-import { SubAgentViewerComponent } from "./components/subagent-viewer.ts";
 import { TaskListComponent } from "./components/task-list.ts";
 import { readTodosFromBranch, TodoListComponent } from "./components/todo-list.ts";
 import { ToolExecutionComponent } from "./components/tool-execution.ts";
@@ -459,8 +458,7 @@ export class InteractiveMode {
 	private backgroundProcessesBar = new BackgroundProcessesBarComponent();
 	private backgroundProcessesBarTimer: ReturnType<typeof setInterval> | undefined;
 	private unsubscribeBackgroundProcesses?: () => void;
-	private subAgentViewer?: SubAgentViewerComponent;
-	private backgroundProcessViewer?: BackgroundProcessViewerComponent;
+	private runningTasksViewer?: RunningTasksViewerComponent;
 
 	// Auto-compaction state
 	private autoCompactionEscapeHandler?: () => void;
@@ -2843,8 +2841,12 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.session.fork", () => this.showUserMessageSelector());
 		this.defaultEditor.onAction("app.session.resume", () => this.showSessionSelector());
 		this.defaultEditor.onAction("app.permissionMode.select", () => this.showPermissionModeSelector());
-		this.defaultEditor.onAction("app.subagents.view", () => this.showSubAgentViewer());
-		this.defaultEditor.onAction("app.backgrounds.view", () => this.showBackgroundProcessViewer());
+		this.defaultEditor.onAction("app.subagents.view", () => this.showRunningTasksViewer());
+		this.defaultEditor.onAction("app.backgrounds.view", () => this.showRunningTasksViewer());
+		this.defaultEditor.onAction("app.tasks.view", () => this.showRunningTasksViewer());
+		this.defaultEditor.hasRunningTasks = () =>
+			this.session.listSubAgents().some((r) => r.status === "running") ||
+			getBackgroundProcesses().some((r) => r.status === "running");
 		this.defaultEditor.onAction("app.bash.background", () => this.backgroundCurrentBashCommand());
 		this.defaultEditor.onAction("app.planMode.toggle", () => this.togglePlanMode());
 
@@ -3186,7 +3188,7 @@ export class InteractiveMode {
 		// running, and tick a 1s timer so elapsed durations stay live.
 		this.backgroundAgentsBar.update(records);
 		// Keep the open sub-agent viewer (picker/transcript) live.
-		this.subAgentViewer?.update(records);
+		this.runningTasksViewer?.update(records, getBackgroundProcesses());
 		const anyRunning = records.some((r) => r.status === "running");
 		if (anyRunning && !this.backgroundAgentsBarTimer) {
 			this.backgroundAgentsBarTimer = setInterval(() => {
@@ -3205,7 +3207,7 @@ export class InteractiveMode {
 	private syncBackgroundProcessesBar(): void {
 		const records = getBackgroundProcesses();
 		this.backgroundProcessesBar.update(records);
-		this.backgroundProcessViewer?.update(records);
+		this.runningTasksViewer?.update(this.session.listSubAgents(), records);
 		const anyRunning = records.some((r) => r.status === "running");
 		if (anyRunning && !this.backgroundProcessesBarTimer) {
 			this.backgroundProcessesBarTimer = setInterval(() => {
@@ -5994,27 +5996,32 @@ export class InteractiveMode {
 	}
 
 	private async handleSubagentsCommand(): Promise<void> {
-		this.showSubAgentViewer();
+		this.showRunningTasksViewer();
 	}
 
 	/**
-	 * Open the sub-agent viewer: a picker over all background sub-agents /
-	 * teammates, Enter opens a live transcript tail, Esc backs out, 'k' kills.
-	 * Ports easy-agent's teammate navigation (Shift+↓ picker).
+	 * Open the unified running-tasks viewer: a picker over background bash
+	 * processes AND sub-agents (Claude Code's Down-arrow model). Enter opens a
+	 * live view (bash output tail or sub-agent transcript), Esc/Left backs out,
+	 * 'k' kills. Bound to Down (empty editor), Shift+Down, Ctrl+Shift+B.
 	 */
-	private showSubAgentViewer(): void {
-		if (this.subAgentViewer) return; // Already open.
-		this.subAgentViewer = new SubAgentViewerComponent(
+	private showRunningTasksViewer(): void {
+		if (this.runningTasksViewer) return; // Already open.
+		this.runningTasksViewer = new RunningTasksViewerComponent(
 			this.session.listSubAgents(),
+			getBackgroundProcesses(),
 			() => {
-				this.subAgentViewer = undefined;
+				this.runningTasksViewer = undefined;
 				this.hideExtensionSelector();
 			},
-			(id) => this.session.killSubAgent(id, "user"),
+			(item) => {
+				if (item.kind === "agent") this.session.killSubAgent(item.record.id, "user");
+				else this.killBackgroundProcess(item.record.id);
+			},
 		);
 		this.editorContainer.clear();
-		this.editorContainer.addChild(this.subAgentViewer);
-		this.ui.setFocus(this.subAgentViewer);
+		this.editorContainer.addChild(this.runningTasksViewer);
+		this.ui.setFocus(this.runningTasksViewer);
 		this.ui.requestRender();
 	}
 
@@ -6038,27 +6045,6 @@ export class InteractiveMode {
 		}
 		requestBackground(bashToolCallId);
 		this.showStatus("Backgrounding bash command…");
-	}
-
-	/**
-	 * Open the background process viewer: a picker over all background
-	 * bash processes, Enter opens a live output tail, Esc backs out,
-	 * 'k' kills the process. Mirrors showSubAgentViewer.
-	 */
-	private showBackgroundProcessViewer(): void {
-		if (this.backgroundProcessViewer) return; // Already open.
-		this.backgroundProcessViewer = new BackgroundProcessViewerComponent(
-			getBackgroundProcesses(),
-			() => {
-				this.backgroundProcessViewer = undefined;
-				this.hideExtensionSelector();
-			},
-			(id: string) => this.killBackgroundProcess(id),
-		);
-		this.editorContainer.clear();
-		this.editorContainer.addChild(this.backgroundProcessViewer);
-		this.ui.setFocus(this.backgroundProcessViewer);
-		this.ui.requestRender();
 	}
 
 	/** Kill a background process by its tool call id. */
