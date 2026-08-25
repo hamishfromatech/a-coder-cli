@@ -147,6 +147,7 @@ import { ModelSelectorComponent } from "./components/model-selector.ts";
 import { type AuthSelectorProvider, OAuthSelectorComponent } from "./components/oauth-selector.ts";
 import { OutputStyleSelectorComponent } from "./components/output-style-selector.ts";
 import { PermissionModeSelectorComponent } from "./components/permission-mode-selector.ts";
+import { type PermissionRuleAction, PermissionRulesSelectorComponent } from "./components/permission-rules-selector.ts";
 import { QuestionPromptComponent } from "./components/question-prompt.ts";
 import { ScopedModelsSelectorComponent } from "./components/scoped-models-selector.ts";
 import { SessionSelectorComponent } from "./components/session-selector.ts";
@@ -2898,6 +2899,11 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
+			if (text === "/permissions") {
+				this.showPermissionRulesSelector();
+				this.editor.setText("");
+				return;
+			}
 			if (text === "/output-style" || text.startsWith("/output-style ")) {
 				const arg = text.startsWith("/output-style ") ? text.slice("/output-style ".length).trim() : undefined;
 				this.handleOutputStyleCommand(arg);
@@ -4948,6 +4954,59 @@ export class InteractiveMode {
 				? `Output style: ${styleName} — ${style.description}`
 				: `Output style: default`,
 		);
+	}
+
+	private showPermissionRulesSelector(): void {
+		const render = () => {
+			const policies = this.settingsManager.getPermissionPolicies();
+			this.showSelector((done) => {
+				const selector = new PermissionRulesSelectorComponent(policies, {
+					onSelect: async (action: PermissionRuleAction) => {
+						if (action.kind === "add") {
+							const rule = await this.showExtensionInput(
+								`Add ${action.category} rule`,
+								"e.g. bash, edit, write, mcp__server:*, $defaults",
+							);
+							const value = rule?.trim();
+							if (value) {
+								this.mutatePermissionRule(action.category, value, "add");
+								this.showStatus(`Added ${action.category} rule: ${value}`);
+							}
+						} else {
+							const confirmed = await this.showExtensionConfirm(`Remove ${action.category} rule?`, action.rule);
+							if (confirmed) {
+								this.mutatePermissionRule(action.category, action.rule, "remove");
+								this.showStatus(`Removed ${action.category} rule: ${action.rule}`);
+							}
+						}
+						done();
+						// Reopen so the list reflects the change.
+						render();
+					},
+					onCancel: () => {
+						done();
+						this.ui.requestRender();
+					},
+				});
+				return { component: selector, focus: selector };
+			});
+		};
+		render();
+	}
+
+	/** Add or remove a single permission policy rule in a category, then persist. */
+	private mutatePermissionRule(category: "allow" | "softDeny" | "hardDeny", rule: string, op: "add" | "remove"): void {
+		const policies = this.settingsManager.getPermissionPolicies();
+		const list = [...(policies[category] ?? [])];
+		if (op === "add") {
+			if (!list.includes(rule)) list.push(rule);
+		} else {
+			const idx = list.indexOf(rule);
+			if (idx >= 0) list.splice(idx, 1);
+		}
+		const next: typeof policies = { ...policies };
+		next[category] = list.length > 0 ? list : undefined;
+		this.settingsManager.setPermissionPolicies(next);
 	}
 
 	private togglePlanMode(): void {

@@ -19,6 +19,7 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "settings", description: "Open settings menu" },
 	{ name: "model", description: "Select model (opens selector UI)" },
 	{ name: "permission", description: "Open permission mode selector" },
+	{ name: "permissions", description: "Manage permission policy rules (allow / soft-deny / hard-deny)" },
 	{ name: "output-style", description: "Switch output style (reshapes how the agent answers)" },
 	{ name: "scoped-models", description: "Enable/disable models for Ctrl+P cycling" },
 	{ name: "export", description: "Export session (HTML default, or specify path: .html/.jsonl)" },
