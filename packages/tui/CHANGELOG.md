@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `Terminal.guardRawModeOnInput()` to re-assert raw input mode on each stdin event for a short window, catching TTY line-discipline resets that happen after the one-shot `ensureRawMode()` call.
+
 ## [0.80.26] - 2026-08-22
 
 ## [0.80.25] - 2026-08-22

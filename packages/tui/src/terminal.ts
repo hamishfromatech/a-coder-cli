@@ -69,6 +69,18 @@ export interface Terminal {
 	ensureRawMode(): void;
 
 	/**
+	 * Arm a guard window during which every stdin data event re-asserts raw
+	 * mode before being processed. This catches TTY line-discipline resets that
+	 * happen after the one-shot `ensureRawMode()` call (e.g. a child process
+	 * spawned asynchronously by an extension hook that exits later): the user's
+	 * own keystrokes preceding Enter restore raw mode, so Enter arrives as "\r"
+	 * and submits instead of inserting a newline.
+	 *
+	 * @param durationMs How long to keep re-asserting on input (default: 5000).
+	 */
+	guardRawModeOnInput(durationMs?: number): void;
+
+	/**
 	 * Drain stdin before exiting to prevent Kitty key release events from
 	 * leaking to the parent shell over slow SSH connections.
 	 * @param maxMs - Maximum time to drain (default: 1000ms)
@@ -187,6 +199,12 @@ export class ProcessTerminal implements Terminal {
 		process.stdout.write("\x1b[?2004h");
 	}
 
+	private rawModeGuardUntil = 0;
+
+	guardRawModeOnInput(durationMs = 5000): void {
+		this.rawModeGuardUntil = Date.now() + durationMs;
+	}
+
 	/**
 	 * Set up StdinBuffer to split batched input into individual sequences.
 	 * This ensures components receive single events, making matchesKey/isKeyRelease work correctly.
@@ -221,6 +239,14 @@ export class ProcessTerminal implements Terminal {
 
 		// Handler that pipes stdin data through the buffer
 		this.stdinDataHandler = (data: string) => {
+			// During a guard window armed after a session replacement, re-assert
+			// raw mode on each input event. A child process may reset the TTY line
+			// discipline after the one-shot ensureRawMode() call; re-asserting on
+			// the user's own keystrokes (which precede Enter) restores "\r" for
+			// Enter so it submits instead of inserting a newline.
+			if (Date.now() < this.rawModeGuardUntil && process.stdin.setRawMode) {
+				process.stdin.setRawMode(true);
+			}
 			this.stdinBuffer!.process(data);
 		};
 	}
