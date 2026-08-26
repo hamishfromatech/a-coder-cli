@@ -69,14 +69,21 @@ export interface Terminal {
 	ensureRawMode(): void;
 
 	/**
-	 * Arm a guard window during which every stdin data event re-asserts raw
-	 * mode before being processed. This catches TTY line-discipline resets that
-	 * happen after the one-shot `ensureRawMode()` call (e.g. a child process
-	 * spawned asynchronously by an extension hook that exits later): the user's
-	 * own keystrokes preceding Enter restore raw mode, so Enter arrives as "\r"
-	 * and submits instead of inserting a newline.
+	 * Arm a guard window during which raw input mode is re-asserted, both on
+	 * every stdin data event and on a short polling interval.
 	 *
-	 * @param durationMs How long to keep re-asserting on input (default: 5000).
+	 * A child process spawned during a session replacement (e.g. by an
+	 * extension hook or tool) can reset the TTY line discipline. If it does so
+	 * asynchronously — after the one-shot `ensureRawMode()` call, e.g. when an
+	 * old MCP server or extension child is torn down and restores canonical
+	 * (cooked) mode on exit — the terminal can be left line-buffering
+	 * keystrokes. In canonical mode the kernel only delivers input to Node on
+	 * Enter, so an input-event-only guard never runs before the Enter that
+	 * delivers "text\n": Enter arrives as "\n" and inserts a newline instead of
+	 * submitting. The polling re-assertion recovers such async resets before
+	 * the user presses Enter, regardless of whether keystrokes have arrived.
+	 *
+	 * @param durationMs How long to keep re-asserting (default: 5000).
 	 */
 	guardRawModeOnInput(durationMs?: number): void;
 
@@ -200,9 +207,33 @@ export class ProcessTerminal implements Terminal {
 	}
 
 	private rawModeGuardUntil = 0;
+	private rawModeGuardInterval: ReturnType<typeof setInterval> | undefined;
 
 	guardRawModeOnInput(durationMs = 5000): void {
 		this.rawModeGuardUntil = Date.now() + durationMs;
+		// A child that resets the TTY line discipline AFTER the one-shot
+		// ensureRawMode() call can leave the terminal in canonical (cooked) mode.
+		// In canonical mode the kernel line-buffers keystrokes and only delivers
+		// them to Node on Enter, so the input-event re-assertion below never runs
+		// before the Enter that delivers "text\n" — Enter arrives as "\n" and
+		// inserts a newline instead of submitting. Re-assert raw mode on a short
+		// polling interval for the guard window so async child-exit resets are
+		// recovered before the user presses Enter, regardless of keystrokes.
+		if (this.rawModeGuardInterval) clearInterval(this.rawModeGuardInterval);
+		this.rawModeGuardInterval = setInterval(() => {
+			if (Date.now() >= this.rawModeGuardUntil) {
+				if (this.rawModeGuardInterval) {
+					clearInterval(this.rawModeGuardInterval);
+					this.rawModeGuardInterval = undefined;
+				}
+				return;
+			}
+			// Only re-assert raw mode here (not bracketed paste) to avoid
+			// spamming stdout with escape sequences 10x/sec.
+			if (process.stdin.setRawMode) {
+				process.stdin.setRawMode(true);
+			}
+		}, 100);
 	}
 
 	/**
@@ -469,6 +500,13 @@ export class ProcessTerminal implements Terminal {
 			setKittyProtocolActive(false);
 		}
 		this.disableModifyOtherKeys();
+
+		// Stop the raw-mode guard poller so it doesn't outlive the terminal.
+		if (this.rawModeGuardInterval) {
+			clearInterval(this.rawModeGuardInterval);
+			this.rawModeGuardInterval = undefined;
+		}
+		this.rawModeGuardUntil = 0;
 
 		// Clean up StdinBuffer
 		if (this.stdinBuffer) {

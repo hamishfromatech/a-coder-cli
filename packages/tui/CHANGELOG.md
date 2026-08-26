@@ -4,7 +4,7 @@
 
 ### Added
 
-- Added `Terminal.guardRawModeOnInput()` to re-assert raw input mode on each stdin event for a short window, catching TTY line-discipline resets that happen after the one-shot `ensureRawMode()` call.
+- Added `Terminal.guardRawModeOnInput()` to re-assert raw input mode for a short window after a session replacement, both on each stdin event and on a polling interval. The polling catches TTY line-discipline resets that happen asynchronously after the one-shot `ensureRawMode()` call (e.g. when a child process torn down during `/resume` restores canonical mode on exit): in canonical mode the kernel line-buffers keystrokes and only delivers them on Enter, so an input-event-only guard never runs before Enter, which arrived as "\n" and inserted a newline instead of submitting. The poller re-asserts raw mode before the user presses Enter so messages and slash commands submit. Fixes `/resume` leaving the TUI input box unable to send.
 
 ## [0.80.26] - 2026-08-22
 
