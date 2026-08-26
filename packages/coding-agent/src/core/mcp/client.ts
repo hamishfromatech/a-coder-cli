@@ -60,12 +60,23 @@ export class McpClient {
 function createTransport(config: McpServerConfig) {
 	switch (config.transport) {
 		case "stdio": {
-			return new StdioClientTransport({
+			const suppress = config.suppressStderrPatterns?.filter((p) => p.length > 0);
+			if (!suppress || suppress.length === 0) {
+				return new StdioClientTransport({
+					command: config.commandOrUrl,
+					args: config.args,
+					env: config.env,
+					stderr: "inherit",
+				});
+			}
+			const transport = new StdioClientTransport({
 				command: config.commandOrUrl,
 				args: config.args,
 				env: config.env,
-				stderr: "inherit",
+				stderr: "pipe",
 			});
+			filterStderr(transport, suppress);
+			return transport;
 		}
 		case "sse": {
 			const url = new URL(config.commandOrUrl);
@@ -82,4 +93,28 @@ function createTransport(config: McpServerConfig) {
 		default:
 			throw new Error(`Unsupported MCP transport: ${(config as McpServerConfig).transport}`);
 	}
+}
+
+/**
+ * Forward a stdio MCP server's stderr to the parent process, dropping any line
+ * that matches one of `patterns` (each a regex source, tested per line). Used
+ * to silence known-benign server noise without hiding real errors.
+ */
+function filterStderr(transport: StdioClientTransport, patterns: string[]): void {
+	const stderr = transport.stderr;
+	if (!stderr) return;
+	const regexes = patterns.map((p) => new RegExp(p));
+	let tail = "";
+	stderr.on("data", (chunk: Buffer) => {
+		const text = tail + chunk.toString();
+		const lines = text.split(/\r?\n/);
+		tail = lines.pop() ?? "";
+		for (const line of lines) {
+			if (regexes.some((r) => r.test(line))) continue;
+			process.stderr.write(line + "\n");
+		}
+	});
+	stderr.on("end", () => {
+		if (tail && !regexes.some((r) => r.test(tail))) process.stderr.write(tail);
+	});
 }
