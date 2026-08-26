@@ -108,19 +108,78 @@ function Install-FromReleases {
         # up here; the one still in use simply fails to delete (harmless).
         Get-ChildItem -Path $LibDir -Filter 'pi.exe.old.*' -ErrorAction SilentlyContinue |
             Remove-Item -Force -ErrorAction SilentlyContinue
+        $stamp = Get-Date -Format 'yyyyMMddHHmmss'
         $LiveExe = Join-Path $LibDir 'pi.exe'
         if (Test-Path $LiveExe) {
-            $Backup = Join-Path $LibDir ("pi.exe.old." + (Get-Date -Format 'yyyyMMddHHmmss'))
-            try { Move-Item -Path $LiveExe -Destination $Backup -Force -ErrorAction Stop } catch {}
+            try { Move-Item -Path $LiveExe -Destination "$LiveExe.old.$stamp" -Force -ErrorAction Stop } catch {}
         }
+        # Native addons (*.node) are also locked while loaded by a running
+        # a-coder-cli (or the desktop); rename them out of the way too so the
+        # copy can write fresh ones at the original names. Windows allows
+        # renaming a loaded .node. Clean stale .node.old.* backups first.
+        Get-ChildItem -Path $LibDir -Recurse -Filter '*.node.old.*' -ErrorAction SilentlyContinue |
+            Remove-Item -Force -ErrorAction SilentlyContinue
+        Get-ChildItem -Path $LibDir -Recurse -Filter '*.node' -File -ErrorAction SilentlyContinue | ForEach-Object {
+            try { Move-Item -Path $_.FullName -Destination "$($_.FullName).old.$stamp" -Force -ErrorAction Stop } catch {}
+        }
+        # Clean stale deferred sidecars from a previous run that couldn't
+        # replace an in-use file (see the per-file copy loop below).
+        Get-ChildItem -Path $LibDir -Recurse -Filter '*.new.*' -ErrorAction SilentlyContinue |
+            Remove-Item -Force -ErrorAction SilentlyContinue
 
-        Copy-Item -Path "$TempExtract\*" -Destination $LibDir -Recurse -Force
+        # Copy the archive into LibDir one file at a time so a single in-use
+        # file can't abort the whole update. The renames above already move the
+        # running pi.exe and loaded *.node out of the way in the common case;
+        # this loop is the backstop for a file whose rename silently failed
+        # (held with a handle that blocks rename too). For such a file we stage
+        # the new content as <name>.new.<stamp> and defer it: the VERSION marker
+        # is NOT bumped, so re-running the installer (after closing A-Coder
+        # Desktop / all a-coder-cli terminals) retries the swap and finishes the
+        # update instead of leaving a half-installed tree and skipping desktop.
+        $deferred = [System.Collections.Generic.List[string]]::new()
+        Get-ChildItem -Path $TempExtract -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
+            $rel = $_.FullName.Substring($TempExtract.Length + 1)
+            $dst = Join-Path $LibDir $rel
+            $dstDir = Split-Path $dst -Parent
+            if (-not (Test-Path $dstDir)) {
+                New-Item -ItemType Directory -Force -Path $dstDir | Out-Null
+            }
+            $copied = $false
+            try {
+                Copy-Item -Path $_.FullName -Destination $dst -Force -ErrorAction Stop
+                $copied = $true
+            } catch {
+                # Destination is locked. Try renaming it out of the way, then
+                # retry the copy (recovers files the global rename missed).
+                $renamed = $false
+                if (Test-Path $dst) {
+                    try { Move-Item -Path $dst -Destination "$dst.old.$stamp" -Force -ErrorAction Stop; $renamed = $true } catch {}
+                }
+                if ($renamed) {
+                    try { Copy-Item -Path $_.FullName -Destination $dst -Force -ErrorAction Stop; $copied = $true } catch {}
+                }
+            }
+            if (-not $copied) {
+                # Still locked: stage the new content as a .new sidecar for a
+                # re-run to swap in, and record it so VERSION isn't bumped.
+                try { Copy-Item -Path $_.FullName -Destination "$dst.new.$stamp" -Force -ErrorAction Stop } catch {}
+                $deferred.Add($rel) | Out-Null
+            }
+        }
 
         New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
         # A .cmd shim avoids duplicating the large binary and preserves argv.
         $ShimContent = '@"%~dp0..\lib\a-coder-cli\pi.exe" %*'
         Set-Content -Path $BinShim -Value $ShimContent -Encoding ASCII -NoNewline
         Add-Content -Path $BinShim -Value "`r`n" -Encoding ASCII
+
+        if ($deferred.Count -gt 0) {
+            Write-Host "Downloaded $AssetName; $($deferred.Count) file(s) in use, staged as .new for next run." -ForegroundColor Yellow
+            Write-Host "Close all A-Coder Desktop windows and a-coder-cli terminals, then re-run this command to finish:" -ForegroundColor Yellow
+            $deferred | Select-Object -First 5 | ForEach-Object { Write-Host "  - $_" -ForegroundColor DarkGray }
+            # Do NOT bump VERSION: a re-run must retry replacing the deferred files.
+            return $true
+        }
 
         Write-Host "Downloaded $AssetName and installed a-coder-cli." -ForegroundColor Green
         Set-Content -Path (Join-Path $InstallDir "VERSION") -Value $Tag -NoNewline

@@ -30,6 +30,7 @@
 
 - Fixed the input box not submitting after `/new` (and other session replacements): a child process could reset the TTY line discipline after the one-shot raw-mode re-assertion, so Enter arrived as a newline instead of submitting. Raw mode is now re-asserted on each stdin event for a short window after a session replacement.
 - Fixed `Cannot continue from message role: assistant` thrown when a post-run retry followed an overflow compaction: compaction rebuilds context from the session and re-adds the trailing partial/error assistant message, which is now dropped again before `agent.continue()` so the retry proceeds.
+- Windows installer (`Install-A-Coder.ps1`) no longer aborts a self-update when a file is in use. Loaded native addons (`.node`) are renamed out of the way before copying (Windows allows renaming a loaded `.node`), and the archive is copied file-by-file so a single locked file can't brick the whole update. A file that still can't be replaced is staged as a `.new.<stamp>` sidecar and the version marker is not bumped, so re-running the installer after closing A-Coder Desktop / all a-coder-cli terminals finishes the swap instead of leaving a half-installed tree and skipping the desktop install.
 
 ## [0.80.26] - 2026-08-22
 
