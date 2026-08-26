@@ -782,12 +782,12 @@ export class InteractiveMode {
 		this.ui.addChild(this.pendingMessagesContainer);
 		this.ui.addChild(this.statusContainer);
 		this.ui.addChild(this.backgroundAgentsBar);
-		this.ui.addChild(this.backgroundProcessesBar);
 		this.renderWidgets(); // Initialize with default spacer
 		this.ui.addChild(this.widgetContainerAbove);
 		this.ui.addChild(this.editorContainer);
 		this.ui.addChild(this.widgetContainerBelow);
 		this.ui.addChild(this.footer);
+		this.ui.addChild(this.backgroundProcessesBar);
 		this.ui.setFocus(this.editor);
 
 		this.setupKeyHandlers();
