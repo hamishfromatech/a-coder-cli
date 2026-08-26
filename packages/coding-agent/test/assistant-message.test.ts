@@ -37,6 +37,7 @@ describe("AssistantMessageComponent", () => {
 		initTheme("dark");
 
 		const component = new AssistantMessageComponent(createAssistantMessage([{ type: "text", text: "hello" }]));
+		component.flush();
 		const lines = component.render(40);
 
 		expect(lines).not.toHaveLength(0);
@@ -53,6 +54,7 @@ describe("AssistantMessageComponent", () => {
 				{ type: "toolCall", id: "tool-1", name: "read", arguments: { path: "file.txt" } },
 			]),
 		);
+		component.flush();
 		const rendered = component.render(60).join("\n");
 
 		expect(rendered.includes(OSC133_ZONE_START)).toBe(false);
@@ -67,6 +69,7 @@ describe("AssistantMessageComponent", () => {
 			createAssistantMessage([{ type: "thinking", thinking: "private reasoning" }], { stopReason: "length" }),
 			true,
 		);
+		component.flush();
 		const rendered = component.render(80).join("\n");
 
 		expect(rendered).toContain("Thinking...");
@@ -86,6 +89,7 @@ describe("AssistantMessageComponent", () => {
 			"Thinking...",
 			1,
 		);
+		component.flush();
 		const lines = component.render(80).map((line) => stripAnsi(line));
 
 		expect(lines.some((line) => line.includes(" hello"))).toBe(true);

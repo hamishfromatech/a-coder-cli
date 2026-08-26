@@ -96,7 +96,7 @@ describe("AgentSession permission mode", () => {
 		session.setPermissionPromptHandler(handler);
 		const result = await session.agent.beforeToolCall?.(makeToolCall("read"));
 		expect(result).toBeUndefined();
-		expect(handler).toHaveBeenCalledWith("read", 'Permission mode is "ask"');
+		expect(handler).toHaveBeenCalledWith("read", 'Permission mode is "ask"', {});
 		session.dispose();
 	});
 
@@ -120,7 +120,7 @@ describe("AgentSession permission mode", () => {
 			block: true,
 			reason: "Plan mode is active: approval required before making changes",
 		});
-		expect(handler).toHaveBeenCalledWith("bash", "Plan mode is active: approval required before making changes");
+		expect(handler).toHaveBeenCalledWith("bash", "Plan mode is active: approval required before making changes", {});
 
 		const editResult = await session.agent.beforeToolCall?.(makeToolCall("edit"));
 		expect(editResult).toEqual({
@@ -147,7 +147,7 @@ describe("AgentSession permission mode", () => {
 
 		const result = await session.agent.beforeToolCall?.(makeToolCall("write"));
 		expect(result).toBeUndefined();
-		expect(handler).toHaveBeenCalledWith("write", "Plan mode is active: approval required before making changes");
+		expect(handler).toHaveBeenCalledWith("write", "Plan mode is active: approval required before making changes", {});
 		session.dispose();
 	});
 

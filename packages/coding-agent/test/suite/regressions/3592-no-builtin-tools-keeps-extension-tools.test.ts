@@ -73,29 +73,34 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
 	it("keeps extension tools active when built-in defaults are disabled", async () => {
 		const session = await createSession({ noTools: "builtin" });
 
-		expect(
-			session
-				.getAllTools()
-				.map((tool) => tool.name)
-				.sort(),
-		).toEqual([
-			"bash",
-			"dynamic_tool",
-			"edit",
-			"find",
-			"get_subagent_status",
-			"grep",
-			"kill_subagent",
-			"list_subagents",
-			"ls",
-			"memory",
-			"plan_mode",
-			"read",
-			"spawn_subagent",
-			"todo",
-			"wait_subagent",
-			"write",
-		]);
+		const allToolNames = session
+			.getAllTools()
+			.map((tool) => tool.name)
+			.sort();
+		// Built-in defaults remain registered (not removed) even when disabled as
+		// the active set; only the extension tool is active. Use arrayContaining
+		// so newly added built-in tools don't make this regression test stale.
+		expect(allToolNames).toContain("dynamic_tool");
+		expect(allToolNames).toEqual(
+			expect.arrayContaining([
+				"bash",
+				"dynamic_tool",
+				"edit",
+				"find",
+				"get_subagent_status",
+				"grep",
+				"kill_subagent",
+				"list_subagents",
+				"ls",
+				"memory",
+				"plan_mode",
+				"read",
+				"spawn_subagent",
+				"todo",
+				"wait_subagent",
+				"write",
+			]),
+		);
 		expect(session.getActiveToolNames()).toEqual(["dynamic_tool"]);
 		expect(session.systemPrompt).toContain("- dynamic_tool: Run dynamic test behavior");
 		expect(session.systemPrompt).not.toContain("- read:");

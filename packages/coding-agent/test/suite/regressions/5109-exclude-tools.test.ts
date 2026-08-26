@@ -50,15 +50,16 @@ describe("regression #5109: exclude tools", () => {
 			expect(allToolNames).not.toContain("ask_question");
 			expect(allToolNames).toContain("bash");
 			expect(allToolNames).toContain("dynamic_tool");
-			expect(harness.session.getActiveToolNames().sort()).toEqual([
-				"bash",
-				"dynamic_tool",
-				"edit",
-				"memory",
-				"plan_mode",
-				"todo",
-				"write",
-			]);
+			// Excluded tools are filtered from the active set; the remaining
+			// default-active built-ins plus the extension tool stay active. Assert
+			// the excluded ones are absent and key tools are present rather than an
+			// exact list, so newly added default-active tools don't stale this test.
+			const activeToolNames = harness.session.getActiveToolNames().sort();
+			expect(activeToolNames).not.toContain("read");
+			expect(activeToolNames).not.toContain("ask_question");
+			expect(activeToolNames).toEqual(
+				expect.arrayContaining(["bash", "dynamic_tool", "edit", "memory", "plan_mode", "todo", "write"]),
+			);
 			expect(harness.session.systemPrompt).not.toContain("- read:");
 			expect(harness.session.systemPrompt).not.toContain("ask_question");
 			expect(harness.session.systemPrompt).toContain("- dynamic_tool: Run dynamic test behavior");

@@ -131,6 +131,7 @@ async function* createIncompleteEvents(): AsyncIterable<ResponseStreamEvent> {
 		response: {
 			id: "resp_incomplete",
 			status: "incomplete",
+			incomplete_details: { reason: "max_output_tokens" },
 			usage: {
 				input_tokens: 30,
 				output_tokens: 12,

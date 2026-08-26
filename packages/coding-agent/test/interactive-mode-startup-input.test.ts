@@ -12,6 +12,7 @@ type SubmitContext = {
 		isStreaming: boolean;
 		isBashRunning: boolean;
 		prompt: (text: string, options?: unknown) => Promise<void>;
+		drainPendingNotifications: () => string[];
 	};
 	flushPendingBashComponents: () => void;
 	onInputCallback?: (text: string) => void;
@@ -42,6 +43,7 @@ function createSubmitContext(): SubmitContext {
 			isStreaming: false,
 			isBashRunning: false,
 			prompt: vi.fn(async () => {}),
+			drainPendingNotifications: vi.fn(() => []),
 		},
 		flushPendingBashComponents: vi.fn(),
 		pendingUserInputs: [],
