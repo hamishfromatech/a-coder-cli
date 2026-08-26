@@ -73,12 +73,7 @@ export async function createComposioIntegration(
 	const cached = CACHE.get(cacheKey);
 	if (cached) return cached;
 
-	const userId = config.userId ?? resolveStableUserId(agentDir);
-
-	const composio = new Composio({
-		apiKey: config.apiKey,
-		provider: new PiProvider(),
-	});
+	const { composio, userId } = createComposioClient(config, agentDir);
 
 	const session = await composio.sessions.create(userId, {
 		...(toolkits.length > 0 ? { toolkits } : {}),
@@ -133,11 +128,26 @@ export { PI_COMPOSIO_SESSION_TOOL_NAMES as COMPOSIO_TOOL_NAMES } from "@composio
 const CACHE = new Map<string, ComposioIntegration>();
 
 /**
+ * Construct a `Composio` client and resolve the stable per-install user id.
+ * Shared by the agent integration (`createComposioIntegration`) and the
+ * apps-gallery service (`composio-apps.ts`) so both route connections under
+ * the same user id and API key.
+ */
+export function createComposioClient(
+	config: ResolvedComposioConfig,
+	agentDir: string = getAgentDir(),
+): { composio: Composio<PiProvider>; userId: string } {
+	const composio = new Composio({ apiKey: config.apiKey, provider: new PiProvider() });
+	const userId = config.userId ?? resolveStableUserId(agentDir);
+	return { composio, userId };
+}
+
+/**
  * Composio scopes connected accounts by `user_id` within a developer's API
  * key, so a stable per-install id keeps a user's connections across sessions.
  * Persisted at `<agentDir>/composio-user-id`, generated on first use.
  */
-function resolveStableUserId(agentDir: string): string {
+export function resolveStableUserId(agentDir: string): string {
 	const file = join(agentDir, "composio-user-id");
 	try {
 		if (existsSync(file)) {

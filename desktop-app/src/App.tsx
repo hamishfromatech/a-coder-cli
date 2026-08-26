@@ -31,6 +31,7 @@ import { CommandPalette, type CommandItem } from "./components/CommandPalette";
 import { Composer } from "./components/Composer";
 import { FindBar } from "./components/FindBar";
 import { HomeDashboard } from "./components/HomeDashboard";
+import { AppsPanel } from "./components/AppsPanel";
 import { MessageList } from "./components/MessageList";
 import { MemoryModal } from "./components/MemoryModal";
 import { ModelPicker } from "./components/ModelPicker";
@@ -114,6 +115,7 @@ export default function App() {
 	const [showCommandPalette, setShowCommandPalette] = useState(false);
 	const [showCommandCenter, setShowCommandCenter] = useState(false);
 	const [showHome, setShowHome] = useState(false);
+	const [showApps, setShowApps] = useState(false);
 	const [showSubagents, setShowSubagents] = useState(false);
 	const [showTeams, setShowTeams] = useState(false);
 	const [questionRequest, setQuestionRequest] = useState<{
@@ -777,6 +779,7 @@ export default function App() {
 		const onOpenFindBar = () => setShowFindBar(true);
 		const onOpenCommandPalette = () => setShowCommandPalette(true);
 		const onOpenHome = () => setShowHome(true);
+		const onOpenApps = () => setShowApps(true);
 		const onReopenClosedTab = () => {
 			const tab = useClosedTabsStore.getState().take();
 			if (tab) {
@@ -820,6 +823,7 @@ export default function App() {
 		window.addEventListener("a-coder:find-in-page", onOpenFindBar);
 		window.addEventListener("a-coder:command-palette", onOpenCommandPalette);
 		window.addEventListener("a-coder:open-home", onOpenHome);
+		window.addEventListener("a-coder:open-apps", onOpenApps);
 		window.addEventListener("a-coder:reopen-closed-tab", onReopenClosedTab);
 		window.addEventListener("a-coder:open-account", onOpenAccount);
 		window.addEventListener("a-coder:open-model-picker", onOpenModel);
@@ -839,6 +843,7 @@ export default function App() {
 			window.removeEventListener("a-coder:find-in-page", onOpenFindBar);
 			window.removeEventListener("a-coder:command-palette", onOpenCommandPalette);
 		window.removeEventListener("a-coder:open-home", onOpenHome);
+		window.removeEventListener("a-coder:open-apps", onOpenApps);
 		window.removeEventListener("a-coder:reopen-closed-tab", onReopenClosedTab);
 			window.removeEventListener("a-coder:open-account", onOpenAccount);
 			window.removeEventListener("a-coder:open-model-picker", onOpenModel);
@@ -936,6 +941,7 @@ export default function App() {
 			{ id: "project-picker", label: "Open project", group: "navigate", action: () => setShowProjectPicker(true) },
 			{ id: "find", label: "Find in page", keybinding: "⌘F", group: "navigate", action: () => setShowFindBar(true) },
 			{ id: "home", label: "Open home dashboard", keybinding: "⇧⌘H", group: "navigate", action: () => setShowHome(true) },
+			{ id: "apps", label: "Browse Composio apps", group: "tools", action: () => setShowApps(true) },
 			{ id: "reopen-closed-tab", label: "Reopen closed session", keybinding: "⇧⌘T", group: "session", action: () => window.dispatchEvent(new CustomEvent("a-coder:reopen-closed-tab")) },
 			{ id: "settings", label: "Open settings", keybinding: "⌘,", group: "settings", action: () => setShowSettings(true) },
 			{ id: "hotkeys", label: "Show keyboard shortcuts", group: "settings", action: () => setShowHotkeys(true) },
@@ -1138,6 +1144,7 @@ export default function App() {
 			)}
 
 			<SubagentPanel open={showSubagents} onClose={() => setShowSubagents(false)} />
+		<AppsPanel open={showApps} onClose={() => setShowApps(false)} />
 			<TeammateViewer open={showTeams} onClose={() => setShowTeams(false)} />
 			{questionRequest && (
 				<QuestionPrompt

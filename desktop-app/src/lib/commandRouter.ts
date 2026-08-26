@@ -48,6 +48,15 @@ export const BUILTIN_COMMANDS: BuiltinCommand[] = [
 		}),
 	},
 	{
+		name: "apps",
+		description: "Browse and connect Composio apps",
+		route: () => ({
+			kind: "open",
+			open: () => window.dispatchEvent(new CustomEvent("a-coder:open-apps")),
+			label: "Open Apps",
+		}),
+	},
+	{
 		name: "model",
 		description: "Select model",
 		route: (_args, h) => ({

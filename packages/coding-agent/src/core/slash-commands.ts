@@ -42,6 +42,7 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "reload", description: "Reload keybindings, extensions, skills, prompts, and themes" },
 	{ name: "subagents", description: "Open subagent manager UI" },
 	{ name: "mcp", description: "Show MCP server connection status" },
+	{ name: "apps", description: "Browse and connect Composio apps (toolkits)" },
 	{ name: "todos", description: "Show the current task list (from the todo tool)" },
 	{ name: "tasks", description: "Show the persistent task graph (from the task tools)" },
 	{ name: "rewind", description: "Restore tracked files to a previous turn (undo file edits)" },

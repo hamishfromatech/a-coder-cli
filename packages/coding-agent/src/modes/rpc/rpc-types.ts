@@ -90,6 +90,11 @@ export type RpcCommand =
 	// File history
 	| { id?: string; type: "rewind"; steps?: number }
 
+	// Composio apps gallery
+	| { id?: string; type: "composio_list_apps" }
+	| { id?: string; type: "composio_connect_app"; slug: string }
+	| { id?: string; type: "composio_disconnect_app"; connectedAccountId: string }
+
 	// Commands (available for invocation via prompt)
 	| { id?: string; type: "get_commands" };
 

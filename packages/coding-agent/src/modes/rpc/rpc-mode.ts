@@ -13,6 +13,8 @@
 
 import * as crypto from "node:crypto";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
+import { resolveComposioConfig } from "../../core/composio.ts";
+import { connectComposioApp, disconnectComposioApp, listComposioApps } from "../../core/composio-apps.ts";
 import type {
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
@@ -855,6 +857,71 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				} catch (err) {
 					const msg = err instanceof Error ? err.message : String(err);
 					return error(id, "rewind", `Rewind failed: ${msg}`);
+				}
+			}
+
+			// =================================================================
+			// Composio apps gallery
+			// =================================================================
+
+			case "composio_list_apps": {
+				const cfg = resolveComposioConfig(runtimeHost.services.settingsManager.getComposioSettings());
+				if (!cfg) {
+					return error(
+						id,
+						"composio_list_apps",
+						"Composio is not configured. Add composio.apiKey in settings or set COMPOSIO_API_KEY.",
+					);
+				}
+				try {
+					const apps = await listComposioApps(cfg, runtimeHost.services.agentDir);
+					return success(id, "composio_list_apps", { apps });
+				} catch (err) {
+					const msg = err instanceof Error ? err.message : String(err);
+					return error(id, "composio_list_apps", `Failed to list Composio apps: ${msg}`);
+				}
+			}
+
+			case "composio_connect_app": {
+				const cfg = resolveComposioConfig(runtimeHost.services.settingsManager.getComposioSettings());
+				if (!cfg) {
+					return error(
+						id,
+						"composio_connect_app",
+						"Composio is not configured. Add composio.apiKey in settings or set COMPOSIO_API_KEY.",
+					);
+				}
+				try {
+					// Return the sign-in link + pending account id immediately; the
+					// caller (desktop) opens the link and polls by re-listing. We do
+					// NOT block on waitForConnection here — that would hold the RPC
+					// channel for the whole OAuth round-trip.
+					const result = await connectComposioApp(cfg, runtimeHost.services.agentDir, command.slug);
+					return success(id, "composio_connect_app", {
+						redirectUrl: result.redirectUrl,
+						connectedAccountId: result.connectedAccountId,
+					});
+				} catch (err) {
+					const msg = err instanceof Error ? err.message : String(err);
+					return error(id, "composio_connect_app", `Failed to connect: ${msg}`);
+				}
+			}
+
+			case "composio_disconnect_app": {
+				const cfg = resolveComposioConfig(runtimeHost.services.settingsManager.getComposioSettings());
+				if (!cfg) {
+					return error(
+						id,
+						"composio_disconnect_app",
+						"Composio is not configured. Add composio.apiKey in settings or set COMPOSIO_API_KEY.",
+					);
+				}
+				try {
+					await disconnectComposioApp(cfg, runtimeHost.services.agentDir, command.connectedAccountId);
+					return success(id, "composio_disconnect_app");
+				} catch (err) {
+					const msg = err instanceof Error ? err.message : String(err);
+					return error(id, "composio_disconnect_app", `Failed to disconnect: ${msg}`);
 				}
 			}
 

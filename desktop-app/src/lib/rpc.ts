@@ -491,6 +491,28 @@ export interface RewindResult {
 export const rewind = (steps?: number) =>
 	sendCommand({ type: "rewind", steps }) as Promise<RewindResult>;
 
+// ---- Composio apps gallery ----
+export interface ComposioApp {
+	slug: string;
+	name: string;
+	description?: string;
+	logo?: string;
+	toolsCount?: number;
+	noAuth?: boolean;
+	connected: boolean;
+	connectedAccountId?: string;
+}
+export interface ComposioConnectResult {
+	redirectUrl: string | null;
+	connectedAccountId: string;
+}
+export const listComposioApps = () =>
+	sendCommand({ type: "composio_list_apps" }) as Promise<{ apps: ComposioApp[] }>;
+export const connectComposioApp = (slug: string) =>
+	sendCommand({ type: "composio_connect_app", slug }) as Promise<ComposioConnectResult>;
+export const disconnectComposioApp = (connectedAccountId: string) =>
+	sendCommand({ type: "composio_disconnect_app", connectedAccountId }) as Promise<void>;
+
 // ---- session import/export (jsonl) ----
 export const exportJsonl = (outputPath?: string) =>
 	sendCommand({ type: "export_jsonl", outputPath }) as Promise<ExportHtmlResult>;
