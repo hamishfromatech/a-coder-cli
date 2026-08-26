@@ -83,6 +83,19 @@ export function previewToolResult(content: string, max = 2000): string {
 }
 
 /**
+ * Cap on the subagent result text returned to the parent / shown in the
+ * completion event / completion notification. Large enough (128k) that real
+ * subagent work isn't cut, while still bounding the parent's context cost.
+ */
+export const SUBAGENT_RESULT_MAX_CHARS = 128_000;
+
+/** Truncate a subagent's result text, adding a marker when it exceeds the cap. */
+export function truncateSubagentResult(text: string, max = SUBAGENT_RESULT_MAX_CHARS): string {
+	if (text.length <= max) return text;
+	return `${text.slice(0, max)}\n... [truncated ${text.length - max} more chars]`;
+}
+
+/**
  * Read + parse the JSONL .output file a background sub-agent appends to.
  * Returns [] when the file is missing. Partial trailing lines (process
  * crashed mid-append) are dropped instead of throwing.

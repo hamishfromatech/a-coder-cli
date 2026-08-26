@@ -114,6 +114,7 @@ import {
 	ensureTaskOutputFile,
 	getTaskOutputPath,
 	previewToolResult,
+	truncateSubagentResult,
 } from "./subagents/task-output.ts";
 import { type BuildSystemPromptOptions, buildSystemPrompt } from "./system-prompt.ts";
 import { drainUnreadMessages, formatMailboxAttachment } from "./teams/mailbox.ts";
@@ -4000,7 +4001,8 @@ export class AgentSession {
 								const ev: SubAgentProgressEvent = { type: "text", text };
 								onProgress?.(ev);
 								pushEvent(ev);
-								if (outputFile) void appendTaskOutput(outputFile, { type: "text", text: text.slice(0, 4000) });
+								if (outputFile)
+									void appendTaskOutput(outputFile, { type: "text", text: truncateSubagentResult(text) });
 							}
 						}
 						break;
@@ -4050,7 +4052,7 @@ export class AgentSession {
 					void appendTaskOutput(outputFile, {
 						type: "completed",
 						reason: record.status,
-						finalText: finalText.slice(0, 4000),
+						finalText: truncateSubagentResult(finalText),
 						durationMs: Date.now() - record.startedAt,
 						totalTokens,
 						toolUseCount,
@@ -4178,7 +4180,7 @@ export class AgentSession {
 		if (record.totalTokens && record.totalTokens > 0) parts.push(`${record.totalTokens} tokens`);
 		if (record.turnCount > 0) parts.push(`${record.turnCount} turns`);
 		parts.push(elapsed);
-		const body = record.finalText ? record.finalText.slice(0, 2000).trim() : record.error;
+		const body = record.finalText ? truncateSubagentResult(record.finalText).trim() : record.error;
 		const worktree = record.worktreePath
 			? `\nWorktree kept at: ${record.worktreePath} (${record.worktreeBranch})`
 			: "";

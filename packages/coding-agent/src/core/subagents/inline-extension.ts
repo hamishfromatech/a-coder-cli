@@ -2,7 +2,7 @@ import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { findAgent } from "../agents/index.ts";
 import type { ExtensionFactory, InProcessSubAgentRecord, SubAgentRunResult } from "../extensions/types.ts";
-import { getTaskOutputPath } from "./task-output.ts";
+import { getTaskOutputPath, truncateSubagentResult } from "./task-output.ts";
 
 export interface SubagentToolOptions {
 	cliPath?: string;
@@ -250,7 +250,7 @@ export function createSubagentExtensionFactory(_options: SubagentToolOptions = {
 function formatRunResult(result: SubAgentRunResult): string {
 	const lines = [`Subagent: ${result.agentType}`, `Turns: ${result.turnCount}`, `Tool uses: ${result.toolUseCount}`];
 	if (result.warnings?.length) lines.push(`Warnings: ${result.warnings.join("; ")}`);
-	if (result.finalText) lines.push("Output:", result.finalText.slice(0, 4000));
+	if (result.finalText) lines.push("Output:", truncateSubagentResult(result.finalText));
 	return lines.join("\n");
 }
 
@@ -264,6 +264,6 @@ function formatRecord(record: InProcessSubAgentRecord): string {
 	];
 	if (record.error) lines.push(`Error: ${record.error}`);
 	if (record.worktreePath) lines.push(`Worktree: ${record.worktreePath} (${record.worktreeBranch})`);
-	if (record.finalText) lines.push("Output:", record.finalText.slice(0, 4000));
+	if (record.finalText) lines.push("Output:", truncateSubagentResult(record.finalText));
 	return lines.join("\n");
 }
