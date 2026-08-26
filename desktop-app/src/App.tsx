@@ -224,10 +224,13 @@ export default function App() {
 	const { leftSidebarOpen, setLeftSidebarOpen, rightSidebarOpen, setRightSidebarOpen, rightSidebarWidth } = useUiStore();
 	const effectiveCwd = projectPath || FALLBACK_CWD;
 
-	// Apply theme class to the document root.
+	// Apply theme class to the document root. Applies live (skin/mode changes
+	// from the settings panel) and after the engine loads cliGlobalSettings.theme,
+	// without re-running connectEngine (which would reconnect the backend).
+	const resolvedTheme = (cliGlobalSettings.theme as import("./stores/settings-store").Theme) ?? theme;
 	useEffect(() => {
-		applyNamedTheme(skin, theme);
-	}, [skin, theme]);
+		applyNamedTheme(skin, resolvedTheme);
+	}, [skin, resolvedTheme]);
 
 	// Resolve a workspace preselected by the `pi --desktop` CLI launcher
 	// (A_CODER_DESKTOP_WORKSPACE) and apply it before booting the engine so the
@@ -331,9 +334,11 @@ export default function App() {
 				setStatus("connected");
 				setCwd(targetCwd);
 
-				// Sync the full engine state, apply theme, and prompt for trust if needed.
+				// Sync the full engine state and prompt for trust if needed.
+				// Theme is applied by a dedicated effect (see resolvedTheme) — not here,
+				// to avoid re-creating connectEngine and reconnecting the backend
+				// whenever the appearance changes.
 				await syncEngineState();
-				applyNamedTheme(skin, (cliGlobalSettings.theme as import("./stores/settings-store").Theme) ?? theme);
 				try {
 					const trusted = await rpc.getProjectTrust(targetCwd);
 					if (!trusted) setTrustPrompt(targetCwd);
@@ -657,9 +662,6 @@ export default function App() {
 		},
 		[
 			cliPath,
-			cliGlobalSettings.theme,
-			theme,
-			skin,
 			setStatus,
 			setCwd,
 			setModel,
