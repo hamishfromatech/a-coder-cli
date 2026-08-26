@@ -25,6 +25,12 @@ export interface OllamaShowResponse {
 	parameters?: string;
 	/** Low-level architecture metadata; keys like "<arch>.context_length". */
 	model_info?: Record<string, unknown>;
+	/**
+	 * Server-reported capability tags, e.g. ["completion","tools","vision"].
+	 * Only present on `/api/show` (Ollama Cloud `/api/tags` omits it); this is the
+	 * authoritative source for vision support.
+	 */
+	capabilities?: string[];
 }
 
 /** A model entry in the native `/api/tags` response. */
@@ -136,16 +142,25 @@ export interface FetchOllamaContextWindowOptions {
 	apiKey?: string;
 }
 
+/** Capabilities + context window resolved from an Ollama `/api/show` call. */
+export interface OllamaShowCaps {
+	contextWindow?: number;
+	/** Ollama capability tags, e.g. ["completion","tools","vision"]. */
+	capabilities?: string[];
+}
+
 /**
- * Fetch the effective context window for an Ollama model via `/api/show`.
+ * Fetch `/api/show` caps for an Ollama model: the effective context window AND
+ * the server-reported capabilities (the source of truth for vision support —
+ * Ollama Cloud `/api/tags` omits capabilities, so `/api/show` is required).
  * Best-effort: returns undefined on any network/parse failure so callers can
  * fall back to the static catalog value.
  */
-export async function fetchOllamaContextWindow(
+export async function fetchOllamaShowCaps(
 	baseUrl: string,
 	modelId: string,
 	options: FetchOllamaContextWindowOptions = {},
-): Promise<number | undefined> {
+): Promise<OllamaShowCaps | undefined> {
 	const origin = ollamaNativeOrigin(baseUrl);
 	if (!origin) return undefined;
 	const doFetch = options.fetch ?? globalThis.fetch;
@@ -167,11 +182,28 @@ export async function fetchOllamaContextWindow(
 		});
 		if (!res.ok) return undefined;
 		const json = (await res.json()) as OllamaShowResponse;
-		return parseOllamaContextLength(json);
+		return {
+			contextWindow: parseOllamaContextLength(json),
+			capabilities: json.capabilities,
+		};
 	} catch {
 		return undefined;
 	} finally {
 		clearTimeout(timer);
 		options.signal?.removeEventListener("abort", onParentAbort);
 	}
+}
+
+/**
+ * Fetch the effective context window for an Ollama model via `/api/show`.
+ * Best-effort: returns undefined on any network/parse failure so callers can
+ * fall back to the static catalog value.
+ */
+export async function fetchOllamaContextWindow(
+	baseUrl: string,
+	modelId: string,
+	options: FetchOllamaContextWindowOptions = {},
+): Promise<number | undefined> {
+	const caps = await fetchOllamaShowCaps(baseUrl, modelId, options);
+	return caps?.contextWindow;
 }

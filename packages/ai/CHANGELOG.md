@@ -4,6 +4,7 @@
 
 ### Changed
 - Local Ollama models now discover their real context window at model-list refresh time (via the native /api/tags model_info.context_length, falling back to /api/show), matching Ollama Cloud, instead of hardcoding 128000 until the model is first activated.
+- Ollama Cloud vision support is now detected from `/api/show` per model (`capabilities` includes `"vision"`), not `/api/tags`. Ollama Cloud's `/api/tags` omits `capabilities`, so vision models were previously treated as text-only and images were silently dropped. The refresh now probes `/api/show` for every model (in parallel) and sets `input: ["text","image"]` when the server reports `"vision"`.
 
 ## [0.80.26] - 2026-08-22
 

@@ -5,7 +5,8 @@ import { createProvider, type Provider } from "../models.ts";
 import type { Model } from "../types.ts";
 import { OLLAMA_CLOUD_MODELS } from "./ollama-cloud.models.ts";
 import {
-	fetchOllamaContextWindow,
+	fetchOllamaShowCaps,
+	type OllamaShowCaps,
 	type OllamaTagsResponse,
 	parseContextLengthFromModelInfo,
 } from "./ollama-context.ts";
@@ -14,14 +15,12 @@ export async function resolveOllamaCloudModelCaps(
 	id: string,
 	apiKey: string,
 	signal?: AbortSignal,
-): Promise<Pick<Model<"openai-completions">, "contextWindow"> | undefined> {
-	const contextWindow = await fetchOllamaContextWindow("https://ollama.com/v1", id, {
+): Promise<OllamaShowCaps | undefined> {
+	return fetchOllamaShowCaps("https://ollama.com/v1", id, {
 		apiKey,
 		signal,
 		timeoutMs: 8000,
 	});
-	if (!contextWindow || contextWindow <= 0) return undefined;
-	return { contextWindow };
 }
 
 export function createOllamaCloudModel(
@@ -88,31 +87,24 @@ export async function fetchOllamaCloudModels(
 	const tagsJson = (await tagsRes.json()) as OllamaTagsResponse;
 	const tags = tagsJson.models ?? [];
 
-	const models: Model<"openai-completions">[] = [];
-	for (const tag of tags) {
-		const name = tag.name || tag.model;
-		if (!name) continue;
-
-		// Start with whatever /api/tags already tells us.
-		const contextWindow = parseContextLengthFromModelInfo(tag.model_info);
-		const vision = tag.capabilities?.includes("vision") ?? false;
-		const base = createOllamaCloudModel(name, {
-			contextWindow,
-			vision,
-		});
-
-		// Probe /api/show for a more accurate context window when /api/tags
-		// didn't include model_info or omitted context_length.
-		if (!contextWindow) {
+	// Ollama Cloud `/api/tags` carries no `capabilities`, so vision support is
+	// read from `/api/show` per model (the source of truth). Probe every model
+	// in parallel — `/api/show` also gives a more accurate context window.
+	const models = await Promise.all(
+		tags.map(async (tag) => {
+			const name = tag.name || tag.model;
+			if (!name) return undefined;
+			const tagsContextWindow = parseContextLengthFromModelInfo(tag.model_info);
+			const tagsVision = tag.capabilities?.includes("vision") ?? false;
 			const caps = await resolveOllamaCloudModelCaps(name, apiKey, signal);
-			if (caps) {
-				base.contextWindow = caps.contextWindow;
-			}
-		}
-
-		models.push(base);
-	}
-	return models;
+			const vision = caps?.capabilities?.includes("vision") ?? tagsVision;
+			return createOllamaCloudModel(name, {
+				contextWindow: caps?.contextWindow ?? tagsContextWindow,
+				vision,
+			});
+		}),
+	);
+	return models.filter((m): m is Model<"openai-completions"> => m !== undefined);
 }
 
 export function ollamaCloudProvider(): Provider<"openai-completions"> {
