@@ -6,6 +6,9 @@
 - Local Ollama models now discover their real context window at model-list refresh time (via the native /api/tags model_info.context_length, falling back to /api/show), matching Ollama Cloud, instead of hardcoding 128000 until the model is first activated.
 - Ollama Cloud vision support is now detected from `/api/show` per model (`capabilities` includes `"vision"`), not `/api/tags`. Ollama Cloud's `/api/tags` omits `capabilities`, so vision models were previously treated as text-only and images were silently dropped. The refresh now probes `/api/show` for every model (in parallel) and sets `input: ["text","image"]` when the server reports `"vision"`.
 
+### Fixed
+- Fixed release builds failing with `TS2353: '"openai-completions"' does not exist in type ...` when a regenerated provider catalog no longer contains any `openai-completions` models (upstream drift, e.g. Cloudflare AI Gateway). The affected providers (`cloudflare-ai-gateway`, `fireworks`, `github-copilot`, `opencode`, `opencode-go`) now pass an explicit `TApi` type argument to `createProvider` matching their declared provider union, so the hand-written `api` object keys stay valid regardless of which model APIs the regenerated catalog happens to include.
+
 ## [0.80.26] - 2026-08-22
 
 ## [0.80.25] - 2026-08-22
