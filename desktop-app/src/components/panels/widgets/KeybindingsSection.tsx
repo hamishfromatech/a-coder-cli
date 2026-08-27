@@ -57,7 +57,7 @@ export function KeybindingsSection() {
 				</h2>
 				<p className="mt-0.5 text-2xs leading-relaxed text-pi-text-muted">
 					Edit keyboard shortcuts stored in{" "}
-					<code className="font-mono text-pi-text">~/.a-coder-cli/agent/keybindings.json</code>.
+					<code className="font-mono text-pi-text">~/.a-coder/cli/agent/keybindings.json</code>.
 					Changes take effect the next time you start a-coder-cli in a new session.
 				</p>
 			</div>

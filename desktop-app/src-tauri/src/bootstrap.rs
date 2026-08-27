@@ -3,10 +3,11 @@
 //! When the desktop app can't find `a-coder-cli` on PATH (a fresh install with
 //! only the desktop app, not the CLI), this downloads the matching
 //! `pi-<platform>-<arch>` archive from the GitHub release and installs it into
-//! `~/.a-coder/lib/a-coder-cli/` + a `a-coder-cli` command in `~/.a-coder/bin/`,
-//! mirroring `install-a-coder.sh`. The frontend boot-failure card exposes a
-//! one-click "Install the A-Coder CLI engine" button that calls this command
-//! and retries the connect.
+//! `~/.a-coder/cli/lib/a-coder-cli/` + a `a-coder-cli` command in
+//! `~/.a-coder/cli/bin/`, mirroring `install-a-coder.sh`. A shim is also kept
+//! in the legacy `~/.a-coder/bin/` (when it exists) so older PATH entries keep
+//! working. The frontend boot-failure card exposes a one-click "Install the
+//! A-Coder CLI engine" button that calls this command and retries the connect.
 
 use std::path::{Path, PathBuf};
 
@@ -77,10 +78,55 @@ fn strip_v_prefix(v: &str) -> String {
 	v.trim().strip_prefix('v').unwrap_or(v.trim()).to_string()
 }
 
-/// Download + install a specific a-coder-cli release tag into `~/.a-coder`.
+/// Create the `a-coder-cli` command shim(s) next to the installed engine.
+/// `bin_dir` gets the canonical shim (`../lib/a-coder-cli/pi`). When the
+/// legacy `~/.a-coder/bin` directory exists (pre product-nesting installs put
+/// the command there and users' PATH already references it), it also gets a
+/// shim pointing at `../cli/lib/a-coder-cli/pi`.
+fn write_command_shims(bin_dir: &Path, legacy_bin_dir: Option<&Path>, platform: &str) -> Result<(), String> {
+	std::fs::create_dir_all(bin_dir).map_err(|e| e.to_string())?;
+	let name = if platform == "windows" {
+		"a-coder-cli.cmd"
+	} else {
+		"a-coder-cli"
+	};
+	let command = bin_dir.join(name);
+	if platform == "windows" {
+		let rel = "@\"%~dp0..\\lib\\a-coder-cli\\pi.exe\" %*\r\n";
+		std::fs::write(&command, rel).map_err(|e| e.to_string())?;
+	} else {
+		let _ = std::fs::remove_file(&command);
+		#[cfg(unix)]
+		{
+			use std::os::unix::fs::symlink;
+			symlink("../lib/a-coder-cli/pi", &command)
+				.map_err(|e| format!("Failed to symlink a-coder-cli: {}", e))?;
+		}
+	}
+
+	if let Some(legacy_dir) = legacy_bin_dir {
+		if legacy_dir != bin_dir && legacy_dir.exists() {
+			let legacy = legacy_dir.join(name);
+			let _ = std::fs::remove_file(&legacy);
+			if platform == "windows" {
+				let rel = "@\"%~dp0..\\cli\\lib\\a-coder-cli\\pi.exe\" %*\r\n";
+				let _ = std::fs::write(&legacy, rel);
+			} else {
+				#[cfg(unix)]
+				{
+					use std::os::unix::fs::symlink;
+					let _ = symlink("../cli/lib/a-coder-cli/pi", &legacy);
+				}
+			}
+		}
+	}
+	Ok(())
+}
+
+/// Download + install a specific a-coder-cli release tag into `~/.a-coder/cli`.
 /// Mirrors `bootstrap_cli` but pins the tag to the desktop version.
 async fn install_cli_release(tag: &str) -> Result<PathBuf, String> {
-	let install_dir = a_coder_dir();
+	let install_dir = cli_install_dir();
 	let lib_dir = install_dir.join("lib").join("a-coder-cli");
 	let bin_dir = install_dir.join("bin");
 
@@ -123,33 +169,16 @@ async fn install_cli_release(tag: &str) -> Result<PathBuf, String> {
 		let _ = std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755));
 	}
 
-	std::fs::create_dir_all(&bin_dir).map_err(|e| e.to_string())?;
-	let command = bin_dir.join(if platform == "windows" {
-		"a-coder-cli.cmd".to_string()
-	} else {
-		"a-coder-cli".to_string()
-	});
-	if platform == "windows" {
-		let rel = "@\"%~dp0..\\lib\\a-coder-cli\\pi.exe\" %*\r\n";
-		std::fs::write(&command, rel).map_err(|e| e.to_string())?;
-	} else {
-		let _ = std::fs::remove_file(&command);
-		#[cfg(unix)]
-		{
-			use std::os::unix::fs::symlink;
-			symlink("../lib/a-coder-cli/pi", &command)
-				.map_err(|e| format!("Failed to symlink a-coder-cli: {}", e))?;
-		}
-	}
+	write_command_shims(&bin_dir, Some(&a_coder_dir().join("bin")), &platform)?;
 
 	let _ = std::fs::write(install_dir.join("VERSION"), tag);
 
 	Ok(binary)
 }
 
-/// Download + install the a-coder-cli engine into `~/.a-coder` when the desktop
-/// app can't find it on PATH. Returns the resolved path to the `pi` binary so
-/// the frontend can immediately retry the connect with it.
+/// Download + install the a-coder-cli engine into `~/.a-coder/cli` when the
+/// desktop app can't find it on PATH. Returns the resolved path to the `pi`
+/// binary so the frontend can immediately retry the connect with it.
 #[tauri::command]
 pub async fn bootstrap_cli() -> Result<String, String> {
 	// Already resolvable? Nothing to do — return the existing path.
@@ -157,7 +186,7 @@ pub async fn bootstrap_cli() -> Result<String, String> {
 		return Ok(p.display().to_string());
 	}
 
-	let install_dir = a_coder_dir();
+	let install_dir = cli_install_dir();
 	let lib_dir = install_dir.join("lib").join("a-coder-cli");
 	let bin_dir = install_dir.join("bin");
 
@@ -209,25 +238,9 @@ pub async fn bootstrap_cli() -> Result<String, String> {
 		let _ = std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755));
 	}
 
-	// Create the command shim/symlink in bin_dir so future PATH lookups find it.
-	std::fs::create_dir_all(&bin_dir).map_err(|e| e.to_string())?;
-	let command = bin_dir.join(if platform == "windows" {
-		"a-coder-cli.cmd".to_string()
-	} else {
-		"a-coder-cli".to_string()
-	});
-	if platform == "windows" {
-		let rel = "@\"%~dp0..\\lib\\a-coder-cli\\pi.exe\" %*\r\n";
-		std::fs::write(&command, rel).map_err(|e| e.to_string())?;
-	} else {
-		let _ = std::fs::remove_file(&command);
-		#[cfg(unix)]
-		{
-			use std::os::unix::fs::symlink;
-			symlink("../lib/a-coder-cli/pi", &command)
-				.map_err(|e| format!("Failed to symlink a-coder-cli: {}", e))?;
-		}
-	}
+	// Create the command shim/symlink in bin_dir so future PATH lookups find it
+	// (plus the legacy ~/.a-coder/bin shim when that dir exists).
+	write_command_shims(&bin_dir, Some(&a_coder_dir().join("bin")), &platform)?;
 
 	// Persist a version marker (matches install-a-coder.sh).
 	let _ = std::fs::write(install_dir.join("VERSION"), &tag);
@@ -312,6 +325,7 @@ fn extract_zip(archive: &Path, dest: &Path) -> Result<(), String> {
 	}
 }
 
+/// The shared `~/.a-coder` product root (cli/, ide/, desktop/).
 fn a_coder_dir() -> PathBuf {
 	let home = if cfg!(windows) {
 		std::env::var("USERPROFILE").unwrap_or_default()
@@ -319,6 +333,12 @@ fn a_coder_dir() -> PathBuf {
 		std::env::var("HOME").unwrap_or_default()
 	};
 	PathBuf::from(home).join(".a-coder")
+}
+
+/// The CLI product install dir: `~/.a-coder/cli` (lib + bin + VERSION,
+/// alongside its config: agent/, teams/, tasks/, MEMORY.md).
+fn cli_install_dir() -> PathBuf {
+	a_coder_dir().join("cli")
 }
 
 fn platform_arch() -> (String, String) {
@@ -355,5 +375,11 @@ mod tests {
 	fn a_coder_dir_under_home() {
 		let dir = a_coder_dir();
 		assert!(dir.ends_with(".a-coder"));
+	}
+
+	#[test]
+	fn cli_install_dir_nests_under_shared_root() {
+		let dir = cli_install_dir();
+		assert!(dir.ends_with(".a-coder/cli"));
 	}
 }

@@ -24,8 +24,8 @@ Use the [example extension](../examples/extensions/gondolin) when you want `a-co
 Setup:
 
 ```bash
-cp -R packages/coding-agent/examples/extensions/gondolin ~/.a-coder-cli/agent/extensions/gondolin
-cd ~/.a-coder-cli/agent/extensions/gondolin
+cp -R packages/coding-agent/examples/extensions/gondolin ~/.a-coder/cli/agent/extensions/gondolin
+cd ~/.a-coder/cli/agent/extensions/gondolin
 npm install --ignore-scripts
 ```
 
@@ -33,7 +33,7 @@ Run from the project you want mounted:
 
 ```bash
 cd /path/to/project
-a-coder-cli -e ~/.a-coder-cli/agent/extensions/gondolin
+a-coder-cli -e ~/.a-coder/cli/agent/extensions/gondolin
 ```
 
 The extension mounts the host cwd at `/workspace` in the VM and overrides `read`, `write`, `edit`, `bash`, `grep`, `find`, and `ls`.
@@ -74,7 +74,7 @@ docker run --rm -it \
 
 The `-v "$PWD:/workspace"` mounts your current directory into the container at /workspace such that reads and writes in `/workspace` inside Docker directly affect your host files, like in the Gondolin example.
 
-Use a named volume for `/root/.a-coder-cli/agent` if you want container-local settings and sessions. Mounting your host `~/.a-coder-cli/agent` exposes host auth and session files to the container.
+Use a named volume for `/root/.a-coder-cli/agent` if you want container-local settings and sessions. Mounting your host `~/.a-coder/cli/agent` exposes host auth and session files to the container.
 
 ## OpenShell
 

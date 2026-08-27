@@ -472,7 +472,11 @@ interface PackageJson {
 	version?: string;
 	piConfig?: {
 		name?: string;
+		/** Project-scope config directory name: `<cwd>/<configDir>/`. */
 		configDir?: string;
+		/** User-scope config directory: `~/${userConfigDir}/`. Products nest under
+		 *  the shared `~/.a-coder` root, mirroring the IDE (`~/.a-coder/ide`). */
+		userConfigDir?: string;
 	};
 }
 
@@ -489,6 +493,10 @@ export const PACKAGE_NAME: string = pkg.name || "@earendil-works/pi-coding-agent
 export const APP_NAME: string = piConfigName || "a-coder-cli";
 export const APP_TITLE: string = piConfigName ? APP_NAME : "A-Coder CLI";
 export const CONFIG_DIR_NAME: string = pkg.piConfig?.configDir || ".a-coder-cli";
+/** User-scope config directory (`~/.a-coder/cli` for the official build). Holds
+ *  agent/, teams/, tasks/, file-history/ and MEMORY.md. Project-scope dirs keep
+ *  CONFIG_DIR_NAME. Falls back to CONFIG_DIR_NAME for non-official builds. */
+export const USER_CONFIG_DIR_NAME: string = pkg.piConfig?.userConfigDir || CONFIG_DIR_NAME;
 export const VERSION: string = pkg.version || "0.0.0";
 
 /** GitHub repo that hosts releases + the one-shot install scripts. */
@@ -519,21 +527,21 @@ export function getShareViewerUrl(gistId: string): string {
 }
 
 // =============================================================================
-// User Config Paths (~/.a-coder-cli/agent/*)
+// User Config Paths (~/.a-coder/cli/*)
 // =============================================================================
 
-/** Get the agent config directory (e.g., ~/.a-coder-cli/agent/) */
+/** Get the agent config directory (e.g., ~/.a-coder/cli/agent/) */
 export function getAgentDir(): string {
 	const envDir = process.env[ENV_AGENT_DIR];
 	if (envDir) {
 		return expandTildePath(envDir);
 	}
-	return join(homedir(), CONFIG_DIR_NAME, "agent");
+	return join(homedir(), USER_CONFIG_DIR_NAME, "agent");
 }
 
 /** Get path to persistent cross-workspace MEMORY.md */
 export function getMemoryPath(): string {
-	return join(homedir(), CONFIG_DIR_NAME, "MEMORY.md");
+	return join(homedir(), USER_CONFIG_DIR_NAME, "MEMORY.md");
 }
 
 /** Get path to the workspace-scoped MEMORY.md inside the session directory. */
@@ -591,20 +599,20 @@ export function getDebugLogPath(): string {
 	return join(getAgentDir(), `${APP_NAME}-debug.log`);
 }
 
-/** Get path to the Agent Teams root directory (e.g., ~/.a-coder-cli/teams). */
+/** Get path to the Agent Teams root directory (e.g., ~/.a-coder/cli/teams). */
 export function getTeamsRoot(): string {
 	const envDir = process.env[ENV_TEAMS_DIR];
 	if (envDir) {
 		return expandTildePath(envDir);
 	}
-	return join(homedir(), CONFIG_DIR_NAME, "teams");
+	return join(homedir(), USER_CONFIG_DIR_NAME, "teams");
 }
 
-/** Get path to the persistent task graph root directory (e.g., ~/.a-coder-cli/tasks). */
+/** Get path to the persistent task graph root directory (e.g., ~/.a-coder/cli/tasks). */
 export function getTasksRoot(): string {
 	const envDir = process.env[ENV_TASKS_DIR];
 	if (envDir) {
 		return expandTildePath(envDir);
 	}
-	return join(homedir(), CONFIG_DIR_NAME, "tasks");
+	return join(homedir(), USER_CONFIG_DIR_NAME, "tasks");
 }

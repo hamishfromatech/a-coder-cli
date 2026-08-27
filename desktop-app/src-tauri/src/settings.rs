@@ -5,6 +5,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 const CONFIG_DIR_NAME: &str = ".a-coder-cli";
+/// User-scope config root shared across A-Coder products (`~/.a-coder/cli`),
+/// mirroring the engine's `USER_CONFIG_DIR_NAME`. Holds agent/, teams/ and
+/// MEMORY.md. Project-scope dirs keep CONFIG_DIR_NAME.
+const USER_CONFIG_DIR: (&str, &str) = (".a-coder", "cli");
 const AGENT_DIR: &str = "agent";
 
 pub fn home_dir() -> Result<PathBuf, String> {
@@ -18,8 +22,24 @@ pub fn home_dir() -> Result<PathBuf, String> {
     .map(PathBuf::from)
 }
 
+/// Resolve the user-scope config root. Prefers `~/.a-coder/cli`; falls back to
+/// the legacy flat `~/.a-coder-cli` when it still holds the data (the engine
+/// migrates it to the nested root on its next startup).
+fn user_config_root() -> Result<PathBuf, String> {
+    let home = home_dir()?;
+    let new_root = home.join(USER_CONFIG_DIR.0).join(USER_CONFIG_DIR.1);
+    if new_root.exists() {
+        return Ok(new_root);
+    }
+    let legacy = home.join(CONFIG_DIR_NAME);
+    if legacy.exists() {
+        return Ok(legacy);
+    }
+    Ok(new_root)
+}
+
 fn agent_dir() -> Result<PathBuf, String> {
-    Ok(home_dir()?.join(CONFIG_DIR_NAME).join(AGENT_DIR))
+    Ok(user_config_root()?.join(AGENT_DIR))
 }
 
 pub fn global_settings_path() -> Result<PathBuf, String> {
@@ -34,7 +54,7 @@ pub fn global_subagents_path() -> Result<PathBuf, String> {
     Ok(agent_dir()?.join("subagents.json"))
 }
 
-/// Root directory for Agent Teams state (`~/.a-coder-cli/teams`). Honors the
+/// Root directory for Agent Teams state (`~/.a-coder/cli/teams`). Honors the
 /// same `A-CODER-CLI_TEAMS_DIR` override the coding-agent reads so dev/test
 /// installs stay in sync.
 pub fn global_teams_root() -> Result<PathBuf, String> {
@@ -43,7 +63,7 @@ pub fn global_teams_root() -> Result<PathBuf, String> {
             return Ok(PathBuf::from(dir));
         }
     }
-    Ok(home_dir()?.join(CONFIG_DIR_NAME).join("teams"))
+    Ok(user_config_root()?.join("teams"))
 }
 
 fn sanitize_member_name(name: &str) -> String {
@@ -90,7 +110,7 @@ pub fn global_keybindings_path() -> Result<PathBuf, String> {
 const MEMORY_FILE_NAME: &str = "MEMORY.md";
 
 pub fn global_memory_path() -> Result<PathBuf, String> {
-    Ok(home_dir()?.join(CONFIG_DIR_NAME).join(MEMORY_FILE_NAME))
+    Ok(user_config_root()?.join(MEMORY_FILE_NAME))
 }
 
 pub fn project_settings_path(cwd: &str) -> PathBuf {

@@ -16,7 +16,7 @@
  *     target snapshot.
  *
  * Backups are full file copies stored under
- *   ~/.a-coder-cli/file-history/{sessionId}/{pathHash}@v{N}
+ *   ~/.a-coder/cli/file-history/{sessionId}/{pathHash}@v{N}
  * Snapshot metadata is held in-process on the owning AgentSession (one main
  * session per process; in-process sub-agents share the main session's hook
  * closure, so their edits are tracked against the main session too).
@@ -32,7 +32,7 @@ import { chmod, copyFile, mkdir, readdir, readFile, rm, stat, unlink } from "nod
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { diffLines } from "diff";
-import { CONFIG_DIR_NAME } from "../config.ts";
+import { USER_CONFIG_DIR_NAME } from "../config.ts";
 
 /** null backupFileName means "the file did not exist in this version". */
 type BackupFileName = string | null;
@@ -73,7 +73,7 @@ function isEnvTruthy(value: string | undefined): boolean {
 function getFileHistoryRoot(): string {
 	const envDir = process.env.A_CODER_CLI_FILE_HISTORY_DIR;
 	if (envDir) return envDir;
-	return join(homedir(), CONFIG_DIR_NAME, "file-history");
+	return join(homedir(), USER_CONFIG_DIR_NAME, "file-history");
 }
 
 export class FileHistory {

@@ -357,7 +357,7 @@ interface OAuthLoginCallbacks {
 
 ### OAuthCredentials
 
-Credentials are persisted in `~/.a-coder-cli/agent/auth.json`:
+Credentials are persisted in `~/.a-coder/cli/agent/auth.json`:
 
 ```typescript
 interface OAuthCredentials {

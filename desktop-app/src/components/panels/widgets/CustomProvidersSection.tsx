@@ -75,7 +75,7 @@ function newProviderId(existing: Record<string, unknown>): string {
 
 /**
  * Custom Providers section — manage OpenAI-compatible (and other API-shaped)
- * providers stored in `~/.a-coder-cli/agent/models.json`.
+ * providers stored in `~/.a-coder/cli/agent/models.json`.
  *
  * Each provider is keyed by an id (used in `defaultProvider` in settings.json
  * and as the `<provider>:<model>` prefix). The form edits the same JSON the

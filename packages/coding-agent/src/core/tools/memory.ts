@@ -34,7 +34,7 @@ const memorySchema = Type.Object(
 				[
 					Type.Literal("global", {
 						description:
-							"Shared across every workspace and session (~/.a-coder-cli/MEMORY.md). Use for user preferences, project context, conventions, or any facts that should be available globally.",
+							"Shared across every workspace and session (~/.a-coder/cli/MEMORY.md). Use for user preferences, project context, conventions, or any facts that should be available globally.",
 					}),
 					Type.Literal("workspace", {
 						description:

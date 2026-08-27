@@ -8,7 +8,7 @@
  *
  * Layout (per task list):
  *
- *   ~/.a-coder-cli/tasks/<taskListId>/
+ *   ~/.a-coder/cli/tasks/<taskListId>/
  *     1.json
  *     2.json
  *     .highwatermark   <-- max id ever assigned, survives deletes/reset

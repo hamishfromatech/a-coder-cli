@@ -4,7 +4,7 @@
 
 Extensions are TypeScript modules that extend A-Coder CLI's behavior. They can subscribe to lifecycle events, register custom tools callable by the LLM, add commands, and more.
 
-> **Placement for /reload:** Put extensions in `~/.a-coder-cli/agent/extensions/` (global) or `.a-coder-cli/extensions/` (project-local) for auto-discovery. Use `a-coder-cli -e ./path.ts` only for quick tests. Extensions in auto-discovered locations can be hot-reloaded with `/reload`.
+> **Placement for /reload:** Put extensions in `~/.a-coder/cli/agent/extensions/` (global) or `.a-coder-cli/extensions/` (project-local) for auto-discovery. Use `a-coder-cli -e ./path.ts` only for quick tests. Extensions in auto-discovered locations can be hot-reloaded with `/reload`.
 
 **Key capabilities:**
 - **Custom tools** - Register tools the LLM can call via `pi.registerTool()`
@@ -54,7 +54,7 @@ See [examples/extensions/](../examples/extensions/) for working implementations.
 
 ## Quick Start
 
-Create `~/.a-coder-cli/agent/extensions/my-extension.ts`:
+Create `~/.a-coder/cli/agent/extensions/my-extension.ts`:
 
 ```typescript
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -113,8 +113,8 @@ Extensions are auto-discovered from trusted locations. Project-local `.a-coder-c
 
 | Location | Scope |
 |----------|-------|
-| `~/.a-coder-cli/agent/extensions/*.ts` | Global (all projects) |
-| `~/.a-coder-cli/agent/extensions/*/index.ts` | Global (subdirectory) |
+| `~/.a-coder/cli/agent/extensions/*.ts` | Global (all projects) |
+| `~/.a-coder/cli/agent/extensions/*/index.ts` | Global (subdirectory) |
 | `.a-coder-cli/extensions/*.ts` | Project-local |
 | `.a-coder-cli/extensions/*/index.ts` | Project-local (subdirectory) |
 
@@ -227,14 +227,14 @@ Defer background resource startup until `session_start` or the command/tool/even
 **Single file** - simplest, for small extensions:
 
 ```
-~/.a-coder-cli/agent/extensions/
+~/.a-coder/cli/agent/extensions/
 └── my-extension.ts
 ```
 
 **Directory with index.ts** - for multi-file extensions:
 
 ```
-~/.a-coder-cli/agent/extensions/
+~/.a-coder/cli/agent/extensions/
 └── my-extension/
     ├── index.ts        # Entry point (exports default function)
     ├── tools.ts        # Helper module
@@ -244,7 +244,7 @@ Defer background resource startup until `session_start` or the command/tool/even
 **Package with dependencies** - for extensions that need npm packages:
 
 ```
-~/.a-coder-cli/agent/extensions/
+~/.a-coder/cli/agent/extensions/
 └── my-extension/
     ├── package.json    # Declares dependencies and entry points
     ├── package-lock.json

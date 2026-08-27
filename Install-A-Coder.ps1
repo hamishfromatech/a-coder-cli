@@ -4,7 +4,7 @@
 # Copyright (c) The A-Tech Corporation PTY LTD
 # Usage:
 #   powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/<org>/<repo>/main/Install-A-Coder.ps1 | iex"
-#   or   .\Install-A-Coder.ps1 [-Version latest] [-InstallDir "$env:USERPROFILE\.a-coder"]
+#   or   .\Install-A-Coder.ps1 [-Version latest] [-InstallDir "$env:USERPROFILE\.a-coder\cli"]
 # ============================================================================
 [CmdletBinding()]
 param(
@@ -17,8 +17,11 @@ param(
 $ErrorActionPreference = "Stop"
 
 # Defaults
+# Products nest under the shared ~\.a-coder root: the CLI installs into
+# ~\.a-coder\cli (lib + bin + VERSION), alongside its config (agent/, teams/,
+# tasks/, MEMORY.md). IDE -> ide\, desktop -> desktop\.
 if ([string]::IsNullOrEmpty($InstallDir)) {
-    $InstallDir = Join-Path $env:USERPROFILE ".a-coder"
+    $InstallDir = Join-Path $env:USERPROFILE ".a-coder\cli"
 }
 
 $BinDir = Join-Path $InstallDir "bin"
@@ -26,6 +29,13 @@ $LibDir = Join-Path $InstallDir "lib\a-coder-cli"
 $BinShim = Join-Path $BinDir "a-coder-cli.cmd"
 $BinExe = Join-Path $BinDir "a-coder-cli.exe"
 $Repo = "hamishfromatech/pi-mono"
+
+# Legacy single-product layout (pre product nesting): ~\.a-coder\{lib,bin}.
+# When present we keep a shim there pointing at the new binary so existing
+# PATH entries keep working, and clean the stale tree once the new one lands.
+$LegacyACoderDir = Join-Path $env:USERPROFILE ".a-coder"
+$LegacyLibDir = Join-Path $LegacyACoderDir "lib\a-coder-cli"
+$LegacyBinDir = Join-Path $LegacyACoderDir "bin"
 
 function Write-Header {
     Write-Host "Installing A-Coder CLI v$Version for Windows ..." -ForegroundColor Cyan
@@ -291,12 +301,26 @@ if (-not $CliAlreadyUpToDate) {
 
     Add-ToPath -Dir $BinDir
 
+    # Keep the legacy ~\.a-coder\bin shim working and drop the stale lib tree
+    # (best-effort — a running process may still hold files open; the shim
+    # already points at the new binary, and a re-run finishes the cleanup).
+    if ((Test-Path $LegacyBinDir) -and ($LegacyBinDir -ne $BinDir)) {
+        Remove-Item -Path (Join-Path $LegacyBinDir "a-coder-cli.cmd") -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path (Join-Path $LegacyBinDir "a-coder-cli.exe") -Force -ErrorAction SilentlyContinue
+        $LegacyShimContent = '@"%~dp0..\cli\lib\a-coder-cli\pi.exe" %*'
+        Set-Content -Path (Join-Path $LegacyBinDir "a-coder-cli.cmd") -Value $LegacyShimContent -Encoding ASCII -NoNewline
+        Add-Content -Path (Join-Path $LegacyBinDir "a-coder-cli.cmd") -Value "`r`n" -Encoding ASCII
+    }
+    if ((Test-Path $LegacyLibDir) -and ($LegacyLibDir -ne $LibDir)) {
+        Remove-Item -Path $LegacyLibDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
     Write-Host ""
     Write-Host "==================================================" -ForegroundColor Cyan
     Write-Host "A-Coder CLI installed successfully!" -ForegroundColor Green
     Write-Host ""
     Write-Host "  Binary:     $BinShim"
-    Write-Host "  Config dir: $(Join-Path $env:USERPROFILE '.a-coder')"
+    Write-Host "  Config dir: $(Join-Path $env:USERPROFILE '.a-coder\cli')"
     try {
         $Ver = & $BinShim --version 2>$null
         Write-Host "  Version:    $Ver"

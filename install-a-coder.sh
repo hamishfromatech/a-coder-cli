@@ -27,7 +27,7 @@ modules). This script extracts the whole tree into a lib directory and links
 an \`a-coder-cli\` command onto your PATH.
 
 Options:
-  --dir <path>    Install to a custom directory (default: ~/.a-coder)
+  --dir <path>    Install to a custom directory (default: ~/.a-coder/cli)
   --force         Overwrite an existing installation
   --quiet         Suppress status messages
   -h, --help      Show this help
@@ -108,13 +108,23 @@ PLATFORM="$(detect_platform)"
 ARCH="$(detect_arch)"
 
 # --- resolve install directory -----------------------------------------------
+# Products nest under the shared ~/.a-coder root: the CLI installs into
+# ~/.a-coder/cli (lib + bin + VERSION), alongside its config (agent/, teams/,
+# tasks/, MEMORY.md). IDE → ide/, desktop → desktop/.
 if [[ -z "$INSTALL_DIR" ]]; then
-  INSTALL_DIR="$HOME/.a-coder"
+  INSTALL_DIR="$HOME/.a-coder/cli"
 fi
 
 LIB_DIR="$INSTALL_DIR/lib/a-coder-cli"
 BIN_DIR="$INSTALL_DIR/bin"
 COMMAND="$BIN_DIR/a-coder-cli"
+
+# Legacy single-product layout (pre product nesting): ~/.a-coder/{lib,bin}.
+# When present we keep a shim there pointing at the new binary so existing
+# PATH entries keep working, and clean the stale tree once the new one lands.
+LEGACY_ACODER_DIR="$HOME/.a-coder"
+LEGACY_LIB_DIR="$LEGACY_ACODER_DIR/lib/a-coder-cli"
+LEGACY_BIN_DIR="$LEGACY_ACODER_DIR/bin"
 
 mkdir -p "$INSTALL_DIR" "$LIB_DIR" "$BIN_DIR"
 
@@ -331,6 +341,23 @@ if [[ "$CLI_ALREADY_UP_TO_DATE" == "false" ]]; then
 
   # --- make it available in PATH for current session ---------------------------
   export PATH="$BIN_DIR:$PATH"
+
+  # --- keep legacy ~/.a-coder/bin shim + clean stale tree ----------------------
+  # Installs from before product nesting put the command in ~/.a-coder/bin and
+  # that dir is already on users' PATH. Refresh the shim to point at the new
+  # binary, then drop the old lib tree (best-effort — a running process may
+  # still hold it open; that's fine on macOS/Linux and harmless on Windows).
+  if [[ -d "$LEGACY_BIN_DIR" && "$LEGACY_BIN_DIR" != "$BIN_DIR" ]]; then
+    rm -f "$LEGACY_BIN_DIR/a-coder-cli" "$LEGACY_BIN_DIR/a-coder-cli.cmd"
+    if [[ "$PLATFORM" == "windows" ]]; then
+      printf '@"%%~dp0..\\cli\\lib\\a-coder-cli\\pi.exe" %%*\r\n' > "$LEGACY_BIN_DIR/a-coder-cli.cmd"
+    else
+      ln -s "../cli/lib/a-coder-cli/pi" "$LEGACY_BIN_DIR/a-coder-cli"
+    fi
+  fi
+  if [[ -d "$LEGACY_LIB_DIR" && "$LEGACY_LIB_DIR" != "$LIB_DIR" ]]; then
+    rm -rf "$LEGACY_LIB_DIR" 2>/dev/null || true
+  fi
 
   # --- shell completions hook (bash / zsh) -------------------------------------
   if [[ -x "$COMMAND" || -f "$COMMAND.cmd" ]]; then

@@ -4,8 +4,8 @@
 
 import chalk from "chalk";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
-import { dirname, join } from "path";
-import { CONFIG_DIR_NAME, getAgentDir, getBinDir } from "./config.ts";
+import { dirname, join, resolve } from "path";
+import { CONFIG_DIR_NAME, getAgentDir, getBinDir, USER_CONFIG_DIR_NAME } from "./config.ts";
 import { migrateKeybindingsConfig } from "./core/keybindings.ts";
 
 const MIGRATION_GUIDE_URL =
@@ -338,6 +338,62 @@ function migrateOneConfigDir(oldDir: string, newDir: string, label: string): boo
 }
 
 /**
+ * Move user-scope config data from the legacy flat root `~/.a-coder-cli` to
+ * `~/.a-coder/cli` (the shared A-Coder root, product-nested: IDE → `ide/`,
+ * CLI → `cli/`, desktop → `desktop/`).
+ *
+ * - If the new root doesn't exist yet, the old dir is renamed wholesale.
+ * - If both exist (e.g. the desktop bootstrap already installed the engine
+ *   into `~/.a-coder/cli/lib`), entries are moved individually without
+ *   overwriting anything already in place.
+ *
+ * Non-destructive and idempotent: entries that already exist at the target
+ * are skipped, and a fully-drained old dir is removed if empty.
+ */
+function migrateUserConfigRoot(home: string): void {
+	if (USER_CONFIG_DIR_NAME === CONFIG_DIR_NAME) return;
+	const oldDir = join(home, CONFIG_DIR_NAME);
+	const newDir = join(home, USER_CONFIG_DIR_NAME);
+	if (!existsSync(oldDir)) return;
+
+	if (!existsSync(newDir)) {
+		try {
+			mkdirSync(dirname(newDir), { recursive: true });
+			renameSync(oldDir, newDir);
+			console.log(chalk.green(`Migrated config dir ${oldDir} → ${newDir}`));
+		} catch {
+			// Fall through to per-entry migration on failure.
+		}
+		return;
+	}
+
+	let movedAny = false;
+	try {
+		for (const entry of readdirSync(oldDir)) {
+			const from = join(oldDir, entry);
+			const to = join(newDir, entry);
+			if (existsSync(to)) continue;
+			try {
+				renameSync(from, to);
+				movedAny = true;
+			} catch {
+				// Skip entries that can't be moved (permissions, locks, etc.).
+			}
+		}
+	} catch {
+		// Ignore readdir errors.
+	}
+	if (movedAny) {
+		console.log(chalk.green(`Migrated config dir ${oldDir} → ${newDir}`));
+	}
+	try {
+		rmSync(oldDir); // remove if now empty
+	} catch {
+		// Still has content — leave it alone.
+	}
+}
+
+/**
  * Migrate the legacy config directory `~/.a-coder` to `~/.a-coder-cli`.
  *
  * The config dir was renamed from `.a-coder` to `.a-coder-cli` to avoid
@@ -356,10 +412,17 @@ export function migrateConfigDir(cwd: string): void {
 
 	const home = process.env.HOME || process.env.USERPROFILE;
 	if (home) {
+		// Newest first: flat `~/.a-coder-cli` → nested `~/.a-coder/cli`.
+		migrateUserConfigRoot(home);
 		migrateOneConfigDir(join(home, ".a-coder", "agent"), getAgentDir(), "global");
 	}
 
-	if (cwd && cwd !== ".") {
+	// Legacy project-local `.a-coder` → `.a-coder-cli`. Skipped when the "project"
+	// is the home directory itself: there `~/.a-coder` is the shared product root
+	// (cli/, ide/, desktop/), not a legacy project config — renaming it would
+	// destroy the layout migrateUserConfigRoot just created.
+	const isHomeCwd = home !== undefined && resolve(cwd) === resolve(home);
+	if (cwd && cwd !== "." && !isHomeCwd) {
 		migrateOneConfigDir(join(cwd, ".a-coder"), join(cwd, ".a-coder-cli"), "project-local");
 	}
 }

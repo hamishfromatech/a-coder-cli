@@ -19,7 +19,7 @@ Themes are JSON files that define colors for the TUI.
 Pi loads themes from:
 
 - Built-in: `dark`, `light`
-- Global: `~/.a-coder-cli/agent/themes/*.json`
+- Global: `~/.a-coder/cli/agent/themes/*.json`
 - Project: `.a-coder-cli/themes/*.json` (only after the project is trusted)
 - Packages: `themes/` directories or `pi.themes` entries in `package.json`
 - Settings: `themes` array with files or directories
@@ -44,8 +44,8 @@ On first run, a-coder-cli detects your terminal background and defaults to `dark
 1. Create a theme file:
 
 ```bash
-mkdir -p ~/.a-coder-cli/agent/themes
-vim ~/.a-coder-cli/agent/themes/my-theme.json
+mkdir -p ~/.a-coder/cli/agent/themes
+vim ~/.a-coder/cli/agent/themes/my-theme.json
 ```
 
 2. Define the theme with all required colors (see [Color Tokens](#color-tokens)):

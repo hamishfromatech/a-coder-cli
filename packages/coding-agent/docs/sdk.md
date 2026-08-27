@@ -338,7 +338,7 @@ const { session } = await createAgentSession({
   cwd: process.cwd(), // default
   
   // Global config directory
-  agentDir: "~/.a-coder-cli/agent", // default (expands ~)
+  agentDir: "~/.a-coder/cli/agent", // default (expands ~)
 });
 ```
 
@@ -354,7 +354,7 @@ const { session } = await createAgentSession({
 `agentDir` is used by `DefaultResourceLoader` for:
 - Global extensions (`extensions/`)
 - Global skills:
-  - `skills/` under `agentDir` (for example `~/.a-coder-cli/agent/skills/`)
+  - `skills/` under `agentDir` (for example `~/.a-coder/cli/agent/skills/`)
   - `~/.agents/skills/`
 - Global prompts (`prompts/`)
 - Global context file (`AGENTS.md`)
@@ -444,7 +444,7 @@ API key resolution priority (handled by AuthStorage):
 ```typescript
 import { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 
-// Default: uses ~/.a-coder-cli/agent/auth.json and ~/.a-coder-cli/agent/models.json
+// Default: uses ~/.a-coder/cli/agent/auth.json and ~/.a-coder/cli/agent/models.json
 const authStorage = AuthStorage.create();
 const modelRegistry = ModelRegistry.create(authStorage);
 
@@ -582,7 +582,7 @@ If you pass `tools`, include each custom or extension tool name you want enabled
 
 ### Extensions
 
-Extensions are loaded by the `ResourceLoader`. `DefaultResourceLoader` discovers extensions from `~/.a-coder-cli/agent/extensions/`, `.a-coder-cli/extensions/`, and settings.json extension sources.
+Extensions are loaded by the `ResourceLoader`. `DefaultResourceLoader` discovers extensions from `~/.a-coder/cli/agent/extensions/`, `.a-coder-cli/extensions/`, and settings.json extension sources.
 
 ```typescript
 import { createAgentSession, DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
@@ -840,7 +840,7 @@ const { session } = await createAgentSession({
 **Project-specific settings:**
 
 Settings load from two locations and merge:
-1. Global: `~/.a-coder-cli/agent/settings.json`
+1. Global: `~/.a-coder/cli/agent/settings.json`
 2. Project: `<cwd>/.pi/settings.json`
 
 Project overrides global. Nested objects merge keys. Setters modify global settings by default.

@@ -5,7 +5,8 @@
 	"type": "module",
 	"piConfig": {
 		"name": "a-coder-cli",
-		"configDir": ".a-coder-cli"
+		"configDir": ".a-coder-cli",
+		"userConfigDir": ".a-coder/cli"
 	},
 	"bin": {
 		"a-coder-cli": "./dist/cli.js"

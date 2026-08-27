@@ -51,7 +51,7 @@ Access settings via the gear icon or `Cmd+,` / `Ctrl+,`:
 - **Thinking Level** — Set reasoning depth (off, minimal, low, medium, high)
 - **Theme** — Light or dark mode
 
-Custom providers configured in `~/.a-coder/agent/models.json` sync automatically with the desktop app.
+Custom providers configured in `~/.a-coder/cli/agent/models.json` sync automatically with the desktop app.
 
 ## Installation
 
@@ -102,9 +102,9 @@ If using a version manager (nvm, fnm, mise), ensure the Node.js installation wit
 **Problem:** Previous chat history doesn't appear when resuming.
 
 **Solution:**
-- Sessions are stored in `~/.a-coder/agent/sessions/`
+- Sessions are stored in `~/.a-coder/cli/agent/sessions/`
 - Use the project selector to navigate to the correct working directory
-- Check that sessions exist: `ls ~/.a-coder/agent/sessions/`
+- Check that sessions exist: `ls ~/.a-coder/cli/agent/sessions/`
 
 ### Authentication failures
 
@@ -113,7 +113,7 @@ If using a version manager (nvm, fnm, mise), ensure the Node.js installation wit
 **Solution:**
 - For API keys, set the environment variable before launching: `export ANTHROPIC_API_KEY=sk-ant-...`
 - For subscriptions, use `/login` in the chat to authenticate via OAuth
-- Check `~/.a-coder/agent/auth.json` for stored credentials
+- Check `~/.a-coder/cli/agent/auth.json` for stored credentials
 
 ### App crashes on startup
 

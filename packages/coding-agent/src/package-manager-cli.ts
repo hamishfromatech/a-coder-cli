@@ -729,7 +729,7 @@ export async function handlePackageCommand(
 						return true;
 					}
 					const installMethod = detectInstallMethod();
-					// The ~/.a-coder install layout (bun-compiled binary) is not managed by an
+					// The ~/.a-coder/cli install layout (bun-compiled binary) is not managed by an
 					// npm/pnpm/yarn/bun global package manager, so the in-process self-update
 					// cannot run `npm install -g`. Run the one-shot installer in place
 					// instead (curl install scripts are the source of truth for CLI updates).

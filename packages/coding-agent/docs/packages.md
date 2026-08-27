@@ -37,7 +37,7 @@ a-coder-cli update --extension npm:@foo/bar
 
 These commands manage packages and `a-coder-cli update` can update the CLI installation. To uninstall, see [Quickstart](quickstart.md#uninstall).
 
-By default, `install` and `remove` write to user settings (`~/.a-coder-cli/agent/settings.json`). Use `-l` to write to project settings (`.a-coder-cli/settings.json`) instead. Project settings can be shared with your team, and a-coder-cli installs any missing packages automatically on startup after the project is trusted.
+By default, `install` and `remove` write to user settings (`~/.a-coder/cli/agent/settings.json`). Use `-l` to write to project settings (`.a-coder-cli/settings.json`) instead. Project settings can be shared with your team, and a-coder-cli installs any missing packages automatically on startup after the project is trusted.
 
 To try a package without installing it, use `--extension` or `-e`. This installs to a temporary directory for the current run only:
 
@@ -58,7 +58,7 @@ npm:pkg
 ```
 
 - Versioned specs are pinned and skipped by package updates (`a-coder-cli update --extensions`, `a-coder-cli update --all`).
-- User installs go under `~/.a-coder-cli/agent/npm/`.
+- User installs go under `~/.a-coder/cli/agent/npm/`.
 - Project installs go under `.a-coder-cli/npm/`.
 - Set `npmCommand` in `settings.json` to pin npm package lookup and install operations to a specific wrapper command such as `mise` or `asdf`.
 
@@ -86,7 +86,7 @@ ssh://git@github.com/user/repo@v1
 - For non-interactive runs (for example CI), you can set `GIT_TERMINAL_PROMPT=0` to disable credential prompts and set `GIT_SSH_COMMAND` (for example `ssh -o BatchMode=yes -o ConnectTimeout=5`) to fail fast.
 - Refs are pinned tags or commits. `a-coder-cli update --extensions` and `a-coder-cli update --all` do not move them to newer refs, but they do reconcile an existing clone to the configured ref.
 - Use `a-coder-cli install git:host/user/repo@new-ref` to update settings and move an existing package to a new pinned ref.
-- Cloned to `~/.a-coder-cli/agent/git/<host>/<path>` (global) or `.a-coder-cli/git/<host>/<path>` (project).
+- Cloned to `~/.a-coder/cli/agent/git/<host>/<path>` (global) or `.a-coder-cli/git/<host>/<path>` (project).
 - When reconciliation changes the checkout, a-coder-cli resets and cleans the clone, then runs `npm install` if `package.json` exists.
 
 **SSH examples:**
@@ -214,7 +214,7 @@ Filter what a package loads using the object form in settings:
 
 ## Enable and Disable Resources
 
-Use `a-coder-cli config` to enable or disable extensions, skills, prompt templates, and themes from installed packages and local directories. Works for both global (`~/.a-coder-cli/agent`) and project (`.a-coder-cli/`) scopes.
+Use `a-coder-cli config` to enable or disable extensions, skills, prompt templates, and themes from installed packages and local directories. Works for both global (`~/.a-coder/cli/agent`) and project (`.a-coder-cli/`) scopes.
 
 ## Scope and Deduplication
 

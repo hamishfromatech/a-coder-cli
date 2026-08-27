@@ -72,7 +72,7 @@ Configure delivery in [Settings](settings.md) with `steeringMode` and `followUpM
 
 ## Sessions
 
-Sessions are saved automatically to `~/.a-coder-cli/agent/sessions/`, organized by working directory.
+Sessions are saved automatically to `~/.a-coder/cli/agent/sessions/`, organized by working directory.
 
 ```bash
 pi -c                  # Continue most recent session
@@ -97,7 +97,7 @@ See [Sessions](sessions.md) and [Compaction](compaction.md) for details.
 
 Pi loads `AGENTS.md` or `CLAUDE.md` at startup from:
 
-- `~/.a-coder-cli/agent/AGENTS.md` for global instructions
+- `~/.a-coder/cli/agent/AGENTS.md` for global instructions
 - parent directories, walking up from the current working directory
 - the current directory
 
@@ -108,23 +108,23 @@ Use context files for project conventions, commands, safety rules, and preferenc
 Replace the default system prompt with:
 
 - `.pi/SYSTEM.md` for a project
-- `~/.a-coder-cli/agent/SYSTEM.md` globally
+- `~/.a-coder/cli/agent/SYSTEM.md` globally
 
 Append to the default prompt without replacing it with `APPEND_SYSTEM.md` in either location.
 
 ### Project Trust
 
-On interactive startup, a-coder-cli asks before trusting a project folder that contains project-local settings, resources, or project `.agents/skills` and has no saved decision for the folder or a parent folder in `~/.a-coder-cli/agent/trust.json`. Trusting a project allows a-coder-cli to load `.pi/settings.json` and `.pi` resources, install missing project packages, and execute project extensions.
+On interactive startup, a-coder-cli asks before trusting a project folder that contains project-local settings, resources, or project `.agents/skills` and has no saved decision for the folder or a parent folder in `~/.a-coder/cli/agent/trust.json`. Trusting a project allows a-coder-cli to load `.pi/settings.json` and `.pi` resources, install missing project packages, and execute project extensions.
 
 Before the trust decision, a-coder-cli loads only context files, user/global extensions, and CLI `-e` extensions so they can handle the `project_trust` event. Project-local extensions, project package-managed extensions, and project settings are loaded only after the project is trusted. This split also applies when switching to a session from a different cwd whose trust has not been resolved in the current process.
 
 Non-interactive modes (`-p`, `--mode json`, and `--mode rpc`) do not show a trust prompt. Without an applicable saved trust decision, they use `defaultProjectTrust` from global settings: `ask` (default) and `never` ignore those project resources, while `always` trusts them. Pass `--approve`/`-a` or `--no-approve`/`-na` to override project trust for one run.
 
-If no extension or saved decision applies, `defaultProjectTrust` controls the fallback behavior. Set it to `"ask"`, `"always"`, or `"never"` in `~/.a-coder-cli/agent/settings.json`, or change it with `/settings`.
+If no extension or saved decision applies, `defaultProjectTrust` controls the fallback behavior. Set it to `"ask"`, `"always"`, or `"never"` in `~/.a-coder/cli/agent/settings.json`, or change it with `/settings`.
 
 `a-coder-cli config` and package commands use the same project trust flow, except `a-coder-cli update` never prompts. Pass `--approve` to trust project-local settings for one command or `--no-approve` to ignore them.
 
-Use `/trust` in interactive mode to save a project trust decision for future sessions, including trust for the immediate parent folder. It writes `~/.a-coder-cli/agent/trust.json` only; the current session is not reloaded, so restart a-coder-cli for changes to take effect.
+Use `/trust` in interactive mode to save a project trust decision for future sessions, including trust for the immediate parent folder. It writes `~/.a-coder/cli/agent/trust.json` only; the current session is not reloaded, so restart a-coder-cli for changes to take effect.
 
 
 ## Exporting and Sharing Sessions
@@ -290,7 +290,7 @@ a-coder-cli --exclude-tools ask_question
 
 | Variable | Description |
 |----------|-------------|
-| `A_CODER_CLI_CODING_AGENT_DIR` | Override config directory; default is `~/.a-coder-cli/agent` |
+| `A_CODER_CLI_CODING_AGENT_DIR` | Override config directory; default is `~/.a-coder/cli/agent` |
 | `A_CODER_CLI_CODING_AGENT_SESSION_DIR` | Override session storage directory; overridden by `--session-dir` |
 | `A_CODER_CLI_PACKAGE_DIR` | Override package directory, useful for Nix/Guix store paths |
 | `A_CODER_CLI_OFFLINE` | Disable startup network operations, including update checks, package update checks, and install/update telemetry |

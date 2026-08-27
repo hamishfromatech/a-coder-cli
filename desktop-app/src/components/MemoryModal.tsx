@@ -127,7 +127,7 @@ export function MemoryModal({ open, onClose }: MemoryModalProps) {
 							</span>
 						) : (
 							<span className="text-2xs text-pi-text-faint">
-								Stored in ~/.a-coder-cli/MEMORY.md
+								Stored in ~/.a-coder/cli/MEMORY.md
 							</span>
 						)}
 					</div>

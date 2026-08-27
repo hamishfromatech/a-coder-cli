@@ -6,8 +6,9 @@
  * app updates itself via its own Tauri updater), then re-execs the CLI so the
  * user lands on the new version without a manual restart.
  *
- * The installer extracts a fresh `~/.a-coder/lib/a-coder-cli` tree over the
- * running binary. On macOS/Linux the kernel keeps the old inode mapped for the
+ * The installer extracts a fresh `~/.a-coder/cli/lib/a-coder-cli` tree over
+ * the running binary (legacy installs live at `~/.a-coder/lib/a-coder-cli`;
+ * the installer refreshes the legacy `~/.a-coder/bin` shim to point here). On macOS/Linux the kernel keeps the old inode mapped for the
  * running process, so `rm -rf` + re-extract is safe. On Windows the running
  * `pi.exe` is locked, so `Install-A-Coder.ps1` renames it before copying (see
  * that script). In both cases the new binary is in place before we re-exec.

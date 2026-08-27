@@ -2,7 +2,7 @@
  * Disk-based loader for custom sub-agent definitions (`.md` + YAML frontmatter).
  *
  * Two scopes are scanned (project overrides user on name collision):
- *   1. user    — `~/.a-coder-cli/agent/agents/*.md`   (lower priority)
+ *   1. user    — `~/.a-coder/cli/agent/agents/*.md`   (lower priority)
  *   2. project  — `<cwd>/.a-coder-cli/agents/*.md`     (higher priority)
  *
  * Files with malformed frontmatter or missing required fields (`name`,
@@ -17,7 +17,7 @@ import { CONFIG_DIR_NAME, getAgentDir } from "../../config.ts";
 import { parseFrontmatter } from "../../utils/frontmatter.ts";
 import type { AgentDefinition, AgentIsolation, AgentPermissionMode, AgentSource } from "./types.ts";
 
-/** `~/.a-coder-cli/agent/agents` */
+/** `~/.a-coder/cli/agent/agents` */
 export function getUserAgentsDir(): string {
 	return path.join(getAgentDir(), "agents");
 }

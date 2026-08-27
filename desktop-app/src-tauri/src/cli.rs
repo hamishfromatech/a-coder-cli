@@ -74,19 +74,24 @@ fn is_node_script(path: &Path) -> bool {
 }
 
 /// If `path` is a Windows batch shim that delegates to a release binary next
-/// to it (e.g. `~/.a-coder/bin/a-coder-cli.cmd` -> `../lib/a-coder-cli/pi.exe`),
-/// return the binary path so the desktop can own the process directly.
+/// to it, return the binary path so the desktop can own the process directly.
+/// Handles both shim layouts: the product-nested one
+/// (`~/.a-coder/cli/bin/a-coder-cli.cmd` -> `../lib/a-coder-cli/pi.exe`) and
+/// the legacy one (`~/.a-coder/bin/a-coder-cli.cmd` ->
+/// `../cli/lib/a-coder-cli/pi.exe`).
 fn resolve_windows_release_binary(path: &Path) -> Option<PathBuf> {
 	let ext = path.extension()?.to_string_lossy().to_lowercase();
 	if ext != "cmd" && ext != "bat" {
 		return None;
 	}
 	let shim_dir = path.parent()?;
-	let candidate = shim_dir
-		.join("../lib/a-coder-cli")
-		.join(format!("pi{}", std::env::consts::EXE_SUFFIX));
-	if candidate.is_file() {
-		return Some(candidate);
+	for rel in ["../lib/a-coder-cli", "../cli/lib/a-coder-cli"] {
+		let candidate = shim_dir
+			.join(rel)
+			.join(format!("pi{}", std::env::consts::EXE_SUFFIX));
+		if candidate.is_file() {
+			return Some(candidate);
+		}
 	}
 	None
 }
@@ -170,21 +175,29 @@ pub fn resolve_cli_path(override_path: Option<String>) -> Result<PathBuf, String
     }
 
     // Prefer the unified-release Bun binary installed by the desktop bootstrap
-    // or the official installer. It lives at ~/.a-coder/lib/a-coder-cli/pi and
-    // does not depend on Node, so it is more reliable than PATH-resolved shims
+    // or the official installer. It lives at ~/.a-coder/cli/lib/a-coder-cli/pi
+    // (product-nested; older installs used ~/.a-coder/lib/a-coder-cli) and does
+    // not depend on Node, so it is more reliable than PATH-resolved shims
     // (e.g. the ~/.local/bin/a-coder-cli wrapper left by older installs).
     let suffix = std::env::consts::EXE_SUFFIX;
     if let Some(a_coder_dir) = a_coder_install_dir() {
-        let lib_bin = a_coder_dir
-            .join("lib")
-            .join("a-coder-cli")
-            .join(format!("pi{}", suffix));
-        if lib_bin.is_file() {
-            return Ok(lib_bin);
+        // Product-nested layout first, then the legacy flat layout.
+        let lib_dirs = [
+            a_coder_dir.join("cli").join("lib").join("a-coder-cli"),
+            a_coder_dir.join("lib").join("a-coder-cli"),
+        ];
+        for lib_dir in lib_dirs {
+            let lib_bin = lib_dir.join(format!("pi{}", suffix));
+            if lib_bin.is_file() {
+                return Ok(lib_bin);
+            }
         }
-        let shim_bin = a_coder_dir.join("bin").join(format!("a-coder-cli{}", suffix));
-        if shim_bin.is_file() {
-            return Ok(shim_bin);
+        let shim_dirs = [a_coder_dir.join("cli").join("bin"), a_coder_dir.join("bin")];
+        for shim_dir in shim_dirs {
+            let shim_bin = shim_dir.join(format!("a-coder-cli{}", suffix));
+            if shim_bin.is_file() {
+                return Ok(shim_bin);
+            }
         }
     }
 
@@ -267,6 +280,7 @@ pub fn reconstructed_path() -> String {
         "~/.config/npm/node_global/bin",
         "~/.local/bin",
         "~/.yarn/bin",
+        "~/.a-coder/cli/bin",
         "~/.a-coder/bin",
         "~/.config/yarn/global/node_modules/.bin",
         "/usr/local/lib/node_modules/.bin",
@@ -349,9 +363,10 @@ fn sibling_workspace_cli_path() -> Option<PathBuf> {
     Some(workspace_root.join("packages").join("coding-agent").join("dist").join("cli.js"))
 }
 
-/// The ~/.a-coder install dir used by install-a-coder.sh / Install-A-Coder.ps1
-/// and the desktop app's own first-launch bootstrap. Returns None if the home
-/// dir can't be determined.
+/// The shared ~/.a-coder product root used by install-a-coder.sh /
+/// Install-A-Coder.ps1 and the desktop app's own first-launch bootstrap (the
+/// CLI itself nests under it at ~/.a-coder/cli). Returns None if the home dir
+/// can't be determined.
 fn a_coder_install_dir() -> Option<PathBuf> {
 	let home = (if cfg!(windows) {
 		std::env::var("USERPROFILE").ok()
@@ -483,6 +498,36 @@ mod tests {
 
         assert!(result.is_ok(), "{}", result.unwrap_err());
         assert_eq!(result.unwrap(), bootstrap_bin);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_resolve_cli_path_prefers_nested_layout() {
+        use std::env;
+        let dir = tempdir().expect("Failed to create temp dir");
+        let home = dir.path().join("home");
+        // Both layouts present: the product-nested one must win.
+        std::fs::create_dir_all(home.join(".a-coder/cli/lib/a-coder-cli"))
+            .expect("Failed to create nested dirs");
+        std::fs::create_dir_all(home.join(".a-coder/lib/a-coder-cli"))
+            .expect("Failed to create legacy dirs");
+
+        let nested_bin = home.join(".a-coder/cli/lib/a-coder-cli/pi");
+        let legacy_bin = home.join(".a-coder/lib/a-coder-cli/pi");
+        std::fs::write(&nested_bin, b"").expect("Failed to write nested binary");
+        std::fs::write(&legacy_bin, b"").expect("Failed to write legacy binary");
+
+        let previous_home = env::var("HOME").ok();
+        env::set_var("HOME", home.to_string_lossy().to_string());
+        let result = resolve_cli_path(None);
+        if let Some(prev) = previous_home {
+            env::set_var("HOME", prev);
+        } else {
+            env::remove_var("HOME");
+        }
+
+        assert!(result.is_ok(), "{}", result.unwrap_err());
+        assert_eq!(result.unwrap(), nested_bin);
     }
 
     #[test]

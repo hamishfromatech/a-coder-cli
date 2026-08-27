@@ -72,9 +72,7 @@ fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
 /// Defaults to true on macOS, false on other platforms.
 pub fn minimize_to_tray_enabled() -> bool {
     // Try to read from the CLI's settings.json.
-    let settings_path = crate::settings::home_dir()
-        .ok()
-        .map(|home| home.join(".a-coder-cli").join("agent").join("settings.json"));
+    let settings_path = crate::settings::global_settings_path().ok();
 
     if let Some(settings_path) = settings_path {
 

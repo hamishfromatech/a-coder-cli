@@ -4,7 +4,7 @@
  *
  * Ports easy-agent's TaskCreate/TaskGet/TaskList/TaskUpdate toolchain into
  * pi-mono. Unlike the session-scoped `todo` tool (which the model rewrites in
- * full every call), tasks persist to disk under ~/.a-coder-cli/tasks/<session>
+ * full every call), tasks persist to disk under ~/.a-coder/cli/tasks/<session>
  * with stable high-water-mark ids and a bidirectional blocks/blockedBy
  * dependency graph. `task_update` accepts status "deleted" as a pseudo-status
  * to delete a task and cascade reference cleanup. Every result snapshots the

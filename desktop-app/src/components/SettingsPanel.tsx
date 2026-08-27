@@ -764,7 +764,7 @@ function AdvancedJsonEditor({
 						rpc
 							.openInEditor(
 								scope === "global"
-									? "~/.a-coder-cli/agent/settings.json"
+									? "~/.a-coder/cli/agent/settings.json"
 									: "./.a-coder-cli/settings.json",
 							)
 							.catch(() => {})
@@ -780,7 +780,7 @@ function AdvancedJsonEditor({
 						rpc
 							.revealInFileManager(
 								scope === "global"
-									? "~/.a-coder-cli/agent/settings.json"
+									? "~/.a-coder/cli/agent/settings.json"
 									: "./.a-coder-cli/settings.json",
 							)
 							.catch(() => {})
