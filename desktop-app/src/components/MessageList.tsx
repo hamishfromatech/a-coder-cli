@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import * as rpc from "../lib/rpc";
 import { MarkdownTextContent } from "./markdown/MarkdownText";
+import { AskUserQuestionCard } from "./tool-renderers/AskUserQuestionCard";
 import { RichToolCall } from "./tool-renderers";
 
 /** Find the id of the tool call currently awaiting approval: the last tool call
@@ -409,17 +410,23 @@ function AssistantMessageItem({
 					</div>
 				)}
 
-				{toolCalls.map((toolCall, i) => (
-					<RichToolCall
-						key={i}
-						toolCall={toolCall}
-						approvalRequest={
-							approvalToolCallId && toolCall.id === approvalToolCallId
-								? approvalRequest
-								: undefined
-						}
-					/>
-				))}
+				{toolCalls.map((toolCall, i) =>
+					toolCall.name === "ask_user_question" ? (
+						// Structured questions render as an interactive inline card
+						// (hermes-style) instead of the generic collapsed tool row.
+						<AskUserQuestionCard key={i} toolCall={toolCall} />
+					) : (
+						<RichToolCall
+							key={i}
+							toolCall={toolCall}
+							approvalRequest={
+								approvalToolCallId && toolCall.id === approvalToolCallId
+									? approvalRequest
+									: undefined
+							}
+						/>
+					),
+				)}
 				{(message.stopReason === "error" || message.stopReason === "aborted") && message.errorMessage && (
 					<AssistantErrorBlock message={message.errorMessage} aborted={message.stopReason === "aborted"} />
 				)}

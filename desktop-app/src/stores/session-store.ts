@@ -28,6 +28,14 @@ export interface UiRequest {
 
 export type AnyModel = Model<Api>;
 
+/** Pending ask_user_question request (extension_ui_request method "question").
+ *  Rendered inline on the pending tool-call row (hermes-style question card);
+ *  null when no question is open for the active session. */
+export interface QuestionUiRequest {
+	id: string;
+	questions: import("../lib/rpc").UserQuestion[];
+}
+
 export interface ContextUsage {
 	tokens: number | null;
 	contextWindow: number;
@@ -104,6 +112,11 @@ export interface SessionState {
 	uiRequests: UiRequest[];
 	addUiRequest: (request: Omit<UiRequest, "resolve">) => Promise<{ confirmed?: boolean; value?: string; cancelled?: true }>;
 	resolveUiRequest: (id: string, response: { confirmed?: boolean; value?: string; cancelled?: true }) => void;
+
+	/** Active ask_user_question request for the currently-shown session. The
+	 *  inline AskUserQuestionCard on the pending tool row reads and resolves it. */
+	questionRequest: QuestionUiRequest | null;
+	setQuestionRequest: (request: QuestionUiRequest | null) => void;
 
 	// Inline approval anchor visibility. The inline tool-approval bar (rendered
 	// under the pending tool row) sets this true while it is on screen, so the
@@ -192,6 +205,7 @@ export const useSessionStore = create<SessionState>((set) => ({
 			abortRequested: false,
 			isCompacting: false,
 			error: null,
+			questionRequest: null,
 		}),
 	uiRequests: [],
 	approvalInlineVisible: false,
@@ -209,4 +223,6 @@ export const useSessionStore = create<SessionState>((set) => ({
 			request.resolve(response);
 			return { uiRequests: state.uiRequests.filter((r) => r.id !== id) };
 		}),
+	questionRequest: null,
+	setQuestionRequest: (questionRequest) => set({ questionRequest }),
 }));

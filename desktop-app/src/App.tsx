@@ -10,7 +10,7 @@ import { pickLoadingVerb } from "./lib/loading-verbs";
 import { getCachedSessionMessages, setCachedSessionMessages } from "./lib/session-cache";
 import { useRuntimeStatusStore } from "./stores/runtime-status-store";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { useSessionStore } from "./stores/session-store";
+import { useSessionStore, type QuestionUiRequest } from "./stores/session-store";
 import { useSettingsStore } from "./stores/settings-store";
 import { useWorkspaceStore } from "./stores/workspace-store";
 import { useSessionTreeStore } from "./stores/session-tree-store";
@@ -51,7 +51,6 @@ import { SidebarProjects } from "./components/SidebarProjects";
 import { StatusBar } from "./components/StatusBar";
 import { Titlebar } from "./components/Titlebar";
 import { SubagentPanel } from "./components/SubagentPanel";
-import { QuestionPrompt } from "./components/QuestionPrompt";
 import { TeammateViewer } from "./components/TeammateViewer";
 import { Toaster } from "./components/Toaster";
 import { UpdateModal } from "./components/UpdateModal";
@@ -120,17 +119,13 @@ export default function App() {
 	const [showApps, setShowApps] = useState(false);
 	const [showSubagents, setShowSubagents] = useState(false);
 	const [showTeams, setShowTeams] = useState(false);
-	const [questionRequest, setQuestionRequest] = useState<{
-		id: string;
-		questions: import("./lib/rpc").UserQuestion[];
-	} | null>(null);
 	// Session-scoped question dialogs (Phase 2): a question asked by a
 	// background session is parked under its session file and promoted when
 	// that session becomes active. The currently-shown question is stashed
-	// back when the user switches away.
-	const parkedQuestionsRef = useRef<Map<string, { id: string; questions: import("./lib/rpc").UserQuestion[] }>>(
-		new Map(),
-	);
+	// back when the user switches away. The active request lives in the
+	// session store so the inline AskUserQuestionCard on the pending tool row
+	// can read and resolve it (hermes-style inline card, not a modal).
+	const parkedQuestionsRef = useRef<Map<string, QuestionUiRequest>>(new Map());
 	const shownQuestionSessionRef = useRef<string | null | undefined>(undefined);
 	const [showHotkeys, setShowHotkeys] = useState(false);
 	const [showChangelog, setShowChangelog] = useState(false);
@@ -628,7 +623,7 @@ export default function App() {
 									// Background session — park it; promoted on activation.
 									parkedQuestionsRef.current.set(requestSession, { id: req.id, questions: q.questions });
 								} else {
-									setQuestionRequest({ id: req.id, questions: q.questions });
+									useSessionStore.getState().setQuestionRequest({ id: req.id, questions: q.questions });
 								}
 								break;
 							}
@@ -1004,10 +999,9 @@ export default function App() {
 	useEffect(() => {
 		const leavingSession = shownQuestionSessionRef.current;
 		if (leavingSession !== undefined && leavingSession !== sessionFile) {
-			setQuestionRequest((current) => {
-				if (current && leavingSession) parkedQuestionsRef.current.set(leavingSession, current);
-				return parkedQuestionsRef.current.get(sessionFile ?? "") ?? null;
-			});
+			const { questionRequest: current, setQuestionRequest } = useSessionStore.getState();
+			if (current && leavingSession) parkedQuestionsRef.current.set(leavingSession, current);
+			setQuestionRequest(parkedQuestionsRef.current.get(sessionFile ?? "") ?? null);
 		}
 		shownQuestionSessionRef.current = sessionFile;
 	}, [sessionFile]);
@@ -1278,29 +1272,6 @@ export default function App() {
 			<SubagentPanel open={showSubagents} onClose={() => setShowSubagents(false)} />
 		<AppsPanel open={showApps} onClose={() => setShowApps(false)} />
 			<TeammateViewer open={showTeams} onClose={() => setShowTeams(false)} />
-			{questionRequest && (
-				<QuestionPrompt
-					questions={questionRequest.questions}
-					onAnswer={(answers) => {
-						const id = questionRequest.id;
-						setQuestionRequest(null);
-						if (answers) {
-								void rpc.sendUiResponse({
-									type: "extension_ui_response",
-									id,
-									answers,
-								});
-							} else {
-								void rpc.sendUiResponse({
-									type: "extension_ui_response",
-									id,
-									cancelled: true as const,
-								});
-							}
-					}}
-				/>
-			)}
-
 			{trustPrompt && (
 				<TrustModal
 					cwd={trustPrompt}
