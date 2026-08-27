@@ -2,9 +2,9 @@
 
 ## [Unreleased]
 
-### Added
+### Changed
 
-- Added `Terminal.guardRawModeOnInput()` to re-assert raw input mode for a short window after a session replacement, both on each stdin event and on a polling interval. The polling catches TTY line-discipline resets that happen asynchronously after the one-shot `ensureRawMode()` call (e.g. when a child process torn down during `/resume` restores canonical mode on exit): in canonical mode the kernel line-buffers keystrokes and only delivers them on Enter, so an input-event-only guard never runs before Enter, which arrived as "\n" and inserted a newline instead of submitting. The poller re-asserts raw mode before the user presses Enter so messages and slash commands submit. Fixes `/resume` leaving the TUI input box unable to send.
+- Replaced the time-boxed `Terminal.guardRawModeOnInput()` guard with a raw-mode watchdog that runs for the lifetime of the TUI (`start()` to `stop()`). The TTY line-discipline resets that follow a session replacement can land 10-30s later — long after the previous 5-second guard expired — leaving Enter arriving as "\n" and the editor inserting newlines instead of submitting messages and slash commands. The watchdog re-asserts raw mode on a 100ms interval and toggles through cooked mode first, because libuv caches the mode and short-circuits repeated `setRawMode(true)` calls (`uv_tty_set_mode` returns early when the cached mode already matches), which made re-asserting alone ineffective after an external reset. `stop()` clears the watchdog so suspend (external editor, Ctrl+Z) can restore cooked mode.
 
 ## [0.80.26] - 2026-08-22
 

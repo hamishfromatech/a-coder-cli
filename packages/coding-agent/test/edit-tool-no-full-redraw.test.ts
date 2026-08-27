@@ -17,7 +17,6 @@ class FakeTerminal implements Terminal {
 	start(): void {}
 	stop(): void {}
 	ensureRawMode(): void {}
-	guardRawModeOnInput(_durationMs?: number): void {}
 	async drainInput(): Promise<void> {}
 	write(data: string): void {
 		this.writes.push(data);

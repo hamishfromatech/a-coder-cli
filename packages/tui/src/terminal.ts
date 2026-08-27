@@ -69,25 +69,6 @@ export interface Terminal {
 	ensureRawMode(): void;
 
 	/**
-	 * Arm a guard window during which raw input mode is re-asserted, both on
-	 * every stdin data event and on a short polling interval.
-	 *
-	 * A child process spawned during a session replacement (e.g. by an
-	 * extension hook or tool) can reset the TTY line discipline. If it does so
-	 * asynchronously — after the one-shot `ensureRawMode()` call, e.g. when an
-	 * old MCP server or extension child is torn down and restores canonical
-	 * (cooked) mode on exit — the terminal can be left line-buffering
-	 * keystrokes. In canonical mode the kernel only delivers input to Node on
-	 * Enter, so an input-event-only guard never runs before the Enter that
-	 * delivers "text\n": Enter arrives as "\n" and inserts a newline instead of
-	 * submitting. The polling re-assertion recovers such async resets before
-	 * the user presses Enter, regardless of whether keystrokes have arrived.
-	 *
-	 * @param durationMs How long to keep re-asserting (default: 5000).
-	 */
-	guardRawModeOnInput(durationMs?: number): void;
-
-	/**
 	 * Drain stdin before exiting to prevent Kitty key release events from
 	 * leaking to the parent shell over slow SSH connections.
 	 * @param maxMs - Maximum time to drain (default: 1000ms)
@@ -195,6 +176,8 @@ export class ProcessTerminal implements Terminal {
 		// Query Kitty keyboard protocol and fall back to modifyOtherKeys when DA confirms no Kitty response.
 		// See: https://sw.kovidgoyal.net/kitty/keyboard-protocol/
 		this.queryAndEnableKittyProtocol();
+
+		this.startRawModeWatchdog();
 	}
 
 	ensureRawMode(): void {
@@ -206,34 +189,43 @@ export class ProcessTerminal implements Terminal {
 		process.stdout.write("\x1b[?2004h");
 	}
 
-	private rawModeGuardUntil = 0;
-	private rawModeGuardInterval: ReturnType<typeof setInterval> | undefined;
+	private rawModeWatchdogInterval: ReturnType<typeof setInterval> | undefined;
 
-	guardRawModeOnInput(durationMs = 5000): void {
-		this.rawModeGuardUntil = Date.now() + durationMs;
-		// A child that resets the TTY line discipline AFTER the one-shot
-		// ensureRawMode() call can leave the terminal in canonical (cooked) mode.
-		// In canonical mode the kernel line-buffers keystrokes and only delivers
-		// them to Node on Enter, so the input-event re-assertion below never runs
-		// before the Enter that delivers "text\n" — Enter arrives as "\n" and
-		// inserts a newline instead of submitting. Re-assert raw mode on a short
-		// polling interval for the guard window so async child-exit resets are
-		// recovered before the user presses Enter, regardless of keystrokes.
-		if (this.rawModeGuardInterval) clearInterval(this.rawModeGuardInterval);
-		this.rawModeGuardInterval = setInterval(() => {
-			if (Date.now() >= this.rawModeGuardUntil) {
-				if (this.rawModeGuardInterval) {
-					clearInterval(this.rawModeGuardInterval);
-					this.rawModeGuardInterval = undefined;
-				}
-				return;
-			}
-			// Only re-assert raw mode here (not bracketed paste) to avoid
-			// spamming stdout with escape sequences 10x/sec.
-			if (process.stdin.setRawMode) {
-				process.stdin.setRawMode(true);
-			}
+	/**
+	 * While the TUI owns the terminal, keep stdin in raw mode.
+	 *
+	 * Child processes spawned by the app (MCP servers, extension hooks, tool
+	 * subprocesses) can reset the TTY line discipline on the shared terminal —
+	 * asynchronously, and long after they are spawned (observed 10-30s after a
+	 * session replacement). In canonical (cooked) mode the kernel line-buffers
+	 * keystrokes and only delivers them to Node on Enter, so Enter arrives as
+	 * "\n" and the editor inserts a newline instead of submitting. A time-boxed
+	 * guard window is not enough: once it expires, any later reset is permanent.
+	 *
+	 * Node's `stdin.isRaw` only reflects our last setRawMode call, not the
+	 * kernel state, so the watchdog re-asserts raw mode unconditionally on a
+	 * short interval. `stop()` clears it so suspend (external editor, Ctrl+Z)
+	 * can restore cooked mode without a fight.
+	 */
+	private startRawModeWatchdog(): void {
+		this.stopRawModeWatchdog();
+		this.rawModeWatchdogInterval = setInterval(() => {
+			if (!process.stdin.setRawMode) return;
+			// libuv caches the current mode and short-circuits repeated
+			// setRawMode(true) calls (uv_tty_set_mode returns early when
+			// tty->mode already matches), so a kernel reset by an external
+			// process is only repaired by first restoring the saved cooked
+			// settings and then re-applying raw mode.
+			process.stdin.setRawMode(false);
+			process.stdin.setRawMode(true);
 		}, 100);
+	}
+
+	private stopRawModeWatchdog(): void {
+		if (this.rawModeWatchdogInterval) {
+			clearInterval(this.rawModeWatchdogInterval);
+			this.rawModeWatchdogInterval = undefined;
+		}
 	}
 
 	/**
@@ -270,14 +262,6 @@ export class ProcessTerminal implements Terminal {
 
 		// Handler that pipes stdin data through the buffer
 		this.stdinDataHandler = (data: string) => {
-			// During a guard window armed after a session replacement, re-assert
-			// raw mode on each input event. A child process may reset the TTY line
-			// discipline after the one-shot ensureRawMode() call; re-asserting on
-			// the user's own keystrokes (which precede Enter) restores "\r" for
-			// Enter so it submits instead of inserting a newline.
-			if (Date.now() < this.rawModeGuardUntil && process.stdin.setRawMode) {
-				process.stdin.setRawMode(true);
-			}
 			this.stdinBuffer!.process(data);
 		};
 	}
@@ -501,12 +485,9 @@ export class ProcessTerminal implements Terminal {
 		}
 		this.disableModifyOtherKeys();
 
-		// Stop the raw-mode guard poller so it doesn't outlive the terminal.
-		if (this.rawModeGuardInterval) {
-			clearInterval(this.rawModeGuardInterval);
-			this.rawModeGuardInterval = undefined;
-		}
-		this.rawModeGuardUntil = 0;
+		// Stop the raw-mode watchdog so suspend (external editor, Ctrl+Z) can
+		// restore cooked mode, and so the poller doesn't outlive the terminal.
+		this.stopRawModeWatchdog();
 
 		// Clean up StdinBuffer
 		if (this.stdinBuffer) {

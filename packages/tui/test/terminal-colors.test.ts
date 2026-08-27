@@ -32,8 +32,6 @@ class TestTerminal implements Terminal {
 
 	ensureRawMode(): void {}
 
-	guardRawModeOnInput(_durationMs?: number): void {}
-
 	async drainInput(_maxMs?: number, _idleMs?: number): Promise<void> {}
 
 	write(data: string): void {

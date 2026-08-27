@@ -44,10 +44,6 @@ export class VirtualTerminal implements Terminal {
 		// No-op for virtual terminal - no real TTY to re-assert
 	}
 
-	guardRawModeOnInput(_durationMs?: number): void {
-		// No-op for virtual terminal - no real TTY to re-assert
-	}
-
 	stop(): void {
 		// Disable bracketed paste mode
 		this.xterm.write("\x1b[?2004l");
