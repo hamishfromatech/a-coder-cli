@@ -193,9 +193,12 @@ describe("AgentSessionRuntime characterization", () => {
 		expect(runtime.session).not.toBe(originalSession);
 		expect(runtime.session.messages).toEqual([]);
 		const secondSessionFile = runtime.session.sessionFile;
+		// Phase 2 keep-alive: the previous session detaches to the background
+		// registry (re-attachable) instead of being torn down, so NO
+		// session_shutdown fires at switch time. It fires when the detached
+		// runtime is reaped or explicitly discarded.
 		expect(events).toEqual([
 			{ type: "session_before_switch", reason: "new", targetSessionFile: undefined },
-			{ type: "session_shutdown", reason: "new", targetSessionFile: secondSessionFile },
 			{ type: "session_start", reason: "new", previousSessionFile: originalSessionFile },
 		]);
 
@@ -204,10 +207,23 @@ describe("AgentSessionRuntime characterization", () => {
 		const switchResult = await runtime.switchSession(originalSessionFile!);
 		expect(switchResult.cancelled).toBe(false);
 		await runtime.session.bindExtensions({});
+		// Same keep-alive semantics on resume: the second session detaches alive.
 		expect(events).toEqual([
 			{ type: "session_before_switch", reason: "resume", targetSessionFile: originalSessionFile },
-			{ type: "session_shutdown", reason: "resume", targetSessionFile: originalSessionFile },
 			{ type: "session_start", reason: "resume", previousSessionFile: secondSessionFile },
+		]);
+
+		events.length = 0;
+
+		// Extension-initiated replacements discard the previous runtime: shutdown
+		// fires (with the target file) before the replacement session starts.
+		const discardResult = await runtime.newSession({ discardPrevious: true });
+		expect(discardResult.cancelled).toBe(false);
+		await runtime.session.bindExtensions({});
+		expect(events).toEqual([
+			{ type: "session_before_switch", reason: "new", targetSessionFile: undefined },
+			{ type: "session_shutdown", reason: "new", targetSessionFile: runtime.session.sessionFile },
+			{ type: "session_start", reason: "new", previousSessionFile: originalSessionFile },
 		]);
 	});
 

@@ -5050,7 +5050,7 @@ export class InteractiveMode {
 						if (action.kind === "add") {
 							const rule = await this.showExtensionInput(
 								`Add ${action.category} rule`,
-								"e.g. bash, edit, write, mcp__server:*, $defaults",
+								"e.g. bash, edit, write, mcp__server__*, $defaults",
 							);
 							const value = rule?.trim();
 							if (value) {

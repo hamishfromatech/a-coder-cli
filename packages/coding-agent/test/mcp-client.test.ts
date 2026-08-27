@@ -4,7 +4,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { McpClient, type McpDiscoveredTool } from "../src/core/mcp/client.ts";
-import { formatMcpResult } from "../src/core/mcp/inline-extension.ts";
+import { firstClassToolName, formatMcpResult, MAX_FIRST_CLASS_TOOLS } from "../src/core/mcp/inline-extension.ts";
 import type { McpServerConfig } from "../src/core/mcp/types.ts";
 
 const config: McpServerConfig = { name: "test", transport: "stdio", commandOrUrl: "unused" };
@@ -218,5 +218,26 @@ describe("tool mapping", () => {
 			inputSchema: { type: "object", properties: { q: { type: "string" } }, required: ["q"] },
 		});
 		await mc.close();
+	});
+});
+
+describe("firstClassToolName", () => {
+	it("builds mcp__server__tool names", () => {
+		expect(firstClassToolName("chrome-devtools", "navigate_page")).toBe("mcp__chrome-devtools__navigate_page");
+	});
+
+	it("sanitizes characters providers reject", () => {
+		expect(firstClassToolName("my server", "tool.variant")).toBe("mcp__my_server__tool_variant");
+		expect(firstClassToolName("srv", "")).toBe("mcp__srv__tool");
+	});
+
+	it("caps the composite name at 128 chars", () => {
+		const name = firstClassToolName("s", "x".repeat(200));
+		expect(name.length).toBe(128);
+		expect(name.startsWith("mcp__s__")).toBe(true);
+	});
+
+	it("cap constant keeps aggregator servers on the stub path", () => {
+		expect(MAX_FIRST_CLASS_TOOLS).toBeGreaterThan(0);
 	});
 });
