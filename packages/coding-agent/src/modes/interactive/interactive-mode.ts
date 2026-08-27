@@ -1717,7 +1717,7 @@ export class InteractiveMode {
 				newSession: async (options) => {
 					this.clearStatusIndicator();
 					try {
-						return await this.runtimeHost.newSession(options);
+						return await this.runtimeHost.newSession({ ...options, discardPrevious: true });
 					} catch (error: unknown) {
 						return this.handleFatalRuntimeError("Failed to create session", error);
 					}
@@ -1755,7 +1755,7 @@ export class InteractiveMode {
 					return { cancelled: false };
 				},
 				switchSession: async (sessionPath, options) => {
-					return this.handleResumeSession(sessionPath, options);
+					return this.handleResumeSession(sessionPath, { ...options, discardPrevious: true });
 				},
 				reload: async () => {
 					await this.handleReloadCommand();

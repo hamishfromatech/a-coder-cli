@@ -119,9 +119,11 @@ describe("AgentSessionRuntime session lifecycle events", () => {
 		expect(newSessionResult.cancelled).toBe(false);
 		await runtimeHost.session.bindExtensions({});
 		const secondSessionFile = runtimeHost.session.sessionFile;
+		// Phase 2/3 keep-alive: switching away keeps the previous runtime live
+		// (detached) instead of emitting session_shutdown — the shutdown fires
+		// when the idle reaper reaps it. before_switch + session_start only.
 		expect(events).toEqual([
 			{ type: "session_before_switch", reason: "new", targetSessionFile: undefined },
-			{ type: "session_shutdown", reason: "new", targetSessionFile: secondSessionFile },
 			{ type: "session_start", reason: "new", previousSessionFile: originalSessionFile },
 		]);
 
@@ -130,10 +132,10 @@ describe("AgentSessionRuntime session lifecycle events", () => {
 
 		const switchResult = await runtimeHost.switchSession(originalSessionFile!);
 		expect(switchResult.cancelled).toBe(false);
+		expect(switchResult.reattached).toBe(true);
 		await runtimeHost.session.bindExtensions({});
 		expect(events).toEqual([
 			{ type: "session_before_switch", reason: "resume", targetSessionFile: originalSessionFile },
-			{ type: "session_shutdown", reason: "resume", targetSessionFile: originalSessionFile },
 			{ type: "session_start", reason: "resume", previousSessionFile: secondSessionFile },
 		]);
 	});
@@ -162,7 +164,7 @@ describe("AgentSessionRuntime session lifecycle events", () => {
 		expect(events).toEqual([{ type: "session_before_switch", reason: "new", targetSessionFile: undefined }]);
 	});
 
-	it("runs beforeSessionInvalidate after session_shutdown and before rebindSession", async () => {
+	it("runs beforeSessionInvalidate before rebindSession and keeps the detached ctx valid", async () => {
 		const phases: string[] = [];
 		const { runtimeHost } = await createRuntimeHost((pi) => {
 			pi.on("session_shutdown", () => {
@@ -180,10 +182,11 @@ describe("AgentSessionRuntime session lifecycle events", () => {
 
 		await runtimeHost.newSession();
 
-		expect(phases).toEqual(["session_shutdown", "beforeSessionInvalidate", "rebindSession"]);
-		expect(() => oldSession.extensionRunner.createContext().cwd).toThrow(
-			"This extension ctx is stale after session replacement or reload. Do not use a captured extension or command ctx after ctx.newSession(), ctx.fork(), ctx.switchSession(), or ctx.reload(). For newSession, fork, and switchSession, move post-replacement work into withSession and use the ctx passed to withSession. For reload, do not use the old ctx after await ctx.reload().",
-		);
+		// Phase 2/3 keep-alive: no session_shutdown at switch — the detached
+		// runtime stays live and its extension ctx remains valid until the
+		// idle reaper (or host dispose) reaps it.
+		expect(phases).toEqual(["beforeSessionInvalidate", "rebindSession"]);
+		expect(oldSession.extensionRunner.createContext().cwd).toBe(oldSession.sessionManager.getCwd());
 		runtimeHost.setBeforeSessionInvalidate(undefined);
 		runtimeHost.setRebindSession(undefined);
 	});

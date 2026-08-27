@@ -106,7 +106,7 @@ describe("regression #2860: replaced session callbacks", () => {
 			await session.bindExtensions({
 				commandContextActions: {
 					waitForIdle: () => session.agent.waitForIdle(),
-					newSession: async (options) => runtime.newSession(options),
+					newSession: async (options) => runtime.newSession({ ...options, discardPrevious: true }),
 					fork: async (entryId, options) => {
 						const result = await runtime.fork(entryId, options);
 						return { cancelled: result.cancelled };
@@ -120,7 +120,8 @@ describe("regression #2860: replaced session callbacks", () => {
 						});
 						return { cancelled: result.cancelled };
 					},
-					switchSession: async (sessionPath, options) => runtime.switchSession(sessionPath, options),
+					switchSession: async (sessionPath, options) =>
+						runtime.switchSession(sessionPath, { ...options, discardPrevious: true }),
 					reload: async () => {
 						await session.reload();
 					},

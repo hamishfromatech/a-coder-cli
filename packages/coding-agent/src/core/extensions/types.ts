@@ -491,7 +491,12 @@ export interface ExtensionCommandContext extends ExtensionContext {
 	/** Switch to a different session file. */
 	switchSession(
 		sessionPath: string,
-		options?: { withSession?: (ctx: ReplacedSessionContext) => Promise<void> },
+		options?: {
+			withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
+			/** Engine-internal: extension-initiated switches discard the previous
+			 *  runtime so the captured ctx goes stale (#2860 contract). */
+			discardPrevious?: boolean;
+		},
 	): Promise<{ cancelled: boolean }>;
 
 	/** Reload extensions, skills, prompts, and themes. */

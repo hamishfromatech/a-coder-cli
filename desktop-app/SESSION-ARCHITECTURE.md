@@ -2,7 +2,7 @@
 
 Where desktop session switching is today, where it is going, and the phased plan to get there. Written after porting the immediate switching fixes (warm transcript cache, stale-switch guard, mid-stream tab switching, per-session drafts) and studying how hermes-agent's desktop (`~/Downloads/Code/A-Coder/hermes-agent/apps/desktop`) handles the same problem.
 
-**Status:** Phase 1 (runtime registry + detaching turns) is implemented in the engine (`packages/coding-agent/src/core/agent-session-runtime.ts`) with the `get_sessions_status` / `abort_session` RPC commands and the `sessions_update` event; the desktop badges background running/finished states on session tabs (`src/stores/runtime-status-store.ts`) and shows a notification orb in the sidebar rail when a background session needs input (amber) or finished while away (green). Phase 2 is implemented on top of it: idle keep-alive (settled detached runtimes stay live ~30min, bounded at 4, `setDetachedIdleTimeoutMs` override), session-scoped UI-request routing (`extension_ui_request` tagged with `sessionFile`; the desktop queues requests per session and only shows them for the active session), session-scoped commands (`prompt`/`steer`/`follow_up`/`abort` accept `sessionPath`), and `switch_session` responses carrying `reattached` + a runtime snapshot for in-flight turn adoption. Not yet implemented: split view / tiles, and Phase 3 multi-project.
+**Status:** Phase 1 (runtime registry + detaching turns) is implemented in the engine (`packages/coding-agent/src/core/agent-session-runtime.ts`) with the `get_sessions_status` / `abort_session` RPC commands and the `sessions_update` event; the desktop badges background running/finished states on session tabs (`src/stores/runtime-status-store.ts`) and shows a notification orb in the sidebar rail when a background session needs input (amber) or finished while away (green). Phase 2 is implemented on top of it: idle keep-alive (settled detached runtimes stay live ~30min, bounded at 4, `setDetachedIdleTimeoutMs` override), session-scoped UI-request routing (`extension_ui_request` tagged with `sessionFile`; the desktop queues requests per session and only shows them for the active session), session-scoped commands (`prompt`/`steer`/`follow_up`/`abort` accept `sessionPath`), and `switch_session` responses carrying `reattached` + a runtime snapshot for in-flight turn adoption. Not yet implemented: split view / tiles, and Phase 3 multi-project (per-session cwd) implemented.
 
 | Shipped (this round) | File |
 |---|---|
@@ -67,14 +67,14 @@ With the registry in place, this is lifecycle + plumbing rather than a rewrite:
 4. **Extension event scoping**: `session_start`/`session_shutdown`/`before_switch` fire for background attach/detach too; extension dialogs route by session.
 5. **Desktop**: project-grouped sidebar with live sessions across projects; optional split view / tiles; runtimeId↔session mapping validated against recycled ids.
 
-## Phase 3 (optional, later) — multiple projects in one engine
+## Phase 3 — multiple projects in one engine (implemented)
 
-Today each runtime inherits the engine's cwd; a project switch spawns a new engine process. True multi-project either:
+**Decision: per-session cwd in one engine** (not engine-per-project pooling). The registry is cwd-agnostic — each runtime carries its own cwd-bound services created from the session's recorded cwd — so project switching becomes a session switch: no engine restart, and all Phase 1/2 behavior (warm cache, background turns, badges, orb) works across projects automatically.
 
-- **One engine per project**, pooled desktop-side (hermes's model — simplest, most isolated), or
-- **Per-session cwd in the engine** (one engine hosts sessions across projects).
-
-Phases 1–2 do not block either path; this decision can wait until Phase 2 lands.
+- `newSession({ cwd })` / `new_session { cwd }`: start a session in another project (session lands in that project's session dir; runtime services are created for that cwd).
+- Desktop `switchProject`: resumes the project's most recent session, or starts a new one — no `disconnect`/`connectEngine` restart. Trust check still runs per project.
+- Tabs span projects; each project's previous session detaches and stays live (idle reaper applies).
+- Extension contract preserved: extension-initiated replacements (`ctx.newSession()`/`ctx.switchSession()`/`ctx.fork()`) pass `discardPrevious` so the previous runtime is disposed and captured ctx goes stale (#2860); user-driven switches keep it in the background registry.
 
 ## Decisions and risks
 

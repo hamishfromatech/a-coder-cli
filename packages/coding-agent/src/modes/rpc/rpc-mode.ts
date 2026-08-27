@@ -364,7 +364,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			mode: "rpc",
 			commandContextActions: {
 				waitForIdle: () => session.agent.waitForIdle(),
-				newSession: async (options) => runtimeHost.newSession(options),
+				newSession: async (options) => runtimeHost.newSession({ ...options, discardPrevious: true }),
 				fork: async (entryId, forkOptions) => {
 					const result = await runtimeHost.fork(entryId, forkOptions);
 					return { cancelled: result.cancelled };
@@ -379,7 +379,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					return { cancelled: result.cancelled };
 				},
 				switchSession: async (sessionPath, options) => {
-					return runtimeHost.switchSession(sessionPath, options);
+					return runtimeHost.switchSession(sessionPath, { ...options, discardPrevious: true });
 				},
 				reload: async () => {
 					await session.reload();
@@ -538,8 +538,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "new_session": {
-				const options = command.parentSession ? { parentSession: command.parentSession } : undefined;
-				const result = await runtimeHost.newSession(options);
+				const options = {
+					parentSession: command.parentSession,
+					cwd: command.cwd,
+				};
+				const result = await runtimeHost.newSession(options.parentSession || options.cwd ? options : undefined);
 				if (!result.cancelled) {
 					await rebindSession();
 				}

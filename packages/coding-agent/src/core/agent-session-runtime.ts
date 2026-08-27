@@ -12,7 +12,7 @@ import type {
 import { emitSessionShutdownEvent } from "./extensions/runner.ts";
 import type { CreateAgentSessionResult } from "./sdk.ts";
 import { assertSessionCwdExists } from "./session-cwd.ts";
-import { SessionManager } from "./session-manager.ts";
+import { getDefaultSessionDir, SessionManager } from "./session-manager.ts";
 
 /**
  * Result returned by runtime creation.
@@ -294,20 +294,25 @@ export class AgentSessionRuntime {
 	}
 
 	/**
-	 * Detach the current runtime when it is mid-turn, otherwise tear it down
-	 * as usual. Used by `switchSession` so switching away from a running turn
-	 * no longer aborts it.
+	 * Move the current runtime into the detached registry instead of tearing
+	 * it down. Phase 2/3 keep-alive: EVERY session the user switches away from
+	 * stays live (bounded by MAX_DETACHED_RUNTIMES + the idle reaper), so
+	 * switching back is a pure re-attach — for a session that was mid-turn,
+	 * idle, or hosted in another project. The only exception is a replacement
+	 * that targets the SAME session file (e.g. /clear rewrites it in place):
+	 * the detached writer would race the rewritten file.
 	 */
 	private async detachOrTeardownCurrent(
 		reason: SessionShutdownEvent["reason"],
 		targetSessionFile?: string,
+		options?: { discardPrevious?: boolean },
 	): Promise<void> {
-		const busy = this.session.isStreaming || this.session.isCompacting;
-		// Never detach when the replacement targets the SAME session file (e.g.
-		// /clear rewrites it in place): the detached writer would race the
-		// rewritten file. Only a switch to a different session detaches.
+		// Extension-initiated replacements discard the previous session: the
+		// documented ctx contract is that a captured ctx goes stale after
+		// ctx.newSession()/ctx.switchSession()/ctx.fork() (#2860), so extensions
+		// never observe a live background session they did not opt into.
 		const sameFile = targetSessionFile !== undefined && this.session.sessionFile === targetSessionFile;
-		if (busy && !sameFile) {
+		if (!sameFile && !options?.discardPrevious) {
 			this.detachCurrent();
 			return;
 		}
@@ -486,12 +491,15 @@ export class AgentSessionRuntime {
 		return true;
 	}
 
-	private async finishSessionReplacement(withSession?: (ctx: ReplacedSessionContext) => Promise<void>): Promise<void> {
+	private async finishSessionReplacement(
+		withSession?: (ctx: ReplacedSessionContext) => Promise<void>,
+		startEvent?: SessionStartEvent,
+	): Promise<void> {
 		if (this.rebindSession) {
 			await this.rebindSession(this.session);
 		}
 		// Listeners are now re-attached; tell the UI the session context changed.
-		this.session.emitSessionStartEvent();
+		this.session.emitSessionStartEvent(startEvent);
 		if (withSession) {
 			await withSession(this.session.createReplacedSessionContext());
 		}
@@ -503,6 +511,9 @@ export class AgentSessionRuntime {
 			cwdOverride?: string;
 			withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
 			projectTrustContextFactory?: (cwd: string) => ProjectTrustContext;
+			/** Tear down (dispose + invalidate) the previous runtime instead of
+			 *  keeping it live in the background registry (extension ctx contract). */
+			discardPrevious?: boolean;
 		},
 	): Promise<{ cancelled: boolean; reattached?: boolean; snapshot?: ReattachSnapshot }> {
 		const beforeResult = await this.emitBeforeSwitch("resume", sessionPath);
@@ -524,10 +535,14 @@ export class AgentSessionRuntime {
 			detached.detachUnsubscribe?.();
 			detached.detachUnsubscribe = undefined;
 			detached.detachedAt = undefined;
-			await this.detachOrTeardownCurrent("resume", sessionPath);
+			await this.detachOrTeardownCurrent("resume", sessionPath, options);
 			this.current = detached;
 			this.emitRuntimesChanged();
-			await this.finishSessionReplacement(options?.withSession);
+			await this.finishSessionReplacement(options?.withSession, {
+				type: "session_start",
+				reason: "resume",
+				previousSessionFile,
+			});
 			return {
 				cancelled: false,
 				reattached: true,
@@ -541,7 +556,7 @@ export class AgentSessionRuntime {
 
 		const sessionManager = SessionManager.open(sessionPath, undefined, options?.cwdOverride);
 		assertSessionCwdExists(sessionManager, this.cwd);
-		await this.detachOrTeardownCurrent("resume", sessionManager.getSessionFile());
+		await this.detachOrTeardownCurrent("resume", sessionManager.getSessionFile(), options);
 		this.apply(
 			await this.createRuntime({
 				cwd: sessionManager.getCwd(),
@@ -557,6 +572,14 @@ export class AgentSessionRuntime {
 
 	async newSession(options?: {
 		parentSession?: string;
+		/** Start the new session in a different project (Phase 3 multi-project):
+		 *  the session lands in that project's session dir and the runtime is
+		 *  created with cwd-bound services for that project. */
+		cwd?: string;
+		/** Tear down (dispose + invalidate) the previous runtime instead of
+		 *  keeping it live in the background registry. Set by extension-initiated
+		 *  replacements to preserve the stale-ctx contract (#2860). */
+		discardPrevious?: boolean;
 		setup?: (sessionManager: SessionManager) => Promise<void>;
 		withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
 	}): Promise<{ cancelled: boolean }> {
@@ -566,18 +589,25 @@ export class AgentSessionRuntime {
 		}
 
 		const previousSessionFile = this.session.sessionFile;
-		const sessionDir = this.session.sessionManager.getSessionDir();
-		const sessionManager = this.session.sessionManager.isPersisted()
-			? SessionManager.create(this.cwd, sessionDir)
-			: SessionManager.inMemory(this.cwd);
+		const targetCwd = options?.cwd ? resolvePath(options.cwd) : this.cwd;
+		if (options?.cwd && !existsSync(targetCwd)) {
+			throw new Error(`Project directory does not exist: ${targetCwd}`);
+		}
+		const sessionDir = options?.cwd
+			? getDefaultSessionDir(targetCwd, this.services.agentDir)
+			: this.session.sessionManager.getSessionDir();
+		const sessionManager =
+			options?.cwd || this.session.sessionManager.isPersisted()
+				? SessionManager.create(targetCwd, sessionDir)
+				: SessionManager.inMemory(targetCwd);
 		if (options?.parentSession) {
 			sessionManager.newSession({ parentSession: options.parentSession });
 		}
 
-		await this.detachOrTeardownCurrent("new", sessionManager.getSessionFile());
+		await this.detachOrTeardownCurrent("new", sessionManager.getSessionFile(), options);
 		this.apply(
 			await this.createRuntime({
-				cwd: this.cwd,
+				cwd: targetCwd,
 				agentDir: this.services.agentDir,
 				sessionManager,
 				sessionStartEvent: { type: "session_start", reason: "new", previousSessionFile },

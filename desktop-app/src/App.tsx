@@ -222,7 +222,6 @@ export default function App() {
 	const { current: projectPath, setCurrent: setProjectPath } = useWorkspaceStore();
 	const { setTree } = useSessionTreeStore();
 	const openTab = useTabsStore((s) => s.openTab);
-	const clearTabs = useTabsStore((s) => s.clear);
 	const sessionFile = useSessionStore((s) => s.sessionFile);
 	const sessionName = useSessionStore((s) => s.sessionName);
 	const { setStats } = useStatsStore();
@@ -955,16 +954,36 @@ export default function App() {
 
 	// Switch to a different project: update the store, drop the engine + open
 	// session tabs (tabs are per-project), and reconnect against the new cwd.
+	// Phase 3 multi-project: switching projects no longer restarts the engine.
+	// The engine hosts runtimes for any cwd (its registry already carries
+	// per-runtime services), so a project switch is a session switch: resume
+	// that project's most recent session, or start a new session in it.
 	const switchProject = useCallback(
 		async (path: string) => {
+			if (path === projectPath) return;
 			setProjectPath(path);
-			unlistenRef.current?.();
-			unlistenRef.current = null;
-			clearTabs();
-			await rpc.disconnect().catch(() => {});
-			await connectEngine(path, { continueSession: true });
+			try {
+				const trusted = await rpc.getProjectTrust(path);
+				if (!trusted) setTrustPrompt(path);
+			} catch {
+				// trust check is best-effort
+			}
+			try {
+				const res = await rpc.listSessions();
+				const latest = (res.sessions ?? [])
+					.filter((s) => s.cwd === path)
+					.sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime())[0];
+				if (latest) {
+					pushCurrentToClosedTabs();
+					await rpc.switchSession(latest.path);
+				} else {
+					await rpc.newSession(undefined, path);
+				}
+			} catch (e) {
+				toast.error("Failed to switch project", e instanceof Error ? e.message : String(e));
+			}
 		},
-		[setProjectPath, clearTabs, connectEngine],
+		[setProjectPath, projectPath, pushCurrentToClosedTabs],
 	);
 	switchProjectRef.current = switchProject;
 

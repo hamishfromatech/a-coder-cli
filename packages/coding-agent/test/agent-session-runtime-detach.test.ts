@@ -156,11 +156,12 @@ describe("AgentSessionRuntime background (detached) sessions", () => {
 		expect(runtimeHost.session.sessionFile).toBe(sessionAFile);
 		expect(runtimeHost.session.isStreaming).toBe(true);
 
-		// The same live runtime is active again — one registry entry, no dupe.
+		// The same live runtime is active again — A re-attached; B stays in the
+		// registry (idle, keep-alive).
 		const statuses = runtimeHost.getSessionsStatus();
-		expect(statuses).toHaveLength(1);
-		expect(statuses[0]?.sessionFile).toBe(sessionAFile);
-		expect(statuses[0]?.running).toBe(true);
+		expect(statuses).toHaveLength(2);
+		expect(statuses.find((s) => s.sessionFile === sessionAFile)?.running).toBe(true);
+		expect(statuses.find((s) => s.active)?.sessionFile).toBe(sessionAFile);
 
 		// The turn still completes and lands in the re-attached session.
 		resolvers[0]?.("done");
@@ -230,6 +231,49 @@ describe("AgentSessionRuntime background (detached) sessions", () => {
 			const a = runtimeHost.getSessionsStatus().find((s) => s.sessionFile === sessionAFile);
 			expect(a?.running).toBe(false);
 		});
+	});
+
+	it("newSession({ cwd }) hosts a session from another project (Phase 3 multi-project)", async () => {
+		const runtimeHost = await createRuntimeHost();
+		const projectB = `${runtimeHost.services.cwd}-project-b`;
+		mkdirSync(projectB, { recursive: true });
+
+		// Start a turn on project A, then start a new session in project B.
+		void runtimeHost.session.prompt("hello from A");
+		await vi.waitFor(() => expect(runtimeHost.session.isStreaming).toBe(true));
+		const sessionAFile = runtimeHost.session.sessionFile!;
+
+		const result = await runtimeHost.newSession({ cwd: projectB });
+		expect(result.cancelled).toBe(false);
+
+		// The new runtime lives in project B: its cwd and session file follow
+		// the project's encoded session dir.
+		expect(runtimeHost.session.cwd).toBe(projectB);
+		expect(runtimeHost.session.sessionFile?.includes("--")).toBe(true);
+		expect(runtimeHost.session.sessionFile?.startsWith(projectB.replace(/^\//, ""))).toBe(false); // sanity
+		const sessionBFile = runtimeHost.session.sessionFile!;
+		expect(sessionBFile).not.toBe(sessionAFile);
+
+		// Project A's runtime is detached but still streaming.
+		const statuses = runtimeHost.getSessionsStatus();
+		expect(statuses).toHaveLength(2);
+		const statusA = statuses.find((s) => s.sessionFile === sessionAFile);
+		expect(statusA?.running).toBe(true);
+		expect(statusA?.active).toBe(false);
+		const statusB = statuses.find((s) => s.sessionFile === sessionBFile);
+		expect(statusB?.active).toBe(true);
+
+		// Finish A's turn, then switch back to project A's session.
+		resolvers[0]?.("done from A");
+		await vi.waitFor(() => {
+			expect(runtimeHost.getSessionsStatus().find((s) => s.sessionFile === sessionAFile)?.running).toBe(false);
+		});
+		await runtimeHost.switchSession(sessionAFile);
+		expect(runtimeHost.session.cwd).toBe(projectB.replace(/-project-b$/, ""));
+		expect(runtimeHost.session.sessionFile).toBe(sessionAFile);
+
+		// Project B's runtime detached idle and is still addressable.
+		expect(runtimeHost.getSessionForPath(sessionBFile)?.sessionFile).toBe(sessionBFile);
 	});
 
 	it("abortSession returns false for unknown session paths", async () => {

@@ -717,8 +717,14 @@ export class AgentSession {
 	}
 
 	/** Re-emit the stored session_start event to all listeners. Called after a
-	 *  session replacement once listeners have been re-attached. */
-	emitSessionStartEvent(): void {
+	 *  session replacement once listeners have been re-attached. An explicit
+	 *  event replaces the stored one first — used by runtime re-attachment,
+	 *  where the live runtime's original startup event must not be replayed
+	 *  (clients key on reason/previousSessionFile to refetch). */
+	emitSessionStartEvent(event?: SessionStartEvent): void {
+		if (event) {
+			this._sessionStartEvent = event;
+		}
 		this._emit(this._sessionStartEvent);
 	}
 
