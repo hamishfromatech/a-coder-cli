@@ -8,6 +8,7 @@
 import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { ImageContent, Model } from "@earendil-works/pi-ai";
 import type { SessionStats } from "../../core/agent-session.ts";
+import type { RuntimeSessionStatus } from "../../core/agent-session-runtime.ts";
 import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
 import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.ts";
@@ -20,10 +21,18 @@ import type { SourceInfo } from "../../core/source-info.ts";
 
 export type RpcCommand =
 	// Prompting
-	| { id?: string; type: "prompt"; message: string; images?: ImageContent[]; streamingBehavior?: "steer" | "followUp" }
-	| { id?: string; type: "steer"; message: string; images?: ImageContent[] }
-	| { id?: string; type: "follow_up"; message: string; images?: ImageContent[] }
-	| { id?: string; type: "abort" }
+	| {
+			id?: string;
+			type: "prompt";
+			message: string;
+			images?: ImageContent[];
+			streamingBehavior?: "steer" | "followUp";
+			/** Target a background (detached) session by file path. */
+			sessionPath?: string;
+	  }
+	| { id?: string; type: "steer"; message: string; images?: ImageContent[]; sessionPath?: string }
+	| { id?: string; type: "follow_up"; message: string; images?: ImageContent[]; sessionPath?: string }
+	| { id?: string; type: "abort"; sessionPath?: string }
 	| { id?: string; type: "new_session"; parentSession?: string }
 	| { id?: string; type: "clear_conversation" }
 
@@ -89,6 +98,10 @@ export type RpcCommand =
 
 	// File history
 	| { id?: string; type: "rewind"; steps?: number }
+
+	// Runtime registry (background sessions)
+	| { id?: string; type: "get_sessions_status" }
+	| { id?: string; type: "abort_session"; sessionPath: string }
 
 	// Composio apps gallery
 	| { id?: string; type: "composio_list_apps" }
@@ -234,7 +247,17 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "export_html"; success: true; data: { path: string } }
 	| { id?: string; type: "response"; command: "export_jsonl"; success: true; data: { path: string } }
 	| { id?: string; type: "response"; command: "import_jsonl"; success: true; data: { cancelled: boolean } }
-	| { id?: string; type: "response"; command: "switch_session"; success: true; data: { cancelled: boolean } }
+	| {
+			id?: string;
+			type: "response";
+			command: "switch_session";
+			success: true;
+			data: {
+				cancelled: boolean;
+				reattached?: boolean;
+				snapshot?: { running: boolean; needsInput: boolean; pendingMessageCount: number };
+			};
+	  }
 	| { id?: string; type: "response"; command: "fork"; success: true; data: { text: string; cancelled: boolean } }
 	| { id?: string; type: "response"; command: "clone"; success: true; data: { cancelled: boolean } }
 	| {
@@ -274,6 +297,16 @@ export type RpcResponse =
 	  }
 	| { id?: string; type: "response"; command: "set_session_name"; success: true }
 	| { id?: string; type: "response"; command: "set_entry_label"; success: true }
+
+	// Runtime registry (background sessions)
+	| {
+			id?: string;
+			type: "response";
+			command: "get_sessions_status";
+			success: true;
+			data: { sessions: RuntimeSessionStatus[] };
+	  }
+	| { id?: string; type: "response"; command: "abort_session"; success: true; data: { found: boolean } }
 
 	// Messages
 	| { id?: string; type: "response"; command: "get_messages"; success: true; data: { messages: AgentMessage[] } }
@@ -326,7 +359,14 @@ export type RpcExtensionUIRequest =
 			placeholder?: string;
 			timeout?: number;
 	  }
-	| { type: "extension_ui_request"; id: string; method: "editor"; title: string; prefill?: string }
+	| {
+			type: "extension_ui_request";
+			id: string;
+			method: "editor";
+			title: string;
+			prefill?: string;
+			sessionFile?: string;
+	  }
 	| {
 			type: "extension_ui_request";
 			id: string;
@@ -369,6 +409,18 @@ export interface RpcUserQuestion {
 	header: string;
 	options: Array<{ label: string; description?: string }>;
 	multiSelect?: boolean;
+}
+
+// ============================================================================
+// Runtime registry events (stdout)
+// ============================================================================
+
+/** Emitted whenever the runtime registry changes: a session detaches (switched
+ *  away mid-turn), a background turn starts/ends, or a background runtime is
+ *  reaped. Push a snapshot via the `get_sessions_status` response shape. */
+export interface RpcSessionsUpdateEvent {
+	type: "sessions_update";
+	sessions: RuntimeSessionStatus[];
 }
 
 // ============================================================================

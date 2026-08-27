@@ -91,8 +91,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	let shuttingDown = false;
 	const signalCleanupHandlers: Array<() => void> = [];
 
-	/** Helper for dialog methods with signal/timeout support */
+	/** Helper for dialog methods with signal/timeout support. `sessionFile` is
+	 *  the session whose bound UI context opened the dialog — used to flag that
+	 *  runtime as waiting for input (surfaced via sessions_update events). */
 	function createDialogPromise<T>(
+		sessionFile: string | undefined,
 		opts: ExtensionUIDialogOptions | undefined,
 		defaultValue: T,
 		request: Record<string, unknown>,
@@ -101,6 +104,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		if (opts?.signal?.aborted) return Promise.resolve(defaultValue);
 
 		const id = crypto.randomUUID();
+		runtimeHost.markSessionNeedsInput?.(sessionFile, true);
 		return new Promise((resolve, reject) => {
 			let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
@@ -108,6 +112,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				if (timeoutId) clearTimeout(timeoutId);
 				opts?.signal?.removeEventListener("abort", onAbort);
 				pendingExtensionRequests.delete(id);
+				runtimeHost.markSessionNeedsInput?.(sessionFile, false);
 			};
 
 			const onAbort = () => {
@@ -130,31 +135,44 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				},
 				reject,
 			});
-			output({ type: "extension_ui_request", id, ...request } as RpcExtensionUIRequest);
+			output({ type: "extension_ui_request", id, sessionFile, ...request } as RpcExtensionUIRequest);
 		});
 	}
 
 	/**
 	 * Create an extension UI context that uses the RPC protocol.
 	 */
-	const createExtensionUIContext = (): ExtensionUIContext => ({
+	const createExtensionUIContext = (sessionFile: string | undefined): ExtensionUIContext => ({
 		select: (title, options, opts) =>
-			createDialogPromise(opts, undefined, { method: "select", title, options, timeout: opts?.timeout }, (r) =>
-				"cancelled" in r && r.cancelled ? undefined : "value" in r ? r.value : undefined,
+			createDialogPromise(
+				sessionFile,
+				opts,
+				undefined,
+				{ method: "select", title, options, timeout: opts?.timeout },
+				(r) => ("cancelled" in r && r.cancelled ? undefined : "value" in r ? r.value : undefined),
 			),
 
 		confirm: (title, message, opts) =>
-			createDialogPromise(opts, false, { method: "confirm", title, message, timeout: opts?.timeout }, (r) =>
-				"cancelled" in r && r.cancelled ? false : "confirmed" in r ? r.confirmed : false,
+			createDialogPromise(
+				sessionFile,
+				opts,
+				false,
+				{ method: "confirm", title, message, timeout: opts?.timeout },
+				(r) => ("cancelled" in r && r.cancelled ? false : "confirmed" in r ? r.confirmed : false),
 			),
 
 		input: (title, placeholder, opts) =>
-			createDialogPromise(opts, undefined, { method: "input", title, placeholder, timeout: opts?.timeout }, (r) =>
-				"cancelled" in r && r.cancelled ? undefined : "value" in r ? r.value : undefined,
+			createDialogPromise(
+				sessionFile,
+				opts,
+				undefined,
+				{ method: "input", title, placeholder, timeout: opts?.timeout },
+				(r) => ("cancelled" in r && r.cancelled ? undefined : "value" in r ? r.value : undefined),
 			),
 
 		requestUserQuestion: (payload, opts) =>
 			createDialogPromise(
+				sessionFile,
 				opts,
 				undefined,
 				{ method: "question", title: "Questions", questions: payload.questions, timeout: opts?.timeout },
@@ -265,9 +283,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 		async editor(title: string, prefill?: string): Promise<string | undefined> {
 			const id = crypto.randomUUID();
-			return new Promise((resolve, reject) => {
+			runtimeHost.markSessionNeedsInput?.(sessionFile, true);
+			return new Promise((resolve) => {
 				pendingExtensionRequests.set(id, {
 					resolve: (response: RpcExtensionUIResponse) => {
+						runtimeHost.markSessionNeedsInput?.(sessionFile, false);
 						if ("cancelled" in response && response.cancelled) {
 							resolve(undefined);
 						} else if ("value" in response) {
@@ -276,9 +296,19 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 							resolve(undefined);
 						}
 					},
-					reject,
+					reject: () => {
+						runtimeHost.markSessionNeedsInput?.(sessionFile, false);
+						resolve(undefined);
+					},
 				});
-				output({ type: "extension_ui_request", id, method: "editor", title, prefill } as RpcExtensionUIRequest);
+				output({
+					type: "extension_ui_request",
+					id,
+					sessionFile,
+					method: "editor",
+					title,
+					prefill,
+				} as RpcExtensionUIRequest);
 			});
 		},
 
@@ -328,8 +358,9 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 	const rebindSession = async (): Promise<void> => {
 		session = runtimeHost.session;
+		const boundSessionFile = session.sessionFile;
 		await session.bindExtensions({
-			uiContext: createExtensionUIContext(),
+			uiContext: createExtensionUIContext(boundSessionFile),
 			mode: "rpc",
 			commandContextActions: {
 				waitForIdle: () => session.agent.waitForIdle(),
@@ -359,9 +390,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			},
 			permissionPromptHandler: async (toolName, reason) => {
 				const id = crypto.randomUUID();
+				runtimeHost.markSessionNeedsInput?.(boundSessionFile, true);
 				return new Promise((resolve) => {
 					pendingExtensionRequests.set(id, {
 						resolve: (response: RpcExtensionUIResponse) => {
+							runtimeHost.markSessionNeedsInput?.(boundSessionFile, false);
 							if ("cancelled" in response && response.cancelled) {
 								resolve(false);
 							} else if ("confirmed" in response) {
@@ -370,7 +403,10 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 								resolve(false);
 							}
 						},
-						reject: () => resolve(false),
+						reject: () => {
+							runtimeHost.markSessionNeedsInput?.(boundSessionFile, false);
+							resolve(false);
+						},
 					});
 					output({
 						type: "extension_ui_request",
@@ -380,6 +416,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 						message: reason ?? `Permission required for "${toolName}"`,
 						kind: "permission",
 						toolName,
+						sessionFile: boundSessionFile,
 					} as RpcExtensionUIRequest);
 				});
 			},
@@ -422,6 +459,12 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	};
 
 	await rebindSession();
+	// Push runtime-registry changes (background sessions detaching, turns
+	// finishing while detached, reaping) so the client can badge session tabs.
+	runtimeHost.subscribeRuntimes?.(() => {
+		output({ type: "sessions_update", sessions: runtimeHost.getSessionsStatus?.() ?? [] });
+	});
+	output({ type: "sessions_update", sessions: runtimeHost.getSessionsStatus?.() ?? [] });
 	registerSignalHandlers();
 
 	// Pre-fetch dynamic (Ollama Cloud) models in the background so the model
@@ -438,10 +481,16 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// =================================================================
 
 			case "prompt": {
+				// Session-scoped routing: a sessionPath targets a background
+				// (detached) session; omitted means the active session.
+				const target = runtimeHost.getSessionForPath(command.sessionPath);
+				if (!target) {
+					return error(id, "prompt", `Unknown session: ${command.sessionPath}`);
+				}
 				// Start prompt handling immediately, but emit the authoritative response only after
 				// prompt preflight succeeds. Queued and immediately handled prompts also count as success.
 				let preflightSucceeded = false;
-				void session
+				void target
 					.prompt(command.message, {
 						images: command.images,
 						streamingBehavior: command.streamingBehavior,
@@ -462,17 +511,29 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "steer": {
-				await session.steer(command.message, command.images);
+				const target = runtimeHost.getSessionForPath(command.sessionPath);
+				if (!target) {
+					return error(id, "steer", `Unknown session: ${command.sessionPath}`);
+				}
+				await target.steer(command.message, command.images);
 				return success(id, "steer");
 			}
 
 			case "follow_up": {
-				await session.followUp(command.message, command.images);
+				const target = runtimeHost.getSessionForPath(command.sessionPath);
+				if (!target) {
+					return error(id, "follow_up", `Unknown session: ${command.sessionPath}`);
+				}
+				await target.followUp(command.message, command.images);
 				return success(id, "follow_up");
 			}
 
 			case "abort": {
-				await session.abort();
+				const target = runtimeHost.getSessionForPath(command.sessionPath);
+				if (!target) {
+					return error(id, "abort", `Unknown session: ${command.sessionPath}`);
+				}
+				await target.abort();
 				return success(id, "abort");
 			}
 
@@ -708,6 +769,15 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					await rebindSession();
 				}
 				return success(id, "switch_session", result);
+			}
+
+			case "get_sessions_status": {
+				return success(id, "get_sessions_status", { sessions: runtimeHost.getSessionsStatus?.() ?? [] });
+			}
+
+			case "abort_session": {
+				const found = await runtimeHost.abortSession(command.sessionPath);
+				return success(id, "abort_session", { found });
 			}
 
 			case "fork": {
