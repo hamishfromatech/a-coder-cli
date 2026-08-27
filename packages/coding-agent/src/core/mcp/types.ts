@@ -13,5 +13,11 @@ export interface McpServerConfig {
 	 * chrome-devtools-mcp's "No handler registered for issue code ...".
 	 */
 	suppressStderrPatterns?: string[];
+	/**
+	 * Timeout in ms for requests to this server (tool calls and the connection
+	 * handshake). Defaults to the MCP SDK's 60s. Increase for slow servers
+	 * (e.g. browser automation, long-running queries).
+	 */
+	timeoutMs?: number;
 	disabled?: boolean;
 }
