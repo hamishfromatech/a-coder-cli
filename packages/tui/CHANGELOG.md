@@ -4,6 +4,7 @@
 
 ### Changed
 
+- Added `SelectList.setItems()` to replace the item list in place (used by the searchable `/apps` selector to live-filter the gallery).
 - Replaced the time-boxed `Terminal.guardRawModeOnInput()` guard with a raw-mode watchdog that runs for the lifetime of the TUI (`start()` to `stop()`). The TTY line-discipline resets that follow a session replacement can land 10-30s later — long after the previous 5-second guard expired — leaving Enter arriving as "\n" and the editor inserting newlines instead of submitting messages and slash commands. The watchdog re-asserts raw mode on a 100ms interval and toggles through cooked mode first, because libuv caches the mode and short-circuits repeated `setRawMode(true)` calls (`uv_tty_set_mode` returns early when the cached mode already matches), which made re-asserting alone ineffective after an external reset. `stop()` clears the watchdog so suspend (external editor, Ctrl+Z) can restore cooked mode.
 
 ## [0.80.26] - 2026-08-22
