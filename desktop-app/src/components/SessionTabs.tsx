@@ -3,7 +3,9 @@ import { Loader2, Plus, X } from "lucide-react";
 import * as rpc from "../lib/rpc";
 import { useTabsStore } from "../stores/tabs-store";
 import { useSessionStore } from "../stores/session-store";
+import { useRuntimeStatusStore } from "../stores/runtime-status-store";
 import { toast } from "../stores/toast-store";
+import { pickLoadingVerb } from "../lib/loading-verbs";
 
 /** Top-of-main session tab strip — the OpenCode-style "open sessions" row.
  *  Each tab is a session file; clicking switches the engine, the "+" starts a
@@ -15,6 +17,11 @@ export function SessionTabs() {
 	const closeTab = useTabsStore((s) => s.closeTab);
 	const setActive = useTabsStore((s) => s.setActive);
 	const isStreaming = useSessionStore((s) => s.isStreaming);
+	const bgRunning = useRuntimeStatusStore((s) => s.running);
+	const finishedWhileAway = useRuntimeStatusStore((s) => s.finishedWhileAway);
+	const bgRuntimeCount = useRuntimeStatusStore(
+		(s) => Object.keys(s.running).filter((p) => p !== activePath).length,
+	);
 	const [pendingPath, setPendingPath] = useState<string | null>(null);
 
 	const switchTo = async (path: string) => {
@@ -23,7 +30,16 @@ export function SessionTabs() {
 		try {
 			// Optimistically show the new tab as active so the UI feels instant.
 			setActive(path);
-			await rpc.switchSession(path);
+			const result = await rpc.switchSession(path);
+			// Re-attached to a runtime with an in-flight turn: show the streaming
+			// state immediately instead of waiting for the next message event.
+			if (result.reattached && result.snapshot?.running) {
+				const store = useSessionStore.getState();
+				if (!store.isStreaming) {
+					store.setIsStreaming(true);
+					store.setStreamingVerb(pickLoadingVerb());
+				}
+			}
 		} catch (e) {
 			// Revert on failure.
 			setActive(activePath ?? "");
@@ -43,6 +59,8 @@ export function SessionTabs() {
 
 	const onClose = async (path: string) => {
 		// Don't close the active tab mid-stream — the engine is writing to it.
+		// Switching TO another tab mid-stream is allowed: the engine aborts the
+		// in-flight turn and persists it as an aborted message before switching.
 		if (path === activePath && isStreaming) return;
 		const next = closeTab(path);
 		if (next) {
@@ -73,7 +91,7 @@ export function SessionTabs() {
 							<button
 								type="button"
 								onClick={() => void switchTo(tab.path)}
-								disabled={!!pendingPath || (isStreaming && !active)}
+								disabled={!!pendingPath}
 								className="max-w-40 truncate focus-visible:outline-none disabled:cursor-default"
 
 							>
@@ -95,10 +113,18 @@ export function SessionTabs() {
 							>
 								<X className="h-3 w-3" />
 							</button>
-							{busyTab && (
+							{/* Background turn still streaming on this session. */}
+							{!active && bgRunning[tab.path] && (
 								<span
 									className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-pi-accent"
-									aria-hidden
+									aria-label="running in background"
+								/>
+							)}
+							{/* A background turn finished since the last visit. */}
+							{!active && !bgRunning[tab.path] && finishedWhileAway[tab.path] && (
+								<span
+									className="h-1.5 w-1.5 shrink-0 rounded-full bg-pi-success"
+									aria-label="turn finished"
 								/>
 							)}
 							{switching && !busyTab && (
@@ -111,6 +137,14 @@ export function SessionTabs() {
 					);
 				})}
 			</div>
+			{bgRuntimeCount > 0 && (
+				<span
+					className="my-1 flex h-7 shrink-0 items-center rounded-md px-2 font-mono text-3xs text-pi-text-faint"
+					title={`${bgRuntimeCount} background session${bgRuntimeCount === 1 ? "" : "s"} live in the engine`}
+				>
+					{bgRuntimeCount} live
+				</span>
+			)}
 			<button
 				type="button"
 				onClick={() => void startNew()}

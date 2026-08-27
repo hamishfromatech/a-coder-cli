@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronsUpDown, FolderGit2, MessageSquare, Plus, Settings, X } from "lucide-react";
+import { Bell, ChevronsUpDown, FolderGit2, MessageSquare, Plus, Settings, X } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import * as rpc from "./lib/rpc";
 import { playCompletionSound } from "./lib/completion-sound";
@@ -7,6 +7,8 @@ import { triggerHaptic } from "./lib/haptics";
 import { rafCoalesce } from "./lib/raf-coalesce";
 import { synthesize, playAudioBlob, type VoiceSettings } from "./lib/voice";
 import { pickLoadingVerb } from "./lib/loading-verbs";
+import { getCachedSessionMessages, setCachedSessionMessages } from "./lib/session-cache";
+import { useRuntimeStatusStore } from "./stores/runtime-status-store";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { useSessionStore } from "./stores/session-store";
 import { useSettingsStore } from "./stores/settings-store";
@@ -122,6 +124,14 @@ export default function App() {
 		id: string;
 		questions: import("./lib/rpc").UserQuestion[];
 	} | null>(null);
+	// Session-scoped question dialogs (Phase 2): a question asked by a
+	// background session is parked under its session file and promoted when
+	// that session becomes active. The currently-shown question is stashed
+	// back when the user switches away.
+	const parkedQuestionsRef = useRef<Map<string, { id: string; questions: import("./lib/rpc").UserQuestion[] }>>(
+		new Map(),
+	);
+	const shownQuestionSessionRef = useRef<string | null | undefined>(undefined);
 	const [showHotkeys, setShowHotkeys] = useState(false);
 	const [showChangelog, setShowChangelog] = useState(false);
 	const [showMemory, setShowMemory] = useState(false);
@@ -133,6 +143,11 @@ export default function App() {
 	const unlistenRef = useRef<(() => void) | null>(null);
 	const switchProjectRef = useRef<(path: string) => void>(() => {});
 	const loadingHistoryRef = useRef(false);
+	/** Increments on every session_start. Async history loads compare their
+	 *  generation before painting, so a slow fetch from a previous session can
+	 *  never paint over a newer switch (the A→B cross-paint bug hermes guards
+	 *  with resume request ids). */
+	const sessionStartGenerationRef = useRef(0);
 	const {
 		setStatus,
 		setCwd,
@@ -166,11 +181,17 @@ export default function App() {
 	// transcript (with a floating fallback above the composer when that row is
 	// scrolled out of view). Everything else (select/input/editor and generic
 	// extension confirms) still uses the modal.
-	const permissionRequest = uiRequests.find((r) => r.kind === "permission");
-	const modalRequest = uiRequests.find((r) => r.kind !== "permission");
+	// Session-scoped routing (Phase 2): requests for other sessions stay queued
+	// until that session is active; the runtime-status orb already signals them.
+	const requestIsForCurrentSession = (r: { sessionFile?: string }) =>
+		!r.sessionFile || r.sessionFile === sessionFile;
+	const permissionRequest = uiRequests.find((r) => r.kind === "permission" && requestIsForCurrentSession(r));
+	const modalRequest = uiRequests.find((r) => r.kind !== "permission" && requestIsForCurrentSession(r));
 	const { cliPath, theme, skin, reopenLastProject, startupModel, cliGlobalSettings } =
 		useSettingsStore();
 	const { setStatus: setWidgetStatus, setWidget } = useWidgetStore();
+	const updateRuntimeStatus = useRuntimeStatusStore((s) => s.update);
+	const markRuntimeVisited = useRuntimeStatusStore((s) => s.markVisited);
 	useGlobalKeybindings();
 	const { status: updateStatus, update: availableUpdate, dismiss: dismissUpdate } = useUpdateStore();
 	const updateCheckedRef = useRef(false);
@@ -427,6 +448,11 @@ export default function App() {
 								toast.error("Model request failed", event.finalError);
 							}
 							break;
+						case "sessions_update":
+							// Runtime registry changed (background session detaching,
+							// background turn started/finished, or reaped).
+							updateRuntimeStatus(event.sessions, useTabsStore.getState().activePath);
+							break;
 						case "compaction_end":
 							// Compaction changes the context size. Refresh stats and the
 							// footer context-usage bar immediately so it doesn't stay stale.
@@ -448,10 +474,25 @@ export default function App() {
 							// cannot race ahead and create an empty duplicate ahead of the
 							// authoritative snapshot.
 							loadingHistoryRef.current = true;
+							const generation = ++sessionStartGenerationRef.current;
 							resetSession();
 							void (async () => {
+								// Stale-switch guard: bail before every paint if another
+								// session_start landed while this fetch chain was in flight,
+								// so a slow fetch from a previous session can never paint
+								// its transcript over the newly selected one.
+								const isCurrent = () => sessionStartGenerationRef.current === generation;
 								try {
 									await syncEngineState();
+									if (!isCurrent()) return;
+									// Warm-cache fast path: paint the cached transcript for the
+									// target session immediately so switching back to a recently
+									// visited session doesn't flash blank while history loads.
+									const newSessionFile = useSessionStore.getState().sessionFile;
+									const cached = newSessionFile ? getCachedSessionMessages(newSessionFile) : undefined;
+									if (cached && cached.length > 0 && useSessionStore.getState().messages.length === 0) {
+										setMessages(cached);
+									}
 									// Best-effort tree refresh after a session switch. The connect-time get_tree
 									// already populated it, so a failure here is non-critical: retry silently
 									// (a lost/delayed response usually succeeds on retry) and never nag.
@@ -474,23 +515,31 @@ export default function App() {
 											if (attempt < 2) await new Promise((r) => setTimeout(r, 1500));
 										}
 									}
-									if (!treeLoaded) setTree([], null);
-									try {
-										const msgsRes = (await rpc.sendCommand({ type: "get_messages" })) as {
-											messages: import("@earendil-works/pi-agent-core").AgentMessage[];
-										};
-										if (msgsRes?.messages) {
-											setMessages(msgsRes.messages);
-										}
-									} catch (e) {
-										toast.error(
-											"Failed to load messages after session start",
-											e instanceof Error ? e.message : String(e),
-										);
-									}
-								} finally {
-									loadingHistoryRef.current = false;
-								}
+												if (!isCurrent()) return;
+												if (!treeLoaded) setTree([], null);
+												try {
+													const msgsRes = (await rpc.sendCommand({ type: "get_messages" })) as {
+														messages: import("@earendil-works/pi-agent-core").AgentMessage[];
+													};
+													if (!isCurrent()) return;
+													if (msgsRes?.messages) {
+														setMessages(msgsRes.messages);
+														const sessionFile = useSessionStore.getState().sessionFile;
+														if (sessionFile) setCachedSessionMessages(sessionFile, msgsRes.messages);
+													}
+												} catch (e) {
+													if (isCurrent()) {
+														toast.error(
+															"Failed to load messages after session start",
+														e instanceof Error ? e.message : String(e),
+														);
+													}
+												}
+											} finally {
+												if (isCurrent()) {
+													loadingHistoryRef.current = false;
+												}
+											}
 							})();
 							break;
 						}
@@ -575,7 +624,13 @@ export default function App() {
 								const q = req as import("./lib/rpc").ExtensionUiRequestEvent & {
 									questions: import("./lib/rpc").UserQuestion[];
 								};
-								setQuestionRequest({ id: req.id, questions: q.questions });
+								const requestSession = "sessionFile" in req ? req.sessionFile : undefined;
+								if (requestSession && requestSession !== sessionFile) {
+									// Background session — park it; promoted on activation.
+									parkedQuestionsRef.current.set(requestSession, { id: req.id, questions: q.questions });
+								} else {
+									setQuestionRequest({ id: req.id, questions: q.questions });
+								}
 								break;
 							}
 
@@ -628,6 +683,7 @@ export default function App() {
 								prefill: "prefill" in req ? req.prefill : undefined,
 							kind: "kind" in req ? req.kind : undefined,
 							toolName: "toolName" in req ? req.toolName : undefined,
+							sessionFile: "sessionFile" in req ? req.sessionFile : undefined,
 							}).then((response) => {
 								const cancelled = response.cancelled === true;
 								const res: import("./lib/rpc").ExtensionUiResponse = cancelled
@@ -873,6 +929,23 @@ export default function App() {
 		}
 	}, []);
 
+	// Background-session attention: needs-input sessions take priority over
+	// merely-finished ones. Both feed the sidebar rail's notification orb.
+	const needsBackgroundInput = useRuntimeStatusStore((s) =>
+		Object.entries(s.needsInput).some(([path, v]) => v && path !== sessionFile),
+	);
+	const hasBackgroundFinished = useRuntimeStatusStore((s) => Object.keys(s.finishedWhileAway).length > 0);
+	const focusBackgroundSession = useCallback(() => {
+		const status = useRuntimeStatusStore.getState();
+		const needsInputPath = Object.entries(status.needsInput).find(([path, v]) => v && path !== sessionFile)?.[0];
+		const target = needsInputPath ?? Object.keys(status.finishedWhileAway).find((p) => p !== sessionFile);
+		if (!target) return;
+		pushCurrentToClosedTabs();
+		void rpc.switchSession(target).catch((e) =>
+			toast.error("Failed to switch session", e instanceof Error ? e.message : String(e)),
+		);
+	}, [sessionFile, pushCurrentToClosedTabs]);
+
 	const handleReconnect = useCallback(async () => {
 		unlistenRef.current?.();
 		unlistenRef.current = null;
@@ -901,6 +974,36 @@ export default function App() {
 	useEffect(() => {
 		if (sessionFile) openTab(sessionFile, sessionName ?? "Untitled session");
 	}, [sessionFile, sessionName, openTab]);
+
+	// A session the user switches to is no longer "finished while away".
+	useEffect(() => {
+		if (sessionFile) markRuntimeVisited(sessionFile);
+	}, [sessionFile, markRuntimeVisited]);
+
+	// Question dialogs follow their session: stash the shown one when leaving,
+	// promote a parked one when arriving.
+	useEffect(() => {
+		const leavingSession = shownQuestionSessionRef.current;
+		if (leavingSession !== undefined && leavingSession !== sessionFile) {
+			setQuestionRequest((current) => {
+				if (current && leavingSession) parkedQuestionsRef.current.set(leavingSession, current);
+				return parkedQuestionsRef.current.get(sessionFile ?? "") ?? null;
+			});
+		}
+		shownQuestionSessionRef.current = sessionFile;
+	}, [sessionFile]);
+
+	// Keep the warm per-session transcript cache in sync with the live store so
+	// switching back to a recently visited session paints instantly. Skipped
+	// while a history load is in flight — resetSession() briefly pairs the old
+	// session file with an empty message list, and the authoritative fetch
+	// re-populates the cache once it lands.
+	const liveMessages = useSessionStore((s) => s.messages);
+	useEffect(() => {
+		if (sessionFile && !loadingHistoryRef.current) {
+			setCachedSessionMessages(sessionFile, liveMessages);
+		}
+	}, [sessionFile, liveMessages]);
 
 	const handleTrustAccept = async () => {
 		if (!trustPrompt) return;
@@ -1047,6 +1150,9 @@ export default function App() {
 						onOpenSettings={() => setShowSettings(true)}
 						onExpand={() => setLeftSidebarOpen(true)}
 						onPickProject={(path) => void switchProject(path)}
+						needsBackgroundInput={needsBackgroundInput}
+						hasBackgroundFinished={hasBackgroundFinished}
+						onFocusBackground={focusBackgroundSession}
 					/>
 				)}
 
@@ -1101,7 +1207,14 @@ export default function App() {
 						setShowResume(false);
 						pushCurrentToClosedTabs();
 						try {
-							await rpc.switchSession(sessionPath);
+							const result = await rpc.switchSession(sessionPath);
+							if (result.reattached && result.snapshot?.running) {
+								const store = useSessionStore.getState();
+								if (!store.isStreaming) {
+									store.setIsStreaming(true);
+									store.setStreamingVerb(pickLoadingVerb());
+								}
+							}
 						} catch (e) {
 							toast.error("Failed to resume session", e instanceof Error ? e.message : String(e));
 						}
@@ -1348,6 +1461,11 @@ interface SidebarRailProps {
 	onOpenSettings: () => void;
 	onExpand: () => void;
 	onPickProject: (path: string) => void;
+	/** A background session is blocked on a permission prompt / dialog. */
+	needsBackgroundInput: boolean;
+	/** A background turn finished since its session was last visited. */
+	hasBackgroundFinished: boolean;
+	onFocusBackground: () => void;
 }
 
 function SidebarRail({
@@ -1356,6 +1474,9 @@ function SidebarRail({
 	onOpenSettings,
 	onExpand,
 	onPickProject,
+	needsBackgroundInput,
+	hasBackgroundFinished,
+	onFocusBackground,
 }: SidebarRailProps) {
 	const [hovered, setHovered] = useState(false);
 	return (
@@ -1377,6 +1498,11 @@ function SidebarRail({
 				<RailIcon icon={Plus} label="New / open project" onClick={onOpenPicker} />
 				<RailIcon icon={MessageSquare} label="Session tree — pin sidebar" onClick={onExpand} />
 				<div className="flex-1" />
+				<BackgroundAttentionOrb
+					needsInput={needsBackgroundInput}
+					finished={hasBackgroundFinished}
+					onClick={onFocusBackground}
+				/>
 				<RailIcon icon={Settings} label="Settings" onClick={onOpenSettings} />
 			</aside>
 
@@ -1410,6 +1536,41 @@ function RailIcon({
 			className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none" aria-label={label}
 		>
 			<IconCmp className="h-4 w-4" />
+		</button>
+	);
+}
+
+/**
+ * Notification orb in the sidebar rail — lights up when a background session
+ * needs the user: a turn is blocked on a permission prompt / dialog (amber,
+ * pulsing) or a background turn finished since the session was last visited
+ * (green). Clicking jumps to the most urgent background session.
+ */
+function BackgroundAttentionOrb({
+	needsInput,
+	finished,
+	onClick,
+}: {
+	needsInput: boolean;
+	finished: boolean;
+	onClick: () => void;
+}) {
+	if (!needsInput && !finished) return null;
+	const urgent = needsInput;
+	return (
+		<button
+			onClick={onClick}
+			className="relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+			aria-label={urgent ? "A background session needs your input" : "A background turn finished"}
+			title={urgent ? "A background session needs your input" : "A background turn finished"}
+		>
+			<Bell className={`h-4 w-4 ${urgent ? "text-pi-warning" : ""}`} />
+			<span
+				className={`absolute right-1 top-1 h-2 w-2 rounded-full ${
+					urgent ? "animate-pulse bg-pi-warning" : "bg-pi-success"
+				}`}
+				aria-hidden
+			/>
 		</button>
 	);
 }

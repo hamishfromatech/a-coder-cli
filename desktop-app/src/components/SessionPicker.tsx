@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, MessageCircle, Search, X } from "lucide-react";
+import { Check, Loader2, MessageCircle, Search, X } from "lucide-react";
 import * as rpc from "../lib/rpc";
+import { useSessionStore } from "../stores/session-store";
 import { useModalA11y } from "../hooks/useModalA11y";
 import { toast } from "../stores/toast-store";
 import { IconButton } from "./ui/Button";
@@ -48,6 +49,8 @@ export function SessionPicker({ onClose, onResume }: SessionPickerProps) {
 	const [highlight, setHighlight] = useState(0);
 	const inputRef = useRef<HTMLInputElement>(null);
 	const modalRef = useRef<HTMLDivElement>(null);
+	const currentSessionFile = useSessionStore((s) => s.sessionFile);
+	const isStreaming = useSessionStore((s) => s.isStreaming);
 	useModalA11y(modalRef, true, onClose);
 
 	useEffect(() => {
@@ -146,6 +149,7 @@ export function SessionPicker({ onClose, onResume }: SessionPickerProps) {
 						filtered.map((s, i) => {
 							const title = sessionTitle(s);
 							const active = i === highlight;
+							const isCurrent = s.path === currentSessionFile;
 							return (
 								<button
 									key={s.path}
@@ -157,13 +161,19 @@ export function SessionPicker({ onClose, onResume }: SessionPickerProps) {
 								>
 									<MessageCircle className="h-4 w-4 shrink-0 text-pi-text-faint" />
 									<span className="flex min-w-0 flex-1 flex-col leading-snug">
-										<span className="truncate text-xs text-pi-text">{title}</span>
+										<span className={`truncate text-xs ${isCurrent ? "text-pi-text-faint italic" : "text-pi-text"}`}>
+											{title}
+											{isCurrent && <span className="ml-1.5 not-italic text-pi-accent">(current)</span>}
+										</span>
 										{s.cwd && (
 											<span className="truncate font-mono text-3xs text-pi-text-faint">
 												{s.cwd.split(/[/\\]/).filter(Boolean).at(-1) ?? s.cwd}
 											</span>
 										)}
 									</span>
+									{isCurrent && isStreaming && (
+										<Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-pi-accent" aria-label="streaming" />
+									)}
 									<span className="shrink-0 font-mono pi-tabular text-3xs text-pi-text-faint">
 										{s.messageCount}m · {relativeTime(s.modified)}
 									</span>

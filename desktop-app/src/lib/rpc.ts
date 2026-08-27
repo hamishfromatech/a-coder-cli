@@ -16,6 +16,25 @@ export interface SessionInfoChangedEvent {
 	name: string | undefined;
 }
 
+/** Per-session runtime status from the engine's runtime registry (Phase 1 of
+ *  the session architecture roadmap: detaching background turns). */
+export interface RuntimeSessionStatus {
+	sessionFile?: string;
+	sessionId: string;
+	/** True for the session the client is currently attached to. */
+	active: boolean;
+	/** A turn or compaction is in flight on this runtime. */
+	running: boolean;
+	pendingMessageCount: number;
+	/** A permission prompt or extension dialog is pending on this runtime. */
+	needsInput?: boolean;
+}
+
+export interface SessionsUpdateEvent {
+	type: "sessions_update";
+	sessions: RuntimeSessionStatus[];
+}
+
 export type RpcEvent =
 	| AgentEvent
 	| SessionStartEvent
@@ -26,7 +45,8 @@ export type RpcEvent =
 	| BackgroundProcessesUpdateEvent
 	| AutoRetryStartEvent
 	| AutoRetryEndEvent
-	| CompactionEndEvent;
+	| CompactionEndEvent
+	| SessionsUpdateEvent;
 
 /** The engine re-emits agent_end with a retry hint after a retryable failure. */
 export interface AgentEndWillRetry {
@@ -141,6 +161,7 @@ export type ExtensionUiRequestEvent =
 			title: string;
 			options: string[];
 			timeout?: number;
+			sessionFile?: string;
 	  }
 	| {
 			type: "extension_ui_request";
@@ -149,6 +170,7 @@ export type ExtensionUiRequestEvent =
 			title: string;
 			questions: UserQuestion[];
 			timeout?: number;
+			sessionFile?: string;
 	  }
 	| {
 			type: "extension_ui_request";
@@ -159,6 +181,7 @@ export type ExtensionUiRequestEvent =
 			timeout?: number;
 			kind?: "permission";
 			toolName?: string;
+			sessionFile?: string;
 	  }
 	| {
 			type: "extension_ui_request";
@@ -167,6 +190,7 @@ export type ExtensionUiRequestEvent =
 			title: string;
 			placeholder?: string;
 			timeout?: number;
+			sessionFile?: string;
 	  }
 	| {
 			type: "extension_ui_request";
@@ -174,6 +198,7 @@ export type ExtensionUiRequestEvent =
 			method: "editor";
 			title: string;
 			prefill?: string;
+			sessionFile?: string;
 	  }
 	| {
 			type: "extension_ui_request";
@@ -318,6 +343,12 @@ export interface GetEntriesResult {
 
 export interface SwitchSessionResult {
 	cancelled: boolean;
+	/** True when the target runtime was still live in the background (Phase 2
+	 *  re-attach) rather than freshly created. */
+	reattached?: boolean;
+	/** State of the re-attached runtime at switch time — lets the UI adopt an
+	 *  in-flight turn immediately instead of waiting for the next event. */
+	snapshot?: { running: boolean; needsInput: boolean; pendingMessageCount: number };
 }
 
 export interface NewSessionResult {
@@ -384,13 +415,13 @@ export interface GetCommandsResult {
 }
 
 // ---- prompting ----
-export const prompt = (message: string, images?: ImageContent[]) =>
-	sendCommand({ type: "prompt", message, images });
-export const steer = (message: string, images?: ImageContent[]) =>
-	sendCommand({ type: "steer", message, images });
-export const followUp = (message: string, images?: ImageContent[]) =>
-	sendCommand({ type: "follow_up", message, images });
-export const abort = () => sendCommand({ type: "abort" });
+export const prompt = (message: string, images?: ImageContent[], sessionPath?: string) =>
+	sendCommand({ type: "prompt", message, images, sessionPath });
+export const steer = (message: string, images?: ImageContent[], sessionPath?: string) =>
+	sendCommand({ type: "steer", message, images, sessionPath });
+export const followUp = (message: string, images?: ImageContent[], sessionPath?: string) =>
+	sendCommand({ type: "follow_up", message, images, sessionPath });
+export const abort = (sessionPath?: string) => sendCommand({ type: "abort", sessionPath });
 export const newSession = (parentSession?: string) =>
 	sendCommand({ type: "new_session", parentSession });
 export const clearConversation = () =>
@@ -447,6 +478,10 @@ export const exportHtml = (outputPath?: string) =>
 	sendCommand({ type: "export_html", outputPath }) as Promise<ExportHtmlResult>;
 export const switchSession = (sessionPath: string) =>
 	sendCommand({ type: "switch_session", sessionPath }) as Promise<SwitchSessionResult>;
+export const getSessionsStatus = () =>
+	sendCommand({ type: "get_sessions_status" }) as Promise<{ sessions: RuntimeSessionStatus[] }>;
+export const abortSession = (sessionPath: string) =>
+	sendCommand({ type: "abort_session", sessionPath }) as Promise<{ found: boolean }>;
 export const fork = (entryId: string) =>
 	sendCommand({ type: "fork", entryId }) as Promise<ForkResult>;
 export const clone = () => sendCommand({ type: "clone" }) as Promise<CloneResult>;

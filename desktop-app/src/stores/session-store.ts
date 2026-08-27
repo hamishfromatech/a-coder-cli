@@ -20,6 +20,9 @@ export interface UiRequest {
 	 * these as an inline approval bar instead of a modal. */
 	kind?: "permission";
 	toolName?: string;
+	/** The session this request belongs to (Phase 2 session-scoped routing).
+	 * Requests for other sessions stay queued until that session is active. */
+	sessionFile?: string;
 	resolve: (response: { confirmed?: boolean; value?: string; cancelled?: true }) => void;
 }
 

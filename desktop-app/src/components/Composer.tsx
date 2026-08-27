@@ -23,6 +23,7 @@ import {
 	useCallback,
 } from "react";
 import { useSessionStore } from "../stores/session-store";
+import { useDraftStore } from "../stores/draft-store";
 import * as rpc from "../lib/rpc";
 import { triggerHaptic } from "../lib/haptics";
 import type { ImageContent } from "@earendil-works/pi-ai";
@@ -63,6 +64,27 @@ export function Composer() {
 	} = useSessionStore();
 	const connected = status === "connected";
 	const canSend = text.trim().length > 0 && connected;
+
+	// ---- Per-session draft isolation ----
+	// Switching sessions stashes the current composer text under the old
+	// session and restores the target session's draft, so half-written
+	// messages don't leak across sessions (hermes-style draft migration).
+	const sessionFile = useSessionStore((s) => s.sessionFile);
+	const saveDraft = useDraftStore((s) => s.saveDraft);
+	const takeDraft = useDraftStore((s) => s.takeDraft);
+	const textRef = useRef(text);
+	textRef.current = text;
+	const composerSessionRef = useRef<string | null | undefined>(undefined);
+	useEffect(() => {
+		const prevSession = composerSessionRef.current;
+		composerSessionRef.current = sessionFile ?? null;
+		if (prevSession === undefined || prevSession === sessionFile) return;
+		if (prevSession) {
+			saveDraft(prevSession, textRef.current);
+		}
+		const restored = sessionFile ? takeDraft(sessionFile) : undefined;
+		setText(restored ?? "");
+	}, [sessionFile, saveDraft, takeDraft]);
 
 	// ---- Auto-grow textarea ----
 	useLayoutEffect(() => {
