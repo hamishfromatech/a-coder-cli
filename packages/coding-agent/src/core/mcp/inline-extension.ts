@@ -9,11 +9,18 @@ import type { McpServerConfig } from "./types.ts";
 
 export interface McpExtensionFactoryOptions {
 	servers: McpServerConfig[];
+	/**
+	 * Test seam: construct the MCP client for a server config. Defaults to
+	 * `new McpClient(server)`. Tests inject clients bound to in-memory
+	 * transports so no real server process is needed.
+	 */
+	createClient?: (server: McpServerConfig) => McpClient;
 }
 
 /**
- * Servers exposing more tools than this keep the discovery stub only instead
- * of getting one first-class agent tool per MCP tool, so aggregator servers
+ * Servers exposing at most this many tools get one first-class agent tool per
+ * MCP tool (mcp__<server>__<tool>) and no stub at all. Servers above the
+ * threshold get only the gateway stub (mcp_<server>), so aggregator servers
  * (1000+ tools) cannot flood the model's tool list.
  */
 export const MAX_FIRST_CLASS_TOOLS = 50;
@@ -29,6 +36,28 @@ export function firstClassToolName(serverName: string, toolName: string): string
 	const name = `mcp__${sanitizeNamePart(serverName)}__${sanitizeNamePart(toolName)}`;
 	// Anthropic caps tool names at 128 chars; trim the composite name if needed.
 	return name.length > 128 ? name.slice(0, 128) : name;
+}
+
+/** Names of properties the tool's input schema marks as required. */
+function requiredInputProperties(schema: unknown): string[] {
+	if (schema === null || typeof schema !== "object") return [];
+	const required = (schema as { required?: unknown }).required;
+	if (!Array.isArray(required)) return [];
+	return required.filter((key): key is string => typeof key === "string");
+}
+
+/** Render an input schema for a model-facing error, bounded so OpenAPI-derived giants stay digestible. */
+function formatSchemaForError(schema: unknown): string {
+	let text: string;
+	try {
+		text = JSON.stringify(schema, null, 2);
+	} catch {
+		return String(schema);
+	}
+	if (text.length > 4000) {
+		text = `${text.slice(0, 4000)}… [truncated]`;
+	}
+	return text;
 }
 
 export function createMcpExtensionFactory(options: McpExtensionFactoryOptions): ExtensionFactory {
@@ -47,13 +76,10 @@ export function createMcpExtensionFactory(options: McpExtensionFactoryOptions): 
 		/**
 		 * Register each discovered MCP tool as a first-class agent tool
 		 * (mcp__<server>__<tool>) with its real input schema and description, so
-		 * the model sees exact tool names and argument shapes up front instead of
-		 * discovering them through the stub's error text. Called after every
-		 * successful discovery; re-registration overwrites in place. Skipped for
-		 * servers exposing more than MAX_FIRST_CLASS_TOOLS tools (the stub stays
-		 * the only entry point there). Guarded: registration after the session
-		 * was replaced throws from assertActive — the background connect must
-		 * not crash on it.
+		 * the model sees exact tool names and argument shapes up front. Called
+		 * after every successful discovery; re-registration overwrites in place.
+		 * Guarded: registration after the session was replaced throws from
+		 * assertActive — the background connect must not crash on it.
 		 */
 		const registerDiscoveredTools = (client: McpClient, tools: McpDiscoveredTool[]): void => {
 			if (tools.length === 0 || tools.length > MAX_FIRST_CLASS_TOOLS) return;
@@ -76,27 +102,23 @@ export function createMcpExtensionFactory(options: McpExtensionFactoryOptions): 
 		};
 
 		const clients: McpClient[] = [];
-		// Connect to servers lazily. Each tool's execute() ensures its server is
-		// connected and discovered before calling, so a slow or failing MCP
-		// server never blocks session startup/switch. Load failures are recorded
-		// in the MCP status store and surfaced as a subtle footer chip (see
-		// recomputeMcpChip) instead of console.warn, which would dump the full
-		// (often verbose) error into the TUI.
+		// Connect to servers lazily. Discovery runs in the background below and
+		// registers each server's first-class tools (or, for oversized servers,
+		// the gateway stub instead), so a slow or failing MCP server never blocks
+		// session startup/switch. Load failures are recorded in the MCP status
+		// store and surfaced as a subtle footer chip (see recomputeMcpChip)
+		// instead of console.warn, which would dump the full (often verbose)
+		// error into the TUI.
 		for (const server of options.servers) {
 			if (server.disabled) {
 				setMcpServerState(server.name, { status: "disabled" });
 				continue;
 			}
 			setMcpServerState(server.name, { status: "connecting" });
-			clients.push(new McpClient(server));
+			clients.push(options.createClient ? options.createClient(server) : new McpClient(server));
 		}
 		recomputeMcpChip();
 
-		// Register a single lazy-discovery stub per server as the fallback entry
-		// point. Discovered tools are additionally registered as first-class
-		// mcp__<server>__<tool> tools once the server connects (or on first stub
-		// use for servers that were slow to start), so the model normally sees
-		// real names + schemas directly.
 		for (const client of clients) {
 			let discoveredTools: McpDiscoveredTool[] | undefined;
 			let discoveryError: string | undefined;
@@ -104,12 +126,149 @@ export function createMcpExtensionFactory(options: McpExtensionFactoryOptions): 
 				discoveredTools = undefined;
 				discoveryError = undefined;
 			};
+
+			/**
+			 * Register the per-server gateway stub (mcp_<server>) — the only entry
+			 * point for servers exposing more than MAX_FIRST_CLASS_TOOLS tools. It
+			 * exists ONLY for those oversized servers: every other server exercises
+			 * the first-class path exclusively, so smaller models never see the
+			 * nested {tool, arguments} indirection at all.
+			 *
+			 * The stub's `arguments` parameter is deliberately optional so an empty
+			 * call reaches execute instead of failing schema validation, where the
+			 * fail-fast below can echo the target tool's input schema.
+			 */
+			const registerGatewayStub = (toolCount: number): void => {
+				try {
+					pi.registerTool({
+						name: `mcp_${client.serverName}`,
+						label: `MCP: ${client.serverName}`,
+						description:
+							`Gateway to MCP server "${client.serverName}", which exposes ${toolCount} tools — too many to ` +
+							`list individually. Call it with { "tool": <name>, "arguments": <JSON object matching that ` +
+							`tool's input schema> }. Calling it with an unrecognized tool name returns the list of ` +
+							`available tool names.`,
+						parameters: jsonSchemaToTypeBox({
+							type: "object",
+							properties: {
+								tool: {
+									type: "string",
+									description: `Tool name on server "${client.serverName}"`,
+								},
+								arguments: {
+									type: "object",
+									description: "JSON object matching the selected tool's input schema",
+								},
+							},
+							required: ["tool"],
+						}),
+						async execute(_toolCallId, rawParams, signal): Promise<AgentToolResult<unknown>> {
+							const params = rawParams as { tool?: unknown; arguments?: unknown };
+							let { tools, error } = await discover();
+							if (error) {
+								return {
+									content: [
+										{ type: "text", text: `MCP server "${client.serverName}" is unavailable: ${error}` },
+									],
+									details: { error },
+								};
+							}
+							const toolName = typeof params.tool === "string" ? params.tool : "";
+							const toolArgs =
+								typeof params.arguments === "object" && params.arguments !== null ? params.arguments : {};
+							let tool = tools.find((t) => t.name === toolName);
+							if (!tool) {
+								// The cached list may be stale (e.g. the server changed its
+								// tools before we registered the list_changed handler).
+								// Refresh once before reporting failure.
+								invalidateDiscovery();
+								const refreshed = await discover();
+								if (refreshed.error) {
+									return {
+										content: [
+											{
+												type: "text",
+												text: `MCP server "${client.serverName}" is unavailable: ${refreshed.error}`,
+											},
+										],
+										details: { error: refreshed.error },
+									};
+								}
+								tools = refreshed.tools;
+								tool = tools.find((t) => t.name === toolName);
+							}
+							if (!tool) {
+								const available = tools.map((t) => t.name).join(", ") || "(none discovered)";
+								return {
+									content: [
+										{
+											type: "text",
+											text: `Tool "${toolName}" not found on MCP server "${client.serverName}". Available: ${available}`,
+										},
+									],
+									details: { available: tools.map((t) => t.name) },
+								};
+							}
+							// Fail fast when the model sent no arguments but the tool
+							// requires them: echo the input schema instead of forwarding {}
+							// to the server and looping on the server's validation error.
+							// Only the fully-empty case is intercepted; partial arguments
+							// still reach the server, whose error names the missing field.
+							if (Object.keys(toolArgs).length === 0) {
+								const required = requiredInputProperties(tool.inputSchema);
+								if (required.length > 0) {
+									throw new Error(
+										`MCP tool "${toolName}" on server "${client.serverName}" requires arguments but ` +
+											`none were provided. Required properties: ${required.join(", ")}. Retry with ` +
+											`"arguments" matching this input schema:\n${formatSchemaForError(tool.inputSchema)}`,
+									);
+								}
+							}
+							return runMcpTool(client, tool.name, toolArgs as Record<string, unknown>, signal);
+						},
+					});
+				} catch {
+					// Session was replaced/reloaded mid-discovery; the fresh extension
+					// instance registers its own stub. Nothing to do here.
+				}
+			};
+
+			/**
+			 * Connect (memoized) and list the server's tools. Caches the result per
+			 * client (so the stub's execute path transparently reconnects after a
+			 * drop), registers first-class tools for servers within the tool-count
+			 * budget, and the gateway stub for oversized servers. Errors are cached
+			 * until invalidation.
+			 */
+			const discover = async (): Promise<{ tools: McpDiscoveredTool[]; error?: string }> => {
+				if (discoveredTools) return { tools: discoveredTools };
+				if (discoveryError) return { tools: [], error: discoveryError };
+				try {
+					await client.connect();
+					discoveredTools = await client.listTools();
+					setMcpServerState(client.serverName, { status: "ok" });
+					recomputeMcpChip();
+					if (discoveredTools.length > MAX_FIRST_CLASS_TOOLS) {
+						registerGatewayStub(discoveredTools.length);
+					} else {
+						registerDiscoveredTools(client, discoveredTools);
+					}
+					return { tools: discoveredTools };
+				} catch (err) {
+					discoveryError = err instanceof Error ? err.message : String(err);
+					setMcpServerState(client.serverName, { status: "error", error: discoveryError });
+					recomputeMcpChip();
+					return { tools: [], error: discoveryError };
+				}
+			};
+
 			// If the server process dies or the transport drops mid-session, the
 			// client's connected flag flips to false via onclose. Drop the cached
 			// tool list so the next tool call reconnects and re-discovers, and
 			// surface the outage in the status store (unless an error is already
 			// recorded, e.g. from the initial connect attempt, which has a more
-			// specific message).
+			// specific message). First-class tools stay registered: their execute
+			// path (runMcpTool) reconnects transparently.
 			client.onDisconnected = (error) => {
 				invalidateDiscovery();
 				const state = getMcpServerStates().find((s) => s.name === client.serverName);
@@ -121,105 +280,19 @@ export function createMcpExtensionFactory(options: McpExtensionFactoryOptions): 
 					recomputeMcpChip();
 				}
 			};
-			// The server told us its tool list changed: drop the cache so the next
-			// tool call re-lists (and re-registers) instead of failing on a stale
-			// entry.
-			client.onToolsChanged = invalidateDiscovery;
 
-			const discover = async (): Promise<{ tools: McpDiscoveredTool[]; error?: string }> => {
-				if (discoveredTools) return { tools: discoveredTools };
-				if (discoveryError) return { tools: [], error: discoveryError };
-				try {
-					await client.connect();
-					discoveredTools = await client.listTools();
-					setMcpServerState(client.serverName, { status: "ok" });
-					recomputeMcpChip();
-					registerDiscoveredTools(client, discoveredTools);
-					return { tools: discoveredTools };
-				} catch (err) {
-					discoveryError = err instanceof Error ? err.message : String(err);
-					setMcpServerState(client.serverName, { status: "error", error: discoveryError });
-					recomputeMcpChip();
-					return { tools: [], error: discoveryError };
-				}
+			// The server told us its tool list changed: drop the cache and
+			// re-discover in the background so first-class tools are re-registered
+			// (added/removed tools appear or disappear on the next turn) without
+			// waiting for a model tool call.
+			client.onToolsChanged = () => {
+				invalidateDiscovery();
+				void discover();
 			};
 
-			pi.registerTool({
-				name: `mcp_${client.serverName}`,
-				label: `MCP: ${client.serverName}`,
-				description:
-					`Discover and call tools from MCP server "${client.serverName}". ` +
-					`Its tools are also exposed directly as mcp__${client.serverName}__<tool> once the server ` +
-					`connects — prefer those. Use this stub only when they are missing (server still connecting, ` +
-					`or the server exposes too many tools to list individually).`,
-				parameters: jsonSchemaToTypeBox({
-					type: "object",
-					properties: {
-						tool: {
-							type: "string",
-							description: `Tool name on server "${client.serverName}"`,
-						},
-						arguments: {
-							type: "object",
-							description: "Arguments for the selected tool",
-						},
-					},
-					required: ["tool", "arguments"],
-				}),
-				async execute(_toolCallId, rawParams, signal): Promise<AgentToolResult<unknown>> {
-					const params = rawParams as { tool?: unknown; arguments?: unknown };
-					let { tools, error } = await discover();
-					if (error) {
-						return {
-							content: [{ type: "text", text: `MCP server "${client.serverName}" is unavailable: ${error}` }],
-							details: { error },
-						};
-					}
-					const toolName = typeof params.tool === "string" ? params.tool : "";
-					const toolArgs =
-						typeof params.arguments === "object" && params.arguments !== null ? params.arguments : {};
-					let tool = tools.find((t) => t.name === toolName);
-					if (!tool) {
-						// The cached list may be stale (e.g. the server changed its tools
-						// before we registered the list_changed handler). Refresh once
-						// before reporting failure.
-						invalidateDiscovery();
-						const refreshed = await discover();
-						if (refreshed.error) {
-							return {
-								content: [
-									{
-										type: "text",
-										text: `MCP server "${client.serverName}" is unavailable: ${refreshed.error}`,
-									},
-								],
-								details: { error: refreshed.error },
-							};
-						}
-						tools = refreshed.tools;
-						tool = tools.find((t) => t.name === toolName);
-					}
-					if (!tool) {
-						const available = tools.map((t) => t.name).join(", ") || "(none discovered)";
-						return {
-							content: [
-								{
-									type: "text",
-									text: `Tool "${toolName}" not found on MCP server "${client.serverName}". Available: ${available}`,
-								},
-							],
-							details: { available: tools.map((t) => t.name) },
-						};
-					}
-					return runMcpTool(client, tool.name, toolArgs as Record<string, unknown>, signal);
-				},
-			});
-
-			// Connect + discover eagerly in the background: discovery registers the
-			// first-class mcp__<server>__<tool> agent tools (via
-			// registerDiscoveredTools inside discover), so they reach the model's
-			// tool list on the next turn without any stub round-trip. Never blocks
-			// startup; failures land in the status store via discover()'s catch.
+			// Connect + discover eagerly in the background so the server's tools
+			// reach the model's tool list on the next turn. Never blocks startup;
+			// failures land in the status store via discover()'s catch.
 			void discover();
 		}
 
@@ -240,10 +313,10 @@ export function createMcpExtensionFactory(options: McpExtensionFactoryOptions): 
 
 /**
  * Shared dispatch for both the first-class mcp__<server>__<tool> tools and the
- * per-server discovery stub: make sure the server is connected (reconnecting
- * transparently after a mid-session drop), apply the abort signal and the
- * server's configured timeout, surface MCP isError results as agent tool
- * errors, and render content blocks as model-facing text.
+ * gateway stub: make sure the server is connected (reconnecting transparently
+ * after a mid-session drop), apply the abort signal and the server's
+ * configured timeout, surface MCP isError results as agent tool errors, and
+ * render content blocks as model-facing text.
  */
 async function runMcpTool(
 	client: McpClient,
