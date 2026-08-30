@@ -46,13 +46,19 @@ export type RpcEvent =
 	| AutoRetryStartEvent
 	| AutoRetryEndEvent
 	| CompactionEndEvent
-	| SessionsUpdateEvent;
+	| SessionsUpdateEvent
+	| ThinkingLevelChangedEvent;
 
 /** The engine re-emits agent_end with a retry hint after a retryable failure. */
 export interface AgentEndWillRetry {
 	type: "agent_end";
 	messages: unknown[];
 	willRetry: boolean;
+}
+
+export interface ThinkingLevelChangedEvent {
+	type: "thinking_level_changed";
+	level: string;
 }
 
 export interface AutoRetryStartEvent {

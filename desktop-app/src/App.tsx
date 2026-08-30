@@ -442,6 +442,12 @@ export default function App() {
 								toast.error("Model request failed", event.finalError);
 							}
 							break;
+						case "thinking_level_changed":
+							// The engine can change the thinking level itself (the `/think`
+							// command, /think cycling, or thinking-keyword escalation like
+							// "ultrathink"). Keep the status bar in sync.
+							setThinkingLevel(event.level);
+							break;
 						case "sessions_update":
 							// Runtime registry changed (background session detaching,
 							// background turn started/finished, or reaped).

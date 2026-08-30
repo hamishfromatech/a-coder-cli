@@ -77,4 +77,22 @@ describe("session-tree-store", () => {
 		expect(tree[1].role).toBe("toolResult");
 		expect(leafId).toBe("child");
 	});
+
+	it("carries the entry type through to tree nodes", () => {
+		useSessionTreeStore.getState().setTree(
+			[
+				node("root", [
+					{
+						entry: { id: "snap1", type: "file_history_snapshot", parentId: null },
+						children: [],
+					},
+				]),
+			] as any,
+			"root",
+		);
+		const { tree } = useSessionTreeStore.getState();
+		const snapshot = tree[0].children[0];
+		expect(snapshot.type).toBe("file_history_snapshot");
+		expect(snapshot.label).toBeUndefined(); // render layer shows "Checkpoint"
+	});
 });

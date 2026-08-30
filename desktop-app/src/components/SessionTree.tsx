@@ -337,18 +337,26 @@ function FilterMenu({
 }
 
 function applyFilter(nodes: TreeNode[], mode: TreeFilterMode): TreeNode[] {
+	// Checkpoint nodes (file_history_snapshot, one per user turn once file
+	// history persists into the transcript) are bookkeeping — hidden by the TUI
+	// tree in its default view; only the "Everything" mode shows them.
+	const isCheckpoint = (n: TreeNode) => n.type === "file_history_snapshot";
 	switch (mode) {
 		case "no-tools":
 			return nodes
-				.filter((n) => n.role !== "toolResult")
+				.filter((n) => n.role !== "toolResult" && !isCheckpoint(n))
 				.map((n) => ({ ...n, children: applyFilter(n.children, mode) }));
 		case "user-only":
 			return nodes
-				.filter((n) => n.role === "user")
+				.filter((n) => n.role === "user" && !isCheckpoint(n))
 				.map((n) => ({ ...n, children: applyFilter(n.children, mode) }));
 		case "labeled-only":
 			return nodes
-				.filter((n) => !!n.label)
+				.filter((n) => !!n.label && !isCheckpoint(n))
+				.map((n) => ({ ...n, children: applyFilter(n.children, mode) }));
+		case "default":
+			return nodes
+				.filter((n) => !isCheckpoint(n))
 				.map((n) => ({ ...n, children: applyFilter(n.children, mode) }));
 		case "all":
 		default:
@@ -453,7 +461,12 @@ function TreeItem({
 						className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-left"
 
 					>
-						<span className="truncate">{node.label ?? node.id.slice(0, 8)}</span>
+						<span className="truncate">
+							{node.label ??
+								(node.type === "file_history_snapshot"
+									? "Checkpoint"
+									: node.id.slice(0, 8))}
+						</span>
 						{isMultiBranch && (
 							<span className="flex shrink-0 items-center gap-0.5 rounded px-1 text-4xs font-medium text-pi-text-faint bg-pi-surface-overlay">
 								<GitBranch className="h-2.5 w-2.5" />

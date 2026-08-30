@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Sync with the engine's stage-27-adjacent upgrades: `thinking_level_changed` is now handled, so the status bar follows the thinking level when the engine changes it itself (the model raising itself via "ultrathink"-style prompt keywords, or `/think`); and session-tree nodes for new file-history checkpoint entries (`file_history_snapshot`, one per user turn on new sessions while file-history persistence lands in the transcript) are hidden in All / No tools / User only / Labeled views and rendered as "Checkpoint" in "Everything", matching the TUI's tree filter — previously they would have shown as raw id fragments in every mode.
+
 ### Fixed
 
 - Fixed the desktop engine failing to start with `Download failed (status 404 Not Found)`: the version-sync script never updated `desktop-app/src-tauri/Cargo.toml` (its pattern required `version` to directly follow `[package]`, but `name` sits between them), so released desktop apps identified themselves by a stale Cargo version and tried to download a nonexistent matching CLI release tag. `Cargo.toml` now tracks the lockstep version and the sync script fails loudly if it cannot find the version field.

@@ -7,6 +7,8 @@ export interface TreeNode {
 	id: string;
 	label?: string;
 	role: TreeNodeRole;
+	/** Entry type ("message", "file_history_snapshot", "compaction", …). */
+	type?: string;
 	children: TreeNode[];
 }
 
@@ -43,6 +45,7 @@ function normalizeTree(nodes: SessionTreeNode[]): TreeNode[] {
 		id: n.entry.id,
 		label: n.label ?? n.entry.label ?? undefined,
 		role: (n.entry.message?.role === "tool" ? "toolResult" : n.entry.message?.role) ?? "other",
+		type: n.entry.type,
 		children: normalizeTree(n.children),
 	}));
 }
