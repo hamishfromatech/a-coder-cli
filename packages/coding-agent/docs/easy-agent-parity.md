@@ -45,3 +45,4 @@ Comparison of the 35 easy-agent build stages (`/Users/hamishfromatech/Downloads/
 
 - v0.80.54: MCP stub removed for ≤50-tool servers; gateway stub (only >50-tool servers) hardened with schema echo; `edit` `replaceAll`; retry jitter+cap; loop `maxToolTurns`.
 - Current: settings hooks, `skill` tool, MCP resource tools, arg-scoped permission rules + auto-mode classifier, `--mode stream-json`.
+- TUI round (step24/step20/step21 comparison): running-tasks viewer now shows per-turn token usage lines, tool-result preview lines (`⎿ ok (1.2k chars): …`), hidden-event/line indicators, and a 1s elapsed ticker. Verified already on par or better: hljs syntax highlighting wired into markdown + read, stable-prefix streaming markdown cache, word-level diff, transcript overlay with search, grouped read/grep cards, live bash output tails, bar elapsed ticks. Remaining TUI-adjacent idea (not planned): teammate picker auto-exit on new prompt — N/A in pi (viewer replaces the editor).
