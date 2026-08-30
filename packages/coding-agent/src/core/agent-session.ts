@@ -94,10 +94,14 @@ import type {
 	SubAgentRunResult,
 } from "./extensions/types.ts";
 import { FileHistory } from "./file-history.ts";
+import type { ClaudeHookEventName } from "./hooks/hook-events.ts";
+import { buildHookInput, type HookRunOutcome, runConfiguredHooks } from "./hooks/run-hooks.ts";
 import type { BashExecutionMessage, CustomMessage } from "./messages.ts";
 import type { ModelRegistry } from "./model-registry.ts";
 import { applyPersistedOutputStyle, getOutputStylePrompt, loadOutputStyles } from "./output-styles.ts";
+import { classifyToolCall } from "./permission-classifier.ts";
 import {
+	AUTO_MODE_SAFE_TOOL_NAMES,
 	DEFAULT_MUTATING_TOOL_NAMES,
 	type PermissionDecisionResult,
 	resolvePermissionDecision,
@@ -352,6 +356,12 @@ export class AgentSession {
 	/** Messages queued to be included with the next user prompt as context ("asides"). */
 	private _pendingNextTurnMessages: CustomMessage[] = [];
 
+	// Auto-mode classifier state (session-scoped circuit breakers)
+	private _classifierDisabled = false;
+	private _autoModeConsecutiveFailures = 0;
+	private _autoModeConsecutiveBlocks = 0;
+	private _recentAutoModeToolCalls: string[] = [];
+
 	// Compaction state
 	private _compactionAbortController: AbortController | undefined = undefined;
 	private _autoCompactionAbortController: AbortController | undefined = undefined;
@@ -503,7 +513,73 @@ export class AgentSession {
 		this._permissionPromptHandler = handler;
 	}
 
-	private _resolvePermissionDecision(toolName: string): PermissionDecisionResult {
+	private async _resolvePermissionDecisionWithClassifier(
+		toolName: string,
+		args: Record<string, unknown> | undefined,
+	): Promise<PermissionDecisionResult> {
+		const decision = this._resolvePermissionDecision(toolName, args);
+		const matchedDefault = decision.decision === "approve" ? decision.matchedDefault === true : false;
+		if (this._permissionMode !== "auto" || !matchedDefault) {
+			return decision;
+		}
+		const classifierDecision = await this._classifyAutoModeCall(toolName, args);
+		return classifierDecision ?? decision;
+	}
+
+	/**
+	 * Auto-mode LLM classifier bridge. Returns undefined when the classifier is
+	 * disabled/circuit-broken/not-applicable, in which case the static decision
+	 * stands. A classifier block degrades to a prompt (never a silent deny),
+	 * and repeated blocks/failures disable the classifier for the session.
+	 */
+	private async _classifyAutoModeCall(
+		toolName: string,
+		args: Record<string, unknown> | undefined,
+	): Promise<PermissionDecisionResult | undefined> {
+		const settings = this.settingsManager.getAutoModeSettings();
+		if (!settings.enabled || this._classifierDisabled) {
+			return undefined;
+		}
+		// Read-only and informational tools are never worth an LLM call.
+		if (AUTO_MODE_SAFE_TOOL_NAMES.has(toolName)) {
+			return undefined;
+		}
+		const model = this.model;
+		if (!model) {
+			return undefined;
+		}
+		const outcome = await classifyToolCall(model, {
+			toolName,
+			args,
+			recentToolCalls: this._recentAutoModeToolCalls,
+		});
+		this._recentAutoModeToolCalls.push(toolName);
+		if (this._recentAutoModeToolCalls.length > 20) this._recentAutoModeToolCalls.shift();
+		if (!outcome.ok) {
+			this._autoModeConsecutiveFailures++;
+			if (this._autoModeConsecutiveFailures >= settings.maxConsecutiveFailures) {
+				this._classifierDisabled = true;
+			}
+			return undefined;
+		}
+		this._autoModeConsecutiveFailures = 0;
+		if (!outcome.verdict.shouldBlock) {
+			this._autoModeConsecutiveBlocks = 0;
+			return undefined;
+		}
+		this._autoModeConsecutiveBlocks++;
+		if (this._autoModeConsecutiveBlocks >= settings.maxConsecutiveBlocks) {
+			this._classifierDisabled = true;
+		}
+		// Degrade to a user prompt instead of silently denying: an interactive
+		// session asks, non-interactive falls back to the static default (deny).
+		return {
+			decision: this._permissionPromptHandler ? "prompt" : "deny",
+			reason: `Auto-mode classifier: ${outcome.verdict.reason || "call looks dangerous"}`,
+		};
+	}
+
+	private _resolvePermissionDecision(toolName: string, args?: Record<string, unknown>): PermissionDecisionResult {
 		// The plan_mode tool itself must always be callable so the model can
 		// exit plan mode without needing a separate approval step.
 		if (toolName === "plan_mode") {
@@ -526,7 +602,7 @@ export class AgentSession {
 		if (this._permissionMode === "ask" && !isInteractive) {
 			return { decision: "approve" };
 		}
-		return resolvePermissionDecision(this._permissionMode, toolName, policies, isInteractive);
+		return resolvePermissionDecision(this._permissionMode, toolName, policies, isInteractive, args);
 	}
 
 	private async _maybePromptForPermission(
@@ -542,6 +618,36 @@ export class AgentSession {
 		} catch {
 			return false;
 		}
+	}
+
+	/**
+	 * Run configured Claude-Code-compatible settings hooks for one event.
+	 * Hook failures are reported via the extension runner's error channel and
+	 * never abort the flow.
+	 */
+	private async _runHooks(
+		event: ClaudeHookEventName,
+		matcherKey: string | undefined,
+		extra: Record<string, unknown> = {},
+		signal?: AbortSignal,
+	): Promise<HookRunOutcome> {
+		const outcome = await runConfiguredHooks(
+			event,
+			matcherKey,
+			buildHookInput(this.sessionId, this._cwd, event, extra),
+			{
+				cwd: this._cwd,
+				signal,
+			},
+		);
+		for (const error of outcome.errors) {
+			this._extensionRunner.emitError({
+				extensionPath: `hooks:${event}`,
+				event: event,
+				error,
+			});
+		}
+		return outcome;
 	}
 
 	private async _getRequiredRequestAuth(model: Model<any>): Promise<{
@@ -594,20 +700,37 @@ export class AgentSession {
 	 */
 	private _installAgentToolHooks(): void {
 		this.agent.beforeToolCall = async ({ toolCall, args }) => {
-			const permission = this._resolvePermissionDecision(toolCall.name);
+			// PreToolUse hooks: shell hooks from settings.json may deny, force a
+			// user prompt, or auto-approve the call before policy resolution runs.
+			const hookOutcome = await this._runHooks("PreToolUse", toolCall.name, {
+				tool_name: toolCall.name,
+				tool_input: args as Record<string, unknown> | null,
+			});
+			if (hookOutcome.block) {
+				return { block: true, reason: hookOutcome.reason ?? "Blocked by hook" };
+			}
+
+			const permission = hookOutcome.approve
+				? ({ decision: "approve" } as const)
+				: await this._resolvePermissionDecisionWithClassifier(
+						toolCall.name,
+						args as Record<string, unknown> | undefined,
+					);
 			if (permission.decision === "deny") {
 				return { block: true, reason: permission.reason };
 			}
-			if (permission.decision === "prompt") {
+			if (permission.decision === "prompt" || hookOutcome.ask) {
+				const promptReason =
+					hookOutcome.reason ?? (permission.decision === "prompt" ? permission.reason : undefined);
 				const approved = await this._maybePromptForPermission(
 					toolCall.name,
-					permission.reason,
+					promptReason,
 					args as Record<string, unknown> | undefined,
 				);
 				if (!approved) {
 					return {
 						block: true,
-						reason: permission.reason ?? `Permission denied for "${toolCall.name}"`,
+						reason: promptReason ?? `Permission denied for "${toolCall.name}"`,
 					};
 				}
 			}
@@ -657,9 +780,50 @@ export class AgentSession {
 		};
 
 		this.agent.afterToolCall = async ({ toolCall, args, result, isError }) => {
+			// PostToolUse hooks: shell hooks may flag the result (isError + reason
+			// fed back to the model) and/or append additional context to it.
+			const hookContentSuffix: string[] = [];
+			let hookIsError = isError;
+			let hookReason: string | undefined;
+			try {
+				const hookOutcome = await this._runHooks("PostToolUse", toolCall.name, {
+					tool_name: toolCall.name,
+					tool_input: args as Record<string, unknown> | null,
+					tool_response: result.content
+						.map((c) => (typeof c === "string" || !("text" in c) ? "" : ((c as { text?: string }).text ?? "")))
+						.join("\n")
+						.trim()
+						.slice(0, 4000),
+				});
+				if (hookOutcome.block) {
+					hookIsError = true;
+					hookReason = hookOutcome.reason ?? "Tool result blocked by hook";
+					hookContentSuffix.push(`<tool-result-hook>${hookReason}</tool-result-hook>`);
+				}
+				if (hookOutcome.additionalContext.length > 0) {
+					hookContentSuffix.push(...hookOutcome.additionalContext);
+				}
+			} catch {
+				// Hooks must never turn a successful tool result into a crash.
+			}
+
+			const effectiveResult =
+				hookContentSuffix.length > 0 || hookIsError !== isError
+					? {
+							...result,
+							content: [
+								...result.content,
+								...hookContentSuffix.map((text) => ({ type: "text" as const, text })),
+							],
+						}
+					: result;
+
 			const runner = this._extensionRunner;
 			if (!runner.hasHandlers("tool_result")) {
-				return undefined;
+				if (effectiveResult === result) {
+					return undefined;
+				}
+				return { content: effectiveResult.content, details: effectiveResult.details, isError: hookIsError };
 			}
 
 			try {
@@ -668,19 +832,21 @@ export class AgentSession {
 					toolName: toolCall.name,
 					toolCallId: toolCall.id,
 					input: args as Record<string, unknown>,
-					content: result.content,
-					details: result.details,
-					isError,
+					content: effectiveResult.content,
+					details: effectiveResult.details,
+					isError: hookIsError,
 				});
 
 				if (!hookResult) {
-					return undefined;
+					return effectiveResult === result && hookIsError === isError
+						? undefined
+						: { content: effectiveResult.content, details: effectiveResult.details, isError: hookIsError };
 				}
 
 				return {
 					content: hookResult.content,
 					details: hookResult.details,
-					isError: hookResult.isError ?? isError,
+					isError: hookResult.isError ?? hookIsError,
 				};
 			} catch (err) {
 				// A throwing tool_result handler must not turn a successful tool
@@ -740,6 +906,9 @@ export class AgentSession {
 			this._sessionStartEvent = event;
 		}
 		this._emit(this._sessionStartEvent);
+		// Fire-only: SessionStart hooks cannot block or inject context in the
+		// CLI's startup model, but failures are surfaced via the runner.
+		void this._runHooks("SessionStart", undefined, { source: this._sessionStartEvent.reason }).catch(() => {});
 	}
 
 	private _emitQueueUpdate(): void {
@@ -1068,6 +1237,12 @@ export class AgentSession {
 				toolResults: event.toolResults,
 			};
 			await this._extensionRunner.emit(extensionEvent);
+			// Stop hooks fire per completed assistant turn (informational: they
+			// cannot force continuation in the CLI's turn model).
+			void this._runHooks("Stop", undefined, {
+				stop_reason: (event.message as { stopReason?: unknown }).stopReason,
+				last_message: event.message,
+			}).catch(() => {});
 			this._turnIndex++;
 		} else if (event.type === "message_start") {
 			const extensionEvent: MessageStartEvent = {
@@ -1510,6 +1685,29 @@ export class AgentSession {
 					currentText = inputResult.text;
 					currentImages = inputResult.images ?? currentImages;
 				}
+			}
+
+			// UserPromptSubmit hooks: additionalContext is appended to the prompt;
+			// a blocking hook drops the prompt and records the reason as a session
+			// entry so the block is visible in the transcript.
+			const promptHooks = await this._runHooks("UserPromptSubmit", undefined, { prompt: currentText });
+			if (promptHooks.block) {
+				const entryId = this.sessionManager.appendCustomEntry("user_prompt_submit_blocked", {
+					prompt: currentText,
+					reason: promptHooks.reason ?? "Blocked by UserPromptSubmit hook",
+				});
+				const entry = this.sessionManager.getEntry(entryId);
+				if (entry) {
+					this._emit({ type: "entry_appended", entry });
+				}
+				preflightResult?.(true);
+				return;
+			}
+			if (promptHooks.additionalContext.length > 0) {
+				const hookContext = promptHooks.additionalContext
+					.map((ctx) => `<user-prompt-submit-hook>${ctx}</user-prompt-submit-hook>`)
+					.join("\n\n");
+				currentText = `${hookContext}\n\n${currentText}`;
 			}
 
 			// Expand skill commands (/skill:name args) and prompt templates (/template args)
@@ -2159,6 +2357,8 @@ export class AgentSession {
 			let extensionCompaction: CompactionResult | undefined;
 			let fromExtension = false;
 
+			void this._runHooks("PreCompact", undefined, { reason: "manual" }).catch(() => {});
+
 			if (this._extensionRunner.hasHandlers("session_before_compact")) {
 				const result = (await this._extensionRunner.emit({
 					type: "session_before_compact",
@@ -2458,6 +2658,8 @@ export class AgentSession {
 
 			let extensionCompaction: CompactionResult | undefined;
 			let fromExtension = false;
+
+			void this._runHooks("PreCompact", undefined, { reason, willRetry }).catch(() => {});
 
 			if (this._extensionRunner.hasHandlers("session_before_compact")) {
 				const extensionResult = (await this._extensionRunner.emit({
@@ -3041,6 +3243,9 @@ export class AgentSession {
 					memory: {
 						sessionDir: this.sessionManager.getSessionDir(),
 						sessionId: this.sessionManager.getSessionId(),
+					},
+					skill: {
+						getSkills: () => this.resourceLoader.getSkills().skills,
 					},
 				});
 

@@ -112,11 +112,13 @@ import { createLsTool, createLsToolDefinition, type LsToolOptions } from "./ls.t
 import { createMemoryTool, createMemoryToolDefinition } from "./memory.ts";
 import { createPlanModeTool, createPlanModeToolDefinition, type PlanModeToolCallbacks } from "./plan-mode.ts";
 import { createReadTool, createReadToolDefinition, type ReadToolOptions } from "./read.ts";
+import { createSkillTool, createSkillToolDefinition, type SkillToolOptions } from "./skill.ts";
 import { createWriteTool, createWriteToolDefinition, type WriteToolOptions } from "./write.ts";
 
 export type Tool = AgentTool<any>;
 export type ToolDef = ToolDefinition<any, any>;
 export type ToolName =
+	| "skill"
 	| "read"
 	| "bash"
 	| "edit"
@@ -136,6 +138,7 @@ export type ToolName =
 	| "team_delete"
 	| "send_message";
 export const allToolNames: Set<ToolName> = new Set([
+	"skill",
 	"read",
 	"bash",
 	"edit",
@@ -166,10 +169,13 @@ export interface ToolsOptions {
 	ls?: LsToolOptions;
 	planMode?: { callbacks: PlanModeToolCallbacks };
 	memory?: { sessionDir: string; sessionId: string };
+	skill?: SkillToolOptions;
 }
 
 export function createToolDefinition(toolName: ToolName, cwd: string, options?: ToolsOptions): ToolDef {
 	switch (toolName) {
+		case "skill":
+			return createSkillToolDefinition(options?.skill ?? { getSkills: () => [] });
 		case "read":
 			return createReadToolDefinition(cwd, options?.read);
 		case "bash":
@@ -288,6 +294,7 @@ export function createReadOnlyToolDefinitions(cwd: string, options?: ToolsOption
 
 export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): Record<ToolName, ToolDef> {
 	return {
+		skill: createSkillToolDefinition(options?.skill ?? { getSkills: () => [] }),
 		read: createReadToolDefinition(cwd, options?.read),
 		bash: createBashToolDefinition(cwd, options?.bash),
 		edit: createEditToolDefinition(cwd, options?.edit),
@@ -360,6 +367,7 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		task_list: createTaskListTool(),
 		task_update: createTaskUpdateTool(),
 		memory: createMemoryTool(options?.memory),
+		skill: createSkillTool(options?.skill ?? { getSkills: () => [] }),
 		team_create: createTeamCreateTool(),
 		team_delete: createTeamDeleteTool(),
 		send_message: createSendMessageTool(),

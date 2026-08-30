@@ -91,6 +91,10 @@ export interface ComposioSettings {
 /** Rule matching a tool name. Supports exact names, "namespace:*" globs, and "$defaults". */
 export type PermissionRule = string;
 
+function positiveIntOr(value: number | undefined, fallback: number): number {
+	return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+}
+
 export interface PermissionPolicyConfig {
 	/** Tools automatically approved unless matched by a deny rule. */
 	allow?: PermissionRule[];
@@ -98,6 +102,20 @@ export interface PermissionPolicyConfig {
 	softDeny?: PermissionRule[];
 	/** Tools always denied. Takes precedence over softDeny and allow. */
 	hardDeny?: PermissionRule[];
+}
+
+/**
+ * Auto-mode LLM classifier settings. The classifier runs only for tool calls
+ * that static policy rules neither explicitly allow nor deny; failures fall
+ * back to the normal approval flow.
+ */
+export interface AutoModeSettings {
+	/** Enable the auto-mode classifier. Default: false. */
+	enabled?: boolean;
+	/** Consecutive classifier failures before disabling it for the session. Default: 3. */
+	maxConsecutiveFailures?: number;
+	/** Classifier denies (consecutive within one session) after which auto mode degrades to prompting. Default: 3. */
+	maxConsecutiveBlocks?: number;
 }
 
 export type TransportSetting = Transport;
@@ -167,6 +185,7 @@ export interface Settings {
 	sessionDir?: string; // Custom session storage directory (same format as --session-dir CLI flag)
 	permissionMode?: PermissionMode; // default: "ask"
 	permissionPolicies?: PermissionPolicyConfig; // policy rules for "auto" mode
+	autoMode?: AutoModeSettings; // LLM classifier for "auto" mode (opt-in)
 	httpProxy?: string; // Proxy URL applied as HTTP_PROXY and HTTPS_PROXY for Pi-managed HTTP clients
 	httpIdleTimeoutMs?: number; // HTTP header/body idle timeout in milliseconds; 0 disables it
 	websocketConnectTimeoutMs?: number; // WebSocket connect/open handshake timeout in milliseconds; 0 disables it
@@ -1005,6 +1024,14 @@ export class SettingsManager {
 			return value;
 		}
 		return "ask";
+	}
+
+	getAutoModeSettings(): Required<AutoModeSettings> {
+		return {
+			enabled: this.settings.autoMode?.enabled === true,
+			maxConsecutiveFailures: positiveIntOr(this.settings.autoMode?.maxConsecutiveFailures, 3),
+			maxConsecutiveBlocks: positiveIntOr(this.settings.autoMode?.maxConsecutiveBlocks, 3),
+		};
 	}
 
 	setPermissionMode(mode: PermissionMode): void {

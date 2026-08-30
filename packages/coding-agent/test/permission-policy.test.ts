@@ -45,7 +45,10 @@ describe("resolvePermissionDecision", () => {
 			decision: "deny",
 			reason: 'Tool "write" matches hard-deny policy',
 		});
-		expect(resolvePermissionDecision("auto", "read", policies, true)).toEqual({ decision: "approve" });
+		expect(resolvePermissionDecision("auto", "read", policies, true)).toEqual({
+			decision: "approve",
+			matchedDefault: true,
+		});
 	});
 
 	it("prompts on softDeny matches in auto mode when interactive, denies otherwise", () => {
@@ -58,14 +61,20 @@ describe("resolvePermissionDecision", () => {
 			decision: "deny",
 			reason: 'Tool "edit" matches soft-deny policy (no TTY)',
 		});
-		expect(resolvePermissionDecision("auto", "read", policies, true)).toEqual({ decision: "approve" });
+		expect(resolvePermissionDecision("auto", "read", policies, true)).toEqual({
+			decision: "approve",
+			matchedDefault: true,
+		});
 	});
 
 	it("approves on explicit allow matches in auto mode", () => {
 		const policies: PermissionPolicyConfig = { allow: ["read", "grep"] };
 		expect(resolvePermissionDecision("auto", "read", policies, true)).toEqual({ decision: "approve" });
 		expect(resolvePermissionDecision("auto", "grep", policies, true)).toEqual({ decision: "approve" });
-		expect(resolvePermissionDecision("auto", "bash", policies, true)).toEqual({ decision: "approve" });
+		expect(resolvePermissionDecision("auto", "bash", policies, true)).toEqual({
+			decision: "approve",
+			matchedDefault: true,
+		});
 	});
 
 	it("expands $defaults to mutating tools and treats them as soft-deny by default", () => {
@@ -73,7 +82,10 @@ describe("resolvePermissionDecision", () => {
 		for (const tool of DEFAULT_MUTATING_TOOL_NAMES) {
 			expect(resolvePermissionDecision("auto", tool, policies, true).decision).toBe("prompt");
 		}
-		expect(resolvePermissionDecision("auto", "read", policies, true)).toEqual({ decision: "approve" });
+		expect(resolvePermissionDecision("auto", "read", policies, true)).toEqual({
+			decision: "approve",
+			matchedDefault: true,
+		});
 		expect(resolvePolicyRules(policies)).toEqual([...DEFAULT_MUTATING_TOOL_NAMES]);
 	});
 
@@ -95,12 +107,21 @@ describe("resolvePermissionDecision", () => {
 			decision: "deny",
 			reason: 'Tool "custom:dangerous" matches hard-deny policy',
 		});
-		expect(resolvePermissionDecision("auto", "custom_safe", policies, true)).toEqual({ decision: "approve" });
+		expect(resolvePermissionDecision("auto", "custom_safe", policies, true)).toEqual({
+			decision: "approve",
+			matchedDefault: true,
+		});
 	});
 
 	it("falls back to approve in auto mode when no rules match", () => {
-		expect(resolvePermissionDecision("auto", "anything", {}, true)).toEqual({ decision: "approve" });
-		expect(resolvePermissionDecision("auto", "anything", undefined, false)).toEqual({ decision: "approve" });
+		expect(resolvePermissionDecision("auto", "anything", {}, true)).toEqual({
+			decision: "approve",
+			matchedDefault: true,
+		});
+		expect(resolvePermissionDecision("auto", "anything", undefined, false)).toEqual({
+			decision: "approve",
+			matchedDefault: true,
+		});
 	});
 });
 

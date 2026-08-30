@@ -7,7 +7,7 @@ import chalk from "chalk";
 import { APP_NAME, ENV_AGENT_DIR, ENV_SESSION_DIR, USER_CONFIG_DIR_NAME } from "../config.ts";
 import type { ExtensionFlag } from "../core/extensions/types.ts";
 
-export type Mode = "text" | "json" | "rpc";
+export type Mode = "text" | "json" | "stream-json" | "rpc";
 export type PermissionModeArg = "ask" | "allow" | "read-only" | "auto";
 
 export interface Args {
@@ -91,7 +91,7 @@ export function parseArgs(args: string[]): Args {
 			result.version = true;
 		} else if (arg === "--mode" && i + 1 < args.length) {
 			const mode = args[++i];
-			if (mode === "text" || mode === "json" || mode === "rpc") {
+			if (mode === "text" || mode === "json" || mode === "stream-json" || mode === "rpc") {
 				result.mode = mode;
 			}
 		} else if (arg === "--permission-mode" && i + 1 < args.length) {
@@ -280,7 +280,7 @@ ${chalk.bold("Options:")}
   --api-key <key>                API key (defaults to env vars)
   --system-prompt <text>         System prompt (default: coding assistant prompt)
   --append-system-prompt <text>  Append text or file contents to the system prompt (can be used multiple times)
-  --mode <mode>                  Output mode: text (default), json, or rpc
+  --mode <mode>                  Output mode: text (default), json, stream-json, or rpc
   --permission-mode <mode>       Permission mode: ask, allow, read-only, or auto
   --print, -p                    Non-interactive mode: process prompt and exit
   --continue, -c                 Continue previous session

@@ -1,5 +1,5 @@
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
-import type { CallToolResult, ContentBlock } from "@modelcontextprotocol/sdk/types.js";
+import type { CallToolResult, ContentBlock, ReadResourceResult } from "@modelcontextprotocol/sdk/types.js";
 import type { ExtensionFactory, ExtensionUIContext } from "../extensions/types.ts";
 import type { McpDiscoveredTool } from "./client.ts";
 import { McpClient } from "./client.ts";
@@ -118,6 +118,117 @@ export function createMcpExtensionFactory(options: McpExtensionFactoryOptions): 
 			clients.push(options.createClient ? options.createClient(server) : new McpClient(server));
 		}
 		recomputeMcpChip();
+
+		/**
+		 * Cross-server resource tools: list resources across all configured MCP
+		 * servers (optional per-server filter) and read one resource by server+URI.
+		 * Registered up front (they do not depend on tool discovery) and
+		 * transparently trigger each server's lazy connect on use.
+		 */
+		const mcpTimeoutOptions = (signal: AbortSignal | undefined, server: McpClient | undefined) => ({
+			signal,
+			timeoutMs: server?.config.timeoutMs,
+		});
+		try {
+			pi.registerTool({
+				name: "mcp_list_resources",
+				label: "MCP: List resources",
+				description:
+					"List resources exposed by MCP servers. Optionally filter by server name. " +
+					"Returns server, display name, URI, MIME type and description per resource.",
+				parameters: jsonSchemaToTypeBox({
+					type: "object",
+					properties: {
+						server: {
+							type: "string",
+							description: "Optional server name to list resources for (default: all servers)",
+						},
+					},
+				}),
+				async execute(_toolCallId, rawParams, signal): Promise<AgentToolResult<unknown>> {
+					const params = rawParams as { server?: unknown };
+					const filter = typeof params?.server === "string" ? params.server : undefined;
+					const targets = clients.filter((c) => !filter || c.serverName === filter);
+					if (targets.length === 0) {
+						return {
+							content: [{ type: "text", text: `No MCP server named "${filter ?? ""}" is configured.` }],
+							details: { error: "unknown-server" },
+						};
+					}
+					const lines: string[] = [];
+					const all: unknown[] = [];
+					for (const client of targets) {
+						try {
+							await client.connect();
+							const resources = await client.listResources(mcpTimeoutOptions(signal, client));
+							all.push(...resources);
+							if (resources.length === 0) {
+								lines.push(`[${client.serverName}] (no resources)`);
+								continue;
+							}
+							for (const resource of resources) {
+								const label = resource.name ? `${resource.name}: ` : "";
+								const mime = resource.mimeType ? ` (${resource.mimeType})` : "";
+								const desc = resource.description ? ` — ${resource.description}` : "";
+								lines.push(`[${client.serverName}] ${label}${resource.uri}${mime}${desc}`);
+							}
+						} catch (err) {
+							const message = err instanceof Error ? err.message : String(err);
+							lines.push(`[${client.serverName}] unavailable: ${message}`);
+						}
+					}
+					return {
+						content: [{ type: "text", text: lines.join("\n") || "(no resources)" }],
+						details: { resources: all },
+					};
+				},
+			});
+			pi.registerTool({
+				name: "mcp_read_resource",
+				label: "MCP: Read resource",
+				description:
+					"Read one resource from an MCP server. Pass the server name and the resource URI (from mcp_list_resources). " +
+					"Text contents are returned inline; binary contents are reported but not rendered.",
+				parameters: jsonSchemaToTypeBox({
+					type: "object",
+					properties: {
+						server: { type: "string", description: "MCP server name" },
+						uri: { type: "string", description: "Resource URI" },
+					},
+					required: ["server", "uri"],
+				}),
+				async execute(_toolCallId, rawParams, signal): Promise<AgentToolResult<unknown>> {
+					const params = rawParams as { server?: unknown; uri?: unknown };
+					const serverName = typeof params?.server === "string" ? params.server : "";
+					const uri = typeof params?.uri === "string" ? params.uri : "";
+					if (!serverName || !uri) {
+						return {
+							content: [{ type: "text", text: 'Both "server" and "uri" are required.' }],
+							details: { error: "missing-arguments" },
+						};
+					}
+					const client = clients.find((c) => c.serverName === serverName);
+					if (!client) {
+						return {
+							content: [{ type: "text", text: `No MCP server named "${serverName}" is configured.` }],
+							details: { error: "unknown-server" },
+						};
+					}
+					try {
+						await client.connect();
+						const result = await client.readResource(uri, mcpTimeoutOptions(signal, client));
+						const text = formatMcpResourceResult(result);
+						return { content: [{ type: "text", text }], details: result };
+					} catch (err) {
+						const message = err instanceof Error ? err.message : String(err);
+						throw new Error(`MCP resource "${uri}" on server "${serverName}" failed: ${message}`);
+					}
+				},
+			});
+		} catch {
+			// Session was replaced/reloaded mid-connect; the fresh extension
+			// instance registers its own tools. Nothing to do here.
+		}
 
 		for (const client of clients) {
 			let discoveredTools: McpDiscoveredTool[] | undefined;
@@ -377,6 +488,27 @@ export function formatMcpResult(result: CallToolResult): string {
 		}
 	}
 	return parts.join("\n");
+}
+
+/**
+ * Render an MCP ReadResourceResult as model-facing text: text contents
+ * inline, binary blobs as bounded placeholders, multiple content items
+ * separated by headers.
+ */
+export function formatMcpResourceResult(result: ReadResourceResult): string {
+	const contents = result.contents ?? [];
+	if (contents.length === 0) return "(resource has no contents)";
+	if (contents.length === 1) return renderOneResource(contents[0]);
+	return contents.map((content, i) => `[${i + 1}/${contents.length}] ${renderOneResource(content)}`).join("\n\n");
+}
+
+function renderOneResource(content: ReadResourceResult["contents"][number]): string {
+	const header = content.mimeType ? `[${content.mimeType}] ` : "";
+	if ("text" in content) {
+		return `${header}${content.uri}\n${content.text}`;
+	}
+	const approxBytes = Math.floor((content.blob.length * 3) / 4);
+	return `${header}${content.uri}\n[binary content: ~${approxBytes} bytes of base64 — read via a file/download tool if needed]`;
 }
 
 function formatContentBlock(block: ContentBlock): string | undefined {

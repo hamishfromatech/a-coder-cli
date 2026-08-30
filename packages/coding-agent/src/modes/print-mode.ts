@@ -10,13 +10,14 @@ import type { AssistantMessage, ImageContent } from "@earendil-works/pi-ai";
 import type { AgentSessionRuntime } from "../core/agent-session-runtime.ts";
 import { flushRawStdout, writeRawStdout } from "../core/output-guard.ts";
 import { killTrackedDetachedChildren } from "../utils/shell.ts";
+import { buildStreamJsonInit, buildStreamJsonResult, emptyUsageState, mapEventToStreamJson } from "./stream-json.ts";
 
 /**
  * Options for print mode.
  */
 export interface PrintModeOptions {
-	/** Output mode: "text" for final response only, "json" for all events */
-	mode: "text" | "json";
+	/** Output mode: "text" for final response only, "json" for all events, "stream-json" for a Claude-Code-style NDJSON envelope */
+	mode: "text" | "json" | "stream-json";
 	/** Array of additional prompts to send after initialMessage */
 	messages?: string[];
 	/** First message to send (may contain @file content) */
@@ -36,6 +37,7 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 	let unsubscribe: (() => void) | undefined;
 	let disposed = false;
 	const signalCleanupHandlers: Array<() => void> = [];
+	const streamJson = mode === "stream-json" ? { state: emptyUsageState(), startedAt: Date.now() } : undefined;
 
 	const disposeRuntime = async (): Promise<void> => {
 		if (disposed) return;
@@ -104,6 +106,10 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 		unsubscribe = session.subscribe((event) => {
 			if (mode === "json") {
 				writeRawStdout(`${JSON.stringify(event)}\n`);
+			} else if (mode === "stream-json" && streamJson) {
+				for (const line of mapEventToStreamJson(event, streamJson.state)) {
+					writeRawStdout(`${line}\n`);
+				}
 			}
 		});
 	};
@@ -118,6 +124,17 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 
 		await rebindSession();
 
+		if (streamJson) {
+			writeRawStdout(
+				`${buildStreamJsonInit({
+					sessionId: session.sessionId,
+					cwd: process.cwd(),
+					model: session.model ? `${session.model.provider}/${session.model.id}` : undefined,
+					tools: session.agent.state.tools.map((t) => t.name),
+				})}\n`,
+			);
+		}
+
 		if (initialMessage) {
 			await session.prompt(initialMessage, { images: initialImages });
 		}
@@ -126,22 +143,49 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 			await session.prompt(message);
 		}
 
-		if (mode === "text") {
+		if (mode === "text" || mode === "stream-json") {
 			const state = session.state;
 			const lastMessage = state.messages[state.messages.length - 1];
 
 			if (lastMessage?.role === "assistant") {
 				const assistantMsg = lastMessage as AssistantMessage;
-				if (assistantMsg.stopReason === "error" || assistantMsg.stopReason === "aborted") {
+				const resultText = assistantMsg.content
+					.map((c) => (c.type === "text" ? c.text : ""))
+					.join("")
+					.trim();
+				const isError = assistantMsg.stopReason === "error" || assistantMsg.stopReason === "aborted";
+				if (mode === "stream-json") {
+					writeRawStdout(
+						`${buildStreamJsonResult({
+							state: streamJson!.state,
+							startedAt: streamJson!.startedAt,
+							resultText,
+							isError,
+							errorMessage: isError
+								? assistantMsg.errorMessage || `Request ${assistantMsg.stopReason}`
+								: undefined,
+						})}\n`,
+					);
+				} else if (isError) {
 					console.error(assistantMsg.errorMessage || `Request ${assistantMsg.stopReason}`);
 					exitCode = 1;
 				} else {
-					for (const content of assistantMsg.content) {
-						if (content.type === "text") {
-							writeRawStdout(`${content.text}\n`);
+					for (const textContent of assistantMsg.content) {
+						if (textContent.type === "text") {
+							writeRawStdout(`${textContent.text}\n`);
 						}
 					}
 				}
+			} else if (mode === "stream-json") {
+				writeRawStdout(
+					`${buildStreamJsonResult({
+						state: streamJson!.state,
+						startedAt: streamJson!.startedAt,
+						resultText: "",
+						isError: true,
+						errorMessage: "No assistant response",
+					})}\n`,
+				);
 			}
 		}
 

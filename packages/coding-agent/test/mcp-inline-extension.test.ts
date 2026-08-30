@@ -1,7 +1,12 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import {
+	CallToolRequestSchema,
+	ListResourcesRequestSchema,
+	ListToolsRequestSchema,
+	ReadResourceRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ExtensionContext, ToolDefinition } from "../src/core/extensions/types.ts";
 import { McpClient } from "../src/core/mcp/client.ts";
@@ -66,6 +71,63 @@ function callStub(stub: ToolDefinition, params: unknown): Promise<unknown> {
 	return stub.execute("id", params as never, undefined, undefined, emptyCtx);
 }
 
+function callToolToolDefinition(tool: ToolDefinition, params: unknown): Promise<unknown> {
+	return tool.execute("id", params as never, undefined, undefined, emptyCtx);
+}
+
+describe("MCP resource tools", () => {
+	it("lists resources across servers and reads one by uri", async () => {
+		const injected = new Client({ name: "test-client", version: "1.0.0" }, { capabilities: {} });
+		const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+		const server = new Server(
+			{ name: "test-server", version: "1.0.0" },
+			{ capabilities: { tools: {}, resources: {} } },
+		);
+		server.setRequestHandler(ListResourcesRequestSchema, async () => ({
+			resources: [{ uri: "file:///a.txt", name: "A", description: "File A", mimeType: "text/plain" }],
+		}));
+		server.setRequestHandler(ReadResourceRequestSchema, async (request) => ({
+			contents: [{ uri: request.params.uri, text: "contents of A", mimeType: "text/plain" }],
+		}));
+		await server.connect(serverTransport);
+		const mc = new McpClient(serverConfig, { client: injected, transport: clientTransport });
+
+		const registered = new Map<string, ToolDefinition>();
+		const pi = {
+			registerTool: (tool: ToolDefinition): void => {
+				registered.set(tool.name, tool);
+			},
+			on: () => {},
+		};
+		await createMcpExtensionFactory({
+			servers: [serverConfig],
+			createClient: () => mc,
+		})(pi as unknown as Parameters<ReturnType<typeof createMcpExtensionFactory>>[0]);
+
+		const listTool = registered.get("mcp_list_resources");
+		const readTool = registered.get("mcp_read_resource");
+		expect(listTool).toBeDefined();
+		expect(readTool).toBeDefined();
+
+		const listed = (await callToolToolDefinition(listTool as ToolDefinition, {})) as {
+			content: { type: string; text: string }[];
+		};
+		expect(listed.content[0]?.text).toContain("[testsrv] A: file:///a.txt (text/plain) — File A");
+
+		const read = (await callToolToolDefinition(readTool as ToolDefinition, {
+			server: "testsrv",
+			uri: "file:///a.txt",
+		})) as { content: { type: string; text: string }[] };
+		expect(read.content[0]?.text).toContain("contents of A");
+
+		await expect(
+			callToolToolDefinition(readTool as ToolDefinition, { server: "unknown", uri: "x" }),
+		).resolves.toMatchObject({ details: { error: "unknown-server" } });
+
+		await mc.close();
+	});
+});
+
 afterEach(() => {
 	vi.restoreAllMocks();
 });
@@ -73,7 +135,7 @@ afterEach(() => {
 describe("MCP extension registration", () => {
 	it("registers only first-class tools (no stub) for a server within the tool budget", async () => {
 		const { registered } = await setupFactory(2);
-		await vi.waitFor(() => expect(registered.size).toBe(2));
+		await vi.waitFor(() => expect(registered.size).toBe(4)); // 2 first-class + 2 resource tools
 		expect(registered.has("mcp__testsrv__t1")).toBe(true);
 		expect(registered.has("mcp__testsrv__t2")).toBe(true);
 		expect(registered.has("mcp_testsrv")).toBe(false);
@@ -82,8 +144,8 @@ describe("MCP extension registration", () => {
 	it("registers only the gateway stub for a server above the tool budget", async () => {
 		const { registered } = await setupFactory(MAX_FIRST_CLASS_TOOLS + 1);
 		await vi.waitFor(() => expect(registered.has("mcp_testsrv")).toBe(true));
-		expect(registered.size).toBe(1);
-		expect([...registered.keys()][0]).toBe("mcp_testsrv");
+		expect(registered.size).toBe(3); // stub + 2 resource tools
+		expect(registered.has("mcp__testsrv__t1")).toBe(false);
 	});
 });
 

@@ -3,7 +3,7 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import type { CallToolResult, ListToolsResult } from "@modelcontextprotocol/sdk/types.js";
+import type { CallToolResult, ListToolsResult, ReadResourceResult } from "@modelcontextprotocol/sdk/types.js";
 import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import { VERSION } from "../../config.ts";
 import type { McpServerConfig } from "./types.ts";
@@ -37,6 +37,14 @@ export interface McpDiscoveredTool {
 	name: string;
 	description?: string;
 	inputSchema: Record<string, unknown>;
+}
+
+export interface McpResourceInfo {
+	serverName: string;
+	uri: string;
+	name?: string;
+	description?: string;
+	mimeType?: string;
 }
 
 export interface McpCallToolOptions {
@@ -189,6 +197,49 @@ export class McpClient {
 			signal: options.signal,
 			timeout: options.timeoutMs,
 		})) as CallToolResult;
+	}
+
+	/**
+	 * List the server's resources. Servers that do not declare the resources
+	 * capability reject the call (surfaced by the caller per-server).
+	 */
+	async listResources(options: McpCallToolOptions = {}): Promise<McpResourceInfo[]> {
+		if (!this._connected) throw new Error(`MCP server ${this.serverName} is not connected`);
+		const resources: McpResourceInfo[] = [];
+		let cursor: string | undefined;
+		for (let page = 0; page < MAX_LIST_PAGES; page++) {
+			const result = await this.client.listResources(cursor ? { cursor } : undefined, {
+				signal: options.signal,
+				timeout: options.timeoutMs,
+			});
+			for (const resource of result.resources) {
+				resources.push({
+					serverName: this.serverName,
+					uri: resource.uri,
+					name: resource.name,
+					description: resource.description,
+					mimeType: resource.mimeType,
+				});
+			}
+			cursor = result.nextCursor;
+			if (!cursor) return resources;
+		}
+		return resources;
+	}
+
+	/**
+	 * Read one resource by URI. Text contents are returned inline; binary blobs
+	 * keep their base64 payload — the caller decides how to present them.
+	 */
+	async readResource(uri: string, options: McpCallToolOptions = {}): Promise<ReadResourceResult> {
+		if (!this._connected) throw new Error(`MCP server ${this.serverName} is not connected`);
+		return (await this.client.readResource(
+			{ uri },
+			{
+				signal: options.signal,
+				timeout: options.timeoutMs,
+			},
+		)) as ReadResourceResult;
 	}
 
 	/**
