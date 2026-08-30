@@ -6021,6 +6021,7 @@ export class InteractiveMode {
 			this.session.listSubAgents(),
 			getBackgroundProcesses(),
 			() => {
+				this.runningTasksViewer?.dispose();
 				this.runningTasksViewer = undefined;
 				this.hideExtensionSelector();
 			},
@@ -6028,6 +6029,7 @@ export class InteractiveMode {
 				if (item.kind === "agent") this.session.killSubAgent(item.record.id, "user");
 				else this.killBackgroundProcess(item.record.id);
 			},
+			this.ui,
 		);
 		this.editorContainer.clear();
 		this.editorContainer.addChild(this.runningTasksViewer);

@@ -327,11 +327,26 @@ export type ExtensionMode = "tui" | "rpc" | "json" | "print";
  */
 export type SubAgentProgressEvent =
 	| { type: "tool_use_start"; toolName: string }
-	| { type: "tool_use_done"; toolName: string; isError?: boolean }
+	| {
+			type: "tool_use_done";
+			toolName: string;
+			isError?: boolean;
+			/** Total characters across the tool result's text blocks. */
+			resultChars?: number;
+			/** First non-empty line of the result, capped at 80 chars (for live views). */
+			resultPreview?: string;
+	  }
 	| { type: "text"; text: string }
-	| { type: "turn_complete"; turnCount: number }
+	| { type: "turn_complete"; turnCount: number; usage?: SubAgentTurnUsage }
 	| { type: "completed"; finalText: string; toolUseCount: number; turnCount: number }
 	| { type: "aborted" };
+
+/** Per-turn token deltas for the turn_complete progress event. */
+export interface SubAgentTurnUsage {
+	inputTokens: number;
+	outputTokens: number;
+	totalTokens: number;
+}
 
 /** Result of an in-process sub-agent run. */
 export interface SubAgentRunResult {

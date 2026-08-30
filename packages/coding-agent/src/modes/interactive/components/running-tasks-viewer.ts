@@ -66,6 +66,32 @@ function truncateText(text: string, maxLen: number): string {
 	return text.length <= maxLen ? text : `${text.slice(0, maxLen - 1)}…`;
 }
 
+function formatChars(n: number): string {
+	if (n < 1000) return `${n} chars`;
+	if (n < 1000000) return `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}k chars`;
+	return `${(n / 1000000).toFixed(1)}M chars`;
+}
+
+/** `⎿ ok (1.2k chars): first line of output…` — dim detail under a finished tool. */
+function formatToolResultDetail(event: { isError?: boolean; resultChars?: number; resultPreview?: string }): string {
+	const status = event.isError ? "error" : "ok";
+	const size = event.resultChars !== undefined && event.resultChars > 0 ? ` (${formatChars(event.resultChars)})` : "";
+	const preview = event.resultPreview ? `: ${truncateText(event.resultPreview, 60)}` : "";
+	if (!size && !preview) return `⎿ ${status}`;
+	return `⎿ ${status}${size}${preview}`;
+}
+
+/** `— turn 2 · 1,842 tok (in 1,310, out 532)` — usage appended when known. */
+function formatTurnLine(
+	turnCount: number,
+	usage: { inputTokens: number; outputTokens: number; totalTokens: number } | undefined,
+): string {
+	if (!usage) return `— turn ${turnCount}`;
+	const inTok = usage.inputTokens.toLocaleString();
+	const outTok = usage.outputTokens.toLocaleString();
+	return `— turn ${turnCount} · ${usage.totalTokens.toLocaleString()} tok (in ${inTok}, out ${outTok})`;
+}
+
 function itemStartedAt(item: TaskItem): number {
 	return item.kind === "agent" ? item.record.startedAt : item.record.startedAt;
 }
@@ -128,16 +154,21 @@ export class RunningTasksViewerComponent extends Container {
 	private bodyContainer: Container;
 	private hint: Text;
 	private killedNotice: string | undefined;
+	/** 1s render ticker so elapsed/duration displays advance while idle. */
+	private elapsedTimer: ReturnType<typeof setInterval> | undefined;
+	private elapsedTui: { requestRender: () => void } | undefined;
 
 	constructor(
 		subagents: InProcessSubAgentRecord[],
 		backgrounds: BackgroundProcessRecord[],
 		onClose: () => void,
 		onKill: (item: TaskItem) => void,
+		elapsedTui?: { requestRender: () => void },
 	) {
 		super();
 		this.onClose = onClose;
 		this.onKill = onKill;
+		this.elapsedTui = elapsedTui;
 		this.setItems(subagents, backgrounds);
 
 		this.addChild(new Spacer(1));
@@ -148,6 +179,34 @@ export class RunningTasksViewerComponent extends Container {
 		this.addChild(this.hint);
 
 		this.rerender();
+		this.startElapsedTicker();
+	}
+
+	/** Start the 1s elapsed ticker; stop when no item is running (or disposed). */
+	private startElapsedTicker(): void {
+		if (!this.elapsedTui || this.elapsedTimer) return;
+		this.elapsedTimer = setInterval(() => {
+			if (
+				this.items.some((i) => (i.kind === "agent" ? i.record.status === "running" : i.record.status === "running"))
+			) {
+				this.elapsedTui?.requestRender();
+			} else {
+				this.stopElapsedTicker();
+			}
+		}, 1000);
+		this.elapsedTimer.unref?.();
+	}
+
+	private stopElapsedTicker(): void {
+		if (this.elapsedTimer) {
+			clearInterval(this.elapsedTimer);
+			this.elapsedTimer = undefined;
+		}
+	}
+
+	/** Release the ticker; call when the viewer is removed from the screen. */
+	dispose(): void {
+		this.stopElapsedTicker();
 	}
 
 	/** Push fresh snapshots of both stores (live updates). */
@@ -161,6 +220,7 @@ export class RunningTasksViewerComponent extends Container {
 			this.viewingId = undefined;
 		}
 		this.rerender();
+		this.startElapsedTicker();
 	}
 
 	private setItems(subagents: InProcessSubAgentRecord[], backgrounds: BackgroundProcessRecord[]): void {
@@ -259,7 +319,12 @@ export class RunningTasksViewerComponent extends Container {
 			this.bodyContainer.addChild(new Text(theme.fg("dim", `worktree: ${record.worktreePath}`), 1, 1));
 		this.bodyContainer.addChild(new Spacer(1));
 
-		const tail = record.timeline.slice(-12);
+		const timelineTail = 12;
+		const droppedEvents = Math.max(0, record.timeline.length - timelineTail);
+		if (droppedEvents > 0) {
+			this.bodyContainer.addChild(new Text(theme.fg("dim", `… ${droppedEvents} earlier events hidden`), 1, 1));
+		}
+		const tail = record.timeline.slice(-timelineTail);
 		if (tail.length === 0) {
 			this.bodyContainer.addChild(new Text(theme.fg("muted", "(no events yet)"), 1, 1));
 		} else {
@@ -282,17 +347,17 @@ export class RunningTasksViewerComponent extends Container {
 					new Text(`${theme.fg("accent", "→")} ${theme.fg("muted", event.toolName)}`, 1, 1),
 				);
 				break;
-			case "tool_use_done":
-				this.bodyContainer.addChild(
-					new Text(
-						`${event.isError ? theme.fg("error", "✗") : theme.fg("success", "✓")} ${theme.fg("muted", event.toolName)}`,
-						1,
-						1,
-					),
-				);
+			case "tool_use_done": {
+				const mark = event.isError ? theme.fg("error", "✗") : theme.fg("success", "✓");
+				this.bodyContainer.addChild(new Text(`${mark} ${theme.fg("muted", event.toolName)}`, 1, 1));
+				const detail = formatToolResultDetail(event);
+				if (detail) {
+					this.bodyContainer.addChild(new Text(theme.fg("dim", detail), 1, 1));
+				}
 				break;
+			}
 			case "turn_complete":
-				this.bodyContainer.addChild(new Text(theme.fg("dim", `— turn ${event.turnCount}`), 1, 1));
+				this.bodyContainer.addChild(new Text(theme.fg("dim", formatTurnLine(event.turnCount, event.usage)), 1, 1));
 				break;
 			case "completed":
 				this.bodyContainer.addChild(
@@ -329,8 +394,13 @@ export class RunningTasksViewerComponent extends Container {
 			this.bodyContainer.addChild(new Text(theme.fg("dim", `log: ${record.fullOutputPath}`), 1, 1));
 		this.bodyContainer.addChild(new Spacer(1));
 
+		const bashTailLines = 15;
 		const lines = record.output.split("\n").filter((l) => l.length > 0);
-		const tail = lines.slice(-15);
+		const droppedLines = Math.max(0, lines.length - bashTailLines);
+		if (droppedLines > 0) {
+			this.bodyContainer.addChild(new Text(theme.fg("dim", `… ${droppedLines} earlier lines hidden`), 1, 1));
+		}
+		const tail = lines.slice(-bashTailLines);
 		if (tail.length === 0) {
 			this.bodyContainer.addChild(new Text(theme.fg("muted", "(no output yet)"), 1, 1));
 		} else {

@@ -320,6 +320,36 @@ export function computeRetryDelayMs(baseDelayMs: number, attempt: number, random
 /** Standard thinking levels */
 const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high"];
 
+/**
+ * Summarize a tool result for the sub-agent progress timeline: total text
+ * characters plus a first-line preview, so live views can show what a tool
+ * returned without keeping the full output in the timeline.
+ */
+function summarizeToolResult(result: unknown): { resultChars?: number; resultPreview?: string } {
+	if (!result || typeof result !== "object") return {};
+	const content = (result as { content?: unknown }).content;
+	if (!Array.isArray(content)) return {};
+	let chars = 0;
+	let preview: string | undefined;
+	for (const block of content) {
+		if (typeof block === "string") {
+			chars += block.length;
+			preview = preview ?? block;
+			continue;
+		}
+		if (block && typeof block === "object" && "text" in block) {
+			const text = String((block as { text?: unknown }).text ?? "");
+			chars += text.length;
+			preview = preview ?? text;
+		}
+	}
+	const firstLine = preview?.split("\n").find((l) => l.trim() !== "") ?? preview ?? "";
+	return {
+		...(chars > 0 ? { resultChars: chars } : {}),
+		...(firstLine.trim() !== "" ? { resultPreview: firstLine.trim().slice(0, 80) } : {}),
+	};
+}
+
 /** Mirror one tool result (truncated preview) into a background sub-agent's .output file. */
 function appendToolResultToOutput(outputFile: string, context: AfterToolCallContext): void {
 	const preview = context.result?.content
@@ -4184,10 +4214,12 @@ export class AgentSession {
 					case "tool_execution_end":
 						record.lastToolName = event.toolName;
 						{
+							const resultInfo = summarizeToolResult(event.result);
 							const ev: SubAgentProgressEvent = {
 								type: "tool_use_done",
 								toolName: event.toolName,
 								isError: event.isError,
+								...resultInfo,
 							};
 							onProgress?.(ev);
 							pushEvent(ev);
@@ -4213,7 +4245,19 @@ export class AgentSession {
 										turn: turnCount,
 									});
 							}
-							const ev: SubAgentProgressEvent = { type: "turn_complete", turnCount };
+							const ev: SubAgentProgressEvent = {
+								type: "turn_complete",
+								turnCount,
+								...(usage
+									? {
+											usage: {
+												inputTokens: usage.input,
+												outputTokens: usage.output,
+												totalTokens: usage.totalTokens,
+											},
+										}
+									: {}),
+							};
 							onProgress?.(ev);
 							pushEvent(ev);
 							if (turnCount >= maxTurns) subAgent.abort();

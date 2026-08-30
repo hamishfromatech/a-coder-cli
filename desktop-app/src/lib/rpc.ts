@@ -94,9 +94,22 @@ export interface QueueUpdateEvent {
 /** Live snapshot of the in-process sub-agent store (background sub-agents + Agent Teams teammates). */
 export type SubAgentTimelineEvent =
 	| { type: "tool_use_start"; toolName: string }
-	| { type: "tool_use_done"; toolName: string; isError?: boolean }
+	| {
+			type: "tool_use_done";
+			toolName: string;
+			isError?: boolean;
+			/** Total characters across the tool result's text blocks. */
+			resultChars?: number;
+			/** First non-empty line of the result, capped at 80 chars. */
+			resultPreview?: string;
+	  }
 	| { type: "text"; text: string }
-	| { type: "turn_complete"; turnCount: number }
+	| {
+			type: "turn_complete";
+			turnCount: number;
+			/** Per-turn token deltas. */
+			usage?: { inputTokens: number; outputTokens: number; totalTokens: number };
+	  }
 	| { type: "completed"; finalText: string; toolUseCount: number; turnCount: number }
 	| { type: "aborted" };
 

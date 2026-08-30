@@ -177,9 +177,9 @@ export function TeammateViewer({ open, onClose }: TeammateViewerProps) {
 																		: event.type === "tool_use_start"
 																			? `→ ${event.toolName}`
 																			: event.type === "tool_use_done"
-																				? `${event.isError ? "✗" : "✓"} ${event.toolName}`
+																				? `${event.isError ? "✗" : "✓"} ${event.toolName}${event.resultPreview ? ` ⎿ ${event.resultPreview}` : ""}`
 																				: event.type === "turn_complete"
-																					? `— turn ${event.turnCount}`
+																					? `— turn ${event.turnCount}${event.usage ? ` · ${event.usage.totalTokens.toLocaleString()} tok` : ""}`
 																					: event.type === "completed"
 																						? `— completed (${event.toolUseCount} tools)`
 																						: "— aborted"}

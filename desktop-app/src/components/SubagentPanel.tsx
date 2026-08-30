@@ -55,6 +55,9 @@ function TimelineEntry({ event }: { event: SubAgentTimelineEvent }) {
 			return (
 				<div className={`font-mono text-3xs ${event.isError ? "text-pi-error" : "text-pi-text-muted"}`}>
 					{event.isError ? "✗" : "✓"} {event.toolName}
+					{event.resultPreview !== undefined && (
+						<div className="truncate text-pi-text-faint">⎿ {event.resultPreview}</div>
+					)}
 				</div>
 			);
 		case "text": {
@@ -67,7 +70,12 @@ function TimelineEntry({ event }: { event: SubAgentTimelineEvent }) {
 			);
 		}
 		case "turn_complete":
-			return <div className="text-3xs text-pi-text-faint">— turn {event.turnCount}</div>;
+			return (
+				<div className="text-3xs text-pi-text-faint">
+					— turn {event.turnCount}
+					{event.usage ? ` · ${event.usage.totalTokens.toLocaleString()} tok` : ""}
+				</div>
+			);
 		case "completed":
 			return (
 				<div className="text-3xs text-pi-success">
