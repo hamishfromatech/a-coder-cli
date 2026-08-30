@@ -531,4 +531,21 @@ export const MISTRAL_MODELS = {
 		contextWindow: 32000,
 		maxTokens: 32000,
 	} satisfies Model<"mistral-conversations">,
+	"zai-glm-5-2": {
+		id: "zai-glm-5-2",
+		name: "GLM-5.2",
+		api: "mistral-conversations",
+		provider: "mistral",
+		baseUrl: "https://api.mistral.ai",
+		reasoning: true,
+		input: ["text"],
+		cost: {
+			input: 1.4,
+			output: 4.4,
+			cacheRead: 0.14,
+			cacheWrite: 0,
+		},
+		contextWindow: 1000000,
+		maxTokens: 131072,
+	} satisfies Model<"mistral-conversations">,
 } as const;

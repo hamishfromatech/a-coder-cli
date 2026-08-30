@@ -362,4 +362,23 @@ export const TOGETHER_MODELS = {
 		contextWindow: 512000,
 		maxTokens: 164000,
 	} satisfies Model<"openai-completions">,
+	"zai-org/GLM-5.3-Flash": {
+		id: "zai-org/GLM-5.3-Flash",
+		name: "GLM-5.3-Flash",
+		api: "openai-completions",
+		provider: "together",
+		baseUrl: "https://api.together.ai/v1",
+		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false,"maxTokensField":"max_tokens","thinkingFormat":"together","supportsStrictMode":false,"supportsLongCacheRetention":false},
+		reasoning: true,
+		thinkingLevelMap: {"minimal":null,"low":null,"medium":null},
+		input: ["text", "image"],
+		cost: {
+			input: 0.15,
+			output: 0.5,
+			cacheRead: 0.03,
+			cacheWrite: 0,
+		},
+		contextWindow: 1048575,
+		maxTokens: 400000,
+	} satisfies Model<"openai-completions">,
 } as const;
