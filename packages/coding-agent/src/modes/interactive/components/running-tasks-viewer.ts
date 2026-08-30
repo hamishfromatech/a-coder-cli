@@ -144,8 +144,19 @@ function itemMeta(item: TaskItem): string {
 	return meta.join(", ");
 }
 
+/** Whether the picker should include finished tasks. Remembered across opens. */
+let showFinishedDefault = true;
+
+function isTaskRunning(item: TaskItem): boolean {
+	return item.record.status === "running";
+}
+
 export class RunningTasksViewerComponent extends Container {
+	/** Full snapshot (running + finished). */
+	private allItems: TaskItem[] = [];
+	/** Visible slice (respects the hide-finished toggle). */
 	private items: TaskItem[] = [];
+	private showFinished: boolean = showFinishedDefault;
 	private mode: "picking" | "viewing" = "picking";
 	private selectedIndex = 0;
 	private viewingId: string | undefined;
@@ -212,15 +223,21 @@ export class RunningTasksViewerComponent extends Container {
 	/** Push fresh snapshots of both stores (live updates). */
 	update(subagents: InProcessSubAgentRecord[], backgrounds: BackgroundProcessRecord[]): void {
 		this.setItems(subagents, backgrounds);
-		if (this.selectedIndex >= this.items.length) {
-			this.selectedIndex = Math.max(0, this.items.length - 1);
-		}
-		if (this.viewingId && !this.items.some((i) => itemId(i) === this.viewingId)) {
+		if (this.viewingId && !this.allItems.some((i) => itemId(i) === this.viewingId)) {
 			this.mode = "picking";
 			this.viewingId = undefined;
 		}
+		this.rebuildVisibleItems();
+		this.clampSelection();
 		this.rerender();
 		this.startElapsedTicker();
+	}
+
+	/** Keep the picker cursor inside the visible list. */
+	private clampSelection(): void {
+		if (this.selectedIndex >= this.items.length) {
+			this.selectedIndex = Math.max(0, this.items.length - 1);
+		}
 	}
 
 	private setItems(subagents: InProcessSubAgentRecord[], backgrounds: BackgroundProcessRecord[]): void {
@@ -229,7 +246,13 @@ export class RunningTasksViewerComponent extends Container {
 			...backgrounds.map((record): TaskItem => ({ kind: "bash", record })),
 		];
 		items.sort((a, b) => itemStartedAt(a) - itemStartedAt(b));
-		this.items = items;
+		this.allItems = items;
+		this.rebuildVisibleItems();
+	}
+
+	/** Recompute the picker-visible list from the full snapshot. */
+	private rebuildVisibleItems(): void {
+		this.items = this.showFinished ? this.allItems : this.allItems.filter((i) => isTaskRunning(i));
 	}
 
 	private selectedItem(): TaskItem | undefined {
@@ -237,7 +260,7 @@ export class RunningTasksViewerComponent extends Container {
 	}
 
 	private viewItem(): TaskItem | undefined {
-		return this.items.find((i) => itemId(i) === this.viewingId);
+		return this.allItems.find((i) => itemId(i) === this.viewingId);
 	}
 
 	private rerender(): void {
@@ -250,7 +273,18 @@ export class RunningTasksViewerComponent extends Container {
 	private renderPicker(): void {
 		this.bodyContainer.addChild(new Text(theme.fg("accent", theme.bold("Running tasks")), 1, 1));
 		if (this.items.length === 0) {
-			this.bodyContainer.addChild(new Text(theme.fg("muted", "No background processes or sub-agents."), 1, 1));
+			this.bodyContainer.addChild(
+				new Text(
+					theme.fg(
+						"muted",
+						this.showFinished
+							? "No background processes or sub-agents."
+							: "No running tasks — press h to show finished runs.",
+					),
+					1,
+					1,
+				),
+			);
 		}
 		for (let i = 0; i < this.items.length; i++) {
 			const item = this.items[i];
@@ -268,6 +302,8 @@ export class RunningTasksViewerComponent extends Container {
 				keyHint("tui.select.confirm", "view") +
 				"  " +
 				rawKeyHint("k", "kill") +
+				"  " +
+				rawKeyHint("h", this.showFinished ? "hide done" : "show done") +
 				"  " +
 				keyHint("tui.select.cancel", "close"),
 		);
@@ -415,7 +451,13 @@ export class RunningTasksViewerComponent extends Container {
 		const back = kb.matches(keyData, "tui.select.cancel") || kb.matches(keyData, "tui.editor.cursorLeft");
 
 		if (this.mode === "picking") {
-			if (keyData === "k" && this.items.length > 0) {
+			if (keyData === "h") {
+				this.showFinished = !this.showFinished;
+				showFinishedDefault = this.showFinished;
+				this.rebuildVisibleItems();
+				this.clampSelection();
+				this.rerender();
+			} else if (keyData === "k" && this.items.length > 0) {
 				const item = this.selectedItem();
 				if (item) {
 					this.onKill(item);

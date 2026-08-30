@@ -121,6 +121,81 @@ describe("RunningTasksViewerComponent", () => {
 		expect(lines).not.toContain("line-14");
 	});
 
+	it("toggles finished tasks with h and remembers the choice", () => {
+		const finishedAgent = makeAgent({
+			id: "agent-done",
+			status: "completed",
+			goal: "finished goal",
+		});
+		const runningAgent = makeAgent({ id: "agent-1", startedAt: Date.now() + 5, goal: "running goal" });
+		const component = new RunningTasksViewerComponent(
+			[finishedAgent, runningAgent],
+			[makeBash({ id: "bash-done", status: "done" as never, command: "echo done-task" })],
+			() => {},
+			() => {},
+		);
+		ensureTheme();
+
+		// All three visible by default.
+		let lines = renderComponent(component).join("\n");
+		expect(lines).toContain("finished goal");
+		expect(lines).toContain("echo done-task");
+
+		// Toggle: hide finished → only the running agent remains.
+		component.handleInput("h");
+		lines = renderComponent(component).join("\n");
+		expect(lines).toContain("running goal");
+		expect(lines).not.toContain("finished goal");
+		expect(lines).not.toContain("echo done-task");
+		expect(lines).toContain("show done");
+
+		// Toggle back.
+		component.handleInput("h");
+		lines = renderComponent(component).join("\n");
+		expect(lines).toContain("finished goal");
+		expect(lines).toContain("echo done-task");
+		expect(lines).toContain("hide done");
+	});
+
+	it("hides finished tasks when everything is done, with a hint to toggle", () => {
+		const component = new RunningTasksViewerComponent(
+			[makeAgent({ id: "agent-done", status: "completed" })],
+			[],
+			() => {},
+			() => {},
+		);
+		ensureTheme();
+		component.handleInput("h");
+		const lines = renderComponent(component).join("\n");
+		expect(lines).toContain("No running tasks — press h to show finished runs.");
+		component.handleInput("h");
+	});
+
+	it("leaves viewing mode unaffected by the h toggle", () => {
+		const finishedAgent = makeAgent({
+			id: "agent-done",
+			status: "completed",
+			goal: "finished goal",
+		});
+		const runningAgent = makeAgent({ id: "agent-1", startedAt: Date.now() + 5, goal: "running goal" });
+		const component = new RunningTasksViewerComponent(
+			[finishedAgent, runningAgent],
+			[],
+			() => {},
+			() => {},
+		);
+		ensureTheme();
+		// Select the finished agent (first in sort order) and drill in.
+		component.handleInput("\r");
+		expect(renderComponent(component).join("\n")).toContain("finished goal");
+		// 'h' in viewing mode does nothing: the open transcript stays readable.
+		component.handleInput("h");
+		expect(renderComponent(component).join("\n")).toContain("finished goal");
+		// Back to the picker — the finished agent is still listed (default on).
+		component.handleInput("\u001b");
+		expect(renderComponent(component).join("\n")).toContain("finished goal");
+	});
+
 	it("renders the picker with both kinds and honors kill routing", () => {
 		ensureTheme();
 		const killed: string[] = [];
