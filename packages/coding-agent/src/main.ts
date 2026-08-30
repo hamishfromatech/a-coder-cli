@@ -107,6 +107,9 @@ function resolveAppMode(parsed: Args, stdinIsTTY: boolean, stdoutIsTTY: boolean)
 	if (parsed.mode === "json") {
 		return "json";
 	}
+	if (parsed.mode === "stream-json") {
+		return "stream-json";
+	}
 	if (parsed.print || !stdinIsTTY || !stdoutIsTTY) {
 		return "print";
 	}
@@ -114,7 +117,9 @@ function resolveAppMode(parsed: Args, stdinIsTTY: boolean, stdoutIsTTY: boolean)
 }
 
 function toPrintOutputMode(appMode: AppMode): Exclude<Mode, "rpc"> {
-	return appMode === "json" ? "json" : "text";
+	if (appMode === "json") return "json";
+	if (appMode === "stream-json") return "stream-json";
+	return "text";
 }
 
 function isPlainRuntimeMetadataCommand(parsed: Args): boolean {
