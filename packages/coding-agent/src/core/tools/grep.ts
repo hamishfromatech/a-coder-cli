@@ -2,9 +2,10 @@ import { readFile as fsReadFile, stat as fsStat } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Text } from "@earendil-works/pi-tui";
-import { spawn } from "child_process";
+import { execFile, spawn } from "child_process";
 import path from "path";
 import { type Static, Type } from "typebox";
+import { promisify } from "util";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.ts";
 import type { Theme } from "../../modes/interactive/theme/theme.ts";
 import { ensureTool } from "../../utils/tools-manager.ts";
@@ -61,6 +62,8 @@ export interface GrepToolDetails {
 	truncation?: TruncationResult;
 	matchLimitReached?: number;
 	linesTruncated?: boolean;
+	/** Set when the search ran through the grep(1) fallback (ripgrep unavailable). */
+	grepFallbackUsed?: boolean;
 }
 
 /**
@@ -78,6 +81,126 @@ const defaultGrepOperations: GrepOperations = {
 	isDirectory: async (p) => (await fsStat(p)).isDirectory(),
 	readFile: (p) => fsReadFile(p, "utf-8"),
 };
+
+const execFileAsync = promisify(execFile);
+
+/**
+ * Result of running the grep(1) fallback used when ripgrep is unavailable.
+ */
+export interface GrepFallbackResult {
+	/** Formatted output lines (same `path:line: text` shape as the ripgrep path). */
+	outputLines: string[];
+	matchCount: number;
+	matchLimitReached: boolean;
+	linesTruncated: boolean;
+}
+
+/**
+ * Build grep(1) arguments mirroring the common subset of the ripgrep path's
+ * input. Uses ERE (`-E`) as the closest match for ripgrep's regex flavor.
+ */
+export function buildGrepFallbackArguments(input: {
+	pattern: string;
+	ignoreCase?: boolean;
+	literal?: boolean;
+	glob?: string;
+	context?: number;
+	searchPath: string;
+}): string[] {
+	const args = input.literal ? ["-R", "-n", "-F"] : ["-R", "-n", "-E"];
+	if (input.ignoreCase) args.push("-i");
+	if (input.glob) args.push("--include", input.glob);
+	if (input.context && input.context > 0) args.push("-C", String(Math.floor(input.context)));
+	args.push("--", input.pattern, input.searchPath);
+	return args;
+}
+
+/**
+ * grep(1) fallback for environments where ripgrep cannot be provisioned
+ * (offline mode, Termux, failed download). Output shape matches the ripgrep
+ * path so consumers see the same format. Difference vs ripgrep, stated in the
+ * tool's fallback notice: grep(1) does not respect .gitignore.
+ */
+export async function runGrepFallback(
+	input: {
+		pattern: string;
+		ignoreCase?: boolean;
+		literal?: boolean;
+		glob?: string;
+		context?: number;
+	},
+	searchPath: string,
+	effectiveLimit: number,
+	signal?: AbortSignal,
+): Promise<GrepFallbackResult> {
+	const args = buildGrepFallbackArguments({ ...input, searchPath });
+	let stdout: string;
+	try {
+		const result = await execFileAsync("grep", args, {
+			maxBuffer: 8 * 1024 * 1024,
+			signal,
+			windowsHide: true,
+		});
+		stdout = result.stdout;
+	} catch (error: unknown) {
+		const err = error as { code?: number | string; killed?: boolean; message?: string };
+		if (err?.code === 1) {
+			// grep exit code 1 = no matches.
+			return { outputLines: [], matchCount: 0, matchLimitReached: false, linesTruncated: false };
+		}
+		if (err?.killed) {
+			throw new Error("Operation aborted");
+		}
+		throw new Error(err?.message ?? "grep (1) fallback failed");
+	}
+
+	const searchIsFile = !(await fsStat(searchPath)
+		.then((s) => s.isDirectory())
+		.catch(() => false));
+	const baseDir = searchIsFile ? path.dirname(searchPath) : searchPath;
+	const matchLineRe = /^(.+?):(\d+):(.*)$/;
+	const contextLineRe = /^(.+?)-(\d+)-(.*)$/;
+
+	const outputLines: string[] = [];
+	let matchCount = 0;
+	let matchLimitReached = false;
+	let linesTruncated = false;
+
+	for (const rawLine of stdout.split("\n")) {
+		if (!rawLine) continue;
+		const match = matchLineRe.exec(rawLine);
+		const contextMatch = !match || matchCount >= effectiveLimit ? contextLineRe.exec(rawLine) : undefined;
+		const parsed = match ?? contextMatch;
+		if (!parsed) {
+			// "Binary file X matches" and other non path lines pass through
+			// while matches still fit within the limit.
+			if (matchCount < effectiveLimit) outputLines.push(rawLine);
+			continue;
+		}
+		if (matchCount >= effectiveLimit && !contextMatch) {
+			matchLimitReached = true;
+			continue;
+		}
+		const [, filePath, lineNumber, lineTextRaw] = parsed;
+		const displayPath = relativeDisplayPath(baseDir, filePath);
+		const { text: truncatedText, wasTruncated } = truncateLine(lineTextRaw.replace(/\r/g, ""));
+		if (wasTruncated) linesTruncated = true;
+		if (contextMatch) {
+			outputLines.push(`${displayPath}-${lineNumber}- ${truncatedText}`);
+		} else {
+			outputLines.push(`${displayPath}:${lineNumber}: ${truncatedText}`);
+			matchCount++;
+		}
+	}
+
+	matchLimitReached = matchCount >= effectiveLimit;
+	return { outputLines, matchCount, matchLimitReached, linesTruncated };
+}
+
+function relativeDisplayPath(baseDir: string, filePath: string): string {
+	const rel = path.relative(baseDir, filePath);
+	return rel && !rel.startsWith("..") ? rel.replace(/\\/g, "/") : path.basename(filePath);
+}
 
 export interface GrepToolOptions {
 	/** Custom operations for grep. Default: local filesystem plus ripgrep */
@@ -189,13 +312,51 @@ export function createGrepToolDefinition(
 
 				(async () => {
 					try {
+						const searchPath = resolveToCwd(searchDir || ".", cwd);
+						const effectiveLimit = Math.max(1, limit ?? DEFAULT_LIMIT);
 						const rgPath = await ensureTool("rg", true);
 						if (!rgPath) {
-							settle(() => reject(new Error("ripgrep (rg) is not available and could not be downloaded")));
+							// grep(1) fallback: ripgrep could not be provisioned (offline
+							// mode, Termux, failed download). Same output contract, with a
+							// notice about the weaker ignore/gitignore behavior.
+							const fallback = await runGrepFallback(
+								{ pattern, ignoreCase, literal, glob, context },
+								searchPath,
+								effectiveLimit,
+								signal,
+							);
+							const rawOutput = fallback.outputLines.join("\n");
+							const truncation = truncateHead(rawOutput, { maxLines: Number.MAX_SAFE_INTEGER });
+							const details: GrepToolDetails = { grepFallbackUsed: true };
+							let output = truncation.content;
+							if (fallback.outputLines.length === 0) {
+								output = "No matches found";
+							} else {
+								const notices: string[] = [
+									"ripgrep unavailable \u2014 searched with grep (1); .gitignore not applied",
+								];
+								if (fallback.matchLimitReached) {
+									notices.push(
+										`${effectiveLimit} matches limit reached. Use limit=${effectiveLimit * 2} for more, or refine pattern`,
+									);
+									details.matchLimitReached = effectiveLimit;
+								}
+								if (truncation.truncated) {
+									notices.push(`${formatSize(DEFAULT_MAX_BYTES)} limit reached`);
+									details.truncation = truncation;
+								}
+								if (fallback.linesTruncated) {
+									notices.push(
+										`Some lines truncated to ${GREP_MAX_LINE_LENGTH} chars. Use read tool to see full lines`,
+									);
+									details.linesTruncated = true;
+								}
+								output += `\n\n[${notices.join(". ")}]`;
+							}
+							settle(() => resolve({ content: [{ type: "text", text: output }], details }));
 							return;
 						}
 
-						const searchPath = resolveToCwd(searchDir || ".", cwd);
 						const ops = customOps ?? defaultGrepOperations;
 						let isDirectory: boolean;
 						try {
@@ -206,7 +367,6 @@ export function createGrepToolDefinition(
 						}
 
 						const contextValue = context && context > 0 ? context : 0;
-						const effectiveLimit = Math.max(1, limit ?? DEFAULT_LIMIT);
 						const formatPath = (filePath: string): string => {
 							if (isDirectory) {
 								const relative = path.relative(searchPath, filePath);

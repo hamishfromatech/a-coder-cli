@@ -112,6 +112,22 @@ describe("mailbox", () => {
 		await markMessagesAsRead("backend", "t");
 		expect((await readMailbox("backend", "t"))[0]?.read).toBe(true);
 	});
+
+	it("serializes concurrent writers without dropping messages", async () => {
+		// Regression guard for the keyed mailbox mutex: interleaved
+		// read-modify-write cycles must not lose messages (e.g. a SendMessage
+		// landing while a running teammate drains its inbox).
+		await Promise.all(
+			Array.from({ length: 20 }, (_, i) =>
+				writeToMailbox("busy", { from: `sender-${i}`, text: `m${i}`, timestamp: "t" }, "t"),
+			),
+		);
+		const inbox = await readMailbox("busy", "t");
+		expect(inbox).toHaveLength(20);
+		const unread = await drainUnreadMessages("busy", "t");
+		expect(unread).toHaveLength(20);
+		expect(await drainUnreadMessages("busy", "t")).toEqual([]);
+	});
 });
 
 describe("team tools", () => {

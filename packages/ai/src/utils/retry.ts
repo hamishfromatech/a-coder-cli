@@ -1,5 +1,85 @@
 import type { AssistantMessage } from "../types.ts";
 
+/**
+ * Extract a provider-requested retry delay (the `Retry-After` / `Retry-After-Ms`
+ * HTTP headers, or SDK-specific `retryAfter`/`retryAfterMs` fields) from a
+ * thrown provider error, normalized to milliseconds. Returns undefined when
+ * the error carries no such hint.
+ *
+ * Supported value shapes:
+ * - `retry-after-ms` header / `retryAfterMs` field: milliseconds number or numeric string
+ * - `retry-after` header / `retryAfter` field: seconds number, numeric string, or HTTP-date
+ */
+export function extractRetryAfterMs(error: unknown): number | undefined {
+	if (!error || typeof error !== "object") return undefined;
+	const source = error as {
+		headers?: Headers | Record<string, unknown>;
+		$metadata?: { attempts?: unknown };
+		$response?: { headers?: unknown };
+		retryAfter?: unknown;
+		retryAfterMs?: unknown;
+	};
+
+	const fromHeaders = readRetryAfterFromHeaders(source.headers);
+	if (fromHeaders !== undefined) return fromHeaders;
+
+	const fromResponse = readRetryAfterFromHeaders(source.$response?.headers);
+	if (fromResponse !== undefined) return fromResponse;
+
+	if (typeof source.retryAfterMs === "number" && source.retryAfterMs >= 0) {
+		return source.retryAfterMs;
+	}
+	if (typeof source.retryAfterMs === "string") {
+		const millis = Number(source.retryAfterMs);
+		if (Number.isFinite(millis) && millis >= 0) return millis;
+	}
+	// OpenAI SDK exposes `error.retryAfter` as a number of milliseconds.
+	if (typeof source.retryAfter === "number" && source.retryAfter >= 0) {
+		return source.retryAfter;
+	}
+	return undefined;
+}
+
+function readRetryAfterFromHeaders(headers: unknown): number | undefined {
+	const get = (name: string): string | undefined => {
+		if (headers && typeof (headers as Headers).get === "function") {
+			return (headers as Headers).get(name) ?? undefined;
+		}
+		if (headers && typeof headers === "object") {
+			const value = (headers as Record<string, unknown>)[name];
+			return typeof value === "string" || typeof value === "number" ? String(value) : undefined;
+		}
+		return undefined;
+	};
+
+	const retryAfterMs = get("retry-after-ms");
+	if (retryAfterMs !== undefined) {
+		const millis = Number(retryAfterMs);
+		if (Number.isFinite(millis) && millis >= 0) return millis;
+	}
+
+	const retryAfter = get("retry-after");
+	if (retryAfter === undefined) return undefined;
+	return parseRetryAfterValue(retryAfter);
+}
+
+/**
+ * Parse a single `Retry-After` value: seconds or an HTTP-date.
+ */
+export function parseRetryAfterValue(value: string): number | undefined {
+	const trimmed = value.trim();
+	if (/^\d+$/.test(trimmed)) {
+		const millis = Number(trimmed) * 1000;
+		return millis >= 0 ? millis : undefined;
+	}
+	const date = Date.parse(trimmed);
+	if (!Number.isNaN(date)) {
+		const delta = date - Date.now();
+		return delta >= 0 ? delta : 0;
+	}
+	return undefined;
+}
+
 function buildProviderErrorPattern(patterns: readonly string[]): RegExp {
 	return new RegExp(patterns.join("|"), "i");
 }

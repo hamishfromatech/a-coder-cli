@@ -402,6 +402,12 @@ export interface AssistantMessage {
 	usage: Usage;
 	stopReason: StopReason;
 	errorMessage?: string;
+	/**
+	 * Provider-requested retry delay in milliseconds (from `Retry-After` headers
+	 * or SDK equivalents) when the error came with one. Consumers implementing
+	 * their own retry/backoff should honor this over their default schedule.
+	 */
+	retryAfterMs?: number;
 	timestamp: number; // Unix timestamp in milliseconds
 }
 

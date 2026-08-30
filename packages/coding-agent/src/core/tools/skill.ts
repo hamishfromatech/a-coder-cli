@@ -33,6 +33,12 @@ export interface SkillToolOptions {
 	getSkills: () => Skill[];
 	/** Session id, substituted for `${SESSION_ID}` in the skill body. */
 	getSessionId?: () => string;
+	/**
+	 * Grant session-scoped permission allow rules (easy-agent `allowed-tools`
+	 * frontmatter): called when a skill with `allowed-tools` is invoked, before
+	 * its instructions are returned.
+	 */
+	addSessionAllowRules?: (rules: string[]) => void;
 }
 
 /**
@@ -89,6 +95,11 @@ export function createSkillToolDefinition(options: SkillToolOptions): ToolDefini
 				throw new Error(
 					`Skill "${skill.name}" cannot be invoked by the model (disable-model-invocation is set). The user can run it explicitly via /skill:${skill.name}.`,
 				);
+			}
+			// easy-agent parity: pre-approve the skill's `allowed-tools` for this
+			// session before the model follows its instructions.
+			if (skill.allowedTools?.length && options.addSessionAllowRules) {
+				options.addSessionAllowRules(skill.allowedTools);
 			}
 			let raw: string;
 			try {

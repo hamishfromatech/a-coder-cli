@@ -95,4 +95,36 @@ describe("skill tool", () => {
 			/disable-model-invocation/,
 		);
 	});
+
+	it("grants allowed-tools as session allow rules on invocation", async () => {
+		const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
+		const { tmpdir } = await import("node:os");
+		const { join } = await import("node:path");
+		const dir = mkdtempSync(join(tmpdir(), "skill-tool-allow-"));
+		try {
+			writeFileSync(join(dir, "SKILL.md"), SKILL_BODY);
+			const skill = makeSkill({
+				filePath: join(dir, "SKILL.md"),
+				baseDir: dir,
+				allowedTools: ["Bash(git commit *)", "Read"],
+			});
+			const granted: string[][] = [];
+			const tool = createSkillToolDefinition({
+				getSkills: () => [skill],
+				addSessionAllowRules: (rules) => granted.push(rules),
+			});
+			await tool.execute("id", { skill: "test-skill", args: "x" }, undefined, undefined, emptyCtx);
+			expect(granted).toEqual([["Bash(git commit *)", "Read"]]);
+
+			// Skills without allowed-tools never call the hook.
+			const noRules = createSkillToolDefinition({
+				getSkills: () => [makeSkill({ filePath: join(dir, "SKILL.md"), baseDir: dir })],
+				addSessionAllowRules: (rules) => granted.push(rules),
+			});
+			await noRules.execute("id", { skill: "test-skill", args: "x" }, undefined, undefined, emptyCtx);
+			expect(granted).toHaveLength(1);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
 });

@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ENV_TEAMS_DIR } from "../../src/config.ts";
 import type { InProcessSubAgentRecord } from "../../src/core/extensions/types.ts";
 import { readTaskOutputEvents } from "../../src/core/subagents/task-output.ts";
+import { readMailbox, writeToMailbox } from "../../src/core/teams/mailbox.ts";
 import { readTeamFile, TEAM_LEAD_NAME, writeTeamFile } from "../../src/core/teams/team-file.ts";
 import { createHarness, type Harness } from "./harness.ts";
 
@@ -269,6 +270,108 @@ describe("AgentSession background sub-agents (in-process store)", () => {
 			const member = file?.members.find((m) => m.name === "backend");
 			expect(member).toBeDefined();
 			expect(member?.isActive).toBe(false);
+		} finally {
+			delete process.env[ENV_TEAMS_DIR];
+			await rm(teamsDir, { recursive: true, force: true });
+		}
+	});
+
+	it("wakes a running teammate for mail sent mid-run", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+
+		const teamsDir = await mkdtemp(join(tmpdir(), "a-coder-teams-wake-"));
+		process.env[ENV_TEAMS_DIR] = teamsDir;
+		try {
+			await writeTeamFile("wake", {
+				name: "wake",
+				createdAt: 1,
+				leadAgentId: `${TEAM_LEAD_NAME}@wake`,
+				members: [{ agentId: `${TEAM_LEAD_NAME}@wake`, name: TEAM_LEAD_NAME, joinedAt: 1, isActive: true }],
+			});
+			// Call 1 builds the first turn; its factory delivers mail mid-run (after
+			// the spawn-time drain consumed the initial inbox), so the wake loop
+			// must pick it up and run a second turn. Call 2 acknowledges it.
+			harness.setResponses([
+				async () => {
+					await writeToMailbox(
+						"backend",
+						{
+							from: TEAM_LEAD_NAME,
+							text: "please also check the flaky test",
+							timestamp: new Date().toISOString(),
+						},
+						"wake",
+					);
+					return fauxAssistantMessage("first turn done");
+				},
+				fauxAssistantMessage("mail acknowledged"),
+			]);
+
+			const { id } = harness.session.runSubAgentBackground({
+				id: "bg-wake",
+				prompt: "start work",
+				maxTurns: 5,
+				name: "backend",
+				teamName: "wake",
+			});
+			const record = await harness.session.waitSubAgent(id);
+
+			// Two prompts ran: the initial one plus the mail wake-up.
+			expect(record?.status).toBe("completed");
+			expect(record?.turnCount).toBe(2);
+			expect(record?.finalText).toBe("mail acknowledged");
+			// Mail was consumed (marked read) by the wake drain.
+			const inbox = await readMailbox("backend", "wake");
+			expect(inbox.every((m) => m.read)).toBe(true);
+		} finally {
+			delete process.env[ENV_TEAMS_DIR];
+			await rm(teamsDir, { recursive: true, force: true });
+		}
+	});
+
+	it("leaves mail unread when the turn budget is already spent", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+
+		const teamsDir = await mkdtemp(join(tmpdir(), "a-coder-teams-budget-"));
+		process.env[ENV_TEAMS_DIR] = teamsDir;
+		try {
+			await writeTeamFile("budget", {
+				name: "budget",
+				createdAt: 1,
+				leadAgentId: `${TEAM_LEAD_NAME}@budget`,
+				members: [{ agentId: `${TEAM_LEAD_NAME}@budget`, name: TEAM_LEAD_NAME, joinedAt: 1, isActive: true }],
+			});
+			harness.setResponses([
+				async () => {
+					await writeToMailbox(
+						"late",
+						{
+							from: TEAM_LEAD_NAME,
+							text: "one more thing",
+							timestamp: new Date().toISOString(),
+						},
+						"budget",
+					);
+					return fauxAssistantMessage("done, budget spent");
+				},
+			]);
+
+			const { id } = harness.session.runSubAgentBackground({
+				id: "bg-budget",
+				prompt: "x",
+				maxTurns: 1,
+				name: "late",
+				teamName: "budget",
+			});
+			const record = await harness.session.waitSubAgent(id);
+
+			expect(record?.status).toBe("completed");
+			expect(record?.turnCount).toBe(1);
+			const inbox = await readMailbox("late", "budget");
+			// The wake-up prompt was refused (turn budget), so the message remains unread.
+			expect(inbox.some((m) => !m.read)).toBe(true);
 		} finally {
 			delete process.env[ENV_TEAMS_DIR];
 			await rm(teamsDir, { recursive: true, force: true });

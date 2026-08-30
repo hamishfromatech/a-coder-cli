@@ -8,14 +8,17 @@
  *   └── inboxes/            ← per-teammate mailboxes (see mailbox.ts)
  *       └── <name>.json
  *
- * One team per process. The only writers are the lead's process (teammates run
- * in-process), so read-modify-write races are impossible and no file lock is
- * needed at this layer.
+ * One team per process, but multiple writers (lead tools, teammate runner,
+ * drain/wake cycles) interleave on the event loop — read-modify-write
+ * sequences are serialized with a per-file keyed mutex, matching easy-agent's
+ * proper-lockfile tolerance for concurrent writers without the cross-process
+ * lock overhead.
  */
 
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { getTeamsRoot } from "../../config.ts";
+import { withKeyedLock } from "../../utils/async-mutex.ts";
 
 export interface TeamMember {
 	/** Deterministic id: `<name>@<teamName>`. */
@@ -87,18 +90,28 @@ export async function writeTeamFile(teamName: string, file: TeamFile): Promise<v
 }
 
 /**
+ * Serialize a team-file read-modify-write so concurrent member updates
+ * (spawn/finish/respawn + broadcasts) cannot drop each other's changes.
+ */
+function withTeamFileLock<T>(teamName: string, fn: () => Promise<T>): Promise<T> {
+	return withKeyedLock(getTeamFilePath(teamName), fn);
+}
+
+/**
  * Append a member to the team. Idempotent on `name` — a same-named member is
  * replaced (covers respawning a crashed teammate). Returns null when the team
  * file doesn't exist.
  */
 export async function addTeamMember(teamName: string, member: TeamMember): Promise<TeamFile | null> {
-	const file = await readTeamFile(teamName);
-	if (!file) return null;
-	const filtered = file.members.filter((m) => m.name !== member.name);
-	filtered.push(member);
-	const next: TeamFile = { ...file, members: filtered };
-	await writeTeamFile(teamName, next);
-	return next;
+	return withTeamFileLock(teamName, async () => {
+		const file = await readTeamFile(teamName);
+		if (!file) return null;
+		const filtered = file.members.filter((m) => m.name !== member.name);
+		filtered.push(member);
+		const next: TeamFile = { ...file, members: filtered };
+		await writeTeamFile(teamName, next);
+		return next;
+	});
 }
 
 /** Set a member's active flag. Returns the updated TeamFile (or unchanged). */
@@ -107,33 +120,37 @@ export async function setMemberActive(
 	memberName: string,
 	isActive: boolean,
 ): Promise<TeamFile | null> {
-	const file = await readTeamFile(teamName);
-	if (!file) return null;
-	let changed = false;
-	const next: TeamFile = {
-		...file,
-		members: file.members.map((m) => {
-			if (m.name === memberName && m.isActive !== isActive) {
-				changed = true;
-				return { ...m, isActive };
-			}
-			return m;
-		}),
-	};
-	if (!changed) return file;
-	await writeTeamFile(teamName, next);
-	return next;
+	return withTeamFileLock(teamName, async () => {
+		const file = await readTeamFile(teamName);
+		if (!file) return null;
+		let changed = false;
+		const next: TeamFile = {
+			...file,
+			members: file.members.map((m) => {
+				if (m.name === memberName && m.isActive !== isActive) {
+					changed = true;
+					return { ...m, isActive };
+				}
+				return m;
+			}),
+		};
+		if (!changed) return file;
+		await writeTeamFile(teamName, next);
+		return next;
+	});
 }
 
 /** Remove a member by name (no-op if absent). */
 export async function removeTeamMember(teamName: string, memberName: string): Promise<TeamFile | null> {
-	const file = await readTeamFile(teamName);
-	if (!file) return null;
-	const filtered = file.members.filter((m) => m.name !== memberName);
-	if (filtered.length === file.members.length) return file;
-	const next: TeamFile = { ...file, members: filtered };
-	await writeTeamFile(teamName, next);
-	return next;
+	return withTeamFileLock(teamName, async () => {
+		const file = await readTeamFile(teamName);
+		if (!file) return null;
+		const filtered = file.members.filter((m) => m.name !== memberName);
+		if (filtered.length === file.members.length) return file;
+		const next: TeamFile = { ...file, members: filtered };
+		await writeTeamFile(teamName, next);
+		return next;
+	});
 }
 
 /** Recursive delete of the team's on-disk state. Best-effort. */

@@ -14,7 +14,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname, isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type {
 	AfterToolCallContext,
 	AgentEvent,
@@ -39,6 +39,7 @@ import {
 	resetApiProviders,
 	streamSimple,
 } from "@earendil-works/pi-ai/compat";
+import ignore from "ignore";
 import { getAgentDir, getMemoryPath, getWorkspaceMemoryPath } from "../config.ts";
 import { getThemeByName, theme } from "../modes/interactive/theme/theme.ts";
 import { formatDuration } from "../utils/duration.ts";
@@ -116,6 +117,7 @@ import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.t
 import type { BranchSummaryEntry, CompactionEntry, SessionEntry, SessionManager } from "./session-manager.ts";
 import { CURRENT_SESSION_VERSION, getLatestCompactionEntry, type SessionHeader } from "./session-manager.ts";
 import type { PermissionMode, PermissionPolicyConfig, PermissionRule, SettingsManager } from "./settings-manager.ts";
+import type { Skill } from "./skills.ts";
 import type { SlashCommandInfo } from "./slash-commands.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
 import {
@@ -308,6 +310,37 @@ function estimateMessagesTokens(messages: AgentMessage[]): number {
 const MAX_RETRY_DELAY_MS = 60_000;
 
 /**
+ * easy-agent's foreground 529 policy (MAX_529_RETRIES): stop auto-retrying
+ * after this many consecutive overloaded-provider failures; other error kinds
+ * reset the counter.
+ */
+export const MAX_CONSECUTIVE_529_RETRIES = 3;
+
+/**
+ * Whether an assistant error message is an Anthropic-style overloaded/529
+ * failure (`529` status or `overloaded_error`), for the consecutive-529 cap.
+ */
+export function isOverloadedAssistantError(message: AssistantMessage): boolean {
+	if (message.stopReason !== "error" || !message.errorMessage) return false;
+	return /\boverloaded\b|overloaded_error|\b529\b/i.test(message.errorMessage);
+}
+
+/**
+ * Whether a failed assistant message already streamed output the user has
+ * seen (non-empty text, non-empty thinking, or any tool call). Auto-retry
+ * refuses to replay such a turn — easy-agent's streamed-output replay guard.
+ */
+export function hasVisibleStreamedOutput(message: AssistantMessage): boolean {
+	if (!Array.isArray(message.content)) return false;
+	return message.content.some((block) => {
+		if (block.type === "text") return typeof block.text === "string" && block.text.trim().length > 0;
+		if (block.type === "thinking") return typeof block.thinking === "string" && block.thinking.trim().length > 0;
+		if (block.type === "toolCall") return true;
+		return false;
+	});
+}
+
+/**
  * Exponential backoff with ±25% jitter for the full-turn auto-retry. Jitter
  * keeps multiple concurrent sessions retrying on the same provider outage from
  * re-synchronizing into a thundering herd.
@@ -433,6 +466,10 @@ export class AgentSession {
 	// Retry state
 	private _retryAbortController: AbortController | undefined = undefined;
 	private _retryAttempt = 0;
+	/** Consecutive overloaded/529 failures driving MAX_CONSECUTIVE_529_RETRIES. */
+	private _consecutiveOverloadRetries = 0;
+	/** Conditional skill names (easy-agent `paths` frontmatter) activated this session; sticky. */
+	private _conditionalSkillsActive = new Set<string>();
 
 	// Auto-continue state: prevents the harness from idling after the assistant
 	// describes a plan but fails to emit tool calls (e.g., 'Let me build that now').
@@ -826,6 +863,14 @@ export class AgentSession {
 		this.agent.beforeToolCall = async (context) => await this._beforeToolCallHook(context);
 
 		this.agent.afterToolCall = async ({ toolCall, args, result, isError }) => {
+			// easy-agent `paths` frontmatter: touch files that match a conditional
+			// skill's patterns and it joins the visible skill listing, sticky for
+			// the session.
+			try {
+				this._maybeActivateConditionalSkills(toolCall.name, args as Record<string, unknown> | undefined);
+			} catch {
+				// Activation must never break tool result handling.
+			}
 			// PostToolUse hooks: shell hooks may flag the result (isError + reason
 			// fed back to the model) and/or append additional context to it.
 			const hookContentSuffix: string[] = [];
@@ -1155,6 +1200,7 @@ export class AgentSession {
 						attempt: this._retryAttempt,
 					});
 					this._retryAttempt = 0;
+					this._consecutiveOverloadRetries = 0;
 				}
 			}
 		}
@@ -1693,6 +1739,76 @@ export class AgentSession {
 		return Array.from(unique);
 	}
 
+	/**
+	 * easy-agent `paths` frontmatter: conditional skills are excluded from the
+	 * model-visible skill listing until one of their path patterns matches a
+	 * file touched this session. Sticky: activation persists for the session.
+	 */
+	private _filterVisibleSkills(skills: Skill[]): Skill[] {
+		if (this._conditionalSkillsActive.size === 0) {
+			return skills.filter((skill) => !skill.paths?.length);
+		}
+		return skills.filter((skill) => !skill.paths?.length || this._conditionalSkillsActive.has(skill.name));
+	}
+
+	/**
+	 * Tools whose path arguments drive conditional-skill activation (easy-agent
+	 * watched Read/Write/Edit/Glob; pi's find is the Glob analog).
+	 */
+	private static readonly CONDITIONAL_SKILL_TRIGGER_TOOLS = new Set(["read", "write", "edit", "find"]);
+
+	/**
+	 * afterToolCall hook: activate conditional skills whose `paths` patterns
+	 * match files touched by read/write/edit/find calls, then refresh the
+	 * system prompt so newly activated skills reach the model next request.
+	 */
+	private _maybeActivateConditionalSkills(toolName: string, args: Record<string, unknown> | undefined): void {
+		if (!AgentSession.CONDITIONAL_SKILL_TRIGGER_TOOLS.has(toolName)) return;
+		const skills = this._resourceLoader.getSkills().skills;
+		if (!skills.some((s) => s.paths?.length && !this._conditionalSkillsActive.has(s.name))) return;
+		const record = (args ?? {}) as Record<string, unknown>;
+		const pathArg =
+			typeof record.path === "string"
+				? record.path
+				: typeof record.file_path === "string"
+					? record.file_path
+					: undefined;
+		if (!pathArg) return;
+		this._activateConditionalSkillsForPaths([pathArg]);
+	}
+
+	/**
+	 * Match touched paths against conditional skills' gitignore-style patterns
+	 * and activate matches. Returns the newly activated skill names.
+	 */
+	_activateConditionalSkillsForPaths(filePaths: string[]): string[] {
+		if (filePaths.length === 0) return [];
+		const relativePaths: string[] = [];
+		for (const filePath of filePaths) {
+			const absolute = isAbsolute(filePath) ? filePath : resolve(this._cwd, filePath);
+			const rel = relative(this._cwd, absolute);
+			if (!rel || rel.startsWith("..") || isAbsolute(rel)) continue;
+			relativePaths.push(rel.split(sep).join("/"));
+		}
+		if (relativePaths.length === 0) return [];
+
+		const activated: string[] = [];
+		for (const skill of this._resourceLoader.getSkills().skills) {
+			if (!skill.paths?.length || this._conditionalSkillsActive.has(skill.name)) continue;
+			const matcher = ignore().add(skill.paths);
+			// Directory-like hits (find/ls roots) match patterns that cover the directory.
+			if (relativePaths.some((p) => matcher.ignores(p) || matcher.ignores(`${p}/`))) {
+				this._conditionalSkillsActive.add(skill.name);
+				activated.push(skill.name);
+			}
+		}
+		if (activated.length > 0) {
+			this._baseSystemPrompt = this._rebuildSystemPrompt(this.getActiveToolNames());
+			this.agent.state.systemPrompt = this._systemPromptOverride ?? this._baseSystemPrompt;
+		}
+		return activated;
+	}
+
 	private _rebuildSystemPrompt(toolNames: string[]): string {
 		const validToolNames = toolNames.filter((name) => this._toolRegistry.has(name));
 		const toolSnippets: Record<string, string> = {};
@@ -1722,7 +1838,7 @@ export class AgentSession {
 
 		this._baseSystemPromptOptions = {
 			cwd: this._cwd,
-			skills: loadedSkills,
+			skills: this._filterVisibleSkills(loadedSkills),
 			agents: loadedAgents,
 			contextFiles: loadedContextFiles,
 			memory: this._loadMemoryForPrompt(),
@@ -1807,6 +1923,7 @@ export class AgentSession {
 				finalError: msg.errorMessage,
 			});
 			this._retryAttempt = 0;
+			this._consecutiveOverloadRetries = 0;
 		}
 
 		if (await this._checkCompaction(msg)) {
@@ -2064,6 +2181,12 @@ export class AgentSession {
 
 		const skill = this.resourceLoader.getSkills().skills.find((s) => s.name === skillName);
 		if (!skill) return text; // Unknown skill, pass through
+
+		// easy-agent parity: the user invoking a skill also unlocks its
+		// `allowed-tools` for the session (the model still needs them approved).
+		if (skill.allowedTools?.length) {
+			this.addSessionAllowRules(skill.allowedTools);
+		}
 
 		try {
 			const content = readFileSync(skill.filePath, "utf-8");
@@ -3479,7 +3602,11 @@ export class AgentSession {
 						sessionId: this.sessionManager.getSessionId(),
 					},
 					skill: {
+						// The skill tool resolves against ALL loaded skills (easy-agent: conditional
+						// `paths` skills stay invocable by name even before activation).
 						getSkills: () => this.resourceLoader.getSkills().skills,
+						getSessionId: () => this.sessionManager.getSessionId(),
+						addSessionAllowRules: (rules) => this.addSessionAllowRules(rules),
 					},
 				});
 
@@ -3584,6 +3711,23 @@ export class AgentSession {
 			return false;
 		}
 
+		// easy-agent-style streamed-output replay guard: if the failed attempt
+		// already streamed visible output (text/thinking/tool calls) the user saw
+		// it — silently re-running the whole turn would duplicate that output.
+		// Surface the error instead and let the user decide to resend.
+		if (hasVisibleStreamedOutput(message)) {
+			return false;
+		}
+
+		const overloaded = isOverloadedAssistantError(message);
+		if (overloaded && this._consecutiveOverloadRetries >= MAX_CONSECUTIVE_529_RETRIES) {
+			// easy-agent's foreground 529 policy: stop hammering an overloaded
+			// provider after three consecutive overload failures. (Background
+			// sub-agents never reach this path — the nested Agent loop fails fast
+			// without a full-turn retry — which is easy-agent's background split.)
+			return false;
+		}
+
 		this._retryAttempt++;
 
 		if (this._retryAttempt > settings.maxRetries) {
@@ -3592,7 +3736,19 @@ export class AgentSession {
 			return false;
 		}
 
-		const delayMs = computeRetryDelayMs(settings.baseDelayMs, this._retryAttempt);
+		if (overloaded) {
+			this._consecutiveOverloadRetries++;
+		} else {
+			this._consecutiveOverloadRetries = 0;
+		}
+
+		// A provider-suggested Retry-After delays the retry directly (capped by
+		// retry.maxDelayMs so the abortable wait stays bounded); otherwise fall
+		// back to exponential backoff with +/-25% jitter.
+		const delayMs =
+			message.retryAfterMs !== undefined
+				? Math.min(Math.max(0, message.retryAfterMs), settings.maxDelayMs)
+				: computeRetryDelayMs(settings.baseDelayMs, this._retryAttempt);
 
 		this._emit({
 			type: "auto_retry_start",
@@ -4493,12 +4649,33 @@ export class AgentSession {
 
 			try {
 				let promptText = params.prompt;
+				const isTeammate = Boolean(teammateName && params.teamName);
 				if (teammateName && params.teamName) {
 					const mailbox = await drainUnreadMessages(teammateName, params.teamName);
 					const attachment = formatMailboxAttachment(mailbox);
 					promptText = attachment ? `${attachment}\n\n${params.prompt}` : params.prompt;
 				}
 				await subAgent.prompt([{ role: "user", content: promptText, timestamp: Date.now() }]);
+
+				// easy-agent parity: named teammates pick up mail sent mid-run. After
+				// each turn chain ends, drain the inbox; unread messages wake the
+				// teammate for another turn until the box is empty (or the turn
+				// budget is spent — mail left unread stays for inspection).
+				if (isTeammate) {
+					while (turnCount < maxTurns) {
+						const moreMail = await drainUnreadMessages(teammateName!, params.teamName!);
+						if (moreMail.length === 0) break;
+						record.updatedAt = Date.now();
+						this._notifySubAgents();
+						await subAgent.prompt([
+							{
+								role: "user",
+								content: formatMailboxAttachment(moreMail),
+								timestamp: Date.now(),
+							},
+						]);
+					}
+				}
 				record.status = "completed";
 			} catch {
 				// killSubAgent pushes an `aborted` timeline event before aborting the

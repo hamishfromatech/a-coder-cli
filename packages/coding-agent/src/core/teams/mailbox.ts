@@ -3,13 +3,17 @@
  *
  * On-disk shape: `~/.a-coder-cli/teams/<team>/inboxes/<name>.json`, an array of
  * TeammateMessage records. Writes rewrite the full file atomically (write +
- * rename); pi-mono teammates run in-process and therefore serialize naturally
- * on the event loop, so no per-file lock is required (unlike easy-agent, which
- * kept proper-lockfile for its tmux backend).
+ * rename); read-modify-write sequences are serialized through a per-inbox
+ * keyed mutex (`withKeyedLock`) so concurrent senders / running-teammate
+ * drains cannot interleave and lose messages. easy-agent needed
+ * proper-lockfile for its cross-process tmux backends; teammate runs are
+ * in-process here, so a keyed in-process mutex gives the same multi-writer
+ * tolerance.
  */
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { withKeyedLock } from "../../utils/async-mutex.ts";
 import { getTeamDir, sanitizeName } from "./team-file.ts";
 
 /** One inbox entry, persisted as-is inside the JSON-array file. */
@@ -55,48 +59,58 @@ export async function readMailbox(agentName: string, teamName: string): Promise<
 	}
 }
 
-/** Append one message to a teammate's inbox. */
+/** Append one message to a teammate's inbox. Serialized per-inbox against other writers. */
 export async function writeToMailbox(
 	recipientName: string,
 	message: Omit<TeammateMessage, "read">,
 	teamName: string,
 ): Promise<void> {
-	const inboxPath = await ensureInboxFile(recipientName, teamName);
-	const messages = await readMailbox(recipientName, teamName);
-	messages.push({ ...message, read: false });
-	await writeFile(inboxPath, JSON.stringify(messages, null, 2), "utf-8");
+	const inboxPath = getInboxPath(recipientName, teamName);
+	await withKeyedLock(inboxPath, async () => {
+		await ensureInboxFile(recipientName, teamName);
+		const messages = await readMailbox(recipientName, teamName);
+		messages.push({ ...message, read: false });
+		await writeFile(inboxPath, JSON.stringify(messages, null, 2), "utf-8");
+	});
 }
 
 /** Flip every unread message to read. No-op if nothing unread. */
 export async function markMessagesAsRead(agentName: string, teamName: string): Promise<void> {
-	const messages = await readMailbox(agentName, teamName);
-	if (messages.length === 0) return;
-	let changed = false;
-	for (const m of messages) {
-		if (!m.read) {
-			m.read = true;
-			changed = true;
+	const inboxPath = getInboxPath(agentName, teamName);
+	await withKeyedLock(inboxPath, async () => {
+		const messages = await readMailbox(agentName, teamName);
+		if (messages.length === 0) return;
+		let changed = false;
+		for (const m of messages) {
+			if (!m.read) {
+				m.read = true;
+				changed = true;
+			}
 		}
-	}
-	if (changed) {
-		await writeFile(getInboxPath(agentName, teamName), JSON.stringify(messages, null, 2), "utf-8");
-	}
+		if (changed) {
+			await writeFile(getInboxPath(agentName, teamName), JSON.stringify(messages, null, 2), "utf-8");
+		}
+	});
 }
 
 /**
  * Atomically read + clear unread messages. Returns only the messages that were
  * unread at the moment of the call. Used by the teammate runner to inject
- * messages into the model's context at spawn time.
+ * messages into the model's context at spawn time and, for named teammates,
+ * between turns so mail sent mid-run reaches a running teammate.
  */
 export async function drainUnreadMessages(agentName: string, teamName: string): Promise<TeammateMessage[]> {
-	const messages = await readMailbox(agentName, teamName);
-	const unread = messages.filter((m) => !m.read);
-	if (unread.length === 0) return [];
-	for (const m of messages) {
-		m.read = true;
-	}
-	await writeFile(getInboxPath(agentName, teamName), JSON.stringify(messages, null, 2), "utf-8");
-	return unread;
+	const inboxPath = getInboxPath(agentName, teamName);
+	return withKeyedLock(inboxPath, async () => {
+		const messages = await readMailbox(agentName, teamName);
+		const unread = messages.filter((m) => !m.read);
+		if (unread.length === 0) return [];
+		for (const m of messages) {
+			m.read = true;
+		}
+		await writeFile(getInboxPath(agentName, teamName), JSON.stringify(messages, null, 2), "utf-8");
+		return unread;
+	});
 }
 
 /** Format mailbox messages as a single user-side context block. */

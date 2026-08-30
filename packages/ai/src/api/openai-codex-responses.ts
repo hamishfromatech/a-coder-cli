@@ -45,6 +45,7 @@ import { formatProviderError, normalizeProviderError } from "../utils/error-body
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { headersToRecord } from "../utils/headers.ts";
 import { resolveHttpProxyUrlForTarget } from "../utils/node-http-proxy.ts";
+import { extractRetryAfterMs } from "../utils/retry.ts";
 import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.ts";
 import { convertResponsesMessages, convertResponsesTools, processResponsesStream } from "./openai-responses-shared.ts";
 import { buildBaseOptions } from "./simple-options.ts";
@@ -403,7 +404,15 @@ export const stream: StreamFunction<"openai-codex-responses", OpenAICodexRespons
 						statusText: response.statusText,
 					});
 					const info = await parseErrorResponse(fakeResponse);
-					throw new Error(info.friendlyMessage || info.message);
+					const finalError = new Error(info.friendlyMessage || info.message);
+					// Preserve the provider's Retry-After hint so the caller's own
+					// retry policy (full-turn auto-retry) can honor it after our
+					// inner loop gives up.
+					const retryAfterDelayMs = getRetryAfterDelayMs(response.headers);
+					if (retryAfterDelayMs !== undefined) {
+						(finalError as Error & { retryAfterMs?: number }).retryAfterMs = retryAfterDelayMs;
+					}
+					throw finalError;
 				} catch (error) {
 					if (error instanceof Error) {
 						if (error.name === "AbortError" || error.message === "Request was aborted") {
@@ -445,6 +454,9 @@ export const stream: StreamFunction<"openai-codex-responses", OpenAICodexRespons
 			}
 			output.stopReason = options?.signal?.aborted ? "aborted" : "error";
 			output.errorMessage = formatProviderError(normalizeProviderError(error));
+			if (output.stopReason === "error") {
+				output.retryAfterMs = extractRetryAfterMs(error);
+			}
 			stream.push({ type: "error", reason: output.stopReason, error: output });
 			stream.end();
 		}

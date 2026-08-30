@@ -68,7 +68,47 @@ export interface SkillFrontmatter {
 	name?: string;
 	description?: string;
 	"disable-model-invocation"?: boolean;
+	/**
+	 * Tools pre-approved while the skill's instructions are active (easy-agent
+	 * `allowed-tools` frontmatter). CSV string or string array; entries use the
+	 * policy-rule syntax: bare tool names or `Tool(arg-glob)`.
+	 */
+	"allowed-tools"?: unknown;
+	allowedTools?: unknown;
+	/**
+	 * gitignore-style path patterns (easy-agent `paths` frontmatter). When set,
+	 * the skill stays out of the model-visible listing until a Read/Write/Edit/
+	 * Find/Ls call in this session touches a matching path — activation is
+	 * sticky for the rest of the session.
+	 */
+	paths?: unknown;
 	[key: string]: unknown;
+}
+
+/**
+ * Normalize the two spellings of the allowed-tools frontmatter value (CSV
+ * string or string array) into a rules array. Returns undefined when absent
+ * or when no usable entries were found.
+ */
+export function normalizeAllowedTools(value: unknown): string[] | undefined {
+	const entries: string[] = [];
+	if (typeof value === "string") {
+		entries.push(...value.split(","));
+	} else if (Array.isArray(value)) {
+		for (const entry of value) {
+			if (typeof entry === "string") entries.push(entry);
+		}
+	}
+	const normalized = entries.map((entry) => entry.trim()).filter((entry) => entry.length > 0);
+	return normalized.length > 0 ? normalized : undefined;
+}
+
+/**
+ * Normalize the `paths` frontmatter value (CSV string or string array of
+ * gitignore-style patterns). Returns undefined when empty or unusable.
+ */
+export function normalizeSkillPaths(value: unknown): string[] | undefined {
+	return normalizeAllowedTools(value);
 }
 
 export interface Skill {
@@ -78,6 +118,10 @@ export interface Skill {
 	baseDir: string;
 	sourceInfo: SourceInfo;
 	disableModelInvocation: boolean;
+	/** Permission rules pre-approved while this skill is active (easy-agent `allowed-tools`). */
+	allowedTools?: string[];
+	/** gitignore-style patterns; non-empty = conditional skill (easy-agent `paths`). */
+	paths?: string[];
 }
 
 export interface LoadSkillsResult {
@@ -314,6 +358,8 @@ function loadSkillFromFile(
 				baseDir: skillDir,
 				sourceInfo: createSkillSourceInfo(filePath, skillDir, source),
 				disableModelInvocation: frontmatter["disable-model-invocation"] === true,
+				allowedTools: normalizeAllowedTools(frontmatter["allowed-tools"] ?? frontmatter.allowedTools),
+				paths: normalizeSkillPaths(frontmatter.paths),
 			},
 			diagnostics,
 		};

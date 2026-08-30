@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `AssistantMessage.retryAfterMs`: provider-requested retry delay (milliseconds), extracted from `Retry-After` / `Retry-After-Ms` response headers (or SDK `retryAfter`/`retryAfterMs` fields) and attached to error assistant messages by every API adapter. The OpenAI Codex adapter's inner retry loop now preserves the hint on its final throw so outer retry policies can honor it too. Callers implementing their own retry/backoff should prefer this over their default schedule.
+
 ### Changed
 - Local Ollama models now discover their real context window at model-list refresh time (via the native /api/tags model_info.context_length, falling back to /api/show), matching Ollama Cloud, instead of hardcoding 128000 until the model is first activated.
 - Ollama Cloud vision support is now detected from `/api/show` per model (`capabilities` includes `"vision"`), not `/api/tags`. Ollama Cloud's `/api/tags` omits `capabilities`, so vision models were previously treated as text-only and images were silently dropped. The refresh now probes `/api/show` for every model (in parallel) and sets `input: ["text","image"]` when the server reports `"vision"`.
