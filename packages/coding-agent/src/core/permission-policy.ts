@@ -234,3 +234,40 @@ export function expandPolicyRules(rules: PermissionRule[] | undefined): string[]
 	}
 	return expanded;
 }
+
+/**
+ * Test whether any rule (tool-name or arg-scoped like `Bash(git *)`) matches a
+ * tool call. Exported for session-scoped allow rules granted outside settings.
+ */
+export function rulesMatch(
+	rules: PermissionRule[] | undefined,
+	toolName: string,
+	args?: Record<string, unknown>,
+): boolean {
+	return anyRuleMatches(rules, toolName, args);
+}
+
+// ─── plan-mode read-only shell detection ────────────────────────────
+
+/** Commands plan mode may auto-approve: read-only listing/inspection forms. */
+const READ_ONLY_SHELL_COMMAND_PATTERN =
+	/^(pwd|ls|cat|head|tail|tree|wc|stat|du|df|which|rg|grep|find|git (status|diff|log|show))(\s|$)/;
+
+/** Patterns that turn an otherwise read-only command into a mutating one. */
+const WRITE_INTENT_SHELL_PATTERN =
+	/(^|\s)(-delete|-exec|-execdir|-ok|-okdir|>|>>|&&|\|\||rm\b|mv\b|dd\b|tee\b|chmod\b|chown\b|touch\b|mkdir\b|rmdir\b|sed\s+-i|ln\b|kill\b|curl\b|wget\b|ssh\b|scp\b|rsync\b|npm\s+(install|uninstall|ci|publish)|pnpm\s+(add|remove|install)|yarn\s+(add|remove)|pip3?\s+install|apt(-get)?\s+(install|remove|upgrade)|brew\s+(install|uninstall|upgrade))/;
+
+/**
+ * Whether a bash command is a read-only inspection command, for plan-mode
+ * auto-approval. Prefix matching is deliberately narrow (no pipes, no
+ * redirection, no destructive flags) — anything unmatched keeps the normal
+ * plan-mode approval flow instead of being denied outright.
+ */
+export function isReadOnlyShellCommand(command: string): boolean {
+	const normalized = String(command ?? "")
+		.trim()
+		.replace(/\s+/g, " ");
+	if (!normalized) return false;
+	if (!READ_ONLY_SHELL_COMMAND_PATTERN.test(normalized)) return false;
+	return !WRITE_INTENT_SHELL_PATTERN.test(normalized);
+}

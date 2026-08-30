@@ -117,6 +117,21 @@ export interface SessionInfoEntry extends SessionEntryBase {
 }
 
 /**
+ * Persisted file-history snapshot so `/rewind` survives a session resume.
+ * One entry per turn-start snapshot and per edit backup attached to the
+ * current turn's snapshot; restoring keeps the fullest (last) record per
+ * messageId. Does NOT participate in LLM context.
+ */
+export interface FileHistorySnapshotEntry extends SessionEntryBase {
+	type: "file_history_snapshot";
+	snapshot: {
+		messageId: string;
+		trackedFileBackups: Record<string, { backupFileName: string | null; version: number; backupTime: string }>;
+		timestamp: string;
+	};
+}
+
+/**
  * Custom message entry for extensions to inject messages into LLM context.
  * Use customType to identify your extension's entries.
  *
@@ -146,7 +161,8 @@ export type SessionEntry =
 	| CustomEntry
 	| CustomMessageEntry
 	| LabelEntry
-	| SessionInfoEntry;
+	| SessionInfoEntry
+	| FileHistorySnapshotEntry;
 
 /** Raw file entry (includes header) */
 export type FileEntry = SessionHeader | SessionEntry;
@@ -1008,6 +1024,39 @@ export class SessionManager {
 		};
 		this._appendEntry(entry);
 		return entry.id;
+	}
+
+	/** Persist a file-history snapshot so `/rewind` survives a resume. */
+	appendFileHistorySnapshot(snapshot: {
+		messageId: string;
+		trackedFileBackups: Record<string, { backupFileName: string | null; version: number; backupTime: string }>;
+		timestamp: string;
+	}): string {
+		const entry: FileHistorySnapshotEntry = {
+			type: "file_history_snapshot",
+			id: generateId(this.byId),
+			parentId: this.leafId,
+			timestamp: new Date().toISOString(),
+			snapshot,
+		};
+		this._appendEntry(entry);
+		return entry.id;
+	}
+
+	/**
+	 * Collect the file-history snapshots on the current branch (root → leaf).
+	 * Multiple entries per messageId (turn-start + per-edit backups) arrive in
+	 * append order; restoring keeps the fullest (last) record per messageId.
+	 */
+	getFileHistorySnapshots(): Array<{
+		messageId: string;
+		trackedFileBackups: Record<string, { backupFileName: string | null; version: number; backupTime: string }>;
+		timestamp: string;
+	}> {
+		const path = buildSessionPath(this.getEntries(), this.leafId, this.byId);
+		return path
+			.filter((e): e is FileHistorySnapshotEntry => e.type === "file_history_snapshot")
+			.map((e) => e.snapshot);
 	}
 
 	/** Append a model change as child of current leaf, then advance leaf. Returns entry id. */

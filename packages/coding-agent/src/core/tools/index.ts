@@ -194,7 +194,11 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			return createMemoryToolDefinition();
 		case "plan_mode":
 			return createPlanModeToolDefinition(
-				options?.planMode?.callbacks ?? { getPlanMode: () => false, setPlanMode: () => {} },
+				options?.planMode?.callbacks ?? {
+					getPlanMode: () => false,
+					setPlanMode: () => {},
+					getPlanFilePath: () => "",
+				},
 			);
 		case "todo":
 			return createTodoToolDefinition();
@@ -238,7 +242,13 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 		case "memory":
 			return createMemoryTool(options?.memory);
 		case "plan_mode":
-			return createPlanModeTool(options?.planMode?.callbacks ?? { getPlanMode: () => false, setPlanMode: () => {} });
+			return createPlanModeTool(
+				options?.planMode?.callbacks ?? {
+					getPlanMode: () => false,
+					setPlanMode: () => {},
+					getPlanFilePath: () => "",
+				},
+			);
 		case "todo":
 			return createTodoTool();
 		case "ask_user_question":
@@ -268,7 +278,9 @@ export function createCodingToolDefinitions(cwd: string, options?: ToolsOptions)
 		createBashToolDefinition(cwd, options?.bash),
 		createEditToolDefinition(cwd, options?.edit),
 		createWriteToolDefinition(cwd, options?.write),
-		createPlanModeToolDefinition(options?.planMode?.callbacks ?? { getPlanMode: () => false, setPlanMode: () => {} }),
+		createPlanModeToolDefinition(
+			options?.planMode?.callbacks ?? { getPlanMode: () => false, setPlanMode: () => {}, getPlanFilePath: () => "" },
+		),
 		createTodoToolDefinition(),
 		createAskUserQuestionToolDefinition(),
 		createTaskCreateToolDefinition(),
@@ -303,7 +315,7 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 		find: createFindToolDefinition(cwd, options?.find),
 		ls: createLsToolDefinition(cwd, options?.ls),
 		plan_mode: createPlanModeToolDefinition(
-			options?.planMode?.callbacks ?? { getPlanMode: () => false, setPlanMode: () => {} },
+			options?.planMode?.callbacks ?? { getPlanMode: () => false, setPlanMode: () => {}, getPlanFilePath: () => "" },
 		),
 		todo: createTodoToolDefinition(),
 		ask_user_question: createAskUserQuestionToolDefinition(),
@@ -324,7 +336,9 @@ export function createCodingTools(cwd: string, options?: ToolsOptions): Tool[] {
 		createBashTool(cwd, options?.bash),
 		createEditTool(cwd, options?.edit),
 		createWriteTool(cwd, options?.write),
-		createPlanModeTool(options?.planMode?.callbacks ?? { getPlanMode: () => false, setPlanMode: () => {} }),
+		createPlanModeTool(
+			options?.planMode?.callbacks ?? { getPlanMode: () => false, setPlanMode: () => {}, getPlanFilePath: () => "" },
+		),
 		createTodoTool(),
 		createAskUserQuestionTool(),
 		createTaskCreateTool(),
@@ -358,7 +372,7 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		find: createFindTool(cwd, options?.find),
 		ls: createLsTool(cwd, options?.ls),
 		plan_mode: createPlanModeTool(
-			options?.planMode?.callbacks ?? { getPlanMode: () => false, setPlanMode: () => {} },
+			options?.planMode?.callbacks ?? { getPlanMode: () => false, setPlanMode: () => {}, getPlanFilePath: () => "" },
 		),
 		todo: createTodoTool(),
 		ask_user_question: createAskUserQuestionTool(),

@@ -39,7 +39,7 @@ import {
 	resetApiProviders,
 	streamSimple,
 } from "@earendil-works/pi-ai/compat";
-import { getMemoryPath, getWorkspaceMemoryPath } from "../config.ts";
+import { getAgentDir, getMemoryPath, getWorkspaceMemoryPath } from "../config.ts";
 import { getThemeByName, theme } from "../modes/interactive/theme/theme.ts";
 import { formatDuration } from "../utils/duration.ts";
 import { stripFrontmatter } from "../utils/frontmatter.ts";
@@ -106,14 +106,16 @@ import { classifyToolCall } from "./permission-classifier.ts";
 import {
 	AUTO_MODE_SAFE_TOOL_NAMES,
 	DEFAULT_MUTATING_TOOL_NAMES,
+	isReadOnlyShellCommand,
 	type PermissionDecisionResult,
 	resolvePermissionDecision,
+	rulesMatch,
 } from "./permission-policy.ts";
 import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.ts";
 import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.ts";
 import type { BranchSummaryEntry, CompactionEntry, SessionEntry, SessionManager } from "./session-manager.ts";
 import { CURRENT_SESSION_VERSION, getLatestCompactionEntry, type SessionHeader } from "./session-manager.ts";
-import type { PermissionMode, PermissionPolicyConfig, SettingsManager } from "./settings-manager.ts";
+import type { PermissionMode, PermissionPolicyConfig, PermissionRule, SettingsManager } from "./settings-manager.ts";
 import type { SlashCommandInfo } from "./slash-commands.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
 import {
@@ -324,6 +326,31 @@ export function computeRetryDelayMs(baseDelayMs: number, attempt: number, random
 const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high"];
 
 /**
+ * Ordered thinking levels used by keyword escalation (pi's supported set plus
+ * xhigh for models that expose it). Index doubles as the escalation rank.
+ */
+const THINKING_ESCALATION_ORDER = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+
+/**
+ * Detect easy-agent-style thinking-escalation keywords in a user prompt.
+ * Returns the requested escalation rank (index into THINKING_ESCALATION_ORDER).
+ */
+function detectThinkingEscalation(text: string): number | undefined {
+	if (/\bultrathink\b/i.test(text)) return THINKING_ESCALATION_ORDER.indexOf("xhigh");
+	if (/\b(megathink|think harder)\b/i.test(text)) return THINKING_ESCALATION_ORDER.indexOf("high");
+	if (/\bthink hard\b/i.test(text)) return THINKING_ESCALATION_ORDER.indexOf("medium");
+	return undefined;
+}
+
+/**
+ * Extract the bash command argument from tool args for read-only detection.
+ */
+function getBashCommandArg(args?: Record<string, unknown>): string {
+	const raw = args?.command ?? args?.cmd;
+	return typeof raw === "string" ? raw : "";
+}
+
+/**
  * Summarize a tool result for the sub-agent progress timeline: total text
  * characters plus a first-line preview, so live views can show what a tool
  * returned without keeping the full output in the timeline.
@@ -494,7 +521,11 @@ export class AgentSession {
 
 		// Turn-bound file history: bind the checkpoint store to this session's
 		// cwd+id, and prune stale per-session backup directories best-effort.
+		// Mirror snapshots into the transcript (persisting) and rehydrate any
+		// snapshots recorded earlier in this session file (resuming).
 		this._fileHistory.configure(this._cwd, this.sessionId);
+		this._fileHistory.setPersistHook((snapshot) => this.sessionManager.appendFileHistorySnapshot(snapshot));
+		this._fileHistory.restoreFromSnapshots(this.sessionManager.getFileHistorySnapshots());
 		void this._fileHistory.cleanupOldBackups();
 
 		this._buildRuntime({
@@ -533,6 +564,44 @@ export class AgentSession {
 		if (this._planMode === enabled) return;
 		this._planMode = enabled;
 		this._emit({ type: "plan_mode_changed", enabled });
+	}
+
+	/** Session-scoped allow rules granted outside settings (e.g. plan-mode allowedPrompts). */
+	private _sessionAllowRules: PermissionRule[] = [];
+
+	/**
+	 * Grant explicit permission allow rules for this session. Rules use the
+	 * settings policy syntax (`"Bash(npm test *)"`, `"read"`) and take
+	 * precedence over the session's permission mode without triggering the
+	 * auto-mode classifier (explicit approval, not a mode default).
+	 */
+	addSessionAllowRules(rules: string[]): void {
+		for (const rule of rules) {
+			const trimmed = rule.trim();
+			if (trimmed && !this._sessionAllowRules.includes(trimmed)) {
+				this._sessionAllowRules.push(trimmed);
+			}
+		}
+	}
+
+	getSessionAllowRules(): readonly string[] {
+		return this._sessionAllowRules;
+	}
+
+	/** Absolute path of this session's plan file (stable per session id). */
+	getPlanFilePath(): string {
+		return join(getAgentDir(), "plans", `${this.sessionId}.md`);
+	}
+
+	/** Whether a write-tool call targets the session's plan file (allowed while planning). */
+	private _isPlanFileWrite(args?: Record<string, unknown>): boolean {
+		const raw = args?.path ?? args?.file_path;
+		if (typeof raw !== "string" || !raw.trim()) return false;
+		try {
+			return resolvePath(raw.trim(), this._cwd) === this.getPlanFilePath();
+		} catch {
+			return false;
+		}
 	}
 
 	/**
@@ -626,12 +695,27 @@ export class AgentSession {
 		}
 
 		// When plan mode is active, mutating tools require explicit approval
-		// regardless of the current permission mode.
+		// regardless of the current permission mode. Obvious read-only bash
+		// commands and writes to the session's plan file stay auto-approved so
+		// planning sessions are not drowned in approval prompts.
 		if (this._planMode && DEFAULT_MUTATING_TOOL_NAMES.has(toolName)) {
+			if (toolName === "bash" && isReadOnlyShellCommand(getBashCommandArg(args))) {
+				return { decision: "approve" };
+			}
+			if (toolName === "write" && this._isPlanFileWrite(args)) {
+				return { decision: "approve" };
+			}
 			const isInteractive = this._permissionPromptHandler !== undefined;
 			return isInteractive
 				? { decision: "prompt", reason: "Plan mode is active: approval required before making changes" }
 				: { decision: "deny", reason: "Plan mode is active but no TTY is available for approval" };
+		}
+
+		// Session-scoped allow rules (e.g. granted by plan-mode allowedPrompts on
+		// exit) take precedence over the mode while never reaching the classifier
+		// (explicit approval, not a mode default).
+		if (this._sessionAllowRules.length > 0 && rulesMatch(this._sessionAllowRules, toolName, args)) {
+			return { decision: "approve" };
 		}
 
 		const mode = modeOverride ?? this._permissionMode;
@@ -1687,6 +1771,13 @@ export class AgentSession {
 
 	private async _runAgentPrompt(messages: AgentMessage | AgentMessage[]): Promise<void> {
 		try {
+			// Thinking-keyword escalation (ultrathink / megathink / think hard) is
+			// applied at the session layer so interactive, print, and SDK callers
+			// all get it. Only raises the level, never lowers it.
+			for (const message of Array.isArray(messages) ? messages : [messages]) {
+				const text = (message as Message).role === "user" ? this._getUserMessageText(message as Message) : "";
+				if (text) this.applyThinkingEscalation(text);
+			}
 			await this.agent.prompt(messages);
 			while (await this._handlePostAgentRun()) {
 				await this.agent.continue();
@@ -2358,6 +2449,30 @@ export class AgentSession {
 	 * Cycle to next thinking level.
 	 * @returns New level, or undefined if model doesn't support thinking
 	 */
+	/**
+	 * Scan a user prompt for thinking-escalation keywords (easy-agent/Claude-style:
+	 * "ultrathink" > "megathink"/"think harder" > "think hard") and raise the
+	 * model's thinking level accordingly for the session. Never lowers the level.
+	 * Returns the new level when an escalation was applied, otherwise undefined.
+	 */
+	applyThinkingEscalation(text: string): ThinkingLevel | undefined {
+		if (!this.supportsThinking() || typeof text !== "string") return undefined;
+		const requestedRank = detectThinkingEscalation(text);
+		if (requestedRank === undefined) return undefined;
+		const model = this.model;
+		if (!model) return undefined;
+		const available = getSupportedThinkingLevels(model) as ThinkingLevel[];
+		const target =
+			available.find((l) => THINKING_ESCALATION_ORDER.indexOf(l) >= requestedRank) ??
+			available[available.length - 1];
+		if (!target) return undefined;
+		if (THINKING_ESCALATION_ORDER.indexOf(target) <= THINKING_ESCALATION_ORDER.indexOf(this.thinkingLevel)) {
+			return undefined;
+		}
+		this.setThinkingLevel(target);
+		return target;
+	}
+
 	cycleThinkingLevel(): ThinkingLevel | undefined {
 		if (!this.supportsThinking()) return undefined;
 
@@ -3346,6 +3461,17 @@ export class AgentSession {
 						callbacks: {
 							getPlanMode: () => this._planMode,
 							setPlanMode: (enabled) => this.setPlanMode(enabled),
+							getPlanFilePath: () => this.getPlanFilePath(),
+							persistPlan: (plan) => {
+								try {
+									const planPath = this.getPlanFilePath();
+									mkdirSync(dirname(planPath), { recursive: true });
+									writeFileSync(planPath, plan, "utf-8");
+								} catch {
+									// best-effort: plan persistence must not break exiting
+								}
+							},
+							addSessionAllowRules: (rules) => this.addSessionAllowRules(rules),
 						},
 					},
 					memory: {
@@ -3834,6 +3960,9 @@ export class AgentSession {
 			// Update agent state
 			const sessionContext = this.sessionManager.buildSessionContext();
 			this.agent.state.messages = sessionContext.messages;
+			// Follow the active branch's file-history snapshots so /rewind targets
+			// the navigated branch's checkpoint chain, not the previous one.
+			this._fileHistory.restoreFromSnapshots(this.sessionManager.getFileHistorySnapshots());
 
 			// Emit session_tree event
 			await this._extensionRunner.emit({

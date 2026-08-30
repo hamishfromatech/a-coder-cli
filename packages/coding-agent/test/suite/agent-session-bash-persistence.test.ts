@@ -158,7 +158,10 @@ describe("AgentSession bash and persistence characterization", () => {
 		});
 		await harness.session.prompt("start");
 
-		const entries = harness.sessionManager.getEntries();
+		// file_history_snapshot entries mirror the turn-start/backup snapshots
+		// into the transcript; they are not conversational messages, so exclude
+		// them (their position vs the prompt entry is timing-dependent).
+		const entries = harness.sessionManager.getEntries().filter((entry) => entry.type !== "file_history_snapshot");
 		expect(entries.map((entry) => entry.type)).toEqual([
 			"custom_message",
 			"message",

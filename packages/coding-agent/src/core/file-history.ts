@@ -22,8 +22,11 @@
  * closure, so their edits are tracked against the main session too).
  *
  * All IO is best-effort: a backup/restore failure is swallowed so file
- * history can never break the agent loop. State is in-memory only — /rewind
- * targets the current session (snapshots do not survive a restart).
+ * history can never break the agent loop. Snapshot metadata is mirrored into
+ * the session transcript as `file_history_snapshot` entries (via the persist
+ * hook set by AgentSession), so `/rewind` survives a `--resume` and follows
+ * the active session branch; the backup copies themselves already persist on
+ * disk under the same session id.
  */
 
 import { createHash } from "node:crypto";
@@ -81,6 +84,8 @@ export class FileHistory {
 	private sessionId = "default";
 	private cwd = process.cwd();
 	private state: FileHistoryState = this.emptyState();
+	/** Persist each snapshot mutation (turn snapshot or edit backup) to the session transcript. */
+	private persistHook: ((snapshot: FileHistorySnapshot) => void) | undefined;
 
 	private emptyState(): FileHistoryState {
 		return { snapshots: [], trackedFiles: new Set() };
@@ -99,6 +104,46 @@ export class FileHistory {
 
 	getState(): FileHistoryState {
 		return this.state;
+	}
+
+	/** Register the callback invoked with the latest snapshot whenever it changes. */
+	setPersistHook(hook: ((snapshot: FileHistorySnapshot) => void) | undefined): void {
+		this.persistHook = hook;
+	}
+
+	/**
+	 * Rebuild in-memory snapshot state from the persisted session transcript.
+	 * Entries arrive in append order; for each messageId the last (fullest)
+	 * record wins, so per-turn edit backups supersede the empty turn-start
+	 * snapshot. Counting/cap semantics match a fresh in-memory session.
+	 */
+	restoreFromSnapshots(snapshots: ReadonlyArray<FileHistorySnapshot>): void {
+		if (!this.enabled) return;
+		const byMessageId = new Map<string, FileHistorySnapshot>();
+		for (const snapshot of snapshots) {
+			if (!snapshot || typeof snapshot.messageId !== "string") continue;
+			byMessageId.set(snapshot.messageId, {
+				messageId: snapshot.messageId,
+				trackedFileBackups: { ...(snapshot.trackedFileBackups ?? {}) },
+				timestamp: snapshot.timestamp,
+			});
+		}
+		const restored: FileHistorySnapshot[] = [];
+		// Preserve first-seen order, replacing each turn's record with its fullest.
+		for (const snapshot of snapshots) {
+			if (!snapshot || typeof snapshot.messageId !== "string") continue;
+			const entry = byMessageId.get(snapshot.messageId);
+			if (entry && !restored.includes(entry)) {
+				restored.push(entry);
+			}
+		}
+		this.state.snapshots = restored.length > MAX_SNAPSHOTS ? restored.slice(-MAX_SNAPSHOTS) : restored;
+		this.state.trackedFiles = new Set();
+		for (const snapshot of this.state.snapshots) {
+			for (const trackingPath of Object.keys(snapshot.trackedFileBackups)) {
+				this.state.trackedFiles.add(trackingPath);
+			}
+		}
 	}
 
 	// ─── phase 1: track an edit (backup pre-edit content) ─────────────────
@@ -137,6 +182,7 @@ export class FileHistory {
 
 		this.state.trackedFiles.add(trackingPath);
 		mostRecent.trackedFileBackups[trackingPath] = backup;
+		this.persistHook?.(mostRecent);
 	}
 
 	// ─── phase 2: make a turn snapshot ────────────────────────────────────
@@ -200,6 +246,7 @@ export class FileHistory {
 		if (this.state.snapshots.length > MAX_SNAPSHOTS) {
 			this.state.snapshots = this.state.snapshots.slice(-MAX_SNAPSHOTS);
 		}
+		this.persistHook?.(newSnapshot);
 	}
 
 	// ─── phase 3: rewind / diff ───────────────────────────────────────────

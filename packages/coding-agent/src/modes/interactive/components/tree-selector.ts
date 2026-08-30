@@ -359,7 +359,8 @@ class TreeList implements Component {
 				entry.type === "custom" ||
 				entry.type === "model_change" ||
 				entry.type === "thinking_level_change" ||
-				entry.type === "session_info";
+				entry.type === "session_info" ||
+				entry.type === "file_history_snapshot";
 
 			switch (this.filterMode) {
 				case "user-only":
@@ -837,6 +838,9 @@ class TreeList implements Component {
 				result = entry.name
 					? [theme.fg("dim", "[title: "), theme.fg("dim", entry.name), theme.fg("dim", "]")].join("")
 					: [theme.fg("dim", "[title: "), theme.italic(theme.fg("dim", "empty")), theme.fg("dim", "]")].join("");
+				break;
+			case "file_history_snapshot":
+				result = theme.fg("dim", `[checkpoint: ${Object.keys(entry.snapshot.trackedFileBackups).length} file(s)]`);
 				break;
 			default:
 				result = "";

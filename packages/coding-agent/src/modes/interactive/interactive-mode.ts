@@ -8,6 +8,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { ThinkingLevel } from "@earendil-works/pi-ai";
 import {
 	type AssistantMessage,
 	getProviders,
@@ -675,6 +676,20 @@ export class InteractiveMode {
 					value: style.name,
 					label: style.name,
 					description: this.prefixAutocompleteDescription(style.description),
+				}));
+			};
+		}
+
+		const thinkCommand = slashCommands.find((command) => command.name === "think");
+		if (thinkCommand) {
+			thinkCommand.getArgumentCompletions = (prefix: string): AutocompleteItem[] | null => {
+				const levels = this.session.getAvailableThinkingLevels().map((l) => String(l));
+				const filtered = levels.filter((l) => l.startsWith(prefix.toLowerCase()));
+				if (filtered.length === 0) return null;
+				return filtered.map((l) => ({
+					value: l,
+					label: l,
+					description: l === this.session.thinkingLevel ? "current" : undefined,
 				}));
 			};
 		}
@@ -2951,6 +2966,12 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
+			if (text === "/think" || text.startsWith("/think ")) {
+				const arg = text.startsWith("/think ") ? text.slice("/think ".length).trim() : undefined;
+				this.handleThinkCommand(arg);
+				this.editor.setText("");
+				return;
+			}
 			if (text === "/export" || text.startsWith("/export ")) {
 				await this.handleExportCommand(text);
 				this.editor.setText("");
@@ -4152,6 +4173,28 @@ export class InteractiveMode {
 			this.updateEditorBorderColor();
 			this.showStatus(`Thinking level: ${newLevel}`);
 		}
+	}
+
+	/** /think [level]: show or set the model's thinking level. */
+	private handleThinkCommand(arg: string | undefined): void {
+		if (!this.session.supportsThinking()) {
+			this.showStatus("Current model does not support thinking");
+			return;
+		}
+		const levels = this.session.getAvailableThinkingLevels();
+		if (!arg) {
+			this.showStatus(`Thinking level: ${this.session.thinkingLevel} (available: ${levels.join(", ")})`);
+			return;
+		}
+		const requested = arg.toLowerCase() as ThinkingLevel;
+		if (!levels.includes(requested)) {
+			this.showStatus(`Unknown thinking level "${arg}" — available: ${levels.join(", ")}`);
+			return;
+		}
+		this.session.setThinkingLevel(requested);
+		this.footer.invalidate();
+		this.updateEditorBorderColor();
+		this.showStatus(`Thinking level: ${requested}`);
 	}
 
 	private async cycleModel(direction: "forward" | "backward"): Promise<void> {

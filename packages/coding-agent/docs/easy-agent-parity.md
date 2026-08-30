@@ -8,19 +8,16 @@ Comparison of the 35 easy-agent build stages (`/Users/hamishfromatech/Downloads/
 |---|------|-----|------|
 | 1 | Sandbox (easy-agent step18) | No macOS seatbelt/sandbox-exec module at all (profile build from permission rules, `sandbox-exec -p` wrap, per-subcommand exclusions, `<sandbox_violations>` stderr annotation, `dangerouslyDisableSandbox` gate). Port `easy-agent/src/sandbox/` into `core/` and hook `bash-executor.ts`. | M |
 | 2 | Web tools (step31) | No WebFetch/WebSearch tools. easy-agent: fetch → HTML→markdown → secondary model pass with `prompt` arg; SSRF re-validation per redirect hop, domain allowlists; search rides Anthropic server-side `web_search` with a Bing fallback. | M/L |
-| 3 | Plan mode enrichment (step13) | Current: single `plan_mode` toggle + approval gating. easy-agent: persisted plan file (`~/.easy-agent/plans/<slug>.md`), read-only tool allowlist enforcement, `allowedPrompts` → session allow rules on exit. Decide which parts are wanted. | M |
-| 4 | Skills follow-ups (step17) | `allowed-tools` frontmatter → temporary permission allow-rules during the skill turn; conditional `paths` frontmatter (gitignore-pattern activation on files touched by Read/Write/Edit/Glob, sticky). | M |
-| 5 | File history across restarts (step26) | `/rewind` state is in-memory per session; easy-agent persists snapshot chains in the session transcript so rewind survives `--resume`. | M |
-| 6 | Thinking controls (step34) | No explicit thinking-token budget or `/effort` control (only cyclable levels); no `redacted_thinking` block display; no ultrathink-style keyword escalation. | M/S |
-| 7 | Agent Teams polish (step21) | Mailboxes drained only at teammate spawn (easy-agent injects mail into a running teammate's next turn); team files/mailboxes unlocked (proper-lockfile design tolerates multi-writer). | S/M |
-| 8 | PowerShell tool (step31) | Windows PowerShell tool (platform-gated), pi is bash-only. | S/M |
-| 9 | Streamed-output replay guard (step27) | A mid-stream failure restarts the whole turn; surface/deduplicate already-visible output (easy-agent refuses to replay). | S/L |
-| 10 | Prompt templates (step23) | `model` and `allowed-tools` frontmatter on prompt templates; raw-args appended when the template has no placeholder. | S |
-| 11 | Workspace containment (step3) | Opt-in per-call path containment guard (reject paths outside cwd) in path-utils. | S |
-| 12 | Bundled agent examples (step19) | No example `.md` agent definitions shipped under the project agents dir. | S |
-| 13 | Retry-After plumbing (step27) | Retry-after headers parsed at provider level but not honored by the full-turn auto-retry / jitter path. | S |
-| 14 | Grep fallback (step5) | grep(1) fallback branch when `rg` is absent (pi auto-installs instead). | S |
-| 15 | 529 overload split (step27) | Foreground/background 529 retry policy split; MiniMax `input_tokens` in `message_delta` quirk. | S |
+| 3 | Skills follow-ups (step17) | `allowed-tools` frontmatter → temporary permission allow-rules during the skill turn; conditional `paths` frontmatter (gitignore-pattern activation on files touched by Read/Write/Edit/Glob, sticky). | M |
+| 4 | Agent Teams polish (step21) | Mailboxes drained only at teammate spawn (easy-agent injects mail into a running teammate's next turn); team files/mailboxes unlocked (proper-lockfile design tolerates multi-writer). | S/M |
+| 5 | PowerShell tool (step31) | Windows PowerShell tool (platform-gated), pi is bash-only. | S/M |
+| 6 | Streamed-output replay guard (step27) | A mid-stream failure restarts the whole turn; surface/deduplicate already-visible output (easy-agent refuses to replay). | S/L |
+| 7 | Prompt templates (step23) | `model` and `allowed-tools` frontmatter on prompt templates; raw-args appended when the template has no placeholder. | S |
+| 8 | Workspace containment (step3) | Opt-in per-call path containment guard (reject paths outside cwd) in path-utils. | S |
+| 9 | Bundled agent examples (step19) | No example `.md` agent definitions shipped under the project agents dir. | S |
+| 10 | Retry-After plumbing (step27) | Retry-after headers parsed at provider level but not honored by the full-turn auto-retry / jitter path. | S |
+| 11 | Grep fallback (step5) | grep(1) fallback branch when `rg` is absent (pi auto-installs instead). | S |
+| 12 | 529 overload split (step27) | Foreground/background 529 retry policy split; MiniMax `input_tokens` in `message_delta` quirk. | S |
 
 ## Done (a-coder-cli already ahead or on par)
 
@@ -40,6 +37,7 @@ Comparison of the 35 easy-agent build stages (`/Users/hamishfromatech/Downloads/
 
 ## Landed for reference
 
+- README-table pass 4: plan-mode enrichment (persisted session plan file, write-to-plan-file allowed while planning, read-only bash auto-approval with a strict write-intent guard, `plan_mode` exit accepts `plan` + `allowedPrompts` which become arg-scoped session allow rules that bypass the classifier), file-history persistence (snapshots mirrored into the transcript as `file_history_snapshot` entries so `/rewind` survives `--resume` and follows branch navigation; the backup copies were already on disk), thinking controls (`/think <level>` slash command with completion; session-layer keyword escalation: ultrathink > megathink/think harder > think hard, raise-only; redacted thinking already displayed). Deliberately NOT ported: removing non-allowlisted tools in plan mode (pi prompts instead of denying — safer interactively), thinking budget_tokens/effort provider betas (pi's provider-agnostic thinking levels cover the same ground), plain-"think" keyword trigger (false-positive surface too large).
 - README-table pass 3 (post stage-35 audit): loop-level output-cap recovery ladder (truncated tool-less turn at the model's maxTokens → bounded "resume mid-thought" continuation, limit 3), persistent-memory auto-injection (`<persistent_memory>` section from global+workspace MEMORY.md, settings-gated, per-scope cap), sub-agent `permissionMode` frontmatter enforcement (plan→read-only, auto→policy+classifier; tools/model/maxTurns were already enforced at spawn), `/output-style` argument completion. Verified already present: output styles (`/output-style` with built-in/user/project scopes), slash-command argument-completion framework, sub-agent tools/model/maxTurns propagation.
 - v0.80.54: MCP stub removed for ≤50-tool servers; gateway stub (only >50-tool servers) hardened with schema echo; `edit` `replaceAll`; retry jitter+cap; loop `maxToolTurns`.
 - Current: settings hooks, `skill` tool, MCP resource tools, arg-scoped permission rules + auto-mode classifier, `--mode stream-json`.
