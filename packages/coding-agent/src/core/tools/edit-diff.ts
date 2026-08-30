@@ -190,6 +190,11 @@ export interface FuzzyMatchResult {
 export interface Edit {
 	oldText: string;
 	newText: string;
+	/**
+	 * Replace every occurrence of oldText instead of requiring a unique match.
+	 * When false (default) a multi-match edit fails with a duplicate error.
+	 */
+	replaceAll?: boolean;
 }
 
 export interface AppliedEditsResult {
@@ -314,6 +319,7 @@ export function applyEditsToNormalizedContent(
 	const normalizedEdits = edits.map((edit) => ({
 		oldText: normalizeToLF(edit.oldText),
 		newText: normalizeToLF(edit.newText),
+		replaceAll: edit.replaceAll === true,
 	}));
 
 	for (let i = 0; i < normalizedEdits.length; i++) {
@@ -332,6 +338,23 @@ export function applyEditsToNormalizedContent(
 		const matchResult = fuzzyFindText(replacementBaseContent, edit.oldText);
 		if (!matchResult.found) {
 			throw getNotFoundError(path, i, normalizedEdits.length);
+		}
+
+		if (edit.replaceAll) {
+			// Replace every occurrence (non-overlapping, left to right) in the
+			// same domain the match was found in: exact space for exact matches,
+			// fuzzy-normalized space otherwise (fuzzyFindText returns offsets in
+			// that space).
+			const domain = matchResult.usedFuzzyMatch
+				? normalizeForFuzzyMatch(replacementBaseContent)
+				: replacementBaseContent;
+			const needle = matchResult.usedFuzzyMatch ? normalizeForFuzzyMatch(edit.oldText) : edit.oldText;
+			let from = 0;
+			for (let hit = domain.indexOf(needle, from); hit !== -1; hit = domain.indexOf(needle, from)) {
+				matchedEdits.push({ editIndex: i, matchIndex: hit, matchLength: needle.length, newText: edit.newText });
+				from = hit + needle.length;
+			}
+			continue;
 		}
 
 		// Count occurrences in the same domain the match was found in. When the

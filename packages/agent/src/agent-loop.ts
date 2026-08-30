@@ -150,6 +150,20 @@ function createAgentStream(): EventStream<AgentEvent, AgentMessage[]> {
 }
 
 /**
+ * Default safety cap on consecutive assistant turns per agent run, overridable
+ * via config.maxToolTurns and the A_CODER_CLI_MAX_TOOL_TURNS environment
+ * variable (PI_MAX_TOOL_TURNS legacy alias accepted too).
+ */
+const DEFAULT_MAX_TOOL_TURNS = 200;
+
+function resolveMaxToolTurns(configMax: number | undefined): number {
+	if (configMax !== undefined) return configMax;
+	const raw = process.env.A_CODER_CLI_MAX_TOOL_TURNS ?? process.env.PI_MAX_TOOL_TURNS;
+	const parsed = Number.parseInt(raw ?? "", 10);
+	return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_TOOL_TURNS;
+}
+
+/**
  * Main loop logic shared by agentLoop and agentLoopContinue.
  */
 async function runLoop(
@@ -163,6 +177,8 @@ async function runLoop(
 	let currentContext = initialContext;
 	let config = initialConfig;
 	let firstTurn = true;
+	const maxToolTurns = resolveMaxToolTurns(config.maxToolTurns);
+	let assistantTurns = 0;
 	// Check for steering messages at start (user may have typed while waiting)
 	let pendingMessages: AgentMessage[] = (await config.getSteeringMessages?.()) || [];
 
@@ -188,6 +204,16 @@ async function runLoop(
 				}
 				pendingMessages = [];
 			}
+
+			// Cap the assistant turn count before streaming another response so a
+			// looping model cannot run forever. The previous turn's tool batch has
+			// fully completed (assistant toolCalls + toolResults), so stopping here
+			// leaves the transcript in a valid state.
+			if (assistantTurns >= maxToolTurns) {
+				await emit({ type: "agent_end", messages: newMessages });
+				return;
+			}
+			assistantTurns++;
 
 			// Stream assistant response
 			const message = await streamAssistantResponse(currentContext, config, signal, emit, streamFn);

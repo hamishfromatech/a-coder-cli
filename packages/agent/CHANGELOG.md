@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Safety cap on the agent loop's assistant turns per run (`AgentLoopConfig.maxToolTurns`, default 200, overridable via `A_CODER_CLI_MAX_TOOL_TURNS` / `PI_MAX_TOOL_TURNS`): a model stuck calling tools forever now ends the run after the current tool batch instead of looping indefinitely.
+
 ## [0.80.26] - 2026-08-22
 
 ## [0.80.25] - 2026-08-22

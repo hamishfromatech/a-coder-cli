@@ -295,6 +295,20 @@ function estimateMessagesTokens(messages: AgentMessage[]): number {
 	return tokens;
 }
 
+/** Never wait longer than a minute between auto-retries, regardless of backoff tier. */
+const MAX_RETRY_DELAY_MS = 60_000;
+
+/**
+ * Exponential backoff with ±25% jitter for the full-turn auto-retry. Jitter
+ * keeps multiple concurrent sessions retrying on the same provider outage from
+ * re-synchronizing into a thundering herd.
+ */
+export function computeRetryDelayMs(baseDelayMs: number, attempt: number, random: () => number = Math.random): number {
+	const exponential = Math.min(baseDelayMs * 2 ** (attempt - 1), MAX_RETRY_DELAY_MS);
+	const jitterFactor = 0.75 + random() * 0.5;
+	return Math.max(1, Math.round(exponential * jitterFactor));
+}
+
 // ============================================================================
 // Constants
 // ============================================================================
@@ -3139,7 +3153,7 @@ export class AgentSession {
 			return false;
 		}
 
-		const delayMs = settings.baseDelayMs * 2 ** (this._retryAttempt - 1);
+		const delayMs = computeRetryDelayMs(settings.baseDelayMs, this._retryAttempt);
 
 		this._emit({
 			type: "auto_retry_start",

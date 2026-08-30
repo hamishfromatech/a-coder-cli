@@ -1,7 +1,8 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import { CallToolRequestSchema, type JSONRPCMessage, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { McpClient, type McpDiscoveredTool } from "../src/core/mcp/client.ts";
 import { firstClassToolName, formatMcpResult, MAX_FIRST_CLASS_TOOLS } from "../src/core/mcp/inline-extension.ts";
@@ -164,6 +165,61 @@ describe("McpClient", () => {
 		await server.notification({ method: "notifications/tools/list_changed", params: {} });
 		await vi.waitFor(() => expect(onToolsChanged).toHaveBeenCalled());
 		await mc.close();
+	});
+
+	describe("connect timeout", () => {
+		class HangingTransport implements Transport {
+			onclose?: () => void;
+			onerror?: (error: Error) => void;
+			onmessage?: (message: JSONRPCMessage) => void;
+			async start(): Promise<void> {
+				return new Promise(() => {});
+			}
+			async send(): Promise<void> {}
+			async close(): Promise<void> {
+				this.onclose?.();
+			}
+		}
+
+		function withConnectTimeout(value: string): void {
+			process.env.A_CODER_CLI_MCP_CONNECT_TIMEOUT = value;
+		}
+
+		function clearConnectTimeout(): void {
+			delete process.env.A_CODER_CLI_MCP_CONNECT_TIMEOUT;
+			delete process.env.MCP_CONNECT_TIMEOUT;
+		}
+
+		it("fails connect() after the configured timeout when the handshake hangs", async () => {
+			withConnectTimeout("50");
+			try {
+				const mc = new McpClient(config, { transport: new HangingTransport() });
+				await expect(mc.connect()).rejects.toThrow(/connection timed out after 50ms/);
+				expect(mc.connected).toBe(false);
+			} finally {
+				clearConnectTimeout();
+			}
+		});
+
+		it("attaches the server stderr tail to timeout errors and inherits the parent env", async () => {
+			withConnectTimeout("400");
+			const mc = new McpClient({
+				name: "noisy",
+				transport: "stdio",
+				commandOrUrl: process.execPath,
+				args: [
+					"-e",
+					"process.stderr.write('my-var=' + (process.env.MCP_TEST_TOKEN ?? 'missing') + '\\n');setInterval(() => {}, 1000)",
+				],
+				env: { MCP_TEST_TOKEN: "inherited-merge" },
+			});
+			try {
+				await expect(mc.connect()).rejects.toThrow(/timed out after 400ms[\s\S]*my-var=inherited-merge/s);
+			} finally {
+				clearConnectTimeout();
+				await mc.close();
+			}
+		}, 10_000);
 	});
 });
 

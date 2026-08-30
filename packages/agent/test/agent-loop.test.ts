@@ -1349,3 +1349,55 @@ describe("agentLoopContinue with AgentMessage", () => {
 		expect(messages[0].role).toBe("assistant");
 	});
 });
+
+describe("agentLoop maxToolTurns cap", () => {
+	it("should stop the loop after maxToolTurns assistant turns", async () => {
+		const toolSchema = Type.Object({ value: Type.String() });
+		const executed: string[] = [];
+		const tool: AgentTool<typeof toolSchema, undefined> = {
+			name: "loop",
+			label: "Loop",
+			description: "Always requests another turn",
+			parameters: toolSchema,
+			async execute(_toolCallId, params) {
+				executed.push(params.value);
+				return { content: [{ type: "text", text: "again" }], details: undefined };
+			},
+		};
+		const context: AgentContext = { systemPrompt: "", messages: [], tools: [tool] };
+		const config: AgentLoopConfig = { model: createModel(), convertToLlm: identityConverter, maxToolTurns: 3 };
+
+		let streamedResponses = 0;
+		const streamFn = () => {
+			const stream = new MockAssistantStream();
+			queueMicrotask(() => {
+				const message = createAssistantMessage(
+					[
+						{
+							type: "toolCall",
+							id: `tool-${streamedResponses}`,
+							name: "loop",
+							arguments: { value: `t${streamedResponses}` },
+						},
+					] as AssistantMessage["content"],
+					"toolUse",
+				);
+				streamedResponses++;
+				stream.push({ type: "done", reason: "toolUse", message });
+			});
+			return stream;
+		};
+
+		const events: AgentEvent[] = [];
+		for await (const event of agentLoop([createUserMessage("go")], context, config, undefined, streamFn)) {
+			events.push(event);
+		}
+
+		// Exactly maxToolTurns assistant responses streamed and executed; the cap
+		// prevented the 4th request.
+		expect(streamedResponses).toBe(3);
+		expect(executed).toEqual(["t0", "t1", "t2"]);
+		expect(events.filter((e) => e.type === "turn_end")).toHaveLength(3);
+		expect(events[events.length - 1]?.type).toBe("agent_end");
+	});
+});

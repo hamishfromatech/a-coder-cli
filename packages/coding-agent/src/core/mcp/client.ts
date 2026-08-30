@@ -14,6 +14,24 @@ import type { McpServerConfig } from "./types.ts";
  */
 const MAX_LIST_PAGES = 64;
 
+/** Connect timeout for the handshake (initialize request). SDK default timeout only covers requests. */
+const DEFAULT_CONNECT_TIMEOUT_MS = 30_000;
+
+function getMcpConnectTimeoutMs(): number {
+	const raw = process.env.A_CODER_CLI_MCP_CONNECT_TIMEOUT ?? process.env.MCP_CONNECT_TIMEOUT;
+	const parsed = Number.parseInt(raw ?? "", 10);
+	return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CONNECT_TIMEOUT_MS;
+}
+
+/** Cap on the raw server stderr tail appended to connect-failure errors. */
+const STDERR_TAIL_BYTES = 64 * 1024;
+
+interface TransportBundle {
+	transport: Transport;
+	/** Returns the last chunk of raw server stderr (stdio only) for error reporting. */
+	getStderrTail?: () => string;
+}
+
 export interface McpDiscoveredTool {
 	serverName: string;
 	name: string;
@@ -100,18 +118,35 @@ export class McpClient {
 		if (!this.connectPromise) {
 			this.closing = false;
 			this.lastTransportError = undefined;
-			const transport = this.transportOverride ?? createTransport(config);
+			const bundle = this.transportOverride ? { transport: this.transportOverride } : createTransport(config);
+			const transport = bundle.transport;
 			this.transport = transport;
-			this.connectPromise = this.client
-				.connect(transport)
-				.then(() => {
-					this._connected = true;
-				})
-				.catch((err) => {
+			this.connectPromise = (async () => {
+				let timer: ReturnType<typeof setTimeout> | undefined;
+				try {
+					// Bound the handshake with a hard timeout: the SDK's request
+					// timeout only covers post-handshake requests, so a hung server
+					// process would otherwise block connect() indefinitely (first
+					// tool call, background discovery).
+					await new Promise<void>((resolve, reject) => {
+						const timeoutMs = getMcpConnectTimeoutMs();
+						timer = setTimeout(() => {
+							reject(new Error(`connection timed out after ${timeoutMs}ms`));
+						}, timeoutMs);
+						timer.unref?.();
+						this.client.connect(transport).then(resolve, reject);
+					});
+				} catch (err) {
 					this.connectPromise = undefined;
 					void transport.close().catch(() => {});
-					throw err;
-				});
+					const tail = bundle.getStderrTail?.().trim() ?? "";
+					const message = err instanceof Error ? err.message : String(err);
+					throw tail ? new Error(`${message} (stderr: ${tail})`) : err;
+				} finally {
+					clearTimeout(timer);
+				}
+				this._connected = true;
+			})();
 		}
 		return this.connectPromise;
 	}
@@ -174,38 +209,51 @@ export class McpClient {
 	}
 }
 
-function createTransport(config: McpServerConfig): Transport {
+function createTransport(config: McpServerConfig): TransportBundle {
 	switch (config.transport) {
 		case "stdio": {
 			const suppress = config.suppressStderrPatterns?.filter((p) => p.length > 0);
-			if (!suppress || suppress.length === 0) {
-				return new StdioClientTransport({
-					command: config.commandOrUrl,
-					args: config.args,
-					env: config.env,
-					stderr: "inherit",
-				});
-			}
+			// Pipe (instead of inherit) so we also keep a raw stderr tail for
+			// connect-failure error messages; matching lines and live forwarding
+			// behavior are preserved via pipeStderr below.
 			const transport = new StdioClientTransport({
 				command: config.commandOrUrl,
 				args: config.args,
-				env: config.env,
+				// Merge the parent environment (PATH and friends) under per-server
+				// overrides: the SDK default env allowlist breaks npx-based servers
+				// when any per-server env is set, since values passed here REPLACE
+				// the default environment entirely.
+				env: { ...(process.env as Record<string, string>), ...(config.env ?? {}) },
 				stderr: "pipe",
 			});
-			filterStderr(transport, suppress);
-			return transport;
+			const getStderrTail = pipeStderr(transport, suppress ?? []);
+			return { transport, getStderrTail };
 		}
 		case "sse": {
 			const url = new URL(config.commandOrUrl);
-			return new SSEClientTransport(url, {
-				requestInit: { headers: config.headers },
-			});
+			return {
+				transport: new SSEClientTransport(url, {
+					requestInit: { headers: config.headers },
+					// The SSE event stream is a separate long-lived GET; without a
+					// fetch override only the POSTs carry custom headers (e.g. auth),
+					// so authenticated servers fail on the GET stream.
+					eventSourceInit: {
+						fetch: (url, init) =>
+							fetch(url, {
+								...init,
+								headers: { ...(init?.headers ?? {}), ...(config.headers ?? {}) },
+							}),
+					},
+				}),
+			};
 		}
 		case "http": {
 			const url = new URL(config.commandOrUrl);
-			return new StreamableHTTPClientTransport(url, {
-				requestInit: { headers: config.headers },
-			});
+			return {
+				transport: new StreamableHTTPClientTransport(url, {
+					requestInit: { headers: config.headers },
+				}),
+			};
 		}
 		default:
 			throw new Error(`Unsupported MCP transport: ${(config as McpServerConfig).transport}`);
@@ -213,25 +261,34 @@ function createTransport(config: McpServerConfig): Transport {
 }
 
 /**
- * Forward a stdio MCP server's stderr to the parent process, dropping any line
- * that matches one of `patterns` (each a regex source, tested per line). Used
- * to silence known-benign server noise without hiding real errors.
+ * Pipe a stdio MCP server's stderr to the parent process, dropping any line
+ * that matches one of `suppressPatterns` (each a regex source, tested per
+ * line) — used to silence known-benign server noise without hiding real
+ * errors. Also keeps a bounded raw tail (including suppressed lines) that
+ * connect() appends to failure messages so a crashed server's last words are
+ * not lost. Returns the tail getter.
  */
-function filterStderr(transport: StdioClientTransport, patterns: string[]): void {
+function pipeStderr(transport: StdioClientTransport, suppressPatterns: string[]): () => string {
 	const stderr = transport.stderr;
-	if (!stderr) return;
-	const regexes = patterns.map((p) => new RegExp(p));
-	let tail = "";
+	if (!stderr) return () => "";
+	const regexes = suppressPatterns.map((p) => new RegExp(p));
+	let pending = "";
+	let rawTail = "";
+	const forEachLine = (line: string): void => {
+		if (regexes.some((r) => r.test(line))) return;
+		process.stderr.write(`${line}\n`);
+	};
 	stderr.on("data", (chunk: Buffer) => {
-		const text = tail + chunk.toString();
+		rawTail = (rawTail + chunk.toString()).slice(-STDERR_TAIL_BYTES);
+		const text = pending + chunk.toString();
 		const lines = text.split(/\r?\n/);
-		tail = lines.pop() ?? "";
+		pending = lines.pop() ?? "";
 		for (const line of lines) {
-			if (regexes.some((r) => r.test(line))) continue;
-			process.stderr.write(`${line}\n`);
+			forEachLine(line);
 		}
 	});
 	stderr.on("end", () => {
-		if (tail && !regexes.some((r) => r.test(tail))) process.stderr.write(tail);
+		if (pending) forEachLine(pending);
 	});
+	return () => rawTail;
 }

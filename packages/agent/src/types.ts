@@ -142,6 +142,15 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	model: Model<any>;
 
 	/**
+	 * Safety cap on consecutive assistant turns within one agent run (prompt →
+	 * stop). Guards against a runaway model looping on tool calls forever.
+	 * When reached, the loop ends after completing the current tool batch; the
+	 * next prompt resumes the same session. Default: 200, overridable via the
+	 * A_CODER_CLI_MAX_TOOL_TURNS (or PI_MAX_TOOL_TURNS) environment variable.
+	 */
+	maxToolTurns?: number;
+
+	/**
 	 * Converts AgentMessage[] to LLM-compatible Message[] before each LLM call.
 	 *
 	 * Each AgentMessage must be converted to a UserMessage, AssistantMessage, or ToolResultMessage
