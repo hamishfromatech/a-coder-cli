@@ -81,6 +81,54 @@ describe("AgentSession permission mode", () => {
 		session.dispose();
 	});
 
+	it("applies sub-agent permissionMode=plan overrides to read-only regardless of session mode", async () => {
+		const { session } = await createSessionWithMode("allow");
+		const subBeforeToolCall = session._createSubAgentBeforeToolCall("plan");
+		expect(subBeforeToolCall).toBeDefined();
+		for (const tool of ["bash", "edit", "write"]) {
+			const result = await subBeforeToolCall?.(makeToolCall(tool));
+			expect(result).toEqual({
+				block: true,
+				reason: `Tool "${tool}" is blocked in read-only mode`,
+			});
+		}
+		const readResult = await subBeforeToolCall?.(makeToolCall("read"));
+		expect(readResult).toBeUndefined();
+		session.dispose();
+	});
+
+	it("applies sub-agent permissionMode=auto with policy rules", async () => {
+		const settingsManager = SettingsManager.inMemory({
+			permissionMode: "allow",
+			permissionPolicies: { hardDeny: ["bash"] },
+		});
+		const sessionManager = SessionManager.inMemory();
+		const { session } = await createAgentSession({
+			cwd: tempDir,
+			agentDir,
+			model: getModel("anthropic", "claude-sonnet-4-5")!,
+			settingsManager,
+			sessionManager,
+		});
+		// Session is "allow", but the sub-agent runs under "auto" policy rules.
+		const subBeforeToolCall = session._createSubAgentBeforeToolCall("auto");
+		expect(subBeforeToolCall).toBeDefined();
+		const denied = await subBeforeToolCall?.(makeToolCall("bash"));
+		expect(denied).toEqual({ block: true, reason: 'Tool "bash" matches hard-deny policy' });
+		const allowed = await subBeforeToolCall?.(makeToolCall("read"));
+		expect(allowed).toBeUndefined();
+		session.dispose();
+	});
+
+	it("lets sub-agent permissionMode=default inherit the session mode", async () => {
+		const { session } = await createSessionWithMode("read-only");
+		expect(session._createSubAgentBeforeToolCall("default")).toBeUndefined();
+		// Parent hook still applies the session mode: mutating tools are denied.
+		const result = await session.agent.beforeToolCall?.(makeToolCall("bash"));
+		expect(result).toEqual({ block: true, reason: 'Tool "bash" is blocked in read-only mode' });
+		session.dispose();
+	});
+
 	it("allows in ask mode when no prompt handler is registered", async () => {
 		const { session } = await createSessionWithMode("ask");
 		const result = await session.agent.beforeToolCall?.(makeToolCall("read"));

@@ -21,6 +21,8 @@ import type {
 	AgentMessage,
 	AgentState,
 	AgentTool,
+	BeforeToolCallContext,
+	BeforeToolCallResult,
 	PrepareNextTurnContext,
 	ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
@@ -37,12 +39,13 @@ import {
 	resetApiProviders,
 	streamSimple,
 } from "@earendil-works/pi-ai/compat";
+import { getMemoryPath, getWorkspaceMemoryPath } from "../config.ts";
 import { getThemeByName, theme } from "../modes/interactive/theme/theme.ts";
 import { formatDuration } from "../utils/duration.ts";
 import { stripFrontmatter } from "../utils/frontmatter.ts";
 import { resolvePath } from "../utils/paths.ts";
 import { sleep } from "../utils/sleep.ts";
-import { findAgent, resolveAgentTools } from "./agents/index.ts";
+import { type AgentPermissionMode, findAgent, resolveAgentTools } from "./agents/index.ts";
 import { formatNoApiKeyFoundMessage, formatNoModelSelectedMessage } from "./auth-guidance.ts";
 import { type BashResult, executeBashWithOperations } from "./bash-executor.ts";
 import {
@@ -546,10 +549,12 @@ export class AgentSession {
 	private async _resolvePermissionDecisionWithClassifier(
 		toolName: string,
 		args: Record<string, unknown> | undefined,
+		modeOverride?: PermissionMode,
 	): Promise<PermissionDecisionResult> {
-		const decision = this._resolvePermissionDecision(toolName, args);
+		const decision = this._resolvePermissionDecision(toolName, args, modeOverride);
 		const matchedDefault = decision.decision === "approve" ? decision.matchedDefault === true : false;
-		if (this._permissionMode !== "auto" || !matchedDefault) {
+		const mode = modeOverride ?? this._permissionMode;
+		if (mode !== "auto" || !matchedDefault) {
 			return decision;
 		}
 		const classifierDecision = await this._classifyAutoModeCall(toolName, args);
@@ -609,7 +614,11 @@ export class AgentSession {
 		};
 	}
 
-	private _resolvePermissionDecision(toolName: string, args?: Record<string, unknown>): PermissionDecisionResult {
+	private _resolvePermissionDecision(
+		toolName: string,
+		args?: Record<string, unknown>,
+		modeOverride?: PermissionMode,
+	): PermissionDecisionResult {
 		// The plan_mode tool itself must always be callable so the model can
 		// exit plan mode without needing a separate approval step.
 		if (toolName === "plan_mode") {
@@ -625,14 +634,15 @@ export class AgentSession {
 				: { decision: "deny", reason: "Plan mode is active but no TTY is available for approval" };
 		}
 
+		const mode = modeOverride ?? this._permissionMode;
 		const isInteractive = this._permissionPromptHandler !== undefined;
 		const policies: PermissionPolicyConfig | undefined = this.settingsManager.getPermissionPolicies();
 		// "ask" without a prompt handler cannot actually ask, so treat it as "allow"
 		// rather than silently denying every tool call.
-		if (this._permissionMode === "ask" && !isInteractive) {
+		if (mode === "ask" && !isInteractive) {
 			return { decision: "approve" };
 		}
-		return resolvePermissionDecision(this._permissionMode, toolName, policies, isInteractive, args);
+		return resolvePermissionDecision(mode, toolName, policies, isInteractive, args);
 	}
 
 	private async _maybePromptForPermission(
@@ -729,85 +739,7 @@ export class AgentSession {
 	 * happens here instead of in wrappers.
 	 */
 	private _installAgentToolHooks(): void {
-		this.agent.beforeToolCall = async ({ toolCall, args }) => {
-			// PreToolUse hooks: shell hooks from settings.json may deny, force a
-			// user prompt, or auto-approve the call before policy resolution runs.
-			const hookOutcome = await this._runHooks("PreToolUse", toolCall.name, {
-				tool_name: toolCall.name,
-				tool_input: args as Record<string, unknown> | null,
-			});
-			if (hookOutcome.block) {
-				return { block: true, reason: hookOutcome.reason ?? "Blocked by hook" };
-			}
-
-			const permission = hookOutcome.approve
-				? ({ decision: "approve" } as const)
-				: await this._resolvePermissionDecisionWithClassifier(
-						toolCall.name,
-						args as Record<string, unknown> | undefined,
-					);
-			if (permission.decision === "deny") {
-				return { block: true, reason: permission.reason };
-			}
-			if (permission.decision === "prompt" || hookOutcome.ask) {
-				const promptReason =
-					hookOutcome.reason ?? (permission.decision === "prompt" ? permission.reason : undefined);
-				const approved = await this._maybePromptForPermission(
-					toolCall.name,
-					promptReason,
-					args as Record<string, unknown> | undefined,
-				);
-				if (!approved) {
-					return {
-						block: true,
-						reason: promptReason ?? `Permission denied for "${toolCall.name}"`,
-					};
-				}
-			}
-
-			// File-history: back up the pre-edit content of any file Edit/Write is
-			// about to change, so `/rewind` can restore it. Runs before the tool
-			// mutates disk; best-effort and idempotent per turn. Relative paths
-			// resolve against the main session cwd (sub-agent worktree edits land
-			// outside it and are naturally skipped on rewind).
-			if (toolCall.name === "edit" || toolCall.name === "write") {
-				const rawArgs = args as Record<string, unknown> | null;
-				const fp =
-					rawArgs &&
-					(typeof rawArgs.path === "string"
-						? rawArgs.path
-						: typeof rawArgs.file_path === "string"
-							? rawArgs.file_path
-							: null);
-				if (fp) {
-					try {
-						const absPath = isAbsolute(fp) ? fp : join(this._cwd, fp);
-						void this._fileHistory.trackEdit(absPath);
-					} catch {
-						// best-effort: never block a tool call on file history
-					}
-				}
-			}
-
-			const runner = this._extensionRunner;
-			if (!runner.hasHandlers("tool_call")) {
-				return undefined;
-			}
-
-			try {
-				return await runner.emitToolCall({
-					type: "tool_call",
-					toolName: toolCall.name,
-					toolCallId: toolCall.id,
-					input: args as Record<string, unknown>,
-				});
-			} catch (err) {
-				if (err instanceof Error) {
-					throw err;
-				}
-				throw new Error(`Extension failed, blocking execution: ${String(err)}`);
-			}
-		};
+		this.agent.beforeToolCall = async (context) => await this._beforeToolCallHook(context);
 
 		this.agent.afterToolCall = async ({ toolCall, args, result, isError }) => {
 			// PostToolUse hooks: shell hooks may flag the result (isError + reason
@@ -890,6 +822,121 @@ export class AgentSession {
 				return undefined;
 			}
 		};
+	}
+
+	/**
+	 * Shared before-tool-call pipeline for the main agent and sub-agents:
+	 * PreToolUse hooks → permission resolution (with optional per-sub-agent
+	 * mode override from agent frontmatter) → file-history tracking →
+	 * extension tool_call handlers.
+	 */
+	private async _beforeToolCallHook(
+		context: BeforeToolCallContext,
+		permissionModeOverride?: PermissionMode,
+	): Promise<BeforeToolCallResult | undefined> {
+		const { toolCall, args } = context;
+		// PreToolUse hooks: shell hooks from settings.json may deny, force a
+		// user prompt, or auto-approve the call before policy resolution runs.
+		const hookOutcome = await this._runHooks("PreToolUse", toolCall.name, {
+			tool_name: toolCall.name,
+			tool_input: args as Record<string, unknown> | null,
+		});
+		if (hookOutcome.block) {
+			return { block: true, reason: hookOutcome.reason ?? "Blocked by hook" };
+		}
+
+		const permission = hookOutcome.approve
+			? ({ decision: "approve" } as const)
+			: await this._resolvePermissionDecisionWithClassifier(
+					toolCall.name,
+					args as Record<string, unknown> | undefined,
+					permissionModeOverride,
+				);
+		if (permission.decision === "deny") {
+			return { block: true, reason: permission.reason };
+		}
+		if (permission.decision === "prompt" || hookOutcome.ask) {
+			const promptReason = hookOutcome.reason ?? (permission.decision === "prompt" ? permission.reason : undefined);
+			const approved = await this._maybePromptForPermission(
+				toolCall.name,
+				promptReason,
+				args as Record<string, unknown> | undefined,
+			);
+			if (!approved) {
+				return {
+					block: true,
+					reason: promptReason ?? `Permission denied for "${toolCall.name}"`,
+				};
+			}
+		}
+
+		// File-history: back up the pre-edit content of any file Edit/Write is
+		// about to change, so `/rewind` can restore it. Runs before the tool
+		// mutates disk; best-effort and idempotent per turn. Relative paths
+		// resolve against the main session cwd (sub-agent worktree edits land
+		// outside it and are naturally skipped on rewind).
+		if (toolCall.name === "edit" || toolCall.name === "write") {
+			const rawArgs = args as Record<string, unknown> | null;
+			const fp =
+				rawArgs &&
+				(typeof rawArgs.path === "string"
+					? rawArgs.path
+					: typeof rawArgs.file_path === "string"
+						? rawArgs.file_path
+						: null);
+			if (fp) {
+				try {
+					const absPath = isAbsolute(fp) ? fp : join(this._cwd, fp);
+					void this._fileHistory.trackEdit(absPath);
+				} catch {
+					// best-effort: never block a tool call on file history
+				}
+			}
+		}
+
+		const runner = this._extensionRunner;
+		if (!runner.hasHandlers("tool_call")) {
+			return undefined;
+		}
+
+		try {
+			return await runner.emitToolCall({
+				type: "tool_call",
+				toolName: toolCall.name,
+				toolCallId: toolCall.id,
+				input: args as Record<string, unknown>,
+			});
+		} catch (err) {
+			if (err instanceof Error) {
+				throw err;
+			}
+			throw new Error(`Extension failed, blocking execution: ${String(err)}`);
+		}
+	}
+
+	/**
+	 * Map an agent definition's frontmatter permissionMode onto this session's
+	 * permission modes. "default" inherits the session mode (shared beforeToolCall,
+	 * current behavior); "plan" enforces read-only; "auto" applies policy rules
+	 * and the classifier through the normal auto path.
+	 */
+	private _subAgentPermissionModeOverride(mode: AgentPermissionMode): PermissionMode | undefined {
+		if (mode === "plan") return "read-only";
+		if (mode === "auto") return "auto";
+		return undefined;
+	}
+
+	/**
+	 * beforeToolCall for sub-agents whose definition sets a permissionMode: runs
+	 * the same hook pipeline as the parent but resolves permissions under the
+	 * definition's mode instead of the session's.
+	 */
+	_createSubAgentBeforeToolCall(
+		mode: AgentPermissionMode,
+	): ((context: BeforeToolCallContext) => Promise<BeforeToolCallResult | undefined>) | undefined {
+		const override = this._subAgentPermissionModeOverride(mode);
+		if (!override) return undefined;
+		return async (context) => await this._beforeToolCallHook(context, override);
 	}
 
 	private _installAgentNextTurnRefresh(): void {
@@ -1594,6 +1641,7 @@ export class AgentSession {
 			skills: loadedSkills,
 			agents: loadedAgents,
 			contextFiles: loadedContextFiles,
+			memory: this._loadMemoryForPrompt(),
 			customPrompt: loaderSystemPrompt,
 			appendSystemPrompt,
 			selectedTools: validToolNames,
@@ -1601,6 +1649,36 @@ export class AgentSession {
 			promptGuidelines,
 		};
 		return buildSystemPrompt(this._baseSystemPromptOptions);
+	}
+
+	/**
+	 * Read global and workspace MEMORY.md scopes for system-prompt injection.
+	 * Returns an empty array when injection is disabled, no file exists, or all
+	 * files are empty. Contents are capped per scope; a snapshot note tells the
+	 * model to re-read via the memory tool for fresh contents.
+	 */
+	private _loadMemoryForPrompt(): Array<{ scope: string; path: string; content: string }> {
+		const settings = this.settingsManager.getMemoryInjectionSettings();
+		if (!settings.enabled) return [];
+		const candidates: Array<{ scope: string; path: string }> = [{ scope: "global", path: getMemoryPath() }];
+		const sessionDir = this.sessionManager.getSessionDir();
+		if (sessionDir) candidates.push({ scope: "workspace", path: getWorkspaceMemoryPath(sessionDir) });
+		const sections: Array<{ scope: string; path: string; content: string }> = [];
+		for (const candidate of candidates) {
+			try {
+				if (!existsSync(candidate.path)) continue;
+				const raw = readFileSync(candidate.path, "utf-8").trim();
+				if (!raw) continue;
+				const content =
+					raw.length > settings.maxCharsPerScope
+						? `${raw.slice(0, settings.maxCharsPerScope)}\n... [truncated, full file at ${candidate.path}]`
+						: raw;
+				sections.push({ ...candidate, content });
+			} catch {
+				// Unreadable memory must never break prompt construction.
+			}
+		}
+		return sections;
 	}
 
 	// =========================================================================
@@ -3911,7 +3989,10 @@ export class AgentSession {
 			getApiKey: parent.getApiKey,
 			onPayload: parent.onPayload,
 			onResponse: parent.onResponse,
-			beforeToolCall: parent.beforeToolCall,
+			beforeToolCall:
+				def?.permissionMode !== undefined
+					? (this._createSubAgentBeforeToolCall(def.permissionMode) ?? parent.beforeToolCall)
+					: parent.beforeToolCall,
 			afterToolCall: parent.afterToolCall,
 			transport: parent.transport,
 			toolExecution: parent.toolExecution,
@@ -4184,7 +4265,10 @@ export class AgentSession {
 				getApiKey: parent.getApiKey,
 				onPayload: parent.onPayload,
 				onResponse: parent.onResponse,
-				beforeToolCall: parent.beforeToolCall,
+				beforeToolCall:
+					def?.permissionMode !== undefined
+						? (this._createSubAgentBeforeToolCall(def.permissionMode) ?? parent.beforeToolCall)
+						: parent.beforeToolCall,
 				afterToolCall: outputFile
 					? parentAfterToolCall
 						? async (context: AfterToolCallContext, signal?: AbortSignal) => {

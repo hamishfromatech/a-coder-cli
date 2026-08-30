@@ -166,6 +166,20 @@ function resolveMaxToolTurns(configMax: number | undefined): number {
 /**
  * Main loop logic shared by agentLoop and agentLoopContinue.
  */
+const MAX_OUTPUT_RECOVERY_LIMIT = 3;
+const MAX_OUTPUT_RECOVERY_PROMPT =
+	"Output token limit hit. Resume directly — no apology, no recap of what you were doing. " +
+	"Pick up mid-thought if that is where the cut happened. Break the remaining work into smaller pieces.";
+
+/**
+ * A length stop whose output actually saturated the model's max-output cap
+ * (not a context-clamped request cap — those end below the model cap and are
+ * handled by overflow/compaction recovery upstream).
+ */
+function isOutputCapSaturated(message: AssistantMessage, maxTokens: number): boolean {
+	return maxTokens > 0 && message.stopReason === "length" && message.usage.output >= maxTokens;
+}
+
 async function runLoop(
 	initialContext: AgentContext,
 	newMessages: AgentMessage[],
@@ -179,6 +193,7 @@ async function runLoop(
 	let firstTurn = true;
 	const maxToolTurns = resolveMaxToolTurns(config.maxToolTurns);
 	let assistantTurns = 0;
+	let maxOutputRecoveryCount = 0;
 	// Check for steering messages at start (user may have typed while waiting)
 	let pendingMessages: AgentMessage[] = (await config.getSteeringMessages?.()) || [];
 
@@ -242,6 +257,28 @@ async function runLoop(
 			}
 
 			await emit({ type: "turn_end", message, toolResults, usage: message.usage });
+
+			// Output-cap recovery: when a tool-less turn was cut off by the model's
+			// max output tokens, commit the truncated output and inject a bounded
+			// continuation prompt so long answers are not silently truncated. Turns
+			// with tool calls continue through the normal tool-result cycle instead.
+			if (
+				toolCalls.length === 0 &&
+				maxOutputRecoveryCount < MAX_OUTPUT_RECOVERY_LIMIT &&
+				isOutputCapSaturated(message, config.model.maxTokens)
+			) {
+				maxOutputRecoveryCount++;
+				const recovery = {
+					role: "user" as const,
+					content: MAX_OUTPUT_RECOVERY_PROMPT,
+					timestamp: Date.now(),
+				};
+				currentContext.messages.push(recovery);
+				newMessages.push(recovery);
+				await emit({ type: "message_start", message: recovery });
+				await emit({ type: "message_end", message: recovery });
+				hasMoreToolCalls = true;
+			}
 
 			const nextTurnContext = {
 				message,

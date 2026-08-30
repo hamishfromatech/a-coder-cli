@@ -21,6 +21,8 @@ export interface BuildSystemPromptOptions {
 	cwd: string;
 	/** Pre-loaded context files. */
 	contextFiles?: Array<{ path: string; content: string }>;
+	/** Persisted memory sections (global/workspace) injected at rebuild time. */
+	memory?: Array<{ scope: string; path: string; content: string }>;
 	/** Pre-loaded skills. */
 	skills?: Skill[];
 	/** Pre-loaded sub-agent definitions (for the available-sub-agents system reminder). */
@@ -37,6 +39,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 		appendSystemPrompt,
 		cwd,
 		contextFiles: providedContextFiles,
+		memory,
 		skills: providedSkills,
 		agents: providedAgents,
 	} = options;
@@ -71,6 +74,8 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 			}
 			prompt += "</project_context>\n";
 		}
+
+		prompt += formatMemorySection(memory);
 
 		// Append sub-agents section (available whenever the spawn_subagent tool is present)
 		const customPromptHasSubagent = !selectedTools || selectedTools.includes("spawn_subagent");
@@ -174,6 +179,8 @@ A-Coder CLI documentation (read only when the user asks about a-coder-cli itself
 		prompt += "</project_context>\n";
 	}
 
+	prompt += formatMemorySection(memory);
+
 	// Append sub-agents section (available whenever the spawn_subagent tool is present)
 	const hasSubagent = tools.includes("spawn_subagent");
 	if (hasSubagent && agents.length > 0) {
@@ -190,4 +197,21 @@ A-Coder CLI documentation (read only when the user asks about a-coder-cli itself
 	prompt += `\nCurrent working directory: ${promptCwd}`;
 
 	return prompt;
+}
+
+/**
+ * Format the <persistent_memory> section. Memory files are read once at
+ * (re)build time, so the injected snapshot can lag behind writes made during
+ * the session — the text tells the model to re-read via the memory tool.
+ */
+function formatMemorySection(memory: BuildSystemPromptOptions["memory"]): string {
+	if (!memory || memory.length === 0) return "";
+	let section = "\n\n<persistent_memory>\n\n";
+	section +=
+		"Persisted memory from previous sessions (snapshot at startup — re-read the current contents via the memory tool before relying on them):\n\n";
+	for (const entry of memory) {
+		section += `<memory scope="${entry.scope}" path="${entry.path}">\n${entry.content}\n</memory>\n\n`;
+	}
+	section += "</persistent_memory>\n";
+	return section;
 }

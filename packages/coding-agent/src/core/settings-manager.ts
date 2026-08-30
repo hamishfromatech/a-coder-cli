@@ -118,6 +118,18 @@ export interface AutoModeSettings {
 	maxConsecutiveBlocks?: number;
 }
 
+/**
+ * Persistent-memory auto-injection. When enabled, global and workspace
+ * MEMORY.md contents are folded into the system prompt at rebuild time so
+ * the model starts with prior context without a tool round-trip.
+ */
+export interface MemoryInjectionSettings {
+	/** Inject memory contents into the system prompt. Default: true. */
+	enabled?: boolean;
+	/** Per-scope character cap for injected content. Default: 2000. */
+	maxCharsPerScope?: number;
+}
+
 export type TransportSetting = Transport;
 
 /**
@@ -186,6 +198,7 @@ export interface Settings {
 	permissionMode?: PermissionMode; // default: "ask"
 	permissionPolicies?: PermissionPolicyConfig; // policy rules for "auto" mode
 	autoMode?: AutoModeSettings; // LLM classifier for "auto" mode (opt-in)
+	memory?: MemoryInjectionSettings; // inject MEMORY.md contents into the system prompt
 	httpProxy?: string; // Proxy URL applied as HTTP_PROXY and HTTPS_PROXY for Pi-managed HTTP clients
 	httpIdleTimeoutMs?: number; // HTTP header/body idle timeout in milliseconds; 0 disables it
 	websocketConnectTimeoutMs?: number; // WebSocket connect/open handshake timeout in milliseconds; 0 disables it
@@ -1024,6 +1037,13 @@ export class SettingsManager {
 			return value;
 		}
 		return "ask";
+	}
+
+	getMemoryInjectionSettings(): Required<MemoryInjectionSettings> {
+		return {
+			enabled: this.settings.memory?.enabled !== false,
+			maxCharsPerScope: positiveIntOr(this.settings.memory?.maxCharsPerScope, 2000),
+		};
 	}
 
 	getAutoModeSettings(): Required<AutoModeSettings> {

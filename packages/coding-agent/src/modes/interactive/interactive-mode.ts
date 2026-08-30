@@ -665,6 +665,20 @@ export class InteractiveMode {
 			};
 		}
 
+		const outputStyleCommand = slashCommands.find((command) => command.name === "output-style");
+		if (outputStyleCommand) {
+			outputStyleCommand.getArgumentCompletions = (prefix: string): AutocompleteItem[] | null => {
+				const styles = listOutputStyles().filter((style) => style.name !== getActiveOutputStyleName());
+				const filtered = fuzzyFilter(styles, prefix, (style) => style.name);
+				if (filtered.length === 0) return null;
+				return filtered.map((style) => ({
+					value: style.name,
+					label: style.name,
+					description: this.prefixAutocompleteDescription(style.description),
+				}));
+			};
+		}
+
 		// Convert prompt templates to SlashCommand format for autocomplete
 		const templateCommands: SlashCommand[] = this.session.promptTemplates.map((cmd) => ({
 			name: cmd.name,

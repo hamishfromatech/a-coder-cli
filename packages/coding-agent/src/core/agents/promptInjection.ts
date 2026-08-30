@@ -28,7 +28,7 @@ const CREATION_GUIDANCE = [
 	"- Required frontmatter fields: `name` (sub-agent identifier), `description` (whenToUse text shown to the dispatching agent).",
 	"- Optional frontmatter fields: `tools` (CSV or YAML list — explicit allow-list; omit for wildcard),",
 	"  `disallowedTools` (CSV or YAML list — strip from the wildcard pool, e.g. write/edit for read-only agents),",
-	"  `model` (override; falls back to parent's), `maxTurns` (positive integer), `permissionMode` (default | plan | auto).",
+	"  `model` (override; falls back to parent's), `maxTurns` (positive integer), `permissionMode` (default | plan | auto; plan enforces read-only, auto applies policy rules — both enforced at spawn).",
 	"- The Markdown body BELOW the frontmatter IS the sub-agent's system prompt — no extra wrapping needed.",
 	"- After writing, the user must restart a-coder-cli for the registry to pick the new file up.",
 	"",

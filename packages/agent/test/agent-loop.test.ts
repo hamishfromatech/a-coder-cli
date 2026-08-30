@@ -7,7 +7,7 @@ import {
 	type UserMessage,
 } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 import { agentLoop, agentLoopContinue } from "../src/agent-loop.ts";
 import type { AgentContext, AgentEvent, AgentLoopConfig, AgentMessage, AgentTool } from "../src/types.ts";
 
@@ -1399,5 +1399,99 @@ describe("agentLoop maxToolTurns cap", () => {
 		expect(executed).toEqual(["t0", "t1", "t2"]);
 		expect(events.filter((e) => e.type === "turn_end")).toHaveLength(3);
 		expect(events[events.length - 1]?.type).toBe("agent_end");
+	});
+});
+
+describe("agentLoop output-cap recovery", () => {
+	function makeLengthMessage(outputTokens: number): AssistantMessage {
+		const message = createAssistantMessage([{ type: "text", text: "truncated" }], "length");
+		message.usage = { ...createUsage(), output: outputTokens };
+		return message;
+	}
+
+	it("continues after a cap-saturated tool-less turn with a recovery prompt", async () => {
+		const context: AgentContext = { systemPrompt: "", messages: [], tools: [] };
+		const config: AgentLoopConfig = { model: createModel(), convertToLlm: identityConverter };
+
+		let calls = 0;
+		const streamFn = () => {
+			const stream = new MockAssistantStream();
+			queueMicrotask(() => {
+				if (calls++ === 0) {
+					stream.push({ type: "done", reason: "length", message: makeLengthMessage(2048) });
+				} else {
+					stream.push({
+						type: "done",
+						reason: "stop",
+						message: createAssistantMessage([{ type: "text", text: "done" }]),
+					});
+				}
+			});
+			return stream;
+		};
+
+		const streamedMessages: AgentMessage[] = [];
+		for await (const event of agentLoop(
+			[createUserMessage("write a long report")],
+			context,
+			config,
+			undefined,
+			streamFn,
+		)) {
+			if (event.type === "message_end") streamedMessages.push(event.message);
+		}
+
+		// user, truncated assistant, recovery user, final assistant
+		expect(streamedMessages.map((m) => m.role)).toEqual(["user", "assistant", "user", "assistant"]);
+		const recovery = streamedMessages[2];
+		assert(recovery.role === "user" && typeof recovery.content === "string");
+		expect(recovery.content).toContain("Resume directly");
+	});
+
+	it("does not continue when the length stop is below the output cap", async () => {
+		const context: AgentContext = { systemPrompt: "", messages: [], tools: [] };
+		const config: AgentLoopConfig = { model: createModel(), convertToLlm: identityConverter };
+
+		let calls = 0;
+		const streamFn = () => {
+			const stream = new MockAssistantStream();
+			queueMicrotask(() => {
+				calls++;
+				stream.push({ type: "done", reason: "length", message: makeLengthMessage(100) });
+			});
+			return stream;
+		};
+
+		const events: AgentEvent[] = [];
+		for await (const event of agentLoop([createUserMessage("hi")], context, config, undefined, streamFn)) {
+			events.push(event);
+		}
+		expect(calls).toBe(1);
+	});
+
+	it("caps recovery attempts at 3", async () => {
+		const context: AgentContext = { systemPrompt: "", messages: [], tools: [] };
+		const config: AgentLoopConfig = { model: createModel(), convertToLlm: identityConverter };
+
+		let calls = 0;
+		const streamFn = () => {
+			const stream = new MockAssistantStream();
+			queueMicrotask(() => {
+				calls++;
+				stream.push({ type: "done", reason: "length", message: makeLengthMessage(2048) });
+			});
+			return stream;
+		};
+
+		const streamedMessages: AgentMessage[] = [];
+		for await (const event of agentLoop([createUserMessage("go")], context, config, undefined, streamFn)) {
+			if (event.type === "message_end") streamedMessages.push(event.message);
+		}
+		// user prompt + 3 assistant turns + 3 recovery prompts = 7 message_end events
+		expect(calls).toBe(4);
+		const recoveryCount = streamedMessages.filter(
+			(m) => m.role === "user" && typeof m.content === "string" && m.content.startsWith("Output token limit hit"),
+		).length;
+		expect(recoveryCount).toBe(3);
 	});
 });

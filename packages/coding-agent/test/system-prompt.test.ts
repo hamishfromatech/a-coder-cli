@@ -99,6 +99,45 @@ describe("buildSystemPrompt", () => {
 			expect(prompt).toContain("- Use dynamic_tool for project summaries.");
 		});
 
+		test("renders persistent memory sections when provided", () => {
+			const prompt = buildSystemPrompt({
+				selectedTools: ["read"],
+				contextFiles: [],
+				memory: [
+					{
+						scope: "global",
+						path: "/memory/MEMORY.md",
+						content: "User prefers concise answers.",
+					},
+					{
+						scope: "workspace",
+						path: "/ws/MEMORY.md",
+						content: "Project uses bun.",
+					},
+				],
+				skills: [],
+				cwd: process.cwd(),
+			});
+
+			expect(prompt).toContain("<persistent_memory>");
+			expect(prompt).toContain('<memory scope="global" path="/memory/MEMORY.md">');
+			expect(prompt).toContain("User prefers concise answers.");
+			expect(prompt).toContain("Project uses bun.");
+			expect(prompt).toContain("re-read the current contents via the memory tool");
+		});
+
+		test("omits the persistent memory section when empty", () => {
+			const prompt = buildSystemPrompt({
+				selectedTools: ["read"],
+				contextFiles: [],
+				memory: [],
+				skills: [],
+				cwd: process.cwd(),
+			});
+
+			expect(prompt).not.toContain("<persistent_memory>");
+		});
+
 		test("deduplicates and trims promptGuidelines", () => {
 			const prompt = buildSystemPrompt({
 				selectedTools: ["read", "dynamic_tool"],
