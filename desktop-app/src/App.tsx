@@ -453,7 +453,21 @@ export default function App() {
 							// background turn started/finished, or reaped).
 							updateRuntimeStatus(event.sessions, useTabsStore.getState().activePath);
 							break;
-						case "compaction_end":
+						case "compaction_start":
+							// Show the compacting state immediately. isCompacting only used
+							// to sync via syncEngineState (connect / session switch), so a
+							// mid-session manual /compact showed no progress in the UI.
+							useSessionStore.getState().setIsCompacting(true);
+							break;
+						case "compaction_end": {
+							useSessionStore.getState().setIsCompacting(false);
+							const cmp = event as import("./lib/rpc").CompactionEndEvent;
+							if (!cmp.aborted && !cmp.willRetry && cmp.errorMessage) {
+								// Manual /compact failures reject the routed rpc promise (see
+								// commandRouter) and toast there; this covers auto-compaction
+								// (threshold/overflow), which has no routed promise.
+								toast.error("Compaction failed", cmp.errorMessage);
+							}
 							// Compaction changes the context size. Refresh stats and the
 							// footer context-usage bar immediately so it doesn't stay stale.
 							void (async () => {
@@ -467,6 +481,7 @@ export default function App() {
 								}
 							})();
 							break;
+						}
 						case "session_start": {
 							// The engine switched to a new or resumed session. Clear local state
 							// and re-sync so the UI matches the authoritative session. While we
@@ -625,7 +640,14 @@ export default function App() {
 									questions: import("./lib/rpc").UserQuestion[];
 								};
 								const requestSession = "sessionFile" in req ? req.sessionFile : undefined;
-								if (requestSession && requestSession !== sessionFile) {
+								// Read the ACTIVE session file from the store, not the closure:
+								// this listener is registered inside connectEngine, which is
+								// memoised before any session_start sets sessionFile — the
+								// closure value is stale (null), so comparing against it parked
+								// every main-session request as "background" and the ask card
+								// stayed read-only (options disabled).
+								const currentSessionFile = useSessionStore.getState().sessionFile;
+								if (requestSession && requestSession !== currentSessionFile) {
 									// Background session — park it; promoted on activation.
 									parkedQuestionsRef.current.set(requestSession, { id: req.id, questions: q.questions });
 								} else {

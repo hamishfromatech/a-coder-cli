@@ -12,6 +12,7 @@ import { useCallback, useEffect, useId, useState } from "react";
 import * as rpc from "../../../lib/rpc";
 import { cn } from "../../../lib/cn";
 import { Button, IconButton } from "../../ui/Button";
+import { Switch } from "../../ui/Switch";
 import { Input, Select } from "../../ui/Input";
 import { Card } from "../../ui/Card";
 
@@ -24,7 +25,7 @@ interface CustomModel {
 	id: string;
 	name?: string;
 	reasoning?: boolean;
-	input?: ("text" | "image")[];
+	input?: string[];
 	cost?: { input: number; output: number; cacheRead: number; cacheWrite: number };
 	contextWindow?: number;
 	maxTokens?: number;
@@ -333,31 +334,28 @@ function ProviderEditor({
 		setFetchingModels(true);
 		setFetchError(null);
 		try {
-			const baseUrl = provider.baseUrl.replace(/\/$/, "");
-			const url = `${baseUrl}/models`;
-			const headers: Record<string, string> = {};
-			if (provider.apiKey && provider.authHeader) {
-				headers["Authorization"] = `Bearer ${provider.apiKey}`;
-			}
-			const res = await fetch(url, { headers });
-			if (!res.ok) {
-				throw new Error(`Endpoint returned ${res.status} ${res.statusText}`);
-			}
-			const json = (await res.json()) as { data?: Array<{ id: string }> };
-			const list = (json.data ?? []).map((entry) => entry.id).filter(Boolean);
-			if (list.length === 0) {
-				throw new Error("No models found at this endpoint.");
-			}
-			const models: CustomModel[] = list.map((modelId) => ({
-				id: modelId,
-				name: modelId,
-				reasoning: false,
-				input: ["text"],
-				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-				contextWindow: 128000,
-				maxTokens: 4096,
-			}));
-			onSetModels?.(models);
+			// Native HTTP via Tauri — a webview fetch() is blocked by CORS/ATS
+			// for remote endpoints (fails with "Load failed" in WKWebView).
+			const list = await rpc.fetchProviderModels({
+				baseUrl: provider.baseUrl,
+				apiKey:
+					provider.apiKey && provider.authHeader
+						? provider.apiKey
+						: undefined,
+			});
+		onSetModels?.(
+			list.map((entry) => ({
+				id: entry.id,
+				name: entry.name ?? entry.id,
+				// Rich metadata mapped from the endpoint when available; sane
+				// fallbacks only where the endpoint omits it.
+				reasoning: entry.reasoning ?? false,
+				input: entry.input ?? ["text"],
+				cost: entry.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+				contextWindow: entry.contextWindow ?? 128000,
+				maxTokens: entry.maxTokens ?? 4096,
+			})),
+		);
 		} catch (e) {
 			setFetchError(e instanceof Error ? e.message : String(e));
 		} finally {
@@ -462,20 +460,26 @@ function ProviderEditor({
 						</div>
 					</div>
 
-					<div className="flex items-center gap-2 px-1">
-						<button
-							type="button"
-							onClick={() => onUpdateProvider({ authHeader: !provider.authHeader })}
-							className={`relative h-4 w-7 rounded-full transition-smooth active-press ${provider.authHeader ? "bg-pi-accent" : "bg-pi-surface-overlay"}`}
-							aria-pressed={provider.authHeader}
+					<div className="flex items-center gap-2.5 px-1 pt-0.5">
+						<Switch
+							id={`auth-header-${id}`}
+							checked={provider.authHeader ?? false}
+							onChange={() => onUpdateProvider({ authHeader: !provider.authHeader })}
+							size="sm"
+							ariaLabel="Send API key as a secret header"
+						/>
+						<label
+							htmlFor={`auth-header-${id}`}
+							className="cursor-pointer select-none"
 						>
-							<span
-								className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-smooth ${provider.authHeader ? "translate-x-3.5" : "translate-x-0.5"}`}
-							/>
-						</button>
-						<span className="text-2xs text-pi-text-muted">
-							Send API key as a secret header
-						</span>
+							<span className="block text-2xs text-pi-text">
+								Send API key as a secret header
+							</span>
+							<span className="mt-0.5 block text-3xs leading-relaxed text-pi-text-faint">
+								Adds Authorization: Bearer &lt;key&gt; on requests to this endpoint.
+								Turn on so the key is sent when fetching models.
+							</span>
+						</label>
 					</div>
 
 					{/* Models ------------------------------------------------------------- */}
@@ -543,6 +547,8 @@ function ModelEditor({
 	onRemove: () => void;
 }) {
 	const [expanded, setExpanded] = useState(false);
+	const thinkingSwitchId = useId();
+	const thinking = model.reasoning ?? false;
 
 	return (
 		<Card className="rounded-md bg-pi-bg/70">
@@ -599,14 +605,17 @@ function ModelEditor({
 						value={model.maxTokens ?? 4096}
 						onChange={(v) => onUpdate({ maxTokens: v })}
 					/>
-					<label className="col-span-2 flex items-center gap-2 px-1 text-2xs text-pi-text-muted">
-						<input
-							type="checkbox"
-							checked={model.reasoning ?? false}
-							onChange={(e) => onUpdate({ reasoning: e.target.checked })}
-							className="accent-pi-accent"
+					<label htmlFor={thinkingSwitchId} className="col-span-2 flex cursor-pointer select-none items-center gap-2.5 px-1">
+						<Switch
+							id={thinkingSwitchId}
+							size="sm"
+							checked={thinking}
+							onChange={() => onUpdate({ reasoning: !thinking })}
+							ariaLabel="This model can show its thinking"
 						/>
-						This model can show its thinking
+						<span className="text-2xs text-pi-text-muted">
+							This model can show its thinking
+						</span>
 					</label>
 				</div>
 			)}

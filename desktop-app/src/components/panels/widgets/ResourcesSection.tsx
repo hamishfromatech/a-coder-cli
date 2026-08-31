@@ -387,14 +387,15 @@ export function ResourcesSection() {
 							placeholder="e.g. github.com/earendil-works/pi-skills"
 							className="min-w-[16rem] flex-1 rounded-md bg-pi-bg px-3 py-1.5 text-2xs text-pi-text placeholder:text-pi-text-faint shadow-ring focus:shadow-focus focus:outline-none"
 						/>
-						<label className="flex items-center gap-1.5 text-2xs text-pi-text-muted">
-							<input
-								type="checkbox"
+						<label htmlFor="resource-only-project" className="flex cursor-pointer select-none items-center gap-2">
+							<Switch
+								id="resource-only-project"
+								size="sm"
 								checked={newLocal}
-								onChange={(e) => setNewLocal(e.target.checked)}
-								className="accent-pi-accent"
+								onChange={() => setNewLocal(!newLocal)}
+								ariaLabel="Only this project"
 							/>
-							Only this project
+							<span className="text-2xs text-pi-text-muted">Only this project</span>
 						</label>
 						<button
 							type="button"

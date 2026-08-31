@@ -1,6 +1,7 @@
 import { Plus, Server, Trash2, X } from "lucide-react";
 import { useCallback, useState } from "react";
 import { Card } from "../../ui/Card";
+import { Switch } from "../../ui/Switch";
 
 type McpTransport = "stdio" | "sse" | "http";
 
@@ -216,14 +217,14 @@ export function McpServersEditor({ value, onChange }: Props) {
 									onChange={(transport) => updateServer(idx, { transport })}
 								/>
 								<div className="flex items-end">
-									<label className="flex cursor-pointer items-center gap-2 rounded-md bg-pi-bg px-2.5 py-2 shadow-ring">
-										<input
-											type="checkbox"
+									<label className="flex cursor-pointer select-none items-center gap-2.5 rounded-md bg-pi-bg px-2.5 py-2 shadow-ring" htmlFor={`mcp-enabled-${idx}`}>
+										<Switch
+											id={`mcp-enabled-${idx}`}
+											size="sm"
 											checked={!server.disabled}
-											onChange={(e) =>
-												updateServer(idx, { disabled: !e.target.checked })
+											onChange={() =>
+												updateServer(idx, { disabled: !server.disabled })
 											}
-											className="h-3.5 w-3.5 accent-pi-accent"
 										/>
 										<span className="text-2xs text-pi-text">Enabled</span>
 									</label>

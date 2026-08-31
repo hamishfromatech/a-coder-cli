@@ -65,6 +65,7 @@ fn main() {
 			settings::write_auth_file,
 			settings::read_models_file,
 			settings::write_models_file,
+			settings::fetch_provider_models,
 			settings::read_keybindings_file,
 			settings::write_keybindings_file,
 			settings::get_memory,

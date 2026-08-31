@@ -6,6 +6,7 @@ import {
 	Coins,
 	Eye,
 	Hash,
+	Loader2,
 	Lock,
 	MessageSquare,
 	RefreshCw,
@@ -60,7 +61,7 @@ const MODE_META: Record<
 };
 
 export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
-	const { status, error, isStreaming, thinkingLevel, permissionMode, contextUsage, streamingVerb } = useSessionStore();
+	const { status, error, isStreaming, isCompacting, thinkingLevel, permissionMode, contextUsage, streamingVerb } = useSessionStore();
 	const subAgents = useSessionStore((s) => s.subAgents);
 	const { stats } = useStatsStore();
 
@@ -132,8 +133,17 @@ export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
 				)}
 			</div>
 
-			{/* Right: status / streaming / error */}
+			{/* Right: status / streaming / compacting / error */}
 			<div className="flex items-center gap-1.5">
+				{isCompacting && (
+					<div
+						title="Summarizing older messages to reclaim context window"
+						className="flex items-center gap-1 rounded bg-pi-warning/10 px-1.5 py-0.5 text-pi-warning"
+					>
+						<Loader2 className="h-2.5 w-2.5 animate-spin" />
+						<span className="font-medium uppercase tracking-wide">Compacting</span>
+					</div>
+				)}
 				{isStreaming && (
 					<div className="flex items-center gap-1 rounded bg-pi-accent-soft px-1.5 py-0.5 text-pi-accent">
 						<span className="flex items-center gap-0.5">

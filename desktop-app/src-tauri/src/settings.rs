@@ -344,6 +344,178 @@ pub fn write_models_file(value: Value) -> Result<(), String> {
     write_json(&path, &value)
 }
 
+/// Arguments for `fetch_provider_models`. Field names are camelCase so the
+/// webview can pass provider objects straight through.
+#[derive(Debug, Deserialize)]
+pub struct FetchProviderModelsArgs {
+    #[serde(rename = "baseUrl")]
+    pub base_url: String,
+    #[serde(rename = "apiKey")]
+    #[serde(default)]
+    pub api_key: Option<String>,
+}
+
+/// A model entry from a provider's `/models` endpoint, mapped onto the
+/// models.json ProviderModelConfig shape. Optional fields are omitted when
+/// the endpoint doesn't provide them so the UI can fall back to its defaults.
+#[derive(Debug, Serialize)]
+pub struct ProviderModelEntry {
+    pub id: String,
+    pub name: Option<String>,
+    #[serde(rename = "contextWindow", skip_serializing_if = "Option::is_none")]
+    pub context_window: Option<f64>,
+    #[serde(rename = "maxTokens", skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cost: Option<ModelCost>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ModelCost {
+    pub input: f64,
+    pub output: f64,
+    #[serde(rename = "cacheRead")]
+    pub cache_read: f64,
+    #[serde(rename = "cacheWrite")]
+    pub cache_write: f64,
+}
+
+/// Pull a f64 out of a JSON value held as a number or a numeric string
+/// (providers commonly encode pricing as strings of per-token amounts).
+fn value_as_f64(value: Option<&Value>) -> Option<f64> {
+    match value? {
+        Value::Number(n) => n.as_f64(),
+        Value::String(s) => s.trim().parse::<f64>().ok(),
+        _ => None,
+    }
+}
+
+/// Fetch the model list from an OpenAI-compatible endpoint (`GET <baseUrl>/models`).
+///
+/// Runs on the Rust side on purpose: a `fetch()` from the webview is blocked
+/// by CORS/ATS for most remote endpoints and fails with `TypeError: Load
+/// failed` (WKWebView). Native HTTP has no origin restrictions, so custom
+/// providers on any host can be probed from the Custom AI settings panel.
+/// Map a single `/models` entry onto the models.json ProviderModelConfig shape.
+/// Returns `None` for entries without a usable (non-empty string) `id`.
+fn map_model_entry(entry: &Value) -> Option<ProviderModelEntry> {
+    let id = entry.get("id").and_then(|v| v.as_str())?;
+    if id.is_empty() {
+        return None;
+    }
+
+    // Rich metadata when present: context/output limits, per-token pricing
+    // (scaled to per-million), reasoning support, input types.
+    let context_window =
+        value_as_f64(entry.get("context_length")).filter(|v| *v > 0.0);
+    let max_tokens =
+        value_as_f64(entry.get("max_output_length")).filter(|v| *v > 0.0);
+
+    // Per-token prices arrive as strings (or numbers); scale to $/M tokens.
+    let scale_to_million = |v: f64| v * 1_000_000.0;
+    let pricing = entry.get("pricing");
+    let cost = pricing.map(|p| ModelCost {
+        input: value_as_f64(p.get("prompt")).map(scale_to_million).unwrap_or(0.0),
+        output: value_as_f64(p.get("completion")).map(scale_to_million).unwrap_or(0.0),
+        cache_read: value_as_f64(p.get("input_cache_read")).map(scale_to_million).unwrap_or(0.0),
+        cache_write: 0.0,
+    });
+
+    let reasoning = entry
+        .get("supported_features")
+        .and_then(|f| f.as_array())
+        .map(|features| {
+            features
+                .iter()
+                .any(|f| f.as_str().map(|s| s == "reasoning").unwrap_or(false))
+        });
+
+    let input = entry
+        .get("input_modalities")
+        .and_then(|m| m.as_array())
+        .map(|mods| {
+            // Only text/image are valid a-coder-cli inputs; keep order stable.
+            let mut kinds: Vec<String> = ["text", "image"]
+                .iter()
+                .filter(|k| {
+                    mods.iter()
+                        .any(|m| m.as_str().map(|s| s == **k).unwrap_or(false))
+                })
+                .map(|k| k.to_string())
+                .collect();
+            if kinds.is_empty() {
+                kinds.push("text".to_string());
+            }
+            kinds
+        });
+
+    Some(ProviderModelEntry {
+        id: id.to_string(),
+        name: entry
+            .get("name")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        context_window,
+        max_tokens,
+        reasoning,
+        input,
+        // Present whenever the provider reports a pricing block (even all
+        // zeros), absent when the endpoint omits pricing entirely.
+        cost,
+    })
+}
+
+#[tauri::command]
+pub async fn fetch_provider_models(
+    args: FetchProviderModelsArgs,
+) -> Result<Vec<ProviderModelEntry>, String> {
+    let base = args.base_url.trim().trim_end_matches('/');
+    if base.is_empty() {
+        return Err("baseUrl required".to_string());
+    }
+    let url = format!("{base}/models");
+
+    let client = reqwest::Client::builder()
+        .user_agent("a-coder-desktop")
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let mut req = client.get(&url);
+    if let Some(key) = args.api_key.as_deref() {
+        if !key.is_empty() && key != "not-needed" {
+            req = req.bearer_auth(key);
+        }
+    }
+
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+    let status = resp.status();
+    let body = resp.text().await.unwrap_or_default();
+    if !status.is_success() {
+        let reason = status.canonical_reason().unwrap_or("");
+        return Err(format!("Endpoint returned {} {}", status.as_u16(), reason));
+    }
+
+    let json: Value =
+        serde_json::from_str(&body).map_err(|_| "Endpoint did not return JSON".to_string())?;
+    let data = json
+        .get("data")
+        .and_then(|d| d.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let models: Vec<ProviderModelEntry> =
+        data.iter().filter_map(map_model_entry).collect();
+    if models.is_empty() {
+        return Err("No models found at this endpoint.".to_string());
+    }
+    Ok(models)
+}
+
 #[tauri::command]
 pub fn read_keybindings_file() -> Result<Value, String> {
     let path = global_keybindings_path()?;
@@ -470,4 +642,68 @@ pub fn set_memory(args: SetMemoryArgs) -> Result<(), String> {
     }
     std::fs::write(&path, args.content).map_err(|e| format!("write {}: {e}", path.display()))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod provider_model_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn maps_full_chat_model_entry() {
+        // Realistic entry shaped like scx.ai /v1/models output (GLM-5.3-Flash).
+        let entry = json!({
+            "id": "GLM-5.3-Flash",
+            "name": "GLM-5.3-Flash",
+            "input_modalities": ["text", "image"],
+            "context_length": 1048576,
+            "max_output_length": 131072,
+            "pricing": {
+                "prompt": "0.0000002",
+                "completion": "0.0000006",
+                "input_cache_read": "0.00000004",
+                "request": "0"
+            },
+            "supported_features": ["tools", "reasoning", "json_mode"]
+        });
+        let m = map_model_entry(&entry).expect("entry should map");
+        assert_eq!(m.id, "GLM-5.3-Flash");
+        assert_eq!(m.context_window, Some(1_048_576.0));
+        assert_eq!(m.max_tokens, Some(131_072.0));
+        assert_eq!(m.reasoning, Some(true));
+        assert_eq!(m.input.as_deref(), Some(&["text".to_string(), "image".to_string()][..]));
+        let cost = m.cost.expect("cost should be present");
+        assert!((cost.input - 0.2).abs() < 1e-9);
+        assert!((cost.output - 0.6).abs() < 1e-9);
+        assert!((cost.cache_read - 0.04).abs() < 1e-9);
+    }
+
+    #[test]
+    fn maps_embedding_model_with_null_output_length() {
+        // E5-style entry: null max_output_length, embeddings-only output.
+        let entry = json!({
+            "id": "E5-Mistral-7B-Instruct",
+            "input_modalities": ["text"],
+            "output_modalities": ["embeddings"],
+            "context_length": 32768,
+            "max_output_length": null,
+            "pricing": { "prompt": "0.000000320438", "completion": "0" },
+            "supported_features": []
+        });
+        let m = map_model_entry(&entry).expect("entry should map");
+        assert_eq!(m.context_window, Some(32_768.0));
+        assert_eq!(m.max_tokens, None, "null max_output_length must map to None");
+        assert_eq!(m.reasoning, Some(false));
+        assert_eq!(m.input.as_deref(), Some(&["text".to_string()][..]));
+        let cost = m.cost.expect("cost should be present");
+        assert!((cost.input - 0.320438).abs() < 1e-6);
+        assert!((cost.output - 0.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn skips_entries_without_id() {
+        assert!(map_model_entry(&json!({ "name": "no id" })).is_none());
+        assert!(map_model_entry(&json!({ "id": "" })).is_none());
+        assert!(map_model_entry(&json!({ "id": 42 })).is_none());
+    }
 }

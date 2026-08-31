@@ -45,6 +45,7 @@ export type RpcEvent =
 	| BackgroundProcessesUpdateEvent
 	| AutoRetryStartEvent
 	| AutoRetryEndEvent
+	| CompactionStartEvent
 	| CompactionEndEvent
 	| SessionsUpdateEvent
 	| ThinkingLevelChangedEvent;
@@ -74,6 +75,11 @@ export interface AutoRetryEndEvent {
 	success: boolean;
 	attempt: number;
 	finalError?: string;
+}
+
+export interface CompactionStartEvent {
+	type: "compaction_start";
+	reason: "manual" | "threshold" | "overflow";
 }
 
 export interface CompactionEndEvent {
@@ -815,6 +821,30 @@ export interface WriteModelsArgs {
 
 export async function writeModelsFile(args: WriteModelsArgs): Promise<void> {
 	await invoke("write_models_file", { value: args.value });
+}
+
+export interface FetchProviderModelsArgs {
+	baseUrl: string;
+	apiKey?: string;
+}
+
+export interface ProviderModelEntry {
+	id: string;
+	name?: string;
+	contextWindow?: number;
+	maxTokens?: number;
+	reasoning?: boolean;
+	input?: string[];
+	cost?: { input: number; output: number; cacheRead: number; cacheWrite: number };
+}
+
+// Fetch a custom provider's model list from `<baseUrl>/models` via a native
+// (Rust/reqwest) HTTP call. The webview `fetch()` path is blocked by CORS for
+// remote endpoints ("Load failed"), so this must stay on the Tauri side.
+export async function fetchProviderModels(
+	args: FetchProviderModelsArgs,
+): Promise<ProviderModelEntry[]> {
+	return await invoke<ProviderModelEntry[]>("fetch_provider_models", { args });
 }
 
 export async function readKeybindingsFile(): Promise<Record<string, unknown>> {

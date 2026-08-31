@@ -1,6 +1,7 @@
 import { Check, Search, Sparkles, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import * as rpc from "../../../lib/rpc";
+import { Switch } from "../../ui/Switch";
 import { useSettingsStore } from "../../../stores/settings-store";
 import {
 	persistCliSettings,
@@ -138,14 +139,15 @@ export function ModelsPicker({ enabled, onChange }: Props) {
 						</button>
 					)}
 				</div>
-				<label className={`flex cursor-pointer items-center gap-1.5 text-2xs text-pi-text-muted transition-hover hover:text-pi-text-secondary`}>
-					<input
-						type="checkbox"
+				<label htmlFor="show-all-models" className="flex cursor-pointer select-none items-center gap-2">
+					<Switch
+						id="show-all-models"
+						size="sm"
 						checked={showAll}
-						onChange={(e) => setShowAll(e.target.checked)}
-						className="h-3 w-3 accent-pi-accent"
+						onChange={() => setShowAll(!showAll)}
+						ariaLabel="Show all models"
 					/>
-					Show all models
+					<span className="text-2xs text-pi-text-muted">Show all models</span>
 				</label>
 			</div>
 

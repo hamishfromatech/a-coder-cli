@@ -185,6 +185,33 @@ export function Composer() {
 		const images = attachedImages;
 		setText("");
 		setAttachedImages([]);
+
+		// Slash commands typed directly (no palette selection) get the same
+		// routing as picking them from the popover: built-ins like /compact,
+			// /model and /settings are wired here on the desktop — engine-side
+			// prompt() only handles extension/skill commands and templates, so a
+			// literal prompt("/compact") would go to the LLM as prose.
+		if (trimmed.startsWith("/")) {
+			triggerHaptic("submit");
+			const action = routeCommand(trimmed, helpers);
+			try {
+				switch (action.kind) {
+					case "rpc":
+						await action.call();
+						break;
+					case "edit":
+						setText(action.text);
+						break;
+					case "open":
+						action.open();
+						break;
+				}
+			} catch (e) {
+				toast.error("Command failed", e instanceof Error ? e.message : String(e));
+			}
+			return;
+		}
+
 		setIsStreaming(true);
 		triggerHaptic("submit");
 		try {
