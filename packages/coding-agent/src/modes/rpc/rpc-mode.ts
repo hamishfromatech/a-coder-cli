@@ -12,6 +12,7 @@
  */
 
 import * as crypto from "node:crypto";
+import { getOAuthProvider } from "@earendil-works/pi-ai/oauth";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import { resolveComposioConfig } from "../../core/composio.ts";
 import { connectComposioApp, disconnectComposioApp, listComposioApps } from "../../core/composio-apps.ts";
@@ -142,6 +143,95 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	/**
 	 * Create an extension UI context that uses the RPC protocol.
 	 */
+	/**
+	 * Run an OAuth sign-in for one provider in the background, bridging the
+	 * provider's login callbacks onto the desktop UI:
+	 *
+	 *   - browser / device-code info  -> `oauth_login_status` events (desktop opens
+	 *     the URL and shows the code inline in the Account settings)
+	 *   - onPrompt (paste redirect)   -> existing `input` dialog request
+	 *   - onSelect (login method)     -> existing `select` dialog request
+	 *   - success                    -> authStorage persists to auth.json, a
+	 *     success event tells the desktop to re-read it.
+	 *
+	 * One login per provider at a time; progress is fire-and-forget stdout so
+	 * the command loop never blocks while the browser callback waits.
+	 */
+	const oauthLoginsInFlight = new Set<string>();
+
+	async function runOAuthLogin(providerId: string): Promise<void> {
+		const emitOAuth = (event: {
+			providerId: string;
+			phase: "started" | "browser" | "device_code" | "progress" | "success" | "error";
+			url?: string;
+			instructions?: string;
+			verificationUri?: string;
+			userCode?: string;
+			message?: string;
+		}) => {
+			output({ type: "oauth_login_status", ...event });
+		};
+
+		if (oauthLoginsInFlight.has(providerId)) {
+			emitOAuth({ providerId, phase: "error", message: "A sign-in for this provider is already in progress." });
+			return;
+		}
+		oauthLoginsInFlight.add(providerId);
+		emitOAuth({ providerId, phase: "started" });
+		try {
+			await runtimeHost.services.authStorage.login(providerId, {
+				onAuth: (info) => {
+					emitOAuth({ providerId, phase: "browser", url: info.url, instructions: info.instructions });
+				},
+				onDeviceCode: (info) => {
+					emitOAuth({
+						providerId,
+						phase: "device_code",
+						verificationUri: info.verificationUri,
+						userCode: info.userCode,
+					});
+				},
+				onPrompt: async (p) => {
+					const value = await createDialogPromise<string | undefined>(
+						undefined,
+						undefined,
+						undefined,
+						{ method: "input", title: p.message, message: p.message, placeholder: p.placeholder },
+						(r) =>
+							"cancelled" in r && r.cancelled ? undefined : "value" in r ? String(r.value ?? "") : undefined,
+					);
+					return value ?? "";
+				},
+				onProgress: (message) => {
+					emitOAuth({ providerId, phase: "progress", message });
+				},
+				onSelect: async (p) => {
+					// The desktop's select dialog resolves with the option label;
+					// map it back to the option id the provider expects.
+					const labels = p.options.map((o) => o.label);
+					const chosen = await createDialogPromise<string | undefined>(
+						undefined,
+						undefined,
+						undefined,
+						{ method: "select", title: p.message, options: labels },
+						(r) =>
+							"cancelled" in r && r.cancelled ? undefined : "value" in r ? String(r.value ?? "") : undefined,
+					);
+					if (chosen === undefined) return undefined;
+					const index = labels.indexOf(chosen);
+					return index >= 0 ? p.options[index]?.id : undefined;
+				},
+			});
+			void session.modelRegistry.refresh();
+			emitOAuth({ providerId, phase: "success" });
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			emitOAuth({ providerId, phase: "error", message });
+		} finally {
+			oauthLoginsInFlight.delete(providerId);
+		}
+	}
+
 	const createExtensionUIContext = (sessionFile: string | undefined): ExtensionUIContext => ({
 		select: (title, options, opts) =>
 			createDialogPromise(
@@ -674,6 +764,15 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			case "reload_auth": {
 				runtimeHost.services.authStorage.reload();
 				return success(id, "reload_auth");
+			}
+
+			case "oauth_login": {
+				const providerId = String(command.providerId ?? "");
+				if (!getOAuthProvider(providerId)) {
+					return error(id, "oauth_login", `Unknown OAuth provider: ${providerId}`);
+				}
+				void runOAuthLogin(providerId);
+				return success(id, "oauth_login", { started: true });
 			}
 
 			// =================================================================

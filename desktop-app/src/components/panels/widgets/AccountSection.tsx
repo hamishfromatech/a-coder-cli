@@ -1,4 +1,5 @@
-import { Check, ChevronDown, Eye, EyeOff, KeyRound, LogOut, X } from "lucide-react";
+import { Check, ChevronDown, Copy, Eye, EyeOff, KeyRound, Loader2, LogOut, RefreshCw, X } from "lucide-react";
+import type { OAuthLoginEvent } from "../../../lib/rpc";
 import { useCallback, useEffect, useState } from "react";
 import { Card } from "../../ui/Card";
 import * as rpc from "../../../lib/rpc";
@@ -128,17 +129,39 @@ export function AccountSection() {
 		[auth, notifyAuthChanged],
 	);
 
+	// Live state machine fed by the engine's `oauth_login_status` events:
+	// started -> (browser | device_code | progress)+ -> success | error.
+	const [oauthFlow, setOauthFlow] = useState<OAuthLoginEvent | null>(null);
+
+	useEffect(() => {
+		const onStatus = (e: Event) => {
+			const flow = (e as CustomEvent<OAuthLoginEvent>).detail;
+			setOauthFlow(flow);
+			if (flow.phase === "success" || flow.phase === "error") {
+				if (flow.phase === "success") void reload();
+				// Keep the finished state visible briefly, then clear.
+				setTimeout(() => setOauthFlow(null), flow.phase === "error" ? 6000 : 4000);
+			}
+		};
+		window.addEventListener("a-coder:oauth-status", onStatus);
+		return () => window.removeEventListener("a-coder:oauth-status", onStatus);
+	}, [reload]);
+
 	const handleOAuthSignIn = useCallback(
 		async (providerId: string) => {
+			setOauthFlow({ type: "oauth_login_status", providerId, phase: "started" });
 			try {
-				await rpc.sendCommand({
-					type: "prompt",
-					message: `/login ${providerId}`,
-				});
+				await rpc.oauthLogin(providerId);
 			} catch (e) {
-				console.error("OAuth login failed", e);
+				setOauthFlow(null);
+				setSaveStatus({
+					providerId,
+					kind: "error",
+					message: e instanceof Error ? e.message : String(e),
+				});
 			}
-			setTimeout(() => void reload(), 2500);
+			// Safety net: re-read auth.json in case events were missed.
+			setTimeout(() => void reload(), 15_000);
 		},
 		[reload],
 	);
@@ -178,6 +201,7 @@ export function AccountSection() {
 								key={p.id}
 								provider={p}
 								credential={getProviderCredentials(auth, p.id)}
+								oauthFlow={oauthFlow?.providerId === p.id ? oauthFlow : null}
 								saveStatus={saveStatus?.providerId === p.id ? saveStatus : null}
 								onClearSaveStatus={() => setSaveStatus(null)}
 								onSignOut={() => void handleSignOut(p.id)}
@@ -202,6 +226,7 @@ export function AccountSection() {
 function ProviderCard({
 	provider,
 	credential,
+	oauthFlow,
 	saveStatus,
 	onClearSaveStatus,
 	onSignOut,
@@ -210,7 +235,8 @@ function ProviderCard({
 }: {
 	provider: ProviderSpec;
 	credential: ProviderCredential | undefined;
-	saveStatus: { kind: "success" | "error"; message: string } | null;
+	oauthFlow: OAuthLoginEvent | null;
+	saveStatus: { kind: "success" | "error" | "info"; message: string } | null;
 	onClearSaveStatus: () => void;
 	onSignOut: () => void;
 	onPasteKey: (key: string) => void;
@@ -290,10 +316,15 @@ function ProviderCard({
 								<button
 									type="button"
 									onClick={onOAuth}
-									className={`inline-flex h-7 items-center gap-1 rounded-md bg-pi-accent px-2.5 text-2xs font-semibold text-white transition-hover active-press hover:bg-pi-accent-hover`}
+									disabled={Boolean(oauthFlow)}
+									className={`inline-flex h-7 items-center gap-1 rounded-md bg-pi-accent px-2.5 text-2xs font-semibold text-white transition-hover active-press hover:bg-pi-accent-hover disabled:cursor-not-allowed disabled:opacity-60`}
 								>
-									<KeyRound className="h-3 w-3" />
-									Sign in
+									{oauthFlow ? (
+										<Loader2 className="h-3 w-3 animate-spin" />
+									) : (
+										<KeyRound className="h-3 w-3" />
+									)}
+									{oauthFlow ? "Signing in…" : "Sign in"}
 								</button>
 							)}
 							<button
@@ -310,6 +341,75 @@ function ProviderCard({
 					)}
 				</div>
 			</div>
+
+			{!signedIn && oauthFlow && (
+				<div className="space-y-2 border-t border-pi-border bg-pi-bg/50 px-4 py-3">
+					<p className="flex items-center gap-2 text-2xs font-medium text-pi-text">
+						{oauthFlow.phase === "success" ? (
+							<Check className="h-3 w-3 text-pi-success" />
+						) : oauthFlow.phase === "error" ? (
+							<X className="h-3 w-3 text-pi-error" />
+						) : (
+							<Loader2 className="h-3 w-3 shrink-0 animate-spin text-pi-accent" />
+						)}
+						{oauthFlow.phase === "started" && "Starting sign-in…"}
+						{oauthFlow.phase === "browser" && "Finish signing in in your browser…"}
+						{oauthFlow.phase === "device_code" && "Enter the code below in your browser"}
+						{oauthFlow.phase === "progress" && (oauthFlow.message || "Working…")}
+						{oauthFlow.phase === "success" && "Signed in — credentials saved."}
+						{oauthFlow.phase === "error" && (oauthFlow.message || "Sign-in failed.")}
+					</p>
+					{oauthFlow.phase === "browser" && oauthFlow.url && (
+						<>
+							<div className="flex items-center gap-2">
+								<a
+									href={oauthFlow.url}
+									target="_blank"
+									rel="noopener noreferrer"
+									className="inline-flex h-7 items-center gap-1.5 rounded-md bg-pi-surface-overlay px-2.5 text-2xs font-medium text-pi-text transition-hover hover:bg-pi-surface-raised"
+								>
+									<RefreshCw className="h-3 w-3" />
+									Open sign-in page ↗
+								</a>
+								<span className="truncate font-mono text-3xs text-pi-text-faint">
+									{oauthFlow.url}
+								</span>
+							</div>
+							<p className="text-3xs text-pi-text-faint">
+								{oauthFlow.instructions ??
+									"Complete the login in your browser. If the browser is on another machine, paste the final redirect URL here."}
+							</p>
+						</>
+					)}
+					{oauthFlow.phase === "device_code" && oauthFlow.userCode && (
+						<div className="flex items-center gap-2">
+							<code className="rounded bg-pi-surface-overlay px-2 py-0.5 font-mono text-xs font-semibold tracking-widest text-pi-text">
+								{oauthFlow.userCode}
+							</code>
+							<button
+								type="button"
+								onClick={() => {
+									void navigator.clipboard.writeText(oauthFlow.userCode ?? "");
+								}}
+								className="inline-flex h-6 items-center gap-1 rounded-md bg-pi-surface-overlay px-2 text-3xs font-medium text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text"
+							>
+								<Copy className="h-3 w-3" />
+								Copy
+							</button>
+							{oauthFlow.verificationUri && (
+								<a
+									href={oauthFlow.verificationUri}
+									target="_blank"
+									rel="noopener noreferrer"
+									className="text-3xs text-pi-accent underline-offset-2 transition-hover hover:underline"
+								>
+									{oauthFlow.verificationUri.replace(/^https?:\/\//, "")} ↗
+								</a>
+							)}
+						</div>
+					)}
+				</div>
+			)}
 
 			{!signedIn && provider.complex && provider.envVars.length > 0 && (
 				<div className="space-y-1.5 border-t border-pi-border bg-pi-bg/50 px-4 py-2.5 transition-smooth hover:bg-pi-bg/60">

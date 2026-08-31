@@ -59,6 +59,7 @@ export type RpcCommand =
 
 	// Auth
 	| { id?: string; type: "reload_auth" }
+	| { id?: string; type: "oauth_login"; providerId: string }
 
 	// Queue modes
 	| { id?: string; type: "set_steering_mode"; mode: "all" | "one-at-a-time" }

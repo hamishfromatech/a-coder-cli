@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bell, ChevronsUpDown, FolderGit2, MessageSquare, Plus, Settings, X } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import * as rpc from "./lib/rpc";
+import { openExternalLink } from "./lib/external-link";
 import { playCompletionSound } from "./lib/completion-sound";
 import { triggerHaptic } from "./lib/haptics";
 import { rafCoalesce } from "./lib/raf-coalesce";
@@ -42,6 +43,7 @@ import { ProjectPicker } from "./components/ProjectPicker";
 import { RightSidebar } from "./components/RightSidebar";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { TodoPanel } from "./components/TodoPanel";
+import { RuntimePanel } from "./components/RuntimePanel";
 import { TaskPanel } from "./components/TaskPanel";
 import { SessionActions, Toolbar } from "./components/Toolbar";
 import { SessionPicker } from "./components/SessionPicker";
@@ -453,6 +455,23 @@ export default function App() {
 							// background turn started/finished, or reaped).
 							updateRuntimeStatus(event.sessions, useTabsStore.getState().activePath);
 							break;
+						case "oauth_login_status": {
+							// OAuth sign-in progress from the engine (Account settings).
+							// The engine is headless — the desktop owns browser opening.
+							const oauth = event as import("./lib/rpc").OAuthLoginEvent;
+							if (oauth.phase === "browser" && oauth.url) {
+								openExternalLink(oauth.url);
+							}
+							if (oauth.phase === "error" && oauth.message) {
+								toast.error("Sign-in failed", oauth.message);
+							}
+							if (oauth.phase === "success") {
+								toast.success("Signed in", "Credentials saved to auth.json");
+								void rpc.reloadAuth().catch(() => {});
+							}
+							window.dispatchEvent(new CustomEvent("a-coder:oauth-status", { detail: oauth }));
+							break;
+						}
 						case "compaction_start":
 							// Show the compacting state immediately. isCompacting only used
 							// to sync via syncEngineState (connect / session switch), so a
@@ -1212,6 +1231,7 @@ export default function App() {
 						<MessageList />
 						<TodoPanel />
 						<TaskPanel />
+						<RuntimePanel />
 						{permissionRequest && !approvalInlineVisible && (
 							<ToolApprovalBar request={permissionRequest} surface="floating" />
 						)}

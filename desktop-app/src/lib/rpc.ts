@@ -46,6 +46,7 @@ export type RpcEvent =
 	| AutoRetryStartEvent
 	| AutoRetryEndEvent
 	| CompactionStartEvent
+	| OAuthLoginEvent
 	| CompactionEndEvent
 	| SessionsUpdateEvent
 	| ThinkingLevelChangedEvent;
@@ -80,6 +81,20 @@ export interface AutoRetryEndEvent {
 export interface CompactionStartEvent {
 	type: "compaction_start";
 	reason: "manual" | "threshold" | "overflow";
+}
+
+// Engine-driven OAuth login (Account settings → Sign in). The engine runs the
+// provider's flow and streams these events; the browser URL / device code is
+// surfaced by the Account section, completion lands in auth.json.
+export interface OAuthLoginEvent {
+	type: "oauth_login_status";
+	providerId: string;
+	phase: "started" | "browser" | "device_code" | "progress" | "success" | "error";
+	url?: string;
+	instructions?: string;
+	verificationUri?: string;
+	userCode?: string;
+	message?: string;
 }
 
 export interface CompactionEndEvent {
@@ -474,6 +489,11 @@ export const setPermissionMode = (mode: PermissionMode) =>
 
 // ---- auth ----
 export const reloadAuth = () => sendCommand({ type: "reload_auth" });
+
+/** Kick off an OAuth sign-in on the engine (`/login <id>` equivalent). The
+ *  flow's progress arrives as `oauth_status` events. */
+export const oauthLogin = (providerId: string) =>
+	sendCommand({ type: "oauth_login", providerId });
 
 // ---- queue modes ----
 export const setSteeringMode = (mode: MessageDeliveryMode) =>
