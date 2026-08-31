@@ -1,8 +1,9 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ENV_TEAMS_DIR } from "../../src/config.ts";
 import type { InProcessSubAgentRecord } from "../../src/core/extensions/types.ts";
 import { readTaskOutputEvents } from "../../src/core/subagents/task-output.ts";
@@ -182,11 +183,11 @@ describe("AgentSession background sub-agents (in-process store)", () => {
 		expect(done?.timeline.map((e) => e.type)).toEqual(expect.arrayContaining(["text", "turn_complete", "completed"]));
 	});
 
-	it("enqueues a completion notification for a background sub-agent", async () => {
+	it("auto-prompts the main session when a background sub-agent completes while idle", async () => {
 		const harness = await createHarness();
 		harnesses.push(harness);
 
-		harness.setResponses([fauxAssistantMessage("bg done")]);
+		harness.setResponses([fauxAssistantMessage("bg done"), fauxAssistantMessage("wake ack")]);
 		const { id } = harness.session.runSubAgentBackground({
 			id: "bg-notif",
 			prompt: "x",
@@ -194,8 +195,26 @@ describe("AgentSession background sub-agents (in-process store)", () => {
 		});
 		await harness.session.waitSubAgent(id);
 
-		const notes = harness.session.drainPendingNotifications();
-		expect(notes.some((n) => n.includes("bg-notif") && n.includes("completed"))).toBe(true);
+		// The notification wake runs a prompt whose user message carries the
+		// note; the second queued response answers that wake turn.
+		await vi.waitFor(
+			() => {
+				const messages = harness.session.messages;
+				const last = messages[messages.length - 1];
+				if (!last || last.role !== "assistant") throw new Error("wake turn did not complete");
+				if (!JSON.stringify(last.content).includes("wake ack")) throw new Error("wake reply not seen yet");
+			},
+			{ timeout: 5000 },
+		);
+
+		const wakePrompt = harness.session.messages.find(
+			(m): m is Extract<AgentMessage, { role: "user" }> =>
+				m.role === "user" && JSON.stringify(m.content).includes("bg-notif"),
+		);
+		expect(wakePrompt).toBeDefined();
+		expect(JSON.stringify(wakePrompt?.content)).toContain("<task-notification>");
+		// The wake consumed the queued notification.
+		expect(harness.session.drainPendingNotifications()).toEqual([]);
 	});
 
 	it("falls back to no isolation when a worktree is requested outside a git repo", async () => {

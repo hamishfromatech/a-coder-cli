@@ -1159,7 +1159,13 @@ export class AgentSession {
 		await this._emitExtensionEvent(event);
 
 		// Notify all listeners
-		this._emit(event.type === "agent_end" ? { ...event, willRetry: this._willRetryAfterAgentEnd(event) } : event);
+		const agentEndWillRetry = event.type === "agent_end" ? this._willRetryAfterAgentEnd(event) : false;
+		this._emit(event.type === "agent_end" ? { ...event, willRetry: agentEndWillRetry } : event);
+		if (event.type === "agent_end" && !agentEndWillRetry) {
+			// A background sub-agent may have finished while this turn streamed;
+			// its notification is still queued. Wake once the run goes idle.
+			this._scheduleSubAgentWake();
+		}
 
 		// Handle session persistence
 		if (event.type === "message_end") {
@@ -4726,6 +4732,7 @@ export class AgentSession {
 				this._notifySubAgents();
 				if (params.notifyOnComplete !== false) {
 					this._enqueueSubAgentNotification(record);
+					this._scheduleSubAgentWake();
 				}
 			}
 		})();
@@ -4826,6 +4833,57 @@ export class AgentSession {
 		const notes = this._pendingNotifications;
 		this._pendingNotifications = [];
 		return notes;
+	}
+
+	/**
+	 * Schedule a deferred wake for pending sub-agent notifications.
+	 *
+	 * Deferred because `agent_end` listeners run before the underlying agent
+	 * clears its streaming state (`finishRun()`), so an immediate check would
+	 * always see the session as busy. A macrotask hop re-checks once idle.
+	 */
+	private _subAgentWakeTimer?: ReturnType<typeof setTimeout>;
+	private _subAgentWakeInFlight = false;
+
+	private _scheduleSubAgentWake(): void {
+		if (this._subAgentWakeTimer) return;
+		this._subAgentWakeTimer = setTimeout(() => {
+			this._subAgentWakeTimer = undefined;
+			this._wakeForPendingSubAgentNotes();
+		}, 0);
+	}
+
+	/**
+	 * Push pending background sub-agent notifications into the main loop as a
+	 * turn, so the model relays finished work without waiting for the user to
+	 * type or poll (easy-agent <task-notification> parity).
+	 *
+	 * While a turn is streaming the notifications stay queued: the next user
+	 * submit stamps them onto the input (interactive mode), and the following
+	 * agent_end wakes for anything that lingers.
+	 */
+	private _wakeForPendingSubAgentNotes(): void {
+		if (this.isStreaming || this.isCompacting || this._subAgentWakeInFlight) return;
+		if (this._pendingNotifications.length === 0) return;
+		const notes = this.drainPendingNotifications();
+		if (notes.length === 0) return;
+		const text = [
+			"<task-notification>",
+			...notes,
+			"</task-notification>",
+			"Background sub-agent results above — report the findings to the user in your reply.",
+		].join("\n\n");
+		this._subAgentWakeInFlight = true;
+		void this.prompt(text, { expandPromptTemplates: false, streamingBehavior: "followUp" })
+			.catch(() => {
+				// Keep the notifications for the next user submit or wake attempt.
+				this._pendingNotifications.unshift(...notes);
+			})
+			.finally(() => {
+				this._subAgentWakeInFlight = false;
+				// A sub-agent spawned during the wake turn may have finished meanwhile.
+				this._scheduleSubAgentWake();
+			});
 	}
 
 	private _enqueueSubAgentNotification(record: InProcessSubAgentRecord): void {
