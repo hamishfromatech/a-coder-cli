@@ -112,6 +112,7 @@ import {
 import { getTaskListId, listTasks, subscribeTasks } from "../../core/tasks/task-store.ts";
 import { isInstallTelemetryEnabled } from "../../core/telemetry.ts";
 import { generateDiffString } from "../../core/tools/edit-diff.ts";
+import type { TodoItem } from "../../core/tools/todo.ts";
 import type { TruncationResult } from "../../core/tools/truncate.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../core/trust-manager.ts";
 import { getChangelogPath, getNewEntries, normalizeChangelogLinks, parseChangelog } from "../../utils/changelog.ts";
@@ -129,6 +130,7 @@ import { getPiUserAgent } from "../../utils/pi-user-agent.ts";
 import { killProcessTree, killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { ensureTool } from "../../utils/tools-manager.ts";
 import { checkForNewPiVersion, type LatestPiRelease } from "../../utils/version-check.ts";
+import { AgentsPanelComponent } from "./components/agents-panel.ts";
 import { ArminComponent } from "./components/armin.ts";
 import { AssistantMessageComponent } from "./components/assistant-message.ts";
 import { BackgroundAgentsBarComponent } from "./components/background-agent-bar.ts";
@@ -177,8 +179,8 @@ import {
 	type StatusIndicator,
 	WorkingStatusIndicator,
 } from "./components/status-indicator.ts";
-import { SubAgentCardComponent } from "./components/subagent-card.ts";
 import { TaskListComponent } from "./components/task-list.ts";
+import { TaskPanelComponent } from "./components/task-panel.ts";
 import { readTodosFromBranch, TodoListComponent } from "./components/todo-list.ts";
 import { ToolExecutionComponent } from "./components/tool-execution.ts";
 import { TranscriptOverlayComponent } from "./components/transcript-overlay.ts";
@@ -459,13 +461,13 @@ export class InteractiveMode {
 	private pendingBashComponents: BashExecutionComponent[] = [];
 
 	// In-process sub-agent progress cards (live UI for background sub-agents)
-	private subAgentContainer: Container;
-	private subAgentCards = new Map<string, SubAgentCardComponent>();
+	private agentsPanel = new AgentsPanelComponent();
+	private taskPanel = new TaskPanelComponent();
+	private agentsPanelTimer: ReturnType<typeof setInterval> | undefined;
 	private unsubscribeSubAgents?: () => void;
 	private backgroundAgentsBar = new BackgroundAgentsBarComponent();
 	private backgroundAgentsBarTimer: ReturnType<typeof setInterval> | undefined;
 	private backgroundProcessesBar = new BackgroundProcessesBarComponent();
-	private backgroundProcessesBarTimer: ReturnType<typeof setInterval> | undefined;
 	private unsubscribeBackgroundProcesses?: () => void;
 	private runningTasksViewer?: RunningTasksViewerComponent;
 
@@ -545,7 +547,6 @@ export class InteractiveMode {
 		this.headerContainer = new Container();
 		this.loadedResourcesContainer = new Container();
 		this.chatContainer = new Container();
-		this.subAgentContainer = new Container();
 		this.pendingMessagesContainer = new Container();
 		this.statusContainer = new Container();
 		this.widgetContainerAbove = new Container();
@@ -815,12 +816,13 @@ export class InteractiveMode {
 		this.ui.addChild(this.loadedResourcesContainer);
 
 		this.ui.addChild(this.chatContainer);
-		this.ui.addChild(this.subAgentContainer);
+		this.ui.addChild(this.agentsPanel);
 		this.ui.addChild(this.pendingMessagesContainer);
 		this.ui.addChild(this.statusContainer);
 		this.ui.addChild(this.backgroundAgentsBar);
 		this.renderWidgets(); // Initialize with default spacer
 		this.ui.addChild(this.widgetContainerAbove);
+		this.ui.addChild(this.taskPanel);
 		this.ui.addChild(this.editorContainer);
 		this.ui.addChild(this.widgetContainerBelow);
 		this.ui.addChild(this.footer);
@@ -838,6 +840,7 @@ export class InteractiveMode {
 		// current in-progress task's activeForm.
 		this.taskStoreUnsubscribe = subscribeTasks(() => {
 			this.updateActiveFormLabel();
+			void this.syncTaskPanel();
 		});
 
 		await this.themeController.applyFromSettings();
@@ -1881,17 +1884,17 @@ export class InteractiveMode {
 	private renderCurrentSessionState(): void {
 		this.loadedResourcesContainer.clear();
 		this.chatContainer.clear();
-		this.subAgentContainer.clear();
-		this.subAgentCards.clear();
+		this.agentsPanel.update([], []);
+		this.taskPanel.update([], []);
 		this.backgroundAgentsBar.update([]);
 		if (this.backgroundAgentsBarTimer) {
 			clearInterval(this.backgroundAgentsBarTimer);
 			this.backgroundAgentsBarTimer = undefined;
 		}
 		this.backgroundProcessesBar.update([]);
-		if (this.backgroundProcessesBarTimer) {
-			clearInterval(this.backgroundProcessesBarTimer);
-			this.backgroundProcessesBarTimer = undefined;
+		if (this.agentsPanelTimer) {
+			clearInterval(this.agentsPanelTimer);
+			this.agentsPanelTimer = undefined;
 		}
 		this.pendingMessagesContainer.clear();
 		this.compactionQueuedMessages = [];
@@ -2044,6 +2047,32 @@ export class InteractiveMode {
 		}
 		if (prev !== this.activeFormLabel) {
 			this.refreshWorkingIndicatorMessage();
+		}
+	}
+
+	/**
+	 * Refresh the inline task panel from the conversation branch (todos) and
+	 * the task store (task graph). Called after todo/task tool calls and on
+	 * task store updates.
+	 */
+	/**
+	 * Refresh the inline task panel from the conversation branch (todos) and
+	 * the task store (task graph). `todosOverride` carries the authoritative
+	 * todo list straight from the tool result — the session branch commits
+	 * tool results asynchronously, so a branch read at event time raced and
+	 * returned empty lists.
+	 */
+	private async syncTaskPanel(todosOverride?: TodoItem[]): Promise<void> {
+		try {
+			const todos =
+				todosOverride ??
+				readTodosFromBranch(this.sessionManager.getBranch() as Array<{ type: string; message?: unknown }>);
+			const taskListId = getTaskListId(this.sessionManager.getSessionId());
+			const tasks = await listTasks(taskListId);
+			this.taskPanel.update(todos, tasks);
+			this.ui.requestRender();
+		} catch {
+			// Task store failures shouldn't take the panel (or spinner) down.
 		}
 	}
 
@@ -2881,6 +2910,7 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.subagents.view", () => this.showRunningTasksViewer());
 		this.defaultEditor.onAction("app.backgrounds.view", () => this.showRunningTasksViewer());
 		this.defaultEditor.onAction("app.tasks.view", () => this.showRunningTasksViewer());
+		this.defaultEditor.onAction("app.tasks.toggle", () => this.taskPanel.toggle());
 		this.defaultEditor.hasRunningTasks = () =>
 			this.session.listSubAgents().some((r) => r.status === "running") ||
 			getBackgroundProcesses().some((r) => r.status === "running");
@@ -3188,84 +3218,43 @@ export class InteractiveMode {
 			await this.handleEvent(event);
 		});
 		this.unsubscribeSubAgents?.();
-		this.unsubscribeSubAgents = this.session.subscribeSubAgents((records) => this.syncSubAgentCards(records));
+		this.unsubscribeSubAgents = this.session.subscribeSubAgents((records) => this.syncAgentsPanel(records));
 
-		// Background processes: subscribe to the store and keep the bar live.
+		// Background processes: subscribe to the store; the merged sync keeps
+		// the footer bar, the inline panel and the task viewer live.
 		this.unsubscribeBackgroundProcesses?.();
 		this.unsubscribeBackgroundProcesses = subscribeBackgroundProcesses(() => {
-			this.syncBackgroundProcessesBar();
+			this.syncAgentsPanel();
 		});
-		this.syncBackgroundProcessesBar();
+		this.syncAgentsPanel();
 	}
 
-	private syncSubAgentCards(records: InProcessSubAgentRecord[]): void {
-		const liveIds = new Set(records.map((r) => r.id));
+	/**
+	 * Sync the unified inline agents panel (sub-agents + background terminal
+	 * processes), the detached-agents footer bar and the running-tasks viewer.
+	 * A shared 1s tick (while anything is running) keeps live durations moving
+	 * between progress events — the per-event refresh alone made elapsed time
+	 * freeze during quiet stretches.
+	 */
+	private syncAgentsPanel(records?: InProcessSubAgentRecord[]): void {
+		const subs = records ?? this.session.listSubAgents();
+		const processes = getBackgroundProcesses();
+		this.agentsPanel.update(subs, processes);
+		this.runningTasksViewer?.update(subs, processes);
+		this.backgroundProcessesBar.update(processes);
 
-		// Remove cards for records no longer in the session, and for completed
-		// foreground (non-detached) sub-agents — their result appears inline in
-		// the conversation as the tool result, so the live card is stale.
-		for (const [id, card] of this.subAgentCards) {
-			if (!liveIds.has(id)) {
-				this.subAgentContainer.removeChild(card);
-				this.subAgentCards.delete(id);
-				continue;
-			}
-			const record = records.find((r) => r.id === id);
-			if (record && !record.detached && record.status !== "running") {
-				this.subAgentContainer.removeChild(card);
-				this.subAgentCards.delete(id);
-			}
-		}
-
-		for (const record of records) {
-			// Skip foreground sub-agents that already completed — their card was
-			// removed above and shouldn't be re-created.
-			if (!record.detached && record.status !== "running") continue;
-
-			let card = this.subAgentCards.get(record.id);
-			if (!card) {
-				card = new SubAgentCardComponent(record);
-				this.subAgentContainer.addChild(card);
-				this.subAgentCards.set(record.id, card);
-			} else {
-				card.update(record);
-			}
-		}
-
-		// Persistent running-agents bar: show while at least one sub-agent is
-		// running, and tick a 1s timer so elapsed durations stay live.
-		this.backgroundAgentsBar.update(records);
-		// Keep the open sub-agent viewer (picker/transcript) live.
-		this.runningTasksViewer?.update(records, getBackgroundProcesses());
-		const anyRunning = records.some((r) => r.status === "running");
-		if (anyRunning && !this.backgroundAgentsBarTimer) {
-			this.backgroundAgentsBarTimer = setInterval(() => {
+		const anyRunning = subs.some((r) => r.status === "running") || processes.some((p) => p.status === "running");
+		if (anyRunning && !this.agentsPanelTimer) {
+			this.agentsPanelTimer = setInterval(() => {
 				this.backgroundAgentsBar.invalidate();
+				this.agentsPanel.invalidate();
 				this.ui.requestRender();
 			}, 1000);
-		} else if (!anyRunning && this.backgroundAgentsBarTimer) {
-			clearInterval(this.backgroundAgentsBarTimer);
-			this.backgroundAgentsBarTimer = undefined;
+		} else if (!anyRunning && this.agentsPanelTimer) {
+			clearInterval(this.agentsPanelTimer);
+			this.agentsPanelTimer = undefined;
 		}
 
-		this.ui.requestRender();
-	}
-
-	/** Sync the background processes bar from the store and manage the 1s tick. */
-	private syncBackgroundProcessesBar(): void {
-		const records = getBackgroundProcesses();
-		this.backgroundProcessesBar.update(records);
-		this.runningTasksViewer?.update(this.session.listSubAgents(), records);
-		const anyRunning = records.some((r) => r.status === "running");
-		if (anyRunning && !this.backgroundProcessesBarTimer) {
-			this.backgroundProcessesBarTimer = setInterval(() => {
-				this.backgroundProcessesBar.invalidate();
-				this.ui.requestRender();
-			}, 1000);
-		} else if (!anyRunning && this.backgroundProcessesBarTimer) {
-			clearInterval(this.backgroundProcessesBarTimer);
-			this.backgroundProcessesBarTimer = undefined;
-		}
 		this.ui.requestRender();
 	}
 
@@ -3306,8 +3295,8 @@ export class InteractiveMode {
 
 			case "session_start":
 				this.chatContainer.clear();
-				this.subAgentContainer.clear();
-				this.subAgentCards.clear();
+				this.agentsPanel.update([], []);
+				this.taskPanel.update([], []);
 				this.pendingMessagesContainer.clear();
 				this.compactionQueuedMessages = [];
 				this.streamingComponent?.dispose();
@@ -3415,6 +3404,19 @@ export class InteractiveMode {
 
 			case "message_end":
 				if (event.message.role === "user") break;
+				if (event.message.role === "toolResult") {
+					const tr = event.message as {
+						toolName?: string;
+					};
+					if (tr.toolName === "todo") {
+						// The tool result carries the full todo list (authoritative).
+						const todos = (event.message as { details?: { todos?: TodoItem[] } }).details?.todos;
+						void this.syncTaskPanel(todos);
+					} else if (tr.toolName === "task_create" || tr.toolName === "task_update") {
+						// Task store mutations fire their own subscription events.
+						void this.syncTaskPanel();
+					}
+				}
 				if (this.streamingComponent && event.message.role === "assistant") {
 					this.streamingMessage = event.message;
 					let errorMessage: string | undefined;
@@ -3494,9 +3496,14 @@ export class InteractiveMode {
 					this.pendingTools.delete(event.toolCallId);
 					this.ui.requestRender();
 				}
-				// Update spinner label from in-progress todo/task activeForm.
-				if (event.toolName === "todo" || event.toolName === "task_create" || event.toolName === "task_update") {
+				// Update spinner label + inline panel from in-progress todo/task.
+				if (event.toolName === "todo") {
 					this.updateActiveFormLabel();
+					const todos = (event.result as { details?: { todos?: TodoItem[] } } | undefined)?.details?.todos;
+					void this.syncTaskPanel(todos);
+				} else if (event.toolName === "task_create" || event.toolName === "task_update") {
+					this.updateActiveFormLabel();
+					void this.syncTaskPanel();
 				}
 				// Collapse consecutive read-only tool calls into a grouped card.
 				if (isCollapsibleTool(event.toolName) && !event.isError) {
@@ -3506,6 +3513,9 @@ export class InteractiveMode {
 			}
 
 			case "agent_end":
+				// Branch commits tool results at turn end — refresh the inline
+				// task board now (mid-turn branch reads were stale/empty).
+				void this.syncTaskPanel();
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(false);
 				}
@@ -6941,9 +6951,9 @@ export class InteractiveMode {
 			this.unsubscribeBackgroundProcesses();
 			this.unsubscribeBackgroundProcesses = undefined;
 		}
-		if (this.backgroundProcessesBarTimer) {
-			clearInterval(this.backgroundProcessesBarTimer);
-			this.backgroundProcessesBarTimer = undefined;
+		if (this.agentsPanelTimer) {
+			clearInterval(this.agentsPanelTimer);
+			this.agentsPanelTimer = undefined;
 		}
 		if (this.taskStoreUnsubscribe) {
 			this.taskStoreUnsubscribe();

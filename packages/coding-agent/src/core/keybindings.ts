@@ -34,6 +34,7 @@ export interface AppKeybindings {
 	"app.subagents.view": true;
 	"app.backgrounds.view": true;
 	"app.tasks.view": true;
+	"app.tasks.toggle": true;
 	"app.bash.background": true;
 	"app.session.resume": true;
 	"app.tree.foldOrUp": true;
@@ -89,7 +90,7 @@ export const KEYBINDINGS = {
 		description: "Cycle to previous model",
 	},
 	"app.model.select": { defaultKeys: "ctrl+l", description: "Open model selector" },
-	"app.tools.expand": { defaultKeys: "ctrl+o", description: "Toggle tool output" },
+	"app.tools.expand": { defaultKeys: "ctrl+shift+o", description: "Toggle tool output" },
 	"app.thinking.toggle": {
 		defaultKeys: "ctrl+t",
 		description: "Toggle thinking blocks",
@@ -136,6 +137,10 @@ export const KEYBINDINGS = {
 	"app.tasks.view": {
 		defaultKeys: "down",
 		description: "Open the running tasks viewer (background processes and sub-agents)",
+	},
+	"app.tasks.toggle": {
+		defaultKeys: "ctrl+o",
+		description: "Expand or collapse the inline task list",
 	},
 	"app.bash.background": {
 		defaultKeys: "ctrl+b",
