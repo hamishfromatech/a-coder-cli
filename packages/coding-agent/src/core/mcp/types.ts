@@ -21,3 +21,24 @@ export interface McpServerConfig {
 	timeoutMs?: number;
 	disabled?: boolean;
 }
+
+/**
+ * chrome-devtools-mcp logs this to stderr for every MCP "issue" notification
+ * the client doesn't subscribe to (e.g. its PerformanceIssue insights) — pure
+ * terminal noise while DevTools collects metrics mid-run.
+ */
+const CHROME_DEVTOOLS_NOISE_PATTERN = "No handler registered for issue code";
+
+/**
+ * Built-in stderr suppression for known-noisy MCP servers, applied by
+ * settings-manager when the server configures no explicit
+ * `suppressStderrPatterns` (pass `[]` to opt out). Matched loosely on
+ * name/command so a custom server name still qualifies.
+ */
+export function defaultStderrSuppressPatterns(
+	server: Pick<McpServerConfig, "name" | "commandOrUrl" | "args">,
+): string[] {
+	const haystack = [server.name, server.commandOrUrl, ...(server.args ?? [])].join(" ");
+	if (/chrome-devtools/i.test(haystack)) return [CHROME_DEVTOOLS_NOISE_PATTERN];
+	return [];
+}

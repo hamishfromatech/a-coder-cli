@@ -25,6 +25,68 @@ describe("SettingsManager", () => {
 		}
 	});
 
+	describe("mcpServers stderr suppression", () => {
+		it("auto-suppresses chrome-devtools noise and leaves other servers alone", async () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(
+				settingsPath,
+				JSON.stringify({
+					mcpServers: [
+						{
+							name: "chrome-devtools",
+							transport: "stdio",
+							commandOrUrl: "npx",
+							args: ["-y", "chrome-devtools-mcp@latest"],
+						},
+						{
+							name: "custom-name-but-chrome",
+							transport: "stdio",
+							commandOrUrl: "node",
+							args: ["chrome-devtools-mcp/launcher.js"],
+						},
+						{ name: "context7", transport: "http", commandOrUrl: "https://mcp.context7.com/mcp" },
+					],
+				}),
+			);
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+			const servers = manager.getMcpServers();
+			expect(servers[0]?.suppressStderrPatterns).toEqual(["No handler registered for issue code"]);
+			// Matched through command args even with a custom server name.
+			expect(servers[1]?.suppressStderrPatterns).toEqual(["No handler registered for issue code"]);
+			expect(servers[2]?.suppressStderrPatterns).toEqual([]);
+		});
+
+		it("keeps explicit patterns (empty array opts out)", async () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(
+				settingsPath,
+				JSON.stringify({
+					mcpServers: [
+						{
+							name: "chrome-devtools",
+							transport: "stdio",
+							commandOrUrl: "npx",
+							args: ["-y", "chrome-devtools-mcp@latest"],
+							suppressStderrPatterns: ["^my noise$"],
+						},
+						{
+							name: "chrome-quiet",
+							transport: "stdio",
+							commandOrUrl: "npx",
+							args: ["-y", "chrome-devtools-mcp@latest"],
+							suppressStderrPatterns: [],
+						},
+					],
+				}),
+			);
+
+			const servers = SettingsManager.create(projectDir, agentDir).getMcpServers();
+			expect(servers[0]?.suppressStderrPatterns).toEqual(["^my noise$"]);
+			expect(servers[1]?.suppressStderrPatterns).toEqual([]); // explicit opt-out
+		});
+	});
+
 	describe("preserves externally added settings", () => {
 		it("should preserve enabledModels when changing thinking level", async () => {
 			// Create initial settings file

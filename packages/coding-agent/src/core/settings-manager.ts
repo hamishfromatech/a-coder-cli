@@ -7,6 +7,7 @@ import { CONFIG_DIR_NAME, getAgentDir } from "../config.ts";
 import { normalizePath, resolvePath } from "../utils/paths.ts";
 import { DEFAULT_HTTP_IDLE_TIMEOUT_MS, parseHttpIdleTimeoutMs } from "./http-dispatcher.ts";
 import type { McpServerConfig } from "./mcp/types.ts";
+import { defaultStderrSuppressPatterns } from "./mcp/types.ts";
 
 export interface LocalProviderSettings {
 	lmStudioBaseUrl?: string;
@@ -1222,7 +1223,12 @@ export class SettingsManager {
 	}
 
 	getMcpServers(): McpServerConfig[] {
-		return [...(this.settings.mcpServers ?? [])];
+		// Auto-suppress known-noisy server stderr (chrome-devtools issue codes)
+		// unless the config carries explicit patterns — an empty array opts out.
+		return (this.settings.mcpServers ?? []).map((server) => ({
+			...server,
+			suppressStderrPatterns: server.suppressStderrPatterns ?? defaultStderrSuppressPatterns(server),
+		}));
 	}
 
 	setMcpServers(servers: McpServerConfig[]): void {
