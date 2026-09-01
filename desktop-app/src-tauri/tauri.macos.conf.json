@@ -1,0 +1,26 @@
+{
+	"$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+	"app": {
+		"windows": [
+			{
+				"title": "A-Coder Desktop",
+				"width": 1280,
+				"height": 832,
+				"minWidth": 900,
+				"minHeight": 560,
+				"resizable": true,
+				"fullscreen": false,
+				"center": true,
+				"decorations": true,
+				"titleBarStyle": "Overlay",
+				"hiddenTitle": true,
+				"trafficLightPosition": { "x": 16, "y": 12 },
+				"visible": true,
+				"focus": true,
+				"skipTaskbar": false,
+				"backgroundColor": "#0a0a0c",
+				"acceptFirstMouse": true
+			}
+		]
+	}
+}

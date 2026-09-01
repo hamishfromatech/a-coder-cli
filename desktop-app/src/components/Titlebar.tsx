@@ -9,8 +9,10 @@ import {
 import { useUiStore } from "../stores/ui-store";
 import { useSessionStore } from "../stores/session-store";
 import * as rpc from "../lib/rpc";
+import { isMacOS } from "../lib/platform";
 import { triggerHaptic } from "../lib/haptics";
 import { BrandMark } from "./ui/BrandMark";
+import { WindowControls } from "./WindowControls";
 
 export function Titlebar() {
 	const [editingName, setEditingName] = useState(false);
@@ -42,13 +44,22 @@ export function Titlebar() {
 		}
 	};
 
-	// Native window decorations are enabled in tauri.conf.json, so the OS
-	// titlebar provides drag, minimize, maximize/restore, and close. This
-	// component is now a compact toolbar rather than a second titlebar.
+	// Frameless window: this bar is the only titlebar. The root element and
+	// its empty wrappers carry data-tauri-drag-region (drag + double-click
+	// maximize, handled by Tauri's injected script); buttons and the session
+	// name control stay interactive. macOS keeps native overlay traffic
+	// lights (tauri.macos.conf.json), so the left slot reserves space for
+	// them; Windows/Linux render custom controls flush at the right edge.
 	return (
-		<div className="flex h-9 shrink-0 select-none items-center border-b border-pi-border bg-pi-surface/70 backdrop-blur">
-			{/* Left slot: left sidebar toggle. */}
-			<div className="flex h-full shrink-0 items-center gap-1 pl-1">
+		<div
+			data-tauri-drag-region
+			className="flex h-9 shrink-0 select-none items-center border-b border-pi-border bg-pi-surface/70 backdrop-blur"
+		>
+			{/* Left slot: (macOS traffic lights) + left sidebar toggle. */}
+			<div
+				data-tauri-drag-region
+				className={`flex h-full shrink-0 items-center gap-1 ${isMacOS ? "pl-[72px]" : "pl-1"}`}
+			>
 				<SidebarToggle
 					onClick={toggleLeftSidebar}
 					active={leftSidebarOpen}
@@ -59,12 +70,15 @@ export function Titlebar() {
 			</div>
 
 			{/* Brand & session title. */}
-			<div className="flex h-full flex-1 items-center gap-2 px-2.5">
+			<div data-tauri-drag-region className="flex h-full flex-1 items-center gap-2 px-2.5">
 				<span
 					className={`h-1.5 w-1.5 shrink-0 rounded-full ${status === "error" ? "bg-pi-error" : status === "connecting" ? "bg-pi-warning" : "bg-pi-success"}`}
 					aria-hidden
+					style={{ pointerEvents: "none" }}
 				/>
-				<BrandMark className="h-5 w-5" />
+				<span className="shrink-0" style={{ pointerEvents: "none" }}>
+					<BrandMark className="h-5 w-5" />
+				</span>
 				<div className="flex items-center gap-1.5 truncate text-xs">
 					<span className="font-semibold tracking-tight text-pi-text">A-Coder</span>
 					{editingName ? (
@@ -107,10 +121,10 @@ export function Titlebar() {
 			</div>
 
 			{/* Center spacer */}
-			<div className="flex-1" />
+			<div data-tauri-drag-region className="flex-1" />
 
 			{/* Right slot: right sidebar controls. */}
-			<div className="flex h-full shrink-0 items-center gap-0.5 px-1.5">
+			<div data-tauri-drag-region className="flex h-full shrink-0 items-center gap-0.5 px-1.5">
 				{(
 					[
 						{ tab: "files", label: "Files", icon: FileText },
@@ -146,6 +160,9 @@ export function Titlebar() {
 					<PanelRight className="h-3.5 w-3.5 transition-smooth" />
 				</SidebarToggle>
 			</div>
+
+			{/* Window controls: flush at the top-right edge (non-macOS). */}
+			{!isMacOS && <WindowControls />}
 		</div>
 	);
 }

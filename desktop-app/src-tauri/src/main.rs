@@ -93,9 +93,10 @@ fn main() {
 			// Build the system tray.
 			let _tray = tray::build_tray(&app_handle)?;
 
-			// Explicitly show and focus the main window on startup. On macOS with
-			// decorations=false the window can otherwise appear hidden or not
-			// respond to Dock clicks / cmd-tab activation.
+			// Explicitly show and focus the main window on startup. Frameless
+			// windows (decorations=false on Windows/Linux; macOS uses the
+			// overlay titlebar) can otherwise appear hidden or not respond to
+			// Dock clicks / taskbar / cmd-tab activation.
 			if let Some(window) = app_handle.get_webview_window("main") {
 				let _ = window.unminimize();
 				let _ = window.show();
