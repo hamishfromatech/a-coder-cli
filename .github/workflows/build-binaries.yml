@@ -203,11 +203,9 @@ jobs:
             -name '*.deb' -o \
             -name '*.rpm' -o \
             -name '*.AppImage' -o \
-            -name '*.AppImage.tar.gz' -o \
-            -name '*.AppImage.tar.gz.sig' -o \
+            -name '*.AppImage.sig' -o \
             -name '*-setup.exe' -o \
-            -name '*-setup.nsis.zip' -o \
-            -name '*-setup.nsis.zip.sig' -o \
+            -name '*-setup.exe.sig' -o \
             -name '*.msi' -o \
             -name '*.msi.sig' -o \
             -name '*.exe.sig' \
@@ -238,11 +236,13 @@ jobs:
           const root = "desktop-artifacts";
 
           // [updaterKey, targetDir, archiveGlob, sigGlob]
+          // Tauri v2 updater artifacts: macOS .app.tar.gz, Windows raw NSIS
+          // -setup.exe, Linux raw .AppImage (each with a .sig sibling).
           const specs = [
             ["darwin-aarch64", "a-coder-desktop-aarch64-apple-darwin", "*.app.tar.gz", "*.app.tar.gz.sig"],
             ["darwin-x86_64",  "a-coder-desktop-x86_64-apple-darwin",  "*.app.tar.gz", "*.app.tar.gz.sig"],
-            ["linux-x86_64",   "a-coder-desktop-x86_64-unknown-linux-gnu", "*.AppImage.tar.gz", "*.AppImage.tar.gz.sig"],
-            ["win32-x86_64",   "a-coder-desktop-x86_64-pc-windows-msvc", "*-setup.nsis.zip", "*-setup.nsis.zip.sig"],
+            ["linux-x86_64",   "a-coder-desktop-x86_64-unknown-linux-gnu", "*.AppImage", "*.AppImage.sig"],
+            ["windows-x86_64", "a-coder-desktop-x86_64-pc-windows-msvc", "*-setup.exe", "*-setup.exe.sig"],
           ];
 
           function findOne(dir, glob) {
@@ -295,7 +295,11 @@ jobs:
             if (!archive || !sig) { console.error(`  skipping ${key} (missing archive or signature in ${targetDir})`); continue; }
             platforms[key] = {
               signature: fs.readFileSync(sig, "utf8").trim(),
-              url: `${base}/${path.basename(archive)}`,
+              // GitHub normalizes release asset names (spaces become dots),
+              // so the URL must use the normalized basename or it 404s —
+              // e.g. "A-Coder Desktop.app.tar.gz" is stored as
+              // "A-Coder.Desktop.app.tar.gz".
+              url: `${base}/${path.basename(archive).replace(/ /g, ".")}`,
             };
           }
 

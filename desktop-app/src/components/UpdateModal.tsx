@@ -35,6 +35,7 @@ export function UpdateModal({ update, onDismiss }: UpdateModalProps) {
 		status,
 		downloadedBytes,
 		totalBytes,
+		error,
 		setStatus,
 		setError,
 		setProgress,
@@ -155,6 +156,9 @@ export function UpdateModal({ update, onDismiss }: UpdateModalProps) {
 							<p className="text-xs text-pi-error">
 								Update failed. Check your internet connection and try again.
 							</p>
+							{error && (
+								<p className="mt-1 break-words font-mono text-2xs text-pi-error/80">{error}</p>
+							)}
 						</div>
 					)}
 
