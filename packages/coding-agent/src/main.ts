@@ -24,6 +24,7 @@ import {
 	createAgentSessionFromServices,
 	createAgentSessionServices,
 } from "./core/agent-session-services.ts";
+import { captureCliSessionEnd, captureCliSessionStart } from "./core/analytics.ts";
 import { formatNoModelsAvailableMessage } from "./core/auth-guidance.ts";
 import { AuthStorage } from "./core/auth-storage.ts";
 import { type ComposioIntegration, createComposioIntegration, resolveComposioConfig } from "./core/composio.ts";
@@ -898,10 +899,13 @@ export async function main(args: string[], options?: MainOptions) {
 		process.exit(1);
 	}
 
+	captureCliSessionStart(session, appMode, settingsManager);
+
 	if (parsed.acpServer) {
 		printTimings();
 		const acpPort = typeof parsed.acpServer === "number" ? parsed.acpServer : 0;
 		await runAcpServerMode(runtime, { port: acpPort });
+		await captureCliSessionEnd(session, settingsManager);
 		return;
 	} else if (appMode === "rpc") {
 		printTimings();
@@ -935,6 +939,8 @@ export async function main(args: string[], options?: MainOptions) {
 		}
 
 		printTimings();
+		// Note: InteractiveMode.run() loops until shutdown() process.exits, so the
+		// interactive session_end event is captured inside its shutdown() path.
 		await interactiveMode.run();
 	} else {
 		printTimings();
@@ -946,6 +952,7 @@ export async function main(args: string[], options?: MainOptions) {
 		});
 		stopThemeWatcher();
 		restoreStdout();
+		await captureCliSessionEnd(session, settingsManager);
 		if (exitCode !== 0) {
 			process.exitCode = exitCode;
 		}

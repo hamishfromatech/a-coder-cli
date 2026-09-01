@@ -14,6 +14,7 @@
 import * as crypto from "node:crypto";
 import { getOAuthProvider } from "@earendil-works/pi-ai/oauth";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
+import { captureCliSessionEnd } from "../../core/analytics.ts";
 import { resolveComposioConfig } from "../../core/composio.ts";
 import { connectComposioApp, disconnectComposioApp, listComposioApps } from "../../core/composio-apps.ts";
 import type {
@@ -1159,6 +1160,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		unsubscribeBackpressure?.();
 		unsubscribeBackgroundProcesses?.();
 		await runtimeHost.dispose();
+		await captureCliSessionEnd(runtimeHost.session, runtimeHost.services.settingsManager).catch(() => undefined);
 		detachInput();
 		process.stdin.pause();
 		if (signal !== "SIGTERM") {

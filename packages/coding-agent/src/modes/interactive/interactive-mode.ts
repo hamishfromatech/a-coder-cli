@@ -61,6 +61,7 @@ import {
 } from "../../config.ts";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.ts";
 import { type AgentSessionRuntime, SessionImportFileNotFoundError } from "../../core/agent-session-runtime.ts";
+import { captureCliInstall, captureCliSessionEnd } from "../../core/analytics.ts";
 import { resolveComposioConfig } from "../../core/composio.ts";
 import {
 	type ComposioApp,
@@ -1119,21 +1120,21 @@ export class InteractiveMode {
 		if (!lastVersion) {
 			// Fresh install - record the version, send telemetry, don't show changelog
 			this.settingsManager.setLastChangelogVersion(VERSION);
-			this.reportInstallTelemetry(VERSION);
+			this.reportInstallTelemetry(VERSION, true);
 			return undefined;
 		}
 
 		const newEntries = getNewEntries(entries, lastVersion);
 		if (newEntries.length > 0) {
 			this.settingsManager.setLastChangelogVersion(VERSION);
-			this.reportInstallTelemetry(VERSION);
+			this.reportInstallTelemetry(VERSION, false);
 			return newEntries.map((e) => normalizeChangelogLinks(e.content, e)).join("\n\n");
 		}
 
 		return undefined;
 	}
 
-	private reportInstallTelemetry(version: string): void {
+	private reportInstallTelemetry(version: string, firstInstall: boolean): void {
 		if (process.env.A_CODER_CLI_OFFLINE) {
 			return;
 		}
@@ -1141,6 +1142,8 @@ export class InteractiveMode {
 		if (!isInstallTelemetryEnabled(this.settingsManager)) {
 			return;
 		}
+
+		captureCliInstall(version, firstInstall, "interactive", this.settingsManager);
 
 		void fetch(`https://a-coder-cli.dev/api/report-install?version=${encodeURIComponent(version)}`, {
 			headers: {
@@ -3983,6 +3986,8 @@ export class InteractiveMode {
 
 		this.stop();
 		await this.runtimeHost.dispose();
+
+		await captureCliSessionEnd(this.session, this.settingsManager).catch(() => undefined);
 
 		const resumeCommand = formatResumeCommand(this.sessionManager);
 		if (resumeCommand) {

@@ -306,6 +306,7 @@ Pi has two separate startup features:
 
 - **Update check:** fetches `https://pi.dev/api/latest-version` to check whether a newer Pi version exists. Disable it with `A_CODER_CLI_SKIP_VERSION_CHECK=1`. Disabling update checks only turns off this check.
 - **Install/update telemetry:** after first install or a changelog-detected update, sends an anonymous version ping to `https://pi.dev/api/report-install`. This setting also controls optional provider attribution headers for OpenRouter, Cloudflare, and direct NVIDIA NIM requests. Opt out by setting `enableInstallTelemetry` to `false` in `settings.json`, or by setting `A_CODER_CLI_TELEMETRY=0`. This does not disable update checks; Pi may still contact `pi.dev` for the latest version unless update checks are disabled or offline mode is enabled.
+- **Usage analytics (opt-in):** when `enableAnalytics` is turned on in `settings.json` (asked during first-time setup), the CLI and desktop app send anonymous PostHog events (`cli_session_start`, `cli_session_end`, `cli_model_usage`, `cli_install`): app version, mode, OS/arch, model/provider, and aggregate token/cost/tool-call counters per session — including one `cli_model_usage` event per provider/model pair actually used, so mid-session model switches are visible (`requested_model` records the requested model when the provider serves a different concrete one). Events never include prompt content, file paths, or personal information; the only identifier is the anonymous `trackingId` UUID generated in your settings.json on first opt-in. Opt out by setting `enableAnalytics` to `false`, `A_CODER_CLI_ANALYTICS=0`, or running with `A_CODER_CLI_OFFLINE=1`/`--offline`.
 
 Use `--offline` or `A_CODER_CLI_OFFLINE=1` to disable all startup network operations described here, including update checks, package update checks, and install/update telemetry.
 
@@ -663,6 +664,7 @@ a-coder-cli --thinking high "Solve this complex problem"
 | `A_CODER_CLI_OFFLINE` | Disable startup network operations, including update checks, package update checks, and install/update telemetry |
 | `A_CODER_CLI_SKIP_VERSION_CHECK` | Skip the Pi version update check at startup. This prevents the `pi.dev` latest-version request |
 | `A_CODER_CLI_TELEMETRY` | Override install/update telemetry and provider attribution headers. Use `1`/`true`/`yes` to enable or `0`/`false`/`no` to disable. This does not disable update checks |
+| `A_CODER_CLI_ANALYTICS` | Override the opt-in `enableAnalytics` PostHog events. `1`/`true`/`yes` force-enable (still requires a `trackingId`), `0`/`false`/`no` force-disable. Offline mode always disables analytics |
 | `PI_CACHE_RETENTION` | Set to `long` for extended prompt cache (Anthropic: 1h, OpenAI: 24h) |
 | `VISUAL`, `EDITOR` | Fallback external editor for Ctrl+G when `externalEditor` is unset; defaults to Notepad on Windows and `nano` elsewhere |
 
