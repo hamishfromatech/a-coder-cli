@@ -134,17 +134,31 @@ async function runWindowsInstaller(tag: string): Promise<InstallerResult> {
 }
 
 /**
- * Re-exec the CLI with the same argv so the user lands on the freshly-installed
- * version. Callers must have already restored the terminal (cooked mode) before
- * calling this, so the child starts in a clean terminal. The process exits via
- * the child's `spawn` event; a safety timer covers any edge case where neither
- * `spawn` nor `error` fires.
+ * Re-exec the CLI with the same user args so the user lands on the
+ * freshly-installed version. Callers must have already restored the terminal
+ * (cooked mode) before calling this, so the child starts in a clean terminal.
+ * The process exits via the child's `spawn` event; a safety timer covers any
+ * edge case where neither `spawn` nor `error` fires.
  */
 export function relaunchSelf(): void {
-	const child = spawn(process.argv[0], process.argv.slice(1), { stdio: "inherit" });
+	// argv layouts differ per runtime:
+	//   node / tsx:            [node, script, ...userArgs]
+	//   bun (compiled binary): ["bun", "/$bunfs/root/<entry>", ...userArgs]
+	// argv[0] in a compiled binary is the bun runtime, and argv[1] is the
+	// embedded entry of the build that is CURRENTLY RUNNING — stale after a
+	// self-update replaced the executable (the fresh build's embedded entry has
+	// a different BUNFS name, e.g. "/$bunfs/root/pi" vs "/$bunfs/root/pi-local"),
+	// which produced "Module not found /$bunfs/root/pi-local" on relaunch.
+	// Always relaunch through execPath (the real executable for every runtime)
+	// and drop embedded-entry args instead of reconstructing from argv[0].
+	const embeddedEntry = process.argv
+		.slice(1)
+		.find((arg) => arg.includes("$bunfs") || arg.includes("~BUN") || arg.includes("%7EBUN"));
+	const args = embeddedEntry ? process.argv.filter((arg) => arg !== embeddedEntry).slice(1) : process.argv.slice(1);
+	const child = spawn(process.execPath, args, { stdio: "inherit" });
 	child.once("spawn", () => process.exit(0));
 	child.once("error", (error) => {
-		console.error(`Failed to relaunch ${process.argv[0]}: ${error.message}`);
+		console.error(`Failed to relaunch ${process.execPath}: ${error.message}`);
 		process.exit(1);
 	});
 	// Safety net: don't hang forever if the child never emits spawn/error.
