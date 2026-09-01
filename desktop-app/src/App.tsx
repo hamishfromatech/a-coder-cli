@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bell, ChevronsUpDown, FolderGit2, MessageSquare, Plus, Settings, X } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { initDesktopAnalytics } from "./lib/analytics";
 import * as rpc from "./lib/rpc";
 import { openExternalLink } from "./lib/external-link";
 import { playCompletionSound } from "./lib/completion-sound";
@@ -271,6 +272,12 @@ export default function App() {
 			cancelled = true;
 		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
+
+	// Opt-in product analytics (gated by `enableAnalytics` in settings.json).
+	// Fire-and-forget; no-op when opted out or misconfigured.
+	useEffect(() => {
+		void initDesktopAnalytics();
 	}, []);
 
 	// AudioContext priming is now handled in main.tsx on the first user gesture

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Opt-in product analytics via PostHog: when `enableAnalytics` is on in settings.json (the Privacy section in Settings; the same toggle the CLI's first-time setup writes), the app initializes posthog-js with autocapture/pageview/session-recording disabled and sends only explicit anonymous events: `desktop_app_launch` (app version, platform) and `desktop_app_exit` (session duration), with the `trackingId` UUID from settings.json as the distinct ID. The engine (CLI in RPC mode) sends its own opt-in `cli_session_*` events. Ingest key is baked into `src/lib/analytics.ts` (empty until provisioned) with a `VITE_POSTHOG_KEY` build-time override; analytics stays off when settings cannot be read.
+
 ### Changed
 
 - Sync with the engine's stage-27-adjacent upgrades: `thinking_level_changed` is now handled, so the status bar follows the thinking level when the engine changes it itself (the model raising itself via "ultrathink"-style prompt keywords, or `/think`); and session-tree nodes for new file-history checkpoint entries (`file_history_snapshot`, one per user turn on new sessions while file-history persistence lands in the transcript) are hidden in All / No tools / User only / Labeled views and rendered as "Checkpoint" in "Everything", matching the TUI's tree filter — previously they would have shown as raw id fragments in every mode.
