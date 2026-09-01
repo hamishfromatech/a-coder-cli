@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
 	createLlamaCppModel,
 	fetchLlamaCppModels,
+	llamaCppContextWindow,
 	llamaCppProvider,
 	resolveLlamaCppBaseUrl,
 } from "../src/providers/llama-cpp.ts";
@@ -17,20 +18,62 @@ describe("LM Studio provider", () => {
 		expect(model.input).toContain("image");
 	});
 
-	it("fetches models from the local /v1/models endpoint", async () => {
-		const fetchMock = vi.fn().mockResolvedValue({
-			ok: true,
-			json: async () => ({
-				object: "list",
-				data: [{ id: "model-a" }, { id: "model-b" }],
-			}),
+	it("fetches loaded models from /api/v0/models with real context windows", async () => {
+		const fetchMock = vi.fn(async (input: unknown): Promise<Response> => {
+			const url = typeof input === "string" ? input : (input as Request).url;
+			if (url === "http://localhost:1234/api/v0/models") {
+				return new Response(
+					JSON.stringify({
+						data: [
+							{
+								id: "lfm2.5-8b-a1b",
+								type: "llm",
+								state: "loaded",
+								max_context_length: 128000,
+								loaded_context_length: 131072,
+								capabilities: ["tool_use"],
+							},
+							{ id: "big-model", type: "llm", state: "loaded", max_context_length: 262144 },
+							{ id: "dozing", type: "llm", state: "not-loaded", max_context_length: 8192 },
+							{ id: "nomic-embed", type: "embedding", state: "loaded", max_context_length: 2048 },
+						],
+					}),
+					{ status: 200, headers: { "content-type": "application/json" } },
+				);
+			}
+			throw new Error(`Unexpected fetch: ${url}`);
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		const models = await fetchLMStudioModels();
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(models.map((m) => m.id)).toEqual(["lfm2.5-8b-a1b", "big-model"]);
+		expect(models[0]?.contextWindow).toBe(131072); // served instance context wins
+		expect(models[1]?.contextWindow).toBe(262144); // catalog max as fallback
+
+		vi.unstubAllGlobals();
+	});
+
+	it("falls back to the bare /v1/models list when /api/v0/models is unavailable", async () => {
+		const fetchMock = vi.fn(async (input: unknown): Promise<Response> => {
+			const url = typeof input === "string" ? input : (input as Request).url;
+			if (url === "http://localhost:1234/api/v0/models") {
+				return new Response("not found", { status: 404 });
+			}
+			if (url === "http://localhost:1234/v1/models") {
+				return new Response(JSON.stringify({ object: "list", data: [{ id: "model-a" }, { id: "model-b" }] }), {
+					status: 200,
+					headers: { "content-type": "application/json" },
+				});
+			}
+			throw new Error(`Unexpected fetch: ${url}`);
 		});
 		vi.stubGlobal("fetch", fetchMock);
 
 		const models = await fetchLMStudioModels();
 		expect(models).toHaveLength(2);
-		expect(models[0].id).toBe("model-a");
-		expect(models[1].id).toBe("model-b");
+		expect(models[0]?.id).toBe("model-a");
+		expect(models[0]?.contextWindow).toBe(128000); // no metadata available
 		expect(fetchMock).toHaveBeenCalledWith(
 			"http://localhost:1234/v1/models",
 			expect.objectContaining({ headers: { accept: "application/json" } }),
@@ -66,25 +109,38 @@ describe("llama.cpp provider", () => {
 		delete process.env.LLAMACPP_BASE_URL;
 	});
 
-	it("fetches models from the configured /v1/models endpoint", async () => {
+	it("fetches models from the configured /v1/models endpoint and reads the context metadata", async () => {
 		const fetchMock = vi.fn().mockResolvedValue({
 			ok: true,
 			json: async () => ({
 				object: "list",
-				data: [{ id: "llama-3" }],
+				data: [
+					{ id: "qwen-coder", meta: { n_ctx: 262144, n_ctx_train: 262144 } },
+					{ id: "served-lower", meta: { n_ctx: 8192, n_ctx_train: 131072 } },
+					{ id: "no-meta" },
+				],
 			}),
 		});
 		vi.stubGlobal("fetch", fetchMock);
 
 		const models = await fetchLlamaCppModels();
-		expect(models).toHaveLength(1);
-		expect(models[0].id).toBe("llama-3");
+		expect(models).toHaveLength(3);
+		expect(models[0]?.contextWindow).toBe(262144); // served context from meta
+		expect(models[1]?.contextWindow).toBe(8192); // n_ctx wins over n_ctx_train
+		expect(models[2]?.contextWindow).toBe(128000); // no meta: default
 		expect(fetchMock).toHaveBeenCalledWith(
 			"http://localhost:8080/v1/models",
 			expect.objectContaining({ headers: { accept: "application/json" } }),
 		);
 
 		vi.unstubAllGlobals();
+	});
+
+	it("createLlamaCppModel applies a discovered context window", () => {
+		expect(createLlamaCppModel("m", undefined, 262144).contextWindow).toBe(262144);
+		expect(createLlamaCppModel("m", undefined, 0).contextWindow).toBe(128000);
+		expect(llamaCppContextWindow({ id: "x", meta: { n_ctx_train: 4096 } })).toBe(4096);
+		expect(llamaCppContextWindow({ id: "x" })).toBeUndefined();
 	});
 
 	it("provider exposes the placeholder model and dynamic refresh", () => {

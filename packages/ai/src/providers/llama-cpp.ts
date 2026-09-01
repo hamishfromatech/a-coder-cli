@@ -45,6 +45,11 @@ function llamaCppAuth(): ApiKeyAuth {
 export interface LlamaCppModelListItem {
 	id: string;
 	object?: string;
+	/** Newer llama.cpp builds include GGUF-derived metadata here. */
+	meta?: {
+		n_ctx?: number;
+		n_ctx_train?: number;
+	};
 }
 
 export interface LlamaCppModelListResponse {
@@ -62,7 +67,7 @@ export function resolveLlamaCppBaseUrl(override?: string): string {
 	return DEFAULT_BASE_URL;
 }
 
-export function createLlamaCppModel(id: string, baseUrl?: string): Model<"openai-completions"> {
+export function createLlamaCppModel(id: string, baseUrl?: string, contextWindow?: number): Model<"openai-completions"> {
 	return {
 		id,
 		name: `llama.cpp: ${id}`,
@@ -85,9 +90,17 @@ export function createLlamaCppModel(id: string, baseUrl?: string): Model<"openai
 			cacheRead: 0,
 			cacheWrite: 0,
 		},
-		contextWindow: 128000,
+		contextWindow: contextWindow !== undefined && contextWindow > 0 ? contextWindow : 128000,
 		maxTokens: 4096,
 	};
+}
+
+/** The server's loaded context first, the model's trained context second. */
+export function llamaCppContextWindow(entry: LlamaCppModelListItem): number | undefined {
+	const served = entry.meta?.n_ctx;
+	if (served !== undefined && served > 0) return served;
+	const trained = entry.meta?.n_ctx_train;
+	return trained !== undefined && trained > 0 ? trained : undefined;
 }
 
 export async function fetchLlamaCppModels(
@@ -104,7 +117,9 @@ export async function fetchLlamaCppModels(
 	}
 	const json = (await res.json()) as LlamaCppModelListResponse;
 	const list = json.data ?? [];
-	return list.filter((entry) => entry.id).map((entry) => createLlamaCppModel(entry.id, baseUrl));
+	return list
+		.filter((entry) => entry.id)
+		.map((entry) => createLlamaCppModel(entry.id, baseUrl, llamaCppContextWindow(entry)));
 }
 
 export function llamaCppProvider(): Provider<"openai-completions"> {
