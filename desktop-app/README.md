@@ -68,7 +68,7 @@ Custom providers configured in `~/.a-coder/cli/agent/models.json` sync automatic
 
 ### Download
 
-Download the latest release from [GitHub Releases](https://github.com/example/pi-mono/releases):
+Download the latest release from [GitHub Releases](https://github.com/hamishfromatech/a-coder-cli/releases):
 
 - **macOS** — `.dmg` or `.app.zip`
 - **Windows** — `.msi` or `.exe`

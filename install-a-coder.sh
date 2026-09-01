@@ -13,7 +13,7 @@ FORCE=false
 NO_DESKTOP=false
 QUIET=false
 
-REPO="hamishfromatech/pi-mono"
+REPO="hamishfromatech/a-coder-cli"
 
 usage() {
   cat <<EOF

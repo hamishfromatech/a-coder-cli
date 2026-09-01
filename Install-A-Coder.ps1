@@ -28,7 +28,7 @@ $BinDir = Join-Path $InstallDir "bin"
 $LibDir = Join-Path $InstallDir "lib\a-coder-cli"
 $BinShim = Join-Path $BinDir "a-coder-cli.cmd"
 $BinExe = Join-Path $BinDir "a-coder-cli.exe"
-$Repo = "hamishfromatech/pi-mono"
+$Repo = "hamishfromatech/a-coder-cli"
 
 # Legacy single-product layout (pre product nesting): ~\.a-coder\{lib,bin}.
 # When present we keep a shim there pointing at the new binary so existing
@@ -290,7 +290,7 @@ if (-not $CliAlreadyUpToDate) {
         Write-Host "This usually means no release exists for '$Version' yet." -ForegroundColor Yellow
         Write-Host "Push a v* tag to create a release, or build from source:" -ForegroundColor Yellow
         Write-Host "  git clone -b feat/desktop-unified-release https://github.com/$Repo.git" -ForegroundColor White
-        Write-Host "  cd pi-mono && npm install --ignore-scripts && npm run build" -ForegroundColor White
+        Write-Host "  cd a-coder-cli && npm install --ignore-scripts && npm run build" -ForegroundColor White
         Write-Host "  cd packages/coding-agent && npm link" -ForegroundColor White
         throw "No release asset found for $Version."
     }

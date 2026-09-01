@@ -41,10 +41,10 @@ One-line install (downloads the self-contained binary for your platform):
 
 ```bash
 # macOS / Linux
-curl -sSf https://raw.githubusercontent.com/hamishfromatech/pi-mono/feat/desktop-unified-release/install-a-coder.sh | bash
+curl -sSf https://raw.githubusercontent.com/hamishfromatech/a-coder-cli/feat/desktop-unified-release/install-a-coder.sh | bash
 
 # Windows (PowerShell)
-powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/hamishfromatech/pi-mono/feat/desktop-unified-release/Install-A-Coder.ps1 | iex"
+powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/hamishfromatech/a-coder-cli/feat/desktop-unified-release/Install-A-Coder.ps1 | iex"
 ```
 
 This installs the `a-coder-cli` command (symlinked onto your `PATH`). Run `a-coder-cli` in any project folder to start chatting; `a-coder-cli --help` lists all flags.
@@ -53,7 +53,7 @@ This installs the `a-coder-cli` command (symlinked onto your `PATH`). Run `a-cod
 
 ### A-Coder Desktop
 
-**Option A — Download an installer** from the [GitHub Releases](https://github.com/hamishfromatech/pi-mono/releases):
+**Option A — Download an installer** from the [GitHub Releases](https://github.com/hamishfromatech/a-coder-cli/releases):
 
 | Platform | Installer |
 |----------|-----------|
@@ -66,8 +66,8 @@ Drag the `.app` to `/Applications` (macOS), run the `.exe`/`.msi` (Windows), or 
 **Option B — Build from source** (needs Node 22+, Rust, and the [Tauri v2 prerequisites](https://v2.tauri.app/start/prerequisites/)):
 
 ```bash
-git clone https://github.com/hamishfromatech/pi-mono.git
-cd pi-mono
+git clone https://github.com/hamishfromatech/a-coder-cli.git
+cd a-coder-cli
 npm install --ignore-scripts        # monorepo deps
 cd desktop-app
 npm install --ignore-scripts        # desktop-app deps
