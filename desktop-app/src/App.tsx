@@ -17,6 +17,7 @@ import { useSettingsStore } from "./stores/settings-store";
 import { useWorkspaceStore } from "./stores/workspace-store";
 import { useSessionTreeStore } from "./stores/session-tree-store";
 import { useTabsStore } from "./stores/tabs-store";
+import { useOfficeStore } from "./stores/office-store";
 import { useStatsStore, type SessionStats } from "./stores/stats-store";
 import { useUiStore } from "./stores/ui-store";
 import { useWidgetStore } from "./stores/widget-store";
@@ -71,6 +72,21 @@ function isOnboardingComplete(): boolean {
 	} catch {
 		return false;
 	}
+}
+
+/** Minimum gap between office turn-end cues: several coworkers finishing a
+ *  huddle round at once should chime once, not machine-gun. */
+const OFFICE_TURN_CUE_MIN_GAP_MS = 700;
+let lastOfficeTurnCueAt = 0;
+
+/** Play the composer's turn-end cue for a finished coworker turn, throttled so
+ *  simultaneous completions in a huddle drive don't stack into a wall of sound. */
+function playOfficeTurnCompletionSound() {
+	const now = Date.now();
+	if (now - lastOfficeTurnCueAt < OFFICE_TURN_CUE_MIN_GAP_MS) return;
+	lastOfficeTurnCueAt = now;
+	playCompletionSound();
+	triggerHaptic("streamDone");
 }
 
 /** Extract the text of the last assistant message in a run (for voice mode). */
@@ -167,6 +183,7 @@ export default function App() {
 		setAvailableCommands,
 		appendMessage,
 		setMessages,
+		setSessionLoading,
 		updateLastAssistantMessage,
 		updateQueue,
 		resetSession,
@@ -183,8 +200,16 @@ export default function App() {
 	// until that session is active; the runtime-status orb already signals them.
 	const requestIsForCurrentSession = (r: { sessionFile?: string }) =>
 		!r.sessionFile || r.sessionFile === sessionFile;
-	const permissionRequest = uiRequests.find((r) => r.kind === "permission" && requestIsForCurrentSession(r));
-	const modalRequest = uiRequests.find((r) => r.kind !== "permission" && requestIsForCurrentSession(r));
+	// Confirm-style requests (permission or generic extension confirms) render
+	// inline in the transcript; full-screen modal backdrops black out on this
+	// system's WKWebView (backdrop-filter compositing), so they must never be
+	// used for approvals. select/input/editor keep the modal (richer input UI).
+	const permissionRequest = uiRequests.find(
+		(r) => (r.kind === "permission" || r.method === "confirm") && requestIsForCurrentSession(r),
+	);
+	const modalRequest = uiRequests.find(
+		(r) => r.kind !== "permission" && r.method !== "confirm" && requestIsForCurrentSession(r),
+	);
 	const { cliPath, theme, skin, reopenLastProject, startupModel, cliGlobalSettings } =
 		useSettingsStore();
 	const { setStatus: setWidgetStatus, setWidget } = useWidgetStore();
@@ -388,6 +413,9 @@ export default function App() {
 				// on a fresh launch it's empty. The initial session_start event is
 				// not forwarded to subscribers, so we fetch the history ourselves.
 				loadingHistoryRef.current = true;
+				// Resumed sessions may take a moment to load history — show the
+				// loading state instead of flashing the new-conversation EmptyState.
+				if (options?.continueSession) setSessionLoading(true);
 				try {
 					const msgsRes = (await rpc.sendCommand({ type: "get_messages" })) as {
 						messages: import("@earendil-works/pi-agent-core").AgentMessage[];
@@ -399,6 +427,7 @@ export default function App() {
 					toast.error("Failed to load session history", e instanceof Error ? e.message : String(e));
 				} finally {
 					loadingHistoryRef.current = false;
+					setSessionLoading(false);
 				}
 
 				// Load available slash commands.
@@ -462,6 +491,35 @@ export default function App() {
 							// background turn started/finished, or reaped).
 							updateRuntimeStatus(event.sessions, useTabsStore.getState().activePath);
 							break;
+						case "office_update":
+							// Your Office roster changed.
+							useOfficeStore.getState().applySnapshot(
+								(event as import("./lib/rpc").OfficeUpdateEvent).snapshot,
+							);
+							break;
+						case "office_huddle":
+							// A huddle's log changed.
+							useOfficeStore.getState().applyHuddle(
+								(event as import("./lib/rpc").OfficeHuddleEvent).payload,
+							);
+							break;
+						case "office_activity": {
+							// Live coworker activity for the floor view.
+							const activity = (event as import("./lib/rpc").OfficeActivityEvent).activity;
+							useOfficeStore.getState().applyActivity(activity);
+							// Composer stop-reason parity: chime when a coworker's turn ends
+							// naturally. Aborts (office Stop), in-session errors and retryable
+							// failures stay quiet — the same suppression rules as agent_end.
+							if (
+								activity.kind === "turn_end" &&
+								!activity.willRetry &&
+								activity.stopReason !== "aborted" &&
+								activity.stopReason !== "error"
+							) {
+								playOfficeTurnCompletionSound();
+							}
+							break;
+						}
 						case "oauth_login_status": {
 							// OAuth sign-in progress from the engine (Account settings).
 							// The engine is headless — the desktop owns browser opening.
@@ -517,6 +575,9 @@ export default function App() {
 							loadingHistoryRef.current = true;
 							const generation = ++sessionStartGenerationRef.current;
 							resetSession();
+							// History is loading — swap the EmptyState for a loading screen
+							// until get_messages paints (or fails).
+							setSessionLoading(true);
 							void (async () => {
 								// Stale-switch guard: bail before every paint if another
 								// session_start landed while this fetch chain was in flight,
@@ -579,6 +640,9 @@ export default function App() {
 											} finally {
 												if (isCurrent()) {
 													loadingHistoryRef.current = false;
+													// History load finished (painted, failed, or stale) — hand the
+													// chat area back to EmptyState / the painted transcript.
+													setSessionLoading(false);
 												}
 											}
 							})();
@@ -781,6 +845,7 @@ export default function App() {
 			setAvailableCommands,
 			appendMessage,
 			setMessages,
+			setSessionLoading,
 			updateLastAssistantMessage,
 			updateQueue,
 			resetSession,

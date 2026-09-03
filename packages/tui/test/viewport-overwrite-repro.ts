@@ -52,7 +52,7 @@ async function streamLines(buffer: Lines, label: string, count: number, delayMs:
 }
 
 async function main(): Promise<void> {
-	const ui = new TUI(new ProcessTerminal());
+	const ui = new TUI(new ProcessTerminal(), false);
 	const buffer = new Lines();
 	ui.addChild(buffer);
 	ui.start();
@@ -96,7 +96,7 @@ async function main(): Promise<void> {
 main().catch((error) => {
 	// Ensure terminal is restored if something goes wrong.
 	try {
-		const ui = new TUI(new ProcessTerminal());
+		const ui = new TUI(new ProcessTerminal(), false);
 		ui.stop();
 	} catch {
 		// Ignore restore errors.

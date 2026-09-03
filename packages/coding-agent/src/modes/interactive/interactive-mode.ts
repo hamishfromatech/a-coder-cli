@@ -7,7 +7,7 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { type AgentMessage, estimateContextTokens } from "@earendil-works/pi-agent-core";
 import type { ThinkingLevel } from "@earendil-works/pi-ai";
 import {
 	type AssistantMessage,
@@ -41,6 +41,7 @@ import {
 	ProcessTerminal,
 	Spacer,
 	setKeybindings,
+	setReducedMotion,
 	Text,
 	TruncatedText,
 	TUI,
@@ -56,7 +57,10 @@ import {
 	getAuthPath,
 	getDebugLogPath,
 	getDocsPath,
+	getMemoryPath,
+	getSessionMemoryPath,
 	getShareViewerUrl,
+	getWorkspaceMemoryPath,
 	VERSION,
 } from "../../config.ts";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.ts";
@@ -113,6 +117,7 @@ import {
 import { getTaskListId, listTasks, subscribeTasks } from "../../core/tasks/task-store.ts";
 import { isInstallTelemetryEnabled } from "../../core/telemetry.ts";
 import { generateDiffString } from "../../core/tools/edit-diff.ts";
+import type { PlanExitDecision } from "../../core/tools/plan-mode.ts";
 import type { TodoItem } from "../../core/tools/todo.ts";
 import type { TruncationResult } from "../../core/tools/truncate.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../core/trust-manager.ts";
@@ -161,11 +166,18 @@ import {
 import { formatKeyText, keyDisplayText, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.ts";
 import { pickLoadingVerb } from "./components/loading-verbs.ts";
 import { LoginDialogComponent } from "./components/login-dialog.ts";
+import {
+	buildMemoryItems,
+	MEMORY_NEW_FILE_TEMPLATE,
+	type MemoryFileEntry,
+	MemoryPickerComponent,
+} from "./components/memory-picker.ts";
 import { ModelSelectorComponent } from "./components/model-selector.ts";
 import { type AuthSelectorProvider, OAuthSelectorComponent } from "./components/oauth-selector.ts";
 import { OutputStyleSelectorComponent } from "./components/output-style-selector.ts";
 import { PermissionModeSelectorComponent } from "./components/permission-mode-selector.ts";
 import { type PermissionRuleAction, PermissionRulesSelectorComponent } from "./components/permission-rules-selector.ts";
+import { PlanExitDialogComponent } from "./components/plan-exit-dialog.ts";
 import { QuestionPromptComponent } from "./components/question-prompt.ts";
 import { RunningTasksViewerComponent } from "./components/running-tasks-viewer.ts";
 import { ScopedModelsSelectorComponent } from "./components/scoped-models-selector.ts";
@@ -180,6 +192,7 @@ import {
 	type StatusIndicator,
 	WorkingStatusIndicator,
 } from "./components/status-indicator.ts";
+import { StatusLineComponent, type StatusLineContext } from "./components/status-line.ts";
 import { TaskListComponent } from "./components/task-list.ts";
 import { TaskPanelComponent } from "./components/task-panel.ts";
 import { readTodosFromBranch, TodoListComponent } from "./components/todo-list.ts";
@@ -190,7 +203,10 @@ import { TrustSelectorComponent } from "./components/trust-selector.ts";
 import { UserMessageComponent } from "./components/user-message.ts";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.ts";
 import { WelcomeBannerComponent } from "./components/welcome-banner.ts";
+import { buildContextBreakdownLines } from "./context-command.ts";
+import { runDiffCommand } from "./diff-command.ts";
 import { getModelSearchText } from "./model-search.ts";
+import { OfficeTui } from "./office-commands.ts";
 import {
 	getAvailableThemes,
 	getAvailableThemesWithPaths,
@@ -354,6 +370,8 @@ export class InteractiveMode {
 	private fdPath: string | undefined;
 	private editorContainer: Container;
 	private footer: FooterComponent;
+	/** Extra footer row driven by the `ui.statusLine` settings command (undefined when unset). */
+	private statusLineComponent: StatusLineComponent | undefined;
 	private footerDataProvider: FooterDataProvider;
 	// Stored so the same manager can be injected into custom editors, selectors, and extension UI.
 	private keybindings: KeybindingsManager;
@@ -517,6 +535,7 @@ export class InteractiveMode {
 	private options: InteractiveModeOptions;
 	private autoTrustOnReloadCwd: string | undefined;
 	private themeController: InteractiveThemeController;
+	private readonly officeTui: OfficeTui;
 
 	// Convenience accessors
 	private get session(): AgentSession {
@@ -544,7 +563,9 @@ export class InteractiveMode {
 		});
 		this.version = VERSION;
 		this.ui = new TUI(new ProcessTerminal(), this.settingsManager.getShowHardwareCursor());
+		this.officeTui = new OfficeTui(runtimeHost, (text) => this.printOfficeText(text));
 		this.ui.setClearOnShrink(this.settingsManager.getClearOnShrink());
+		setReducedMotion(this.settingsManager.getReducedMotion());
 		this.headerContainer = new Container();
 		this.loadedResourcesContainer = new Container();
 		this.chatContainer = new Container();
@@ -565,6 +586,7 @@ export class InteractiveMode {
 		this.editorContainer.addChild(this.editor as Component);
 		this.footerDataProvider = new FooterDataProvider(this.sessionManager.getCwd());
 		this.footer = new FooterComponent(this.session, this.footerDataProvider);
+		this.initStatusLine();
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
 
 		// Load hide thinking block setting
@@ -693,6 +715,48 @@ export class InteractiveMode {
 					label: l,
 					description: l === this.session.thinkingLevel ? "current" : undefined,
 				}));
+			};
+		}
+
+		// Nested sub-command suggestions (easy-agent commandPalette parity):
+		// verbs the command actually consumes, filtered by what the user typed.
+		const officeCommand = slashCommands.find((command) => command.name === "office");
+		if (officeCommand) {
+			const officeVerbs: Array<{ value: string; description: string }> = [
+				{ value: "hire", description: "Hire a coworker (/office hire Atlas | Scout | Watches the repo)" },
+				{ value: "huddle", description: "Create a huddle (/office huddle standup @atlas @nova)" },
+				{ value: "tell", description: "DM a coworker (/office tell @atlas look at the tests)" },
+				{ value: "say", description: "Address the whole office (/office say standup in 5)" },
+				{ value: "stop", description: "Hold a coworker (/office stop @atlas)" },
+				{ value: "errands", description: "List scheduled errands" },
+			];
+			officeCommand.getArgumentCompletions = (prefix: string): AutocompleteItem[] | null => {
+				const prefixLower = prefix.toLowerCase();
+				const filtered = officeVerbs.filter((v) => v.value.startsWith(prefixLower));
+				if (filtered.length === 0) return null;
+				return filtered.map((v) => ({ value: v.value, label: v.value, description: v.description }));
+			};
+		}
+
+		const exportCommand = slashCommands.find((command) => command.name === "export");
+		if (exportCommand) {
+			const exportFormats: Array<{ value: string; description: string }> = [
+				{ value: "session.html", description: "Export as styled HTML" },
+				{ value: "session.jsonl", description: "Export as raw JSONL (re-importable)" },
+			];
+			exportCommand.getArgumentCompletions = (prefix: string): AutocompleteItem[] | null => {
+				const prefixLower = prefix.toLowerCase();
+				// Match on the full value, or on the extension when the prefix has a dot.
+				const dotIdx = prefixLower.lastIndexOf(".");
+				const filtered = exportFormats.filter((f) => {
+					if (dotIdx >= 0) {
+						const ext = prefixLower.slice(dotIdx + 1);
+						return f.value.toLowerCase().endsWith(prefixLower.slice(dotIdx)) && ext.length > 0;
+					}
+					return f.value.startsWith(prefixLower);
+				});
+				if (filtered.length === 0) return null;
+				return filtered.map((f) => ({ value: f.value, label: f.value, description: f.description }));
 			};
 		}
 
@@ -826,6 +890,10 @@ export class InteractiveMode {
 		this.ui.addChild(this.taskPanel);
 		this.ui.addChild(this.editorContainer);
 		this.ui.addChild(this.widgetContainerBelow);
+		if (this.statusLineComponent) {
+			// Extra row above the hint (easy-agent statusLine placement).
+			this.ui.addChild(this.statusLineComponent);
+		}
 		this.ui.addChild(this.footer);
 		this.ui.addChild(this.backgroundProcessesBar);
 		this.ui.setFocus(this.editor);
@@ -1838,6 +1906,27 @@ export class InteractiveMode {
 				return choice === "Yes";
 			}
 			return await this.showExtensionConfirm(title, reason);
+		});
+		this.session.setPlanApprovalHandler(async (info) => {
+			return await new Promise<PlanExitDecision>((resolve) => {
+				this.showSelector((close) => {
+					const dialog = new PlanExitDialogComponent(
+						this.ui,
+						info.plan,
+						(decision) => {
+							close();
+							this.ui.requestRender();
+							resolve(decision);
+						},
+						() => {
+							close();
+							this.ui.requestRender();
+							resolve({ decision: "keep-planning" });
+						},
+					);
+					return { component: dialog, focus: dialog };
+				});
+			});
 		});
 		this.updatePermissionModeStatus(this.session.permissionMode);
 		this.updatePlanModeStatus(this.session.planMode);
@@ -2983,6 +3072,11 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
+			if (text === "/memory") {
+				this.editor.setText("");
+				await this.showMemoryPicker();
+				return;
+			}
 			if (text === "/permissions") {
 				this.showPermissionRulesSelector();
 				this.editor.setText("");
@@ -3033,6 +3127,31 @@ export class InteractiveMode {
 			if (text === "/session") {
 				this.handleSessionCommand();
 				this.editor.setText("");
+				return;
+			}
+			if (text === "/context") {
+				this.handleContextCommand();
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/diff" || text.startsWith("/diff ")) {
+				const raw = text === "/diff" ? "" : text.slice("/diff ".length).trim();
+				const parsed = raw === "" ? 1 : Number(raw);
+				if (!Number.isInteger(parsed) || parsed < 1) {
+					this.editor.setText("");
+					this.showStatus("Usage: /diff [n] — show working-tree changes and the last n turns' file edits");
+					return;
+				}
+				this.editor.setText("");
+				this.editor.addToHistory?.(text);
+				void this.handleDiffCommand(parsed);
+				return;
+			}
+			if (text === "/office" || text.startsWith("/office ")) {
+				const arg = text.startsWith("/office ") ? text.slice("/office ".length).trim() : undefined;
+				this.editor.setText("");
+				this.editor.addToHistory?.(text);
+				await this.officeTui.handle(arg);
 				return;
 			}
 			if (text === "/changelog") {
@@ -3216,9 +3335,45 @@ export class InteractiveMode {
 		};
 	}
 
+	/**
+	 * Build the status-line component when `ui.statusLine` is configured and
+	 * schedule its first refresh. Undefined without the setting.
+	 */
+	private initStatusLine(): void {
+		const command = this.settingsManager.getStatusLineCommand();
+		if (!command) return;
+		const component = new StatusLineComponent(command, () => this.ui.requestRender());
+		this.statusLineComponent = component;
+		component.refresh(this.statusLineContext());
+	}
+
+	private statusLineContext(): StatusLineContext {
+		const usage = this.session.getContextUsage();
+		let input = 0;
+		let output = 0;
+		for (const entry of this.session.sessionManager.getEntries()) {
+			if (entry.type === "message" && entry.message.role === "assistant") {
+				input += entry.message.usage.input;
+				output += entry.message.usage.output;
+			}
+		}
+		return {
+			model: this.session.model ? `${this.session.model.provider}/${this.session.model.id}` : "",
+			cwd: this.sessionManager.getCwd(),
+			permissionMode: this.session.permissionMode,
+			...(usage?.percent != null ? { contextPercent: Math.round(usage.percent) } : {}),
+			tokens: { input, output },
+		};
+	}
+
+	private refreshStatusLine(): void {
+		this.statusLineComponent?.refresh(this.statusLineContext());
+	}
+
 	private subscribeToAgent(): void {
 		this.unsubscribe = this.session.subscribe(async (event) => {
 			await this.handleEvent(event);
+			this.refreshStatusLine();
 		});
 		this.unsubscribeSubAgents?.();
 		this.unsubscribeSubAgents = this.session.subscribeSubAgents((records) => this.syncAgentsPanel(records));
@@ -3356,6 +3511,8 @@ export class InteractiveMode {
 					this.updatePendingMessagesDisplay();
 					this.ui.requestRender();
 				} else if (event.message.role === "assistant") {
+					// A new streaming round starts — fold the previous round's thinking.
+					this.applyThinkingFolding();
 					this.streamingComponent = new AssistantMessageComponent(
 						undefined,
 						this.hideThinkingBlock,
@@ -3459,6 +3616,16 @@ export class InteractiveMode {
 				this.ui.requestRender();
 				break;
 
+			case "tool_permission_update": {
+				const component = this.pendingTools.get(event.toolCallId);
+				if (component) {
+					if (event.waiting) component.markWaitingPermission();
+					else component.clearWaitingPermission();
+					this.ui.requestRender();
+				}
+				break;
+			}
+
 			case "tool_execution_start": {
 				let component = this.pendingTools.get(event.toolCallId);
 				if (!component) {
@@ -3478,6 +3645,7 @@ export class InteractiveMode {
 					this.chatContainer.addChild(component);
 					this.pendingTools.set(event.toolCallId, component);
 				}
+				component.clearWaitingPermission();
 				component.markExecutionStarted();
 				this.ui.requestRender();
 				break;
@@ -3765,6 +3933,8 @@ export class InteractiveMode {
 					this.outputPad,
 				);
 				this.chatContainer.addChild(assistantComponent);
+				// The new message may carry the latest thinking — re-fold the rest.
+				this.applyThinkingFolding();
 				break;
 			}
 			case "toolResult": {
@@ -3850,7 +4020,40 @@ export class InteractiveMode {
 		for (const [toolCallId, component] of renderedPendingTools) {
 			this.pendingTools.set(toolCallId, component);
 		}
+		this.applyThinkingFolding();
 		this.ui.requestRender();
+	}
+
+	/**
+	 * easy-agent hidePastThinking parity: only the latest round's thinking is
+	 * shown — thinking traces in earlier assistant messages fold away entirely
+	 * (the verbose transcript temporarily unfolds them). The global
+	 * hide-thinking setting still takes precedence.
+	 */
+	private applyThinkingFolding(): void {
+		const assistants = this.chatContainer.children.filter(
+			(child): child is AssistantMessageComponent => child instanceof AssistantMessageComponent,
+		);
+		let lastThinkingIndex = -1;
+		for (let i = assistants.length - 1; i >= 0; i--) {
+			const message = assistants[i].getMessage();
+			if (message?.content.some((c) => c.type === "thinking" && c.thinking.trim())) {
+				lastThinkingIndex = i;
+				break;
+			}
+		}
+		for (let i = 0; i < assistants.length; i++) {
+			assistants[i].setFoldPastThinking(i !== lastThinkingIndex);
+		}
+	}
+
+	/** Unfold (false) or re-fold (true) thinking in every rendered assistant message. */
+	private setChatThinkingFolded(folded: boolean): void {
+		for (const child of this.chatContainer.children) {
+			if (child instanceof AssistantMessageComponent && folded !== child.isFolded()) {
+				child.setFoldPastThinking(folded);
+			}
+		}
 	}
 
 	/**
@@ -4242,12 +4445,17 @@ export class InteractiveMode {
 		}
 
 		// Build transcript lines from the chat container's rendered output.
+		// easy-agent parity: the verbose transcript shows ALL thinking, so the
+		// folded historical thinking is temporarily unfolded for the render and
+		// restored afterwards.
 		const width = this.ui.terminal.columns;
+		this.setChatThinkingFolded(false);
 		const lines: string[] = [];
 		for (const container of [this.loadedResourcesContainer, this.chatContainer]) {
 			const rendered = container.render(width);
 			lines.push(...rendered);
 		}
+		this.setChatThinkingFolded(true);
 
 		this.transcriptOverlay = new TranscriptOverlayComponent({
 			tui: this.ui,
@@ -4265,6 +4473,7 @@ export class InteractiveMode {
 	}
 
 	private hideTranscriptOverlay(): void {
+		this.transcriptOverlay?.dispose();
 		this.transcriptOverlayHandle?.hide();
 		this.transcriptOverlayHandle = undefined;
 		this.transcriptOverlay = undefined;
@@ -4730,6 +4939,7 @@ export class InteractiveMode {
 					quietStartup: this.settingsManager.getQuietStartup(),
 					clearOnShrink: this.settingsManager.getClearOnShrink(),
 					showTerminalProgress: this.settingsManager.getShowTerminalProgress(),
+					reducedMotion: this.settingsManager.getReducedMotion(),
 					warnings: this.settingsManager.getWarnings(),
 				},
 				{
@@ -4864,6 +5074,10 @@ export class InteractiveMode {
 					},
 					onShowTerminalProgressChange: (enabled) => {
 						this.settingsManager.setShowTerminalProgress(enabled);
+					},
+					onReducedMotionChange: (enabled) => {
+						this.settingsManager.setReducedMotion(enabled);
+						setReducedMotion(enabled);
 					},
 					onWarningsChange: (warnings) => {
 						this.settingsManager.setWarnings(warnings);
@@ -5059,6 +5273,95 @@ export class InteractiveMode {
 			);
 			return { component: selector, focus: selector };
 		});
+	}
+
+	/** Build the memory-file list for the /memory picker. */
+	private getMemoryFileEntries(): MemoryFileEntry[] {
+		const entries: MemoryFileEntry[] = [
+			{
+				key: "global",
+				label: "Global memory",
+				path: getMemoryPath(),
+				isNew: !fs.existsSync(getMemoryPath()),
+			},
+		];
+		const sessionDir = this.sessionManager.getSessionDir();
+		if (sessionDir) {
+			const workspacePath = getWorkspaceMemoryPath(sessionDir);
+			entries.push({
+				key: "workspace",
+				label: "Project memory",
+				path: workspacePath,
+				isNew: !fs.existsSync(workspacePath),
+			});
+			const sessionId = this.sessionManager.getSessionId();
+			if (sessionId) {
+				const sessionPath = getSessionMemoryPath(sessionDir, sessionId);
+				entries.push({
+					key: "session",
+					label: "Session memory",
+					path: sessionPath,
+					isNew: !fs.existsSync(sessionPath),
+				});
+			}
+		}
+		return entries;
+	}
+
+	private async showMemoryPicker(): Promise<void> {
+		const entries = this.getMemoryFileEntries();
+		if (entries.length === 0) {
+			this.showWarning("No memory locations available (start a session to get project and session memory).");
+			return;
+		}
+		this.showSelector((done) => {
+			const selector = new MemoryPickerComponent(
+				buildMemoryItems(entries),
+				(key) => {
+					done();
+					const entry = entries.find((e) => e.key === key);
+					if (entry) void this.openMemoryFileInEditor(entry);
+				},
+				() => {
+					done();
+					this.ui.requestRender();
+				},
+			);
+			return { component: selector, focus: selector };
+		});
+	}
+
+	/** Open one memory file in the external editor, creating it with a template when new. */
+	private async openMemoryFileInEditor(entry: MemoryFileEntry): Promise<void> {
+		const editorCmd = this.settingsManager.getExternalEditorCommand();
+		if (!editorCmd) {
+			this.showWarning("No editor configured. Set externalEditor in settings.json or $VISUAL/$EDITOR.");
+			return;
+		}
+
+		try {
+			if (entry.isNew) {
+				fs.mkdirSync(path.dirname(entry.path), { recursive: true });
+				fs.writeFileSync(entry.path, MEMORY_NEW_FILE_TEMPLATE, "utf-8");
+			}
+
+			this.ui.stop();
+			process.stdout.write(`Opening ${entry.path} in ${editorCmd}...\n`);
+
+			const [editor, ...editorArgs] = editorCmd.split(" ");
+			await new Promise<number | null>((resolve) => {
+				const child = spawn(editor, [...editorArgs, entry.path], {
+					stdio: "inherit",
+					shell: process.platform === "win32",
+				});
+				child.on("error", () => resolve(null));
+				child.on("close", (code) => resolve(code));
+			});
+		} finally {
+			this.ui.start();
+			this.ui.requestRender(true);
+		}
+		this.showStatus(`Memory file closed: ${path.basename(entry.path)} (the agent reads it fresh next turn)`);
 	}
 
 	private updatePermissionModeStatus(mode: PermissionMode): void {
@@ -6570,6 +6873,13 @@ export class InteractiveMode {
 		void render();
 	}
 
+	/** Print an office block into the chat transcript. */
+	private printOfficeText(text: string): void {
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(text, 1, 0));
+		this.ui.requestRender();
+	}
+
 	private handleSessionCommand(): void {
 		const stats = this.session.getSessionStats();
 		const sessionName = this.sessionManager.getSessionName();
@@ -6605,6 +6915,43 @@ export class InteractiveMode {
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(info, 1, 0));
 		this.ui.requestRender();
+	}
+
+	/** Render a slash command's pre-formatted output block in the chat. */
+	private addCommandOutput(lines: string[]): void {
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(lines.join("\n"), 1, 0));
+		this.ui.requestRender();
+	}
+
+	/** `/context` — context-window breakdown (system prompt / tools / history / free). */
+	private handleContextCommand(): void {
+		const model = this.session.model;
+		const contextWindow = model?.contextWindow ?? 0;
+		if (!model || contextWindow <= 0) {
+			this.addCommandOutput(["Context usage unknown — no model with a known context window is selected."]);
+			return;
+		}
+		const systemPrompt = this.session.systemPrompt;
+		const tools = this.session.agent.state.tools ?? [];
+		const toolsJson = JSON.stringify(
+			tools.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })),
+		);
+		const messages = this.sessionManager.buildContextEntries().flatMap(sessionEntryToContextMessages);
+		const historyTokens = estimateContextTokens(messages).tokens;
+		this.addCommandOutput(
+			buildContextBreakdownLines({ modelId: model.id, contextWindow, systemPrompt, toolsJson, historyTokens }),
+		);
+	}
+
+	/** `/diff [n]` — working-tree changes + file-history edits for the last n turns. */
+	private async handleDiffCommand(turns: number): Promise<void> {
+		const lines = await runDiffCommand({
+			session: this.session,
+			cwd: this.sessionManager.getCwd(),
+			turns,
+		});
+		this.addCommandOutput(lines);
 	}
 
 	private handleChangelogCommand(): void {
@@ -6938,6 +7285,7 @@ export class InteractiveMode {
 		}
 		this.clearStatusIndicator();
 		this.themeController.disableAutoSync();
+		void this.officeTui.dispose();
 		this.clearExtensionTerminalInputListeners();
 		this.footer.dispose();
 		this.footerDataProvider.dispose();

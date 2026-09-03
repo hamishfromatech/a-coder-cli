@@ -1,10 +1,11 @@
+import { pathToFileURL } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { CallToolResult, ListToolsResult, ReadResourceResult } from "@modelcontextprotocol/sdk/types.js";
-import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
+import { ListRootsRequestSchema, ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import { VERSION } from "../../config.ts";
 import type { McpServerConfig } from "./types.ts";
 
@@ -62,12 +63,21 @@ export interface McpClientOptions {
 	client?: Client;
 	/** Test seam: use this transport instead of building one from the config. */
 	transport?: Transport;
+	/**
+	 * Workspace roots reported to the server via the MCP `roots` capability
+	 * (the server may request them with `roots/list`). Roots-aware servers
+	 * (e.g. chrome-devtools-mcp) confine their file writes to these directories.
+	 * Defaults to the process working directory.
+	 */
+	workspaceRoots?: string[];
 }
 
 export class McpClient {
 	private client: Client;
 	private transport?: Transport;
 	private readonly transportOverride?: Transport;
+	/** Directories reported to roots-aware servers via the `roots` capability. */
+	private readonly workspaceRoots: string[];
 	readonly serverName: string;
 	private _connected = false;
 	readonly config: McpServerConfig;
@@ -94,9 +104,17 @@ export class McpClient {
 		this.serverName = config.name;
 		this.config = config;
 		this.transportOverride = options.transport;
+		this.workspaceRoots = options.workspaceRoots ?? [process.cwd()];
 		this.client =
 			options.client ??
-			new Client({ name: `a-coder-cli-mcp-${config.name}`, version: VERSION }, { capabilities: {} });
+			new Client(
+				{ name: `a-coder-cli-mcp-${config.name}`, version: VERSION },
+				// Advertise the roots capability so servers can learn the session's
+				// workspace directory. Roots-aware servers (chrome-devtools-mcp) use
+				// it to scope their file-writing tools to the project instead of
+				// falling back to the OS temp directory.
+				{ capabilities: { roots: { listChanged: false } } },
+			);
 		this.client.onerror = (error) => {
 			this.lastTransportError = error;
 		};
@@ -108,6 +126,19 @@ export class McpClient {
 		this.client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
 			this.onToolsChanged?.();
 		});
+		// Answer roots/list from the session's workspace directories. Registered
+		// defensively: an injected test client may lack the roots capability, and
+		// the SDK's capability assertion would throw on registration.
+		try {
+			this.client.setRequestHandler(ListRootsRequestSchema, () => ({
+				roots: this.workspaceRoots.map((root) => ({
+					uri: pathToFileURL(root).href,
+					name: root.split("/").filter(Boolean).pop() ?? root,
+				})),
+			}));
+		} catch {
+			// Injected client without the roots capability — nothing to answer.
+		}
 	}
 
 	/** True while the transport is up. Flips to false via onclose when the server or transport dies. */

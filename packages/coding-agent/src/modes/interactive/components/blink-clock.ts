@@ -14,6 +14,7 @@
  */
 
 import type { TUI } from "@earendil-works/pi-tui";
+import { isReducedMotion } from "@earendil-works/pi-tui";
 
 const BLINK_MS = 480;
 
@@ -47,7 +48,8 @@ function stopIfIdle(): void {
 export function subscribeBlink(tui: TUI): () => void {
 	const count = tuiRefCounts.get(tui) ?? 0;
 	tuiRefCounts.set(tui, count + 1);
-	start();
+	// Reduced motion: never start the blink timer; dots render solid.
+	if (!isReducedMotion()) start();
 	let unsubscribed = false;
 	return () => {
 		if (unsubscribed) return;
@@ -67,5 +69,7 @@ export function subscribeBlink(tui: TUI): () => void {
  * When no timer is running (no active subscribers), returns true (solid).
  */
 export function isBlinkVisible(): boolean {
+	// Reduced motion: dots stay solid, no timer churn.
+	if (isReducedMotion()) return true;
 	return visible;
 }

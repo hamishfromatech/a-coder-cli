@@ -23,6 +23,8 @@ import type {
 	ExtensionWidgetOptions,
 	WorkingIndicatorOptions,
 } from "../../core/extensions/index.ts";
+import { OfficeService } from "../../core/office/service.ts";
+import type { Errand } from "../../core/office/types.ts";
 import {
 	flushRawStdout,
 	takeOverStdout,
@@ -38,6 +40,9 @@ import type {
 	RpcCommand,
 	RpcExtensionUIRequest,
 	RpcExtensionUIResponse,
+	RpcOfficeActivityEvent,
+	RpcOfficeHuddleEvent,
+	RpcOfficeUpdateEvent,
 	RpcResponse,
 	RpcSessionState,
 	RpcSlashCommand,
@@ -557,6 +562,34 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	});
 	output({ type: "sessions_update", sessions: runtimeHost.getSessionsStatus?.() ?? [] });
 	registerSignalHandlers();
+
+	// Your Office — coworker sessions, huddles, errands. Events ride the same
+	// stdout stream; prompts route back through `office_respond`.
+	const office = new OfficeService({
+		runtime: runtimeHost,
+		sink: {
+			update: (snapshot) => {
+				output({ type: "office_update", snapshot } satisfies RpcOfficeUpdateEvent);
+			},
+			huddle: (payload) => {
+				output({ type: "office_huddle", payload } satisfies RpcOfficeHuddleEvent);
+			},
+			activity: (activity) => {
+				output({ type: "office_activity", activity } satisfies RpcOfficeActivityEvent);
+			},
+			prompt: () => {},
+		},
+	});
+	office.start();
+	signalCleanupHandlers.push(() => {
+		void office.dispose();
+	});
+	void office
+		.snapshot()
+		.then((snapshot) => {
+			output({ type: "office_update", snapshot } satisfies RpcOfficeUpdateEvent);
+		})
+		.catch(() => {});
 
 	// Pre-fetch dynamic (Ollama Cloud) models in the background so the model
 	// picker is populated by the time the user opens it, without blocking startup.
@@ -1136,9 +1169,102 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			default: {
+				const officeResponse = await handleOfficeCommand(command, id);
+				if (officeResponse !== undefined) {
+					return officeResponse;
+				}
 				const unknownCommand = command as { type: string };
 				return error(id, unknownCommand.type, `Unknown command: ${unknownCommand.type}`);
 			}
+		}
+	};
+
+	/** Your Office command surface. Returns undefined for non-office commands. */
+	const handleOfficeCommand = async (
+		command: RpcCommand,
+		id: string | undefined,
+	): Promise<RpcResponse | undefined> => {
+		switch (command.type) {
+			case "office_list":
+				return success(id, "office_list", await office.snapshot());
+			case "office_coworker_save": {
+				const input = command.coworker;
+				const coworker = input.id
+					? await office.updateCoworker(input.id, input)
+					: await office.createCoworker(input);
+				if (!coworker) return error(id, command.type, "Coworker not found");
+				return success(id, "office_coworker_save", { coworker });
+			}
+			case "office_coworker_delete": {
+				await office.deleteCoworker(command.coworkerId);
+				return success(id, "office_coworker_delete");
+			}
+			case "office_huddle_save": {
+				const input = command.huddle;
+				let huddleId: string;
+				if (input.id) {
+					await office.updateHuddle(input.id, input.name, input.members);
+					huddleId = input.id;
+				} else {
+					const huddle = await office.createHuddle(input.name, input.members);
+					huddleId = huddle.id;
+				}
+				return success(id, "office_huddle_save", { huddleId });
+			}
+			case "office_huddle_delete": {
+				await office.deleteHuddle(command.huddleId);
+				return success(id, "office_huddle_delete");
+			}
+			case "office_send": {
+				const images = (command.images ?? []).map((attachment) => ({
+					name: attachment.name,
+					kind: attachment.kind,
+					data: attachment.dataUrl,
+				}));
+				const message = await office.sendToHuddle(command.huddleId, command.text, images);
+				return success(id, "office_send", { huddleId: command.huddleId, messageId: message.id });
+			}
+			case "office_huddle_get":
+				return success(id, "office_huddle_get", await office.getHuddle(command.huddleId));
+			case "office_stop": {
+				await office.stopHuddle(command.huddleId);
+				return success(id, "office_stop");
+			}
+			case "office_respond": {
+				const handled = await office.respondPrompt(command.requestId, command.choice);
+				return success(id, "office_respond", { handled });
+			}
+			case "office_errand_save": {
+				const input = command.errand;
+				let errand: Errand | undefined;
+				if (input.id) {
+					await office.updateErrand(input.id, input);
+					const errands = await office.snapshot();
+					errand = errands.errands.find((e) => e.id === input.id);
+					if (!errand) return error(id, command.type, "Errand not found");
+				} else {
+					errand = await office.createErrand({
+						coworkerId: input.coworkerId,
+						name: input.name,
+						prompt: input.prompt,
+						schedule: input.schedule,
+						continuity: input.continuity,
+						delivery: input.delivery,
+						huddleId: input.huddleId,
+					});
+				}
+				return success(id, "office_errand_save", { errand });
+			}
+			case "office_errand_delete": {
+				await office.deleteErrand(command.errandId);
+				return success(id, "office_errand_delete");
+			}
+			case "office_errand_run": {
+				await office.runErrandNow(command.errandId);
+				return success(id, "office_errand_run");
+			}
+			default:
+				return undefined;
 		}
 	};
 
@@ -1159,6 +1285,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		unsubscribe?.();
 		unsubscribeBackpressure?.();
 		unsubscribeBackgroundProcesses?.();
+		await office.dispose();
 		await runtimeHost.dispose();
 		await captureCliSessionEnd(runtimeHost.session, runtimeHost.services.settingsManager).catch(() => undefined);
 		detachInput();

@@ -1,9 +1,14 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { CallToolRequestSchema, type JSONRPCMessage, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { McpClient, type McpDiscoveredTool } from "../src/core/mcp/client.ts";
 import { firstClassToolName, formatMcpResult, MAX_FIRST_CLASS_TOOLS } from "../src/core/mcp/inline-extension.ts";
 import type { McpServerConfig } from "../src/core/mcp/types.ts";
@@ -295,5 +300,42 @@ describe("firstClassToolName", () => {
 
 	it("cap constant keeps aggregator servers on the stub path", () => {
 		expect(MAX_FIRST_CLASS_TOOLS).toBeGreaterThan(0);
+	});
+});
+
+describe("McpClient roots capability", () => {
+	it("advertises the roots capability and answers roots/list with the configured roots", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "mcp-roots-"));
+		try {
+			const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+			const server = new Server({ name: "test-server", version: "1.0.0" }, { capabilities: {} });
+			const mc = new McpClient(config, {
+				transport: clientTransport,
+				workspaceRoots: [dir],
+			});
+			await server.connect(serverTransport);
+			await mc.connect();
+
+			const result = await server.request({ method: "roots/list" }, z.object({ roots: z.array(z.any()) }));
+			expect(result.roots).toHaveLength(1);
+			expect(result.roots[0].uri).toBe(pathToFileURL(dir).href);
+			expect(result.roots[0].name).toBe(dir.split("/").filter(Boolean).pop());
+			await mc.close();
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("defaults the reported root to the process working directory", async () => {
+		const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+		const server = new Server({ name: "test-server", version: "1.0.0" }, { capabilities: {} });
+		const mc = new McpClient(config, { transport: clientTransport });
+		await server.connect(serverTransport);
+		await mc.connect();
+
+		const result = await server.request({ method: "roots/list" }, z.object({ roots: z.array(z.any()) }));
+		expect(result.roots).toHaveLength(1);
+		expect(result.roots[0].uri).toBe(pathToFileURL(process.cwd()).href);
+		await mc.close();
 	});
 });

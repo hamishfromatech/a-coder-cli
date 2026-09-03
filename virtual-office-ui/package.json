@@ -1,0 +1,27 @@
+{
+	"name": "@a-coder/virtual-office-ui",
+	"version": "0.0.1",
+	"private": true,
+	"type": "module",
+	"description": "Virtual office floor visualization for Your Office — SVG floor plan with coworker avatars, walk animations, meeting pods, and speech bubbles. Standalone dev mode runs on a mock feed; the desktop app embeds the same components fed by office RPC events.",
+	"scripts": {
+		"dev": "vite",
+		"build": "vite build",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@react-three/fiber": "9.5.0",
+		"react": "19.1.0",
+		"react-dom": "19.1.0",
+		"three": "0.183.1",
+		"zustand": "5.0.3"
+	},
+	"devDependencies": {
+		"@types/react": "19.1.0",
+		"@types/react-dom": "19.1.0",
+		"@types/three": "0.183.0",
+		"@vitejs/plugin-react": "4.3.4",
+		"typescript": "5.9.3",
+		"vite": "6.2.5"
+	}
+}

@@ -45,8 +45,17 @@ export class TranscriptOverlayComponent extends Container {
 		this.lines = opts.lines;
 		this.onCloseCallback = opts.onClose;
 
+		// Wheel scrolling: start sending SGR mouse reports while the overlay is
+		// open; dispose() turns them off again (exit safety net also covers it).
+		this.tui.setMouseEnabled(true);
+
 		// Open at the bottom (most recent).
 		this.scroll = Math.max(0, this.lines.length - this.getViewportHeight());
+	}
+
+	/** Stop mouse tracking when the overlay is removed. */
+	dispose(): void {
+		this.tui.setMouseEnabled(false);
 	}
 
 	private getViewportHeight(): number {

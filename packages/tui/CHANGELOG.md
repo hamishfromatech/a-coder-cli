@@ -2,7 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- Mouse wheel scrolling: `Terminal.enableMouseTracking()/disableMouseTracking()` (DEC 1000 + SGR 1006) and `TUI.setMouseEnabled()`. The transcript overlay enables tracking while open — wheel up/down scroll the transcript 3 lines per tick (arrow-key dispatch to the focused component), clicks/motion are swallowed, multiple reports coalesced in one stdin chunk are each honored, X10 (`ESC [ M`) fallback supported, and `stop()` disables tracking as an exit safety net. Covered by `test/mouse-wheel.test.ts`.
+- Reduced-motion support: module-level `setReducedMotion()/isReducedMotion()` (easy-agent motionPrefs parity). The `Loader` renders a calm static frame (no interval churn) when enabled.
+
 ### Changed
+
+- Fixed a full-screen flash (visible flicker + scrollback wipe) when only lines above the viewport changed while the buffer was taller than the screen: footer-area panels such as the inline agents panel and the running-tasks viewer update on every background-process output chunk, and each update repainted the entire screen because the differential renderer treated any change above the viewport top as unrenderable. The renderer now skips the repaint when the line count is unchanged and every changed line sits above the viewport — the visible screen is provably identical — so per-chunk panel updates no longer trigger full clears (measured 29 full renders in 10s before, 0 after).
+- `PI_DEBUG_REDRAW=1` no longer crashes the TUI when the debug-log directory does not exist: the redraw logger creates `~/.pi/agent/` on demand and never lets logging errors escape.
 
 - Added `SelectList.setItems()` to replace the item list in place (used by the searchable `/apps` selector to live-filter the gallery).
 - Replaced the time-boxed `Terminal.guardRawModeOnInput()` guard with a raw-mode watchdog that runs for the lifetime of the TUI (`start()` to `stop()`). The TTY line-discipline resets that follow a session replacement can land 10-30s later — long after the previous 5-second guard expired — leaving Enter arriving as "\n" and the editor inserting newlines instead of submitting messages and slash commands. The watchdog re-asserts raw mode on a 100ms interval and toggles through cooked mode first, because libuv caches the mode and short-circuits repeated `setRawMode(true)` calls (`uv_tty_set_mode` returns early when the cached mode already matches), which made re-asserting alone ineffective after an external reset. `stop()` clears the watchdog so suspend (external editor, Ctrl+Z) can restore cooked mode.

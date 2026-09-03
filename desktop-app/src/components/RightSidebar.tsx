@@ -1,9 +1,10 @@
-import { FileText, GitBranch } from "lucide-react";
+import { CalendarClock, FileText, GitBranch } from "lucide-react";
 import { useUiStore, type RightSidebarTab } from "../stores/ui-store";
 import { triggerHaptic } from "../lib/haptics";
 import { ArtifactViewer } from "./panels/ArtifactViewer";
 import { FileExplorer } from "./panels/FileExplorer";
 import { GitPanel } from "./panels/GitPanel";
+import { OfficePanel } from "./office/OfficePanel";
 
 interface Props {
 	projectPath: string | null;
@@ -16,10 +17,12 @@ const TABS: {
 }[] = [
 	{ id: "files", label: "Files", icon: FileText },
 	{ id: "git", label: "Git changes", icon: GitBranch },
+	{ id: "office", label: "Office", icon: CalendarClock },
 ];
 
 export function RightSidebar({ projectPath }: Props) {
 	const { rightSidebarTab, setRightSidebarTab, selectedArtifactPath } = useUiStore();
+
 
 	return (
 		<div className="flex h-full w-full flex-col border-l border-pi-border bg-pi-surface shadow-card transition-smooth">
@@ -48,7 +51,7 @@ export function RightSidebar({ projectPath }: Props) {
 							}`}
 						>
 							<Icon className="h-3.5 w-3.5 transition-smooth" />
-							<span className="truncate">{id === "files" ? "Files" : "Git"}</span>
+							<span className="truncate">{id === "files" ? "Files" : id === "git" ? "Git" : "Office"}</span>
 							{active && (
 								<span className="absolute inset-x-2 -bottom-px h-px bg-pi-accent shadow-focus-inner" />
 							)}
@@ -67,6 +70,7 @@ export function RightSidebar({ projectPath }: Props) {
 					)
 				)}
 				{rightSidebarTab === "git" && <GitPanel projectPath={projectPath} />}
+				{rightSidebarTab === "office" && <OfficePanel />}
 			</div>
 		</div>
 	);

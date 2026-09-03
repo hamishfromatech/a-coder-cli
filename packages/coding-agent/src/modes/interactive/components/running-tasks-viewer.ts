@@ -160,6 +160,8 @@ export class RunningTasksViewerComponent extends Container {
 	private mode: "picking" | "viewing" = "picking";
 	private selectedIndex = 0;
 	private viewingId: string | undefined;
+	/** Lines back from the latest timeline event (0 = live tail) while viewing an agent. */
+	private viewScroll = 0;
 	private onClose: () => void;
 	private onKill: (item: TaskItem) => void;
 	private bodyContainer: Container;
@@ -226,6 +228,7 @@ export class RunningTasksViewerComponent extends Container {
 		if (this.viewingId && !this.allItems.some((i) => itemId(i) === this.viewingId)) {
 			this.mode = "picking";
 			this.viewingId = undefined;
+			this.viewScroll = 0;
 		}
 		this.rebuildVisibleItems();
 		this.clampSelection();
@@ -325,7 +328,13 @@ export class RunningTasksViewerComponent extends Container {
 			this.bodyContainer.addChild(new Spacer(1));
 			this.bodyContainer.addChild(new Text(theme.fg("error", this.killedNotice), 1, 1));
 		}
-		this.hint.setText(`${keyHint("tui.select.cancel", "back")}  ${rawKeyHint("k", "kill")}`);
+		if (item.kind === "agent") {
+			this.hint.setText(
+				`${rawKeyHint("↑↓", "scroll")}  ${rawKeyHint("k", "kill")}  ${keyHint("tui.select.cancel", "back")}`,
+			);
+		} else {
+			this.hint.setText(`${keyHint("tui.select.cancel", "back")}  ${rawKeyHint("k", "kill")}`);
+		}
 	}
 
 	private renderAgentView(record: InProcessSubAgentRecord): void {
@@ -356,11 +365,22 @@ export class RunningTasksViewerComponent extends Container {
 		this.bodyContainer.addChild(new Spacer(1));
 
 		const timelineTail = 12;
-		const droppedEvents = Math.max(0, record.timeline.length - timelineTail);
+		// ↑/↓ scroll back through the FULL timeline (easy-agent TeammateViewer
+		// parity): viewScroll counts lines back from the latest event; 0 = live tail.
+		const total = record.timeline.length;
+		const maxOffset = Math.max(0, total - timelineTail);
+		this.viewScroll = Math.min(this.viewScroll, maxOffset);
+		const windowStart = Math.max(0, total - timelineTail - this.viewScroll);
+		const windowEnd = total - this.viewScroll;
+		const droppedEvents = windowStart;
 		if (droppedEvents > 0) {
-			this.bodyContainer.addChild(new Text(theme.fg("dim", `… ${droppedEvents} earlier events hidden`), 1, 1));
+			const droppedLabel =
+				this.viewScroll > 0
+					? `… ${droppedEvents} earlier events hidden (↓ returns to live)`
+					: `… ${droppedEvents} earlier events hidden (↑ scrolls back)`;
+			this.bodyContainer.addChild(new Text(theme.fg("dim", droppedLabel), 1, 1));
 		}
-		const tail = record.timeline.slice(-timelineTail);
+		const tail = record.timeline.slice(windowStart, windowEnd);
 		if (tail.length === 0) {
 			this.bodyContainer.addChild(new Text(theme.fg("muted", "(no events yet)"), 1, 1));
 		} else {
@@ -476,6 +496,7 @@ export class RunningTasksViewerComponent extends Container {
 				if (item) {
 					this.mode = "viewing";
 					this.viewingId = itemId(item);
+					this.viewScroll = 0;
 					this.killedNotice = undefined;
 					this.rerender();
 				}
@@ -489,8 +510,21 @@ export class RunningTasksViewerComponent extends Container {
 		if (back) {
 			this.mode = "picking";
 			this.viewingId = undefined;
+			this.viewScroll = 0;
 			this.killedNotice = undefined;
 			this.rerender();
+		} else if (kb.matches(keyData, "tui.select.up") || kb.matches(keyData, "tui.select.down")) {
+			// Scroll the viewed agent's timeline (↑ = older, ↓ = newer toward live).
+			const item = this.viewItem();
+			if (item?.kind === "agent") {
+				const step = 3;
+				if (kb.matches(keyData, "tui.select.up")) {
+					this.viewScroll += step;
+				} else {
+					this.viewScroll = Math.max(0, this.viewScroll - step);
+				}
+				this.rerender();
+			}
 		} else if (keyData === "k") {
 			const item = this.viewItem();
 			if (item) {

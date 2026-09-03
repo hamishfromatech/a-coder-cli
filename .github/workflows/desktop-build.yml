@@ -378,20 +378,34 @@ jobs:
 
           ls -la release/
 
+      - name: Generate release notes
+        env:
+          # Optional: AI-written notes via Ollama cloud (glm-5.3-flash); falls
+          # back to the desktop changelog extraction when unset or failing.
+          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          VERSION="${RELEASE_TAG#desktop-v}"
+          node scripts/release-notes.mjs generate \
+            --version "${VERSION}" \
+            --tag "desktop-v${VERSION}" \
+            --changelog desktop-app/src/CHANGELOG.md \
+            --label "Desktop app" \
+            --repo "${{ github.repository }}" \
+            --base-path "desktop-app/src" \
+            --out release-assets/RELEASE_NOTES.md \
+          || printf '%s\n' \
+            "## A-Coder Desktop ${RELEASE_TAG}" \
+            "" \
+            "Download the installer for your platform below. macOS builds are signed and notarized; Windows builds are signed with an EV certificate." \
+            > release-assets/RELEASE_NOTES.md
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           name: A-Coder Desktop ${{ github.ref_name }}
-          body: |
-            ## A-Coder Desktop ${{ github.ref_name }}
-
-            Download the installer for your platform below. macOS builds are
-            signed and notarized; Windows builds are signed with an EV
-            certificate.
-
-            **Verify the download** (optional):
-            - macOS: `spctl -a -t install -vv A-Coder Desktop_*.dmg`
-            - Windows: right-click the installer → Properties → Digital Signatures
+          body_path: release-assets/RELEASE_NOTES.md
           draft: true
           prerelease: false
           files: release/*

@@ -74,6 +74,10 @@ export interface SessionState {
 	backgroundProcesses: import("../lib/rpc").BackgroundProcessRecord[];
 	setBackgroundProcesses: (processes: import("../lib/rpc").BackgroundProcessRecord[]) => void;
 	streamingVerb: string;
+	/** True while a session switch / resume is loading its history — the chat
+	 *  area shows a loading state instead of the new-conversation EmptyState. */
+	sessionLoading: boolean;
+	setSessionLoading: (loading: boolean) => void;
 	/** Commands returned by `rpc.getCommands()` — extension/skill/prompt slash commands. */
 	availableCommands: Array<{
 		name: string;
@@ -153,8 +157,10 @@ export const useSessionStore = create<SessionState>((set) => ({
 	backgroundProcesses: [],
 	setBackgroundProcesses: (backgroundProcesses) => set({ backgroundProcesses }),
 	streamingVerb: pickLoadingVerb(),
+	sessionLoading: false,
 	availableCommands: [],
 	setAvailableCommands: (availableCommands) => set({ availableCommands }),
+	setSessionLoading: (sessionLoading) => set({ sessionLoading }),
 	setStatus: (status, error = null) => set({ status, error: status === "error" ? error : null }),
 	setCwd: (cwd) => set({ cwd }),
 	setSessionName: (sessionName) => set({ sessionName }),
@@ -195,6 +201,7 @@ export const useSessionStore = create<SessionState>((set) => ({
 			subAgents: [],
 			backgroundProcesses: [],
 			streamingVerb: pickLoadingVerb(),
+			sessionLoading: false,
 			sessionName: null,
 			sessionId: null,
 			sessionFile: null,

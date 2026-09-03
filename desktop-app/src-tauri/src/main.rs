@@ -50,6 +50,7 @@ fn main() {
 			rpc_commands::send_ui_response,
 			git::git_status,
 			git::git_diff,
+			fs::debug_log,
 			fs::read_text_file,
 			fs::read_file_base64,
 			fs::list_files,
@@ -93,7 +94,7 @@ fn main() {
 			// Build the system tray.
 			let _tray = tray::build_tray(&app_handle)?;
 
-			// Explicitly show and focus the main window on startup. Frameless
+// Explicitly show and focus the main window on startup. Frameless
 			// windows (decorations=false on Windows/Linux; macOS uses the
 			// overlay titlebar) can otherwise appear hidden or not respond to
 			// Dock clicks / taskbar / cmd-tab activation.

@@ -45,7 +45,10 @@ export interface BackgroundProcessRecord {
 
 const MAX_TAIL_LINES = 20;
 
-const store = createStore<BackgroundProcessRecord>();
+// Throttled to ~10Hz (leading + trailing edge): a chatty command emits output
+// in bursts and notifying per chunk would drive renders (and the desktop's
+// background_processes_update stream) far faster than any human can read.
+const store = createStore<BackgroundProcessRecord>({ throttleMs: 100 });
 
 export function getBackgroundProcesses(): BackgroundProcessRecord[] {
 	return store.entries().map(([, v]) => v);
@@ -88,7 +91,7 @@ export function appendBackgroundProcessOutput(id: string, chunk: string): void {
 	const combined = cur.output + chunk;
 	const lines = combined.split("\n");
 	const tail = lines.slice(-MAX_TAIL_LINES);
-	store.set(id, {
+	store.setThrottled(id, {
 		...cur,
 		output: tail.join("\n"),
 		totalLines: cur.totalLines + (chunk.match(/\n/g)?.length ?? 0),

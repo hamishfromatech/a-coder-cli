@@ -1,4 +1,18 @@
+import { invoke } from "@tauri-apps/api/core";
 import React from "react";
+
+// Debug aid: capture renderer fatals before the window goes dark.
+window.addEventListener("error", (e) => {
+	void invoke("debug_log", {
+		line: `${new Date().toISOString()} ERROR ${e.message} @ ${e.filename}:${e.lineno}:${e.colno}`,
+	}).catch(() => {});
+});
+window.addEventListener("unhandledrejection", (e) => {
+	void invoke("debug_log", {
+		line: `${new Date().toISOString()} REJECTION ${String(e.reason).slice(0, 500)}`,
+	}).catch(() => {});
+});
+
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { HapticsProvider } from "./components/HapticsProvider";

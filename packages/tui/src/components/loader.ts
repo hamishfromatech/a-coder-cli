@@ -1,3 +1,4 @@
+import { isReducedMotion } from "../motion.ts";
 import type { TUI } from "../tui.ts";
 import { Text } from "./text.ts";
 
@@ -71,7 +72,8 @@ export class Loader extends Text {
 
 	private restartAnimation(): void {
 		this.stop();
-		if (this.frames.length <= 1) {
+		// Reduced motion: render a calm static frame — no interval, no churn.
+		if (this.frames.length <= 1 || isReducedMotion()) {
 			return;
 		}
 		this.intervalId = setInterval(() => {

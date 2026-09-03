@@ -10,6 +10,11 @@ import type { McpServerConfig } from "./types.ts";
 export interface McpExtensionFactoryOptions {
 	servers: McpServerConfig[];
 	/**
+	 * Workspace roots reported to servers via the MCP `roots` capability.
+	 * Defaults to the process working directory when omitted.
+	 */
+	workspaceRoots?: string[];
+	/**
 	 * Test seam: construct the MCP client for a server config. Defaults to
 	 * `new McpClient(server)`. Tests inject clients bound to in-memory
 	 * transports so no real server process is needed.
@@ -115,7 +120,11 @@ export function createMcpExtensionFactory(options: McpExtensionFactoryOptions): 
 				continue;
 			}
 			setMcpServerState(server.name, { status: "connecting" });
-			clients.push(options.createClient ? options.createClient(server) : new McpClient(server));
+			clients.push(
+				options.createClient
+					? options.createClient(server)
+					: new McpClient(server, { workspaceRoots: options.workspaceRoots }),
+			);
 		}
 		recomputeMcpChip();
 

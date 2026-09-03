@@ -425,6 +425,25 @@ export class AgentSessionRuntime {
 	}
 
 	/**
+	 * Create an independent runtime outside the active/detached registries —
+	 * the substrate for Your Office coworker sessions, which the office service
+	 * owns and reaps itself. Never touches `current` or the detached map, so
+	 * side runtimes do not count against the detached keep-alive cap.
+	 */
+	async createSideRuntime(options: {
+		cwd: string;
+		sessionManager: SessionManager;
+		sessionStartEvent?: SessionStartEvent;
+	}): Promise<CreateAgentSessionRuntimeResult> {
+		return this.createRuntime({
+			cwd: options.cwd,
+			agentDir: this.services.agentDir,
+			sessionManager: options.sessionManager,
+			sessionStartEvent: options.sessionStartEvent,
+		});
+	}
+
+	/**
 	 * Serializable status for every live runtime: the active one plus any
 	 * detached ones still running (or lingering until settled).
 	 */

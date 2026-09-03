@@ -600,6 +600,21 @@ class SessionList implements Component, Focusable {
 			return;
 		}
 
+		// 1-9 quick keys: jump straight to that row (easy-agent SessionPicker
+		// parity). Only when the search field is empty (so digits still filter)
+		// and a session exists at that index.
+		if (keyData.length === 1 && keyData >= "1" && keyData <= "9" && this.searchInput.getValue().length === 0) {
+			const index = Number(keyData) - 1;
+			const target = this.filteredSessions[index];
+			if (target) {
+				this.selectedIndex = index;
+				if (this.onSelect) {
+					this.onSelect(target.session.path);
+				}
+				return;
+			}
+		}
+
 		// Up arrow
 		if (kb.matches(keyData, "tui.select.up")) {
 			this.selectedIndex = Math.max(0, this.selectedIndex - 1);

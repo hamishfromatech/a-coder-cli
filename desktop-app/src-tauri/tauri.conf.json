@@ -1,7 +1,7 @@
 {
 	"$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
 	"productName": "A-Coder Desktop",
-	"version": "0.80.64",
+	"version": "0.80.65",
 	"identifier": "works.earendil.a-coder-desktop",
 	"build": {
 		"beforeDevCommand": "npm run dev",
@@ -10,6 +10,12 @@
 		"devUrl": "http://localhost:1420"
 	},
 	"app": {
+		"security": {
+			"csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; media-src 'self' blob: data:; connect-src 'self' https: http: ws: wss:; frame-src 'self' blob: data:",
+			"capabilities": [
+				"default"
+			]
+		},
 		"windows": [
 			{
 				"title": "A-Coder Desktop",
@@ -20,20 +26,14 @@
 				"resizable": true,
 				"fullscreen": false,
 				"center": true,
-				"decorations": false,
 				"visible": true,
 				"focus": true,
 				"skipTaskbar": false,
 				"backgroundColor": "#0a0a0c",
-				"acceptFirstMouse": true
+				"acceptFirstMouse": true,
+				"decorations": false
 			}
-		],
-		"security": {
-			"csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; media-src 'self' blob: data:; connect-src 'self' https: http: ws: wss:; frame-src 'self' blob: data:",
-			"capabilities": [
-				"default"
-			]
-		}
+		]
 	},
 	"bundle": {
 		"active": true,

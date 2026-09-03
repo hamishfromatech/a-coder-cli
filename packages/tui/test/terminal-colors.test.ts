@@ -8,7 +8,7 @@ import {
 	TUI,
 } from "../src/index.ts";
 
-class TestTerminal implements Terminal {
+export class TestTerminal implements Terminal {
 	private inputHandler?: (data: string) => void;
 	private resizeHandler?: () => void;
 	private readonly columnCount: number;
@@ -65,6 +65,10 @@ class TestTerminal implements Terminal {
 	setTitle(_title: string): void {}
 
 	setProgress(_active: boolean): void {}
+
+	enableMouseTracking(): void {}
+
+	disableMouseTracking(): void {}
 
 	sendInput(data: string): void {
 		this.inputHandler?.(data);

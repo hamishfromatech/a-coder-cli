@@ -11,6 +11,15 @@ import type { SessionStats } from "../../core/agent-session.ts";
 import type { RuntimeSessionStatus } from "../../core/agent-session-runtime.ts";
 import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
+import type {
+	Coworker,
+	Errand,
+	ErrandSchedule,
+	Face,
+	OfficeActivityEvent,
+	OfficeHuddlePayload,
+	OfficeSnapshot,
+} from "../../core/office/types.ts";
 import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.ts";
 import type { PermissionMode } from "../../core/settings-manager.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
@@ -109,8 +118,65 @@ export type RpcCommand =
 	| { id?: string; type: "composio_connect_app"; slug: string }
 	| { id?: string; type: "composio_disconnect_app"; connectedAccountId: string }
 
+	// Your Office (coworkers, huddles, errands)
+	| { id?: string; type: "office_list" }
+	| { id?: string; type: "office_coworker_save"; coworker: OfficeRpcCoworkerInput }
+	| { id?: string; type: "office_coworker_delete"; coworkerId: string }
+	| { id?: string; type: "office_huddle_save"; huddle: OfficeRpcHuddleInput }
+	| { id?: string; type: "office_huddle_delete"; huddleId: string }
+	| { id?: string; type: "office_send"; huddleId: string; text: string; images?: OfficeRpcAttachment[] }
+	| { id?: string; type: "office_huddle_get"; huddleId: string }
+	| { id?: string; type: "office_stop"; huddleId: string }
+	| { id?: string; type: "office_respond"; requestId: string; choice: string | null }
+	| { id?: string; type: "office_errand_save"; errand: OfficeRpcErrandInput }
+	| { id?: string; type: "office_errand_delete"; errandId: string }
+	| { id?: string; type: "office_errand_run"; errandId: string }
+
 	// Commands (available for invocation via prompt)
 	| { id?: string; type: "get_commands" };
+
+/** Coworker create/update payload (id set = update). */
+export interface OfficeRpcCoworkerInput {
+	id?: string;
+	name: string;
+	title?: string;
+	description?: string;
+	/** Custom soul text (regenerates the composed soul when set). */
+	soul?: string;
+	/** Set on update to keep the stored soul instead of recomposing. */
+	keepSoul?: boolean;
+	face?: Partial<Face>;
+	model?: string;
+	autonomy?: Coworker["autonomy"];
+}
+
+/** Huddle create/update payload (id set = update). */
+export interface OfficeRpcHuddleInput {
+	id?: string;
+	name: string;
+	members: string[];
+}
+
+/** Attachment riding an office_send (data URL form). */
+export interface OfficeRpcAttachment {
+	name: string;
+	kind: "image" | "file";
+	/** Data URL. */
+	dataUrl: string;
+}
+
+/** Errand create/update payload (id set = update; partial fields). */
+export interface OfficeRpcErrandInput {
+	id?: string;
+	coworkerId: string;
+	name: string;
+	prompt: string;
+	schedule: ErrandSchedule;
+	continuity: boolean;
+	delivery: Errand["delivery"];
+	huddleId?: string;
+	enabled?: boolean;
+}
 
 // ============================================================================
 // RPC Slash Command (for get_commands response)
@@ -321,6 +387,26 @@ export type RpcResponse =
 			data: { commands: RpcSlashCommand[] };
 	  }
 
+	// Your Office
+	| { id?: string; type: "response"; command: "office_list"; success: true; data: OfficeSnapshot }
+	| { id?: string; type: "response"; command: "office_coworker_save"; success: true; data: { coworker: Coworker } }
+	| { id?: string; type: "response"; command: "office_coworker_delete"; success: true }
+	| { id?: string; type: "response"; command: "office_huddle_save"; success: true; data: { huddleId: string } }
+	| { id?: string; type: "response"; command: "office_huddle_delete"; success: true }
+	| {
+			id?: string;
+			type: "response";
+			command: "office_send";
+			success: true;
+			data: { huddleId: string; messageId: string };
+	  }
+	| { id?: string; type: "response"; command: "office_huddle_get"; success: true; data: OfficeHuddlePayload | null }
+	| { id?: string; type: "response"; command: "office_stop"; success: true }
+	| { id?: string; type: "response"; command: "office_respond"; success: true; data: { handled: boolean } }
+	| { id?: string; type: "response"; command: "office_errand_save"; success: true; data: { errand: Errand } }
+	| { id?: string; type: "response"; command: "office_errand_delete"; success: true }
+	| { id?: string; type: "response"; command: "office_errand_run"; success: true }
+
 	// Error response (any command can fail)
 	| { id?: string; type: "response"; command: string; success: false; error: string };
 
@@ -422,6 +508,25 @@ export interface RpcUserQuestion {
 export interface RpcSessionsUpdateEvent {
 	type: "sessions_update";
 	sessions: RuntimeSessionStatus[];
+}
+
+/** Your Office roster changed (coworkers, statuses, huddle summaries, errands,
+ *  pending prompts). Pushed on every office mutation and turn boundary. */
+export interface RpcOfficeUpdateEvent {
+	type: "office_update";
+	snapshot: OfficeSnapshot;
+}
+
+/** A huddle's log changed (new messages, running state). */
+export interface RpcOfficeHuddleEvent {
+	type: "office_huddle";
+	payload: OfficeHuddlePayload;
+}
+
+/** Live coworker activity (turn lifecycle, tool calls, completed speech). */
+export interface RpcOfficeActivityEvent {
+	type: "office_activity";
+	activity: OfficeActivityEvent;
 }
 
 // ============================================================================

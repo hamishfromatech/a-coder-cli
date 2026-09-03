@@ -28,6 +28,7 @@ import {
 	startBackgroundProcess,
 	startBashProgress,
 } from "../stores/index.ts";
+import { bashIntentTarget, classifyBashIntent } from "./bash-intent.ts";
 import { OutputAccumulator } from "./output-accumulator.ts";
 import { getTextOutput, invalidArgText, str } from "./render-utils.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
@@ -286,7 +287,17 @@ function formatBashCall(args: { command?: string; timeout?: number } | undefined
 	const timeout = args?.timeout as number | undefined;
 	const timeoutSuffix = timeout ? theme.fg("muted", ` (timeout ${timeout}s)`) : "";
 	const commandDisplay = command === null ? invalidArgText(theme) : command ? command : theme.fg("toolOutput", "...");
-	return theme.fg("toolTitle", theme.bold(`$ ${commandDisplay}`)) + timeoutSuffix;
+	// Intent tag (easy-agent toolClassify parity): [Git]/[Test]/[Build]/…
+	// prefix for scannability; the full command stays visible for approval.
+	let intentTag = "";
+	if (command) {
+		const intent = classifyBashIntent(command);
+		if (intent) {
+			const target = bashIntentTarget(command, intent);
+			intentTag = `${theme.fg("accent", `[${intent}${target ? `·${target}` : ""}]`)} `;
+		}
+	}
+	return intentTag + theme.fg("toolTitle", theme.bold(`$ ${commandDisplay}`)) + timeoutSuffix;
 }
 
 function rebuildBashResultRenderComponent(

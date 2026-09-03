@@ -509,10 +509,13 @@ export function getInstallerScriptUrl(name: string): string {
 }
 
 // e.g., A_CODER_CLI_CODING_AGENT_DIR or TAU_CODING_AGENT_DIR
-export const ENV_AGENT_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_DIR`;
-export const ENV_SESSION_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_SESSION_DIR`;
-export const ENV_TEAMS_DIR = `${APP_NAME.toUpperCase()}_TEAMS_DIR`;
-export const ENV_TASKS_DIR = `${APP_NAME.toUpperCase()}_TASKS_DIR`;
+// (hyphens in APP_NAME become underscores so shell exports work)
+const envName = (suffix: string): string => `${APP_NAME.toUpperCase().replace(/-/g, "_")}_${suffix}`;
+export const ENV_AGENT_DIR = envName("CODING_AGENT_DIR");
+export const ENV_SESSION_DIR = envName("CODING_AGENT_SESSION_DIR");
+export const ENV_TEAMS_DIR = envName("TEAMS_DIR");
+export const ENV_TASKS_DIR = envName("TASKS_DIR");
+export const ENV_OFFICE_DIR = envName("OFFICE_DIR");
 
 export function expandTildePath(path: string): string {
 	return normalizePath(path);
@@ -615,4 +618,13 @@ export function getTasksRoot(): string {
 		return expandTildePath(envDir);
 	}
 	return join(homedir(), USER_CONFIG_DIR_NAME, "tasks");
+}
+
+/** Get path to the Your Office root directory (e.g., ~/.a-coder/cli/office). */
+export function getOfficeRoot(): string {
+	const envDir = process.env[ENV_OFFICE_DIR];
+	if (envDir) {
+		return expandTildePath(envDir);
+	}
+	return join(homedir(), USER_CONFIG_DIR_NAME, "office");
 }

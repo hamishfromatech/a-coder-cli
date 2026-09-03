@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-export type RightSidebarTab = "files" | "git";
+export type RightSidebarTab = "files" | "git" | "office";
 export type ArtifactViewMode = "raw" | "preview";
 
 export interface UiState {

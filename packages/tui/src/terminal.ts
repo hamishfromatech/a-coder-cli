@@ -103,6 +103,10 @@ export interface Terminal {
 
 	// Progress indicator (OSC 9;4)
 	setProgress(active: boolean): void;
+
+	// Mouse tracking (DEC 1000 click reporting + 1006 SGR encoding)
+	enableMouseTracking(): void;
+	disableMouseTracking(): void;
 }
 
 /**
@@ -586,6 +590,15 @@ export class ProcessTerminal implements Terminal {
 			// OSC 9;4;0 - clear progress
 			process.stdout.write(TERMINAL_PROGRESS_CLEAR_SEQUENCE);
 		}
+	}
+
+	enableMouseTracking(): void {
+		// DEC 1000: report mouse presses/wheel; DEC 1006: SGR encoding
+		process.stdout.write("\x1b[?1000h\x1b[?1006h");
+	}
+
+	disableMouseTracking(): void {
+		process.stdout.write("\x1b[?1006l\x1b[?1000l");
 	}
 
 	private clearProgressInterval(): boolean {

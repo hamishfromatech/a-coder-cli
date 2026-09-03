@@ -113,3 +113,59 @@ describe("AssistantMessageComponent", () => {
 		expect(unpaddedLines.some((line) => line.startsWith("hello"))).toBe(true);
 	});
 });
+
+describe("AssistantMessageComponent fold past thinking", () => {
+	test("folded message renders no thinking trace; unfolded renders it", () => {
+		initTheme("dark");
+		const message = createAssistantMessage([
+			{ type: "thinking", thinking: "secret reasoning trace" },
+			{ type: "text", text: "visible answer" },
+		]);
+
+		const folded = new AssistantMessageComponent(message);
+		folded.setFoldPastThinking(true);
+		folded.flush();
+		const foldedLines = stripAnsi(folded.render(60).join("\n"));
+		expect(foldedLines).not.toContain("secret reasoning trace");
+		expect(foldedLines).toContain("visible answer");
+
+		const unfolded = new AssistantMessageComponent(message);
+		unfolded.flush();
+		const unfoldedLines = stripAnsi(unfolded.render(60).join("\n"));
+		expect(unfoldedLines).toContain("secret reasoning trace");
+	});
+
+	test("setFoldPastThinking(false) restores the trace on a folded component", () => {
+		initTheme("dark");
+		const message = createAssistantMessage([
+			{ type: "thinking", thinking: "earlier round reasoning" },
+			{ type: "text", text: "answer" },
+		]);
+		const component = new AssistantMessageComponent(message);
+		component.setFoldPastThinking(true);
+		component.flush();
+		expect(stripAnsi(component.render(60).join("\n"))).not.toContain("earlier round reasoning");
+
+		component.setFoldPastThinking(false);
+		component.flush();
+		expect(stripAnsi(component.render(60).join("\n"))).toContain("earlier round reasoning");
+	});
+
+	test("getMessage returns the rendered message; global hide-thinking still wins", () => {
+		initTheme("dark");
+		const message = createAssistantMessage([
+			{ type: "thinking", thinking: "hidden by setting" },
+			{ type: "text", text: "answer" },
+		]);
+		const component = new AssistantMessageComponent(message);
+		component.flush();
+		expect(component.getMessage()).toBe(message);
+
+		component.setHideThinkingBlock(true);
+		component.flush();
+		// The global setting hides thinking even when unfolding is requested.
+		component.setFoldPastThinking(false);
+		component.flush();
+		expect(stripAnsi(component.render(60).join("\n"))).not.toContain("hidden by setting");
+	});
+});

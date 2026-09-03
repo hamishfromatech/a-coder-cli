@@ -49,7 +49,18 @@ export interface PlanModeToolDetails {
 	planFilePath?: string;
 	planSaved?: boolean;
 	allowedPromptsApplied?: number;
+	/** Set when the user declined the exit and plan mode stays on. */
+	keepPlanning?: boolean;
 }
+
+/**
+ * User decision from the exit-plan approval dialog (easy-agent
+ * PlanApprovalDialog parity). `proceed` exits plan mode (optionally first
+ * switching the permission mode to "ask" so every edit still prompts);
+ * `keep-planning` keeps plan mode active and returns the typed feedback to
+ * the model.
+ */
+export type PlanExitDecision = { decision: "proceed"; mode?: "ask" } | { decision: "keep-planning"; feedback?: string };
 
 export interface PlanModeToolCallbacks {
 	getPlanMode(): boolean;
@@ -60,6 +71,15 @@ export interface PlanModeToolCallbacks {
 	persistPlan?(plan: string): void;
 	/** Grant explicit session-scoped allow rules on exit (easy-agent's allowedPrompts). */
 	addSessionAllowRules?(rules: string[]): void;
+	/** Current plan-file content for the approval dialog preview. */
+	getPlanFileContent?(): string | undefined;
+	/** Switch permission mode as part of the approved exit (option 2). */
+	setPermissionMode?(mode: "ask"): void;
+	/**
+	 * Ask the user to approve the plan before leaving plan mode. When absent
+	 * (headless/RPC), exits proceed directly without a dialog.
+	 */
+	requestPlanApproval?(info: { plan?: string; planFilePath?: string }): Promise<PlanExitDecision>;
 }
 
 /**
@@ -97,6 +117,39 @@ export function createPlanModeToolDefinition(
 		parameters: planModeSchema,
 		async execute(_toolCallId, params: PlanModeToolInput) {
 			const previousMode = callbacks.getPlanMode();
+
+			// Exit path: ask the user to approve the plan first (interactive UIs
+			// wire requestPlanApproval; headless runs proceed directly).
+			if (!params.enabled && previousMode && callbacks.requestPlanApproval) {
+				const planFilePath = callbacks.getPlanFilePath();
+				const preview = params.plan?.trim() || callbacks.getPlanFileContent?.() || undefined;
+				const decision = await callbacks.requestPlanApproval({
+					...(preview ? { plan: preview } : {}),
+					planFilePath,
+				});
+				if (decision.decision === "keep-planning") {
+					const feedback = decision.feedback?.trim();
+					const lines = [
+						"Plan mode still active — the user chose to keep planning.",
+						`Plan file: ${planFilePath}`,
+						feedback
+							? `User feedback: ${feedback}`
+							: "Refine the plan in the plan file, then call plan_mode with enabled=false again.",
+					];
+					return {
+						content: [{ type: "text", text: lines.join("\n") }],
+						details: {
+							enabled: true,
+							keepPlanning: true,
+							...(feedback ? { reason: feedback } : {}),
+						} satisfies PlanModeToolDetails,
+					};
+				}
+				if (decision.mode && callbacks.setPermissionMode) {
+					callbacks.setPermissionMode(decision.mode);
+				}
+			}
+
 			callbacks.setPlanMode(params.enabled);
 			const enabled = callbacks.getPlanMode();
 
@@ -148,6 +201,12 @@ export function createPlanModeToolDefinition(
 		renderResult(result, _options, theme, _context) {
 			const text = new Text("", 0, 0);
 			const details = result.details as PlanModeToolDetails | undefined;
+			if (details?.keepPlanning) {
+				const lines = [theme.fg("warning", "Plan mode kept active — user chose to keep planning")];
+				if (details.reason) lines.push(theme.fg("muted", `Feedback: ${details.reason}`));
+				text.setText(lines.join("\n"));
+				return text;
+			}
 			const lines: string[] = [formatPlanModeResult(details?.enabled ?? false, details?.reason)];
 			if (details?.planFilePath) {
 				lines.push(theme.fg("dim", `Plan file: ${details.planFilePath}`));

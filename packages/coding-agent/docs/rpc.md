@@ -812,7 +812,54 @@ Each command has:
 
 **Note**: Built-in TUI commands (`/settings`, `/hotkeys`, etc.) are not included. They are handled only in interactive mode and would not execute if sent via `prompt`.
 
-## Events
+### Your Office
+
+The office surface (coworkers, huddles, errands — see `docs/office.md`).
+
+#### office_list
+
+```json
+{"type": "office_list"}
+```
+
+Response `data`: the full office snapshot — `coworkers` (roster records with face + soul + per-project session pointers), `statuses` (per-coworker `working`/`needsInput`), `huddles` (summaries with preview + last activity; DMs are `dm:<coworkerId>`), `errands`, and `pendingPrompts` (supervised approvals/questions awaiting `office_respond`).
+
+#### office_coworker_save / office_coworker_delete
+
+```json
+{"type": "office_coworker_save", "coworker": {"name": "Atlas", "title": "Scout", "description": "Watches the repo", "face": {"shape": "hexagon", "color": "#2563eb"}, "autonomy": "supervised", "model": "anthropic/claude-sonnet-4-5"}}
+{"type": "office_coworker_delete", "coworkerId": "<id>"}
+```
+
+`id` set on the coworker input = update; `keepSoul: true` preserves the stored soul. Creating a coworker seeds its DM huddle.
+
+#### office_huddle_save / office_huddle_delete / office_huddle_get
+
+```json
+{"type": "office_huddle_save", "huddle": {"name": "Launch room", "members": ["<coworkerId>", "<coworkerId>"]}}
+{"type": "office_huddle_get", "huddleId": "<id>"}
+```
+
+`office_huddle_get` returns the full room payload: `{ huddleId, data: { epoch, log, watermarks, holds, running }, working }` (or `null`).
+
+#### office_send / office_stop
+
+```json
+{"type": "office_send", "huddleId": "<id>", "text": "hello @atlas", "images": [{"name": "shot.png", "kind": "image", "dataUrl": "data:image/png;base64,..."}]}
+{"type": "office_stop", "huddleId": "<id>"}
+```
+
+`office_send` logs the user message, applies hold directives, and starts a huddle drive in the background — the response returns immediately; watch `office_huddle` events for replies. `office_stop` bumps the drive epoch and aborts in-flight turns.
+
+#### office_respond
+
+```json
+{"type": "office_respond", "requestId": "<id>", "choice": "Allow"}
+```
+
+Answers a supervised prompt surfaced in the snapshot (approval or question). `null` denies/cancels.
+
+## Events (continued)
 
 Events are streamed to stdout as JSON lines during agent operation. Events do NOT include an `id` field (only responses do).
 
@@ -836,6 +883,9 @@ Events are streamed to stdout as JSON lines during agent operation. Events do NO
 | `auto_retry_start` | Auto-retry begins (after transient error) |
 | `auto_retry_end` | Auto-retry completes (success or final failure) |
 | `extension_error` | Extension threw an error |
+| `sessions_update` | Runtime registry changed (background sessions) |
+| `office_update` | Your Office roster changed (coworkers, statuses, huddle summaries, errands, pending prompts) |
+| `office_huddle` | A huddle's log changed (new messages, drive running state) |
 
 ### agent_start
 

@@ -212,6 +212,73 @@ describe("plan-mode enrichment", () => {
 		expect(exitResult.details).toMatchObject({ enabled: false, planSaved: true, allowedPromptsApplied: 2 });
 		expect((exitResult.content[0] as { text: string }).text).toContain("Bash(npm test *)");
 	});
+	it("plan_mode exit asks the approval handler and keep-planning keeps plan mode on", async () => {
+		let planMode = false;
+		const decisions: Array<{ plan?: string; planFilePath?: string }> = [];
+		const callbacks: PlanModeToolCallbacks = {
+			getPlanMode: () => planMode,
+			setPlanMode: (enabled) => {
+				planMode = enabled;
+			},
+			getPlanFilePath: () => "/tmp/plan.md",
+			getPlanFileContent: () => "# Draft plan from file",
+			requestPlanApproval: async (info) => {
+				decisions.push(info);
+				return { decision: "keep-planning", feedback: "add a rollback step" };
+			},
+		};
+		const tool = createPlanModeToolDefinition(callbacks);
+
+		await tool.execute("t1", { enabled: true }, undefined, undefined, {} as never);
+		expect(planMode).toBe(true);
+
+		const result = await tool.execute("t2", { enabled: false }, undefined, undefined, {} as never);
+		// The handler received the plan-file preview.
+		expect(decisions[0]).toEqual({ plan: "# Draft plan from file", planFilePath: "/tmp/plan.md" });
+		// Plan mode stays on and the model sees the feedback.
+		expect(planMode).toBe(true);
+		expect(result.details).toMatchObject({ enabled: true, keepPlanning: true });
+		expect((result.content[0] as { text: string }).text).toContain("add a rollback step");
+	});
+
+	it("plan_mode exit proceeds when the approval handler approves, switching mode on request", async () => {
+		let planMode = false;
+		let askModeSet = false;
+		const callbacks: PlanModeToolCallbacks = {
+			getPlanMode: () => planMode,
+			setPlanMode: (enabled) => {
+				planMode = enabled;
+			},
+			getPlanFilePath: () => "/tmp/plan.md",
+			setPermissionMode: (mode) => {
+				if (mode === "ask") askModeSet = true;
+			},
+			requestPlanApproval: async () => ({ decision: "proceed", mode: "ask" }),
+		};
+		const tool = createPlanModeToolDefinition(callbacks);
+
+		await tool.execute("t1", { enabled: true }, undefined, undefined, {} as never);
+		const result = await tool.execute("t2", { enabled: false }, undefined, undefined, {} as never);
+		expect(planMode).toBe(false);
+		expect(askModeSet).toBe(true);
+		expect(result.details).toMatchObject({ enabled: false });
+		expect((result.content[0] as { text: string }).text).toContain("Plan mode disabled");
+	});
+
+	it("plan_mode without an approval handler exits directly (headless)", async () => {
+		let planMode = false;
+		const callbacks: PlanModeToolCallbacks = {
+			getPlanMode: () => planMode,
+			setPlanMode: (enabled) => {
+				planMode = enabled;
+			},
+			getPlanFilePath: () => "/tmp/plan.md",
+		};
+		const tool = createPlanModeToolDefinition(callbacks);
+		await tool.execute("t1", { enabled: true }, undefined, undefined, {} as never);
+		await tool.execute("t2", { enabled: false }, undefined, undefined, {} as never);
+		expect(planMode).toBe(false);
+	});
 
 	it("plan file path is stable per session id", async () => {
 		const { session } = await createSession("allow");

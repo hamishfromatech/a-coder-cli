@@ -68,12 +68,14 @@ jobs:
         run: ./scripts/build-binaries.sh --skip-install
 
       - name: Prepare release payload
+        env:
+          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
         run: |
           set -euo pipefail
           mkdir -p release-assets
           VERSION="${RELEASE_TAG#v}"
           # Release notes are best-effort; fall back to a simple note if extraction fails.
-          if ! node scripts/release-notes.mjs extract --version "${VERSION}" --tag "${RELEASE_TAG}" --out release-assets/RELEASE_NOTES.md 2>/dev/null; then
+          if ! node scripts/release-notes.mjs generate --version "${VERSION}" --tag "${RELEASE_TAG}" --out release-assets/RELEASE_NOTES.md 2>/dev/null; then
             echo "A-Coder CLI ${RELEASE_TAG}" > release-assets/RELEASE_NOTES.md
           fi
 

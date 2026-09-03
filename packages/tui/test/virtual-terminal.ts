@@ -99,6 +99,14 @@ export class VirtualTerminal implements Terminal {
 		this.xterm.write("\x1b[2J\x1b[H"); // Clear screen and move to home (1,1)
 	}
 
+	enableMouseTracking(): void {
+		// No-op for the virtual terminal (tests never enable mouse tracking).
+	}
+
+	disableMouseTracking(): void {
+		// No-op for the virtual terminal.
+	}
+
 	setTitle(title: string): void {
 		// OSC 0;title BEL - set terminal window title
 		this.xterm.write(`\x1b]0;${title}\x07`);

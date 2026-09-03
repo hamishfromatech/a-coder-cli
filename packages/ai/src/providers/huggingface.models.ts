@@ -1010,7 +1010,7 @@ export const HUGGINGFACE_MODELS = {
 			cacheWrite: 0,
 		},
 		contextWindow: 262144,
-		maxTokens: 64000,
+		maxTokens: 128000,
 	} satisfies Model<"openai-completions">,
 	"thinkingmachines/Inkling": {
 		id: "thinkingmachines/Inkling",

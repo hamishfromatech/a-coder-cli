@@ -47,6 +47,7 @@ export interface TerminalSettings {
 	imageWidthCells?: number; // default: 60 (preferred inline image width in terminal cells)
 	clearOnShrink?: boolean; // default: false (clear empty rows when content shrinks)
 	showTerminalProgress?: boolean; // default: false (OSC 9;4 terminal progress indicators)
+	reducedMotion?: boolean; // default: false (render static frames instead of animated spinners/shimmer)
 }
 
 export interface ImageSettings {
@@ -167,6 +168,7 @@ export interface Settings {
 	retry?: RetrySettings;
 	hideThinkingBlock?: boolean;
 	externalEditor?: string; // Command for Ctrl+G external editor; takes precedence over VISUAL/EDITOR
+	statusLine?: string; // Shell command whose first stdout line renders as an extra footer row (JSON context on stdin)
 	shellPath?: string; // Custom shell path (e.g., for Cygwin users on Windows)
 	quietStartup?: boolean;
 	defaultProjectTrust?: DefaultProjectTrust; // default: "ask"; global setting only
@@ -998,6 +1000,15 @@ export class SettingsManager {
 		return process.platform === "win32" ? "notepad" : "nano";
 	}
 
+	/** User-configured status-line command, or undefined when not set. */
+	getStatusLineCommand(): string | undefined {
+		const command = this.settings.statusLine;
+		if (typeof command === "string" && command.trim() !== "") {
+			return command.trim();
+		}
+		return undefined;
+	}
+
 	setHideThinkingBlock(hide: boolean): void {
 		this.globalSettings.hideThinkingBlock = hide;
 		this.markModified("hideThinkingBlock");
@@ -1300,6 +1311,22 @@ export class SettingsManager {
 
 	getShowTerminalProgress(): boolean {
 		return this.settings.terminal?.showTerminalProgress ?? false;
+	}
+
+	getReducedMotion(): boolean {
+		if (this.settings.terminal?.reducedMotion !== undefined) {
+			return this.settings.terminal.reducedMotion;
+		}
+		return process.env.A_CODER_CLI_REDUCED_MOTION === "1";
+	}
+
+	setReducedMotion(enabled: boolean): void {
+		if (!this.globalSettings.terminal) {
+			this.globalSettings.terminal = {};
+		}
+		this.globalSettings.terminal.reducedMotion = enabled;
+		this.markModified("terminal", "reducedMotion");
+		this.save();
 	}
 
 	setShowTerminalProgress(enabled: boolean): void {

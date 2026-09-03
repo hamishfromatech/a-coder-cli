@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import { ExtensionRunner } from "../src/core/extensions/runner.ts";
 import { ModelRegistry } from "../src/core/model-registry.ts";
@@ -23,9 +23,16 @@ describe("DefaultResourceLoader", () => {
 		cwd = join(tempDir, "project");
 		mkdirSync(agentDir, { recursive: true });
 		mkdirSync(cwd, { recursive: true });
+		// The loader's auto-discovery also reads cross-product skill roots in the
+		// real home (~/.agents/skills, ~/.a-coder/skills, ~/.claude/skills). Point
+		// HOME at the temp dir so the suite is hermetic — otherwise duplicate
+		// skills on the host machine (e.g. hyperframes in both ~/.agents and
+		// ~/.claude) surface as collision diagnostics and fail strict assertions.
+		vi.stubEnv("HOME", tempDir);
 	});
 
 	afterEach(() => {
+		vi.unstubAllEnvs();
 		rmSync(tempDir, { recursive: true, force: true });
 	});
 

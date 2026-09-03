@@ -21,6 +21,8 @@ export class AssistantMessageComponent extends Container {
 	private outputPad: number;
 	private lastMessage?: AssistantMessage;
 	private hasToolCalls = false;
+	/** Fold this message's thinking trace (easy-agent hidePastThinking: only the latest round shows). */
+	private foldPastThinking = false;
 	/** Pending message waiting for the throttle timer to flush. */
 	private pendingMessage?: AssistantMessage;
 	/** Active throttle timer, or undefined if no flush is scheduled. */
@@ -67,6 +69,23 @@ export class AssistantMessageComponent extends Container {
 
 	setHideThinkingBlock(hide: boolean): void {
 		this.hideThinkingBlock = hide;
+		if (this.lastMessage) {
+			this.applyUpdate(this.lastMessage);
+		}
+	}
+
+	/** The message this component currently renders (undefined before the first update). */
+	getMessage(): AssistantMessage | undefined {
+		return this.lastMessage;
+	}
+
+	isFolded(): boolean {
+		return this.foldPastThinking;
+	}
+
+	setFoldPastThinking(fold: boolean): void {
+		if (this.foldPastThinking === fold) return;
+		this.foldPastThinking = fold;
 		if (this.lastMessage) {
 			this.applyUpdate(this.lastMessage);
 		}
@@ -147,8 +166,6 @@ export class AssistantMessageComponent extends Container {
 				// Set paddingY=0 to avoid extra spacing before tool executions
 				this.contentContainer.addChild(new Markdown(content.text.trim(), this.outputPad, 0, this.markdownTheme));
 			} else if (content.type === "thinking" && content.thinking.trim()) {
-				// Add spacing only when another visible assistant content block follows.
-				// This avoids a superfluous blank line before separately-rendered tool execution blocks.
 				const hasVisibleContentAfter = message.content
 					.slice(i + 1)
 					.some((c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()));
@@ -161,6 +178,7 @@ export class AssistantMessageComponent extends Container {
 					if (hasVisibleContentAfter) {
 						this.contentContainer.addChild(new Spacer(1));
 					}
+				} else if (this.foldPastThinking) {
 				} else {
 					// Thinking traces in thinkingText color, italic
 					this.contentContainer.addChild(

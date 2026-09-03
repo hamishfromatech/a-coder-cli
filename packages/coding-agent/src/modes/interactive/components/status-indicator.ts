@@ -1,4 +1,4 @@
-import { type Component, Loader, type TUI } from "@earendil-works/pi-tui";
+import { type Component, isReducedMotion, Loader, type TUI } from "@earendil-works/pi-tui";
 import type { WorkingIndicatorOptions } from "../../../core/extensions/index.ts";
 import { formatDuration } from "../../../utils/duration.ts";
 import { theme } from "../theme/theme.ts";
@@ -11,6 +11,10 @@ const REST_PADDING = 10; // ticks the shimmer rests off each side
 
 /** Apply a right-to-left shimmer sweep across plain text. */
 function applyShimmer(text: string): string {
+	// Reduced motion: solid accent, no sweep.
+	if (isReducedMotion()) {
+		return `${theme.getFgAnsi("accent")}${text}\x1b[39m`;
+	}
 	const len = text.length;
 	if (len === 0) return text;
 

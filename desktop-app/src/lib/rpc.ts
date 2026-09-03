@@ -35,6 +35,175 @@ export interface SessionsUpdateEvent {
 	sessions: RuntimeSessionStatus[];
 }
 
+// ---- Your Office ----
+
+export interface OfficeFace {
+	color?: string;
+	shape: "circle" | "hexagon" | "squircle" | "triangle" | "drop" | "cloud";
+	image?: string;
+}
+
+export interface OfficeCoworker {
+	id: string;
+	name: string;
+	handle: string;
+	title?: string;
+	description?: string;
+	soul: string;
+	face: OfficeFace;
+	model?: string;
+	autonomy: "supervised" | "auto";
+	createdAt: number;
+	sessions: Record<string, string>;
+	hidden?: boolean;
+}
+
+export interface OfficeCoworkerStatus {
+	working: boolean;
+	needsInput: boolean;
+}
+
+export interface OfficeMessageAuthor {
+	kind: "user" | "coworker" | "system";
+	id?: string;
+	name: string;
+}
+
+export interface OfficeAttachment {
+	name: string;
+	kind: "image" | "file";
+	data: string;
+}
+
+export interface OfficeMessage {
+	id: string;
+	at: number;
+	from: OfficeMessageAuthor;
+	text: string;
+	images?: OfficeAttachment[];
+}
+
+export interface OfficeHuddleData {
+	epoch: number;
+	log: OfficeMessage[];
+	watermarks: Record<string, number>;
+	holds: Record<string, number>;
+	running?: { startedAt: number; current?: string; thread: number };
+	stranded?: Record<string, { before: number; thread: number }>;
+}
+
+export interface OfficeHuddleSummary {
+	id: string;
+	name: string;
+	members: string[];
+	preview?: string;
+	lastActive?: number;
+	unread?: number;
+	pinned?: boolean;
+}
+
+export interface OfficePrompt {
+	requestId: string;
+	coworkerId: string;
+	coworkerName: string;
+	kind: "approval" | "question";
+	title: string;
+	message: string;
+	choices: string[];
+	at: number;
+}
+
+export interface OfficeErrand {
+	id: string;
+	coworkerId: string;
+	name: string;
+	prompt: string;
+	schedule:
+		| { kind: "every"; minutes: number }
+		| { kind: "daily"; time: string }
+		| { kind: "once"; at: number };
+	continuity: boolean;
+	delivery: "dm" | "huddle";
+	huddleId?: string;
+	enabled: boolean;
+	createdAt: number;
+	lastRunAt?: number;
+	lastStatus?: "ok" | "error" | "timeout";
+	lastError?: string;
+	nextRunAt?: number;
+}
+
+export interface OfficeSnapshot {
+	coworkers: OfficeCoworker[];
+	statuses: Record<string, OfficeCoworkerStatus>;
+	huddles: OfficeHuddleSummary[];
+	errands: OfficeErrand[];
+	pendingPrompts: OfficePrompt[];
+}
+
+export interface OfficeHuddlePayload {
+	huddleId: string;
+	data: OfficeHuddleData;
+	working: Record<string, boolean>;
+}
+
+export interface OfficeActivityItem {
+	coworkerId: string;
+	kind: "turn_start" | "tool_start" | "tool_end" | "speaking" | "turn_end" | "error";
+	toolName?: string;
+	text?: string;
+	/** Present on turn_end: how the turn stopped (composer-style stop reason). */
+	stopReason?: string;
+	/** Present on turn_end: the turn failed retryably and will re-enter the loop. */
+	willRetry?: boolean;
+	at: number;
+}
+
+export interface OfficeUpdateEvent {
+	type: "office_update";
+	snapshot: OfficeSnapshot;
+}
+
+export interface OfficeHuddleEvent {
+	type: "office_huddle";
+	payload: OfficeHuddlePayload;
+}
+
+export interface OfficeActivityEvent {
+	type: "office_activity";
+	activity: OfficeActivityItem;
+}
+
+export interface OfficeCoworkerInput {
+	id?: string;
+	name: string;
+	title?: string;
+	description?: string;
+	soul?: string;
+	keepSoul?: boolean;
+	face?: Partial<OfficeFace>;
+	model?: string;
+	autonomy?: "supervised" | "auto";
+}
+
+export interface OfficeHuddleInput {
+	id?: string;
+	name: string;
+	members: string[];
+}
+
+export interface OfficeErrandInput {
+	id?: string;
+	coworkerId: string;
+	name: string;
+	prompt: string;
+	schedule: OfficeErrand["schedule"];
+	continuity: boolean;
+	delivery: "dm" | "huddle";
+	huddleId?: string;
+	enabled?: boolean;
+}
+
 export type RpcEvent =
 	| AgentEvent
 	| SessionStartEvent
@@ -49,7 +218,10 @@ export type RpcEvent =
 	| OAuthLoginEvent
 	| CompactionEndEvent
 	| SessionsUpdateEvent
-	| ThinkingLevelChangedEvent;
+	| ThinkingLevelChangedEvent
+	| OfficeUpdateEvent
+	| OfficeHuddleEvent
+	| OfficeActivityEvent;
 
 /** The engine re-emits agent_end with a retry hint after a retryable failure. */
 export interface AgentEndWillRetry {
@@ -1017,3 +1189,49 @@ export async function toggleResource(args: ResourceToggleArgs): Promise<void> {
 
 // Legacy wrappers for runtime engine controls removed; the typed wrappers at the top
 // of the file (`rpc.setThinkingLevel`, `rpc.cycleThinkingLevel`, etc.) supersede them.
+
+// ---- Your Office commands ----
+
+/** The Rust layer resolves each command with its `data` payload and rejects
+ *  with the engine's error string — office wrappers are thin casts. */
+
+export const officeList = () => sendCommand({ type: "office_list" }) as Promise<OfficeSnapshot>;
+
+export const officeSaveCoworker = (coworker: OfficeCoworkerInput) =>
+	sendCommand({ type: "office_coworker_save", coworker }) as Promise<{ coworker: OfficeCoworker }>;
+
+export const officeDeleteCoworker = (id: string) =>
+	sendCommand({ type: "office_coworker_delete", coworkerId: id });
+
+export const officeSaveHuddle = (huddle: OfficeHuddleInput) =>
+	sendCommand({ type: "office_huddle_save", huddle }) as Promise<{ huddleId: string }>;
+
+export const officeDeleteHuddle = (id: string) =>
+	sendCommand({ type: "office_huddle_delete", huddleId: id });
+
+export const officeSend = (huddleId: string, text: string, images?: OfficeAttachment[]) =>
+	sendCommand({
+		type: "office_send",
+		huddleId,
+		text,
+		images: images?.map((image) => ({ name: image.name, kind: image.kind, dataUrl: image.data })),
+	}) as Promise<{ huddleId: string; messageId: string }>;
+
+export const officeGetHuddle = (huddleId: string) =>
+	sendCommand({ type: "office_huddle_get", huddleId }) as Promise<OfficeHuddlePayload | null>;
+
+export const officeStop = (huddleId: string) => sendCommand({ type: "office_stop", huddleId });
+
+export const officeRespond = (requestId: string, choice: string | null) =>
+	sendCommand({ type: "office_respond", requestId, choice });
+
+export const officeSaveErrand = (errand: OfficeErrandInput) =>
+	sendCommand({ type: "office_errand_save", errand }) as Promise<{ errand: OfficeErrand }>;
+
+export const officeDeleteErrand = (id: string) =>
+	sendCommand({ type: "office_errand_delete", errandId: id });
+
+export const officeRunErrand = (id: string) => sendCommand({ type: "office_errand_run", errandId: id });
+
+
+

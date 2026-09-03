@@ -16,6 +16,10 @@
           "path": "usage.md"
         },
         {
+          "title": "Your Office",
+          "path": "office.md"
+        },
+        {
           "title": "Providers",
           "path": "providers.md"
         },

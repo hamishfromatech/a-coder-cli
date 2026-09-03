@@ -314,6 +314,13 @@ export class TUI extends Container {
 	private maxLinesRendered = 0; // Track terminal's working area (max lines ever rendered)
 	private previousViewportTop = 0; // Track previous viewport top for resize-aware cursor moves
 	private fullRedrawCount = 0;
+	/**
+	 * Whether SGR mouse tracking is currently enabled (transcript overlay).
+	 * When on, wheel events are translated into arrow-key inputs for the
+	 * focused component and all other mouse reports are swallowed so they
+	 * never leak into the editor as garbage bytes.
+	 */
+	private mouseEnabled = false;
 	private stopped = false;
 	private pendingOsc11BackgroundReplies = 0;
 	private pendingOsc11BackgroundQueries: PendingOsc11BackgroundQuery[] = [];
@@ -690,6 +697,11 @@ export class TUI extends Container {
 			clearTimeout(this.renderTimer);
 			this.renderTimer = undefined;
 		}
+		if (this.mouseEnabled) {
+			// Exit safety net: never leave mouse tracking on after the TUI stops.
+			this.terminal.disableMouseTracking();
+			this.mouseEnabled = false;
+		}
 		if (this.terminalColorSchemeNotificationsEnabled) {
 			this.terminal.write("\x1b[?2031l");
 		}
@@ -758,11 +770,72 @@ export class TUI extends Container {
 		}, delay);
 	}
 
+	/**
+	 * Enable/disable wheel-event handling. Callers (the transcript overlay)
+	 * pair this with terminal.enableMouseTracking/disableMouseTracking so the
+	 * terminal actually starts sending SGR mouse reports.
+	 */
+	setMouseEnabled(enabled: boolean): void {
+		this.mouseEnabled = enabled;
+		if (enabled) {
+			this.terminal.enableMouseTracking();
+		} else {
+			this.terminal.disableMouseTracking();
+		}
+	}
+
+	/**
+	 * Translate SGR mouse reports while tracking is enabled. Wheel up/down
+	 * become three arrow-key inputs for the focused component (line scroll);
+	 * every other mouse report is swallowed. Returns true when the data was
+	 * a mouse report (fully consumed).
+	 */
+	private consumeMouseReport(data: string): boolean {
+		if (!this.mouseEnabled || !data.startsWith("\x1b[")) {
+			return false;
+		}
+		if (!data.includes("\x1b[<") && !data.includes("\x1b[M")) {
+			return false;
+		}
+		// SGR encoding: ESC [ < button ; column ; row (M = press, m = release).
+		// X10 fallback: ESC [ M b x y (three raw bytes after the prefix).
+		// Multiple reports can arrive coalesced in one stdin chunk — honor each.
+		let wheelUp = 0;
+		let wheelDown = 0;
+		for (const m of data.matchAll(/\u001b\[<(\d+);\d+;\d+[Mm]/g)) {
+			const button = Number(m[1]);
+			if (button === 64) wheelUp += 1;
+			else if (button === 65) wheelDown += 1;
+		}
+		for (const m of data.matchAll(/\u001b\[M([\u0040-\u007f])([\u0020-\u007f])([\u0020-\u007f])/g)) {
+			const button = m[1].charCodeAt(0) - 32;
+			if (button === 64) wheelUp += 1;
+			else if (button === 65) wheelDown += 1;
+		}
+		if (wheelUp === 0 && wheelDown === 0) {
+			// Mouse report (click/motion/unknown) — swallow so the bytes never
+			// leak into the editor as garbage input.
+			return true;
+		}
+		const focused = this.focusedComponent;
+		if (focused?.handleInput) {
+			// Three lines per wheel tick feels like a normal scroll step.
+			const up = "\x1b[A";
+			const down = "\x1b[B";
+			for (let i = 0; i < wheelUp * 3; i++) focused.handleInput(up);
+			for (let i = 0; i < wheelDown * 3; i++) focused.handleInput(down);
+		}
+		return true;
+	}
+
 	private handleInput(data: string): void {
 		if (this.consumeOsc11BackgroundResponse(data)) {
 			return;
 		}
 		if (this.consumeTerminalColorSchemeReport(data)) {
+			return;
+		}
+		if (this.consumeMouseReport(data)) {
 			return;
 		}
 
@@ -1327,9 +1400,14 @@ export class TUI extends Container {
 		const debugRedraw = process.env.PI_DEBUG_REDRAW === "1";
 		const logRedraw = (reason: string): void => {
 			if (!debugRedraw) return;
-			const logPath = path.join(os.homedir(), ".pi", "agent", "pi-debug.log");
-			const msg = `[${new Date().toISOString()}] fullRender: ${reason} (prev=${this.previousLines.length}, new=${newLines.length}, height=${height})\n`;
-			fs.appendFileSync(logPath, msg);
+			try {
+				const logPath = path.join(os.homedir(), ".pi", "agent", "pi-debug.log");
+				fs.mkdirSync(path.dirname(logPath), { recursive: true });
+				const msg = `[${new Date().toISOString()}] fullRender: ${reason} (prev=${this.previousLines.length}, new=${newLines.length}, height=${height})\n`;
+				fs.appendFileSync(logPath, msg);
+			} catch {
+				// Debug logging must never take the TUI down.
+			}
 		};
 
 		// First render - just output everything without clearing (assumes clean screen)
@@ -1447,6 +1525,22 @@ export class TUI extends Container {
 			this.previousWidth = width;
 			this.previousHeight = height;
 			this.previousViewportTop = prevViewportTop;
+			return;
+		}
+
+		// Changes entirely above the visible viewport leave the screen untouched:
+		// the line count is unchanged (any append or deletion would also change
+		// lines at or below the viewport top) and every visible row keeps its
+		// content. Skip the repaint entirely — falling through to a full clear
+		// here caused visible flicker when footer-area panels (agents panel,
+		// task viewer) updated while scrolled content filled the screen.
+		if (lastChanged < prevViewportTop && newLines.length === this.previousLines.length) {
+			this.previousLines = newLines;
+			this.previousKittyImageIds = this.collectKittyImageIds(newLines);
+			this.previousWidth = width;
+			this.previousHeight = height;
+			this.previousViewportTop = prevViewportTop;
+			this.positionHardwareCursor(cursorPos, newLines.length);
 			return;
 		}
 

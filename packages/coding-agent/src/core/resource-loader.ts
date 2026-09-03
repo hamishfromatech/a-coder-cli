@@ -239,7 +239,9 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.additionalThemePaths = options.additionalThemePaths ?? [];
 		const mcpServers = this.settingsManager.getMcpServers();
 		this.extensionFactories = [
-			...(mcpServers.length > 0 ? [createMcpExtensionFactory({ servers: mcpServers })] : []),
+			...(mcpServers.length > 0
+				? [createMcpExtensionFactory({ servers: mcpServers, workspaceRoots: [this.cwd] })]
+				: []),
 			createSubagentExtensionFactory({}),
 			...(options.extensionFactories ?? []),
 		];

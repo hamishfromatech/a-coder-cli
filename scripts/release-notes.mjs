@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-const DEFAULT_REPO = "earendil-works/pi";
+const DEFAULT_REPO = "hamishfromatech/a-coder-cli";
 const DEFAULT_BASE_PATH = "packages/coding-agent";
 const DEFAULT_CHANGELOG = "packages/coding-agent/CHANGELOG.md";
 const DEFAULT_FIX_SINCE_TAG = "v0.74.0";
@@ -13,11 +13,29 @@ const LEGACY_REPO_RE = /^https:\/\/github\.com\/(?:badlogic|earendil-works)\/pi-
 const URL_SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i;
 const INLINE_MARKDOWN_LINK_RE = /(!?\[[^\]\n]+\]\()([^\s)]+)((?:\s+[^)]*)?\))/g;
 
+// AI-written release notes (composer for the GitHub release body). The API is
+// OpenAI-compatible (Ollama cloud); failures always fall back to the plain
+// changelog extraction so a release can never break on the LLM.
+const DEFAULT_AI_BASE_URL = "https://ollama.com/v1";
+const DEFAULT_AI_MODEL = "glm-5.3-flash";
+const AI_TIMEOUT_MS = 300_000;
+const AI_MAX_INPUT_CHARS = 24_000;
+const AI_MAX_TOKENS = 128000;
+
+/** Changelogs merged into generated notes, in priority order. */
+const DEFAULT_GENERATE_CHANGELOGS = [
+	{ path: DEFAULT_CHANGELOG, label: "CLI engine" },
+	{ path: "packages/tui/CHANGELOG.md", label: "Terminal UI" },
+	{ path: "desktop-app/src/CHANGELOG.md", label: "Desktop app" },
+];
+
 function printUsage() {
 	console.log(`Usage: node scripts/release-notes.mjs <command> [options]
 
 Commands:
   extract              Extract release notes from the coding-agent changelog
+  generate             AI-written release notes (Ollama cloud, glm-5.3-flash);
+                       falls back to the merged changelog extraction on failure
   fix-github-releases  Rewrite existing GitHub release note links in place
 
 extract options:
@@ -34,6 +52,22 @@ fix-github-releases options:
   --since-tag <vX.Y.Z>    Oldest release tag to patch (default: ${DEFAULT_FIX_SINCE_TAG})
   --base-path <path>      Base path for relative changelog links (default: ${DEFAULT_BASE_PATH})
   --dry-run               Print releases that would change without updating GitHub
+
+generate options:
+  --version <x.y.z>    Version to generate notes for (required)
+  --tag <vX.Y.Z>       Release tag used for repository links (defaults to v<version>)
+  --changelog <path>   Changelog path; repeat to merge (default: all package changelogs)
+  --label <name>       Label for the preceding --changelog (default: derived from path)
+  --out <path>         Output file (default: stdout)
+  --repo <owner/repo>  GitHub repository for generated links (default: ${DEFAULT_REPO})
+  --base-url <url>     OpenAI-compatible API base (default: ${DEFAULT_AI_BASE_URL})
+  --model <name>       LLM model (default: ${DEFAULT_AI_MODEL})
+  --timeout-ms <n>     LLM request timeout (default: ${AI_TIMEOUT_MS})
+  --no-ai              Skip the LLM and emit the merged changelog extraction
+
+The API key is read from the OLLAMA_API_KEY environment variable. When it is
+missing or the request fails, generate falls back to the merged changelog
+extraction so releases never depend on the LLM being available.
 `);
 }
 
@@ -59,8 +93,13 @@ function run(command, args, options = {}) {
 
 function parseOptions(args) {
 	const options = {
+		aiBaseUrl: DEFAULT_AI_BASE_URL,
+		aiModel: DEFAULT_AI_MODEL,
+		aiTimeoutMs: AI_TIMEOUT_MS,
+		aiSkip: false,
 		basePath: DEFAULT_BASE_PATH,
 		changelog: DEFAULT_CHANGELOG,
+		changelogLabel: undefined,
 		dryRun: false,
 		out: undefined,
 		repo: DEFAULT_REPO,
@@ -68,6 +107,10 @@ function parseOptions(args) {
 		tag: undefined,
 		version: undefined,
 	};
+
+	// Collect repeatable --changelog/--label pairs for generate.
+	const changelogSources = [];
+	let pendingLabel = undefined;
 
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
@@ -79,24 +122,55 @@ function parseOptions(args) {
 			options.dryRun = true;
 			continue;
 		}
+		if (arg === "--no-ai") {
+			options.aiSkip = true;
+			continue;
+		}
 
-		const optionNames = new Set(["--base-path", "--changelog", "--out", "--repo", "--since-tag", "--tag", "--version"]);
+		const optionNames = new Set([
+			"--base-path",
+			"--base-url",
+			"--changelog",
+			"--label",
+			"--model",
+			"--out",
+			"--repo",
+			"--since-tag",
+			"--tag",
+			"--timeout-ms",
+			"--version",
+		]);
 		if (!optionNames.has(arg)) {
 			throw new Error(`Unknown option: ${arg}`);
 		}
 
 		const value = args[++i];
-		if (!value) {
+		if (value === undefined) {
 			throw new Error(`${arg} requires a value`);
 		}
 
 		if (arg === "--base-path") options.basePath = value;
-		if (arg === "--changelog") options.changelog = value;
+		if (arg === "--base-url") options.aiBaseUrl = value;
+		if (arg === "--changelog") {
+			const derived = path.basename(value).replace(/CHANGELOG\.md$/i, "") || value;
+			changelogSources.push({ path: value, label: pendingLabel ?? derived });
+			pendingLabel = undefined;
+		}
+		if (arg === "--label") pendingLabel = value;
+		if (arg === "--model") options.aiModel = value;
 		if (arg === "--out") options.out = value;
 		if (arg === "--repo") options.repo = value;
 		if (arg === "--since-tag") options.sinceTag = value;
 		if (arg === "--tag") options.tag = value;
+		if (arg === "--timeout-ms") options.aiTimeoutMs = Number.parseInt(value, 10) || AI_TIMEOUT_MS;
 		if (arg === "--version") options.version = value;
+	}
+
+	if (changelogSources.length > 0) {
+		options.changelogs = changelogSources;
+	}
+	if (pendingLabel !== undefined && changelogSources.length > 0) {
+		changelogSources[changelogSources.length - 1].label = pendingLabel;
 	}
 
 	return options;
@@ -265,6 +339,156 @@ function extractReleaseNotes(options) {
 	writeOutput(markdown, options.out);
 }
 
+// ── generate: AI-written release notes (Ollama cloud, OpenAI-compatible) ────
+
+/** Merge the version's sections from every configured changelog (missing files
+ *  or versions are skipped) into labeled markdown source blocks. Falls back to
+ *  the [Unreleased] section when the version section does not exist yet —
+ *  quick releases (version bump only) never convert [Unreleased] themselves. */
+function collectChangelogSources(options, tag) {
+	const sources = options.changelogs ?? DEFAULT_GENERATE_CHANGELOGS;
+	const version = versionFromTag(tag);
+	const parts = [];
+	for (const source of sources) {
+		if (!existsSync(source.path)) continue;
+		const changelog = readFileSync(source.path, "utf8");
+		let section = extractChangelogSection(changelog, version);
+		let usingUnreleased = false;
+		if (!section) {
+			section = extractChangelogSection(changelog, "Unreleased");
+			usingUnreleased = true;
+		}
+		if (!section) continue;
+		const { markdown } = normalizeReleaseNoteLinks(`${section}\n`, {
+			basePath: options.basePath,
+			repo: options.repo,
+			tag,
+		});
+		parts.push(`### ${source.label}${usingUnreleased ? " (unreleased)" : ""}\n\n${markdown.trim()}`);
+	}
+	return parts;
+}
+
+/** Best-effort commit list for this tag (context only; never fatal). */
+function collectCommitLog(tag) {
+	try {
+		return run("git", ["log", "--oneline", "--no-decorate", "-40", `${tag}~1..${tag}`], { capture: true }).trim();
+	} catch {
+		return "";
+	}
+}
+
+function buildGenerateMessages(options, tag, sources, commitLog) {
+	const version = versionFromTag(tag);
+	const material = sources.join("\n\n") || "(no changelog section found for this version)";
+	const commits = commitLog ? `\n### Commits\n\n${commitLog}\n` : "";
+
+	const system = [
+		"You write release notes for A-Coder, a terminal-native AI coding agent.",
+		"You are given raw changelog entries (and optionally a commit list) for one release version.",
+		"Write GitHub release notes in Markdown that a technical user skims in 30 seconds:",
+		"- Start with ONE short paragraph (2-3 sentences) summarizing what this release is about.",
+		"- Then a '## Highlights' section with the 3-6 most user-visible changes as bullets.",
+		'- Then a "Details" section grouping the remaining entries under short headers',
+		'  (e.g. "Office", "TUI", "Desktop", "Engine", "Fixed") — keep every real change, drop nothing meaningful.',
+		"- Preserve any issue/PR links and file paths exactly as given.",
+		"- Do not invent features, numbers, or links that are not in the source material.",
+		"- No emojis, no marketing fluff, no 'We are excited to announce'.",
+		`- Output ONLY the release notes markdown for version ${version}. No preamble, no code fences.`,
+	].join("\n");
+
+	const user = `Version: ${version} (tag ${tag})\n\n### Changelog source material\n\n${sources.join("\n\n")}${commitLog ? `\n### Commits\n\n${commitLog}\n` : ""}`;
+	const truncatedUser = user.length > AI_MAX_INPUT_CHARS ? `${user.slice(0, AI_MAX_INPUT_CHARS)}\n(…truncated)` : user;
+
+	return [
+		{ role: "system", content: system },
+		{ role: "user", content: truncatedUser },
+	];
+}
+
+function stripCodeFences(text) {
+	const fenced = /^```(?:markdown|md)?\s*\n([\s\S]*?)\n?```\s*$/.exec(text.trim());
+	return (fenced ? fenced[1] : text.trim()) + "\n";
+}
+
+/** Call the OpenAI-compatible endpoint. Resolves with the notes text or throws. */
+async function callAiWriter(options, messages) {
+	const apiKey = process.env.OLLAMA_API_KEY;
+	if (!apiKey) {
+		throw new Error("OLLAMA_API_KEY is not set");
+	}
+
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), options.aiTimeoutMs);
+	try {
+		const response = await fetch(`${options.aiBaseUrl.replace(/\/$/, "")}/chat/completions`, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: `Bearer ${apiKey}`,
+			},
+			body: JSON.stringify({
+				model: options.aiModel,
+				messages,
+				temperature: 0.3,
+				stream: false,
+				max_tokens: AI_MAX_TOKENS,
+			}),
+			signal: controller.signal,
+		});
+		if (!response.ok) {
+			const body = await response.text().catch(() => "");
+			throw new Error(`API ${response.status}: ${body.slice(0, 300)}`);
+		}
+		const payload = await response.json();
+		const content = payload?.choices?.[0]?.message?.content;
+		if (typeof content !== "string" || !content.trim()) {
+			throw new Error("API returned empty content");
+		}
+		return content;
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
+async function generateReleaseNotes(options) {
+	const version = options.version ?? (options.tag ? versionFromTag(options.tag) : undefined);
+	if (!version) {
+		throw new Error("generate requires --version or --tag");
+	}
+
+	const tag = normalizeTag(options.tag ?? version);
+	const sources = collectChangelogSources(options, tag);
+	if (sources.length === 0) {
+		// No changelog material for this version — same fallback as extract.
+		writeOutput(`Release ${version}\n`, options.out);
+		return;
+	}
+
+	let generated;
+	if (!options.aiSkip) {
+		try {
+			const messages = buildGenerateMessages(options, tag, sources, collectCommitLog(tag));
+			generated = await callAiWriter(options, messages);
+			console.error(`[release-notes] notes written by ${options.aiModel} (${options.aiBaseUrl}).`);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			console.warn(
+				`[release-notes] AI generation failed (${error?.name === "AbortError" ? "timeout" : message}); falling back to changelog extraction.`,
+			);
+		}
+	}
+
+	// Fallback: the merged changelog extraction. The generated prose may also
+	// carry partially-copied links, so re-normalize either way.
+	const { markdown } = normalizeReleaseNoteLinks(generated ? stripCodeFences(generated) : `${sources.join("\n\n")}\n`, {
+		basePath: options.basePath,
+		repo: options.repo,
+		tag,
+	});
+	writeOutput(markdown, options.out);
+}
+
 function listGithubReleases(repo) {
 	const output = run("gh", ["api", `repos/${repo}/releases`, "--paginate", "--jq", ".[] | {id, tag_name, body} | @json"], {
 		capture: true,
@@ -353,6 +577,8 @@ try {
 	const options = parseOptions(args);
 	if (command === "extract") {
 		extractReleaseNotes(options);
+	} else if (command === "generate") {
+		await generateReleaseNotes(options);
 	} else if (command === "fix-github-releases") {
 		fixGithubReleases(options);
 	} else {

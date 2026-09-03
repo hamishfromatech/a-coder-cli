@@ -33,6 +33,7 @@ export class ToolExecutionComponent extends Container {
 	private ui: TUI;
 	private cwd: string;
 	private executionStarted = false;
+	private waitingPermission = false;
 	private argsComplete = false;
 	private result?: {
 		content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
@@ -146,6 +147,25 @@ export class ToolExecutionComponent extends Container {
 
 	private createCallFallback(): Component {
 		return new Text(theme.fg("toolTitle", theme.bold(this.toolName)), 0, 0);
+	}
+
+	/** One-line badge shown above the call renderer while awaiting approval. */
+	private createWaitingBadge(): Component {
+		return new Text(theme.fg("warning", "⏸ waiting for approval…"), 0, 0);
+	}
+
+	markWaitingPermission(): void {
+		if (this.waitingPermission) return;
+		this.waitingPermission = true;
+		this.updateDisplay();
+		this.ui.requestRender();
+	}
+
+	clearWaitingPermission(): void {
+		if (!this.waitingPermission) return;
+		this.waitingPermission = false;
+		this.updateDisplay();
+		this.ui.requestRender();
 	}
 
 	private createResultFallback(): Component | undefined {
@@ -295,6 +315,13 @@ export class ToolExecutionComponent extends Container {
 				renderContainer.setBgFn(bgFn);
 			}
 			renderContainer.clear();
+
+			// Waiting-approval badge: shown while the permission prompt is open
+			// and the call has not started executing (easy-agent toolStatusStore
+			// "waiting-permission" phase).
+			if (this.waitingPermission && !this.result) {
+				renderContainer.addChild(this.createWaitingBadge());
+			}
 
 			const callRenderer = this.getCallRenderer();
 			if (!callRenderer) {

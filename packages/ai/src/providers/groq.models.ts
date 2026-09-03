@@ -106,4 +106,21 @@ export const GROQ_MODELS = {
 		contextWindow: 131072,
 		maxTokens: 16384,
 	} satisfies Model<"openai-completions">,
+	"qwen/qwen3.8-27b": {
+		id: "qwen/qwen3.8-27b",
+		name: "Qwen3.8 27B",
+		api: "openai-completions",
+		provider: "groq",
+		baseUrl: "https://api.groq.com/openai/v1",
+		reasoning: true,
+		input: ["text", "image"],
+		cost: {
+			input: 0.8,
+			output: 4,
+			cacheRead: 0,
+			cacheWrite: 0,
+		},
+		contextWindow: 131042,
+		maxTokens: 16384,
+	} satisfies Model<"openai-completions">,
 } as const;

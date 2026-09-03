@@ -250,7 +250,12 @@ export async function emitProjectTrustEvent(
 	return { errors };
 }
 
-const noOpUIContext: ExtensionUIContext = {
+/**
+ * Shared no-op UI context for hosts without a real UI (print mode, side
+ * runtimes). Exported so embedded runtimes (Your Office coworker sessions)
+ * can spread it and override only the dialog methods.
+ */
+export const noOpUIContext: ExtensionUIContext = {
 	select: async () => undefined,
 	confirm: async () => false,
 	input: async () => undefined,

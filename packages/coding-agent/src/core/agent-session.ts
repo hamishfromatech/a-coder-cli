@@ -121,6 +121,11 @@ import type { Skill } from "./skills.ts";
 import type { SlashCommandInfo } from "./slash-commands.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
 import {
+	type BackgroundProcessRecord,
+	type BackgroundProcessStatus,
+	subscribeBackgroundProcesses,
+} from "./stores/background-process-store.ts";
+import {
 	appendTaskOutput,
 	ensureTaskOutputFile,
 	getTaskOutputPath,
@@ -132,6 +137,7 @@ import { drainUnreadMessages, formatMailboxAttachment } from "./teams/mailbox.ts
 import { addTeamMember, formatAgentId, setMemberActive } from "./teams/team-file.ts";
 import { type BashOperations, createLocalBashOperations } from "./tools/bash.ts";
 import { allToolNames, createAllToolDefinitions, createTool, type ToolName } from "./tools/index.ts";
+import type { PlanExitDecision } from "./tools/plan-mode.ts";
 import { createSendMessageTool } from "./tools/teams.ts";
 import { createToolDefinitionFromAgentTool } from "./tools/tool-definition-wrapper.ts";
 import { createAgentWorktree, hasWorktreeChanges, removeAgentWorktree, type WorktreeInfo } from "./worktree.ts";
@@ -177,6 +183,7 @@ export type AgentSessionEvent =
 			followUp: readonly string[];
 	  }
 	| { type: "subagents_update"; agents: InProcessSubAgentRecord[] }
+	| { type: "tool_permission_update"; toolCallId: string; waiting: boolean }
 	| { type: "compaction_start"; reason: "manual" | "threshold" | "overflow" }
 	| { type: "entry_appended"; entry: SessionEntry }
 	| { type: "session_info_changed"; name: string | undefined }
@@ -508,6 +515,10 @@ export class AgentSession {
 		reason: string,
 		args?: Record<string, unknown>,
 	) => Promise<boolean>;
+	/** Interactive exit-plan approval hook — set by the TUI, absent means auto-proceed. */
+	private _planApprovalHandler?:
+		| ((info: { plan?: string; planFilePath?: string }) => Promise<PlanExitDecision>)
+		| undefined;
 	private _planMode = false;
 
 	// Default tool suppression from session options
@@ -555,6 +566,11 @@ export class AgentSession {
 		this._unsubscribeAgent = this.agent.subscribe(this._handleAgentEvent);
 		this._installAgentToolHooks();
 		this._installAgentNextTurnRefresh();
+
+		// Track background bash processes so their termination (done/error/killed)
+		// notifies the agent like detached sub-agents do (<task-notification> wake).
+		// Lives for the session's lifetime — the store is process-wide.
+		subscribeBackgroundProcesses((id, record) => this._handleBackgroundProcessUpdate(id, record));
 
 		// Turn-bound file history: bind the checkpoint store to this session's
 		// cwd+id, and prune stale per-session backup directories best-effort.
@@ -650,6 +666,16 @@ export class AgentSession {
 		handler: ((toolName: string, reason: string, args?: Record<string, unknown>) => Promise<boolean>) | undefined,
 	): void {
 		this._permissionPromptHandler = handler;
+	}
+
+	/**
+	 * Register the interactive exit-plan approval hook (PlanApprovalDialog
+	 * parity). When absent (headless/RPC), plan-mode exits proceed directly.
+	 */
+	setPlanApprovalHandler(
+		handler: ((info: { plan?: string; planFilePath?: string }) => Promise<PlanExitDecision>) | undefined,
+	): void {
+		this._planApprovalHandler = handler;
 	}
 
 	private async _resolvePermissionDecisionWithClassifier(
@@ -986,11 +1012,18 @@ export class AgentSession {
 		}
 		if (permission.decision === "prompt" || hookOutcome.ask) {
 			const promptReason = hookOutcome.reason ?? (permission.decision === "prompt" ? permission.reason : undefined);
-			const approved = await this._maybePromptForPermission(
-				toolCall.name,
-				promptReason,
-				args as Record<string, unknown> | undefined,
-			);
+			// Mark the tool card as waiting for approval while the user decides.
+			this._emit({ type: "tool_permission_update", toolCallId: toolCall.id, waiting: true });
+			let approved: boolean;
+			try {
+				approved = await this._maybePromptForPermission(
+					toolCall.name,
+					promptReason,
+					args as Record<string, unknown> | undefined,
+				);
+			} finally {
+				this._emit({ type: "tool_permission_update", toolCallId: toolCall.id, waiting: false });
+			}
 			if (!approved) {
 				return {
 					block: true,
@@ -3591,6 +3624,20 @@ export class AgentSession {
 							getPlanMode: () => this._planMode,
 							setPlanMode: (enabled) => this.setPlanMode(enabled),
 							getPlanFilePath: () => this.getPlanFilePath(),
+							getPlanFileContent: () => {
+								try {
+									const planPath = this.getPlanFilePath();
+									if (!existsSync(planPath)) return undefined;
+									return readFileSync(planPath, "utf-8");
+								} catch {
+									return undefined;
+								}
+							},
+							setPermissionMode: (mode) => this.setPermissionMode(mode),
+							requestPlanApproval: async (info) => {
+								if (!this._planApprovalHandler) return { decision: "proceed" } as const;
+								return await this._planApprovalHandler(info);
+							},
 							persistPlan: (plan) => {
 								try {
 									const planPath = this.getPlanFilePath();
@@ -4350,6 +4397,10 @@ export class AgentSession {
 	/** Turn-bound file-history checkpoints backing `/rewind`. */
 	private _fileHistory = new FileHistory();
 	private _pendingNotifications: string[] = [];
+	/** Last-known status per background process id — drives completion notifications. */
+	private _backgroundProcessStatuses = new Map<string, BackgroundProcessStatus>();
+	/** Sub-agents terminated by an explicit kill (viewer / kill_subagent tool) — their notes skip the wake. */
+	private _killedSubAgentIds = new Set<string>();
 
 	private _extractAssistantText(msg: AgentMessage | undefined): string {
 		if (!msg || (msg as { role?: string }).role !== "assistant") return "";
@@ -4732,7 +4783,7 @@ export class AgentSession {
 				this._notifySubAgents();
 				if (params.notifyOnComplete !== false) {
 					this._enqueueSubAgentNotification(record);
-					this._scheduleSubAgentWake();
+					if (!this._killedSubAgentIds.has(id)) this._scheduleSubAgentWake();
 				}
 			}
 		})();
@@ -4797,6 +4848,10 @@ export class AgentSession {
 		record.updatedAt = Date.now();
 		record.timeline.push({ type: "aborted" });
 		this._notifySubAgents();
+		// Whoever issued the kill (the user via the task viewer, or the agent
+		// via the kill_subagent tool) already knows the outcome — suppress the
+		// completion wake. The queued note still stamps onto the next submit.
+		this._killedSubAgentIds.add(id);
 		return { ...record };
 	}
 
@@ -4844,6 +4899,8 @@ export class AgentSession {
 	 */
 	private _subAgentWakeTimer?: ReturnType<typeof setTimeout>;
 	private _subAgentWakeInFlight = false;
+	/** Timestamp until which wake attempts are suppressed after a failed prompt. */
+	private _subAgentWakeBackoffUntil = 0;
 
 	private _scheduleSubAgentWake(): void {
 		if (this._subAgentWakeTimer) return;
@@ -4864,6 +4921,9 @@ export class AgentSession {
 	 */
 	private _wakeForPendingSubAgentNotes(): void {
 		if (this.isStreaming || this.isCompacting || this._subAgentWakeInFlight) return;
+		// A failing wake (no model/auth yet) backs off; retry attempts scheduled
+		// before the backoff window elapsed return early here.
+		if (Date.now() < this._subAgentWakeBackoffUntil) return;
 		if (this._pendingNotifications.length === 0) return;
 		const notes = this.drainPendingNotifications();
 		if (notes.length === 0) return;
@@ -4871,13 +4931,20 @@ export class AgentSession {
 			"<task-notification>",
 			...notes,
 			"</task-notification>",
-			"Background sub-agent results above — report the findings to the user in your reply.",
+			"Background task results above — report the findings to the user in your reply.",
 		].join("\n\n");
 		this._subAgentWakeInFlight = true;
 		void this.prompt(text, { expandPromptTemplates: false, streamingBehavior: "followUp" })
 			.catch(() => {
 				// Keep the notifications for the next user submit or wake attempt.
+				// Back off briefly so a persistently failing prompt (no auth, no
+				// model) cannot spin the wake loop hot.
 				this._pendingNotifications.unshift(...notes);
+				this._subAgentWakeBackoffUntil = Date.now() + 2_000;
+				this._subAgentWakeTimer ??= setTimeout(() => {
+					this._subAgentWakeTimer = undefined;
+					this._wakeForPendingSubAgentNotes();
+				}, 2_000);
 			})
 			.finally(() => {
 				this._subAgentWakeInFlight = false;
@@ -4888,6 +4955,49 @@ export class AgentSession {
 
 	private _enqueueSubAgentNotification(record: InProcessSubAgentRecord): void {
 		this._pendingNotifications.push(this._formatSubAgentNotification(record));
+	}
+
+	/**
+	 * Watch background bash-process store transitions. A process leaving the
+	 * "running" state (done/error/killed — by exit, timeout, or a user kill
+	 * from the task viewer) enqueues a task notification and schedules the
+	 * same wake used for detached sub-agents, so the model learns the
+	 * outcome instead of waiting for the user to paste output.
+	 */
+	private _handleBackgroundProcessUpdate(id: string, record: BackgroundProcessRecord | undefined): void {
+		const previous = this._backgroundProcessStatuses.get(id);
+		if (!record) {
+			this._backgroundProcessStatuses.delete(id);
+			return;
+		}
+		this._backgroundProcessStatuses.set(id, record.status);
+		const justTerminated = previous === "running" || (previous === undefined && record.status !== "running");
+		if (justTerminated) {
+			this._pendingNotifications.push(this._formatBackgroundProcessNotification(record));
+			// "killed" is only set by the interactive viewer's kill action — the
+			// user already knows, so don't spend a dedicated wake turn. The note
+			// still rides along on the user's next submission (zero cost).
+			if (record.status !== "killed") this._scheduleSubAgentWake();
+		}
+	}
+
+	private _formatBackgroundProcessNotification(record: BackgroundProcessRecord): string {
+		const elapsed = formatDuration((record.endedAt ?? Date.now()) - record.startedAt);
+		const statusLabel =
+			record.status === "killed" ? "was killed" : record.status === "error" ? "failed" : "completed";
+		const exit = record.exitCode !== undefined ? ` (exit code ${record.exitCode})` : "";
+		const header = `Background process \`$ ${record.command}\` ${statusLabel}${exit} after ${elapsed}`;
+		const meta: string[] = [];
+		if (record.totalLines > 0) meta.push(`${record.totalLines} line${record.totalLines === 1 ? "" : "s"}`);
+		if (record.totalBytes > 0) {
+			const kb = record.totalBytes >= 1024 ? `${(record.totalBytes / 1024).toFixed(1)}KB` : `${record.totalBytes}B`;
+			meta.push(kb);
+		}
+		const tail = record.output.trim();
+		const body = meta.length > 0 ? `\n${meta.join(" · ")}` : "";
+		const output = tail ? `\nOutput tail:\n${tail}` : "";
+		const log = record.fullOutputPath ? `\nFull output: ${record.fullOutputPath}` : "";
+		return `${header}${body}${output}${log}`;
 	}
 
 	private _formatSubAgentNotification(record: InProcessSubAgentRecord): string {

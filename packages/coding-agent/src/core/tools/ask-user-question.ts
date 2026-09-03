@@ -119,7 +119,8 @@ export function createAskUserQuestionToolDefinition(): ToolDefinition<
 			"asking in free-form prose. Provide 1-4 questions, each with a short `header` chip, " +
 			"the full `question` text, and 2-4 distinct `options` (each with a `label` and a short " +
 			"`description` of its trade-offs). Set `multiSelect: true` when the user may pick more " +
-			"than one option. Do NOT add an 'Other' option — the UI provides a way to decline.",
+			"than one option. The UI automatically adds an 'Other' choice where the user can type " +
+			"a custom answer — do not add your own 'Other' option.",
 		promptSnippet: "Ask the user structured multiple-choice questions",
 		promptGuidelines: [
 			"Use `ask_user_question` when a decision among concrete alternatives would otherwise require guessing.",

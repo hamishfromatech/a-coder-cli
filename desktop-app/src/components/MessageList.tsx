@@ -7,6 +7,8 @@ import type {
 } from "@earendil-works/pi-ai";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { useSessionStore, type UiRequest } from "../stores/session-store";
+import { pickLoadingVerb } from "../lib/loading-verbs";
+import { Loader } from "./ui/Loader";
 import { useSettingsStore } from "../stores/settings-store";
 import { ModalBackdrop } from "./ui/Modal";
 import {
@@ -63,6 +65,7 @@ function usePendingApprovalToolCallId(): string | undefined {
 export function MessageList() {
 	const messages = useSessionStore((s) => s.messages);
 	const isStreaming = useSessionStore((s) => s.isStreaming);
+	const sessionLoading = useSessionStore((s) => s.sessionLoading);
 	const hideThinkingBlock = useSettingsStore((s) => s.cliGlobalSettings?.hideThinkingBlock ?? false);
 	const approvalToolCallId = usePendingApprovalToolCallId();
 	const approvalRequest = useSessionStore((s) =>
@@ -89,7 +92,7 @@ export function MessageList() {
 	}, [messages.length, JSON.stringify(messages[messages.length - 1] ?? null), isStreaming, autoScroll]);
 
 	if (messages.length === 0) {
-		return <EmptyState />;
+		return sessionLoading ? <SessionLoadingState /> : <EmptyState />;
 	}
 
 	return (
@@ -105,6 +108,46 @@ export function MessageList() {
 						approvalRequest={approvalRequest}
 					/>
 				))}
+			</div>
+		</div>
+	);
+}
+
+function SessionLoadingState() {
+	const sessionFile = useSessionStore((s) => s.sessionFile);
+	const sessionName = useSessionStore((s) => s.sessionName);
+	// One whimsical verb per loading screen mount.
+	const verb = useMemo(() => pickLoadingVerb(), []);
+	const label = sessionName ?? (sessionFile ? sessionFile.split(/[/\\]/).pop() : null);
+
+	return (
+		<div className="chat-surface flex flex-1 flex-col items-center justify-center gap-5">
+			<div className="chat-column flex flex-col items-center gap-5">
+				<Loader
+					type="lemniscate-bloom"
+					className="text-pi-accent"
+					label="Loading session"
+					style={{ width: 72, height: 72 }}
+				/>
+				<div className="flex flex-col items-center gap-1">
+					<p className="m-0 text-[15px] font-medium tracking-tight text-pi-text/85">
+						{verb}…
+					</p>
+					{label ? (
+						<p className="m-0 max-w-md truncate text-center text-[12px] tracking-tight text-pi-text-muted">
+							Loading {label}
+						</p>
+					) : (
+						<p className="m-0 max-w-md text-center text-[12px] tracking-tight text-pi-text-muted">
+							Restoring conversation history
+						</p>
+					)}
+				</div>
+				<div className="flex w-full max-w-md flex-col gap-3" aria-hidden>
+					<div className="h-3 w-2/3 animate-pulse rounded-full bg-pi-text/8" />
+					<div className="ml-auto h-3 w-1/2 animate-pulse rounded-full bg-pi-text/8" />
+					<div className="h-3 w-3/5 animate-pulse rounded-full bg-pi-text/8" />
+				</div>
 			</div>
 		</div>
 	);

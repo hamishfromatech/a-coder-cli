@@ -4,6 +4,18 @@ use std::path::{Path, PathBuf};
 use base64::Engine;
 use walkdir::WalkDir;
 
+/// Append a renderer diagnostic line to /tmp/a-coder-renderer.log (debug aid).
+#[tauri::command]
+pub fn debug_log(line: String) -> Result<(), String> {
+    use std::io::Write;
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/tmp/a-coder-renderer.log")
+        .map_err(|e| e.to_string())?;
+    writeln!(f, "{}", line).map_err(|e| e.to_string())
+}
+
 /// Read a UTF-8 text file with a hard 1 MiB cap. Returns Err if the file is
 /// larger or not valid UTF-8.
 #[tauri::command]
