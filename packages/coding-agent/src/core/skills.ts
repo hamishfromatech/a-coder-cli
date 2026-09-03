@@ -385,7 +385,7 @@ function loadSkillFromFile(
  * Skills with disableModelInvocation=true are excluded from the prompt
  * (they can only be invoked explicitly via /skill:name commands).
  */
-export function formatSkillsForPrompt(skills: Skill[]): string {
+export function formatSkillsForPrompt(skills: Skill[], fileReadTool: "read" | "bash" = "read"): string {
 	const visibleSkills = skills.filter((s) => !s.disableModelInvocation);
 
 	if (visibleSkills.length === 0) {
@@ -394,7 +394,10 @@ export function formatSkillsForPrompt(skills: Skill[]): string {
 
 	const lines = [
 		"\n\nThe following skills provide specialized instructions for specific tasks.",
-		"When a task matches a skill's description, invoke the skill tool with its name (plus an args string when the user gave details) to load its full instructions. Reading the skill file directly also works; resolve relative paths in a skill against its directory (parent of SKILL.md) using absolute paths in tool commands.",
+		fileReadTool === "read"
+			? "When a task matches a skill's description, invoke the skill tool with its name (plus an args string when the user gave details) to load its full instructions. Reading the skill file directly also works."
+			: "When a task matches a skill's description, use bash to read the skill's SKILL.md to load its full instructions.",
+		"When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md) and use that absolute path in tool commands.",
 		"",
 		"<available_skills>",
 	];

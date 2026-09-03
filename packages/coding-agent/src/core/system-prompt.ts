@@ -57,6 +57,8 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	const contextFiles = providedContextFiles ?? [];
 	const skills = providedSkills ?? [];
 	const agents = providedAgents ?? [];
+	const tools = selectedTools || ["read", "bash", "edit", "write"];
+	const skillFileReadTool = (["read", "bash"] as const).find((tool) => tools.includes(tool));
 
 	if (customPrompt) {
 		let prompt = customPrompt;
@@ -83,10 +85,9 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 			prompt += formatAgentsSystemReminder(agents);
 		}
 
-		// Append skills section (only if read tool is available)
-		const customPromptHasRead = !selectedTools || selectedTools.includes("read");
-		if (customPromptHasRead && skills.length > 0) {
-			prompt += formatSkillsForPrompt(skills);
+		// Append skills when a tool capable of reading their files is available.
+		if (skillFileReadTool && skills.length > 0) {
+			prompt += formatSkillsForPrompt(skills, skillFileReadTool);
 		}
 
 		// Add date and working directory last
@@ -103,7 +104,6 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
 	// Build tools list based on selected tools.
 	// A tool appears in Available tools only when the caller provides a one-line snippet.
-	const tools = selectedTools || ["read", "bash", "edit", "write"];
 	const visibleTools = tools.filter((name) => !!toolSnippets?.[name]);
 	const toolsList =
 		visibleTools.length > 0 ? visibleTools.map((name) => `- ${name}: ${toolSnippets![name]}`).join("\n") : "(none)";
@@ -123,7 +123,6 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	const hasGrep = tools.includes("grep");
 	const hasFind = tools.includes("find");
 	const hasLs = tools.includes("ls");
-	const hasRead = tools.includes("read");
 
 	// File exploration guidelines
 	if (hasBash && !hasGrep && !hasFind && !hasLs) {
@@ -187,9 +186,9 @@ A-Coder CLI documentation (read only when the user asks about a-coder-cli itself
 		prompt += formatAgentsSystemReminder(agents);
 	}
 
-	// Append skills section (only if read tool is available)
-	if (hasRead && skills.length > 0) {
-		prompt += formatSkillsForPrompt(skills);
+	// Append skills when a tool capable of reading their files is available.
+	if (skillFileReadTool && skills.length > 0) {
+		prompt += formatSkillsForPrompt(skills, skillFileReadTool);
 	}
 
 	// Add date and working directory last
