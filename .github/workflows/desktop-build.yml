@@ -86,6 +86,14 @@ jobs:
         # can't resolve @earendil-works/pi-ai). The lockfile is standalone.
         run: npm ci --no-workspaces --ignore-scripts
 
+      - name: Install virtual-office-ui dependencies
+        # The desktop's tsc follows FloorView's import into virtual-office-ui/src,
+        # so its pinned deps (react, three, @react-three/fiber) must exist even
+        # though the folder is not part of the desktop npm project. Its own
+        # committed lockfile pins them exactly.
+        working-directory: virtual-office-ui
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
       # ──────────────────────────────────────────────────────────────────────
       # macOS: import Developer ID certificate into a temporary keychain.
       # Tauri's bundler picks up the identity from the keychain and signs the
