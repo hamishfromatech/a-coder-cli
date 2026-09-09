@@ -35,7 +35,7 @@ a-coder-cli update npm:@foo/bar      # update one package
 a-coder-cli update --extension npm:@foo/bar
 ```
 
-These commands manage packages and `a-coder-cli update` can update the CLI installation. To uninstall, see [Quickstart](quickstart.md#uninstall).
+These commands manage packages and `a-coder-cli update` can update the CLI installation. For installer-managed installations, `a-coder-cli update` downloads the exact checked release archive for this platform, verifies its SHA256 against the release checksums, and activates it atomically, leaving the current release intact if the update fails. Managed installations do not support `--force`; rerun the installer to repair one. To uninstall, see [Quickstart](quickstart.md#uninstall).
 
 By default, `install` and `remove` write to user settings (`~/.a-coder/cli/agent/settings.json`). Use `-l` to write to project settings (`.a-coder-cli/settings.json`) instead. Project settings can be shared with your team, and a-coder-cli installs any missing packages automatically on startup after the project is trusted.
 

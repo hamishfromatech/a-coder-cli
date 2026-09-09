@@ -9,6 +9,7 @@
 - Added `ui_prompt_start` / `ui_prompt_end` extension events (upstream pi #8355 parity): hosts can distinguish active agent work from time spent waiting on blocking `ctx.ui` prompts (select/confirm/input/editor/custom), with nested prompts tracked by depth. RPC/desktop clients receive them as extension events for waiting-state rendering.
 - Added `ctx.modelRegistry.stream()` and `streamSimple()` for extension model calls through configured providers with resolved authentication (upstream pi #8964/#9272 parity). Setup failures surface as error events on the returned stream.
 - Added RPC `clear_queue` to retrieve and remove queued steering and follow-up messages, for interactive Esc behavior (upstream pi #8432 parity): clear before `abort`, then restore the returned text in the client editor.
+- Added in-place managed-install updates that stage the release tarball, verify its SHA256, and atomically activate it (upstream pi parity).
 
 ### Fixed
 

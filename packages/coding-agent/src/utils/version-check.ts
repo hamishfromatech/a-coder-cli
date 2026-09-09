@@ -1,4 +1,5 @@
 import { compare, valid } from "semver";
+import { INSTALLER_REPO } from "../config.ts";
 import { getPiUserAgent } from "./pi-user-agent.ts";
 
 // This fork publishes releases via GitHub, so the latest-version check
@@ -29,6 +30,20 @@ export function isNewerPackageVersion(candidateVersion: string, currentVersion: 
 		return comparison > 0;
 	}
 	return candidateVersion.trim() !== currentVersion.trim();
+}
+
+/** Release tag for a version string, with or without the leading "v". */
+function toReleaseTag(version: string): string {
+	return version.startsWith("v") ? version : `v${version}`;
+}
+
+/** URL of a release asset (e.g. the platform archive or SHA256SUMS) on the GitHub
+ *  repo that hosts releases. The repo is derived from LATEST_VERSION_URL so an
+ *  A_CODER_LATEST_VERSION_URL override redirects downloads alongside it. */
+export function getGitHubReleaseDownloadUrl(version: string, assetName: string): string {
+	const match = /https:\/\/api\.github\.com\/repos\/([^/]+\/[^/]+)\//.exec(LATEST_VERSION_URL);
+	const repo = match?.[1] ?? INSTALLER_REPO;
+	return `https://github.com/${repo}/releases/download/${toReleaseTag(version)}/${assetName}`;
 }
 
 export async function getLatestPiRelease(

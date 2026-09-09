@@ -1,6 +1,19 @@
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	utimesSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import lockfile from "proper-lockfile";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ENV_AGENT_DIR, PACKAGE_NAME, VERSION } from "../src/config.ts";
 import { ProjectTrustStore } from "../src/core/trust-manager.ts";
@@ -21,6 +34,69 @@ describe("package commands", () => {
 	function getNewerPatchVersion(): string {
 		const [major = "0", minor = "0", patch = "0"] = VERSION.split(".");
 		return `${major}.${minor}.${Number.parseInt(patch, 10) + 1}`;
+	}
+
+	// Managed staged updates only run on POSIX; Windows keeps the installer path.
+	const itManaged = it.skipIf(process.platform === "win32");
+
+	function prepareManagedInstall(
+		targetVersion: string,
+		smokeVersion: string = targetVersion,
+	): {
+		managedRoot: string;
+		archivePath: string;
+		checksumLine: string;
+		assetName: string;
+	} {
+		const managedRoot = join(agentDir, "install");
+		const activeRelease = join(managedRoot, "lib", "a-coder-cli");
+		mkdirSync(activeRelease, { recursive: true });
+		writeFileSync(join(activeRelease, "active.txt"), "active");
+		writeFileSync(join(activeRelease, "pi"), `#!/bin/sh\nprintf '%s\n' ${VERSION}\n`);
+		chmodSync(join(activeRelease, "pi"), 0o755);
+		writeFileSync(join(managedRoot, "VERSION"), `v${VERSION}\n`);
+		mkdirSync(join(managedRoot, "bin"), { recursive: true });
+		writeFileSync(join(managedRoot, "bin", "a-coder-cli"), "shim");
+
+		const assetName = `pi-${process.platform}-${process.arch}.tar.gz`;
+		const archiveSource = join(tempDir, "managed-archive-src");
+		const archivePath = join(tempDir, assetName);
+		mkdirSync(join(archiveSource, "pi"), { recursive: true });
+		writeFileSync(join(archiveSource, "pi", "pi"), `#!/bin/sh\nprintf '%s\n' ${smokeVersion}\n`);
+		chmodSync(join(archiveSource, "pi", "pi"), 0o755);
+		writeFileSync(join(archiveSource, "pi", "updated.txt"), `updated ${targetVersion}`);
+		execFileSync("tar", ["-czf", archivePath, "-C", archiveSource, "pi"]);
+		const checksum = createHash("sha256").update(readFileSync(archivePath)).digest("hex");
+
+		process.env.A_CODER_CLI_PACKAGE_DIR = activeRelease;
+		return { managedRoot, archivePath, checksumLine: `${checksum}  ${assetName}\n`, assetName };
+	}
+
+	function mockManagedUpdate(
+		targetVersion: string,
+		archivePath: string,
+		checksumLine: string,
+		assetName: string,
+	): void {
+		const releaseBase = `https://github.com/hamishfromatech/pi-mono/releases/download/v${targetVersion}`;
+		const assetUrl = `${releaseBase}/${assetName}`;
+		const checksumsUrl = `${releaseBase}/SHA256SUMS`;
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (input: string | URL | Request) => {
+				const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+				if (url === "https://api.github.com/repos/hamishfromatech/pi-mono/releases/latest") {
+					return Response.json({ tag_name: `v${targetVersion}` });
+				}
+				if (url === assetUrl) {
+					return new Response(readFileSync(archivePath));
+				}
+				if (url === checksumsUrl) {
+					return new Response(checksumLine);
+				}
+				throw new Error(`Unexpected fetch: ${url}`);
+			}),
+		);
 	}
 
 	async function runPackageCommandDirectly(args: string[]): Promise<void> {
@@ -56,6 +132,7 @@ describe("package commands", () => {
 
 	afterEach(() => {
 		vi.unstubAllGlobals();
+		vi.unstubAllEnvs();
 		vi.restoreAllMocks();
 		process.chdir(originalCwd);
 		process.exitCode = originalExitCode;
@@ -397,10 +474,123 @@ describe("package commands", () => {
 		}
 	});
 
-	it("uses the update check version for forced self updates even when current", async () => {
+	itManaged("updates installer-managed installations through a staged verified release", async () => {
+		const targetVersion = getNewerPatchVersion();
+		const { managedRoot, archivePath, checksumLine, assetName } = prepareManagedInstall(targetVersion);
+		const abandonedStage = join(managedRoot, "staging", "update-abandoned");
+		mkdirSync(abandonedStage, { recursive: true });
+		writeFileSync(join(abandonedStage, "partial"), "partial");
+		const abandonedLock = join(managedRoot, "update.lock");
+		mkdirSync(abandonedLock);
+		utimesSync(abandonedLock, new Date(0), new Date(0));
+		mockManagedUpdate(targetVersion, archivePath, checksumLine, assetName);
+		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+		try {
+			await expect(runPackageCommandDirectly(["update", "--self"])).resolves.toBeUndefined();
+
+			expect(readFileSync(join(managedRoot, "VERSION"), "utf8")).toBe(`v${targetVersion}\n`);
+			expect(readFileSync(join(managedRoot, "lib", "a-coder-cli", "updated.txt"), "utf8")).toBe(
+				`updated ${targetVersion}`,
+			);
+			expect(existsSync(join(managedRoot, "lib", "a-coder-cli", "active.txt"))).toBe(false);
+			expect(readdirSync(join(managedRoot, "staging"))).toEqual([]);
+			expect(logSpy.mock.calls.map(([message]) => String(message)).join("\n")).toContain(
+				`Updated a-coder-cli from ${VERSION} to ${targetVersion}`,
+			);
+			expect(errorSpy).not.toHaveBeenCalled();
+			expect(process.exitCode).toBeUndefined();
+		} finally {
+			logSpy.mockRestore();
+			errorSpy.mockRestore();
+		}
+	});
+
+	itManaged("rejects a concurrent managed update", async () => {
+		const targetVersion = getNewerPatchVersion();
+		const { managedRoot, archivePath, checksumLine, assetName } = prepareManagedInstall(targetVersion);
+		const releaseLock = await lockfile.lock(join(managedRoot, "update"), { realpath: false });
+		mockManagedUpdate(targetVersion, archivePath, checksumLine, assetName);
+		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+		let loggedOutput: string;
+		let errorOutput: string;
+		try {
+			await expect(runPackageCommandDirectly(["update", "--self"])).resolves.toBeUndefined();
+		} finally {
+			// Capture before mockRestore clears the call history.
+			loggedOutput = logSpy.mock.calls.map(([message]) => String(message)).join("\n");
+			errorOutput = errorSpy.mock.calls.map(([message]) => String(message)).join("\n");
+			await releaseLock();
+			logSpy.mockRestore();
+			errorSpy.mockRestore();
+		}
+
+		expect(readFileSync(join(managedRoot, "VERSION"), "utf8")).toBe(`v${VERSION}\n`);
+		expect(existsSync(join(managedRoot, "lib", "a-coder-cli", "updated.txt"))).toBe(false);
+		expect(loggedOutput).not.toContain("Updated a-coder-cli from");
+		expect(errorOutput).toContain(`Another managed a-coder-cli update is already running.`);
+		expect(process.exitCode).toBe(1);
+	});
+
+	itManaged("rejects forced managed reinstalls", async () => {
+		const targetVersion = getNewerPatchVersion();
+		const { managedRoot } = prepareManagedInstall(targetVersion);
+		const fetchMock = vi.fn();
+		vi.stubGlobal("fetch", fetchMock);
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+		try {
+			await expect(runPackageCommandDirectly(["update", "--self", "--force"])).resolves.toBeUndefined();
+
+			expect(fetchMock).not.toHaveBeenCalled();
+			expect(readFileSync(join(managedRoot, "VERSION"), "utf8")).toBe(`v${VERSION}\n`);
+			expect(errorSpy.mock.calls.map(([message]) => String(message)).join("\n")).toContain(
+				"Managed a-coder-cli installations do not support --force",
+			);
+			expect(process.exitCode).toBe(1);
+		} finally {
+			errorSpy.mockRestore();
+		}
+	});
+
+	itManaged("keeps the managed release active when its update fails", async () => {
+		const targetVersion = getNewerPatchVersion();
+		const { managedRoot, archivePath, checksumLine, assetName } = prepareManagedInstall(targetVersion, VERSION);
+		mockManagedUpdate(targetVersion, archivePath, checksumLine, assetName);
+		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+		try {
+			await expect(runPackageCommandDirectly(["update", "--self"])).resolves.toBeUndefined();
+
+			expect(readFileSync(join(managedRoot, "VERSION"), "utf8")).toBe(`v${VERSION}\n`);
+			expect(existsSync(join(managedRoot, "lib", "a-coder-cli", "active.txt"))).toBe(true);
+			expect(existsSync(join(managedRoot, "lib", "a-coder-cli", "updated.txt"))).toBe(false);
+			expect(readdirSync(join(managedRoot, "staging"))).toEqual([]);
+			expect(logSpy.mock.calls.map(([message]) => String(message)).join("\n")).not.toContain(
+				"Updated a-coder-cli from",
+			);
+			expect(errorSpy.mock.calls.map(([message]) => String(message)).join("\n")).toContain(
+				`Managed a-coder-cli smoke test returned version ${VERSION}; expected ${targetVersion}.`,
+			);
+			expect(process.exitCode).toBe(1);
+		} finally {
+			logSpy.mockRestore();
+			errorSpy.mockRestore();
+		}
+	});
+
+	it("keeps npm self-updates non-managed when the managed environment is inherited", async () => {
 		const globalPrefix = join(tempDir, "global-prefix");
 		const projectPrefix = join(tempDir, "project-prefix");
 		const selfPackageDir = join(globalPrefix, "lib", "node_modules", "@earendil-works", "pi-coding-agent");
+		const inheritedManagedRoot = join(tempDir, "inherited-managed-install");
+		mkdirSync(join(inheritedManagedRoot, "lib", "a-coder-cli"), { recursive: true });
+		writeFileSync(join(inheritedManagedRoot, "VERSION"), `v${VERSION}\n`);
+		vi.stubEnv("A_CODER_MANAGED_INSTALL_ROOT", inheritedManagedRoot);
 		const fakeNpmPath = join(tempDir, "fake-npm.cjs");
 		const recordPath = join(tempDir, "self-update.json");
 		mkdirSync(selfPackageDir, { recursive: true });

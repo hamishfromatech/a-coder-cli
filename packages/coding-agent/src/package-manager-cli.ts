@@ -1,6 +1,25 @@
-import { dirname, join, relative } from "node:path";
+import { createHash } from "node:crypto";
+import {
+	closeSync,
+	createWriteStream,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	openSync,
+	readdirSync,
+	readFileSync,
+	readSync,
+	renameSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
+import { basename, dirname, join, relative, resolve } from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import type { ReadableStream as NodeWebReadableStream } from "node:stream/web";
 import { Markdown, type MarkdownTheme } from "@earendil-works/pi-tui";
 import chalk from "chalk";
+import lockfile from "proper-lockfile";
 import { selectConfig } from "./cli/config-selector.ts";
 import { createProjectTrustContext } from "./cli/project-trust.ts";
 import {
@@ -22,9 +41,11 @@ import { type AppMode, resolveProjectTrusted } from "./core/project-trust.ts";
 import { DefaultResourceLoader } from "./core/resource-loader.ts";
 import { type PackageSource, SettingsManager } from "./core/settings-manager.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "./core/trust-manager.ts";
-import { spawnProcess } from "./utils/child-process.ts";
+import { spawnProcess, spawnProcessSync } from "./utils/child-process.ts";
 import { runInstallerSelfUpdate } from "./utils/cli-self-update.ts";
-import { getLatestPiRelease, isNewerPackageVersion } from "./utils/version-check.ts";
+import { canonicalizePath, getCwdRelativePath } from "./utils/paths.ts";
+import { getPiUserAgent } from "./utils/pi-user-agent.ts";
+import { getGitHubReleaseDownloadUrl, getLatestPiRelease, isNewerPackageVersion } from "./utils/version-check.ts";
 import {
 	cleanupWindowsSelfUpdateQuarantine,
 	quarantineWindowsNativeDependencies,
@@ -33,6 +54,297 @@ import {
 export type PackageCommand = "install" | "remove" | "update" | "list";
 
 type UpdateTarget = { type: "all" } | { type: "self" } | { type: "extensions"; source?: string };
+
+// ============================================================================
+// Managed installations (install-a-coder.sh layout)
+//
+// Installer-managed installations live in <root>/lib/a-coder-cli with a
+// <root>/VERSION marker written by the installer. `update --self` stages the
+// GitHub release archive for the current platform, verifies its SHA256 against
+// the release's SHA256SUMS, smoke-tests the staged binary, and only then swaps
+// it into place, leaving the current release intact if any step fails.
+// ============================================================================
+
+const MANAGED_RELEASE_DIR_NAME = "a-coder-cli";
+const MANAGED_VERSION_MARKER = "VERSION";
+const MANAGED_STAGING_DIR = "staging";
+const MANAGED_UPDATE_LOCK_DIR = "update";
+const MANAGED_RELEASE_VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+const MANAGED_DOWNLOAD_TIMEOUT_MS = 600_000;
+const MANAGED_PROCESS_TIMEOUT_MS = 30_000;
+// `update` keeps refreshing the lock mtime so a long download is never stolen;
+// an abandoned lock becomes stealable only after it stops being refreshed.
+const MANAGED_UPDATE_LOCK_OPTIONS = { realpath: false, stale: 120_000, update: 10_000 };
+
+interface ManagedInstallRoot {
+	root: string;
+	releaseDir: string;
+}
+
+function getActiveManagedInstallRoot(): ManagedInstallRoot | undefined {
+	const packageDir = canonicalizePath(getPackageDir());
+	const configuredRoot = process.env.A_CODER_MANAGED_INSTALL_ROOT?.trim();
+	let root: string;
+	if (configuredRoot) {
+		root = canonicalizePath(resolve(configuredRoot));
+		// The launcher environment is inherited by child processes. Do not classify a
+		// source checkout or another installation launched from managed installs as managed.
+		if (getCwdRelativePath(packageDir, join(root, "lib", MANAGED_RELEASE_DIR_NAME)) === undefined) return undefined;
+	} else {
+		if (basename(packageDir) !== MANAGED_RELEASE_DIR_NAME || basename(dirname(packageDir)) !== "lib") {
+			return undefined;
+		}
+		root = dirname(dirname(packageDir));
+	}
+
+	if (!existsSync(join(root, MANAGED_VERSION_MARKER)) || !existsSync(join(root, "lib", MANAGED_RELEASE_DIR_NAME))) {
+		if (configuredRoot) {
+			throw new Error(`Managed install marker is missing or invalid: ${join(root, MANAGED_VERSION_MARKER)}`);
+		}
+		return undefined;
+	}
+	return { root, releaseDir: join(root, "lib", MANAGED_RELEASE_DIR_NAME) };
+}
+
+function readManagedVersionTag(managedRoot: string): string | undefined {
+	try {
+		return readFileSync(join(managedRoot, MANAGED_VERSION_MARKER), "utf8").trim();
+	} catch {
+		return undefined;
+	}
+}
+
+function toReleaseTag(version: string): string {
+	return version.startsWith("v") ? version : `v${version}`;
+}
+
+function getManagedReleaseAssetName(): string {
+	const platform = process.platform === "win32" ? "windows" : process.platform;
+	const extension = process.platform === "win32" ? "zip" : "tar.gz";
+	return `pi-${platform}-${process.arch}.${extension}`;
+}
+
+async function downloadManagedReleaseAsset(url: string, destinationPath: string, label: string): Promise<void> {
+	const response = await fetch(url, {
+		headers: { "User-Agent": getPiUserAgent(VERSION) },
+		signal: AbortSignal.timeout(MANAGED_DOWNLOAD_TIMEOUT_MS),
+	});
+	if (!response.ok || !response.body) {
+		throw new Error(`Could not download managed ${label} from ${url}: HTTP ${response.status}`);
+	}
+	await pipeline(
+		Readable.fromWeb(response.body as unknown as NodeWebReadableStream),
+		createWriteStream(destinationPath),
+	);
+}
+
+function sha256File(filePath: string): string {
+	const hash = createHash("sha256");
+	const descriptor = openSync(filePath, "r");
+	try {
+		const buffer = Buffer.alloc(1024 * 1024);
+		for (;;) {
+			const bytesRead = readSync(descriptor, buffer, 0, buffer.length, null);
+			if (bytesRead === 0) break;
+			hash.update(buffer.subarray(0, bytesRead));
+		}
+	} finally {
+		closeSync(descriptor);
+	}
+	return hash.digest("hex");
+}
+
+function extractManagedArchiveChecksum(checksums: string, assetName: string): string | undefined {
+	for (const line of checksums.split("\n")) {
+		const trimmed = line.trim();
+		if (!trimmed) continue;
+		const [hash, ...rest] = trimmed.split(/\s+/);
+		if (hash && rest.join(" ") === assetName) return hash.toLowerCase();
+	}
+	return undefined;
+}
+
+function verifyManagedArchiveChecksum(archivePath: string, checksums: string, assetName: string): void {
+	const expected = extractManagedArchiveChecksum(checksums, assetName);
+	if (!expected) {
+		throw new Error(`Managed release SHA256SUMS does not list ${assetName}.`);
+	}
+	if (sha256File(archivePath) !== expected) {
+		throw new Error(`Managed release archive ${assetName} failed SHA256 verification.`);
+	}
+}
+
+function extractManagedReleaseArchive(archivePath: string, destinationDir: string): void {
+	const result = spawnProcessSync("tar", ["-xzf", archivePath, "-C", destinationDir, "--strip-components=1"], {
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "pipe"],
+		timeout: MANAGED_PROCESS_TIMEOUT_MS,
+	});
+	if (result.error || result.status !== 0) {
+		const reason = result.error?.message || result.stderr.trim() || `exit code ${result.status ?? "unknown"}`;
+		throw new Error(`Could not extract managed ${APP_NAME} release archive: ${reason}`);
+	}
+}
+
+function verifyManagedRelease(releaseDir: string, expectedVersion: string): void {
+	const binPath = join(releaseDir, process.platform === "win32" ? "pi.exe" : "pi");
+	const result = spawnProcessSync(binPath, ["--version"], {
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "pipe"],
+		timeout: MANAGED_PROCESS_TIMEOUT_MS,
+	});
+	if (result.error || result.status !== 0) {
+		const reason = result.error?.message || result.stderr.trim() || `exit code ${result.status ?? "unknown"}`;
+		throw new Error(`Could not verify managed ${APP_NAME} ${expectedVersion}: ${reason}`);
+	}
+	const installedVersion = result.stdout.trim();
+	if (installedVersion !== expectedVersion) {
+		throw new Error(
+			`Managed ${APP_NAME} smoke test returned version ${installedVersion}; expected ${expectedVersion}.`,
+		);
+	}
+}
+
+function replaceManagedReleaseDirectory(managedInstall: ManagedInstallRoot, stagedDir: string): void {
+	if (!existsSync(managedInstall.releaseDir)) {
+		renameSync(stagedDir, managedInstall.releaseDir);
+		return;
+	}
+	const backupDir = join(managedInstall.root, "lib", `${MANAGED_RELEASE_DIR_NAME}.old-${process.pid}-${Date.now()}`);
+	renameSync(managedInstall.releaseDir, backupDir);
+	try {
+		renameSync(stagedDir, managedInstall.releaseDir);
+	} catch (error: unknown) {
+		try {
+			renameSync(backupDir, managedInstall.releaseDir);
+		} catch {
+			// Startup cleanup restores the backup on the next run.
+		}
+		throw error;
+	}
+	try {
+		rmSync(backupDir, { force: true, recursive: true });
+	} catch {
+		// A concurrent process may still hold the old tree open; startup cleanup retries.
+	}
+}
+
+function activateManagedRelease(managedInstall: ManagedInstallRoot, tag: string): void {
+	const versionPath = join(managedInstall.root, MANAGED_VERSION_MARKER);
+	const temporaryPath = `${versionPath}.tmp.${process.pid}-${Date.now()}`;
+	try {
+		writeFileSync(temporaryPath, `${tag}\n`);
+		renameSync(temporaryPath, versionPath);
+	} finally {
+		rmSync(temporaryPath, { force: true });
+	}
+}
+
+function cleanupManagedStaging(managedRoot: string): void {
+	const stagingRoot = join(managedRoot, MANAGED_STAGING_DIR);
+	try {
+		for (const entry of readdirSync(stagingRoot)) {
+			if (entry.startsWith("update-")) {
+				rmSync(join(stagingRoot, entry), { force: true, recursive: true });
+			}
+		}
+	} catch {
+		// The staging directory does not exist yet or is not writable.
+	}
+}
+
+function restoreInterruptedManagedRelease(managedRoot: string): void {
+	const libRoot = join(managedRoot, "lib");
+	const releaseDir = join(libRoot, MANAGED_RELEASE_DIR_NAME);
+	if (existsSync(releaseDir)) return;
+	try {
+		for (const entry of readdirSync(libRoot)) {
+			if (entry.startsWith(`${MANAGED_RELEASE_DIR_NAME}.old-`)) {
+				renameSync(join(libRoot, entry), releaseDir);
+				return;
+			}
+		}
+	} catch {
+		// Nothing to restore or not writable; the next startup retries.
+	}
+}
+
+export function cleanupManagedInstall(): void {
+	let managedInstall: ManagedInstallRoot | undefined;
+	try {
+		managedInstall = getActiveManagedInstallRoot();
+	} catch {
+		return;
+	}
+	if (!managedInstall) return;
+
+	try {
+		const releaseLock = lockfile.lockSync(
+			join(managedInstall.root, MANAGED_UPDATE_LOCK_DIR),
+			MANAGED_UPDATE_LOCK_OPTIONS,
+		);
+		try {
+			restoreInterruptedManagedRelease(managedInstall.root);
+			cleanupManagedStaging(managedInstall.root);
+		} finally {
+			releaseLock();
+		}
+	} catch {
+		// A live update owns the staging directory, or cleanup is unavailable.
+	}
+}
+
+async function runManagedSelfUpdate(managedInstall: ManagedInstallRoot, version: string): Promise<void> {
+	if (!MANAGED_RELEASE_VERSION_RE.test(version)) {
+		throw new Error(`Invalid managed release version: ${version}`);
+	}
+
+	let releaseLock: () => Promise<void>;
+	try {
+		releaseLock = await lockfile.lock(
+			join(managedInstall.root, MANAGED_UPDATE_LOCK_DIR),
+			MANAGED_UPDATE_LOCK_OPTIONS,
+		);
+	} catch (error: unknown) {
+		if (error instanceof Error && "code" in error && error.code === "ELOCKED") {
+			throw new Error(`Another managed ${APP_NAME} update is already running.`);
+		}
+		throw error;
+	}
+
+	let stageDir: string | undefined;
+	try {
+		const tag = toReleaseTag(version);
+		if (readManagedVersionTag(managedInstall.root) === tag) {
+			verifyManagedRelease(managedInstall.releaseDir, version);
+			return;
+		}
+		cleanupManagedStaging(managedInstall.root);
+		const stagingRoot = join(managedInstall.root, MANAGED_STAGING_DIR);
+		mkdirSync(stagingRoot, { recursive: true });
+		stageDir = mkdtempSync(join(stagingRoot, "update-"));
+		const extractDir = join(stageDir, "extracted");
+		mkdirSync(extractDir, { recursive: true });
+		const assetName = getManagedReleaseAssetName();
+		const archivePath = join(stageDir, assetName);
+		await Promise.all([
+			downloadManagedReleaseAsset(getGitHubReleaseDownloadUrl(version, assetName), archivePath, "release archive"),
+			downloadManagedReleaseAsset(
+				getGitHubReleaseDownloadUrl(version, "SHA256SUMS"),
+				join(stageDir, "SHA256SUMS"),
+				"SHA256SUMS",
+			),
+		]);
+		verifyManagedArchiveChecksum(archivePath, readFileSync(join(stageDir, "SHA256SUMS"), "utf8"), assetName);
+		extractManagedReleaseArchive(archivePath, extractDir);
+		verifyManagedRelease(extractDir, version);
+		replaceManagedReleaseDirectory(managedInstall, extractDir);
+		activateManagedRelease(managedInstall, tag);
+	} finally {
+		if (stageDir) rmSync(stageDir, { force: true, recursive: true });
+		await releaseLock();
+	}
+}
 
 const SELF_UPDATE_NOTE_MARKDOWN_THEME: MarkdownTheme = {
 	heading: (text) => chalk.bold(chalk.yellow(text)),
@@ -724,8 +1036,35 @@ export async function handlePackageCommand(
 					}
 				}
 				if (updateTargetIncludesSelf(target)) {
+					const managedInstall = process.platform === "win32" ? undefined : getActiveManagedInstallRoot();
+					if (managedInstall && options.force) {
+						console.error(
+							chalk.red(
+								`Managed ${APP_NAME} installations do not support --force; rerun the installer to repair this installation.`,
+							),
+						);
+						process.exitCode = 1;
+						return true;
+					}
 					const selfUpdatePlan = await getSelfUpdatePlan(options.force);
 					if (!selfUpdatePlan.shouldRun) {
+						return true;
+					}
+					if (managedInstall) {
+						if (selfUpdatePlan.note) {
+							printSelfUpdateNote(selfUpdatePlan.note);
+						}
+						try {
+							console.log(chalk.dim(`Updating managed ${APP_NAME} installation...`));
+							await runManagedSelfUpdate(managedInstall, selfUpdatePlan.version);
+						} catch (error: unknown) {
+							const message = error instanceof Error ? error.message : "Unknown managed update error";
+							console.error(chalk.red(`Error: ${message}`));
+							process.exitCode = 1;
+							return true;
+						}
+						console.log(chalk.green(`Updated ${APP_NAME} from ${VERSION} to ${selfUpdatePlan.version}`));
+						console.log(chalk.dim(`Restart ${APP_NAME} to use the new version.`));
 						return true;
 					}
 					const installMethod = detectInstallMethod();
