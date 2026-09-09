@@ -7,6 +7,7 @@ import {
 	type Api,
 	type AssistantMessageEventStream,
 	type Context,
+	createAssistantMessageEventStream,
 	getModels,
 	getProviders,
 	type KnownProvider,
@@ -17,6 +18,7 @@ import {
 	registerApiProvider,
 	resetApiProviders,
 	type SimpleStreamOptions,
+	streamSimple,
 } from "@earendil-works/pi-ai/compat";
 import { registerOAuthProvider, resetOAuthProviders } from "@earendil-works/pi-ai/oauth";
 import { fetchLlamaCppModels } from "@earendil-works/pi-ai/providers/llama-cpp";
@@ -357,6 +359,33 @@ export const clearApiKeyCache = clearConfigValueCache;
 /**
  * Model registry - loads and manages models, resolves API keys via AuthStorage.
  */
+function failedAssistantStream(model: Model<Api>, errorMessage: string): AssistantMessageEventStream {
+	const stream = createAssistantMessageEventStream();
+	stream.push({
+		type: "error",
+		reason: "error",
+		error: {
+			role: "assistant",
+			content: [{ type: "text", text: "" }],
+			api: model.api,
+			provider: model.provider,
+			model: model.id,
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "error",
+			errorMessage,
+			timestamp: Date.now(),
+		},
+	});
+	return stream;
+}
+
 export class ModelRegistry {
 	private models: Model<Api>[] = [];
 	private providerRequestConfigs: Map<string, ProviderRequestConfig> = new Map();
@@ -1068,6 +1097,42 @@ export class ModelRegistry {
 	/**
 	 * Get API key and request headers for a model.
 	 */
+	/**
+	 * Stream a model call through the configured provider with request-time
+	 * authentication resolved by this registry. Extension-facing: setup failures
+	 * (missing credentials, config errors) surface as error events on the
+	 * returned stream instead of throwing.
+	 *
+	 * This fork routes all provider streaming through streamSimple, so custom
+	 * providers registered via registerProvider are consulted the same way the
+	 * main loop streams (upstream parity for #9272/#8964).
+	 */
+	async stream(
+		model: Model<Api>,
+		context: Context,
+		options?: SimpleStreamOptions,
+	): Promise<AssistantMessageEventStream> {
+		return this.streamSimple(model, context, options);
+	}
+
+	/** Stream with provider-neutral options and request-time authentication. */
+	async streamSimple(
+		model: Model<Api>,
+		context: Context,
+		options?: SimpleStreamOptions,
+	): Promise<AssistantMessageEventStream> {
+		const auth = await this.getApiKeyAndHeaders(model);
+		if (!auth.ok) {
+			return failedAssistantStream(model, auth.error);
+		}
+		return streamSimple(model, context, {
+			...options,
+			apiKey: auth.apiKey,
+			headers: auth.headers,
+			env: auth.env,
+		});
+	}
+
 	async getApiKeyAndHeaders(model: Model<Api>): Promise<ResolvedRequestAuth> {
 		try {
 			const providerConfig = this.providerRequestConfigs.get(model.provider);

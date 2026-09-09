@@ -954,6 +954,12 @@ ctx.sessionManager.getLeafId()              // Current leaf entry ID
 
 Access to models and API keys.
 
+### Streaming model calls
+
+Use `ctx.modelRegistry.streamSimple(model, context, options)` for provider-neutral options such as `reasoning`, or `stream()` for API-specific options. Both use configured providers and resolve authentication — including for providers registered with `pi.registerProvider()`. Use these instead of `pi-ai/compat` streaming functions, which cannot see the registry's request-time credential resolution.
+
+Both return an `AssistantMessageEventStream`. Iterate it for response events and await `.result()` for the final message. Setup failures produce error events and error results rather than throwing.
+
 ### ctx.signal
 
 The current agent abort signal, or `undefined` when no agent turn is active.
