@@ -43,12 +43,17 @@ export type AuthStatus = {
 
 export interface GetApiKeyOptions {
 	includeFallback?: boolean;
+	/** Require this much remaining OAuth-token validity; defaults to five minutes. */
+	minOAuthValidityMs?: number;
 }
 
 type LockResult<T> = {
 	result: T;
 	next?: string;
 };
+
+/** Tokens with less than this much remaining validity refresh on access. */
+const DEFAULT_OAUTH_MINIMUM_VALIDITY_MS = 5 * 60 * 1000;
 
 const AUTH_FILE_WRITE_OPTIONS = { encoding: "utf-8", mode: 0o600 } as const;
 
@@ -175,6 +180,99 @@ export class FileAuthStorageBackend implements AuthStorageBackend {
 			}
 		}
 	}
+}
+
+/**
+ * Read-only auth.json backend for `auth check --no-refresh`: reads the file
+ * without creating, locking, or writing it. Malformed state surfaces as a load
+ * error instead of being silently ignored, so preflight can report it as an
+ * invalid auth state.
+ */
+export class ReadOnlyAuthStorageBackend implements AuthStorageBackend {
+	private readonly authPath: string;
+
+	constructor(authPath: string = join(getAgentDir(), "auth.json")) {
+		this.authPath = normalizePath(authPath);
+	}
+
+	private readData(): string | undefined {
+		if (!existsSync(this.authPath)) {
+			return undefined;
+		}
+		let content: string;
+		try {
+			content = readFileSync(this.authPath, "utf-8");
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+				return undefined;
+			}
+			throw new Error(`Failed to read auth.json: ${error instanceof Error ? error.message : String(error)}`);
+		}
+		ReadOnlyAuthStorageBackend.validate(content);
+		return content;
+	}
+
+	private static validate(content: string): void {
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(content);
+		} catch (error) {
+			throw new Error(`Failed to read auth.json: ${error instanceof Error ? error.message : String(error)}`);
+		}
+
+		if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+			throw new Error("Invalid auth.json: expected an object");
+		}
+		for (const [providerId, credential] of Object.entries(parsed)) {
+			if (typeof credential !== "object" || credential === null || Array.isArray(credential)) {
+				throw new Error(`Invalid auth.json credential for provider "${providerId}"`);
+			}
+			const value = credential as Record<string, unknown>;
+			if (value.type === "api_key") {
+				const validKey = value.key === undefined || typeof value.key === "string";
+				const validEnv =
+					value.env === undefined ||
+					(typeof value.env === "object" &&
+						value.env !== null &&
+						!Array.isArray(value.env) &&
+						Object.values(value.env).every((entry) => typeof entry === "string"));
+				if (validKey && validEnv) continue;
+			} else if (
+				value.type === "oauth" &&
+				typeof value.access === "string" &&
+				typeof value.refresh === "string" &&
+				typeof value.expires === "number" &&
+				Number.isFinite(value.expires)
+			) {
+				continue;
+			}
+			throw new Error(`Invalid auth.json credential for provider "${providerId}"`);
+		}
+	}
+
+	withLock<T>(fn: (current: string | undefined) => LockResult<T>): T {
+		const { result, next } = fn(this.readData());
+		if (next !== undefined) {
+			throw new Error("Read-only credential storage cannot modify auth.json");
+		}
+		return result;
+	}
+
+	async withLockAsync<T>(fn: (current: string | undefined) => Promise<LockResult<T>>): Promise<T> {
+		const { result, next } = await fn(this.readData());
+		if (next !== undefined) {
+			throw new Error("Read-only credential storage cannot modify auth.json");
+		}
+		return result;
+	}
+}
+
+/**
+ * AuthStorage over ReadOnlyAuthStorageBackend: reads auth.json without creating
+ * or writing it. Used by `auth check --no-refresh`.
+ */
+export function createReadOnlyAuthStorage(authPath: string = join(getAgentDir(), "auth.json")): AuthStorage {
+	return AuthStorage.fromStorage(new ReadOnlyAuthStorageBackend(authPath));
 }
 
 export class InMemoryAuthStorageBackend implements AuthStorageBackend {
@@ -418,6 +516,7 @@ export class AuthStorage {
 	 */
 	private async refreshOAuthTokenWithLock(
 		providerId: OAuthProviderId,
+		minimumValidityMs: number = DEFAULT_OAUTH_MINIMUM_VALIDITY_MS,
 	): Promise<{ apiKey: string; newCredentials: OAuthCredentials } | null> {
 		const provider = getOAuthProvider(providerId);
 		if (!provider) {
@@ -434,7 +533,9 @@ export class AuthStorage {
 				return { result: null };
 			}
 
-			if (Date.now() < cred.expires) {
+			// Tokens close to expiry refresh even though they are still technically
+			// valid, mirroring the upstream request-auth resolution window.
+			if (Date.now() + minimumValidityMs < cred.expires) {
 				return { result: { apiKey: provider.getApiKey(cred), newCredentials: cred } };
 			}
 
@@ -490,23 +591,28 @@ export class AuthStorage {
 				return undefined;
 			}
 
-			// Check if token needs refresh
-			const needsRefresh = Date.now() >= cred.expires;
+			// Check if the token needs refresh. The normal five-minute window
+			// triggers a refresh but does not impose a provider contract; explicit
+			// callers (such as bearer-token export) do require their requested
+			// minimum after the refresh.
+			// An explicit minOAuthValidityMs wins (0 = only refresh when already expired); the
+			// default floor applies to callers that do not state a requirement.
+			const minimumValidityMs = options.minOAuthValidityMs ?? DEFAULT_OAUTH_MINIMUM_VALIDITY_MS;
+			const expiresSoon = (credential: { expires: number }): boolean =>
+				Date.now() + minimumValidityMs >= credential.expires;
 
-			if (needsRefresh) {
+			if (expiresSoon(cred)) {
 				// Use locked refresh to prevent race conditions
+				let result: { apiKey: string; newCredentials: OAuthCredentials } | null;
 				try {
-					const result = await this.refreshOAuthTokenWithLock(providerId);
-					if (result) {
-						return result.apiKey;
-					}
+					result = await this.refreshOAuthTokenWithLock(providerId, minimumValidityMs);
 				} catch (error) {
 					this.recordError(error);
 					// Refresh failed - re-read file to check if another instance succeeded
 					this.reload();
 					const updatedCred = this.data[providerId];
 
-					if (updatedCred?.type === "oauth" && Date.now() < updatedCred.expires) {
+					if (updatedCred?.type === "oauth" && !expiresSoon(updatedCred)) {
 						// Another instance refreshed successfully, use those credentials
 						return provider.getApiKey(updatedCred);
 					}
@@ -515,8 +621,14 @@ export class AuthStorage {
 					// User can /login to re-authenticate (credentials preserved for retry)
 					return undefined;
 				}
+				if (result) {
+					if (options.minOAuthValidityMs !== undefined && expiresSoon(result.newCredentials)) {
+						throw new Error(`OAuth refresh returned a token that expires too soon for ${providerId}`);
+					}
+					return result.apiKey;
+				}
 			} else {
-				// Token not expired, use current access token
+				// Token valid beyond the minimum window, use current access token
 				return provider.getApiKey(cred);
 			}
 		}

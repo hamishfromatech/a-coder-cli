@@ -735,6 +735,16 @@ export class ModelRegistry {
 		return this.models.filter((m) => this.hasConfiguredAuth(m) || KEYLESS_LOCAL_PROVIDERS.has(m.provider));
 	}
 
+	/** Providers that currently have models in the registry. */
+	getRegisteredProviders(): string[] {
+		return [...new Set(this.models.map((m) => m.provider))];
+	}
+
+	/** Whether the registry has any model for the given provider. */
+	hasProvider(provider: string): boolean {
+		return this.models.some((m) => m.provider === provider);
+	}
+
 	/**
 	 * Refresh dynamic provider model lists. Ollama Cloud and OpenAdapter fetch
 	 * their /v1/models endpoints when auth is configured. Best-effort: failures
@@ -1096,6 +1106,10 @@ export class ModelRegistry {
 
 	/**
 	 * Get API key and request headers for a model.
+	 *
+	 * OAuth credentials resolve through AuthStorage, which refreshes and persists
+	 * tokens with less than five minutes remaining (or `minOAuthValidityMs`, when
+	 * the caller requires a longer window).
 	 */
 	/**
 	 * Stream a model call through the configured provider with request-time
@@ -1133,11 +1147,17 @@ export class ModelRegistry {
 		});
 	}
 
-	async getApiKeyAndHeaders(model: Model<Api>): Promise<ResolvedRequestAuth> {
+	async getApiKeyAndHeaders(
+		model: Model<Api>,
+		options: { minOAuthValidityMs?: number } = {},
+	): Promise<ResolvedRequestAuth> {
 		try {
 			const providerConfig = this.providerRequestConfigs.get(model.provider);
 			const providerEnv = this.authStorage.getProviderEnv(model.provider);
-			const apiKeyFromAuthStorage = await this.authStorage.getApiKey(model.provider, { includeFallback: false });
+			const apiKeyFromAuthStorage = await this.authStorage.getApiKey(model.provider, {
+				includeFallback: false,
+				minOAuthValidityMs: options.minOAuthValidityMs,
+			});
 			const apiKey =
 				apiKeyFromAuthStorage ??
 				(providerConfig?.apiKey

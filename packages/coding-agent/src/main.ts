@@ -6,10 +6,19 @@
  */
 
 import { createInterface } from "node:readline";
-import { type ImageContent, modelsAreEqual } from "@earendil-works/pi-ai";
+import { type Api, type ImageContent, type Model, modelsAreEqual } from "@earendil-works/pi-ai";
 import { setCapabilityOverrides } from "@earendil-works/pi-tui";
 import chalk from "chalk";
 import { type Args, type Mode, parseArgs, printHelp } from "./cli/args.ts";
+import {
+	type AuthCommand,
+	AuthCommandError,
+	getAuthCredential,
+	isAuthCommandHelp,
+	parseAuthCommand,
+	printAuthCommandHelp,
+	validateAuthCommandArgs,
+} from "./cli/auth-command.ts";
 import { launchDesktop } from "./cli/desktop.ts";
 import { processFileArguments } from "./cli/file-processor.ts";
 import { buildInitialMessage } from "./cli/initial-message.ts";
@@ -27,12 +36,12 @@ import {
 } from "./core/agent-session-services.ts";
 import { captureCliSessionEnd, captureCliSessionStart } from "./core/analytics.ts";
 import { formatNoModelsAvailableMessage } from "./core/auth-guidance.ts";
-import { AuthStorage } from "./core/auth-storage.ts";
+import { AuthStorage, createReadOnlyAuthStorage } from "./core/auth-storage.ts";
 import { type ComposioIntegration, createComposioIntegration, resolveComposioConfig } from "./core/composio.ts";
 import { exportFromFile } from "./core/export-html/index.ts";
 import type { ExtensionFactory } from "./core/extensions/types.ts";
 import { applyHttpProxySettings, configureHttpDispatcher } from "./core/http-dispatcher.ts";
-import type { ModelRegistry } from "./core/model-registry.ts";
+import { ModelRegistry, type ResolvedRequestAuth } from "./core/model-registry.ts";
 import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/model-resolver.ts";
 import { restoreStdout, takeOverStdout } from "./core/output-guard.ts";
 import { type AppMode, resolveProjectTrusted } from "./core/project-trust.ts";
@@ -480,6 +489,81 @@ export interface MainOptions {
 	extensionFactories?: ExtensionFactory[];
 }
 
+/**
+ * Handle the `pi auth` command surface (`auth print-api-key`, `auth print-bearer-token`,
+ * `auth check`). Returns true when the args are an auth command and the process should exit.
+ */
+export async function handleAuthCommand(args: string[]): Promise<boolean> {
+	if (args[0] !== "auth") return false;
+	if (isAuthCommandHelp(args)) {
+		printAuthCommandHelp();
+		return true;
+	}
+
+	try {
+		const command = parseAuthCommand(args);
+		if (!command) return false;
+		const parsed = parseArgs(command.args);
+		const { provider, model } = validateAuthCommandArgs(parsed, command.kind);
+		const registry = ModelRegistry.create(createReadOnlyAuthStorage());
+		const resolvedModel = resolveAuthModel(registry, provider, model);
+		// auth check --no-refresh only refreshes when the token is already expired;
+		// print-bearer-token --min-expiry requires validity for the requested window.
+		const minOAuthValidityMs = command.kind === "check" && command.noRefresh ? 0 : command.minExpiryMs;
+		const auth = await registry.getApiKeyAndHeaders(resolvedModel, { minOAuthValidityMs });
+
+		if (command.kind === "check") {
+			emitAuthCheckResult(command, resolvedModel, auth);
+		} else {
+			emitAuthCredential(resolvedModel, auth);
+		}
+	} catch (error: unknown) {
+		const message = error instanceof AuthCommandError || error instanceof Error ? error.message : String(error);
+		console.error(chalk.red(message));
+		process.exitCode = 1;
+	}
+	return true;
+}
+
+function resolveAuthModel(
+	registry: ModelRegistry,
+	provider: string | undefined,
+	modelId: string | undefined,
+): Model<Api> {
+	if (modelId !== undefined) {
+		const model =
+			provider !== undefined ? registry.find(provider, modelId) : registry.getAll().find((m) => m.id === modelId);
+		if (model) return model;
+	} else if (provider !== undefined) {
+		const model = registry.getAll().find((m) => m.provider === provider);
+		if (model) return model;
+	}
+	throw new AuthCommandError(`No model found for ${[provider, modelId].filter(Boolean).join("/")}`);
+}
+
+function emitAuthCheckResult(command: AuthCommand, model: Model<Api>, auth: ResolvedRequestAuth): void {
+	if (command.json) {
+		const payload: Record<string, unknown> = { ok: auth.ok, provider: model.provider, model: model.id };
+		if (!auth.ok) payload.error = auth.error;
+		const credential = command.credentials ? getAuthCredential(auth) : undefined;
+		if (credential !== undefined) payload.credential = credential;
+		console.log(JSON.stringify(payload, null, 2));
+	} else if (auth.ok) {
+		console.log(`${model.provider}/${model.id}: authentication ok`);
+	} else {
+		console.error(chalk.red(`${model.provider}/${model.id}: ${auth.error}`));
+		process.exitCode = 1;
+	}
+}
+
+function emitAuthCredential(model: Model<Api>, auth: ResolvedRequestAuth): void {
+	if (!auth.ok) throw new Error(auth.error);
+	const credential = getAuthCredential(auth);
+	if (credential === undefined) {
+		throw new Error(`No credential resolved for ${model.provider}/${model.id}`);
+	}
+	console.log(credential);
+}
 export async function main(args: string[], options?: MainOptions) {
 	resetTimings();
 	const offlineMode = args.includes("--offline") || isTruthyEnvFlag(process.env.A_CODER_CLI_OFFLINE);
@@ -517,6 +601,11 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 
 	if (await handleResourcesCommand(args, { extensionFactories: options?.extensionFactories })) {
+		process.exit(process.exitCode ?? 0);
+		return;
+	}
+
+	if (await handleAuthCommand(args)) {
 		process.exit(process.exitCode ?? 0);
 		return;
 	}
