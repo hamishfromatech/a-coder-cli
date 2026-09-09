@@ -199,6 +199,11 @@ export default function App() {
 	// extension confirms) still uses the modal.
 	// Session-scoped routing (Phase 2): requests for other sessions stay queued
 	// until that session is active; the runtime-status orb already signals them.
+	// NOTE: sessionFile must be declared BEFORE requestIsForCurrentSession — the
+	// predicates below call it during this same render, and a use-before-
+	// declaration here threw a TDZ ReferenceError the moment the first ui
+	// request arrived, unmounting the whole tree (black window).
+	const sessionFile = useSessionStore((s) => s.sessionFile);
 	const requestIsForCurrentSession = (r: { sessionFile?: string }) =>
 		!r.sessionFile || r.sessionFile === sessionFile;
 	// Confirm-style requests (permission or generic extension confirms) render
@@ -249,7 +254,6 @@ export default function App() {
 	const { current: projectPath, setCurrent: setProjectPath } = useWorkspaceStore();
 	const { setTree } = useSessionTreeStore();
 	const openTab = useTabsStore((s) => s.openTab);
-	const sessionFile = useSessionStore((s) => s.sessionFile);
 	const sessionName = useSessionStore((s) => s.sessionName);
 	const { setStats } = useStatsStore();
 
