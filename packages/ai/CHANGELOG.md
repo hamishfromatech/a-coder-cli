@@ -4,7 +4,7 @@
 
 ### Added
 
-- Added OpenRouter OAuth login (upstream pi #6927 parity): `/login openrouter` runs a PKCE authorization flow against a one-shot loopback callback and exchanges the authorization code for a permanent, user-controlled OpenRouter API key. Both OpenRouter providers expose it alongside `OPENROUTER_API_KEY`; `OAuthAuth` gained an optional `loginLabel` for login menus.
+- Added OpenRouter OAuth login (upstream pi #6927/#7114 parity): `/login openrouter` runs a PKCE authorization flow against a one-shot loopback callback, raced against a manual-code prompt so remote/headless sessions can paste the final redirect URL (or bare authorization code) when the browser cannot reach the loopback host. The exchange mints a permanent, user-controlled OpenRouter API key. Both OpenRouter providers expose it alongside `OPENROUTER_API_KEY`; `OAuthAuth` gained an optional `loginLabel` for login menus.
 - Added GPT-6 Astra for OpenAI API keys and OpenAI Codex subscriptions.
 - Added the `supportsExplicitPromptCacheMode` OpenAI Responses compatibility setting for explicit prompt caching via `prompt_cache_options` (`ttl: "30m"` for long-cache GPT-5.6+/GPT-6 Astra requests, `mode: "explicit"` for cache-disabled requests).
 

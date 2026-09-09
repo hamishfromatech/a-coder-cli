@@ -23,6 +23,8 @@ const TOKEN_URL = "https://openrouter.ai/api/v1/auth/keys";
 const LOGIN_TIMEOUT_MS = 5 * 60 * 1000;
 const TOKEN_EXCHANGE_TIMEOUT_MS = 30_000;
 
+const MANUAL_INPUT_MESSAGE = "Complete sign-in in your browser, or paste the authorization code / redirect URL here:";
+
 function getCallbackHost(): string {
 	return getProviderEnvValue("PI_OAUTH_CALLBACK_HOST") || "127.0.0.1";
 }
@@ -347,14 +349,27 @@ export const openRouterOAuth: OAuthAuth = {
 	name: "OpenRouter OAuth",
 
 	async login(callbacks) {
-		const credentials = await loginOpenRouter({
-			onAuth: (info) => callbacks.notify({ type: "auth_url", url: info.url, instructions: info.instructions }),
-			onProgress: (message) => callbacks.notify({ type: "progress", message }),
-			onPrompt: (prompt) =>
-				callbacks.prompt({ type: "text", message: prompt.message, placeholder: prompt.placeholder }),
-			signal: callbacks.signal,
-		});
-		return { ...credentials, type: "oauth" };
+		// The manual_code prompt races the local callback server; abort it once
+		// the flow settles so the UI can dismiss the pending input.
+		const manualAbort = new AbortController();
+		try {
+			const credentials = await loginOpenRouter({
+				onAuth: (info) => callbacks.notify({ type: "auth_url", url: info.url, instructions: info.instructions }),
+				onProgress: (message) => callbacks.notify({ type: "progress", message }),
+				onPrompt: (prompt) =>
+					callbacks.prompt({ type: "text", message: prompt.message, placeholder: prompt.placeholder }),
+				onManualCodeInput: () =>
+					callbacks.prompt({
+						type: "manual_code",
+						message: MANUAL_INPUT_MESSAGE,
+						signal: manualAbort.signal,
+					}),
+				signal: callbacks.signal,
+			});
+			return { ...credentials, type: "oauth" };
+		} finally {
+			manualAbort.abort();
+		}
 	},
 
 	async refresh(credential) {
@@ -377,6 +392,7 @@ export const openRouterOAuthProvider: OAuthProviderInterface = {
 			onAuth: callbacks.onAuth,
 			onPrompt: callbacks.onPrompt,
 			onProgress: callbacks.onProgress,
+			onManualCodeInput: callbacks.onManualCodeInput,
 			signal: callbacks.signal,
 		});
 	},
