@@ -4,6 +4,7 @@
 
 ### Added
 
+- Compaction, branch-summarization, and retry spinners now render inside the editor top border alongside the working indicator (upstream pi parity), instead of occupying a separate status row. TUI editor borders gained centered scroll indicators via overridable `renderTopBorder`/`renderBottomBorder` hooks in `@earendil-works/pi-tui`, and custom editors opt in with `{ embedWorkingStatus: true }`.
 - Added the `/thinking` command (upstream pi parity): no argument opens a searchable thinking-level selector that marks the current level and the startup default, with Ctrl+S (new `app.thinking.save` keybinding) saving the selection as the startup default; a level argument sets it for the session only. `AgentSession.setThinkingLevel`/`cycleThinkingLevel` gained `{ persist }` options — session changes no longer rewrite the saved default implicitly; explicit save flows do.
 - Added `AGENTS.override.md` per-directory context overrides: when a directory contains `AGENTS.override.md`, it is loaded instead of that directory's `AGENTS.md`/`CLAUDE.md`; other directories layer normally (upstream pi #7681 parity).
 - Added `SessionManager.inMemory(cwd, options, entries)` for restoring sessions held outside the filesystem (e.g. a database): entries are adopted with their tree, labels and compaction structure intact, a stored session header carries its identity and version through migration, and headerless entries become the body of a fresh session (upstream pi #8980 parity).

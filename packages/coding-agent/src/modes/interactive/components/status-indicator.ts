@@ -1,4 +1,4 @@
-import { type Component, isReducedMotion, Loader, type TUI } from "@earendil-works/pi-tui";
+import { type Component, isReducedMotion, Loader, type TUI, truncateToWidth } from "@earendil-works/pi-tui";
 import type { WorkingIndicatorOptions } from "../../../core/extensions/index.ts";
 import { formatDuration } from "../../../utils/duration.ts";
 import { theme } from "../theme/theme.ts";
@@ -51,6 +51,17 @@ export class StatusIndicator extends Loader {
 	) {
 		super(ui, spinnerColorFn, messageColorFn, message, indicator);
 		this.kind = kind;
+	}
+
+	/** Single-line indicator content for embedding in an editor border. */
+	renderInBorder(width: number): string {
+		const line = super.render(width + 2)[1] ?? "";
+		return truncateToWidth(line.startsWith(" ") ? line.slice(1).trimEnd() : line.trimEnd(), width, "");
+	}
+
+	/** Spinner-only content for tight editor borders. */
+	renderSpinnerInBorder(width: number): string {
+		return truncateToWidth(this.getRenderedIndicator(), width, "");
 	}
 
 	dispose(): void {
