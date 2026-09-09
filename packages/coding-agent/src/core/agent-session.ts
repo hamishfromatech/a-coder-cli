@@ -469,6 +469,8 @@ export class AgentSession {
 	// Compaction state
 	private _compactionAbortController: AbortController | undefined = undefined;
 	private _autoCompactionAbortController: AbortController | undefined = undefined;
+	/** Resolvers waiting for the session to settle (abort includes compaction cancellation). */
+	private _idleWaiters: Array<() => void> = [];
 	private _overflowRecoveryAttempted = false;
 
 	// Branch summarization state
@@ -2067,24 +2069,17 @@ export class AgentSession {
 			}
 
 			// Emit input event for extension interception (before skill/template expansion)
-			let currentText = text;
-			let currentImages = options?.images;
-			if (this._extensionRunner.hasHandlers("input")) {
-				const inputResult = await this._extensionRunner.emitInput(
-					currentText,
-					currentImages,
-					options?.source ?? "interactive",
-					this.isStreaming ? options?.streamingBehavior : undefined,
-				);
-				if (inputResult.action === "handled") {
-					preflightResult?.(true);
-					return;
-				}
-				if (inputResult.action === "transform") {
-					currentText = inputResult.text;
-					currentImages = inputResult.images ?? currentImages;
-				}
+			const processedInput = await this._runInputHandlers(
+				text,
+				options?.images,
+				options?.source ?? "interactive",
+				this.isStreaming ? options?.streamingBehavior : undefined,
+			);
+			if (!processedInput) {
+				preflightResult?.(true);
+				return;
 			}
+			let { text: currentText, images: currentImages } = processedInput;
 
 			// UserPromptSubmit hooks: additionalContext is appended to the prompt;
 			// a blocking hook drops the prompt and records the reason as a session
@@ -2296,17 +2291,37 @@ export class AgentSession {
 	 * @param images Optional image attachments to include with the message
 	 * @throws Error if text is an extension command
 	 */
-	async steer(text: string, images?: ImageContent[]): Promise<void> {
-		// Check for extension commands (cannot be queued)
-		if (text.startsWith("/")) {
-			this._throwIfExtensionCommand(text);
+	private async _runInputHandlers(
+		text: string,
+		images: ImageContent[] | undefined,
+		source: InputSource,
+		streamingBehavior?: "steer" | "followUp",
+	): Promise<{ text: string; images: ImageContent[] | undefined } | undefined> {
+		if (!this._extensionRunner.hasHandlers("input")) {
+			return { text, images };
 		}
 
-		// Expand skill commands and prompt templates
-		let expandedText = this._expandSkillCommand(text);
-		expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
+		const inputResult = await this._extensionRunner.emitInput(text, images, source, streamingBehavior);
+		if (inputResult.action === "handled") {
+			return undefined;
+		}
+		if (inputResult.action === "transform") {
+			return { text: inputResult.text, images: inputResult.images ?? images };
+		}
+		return { text, images };
+	}
 
-		await this._queueSteer(expandedText, images);
+	/**
+	 * Queue a steering message while the agent is running.
+	 * Delivered after the current assistant turn finishes executing its tool calls,
+	 * before the next LLM call.
+	 * Expands skill commands and prompt templates. Errors on extension commands.
+	 * @param images Optional image attachments to include with the message
+	 * @param options Input source; defaults to interactive
+	 * @throws Error if text is an extension command
+	 */
+	async steer(text: string, images?: ImageContent[], options?: { source?: InputSource }): Promise<void> {
+		await this._queueUserInput(text, images, "steer", options?.source ?? "interactive");
 	}
 
 	/**
@@ -2316,17 +2331,44 @@ export class AgentSession {
 	 * @param images Optional image attachments to include with the message
 	 * @throws Error if text is an extension command
 	 */
-	async followUp(text: string, images?: ImageContent[]): Promise<void> {
-		// Check for extension commands (cannot be queued)
+	/**
+	 * Queue a follow-up message while the agent is running.
+	 * Delivered only when agent has no more tool calls or steering messages.
+	 * Expands skill commands and prompt templates. Errors on extension commands.
+	 * @param images Optional image attachments to include with the message
+	 * @param options Input source; defaults to interactive
+	 * @throws Error if text is an extension command
+	 */
+	async followUp(text: string, images?: ImageContent[], options?: { source?: InputSource }): Promise<void> {
+		await this._queueUserInput(text, images, "followUp", options?.source ?? "interactive");
+	}
+
+	private async _queueUserInput(
+		text: string,
+		images: ImageContent[] | undefined,
+		behavior: "steer" | "followUp",
+		source: InputSource,
+	): Promise<void> {
 		if (text.startsWith("/")) {
 			this._throwIfExtensionCommand(text);
 		}
 
-		// Expand skill commands and prompt templates
-		let expandedText = this._expandSkillCommand(text);
+		const processedInput = await this._runInputHandlers(
+			text,
+			images,
+			source,
+			this.isStreaming ? behavior : undefined,
+		);
+		if (!processedInput) return;
+
+		let expandedText = this._expandSkillCommand(processedInput.text);
 		expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
 
-		await this._queueFollowUp(expandedText, images);
+		if (behavior === "steer") {
+			await this._queueSteer(expandedText, processedInput.images);
+		} else {
+			await this._queueFollowUp(expandedText, processedInput.images);
+		}
 	}
 
 	/**
@@ -2525,8 +2567,33 @@ export class AgentSession {
 	 */
 	async abort(): Promise<void> {
 		this.abortRetry();
+		// #8920: RPC abort must cancel an in-flight compaction/branch summary too,
+		// and only report success once the session has settled.
+		this.abortCompaction();
+		this.abortBranchSummary();
 		this.agent.abort();
 		await this.agent.waitForIdle();
+		await this.waitForIdle();
+	}
+
+	/** Whether the session has no active agent run, compaction, or branch summary. */
+	get isIdle(): boolean {
+		return !this.isStreaming && !this.isCompacting;
+	}
+
+	/** Resolves once the session is idle; abort uses it to include compaction cancellation. */
+	async waitForIdle(): Promise<void> {
+		if (this.isIdle) return;
+		await new Promise<void>((resolve) => {
+			this._idleWaiters.push(resolve);
+		});
+	}
+
+	private _resolveIdleWaitIfIdle(): void {
+		if (!this.isIdle || this._idleWaiters.length === 0) return;
+		const waiters = this._idleWaiters;
+		this._idleWaiters = [];
+		for (const resolve of waiters) resolve();
 	}
 
 	// =========================================================================
@@ -2916,6 +2983,7 @@ export class AgentSession {
 		} finally {
 			this._compactionAbortController = undefined;
 			this._reconnectToAgent();
+			this._resolveIdleWaitIfIdle();
 		}
 	}
 
@@ -3262,6 +3330,7 @@ export class AgentSession {
 			return false;
 		} finally {
 			this._autoCompactionAbortController = undefined;
+			this._resolveIdleWaitIfIdle();
 		}
 	}
 
@@ -4252,6 +4321,7 @@ export class AgentSession {
 			return { editorText, cancelled: false, summaryEntry };
 		} finally {
 			this._branchSummaryAbortController = undefined;
+			this._resolveIdleWaitIfIdle();
 		}
 	}
 

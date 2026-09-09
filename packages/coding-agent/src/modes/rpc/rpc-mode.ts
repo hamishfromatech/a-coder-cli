@@ -639,7 +639,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				if (!target) {
 					return error(id, "steer", `Unknown session: ${command.sessionPath}`);
 				}
-				await target.steer(command.message, command.images);
+				await target.steer(command.message, command.images, { source: "rpc" });
 				return success(id, "steer");
 			}
 
@@ -648,7 +648,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				if (!target) {
 					return error(id, "follow_up", `Unknown session: ${command.sessionPath}`);
 				}
-				await target.followUp(command.message, command.images);
+				await target.followUp(command.message, command.images, { source: "rpc" });
 				return success(id, "follow_up");
 			}
 

@@ -6,8 +6,12 @@
 
 - Added `AGENTS.override.md` per-directory context overrides: when a directory contains `AGENTS.override.md`, it is loaded instead of that directory's `AGENTS.md`/`CLAUDE.md`; other directories layer normally (upstream pi #7681 parity).
 - Added `SessionManager.inMemory(cwd, options, entries)` for restoring sessions held outside the filesystem (e.g. a database): entries are adopted with their tree, labels and compaction structure intact, a stored session header carries its identity and version through migration, and headerless entries become the body of a fresh session (upstream pi #8980 parity).
+- Added `ui_prompt_start` / `ui_prompt_end` extension events (upstream pi #8355 parity): hosts can distinguish active agent work from time spent waiting on blocking `ctx.ui` prompts (select/confirm/input/editor/custom), with nested prompts tracked by depth. RPC/desktop clients receive them as extension events for waiting-state rendering.
 
 ### Fixed
+
+- Fixed direct RPC `steer` and `follow_up` commands bypassing extension `input` handlers ([#8718](https://github.com/earendil-works/pi/issues/8718)): both now run through the same input-handler/queue path as interactive submissions, with `source: "rpc"`.
+- Fixed RPC `abort` reporting success without cancelling an in-progress manual compaction ([#8920](https://github.com/earendil-works/pi/issues/8920)): abort now also cancels compaction and branch summarization, and the session exposes `isIdle`/`waitForIdle()` so abort settles before responding.
 
 - Fixed large tool results crossing the auto-compaction threshold being sent to the provider before compaction. Threshold compaction now runs between tool execution and the next assistant response in the same run, and interactive progress resumes when the run continues ([#6879](https://github.com/earendil-works/pi/issues/6879), upstream #8782). `prepareNextTurn` now runs only when a next turn actually happens, after `shouldStopAfterTurn`.
 - Fixed extension messages sent with `triggerTurn: false` while the agent is running being inserted between a tool call and its result, which made providers that validate message order reject the replayed history. They are now appended once the turn's tool results are in ([#8537](https://github.com/earendil-works/pi/issues/8537)).
