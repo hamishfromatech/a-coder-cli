@@ -573,7 +573,6 @@ async function completeSummarization(
 		...options,
 		cacheRetention: "none",
 		sessionId: options.sessionId ?? uuidv7(),
-		toolChoice: "none",
 	};
 	if (!streamFn) {
 		return completeSimple(model, context, summarizationOptions);

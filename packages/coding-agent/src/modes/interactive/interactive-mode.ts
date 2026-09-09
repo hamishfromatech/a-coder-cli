@@ -3428,23 +3428,28 @@ export class InteractiveMode {
 				this.clearPendingTools();
 				this.currentWorkingVerb = pickLoadingVerb();
 				this.updateActiveFormLabel();
-				if (this.settingsManager.getShowTerminalProgress()) {
-					this.ui.terminal.setProgress(true);
-				}
 				// Restore main escape handler if retry handler is still active
 				// (retry success event fires later, but we need main handler now)
 				if (this.retryEscapeHandler) {
 					this.defaultEditor.onEscape = this.retryEscapeHandler;
 					this.retryEscapeHandler = undefined;
 				}
+				break;
+
+			case "turn_start":
+				if (this.settingsManager.getShowTerminalProgress()) {
+					this.ui.terminal.setProgress(true);
+				}
 				if (this.workingVisible) {
-					this.showStatusIndicator(
-						new WorkingStatusIndicator(
-							this.ui,
-							this.workingMessage ?? this.activeFormLabel ?? this.currentWorkingVerb,
-							this.workingIndicatorOptions,
-						),
-					);
+					if (this.activeStatusIndicator?.kind !== "working") {
+						this.showStatusIndicator(
+							new WorkingStatusIndicator(
+								this.ui,
+								this.workingMessage ?? this.activeFormLabel ?? this.currentWorkingVerb,
+								this.workingIndicatorOptions,
+							),
+						);
+					}
 				} else {
 					this.clearStatusIndicator();
 				}

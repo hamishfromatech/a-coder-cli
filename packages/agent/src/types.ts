@@ -218,13 +218,15 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 *
 	 * Use this to request a graceful stop after the current turn, e.g. before context gets too full.
 	 *
+	 * This callback sees the completed-turn context and runs before `prepareNextTurn`.
+	 *
 	 * Contract: must not throw or reject. Throwing interrupts the low-level agent loop without producing a normal event sequence.
 	 */
 	shouldStopAfterTurn?: (context: ShouldStopAfterTurnContext) => boolean | Promise<boolean>;
 
 	/**
-	 * Called after `turn_end` and before the loop decides whether another provider request should start.
-	 * Return replacement context/model/thinking state to affect the next turn in this run.
+	 * Called after `turn_end` when the loop will continue, immediately before the next turn starts.
+	 * Return replacement context/model/thinking state to affect that turn.
 	 * Return undefined to keep using the current context/config.
 	 */
 	prepareNextTurn?: (

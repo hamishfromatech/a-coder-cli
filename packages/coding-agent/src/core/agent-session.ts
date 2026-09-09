@@ -17,6 +17,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type {
 	AfterToolCallContext,
+	AgentContext,
 	AgentEvent,
 	AgentMessage,
 	AgentState,
@@ -456,6 +457,8 @@ export class AgentSession {
 	private _followUpMessages: string[] = [];
 	/** Messages queued to be included with the next user prompt as context ("asides"). */
 	private _pendingNextTurnMessages: CustomMessage[] = [];
+	/** Context-only custom messages queued during a run, flushed once the current turn's tool results are in. */
+	private _pendingCustomMessages: CustomMessage[] = [];
 
 	// Auto-mode classifier state (session-scoped circuit breakers)
 	private _classifierDisabled = false;
@@ -1106,6 +1109,25 @@ export class AgentSession {
 		return async (context) => await this._beforeToolCallHook(context, override);
 	}
 
+	private async _compactBeforeNextAssistantResponse(context: AgentContext): Promise<AgentContext> {
+		const model = this.model;
+		const settings = this.settingsManager.getCompactionSettings();
+
+		if (
+			!model ||
+			model.contextWindow <= 0 ||
+			!shouldCompact(estimateContextTokens(context.messages).tokens, model.contextWindow, settings)
+		) {
+			return context;
+		}
+
+		await this._runAutoCompaction("threshold", false);
+		return {
+			...context,
+			messages: this.agent.state.messages.slice(),
+		};
+	}
+
 	private _installAgentNextTurnRefresh(): void {
 		const previousPrepareNextTurnWithContext =
 			this.agent.prepareNextTurnWithContext ??
@@ -1113,13 +1135,14 @@ export class AgentSession {
 				? async (_turn: PrepareNextTurnContext, signal?: AbortSignal) => await this.agent.prepareNextTurn?.(signal)
 				: undefined);
 		this.agent.prepareNextTurnWithContext = async (turn, signal) => {
-			const previousSnapshot = await previousPrepareNextTurnWithContext?.(turn, signal);
-			const previousContext = previousSnapshot?.context ?? turn.context;
+			const context = await this._compactBeforeNextAssistantResponse(turn.context);
+			const previousSnapshot = await previousPrepareNextTurnWithContext?.({ ...turn, context }, signal);
+			const nextContext = previousSnapshot?.context ?? context;
 
 			return {
 				...previousSnapshot,
 				context: {
-					...previousContext,
+					...nextContext,
 					systemPrompt: this._systemPromptOverride ?? this._baseSystemPrompt,
 					tools: this.agent.state.tools.slice(),
 				},
@@ -1203,6 +1226,15 @@ export class AgentSession {
 			// A background sub-agent may have finished while this turn streamed;
 			// its notification is still queued. Wake once the run goes idle.
 			this._scheduleSubAgentWake();
+		}
+
+		// A turn ends after its assistant message and every tool result has been appended,
+		// so this is the first point in the run where a context-only custom message can be
+		// inserted without landing between a tool call and its result. Flushing after the
+		// extension and listener dispatch above also picks up messages that turn_end
+		// handlers queued.
+		if (event.type === "turn_end") {
+			this._flushPendingCustomMessages();
 		}
 
 		// Handle session persistence
@@ -1951,6 +1983,7 @@ export class AgentSession {
 		} finally {
 			this._systemPromptOverride = undefined;
 			this._flushPendingBashMessages();
+			this._flushPendingCustomMessages();
 		}
 	}
 
@@ -2099,8 +2132,9 @@ export class AgentSession {
 				return;
 			}
 
-			// Flush any pending bash messages before the new prompt
+			// Flush any pending bash and custom messages before the new prompt
 			this._flushPendingBashMessages();
+			this._flushPendingCustomMessages();
 
 			// Validate model
 			if (!this.model) {
@@ -2347,8 +2381,9 @@ export class AgentSession {
 	/**
 	 * Send a custom message to the session. Creates a CustomMessageEntry.
 	 *
-	 * Handles three cases:
-	 * - Streaming: queues message, processed when loop pulls from queue
+	 * Handles four cases:
+	 * - Streaming + explicit deliverAs: queues message, processed when loop pulls from queue
+	 * - Streaming + triggerTurn false: appended to state/session once the current turn ends
 	 * - Not streaming + triggerTurn: appends to state/session, starts new turn
 	 * - Not streaming + no trigger: appends to state/session, no turn
 	 *
@@ -2373,21 +2408,41 @@ export class AgentSession {
 		} else if (this.isStreaming) {
 			if (options?.deliverAs === "followUp") {
 				this.agent.followUp(appMessage);
-			} else {
+			} else if (options?.deliverAs === "steer") {
 				this.agent.steer(appMessage);
+			} else {
+				// Appending now would put the message between an assistant tool call and its
+				// result, which providers that validate message order reject on replay. Defer
+				// to the end of the turn. Nothing is emitted yet: message events must not
+				// describe messages the session tree does not contain.
+				this._pendingCustomMessages.push(appMessage);
 			}
 		} else if (options?.triggerTurn) {
 			await this._runAgentPrompt(appMessage);
 		} else {
-			this.agent.state.messages.push(appMessage);
-			this.sessionManager.appendCustomMessageEntry(
-				message.customType,
-				message.content,
-				message.display,
-				message.details,
-			);
-			this._emit({ type: "message_start", message: appMessage });
-			this._emit({ type: "message_end", message: appMessage });
+			this._appendCustomMessage(appMessage);
+		}
+	}
+
+	private _appendCustomMessage(appMessage: CustomMessage): void {
+		this.agent.state.messages.push(appMessage);
+		this.sessionManager.appendCustomMessageEntry(
+			appMessage.customType,
+			appMessage.content,
+			appMessage.display,
+			appMessage.details,
+		);
+		this._emit({ type: "message_start", message: appMessage });
+		this._emit({ type: "message_end", message: appMessage });
+	}
+
+	private _flushPendingCustomMessages(): void {
+		if (this._pendingCustomMessages.length === 0) return;
+
+		const pending = this._pendingCustomMessages;
+		this._pendingCustomMessages = [];
+		for (const appMessage of pending) {
+			this._appendCustomMessage(appMessage);
 		}
 	}
 

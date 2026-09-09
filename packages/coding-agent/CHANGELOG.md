@@ -8,6 +8,9 @@
 
 ### Fixed
 
+- Fixed large tool results crossing the auto-compaction threshold being sent to the provider before compaction. Threshold compaction now runs between tool execution and the next assistant response in the same run, and interactive progress resumes when the run continues ([#6879](https://github.com/earendil-works/pi/issues/6879), upstream #8782). `prepareNextTurn` now runs only when a next turn actually happens, after `shouldStopAfterTurn`.
+- Fixed extension messages sent with `triggerTurn: false` while the agent is running being inserted between a tool call and its result, which made providers that validate message order reject the replayed history. They are now appended once the turn's tool results are in ([#8537](https://github.com/earendil-works/pi/issues/8537)).
+- Fixed compaction and branch summaries forcing `toolChoice: "none"`, which OpenAI-compatible gateways reject when no tools are sent ([#8649](https://github.com/earendil-works/pi/issues/8649), [#8638](https://github.com/earendil-works/pi/issues/8638)).
 - Fixed `read`, `write`, `edit`, `grep`, `find`, `ls`, and `bash` tools ignoring `ctx.cwd` when registered by extensions with a different session cwd ([#8627](https://github.com/earendil-works/pi/issues/8627)).
 - Fixed proxied plain-HTTP provider requests hanging after a tool call by tunneling them with CONNECT (`proxyTunnel`, upstream #8134).
 
