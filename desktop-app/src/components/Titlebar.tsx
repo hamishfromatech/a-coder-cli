@@ -55,10 +55,13 @@ export function Titlebar() {
 			data-tauri-drag-region
 			className="flex h-9 shrink-0 select-none items-center border-b border-pi-border bg-pi-surface/70 backdrop-blur"
 		>
-			{/* Left slot: (macOS traffic lights) + left sidebar toggle. */}
+			{/* Left slot: (macOS traffic lights) + left sidebar toggle. macOS 26's
+				traffic lights are ~14pt buttons with ~23pt spacing: the cluster spans
+				16 + 2×23 + 14 = 76px from the configured x:16 inset, so the slot must
+				clear 76px plus breathing room. */}
 			<div
 				data-tauri-drag-region
-				className={`flex h-full shrink-0 items-center gap-1 ${isMacOS ? "pl-[72px]" : "pl-1"}`}
+				className={`flex h-full shrink-0 items-center gap-1 ${isMacOS ? "pl-[96px]" : "pl-1"}`}
 			>
 				<SidebarToggle
 					onClick={toggleLeftSidebar}
