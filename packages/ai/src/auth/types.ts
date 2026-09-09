@@ -157,6 +157,9 @@ export interface OAuthAuth {
 	/** Display name, e.g. "Anthropic (Claude Pro/Max)". */
 	name: string;
 
+	/** Optional shorter label for login menus, e.g. "Sign in with OpenRouter". */
+	loginLabel?: string;
+
 	login(callbacks: AuthLoginCallbacks): Promise<OAuthCredential>;
 
 	/**
