@@ -201,10 +201,13 @@ jobs:
           set -euo pipefail
           # Copy every installer and updater artifact produced by the desktop
           # build matrix into release-assets/ so they ship in one release.
+          # NOTE: macOS updater archives (*.app.tar.gz + .sig) are excluded
+          # here — both matrix jobs emit identically-named files, and the
+          # last upload would overwrite the other on the release, desyncing
+          # latest.json's signature from the archive one platform downloads.
+          # The latest.json generator stages them with arch-distinct names.
           find desktop-artifacts -type f \( \
             -name '*.dmg' -o \
-            -name '*.app.tar.gz' -o \
-            -name '*.app.tar.gz.sig' -o \
             -name '*.deb' -o \
             -name '*.rpm' -o \
             -name '*.AppImage' -o \
@@ -298,13 +301,27 @@ jobs:
             const archive = findRec(dir, match);
             const sig = findRec(dir, sigMatch);
             if (!archive || !sig) { console.error(`  skipping ${key} (missing archive or signature in ${targetDir})`); continue; }
+            // Stage the macOS updater bundle under an arch-distinct name:
+            // both macOS builds produce identically-named archives, and the
+            // release must carry both for each platform's signature to match
+            // the archive it downloads.
+            const arch = key === "darwin-aarch64" ? "aarch64" : key === "darwin-x86_64" ? "x86_64" : null;
+            let assetBase = path.basename(archive);
+            let sigBase = path.basename(sig);
+            if (arch) {
+              const renamed = assetBase.replace(/\.app\.tar\.gz$/, `.${arch}.app.tar.gz`);
+              fs.copyFileSync(archive, path.join("release-assets", renamed.replace(/ /g, ".")));
+              fs.copyFileSync(sig, path.join("release-assets", sigBase.replace(/\.app\.tar\.gz\.sig$/, `.${arch}.app.tar.gz.sig`).replace(/ /g, ".")));
+              assetBase = renamed;
+              sigBase = sigBase.replace(/\.app\.tar\.gz\.sig$/, `.${arch}.app.tar.gz.sig`);
+            }
             platforms[key] = {
               signature: fs.readFileSync(sig, "utf8").trim(),
               // GitHub normalizes release asset names (spaces become dots),
               // so the URL must use the normalized basename or it 404s —
               // e.g. "A-Coder Desktop.app.tar.gz" is stored as
               // "A-Coder.Desktop.app.tar.gz".
-              url: `${base}/${path.basename(archive).replace(/ /g, ".")}`,
+              url: `${base}/${assetBase.replace(/ /g, ".")}`,
             };
           }
 
