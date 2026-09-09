@@ -5,7 +5,7 @@ import { dirname } from "path";
 import { type Static, Type } from "typebox";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.ts";
 import { getLanguageFromPath, highlightCode, type Theme } from "../../modes/interactive/theme/theme.ts";
-import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.ts";
+import type { ExtensionContext, ToolDefinition, ToolRenderResultOptions } from "../extensions/types.ts";
 import { withFileMutationQueue } from "./file-mutation-queue.ts";
 import { resolveToCwd } from "./path-utils.ts";
 import { normalizeDisplayText, renderToolPath, replaceTabs, str } from "./render-utils.ts";
@@ -209,13 +209,19 @@ export function createWriteToolDefinition(
 		promptGuidelines: ["Use write only for new files or complete rewrites."],
 		parameters: writeSchema,
 		prepareArguments: prepareWriteArguments,
-		async execute(_toolCallId, params: { path: string; content: string }, signal?: AbortSignal, _onUpdate?, _ctx?) {
+		async execute(
+			_toolCallId,
+			params: { path: string; content: string },
+			signal?: AbortSignal,
+			_onUpdate?,
+			ctx?: ExtensionContext,
+		) {
 			// Defensive fallback for direct callers that bypass prepareArguments.
 			const path = params.path ?? (params as unknown as { file_path?: string }).file_path;
 			if (typeof path !== "string" || typeof params.content !== "string") {
 				throw new Error("Invalid write tool arguments");
 			}
-			const absolutePath = resolveToCwd(path, cwd);
+			const absolutePath = resolveToCwd(path, ctx?.cwd || cwd);
 			const dir = dirname(absolutePath);
 			return withFileMutationQueue(absolutePath, async () => {
 				// Do not reject from an abort event listener here: that would release the

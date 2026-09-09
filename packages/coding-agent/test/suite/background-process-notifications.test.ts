@@ -46,7 +46,7 @@ describe("AgentSession background process notifications", () => {
 		const harness = await createHarness();
 		harnesses.push(harness);
 
-		startBackgroundProcess("bgproc-running", "npm run dev", 4242);
+		startBackgroundProcess("bgproc-running", "npm run dev", 4242, undefined, harness.session.sessionId);
 		await new Promise((r) => setTimeout(r, 50));
 		expect(harness.session.drainPendingNotifications()).toEqual([]);
 		expect(harness.session.messages.filter((m) => m.role === "user")).toHaveLength(0);
@@ -57,7 +57,7 @@ describe("AgentSession background process notifications", () => {
 		harnesses.push(harness);
 		harness.setResponses([fauxAssistantMessage("proc ack")]);
 
-		startBackgroundProcess("bgproc-done", "npm run dev", 4242);
+		startBackgroundProcess("bgproc-done", "npm run dev", 4242, undefined, harness.session.sessionId);
 		completeBackgroundProcess("bgproc-done", 0, false);
 
 		await waitForWake(harness, "proc ack");
@@ -76,7 +76,7 @@ describe("AgentSession background process notifications", () => {
 		harnesses.push(harness);
 		harness.setResponses([fauxAssistantMessage("kill ack")]);
 
-		startBackgroundProcess("bgproc-kill", "webpack --watch", 4243);
+		startBackgroundProcess("bgproc-kill", "webpack --watch", 4243, undefined, harness.session.sessionId);
 		completeBackgroundProcess("bgproc-kill", 1, false);
 
 		await waitForWake(harness, "kill ack");
@@ -93,7 +93,7 @@ describe("AgentSession background process notifications", () => {
 		const harness = await createHarness();
 		harnesses.push(harness);
 
-		startBackgroundProcess("bgproc-userkill", "vite dev", 4246);
+		startBackgroundProcess("bgproc-userkill", "vite dev", 4246, undefined, harness.session.sessionId);
 		// killed=true is only passed by the interactive viewer's kill action.
 		completeBackgroundProcess("bgproc-userkill", undefined, true);
 		await new Promise((r) => setTimeout(r, 80));
@@ -128,8 +128,8 @@ describe("AgentSession background process notifications", () => {
 		harnesses.push(harness);
 		harness.setResponses([fauxAssistantMessage("batch ack")]);
 
-		startBackgroundProcess("bgproc-a", "make build", 4244);
-		startBackgroundProcess("bgproc-b", "make test", 4245);
+		startBackgroundProcess("bgproc-a", "make build", 4244, undefined, harness.session.sessionId);
+		startBackgroundProcess("bgproc-b", "make test", 4245, undefined, harness.session.sessionId);
 		completeBackgroundProcess("bgproc-a", 0, false);
 		completeBackgroundProcess("bgproc-b", 0, false);
 

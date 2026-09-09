@@ -173,7 +173,9 @@ export const ANTHROPIC_MODELS = {
 		api: "anthropic-messages",
 		provider: "anthropic",
 		baseUrl: "https://api.anthropic.com",
+		compat: {"forceAdaptiveThinking":true,"supportsTemperature":false},
 		reasoning: true,
+		thinkingLevelMap: {"xhigh":"xhigh"},
 		input: ["text", "image"],
 		cost: {
 			input: 5,

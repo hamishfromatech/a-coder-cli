@@ -4,6 +4,15 @@
 
 ### Added
 
+- Added `AGENTS.override.md` per-directory context overrides: when a directory contains `AGENTS.override.md`, it is loaded instead of that directory's `AGENTS.md`/`CLAUDE.md`; other directories layer normally (upstream pi #7681 parity).
+
+### Fixed
+
+- Fixed `read`, `write`, `edit`, `grep`, `find`, `ls`, and `bash` tools ignoring `ctx.cwd` when registered by extensions with a different session cwd ([#8627](https://github.com/earendil-works/pi/issues/8627)).
+- Fixed proxied plain-HTTP provider requests hanging after a tool call by tunneling them with CONNECT (`proxyTunnel`, upstream #8134).
+
+### Added
+
 
 - Background bash processes now notify the agent when they terminate (done/error — by exit or timeout; a user kill from the running-tasks viewer stays quiet and only rides along on the next submission, as does a sub-agent killed via the viewer or kill_subagent tool, since the killing party already knows): the same `<task-notification>` wake used for detached sub-agents fires a turn that reports the outcome, including exit code, duration, line/byte totals, the output tail and the full-output log path. Multiple terminations within one wake window batch into a single turn, and a persistently failing wake prompt backs off 2s instead of spinning.
 - Bash tool cards gain intent tags (easy-agent toolClassify parity): `[Git] $ git status`, `[Test·npm test] $ npm test`, `[Build] $ tsc -p .`, `[Search·"pattern"] $ rg …`, `[List] $ ls src` — a wall of bash cards reads as recognizable actions while the full command stays visible for approval transparency.

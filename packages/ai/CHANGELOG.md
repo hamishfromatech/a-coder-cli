@@ -4,6 +4,21 @@
 
 ### Added
 
+- Added GPT-6 Astra for OpenAI API keys and OpenAI Codex subscriptions.
+- Added the `supportsExplicitPromptCacheMode` OpenAI Responses compatibility setting for explicit prompt caching via `prompt_cache_options` (`ttl: "30m"` for long-cache GPT-5.6+/GPT-6 Astra requests, `mode: "explicit"` for cache-disabled requests).
+
+### Fixed
+
+- Fixed Mistral Medium reasoning requests to use `reasoning_effort` for all reasoning-capable `mistral-medium-*` model IDs instead of the unsupported `prompt_mode` ([#8700](https://github.com/earendil-works/pi/issues/8700)).
+- Routed all GitHub Copilot GPT models through the Responses API (fixes #9209).
+- Added Claude Opus 5 support: adaptive thinking and prompt caching on Anthropic, Amazon Bedrock (inference-profile-only ids), and GitHub Copilot (minimal→low thinking override).
+- Fixed OpenAI Codex SSE parsing to process terminal events that are not followed by a blank line ([#9047](https://github.com/earendil-works/pi/issues/9047)).
+- Fixed `NO_PROXY` matching for both root domains and subdomains, IPv6 bracket entries, and per-entry ports ([#8737](https://github.com/earendil-works/pi/issues/8737)).
+- Fixed Bedrock error bodies surfacing serialized response streams as `{}`.
+- Fixed quadratic CPU usage when draining buffered `EventStream` events ([#9055](https://github.com/earendil-works/pi/issues/9055)).
+
+### Added
+
 - `AssistantMessage.retryAfterMs`: provider-requested retry delay (milliseconds), extracted from `Retry-After` / `Retry-After-Ms` response headers (or SDK `retryAfter`/`retryAfterMs` fields) and attached to error assistant messages by every API adapter. The OpenAI Codex adapter's inner retry loop now preserves the hint on its final throw so outer retry policies can honor it too. Callers implementing their own retry/backoff should prefer this over their default schedule.
 
 ### Changed

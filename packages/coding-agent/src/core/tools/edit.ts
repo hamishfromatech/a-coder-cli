@@ -5,7 +5,7 @@ import { access as fsAccess, readFile as fsReadFile, writeFile as fsWriteFile } 
 import { type Static, Type } from "typebox";
 import { renderDiff } from "../../modes/interactive/components/diff.ts";
 import type { Theme } from "../../modes/interactive/theme/theme.ts";
-import type { ToolDefinition } from "../extensions/types.ts";
+import type { ExtensionContext, ToolDefinition } from "../extensions/types.ts";
 import {
 	applyEditsToNormalizedContent,
 	computeEditsDiff,
@@ -317,7 +317,7 @@ export function createEditToolDefinition(
 		parameters: editSchema,
 		renderShell: "self",
 		prepareArguments: prepareEditArguments,
-		async execute(_toolCallId, rawInput: EditToolInput, signal?: AbortSignal, _onUpdate?, _ctx?) {
+		async execute(_toolCallId, rawInput: EditToolInput, signal?: AbortSignal, _onUpdate?, ctx?: ExtensionContext) {
 			// Defensive fallback for direct callers that bypass prepareArguments.
 			const filePath = rawInput.path ?? (rawInput as unknown as { file_path?: string }).file_path;
 			if (typeof filePath !== "string") {
@@ -325,7 +325,7 @@ export function createEditToolDefinition(
 			}
 			const input: EditToolInput = { ...rawInput, path: filePath };
 			const { path, edits } = validateEditInput(input);
-			const absolutePath = resolveToCwd(path, cwd);
+			const absolutePath = resolveToCwd(path, ctx?.cwd || cwd);
 
 			return withFileMutationQueue(absolutePath, async () => {
 				// Do not reject from an abort event listener here: that would release the

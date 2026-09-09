@@ -86,8 +86,13 @@ function pickBodyText(error: SdkErrorShape): string | undefined {
 	if (isNonEmptyObject(error.error)) return safeJsonStringify(error.error);
 	const responseBody = error.$response?.body;
 	if (typeof responseBody === "string") return responseBody;
+	if (isReadableStreamLike(responseBody)) return undefined;
 	if (isNonEmptyObject(responseBody)) return safeJsonStringify(responseBody);
 	return undefined;
+}
+
+function isReadableStreamLike(value: unknown): boolean {
+	return typeof value === "object" && value !== null && "pipe" in value && typeof value.pipe === "function";
 }
 
 function isNonEmptyObject(value: unknown): boolean {
