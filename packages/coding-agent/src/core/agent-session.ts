@@ -1315,26 +1315,6 @@ export class AgentSession {
 		return textBlocks.map((c) => (c as TextContent).text).join("");
 	}
 
-	/** Extract text from the most recent user message in agent state. */
-	private _getLastUserMessageText(): string {
-		const messages = this.agent.state.messages;
-		for (let i = messages.length - 1; i >= 0; i--) {
-			const msg = messages[i];
-			if (msg.role === "user") {
-				return this._getUserMessageText(msg);
-			}
-		}
-		return "";
-	}
-
-	/** Extract text blocks from an assistant message. */
-	private _getAssistantText(message: AssistantMessage): string {
-		return message.content
-			.filter((c): c is TextContent => c.type === "text")
-			.map((c) => c.text)
-			.join(" ");
-	}
-
 	/**
 	 * Detect when the model hit the output token limit mid-generation.
 	 * This happens with local/small models that have constrained output windows.
@@ -1353,133 +1333,6 @@ export class AgentSession {
 	}
 
 	/** Whether the user message implies they want the agent to take action. */
-	private _userMessageImpliesAction(text: string): boolean {
-		const actionKeywords = [
-			"create",
-			"build",
-			"write",
-			"edit",
-			"add",
-			"implement",
-			"fix",
-			"update",
-			"generate",
-			"make",
-			"modify",
-			"change",
-			"delete",
-			"remove",
-			"refactor",
-			"scaffold",
-			"produce",
-			"construct",
-			"develop",
-			"set up",
-		];
-		const lower = text.toLowerCase();
-		return actionKeywords.some((keyword) => lower.includes(keyword));
-	}
-
-	/**
-	 * Whether the user message contains enough coding/file context to justify a tool-use
-	 * nudge. This prevents us from badgering the model after casual questions like
-	 * "write me a poem".
-	 */
-	private _userMessageHasCodingContext(text: string): boolean {
-		const contextKeywords = [
-			"file",
-			"files",
-			"code",
-			"codes",
-			"project",
-			"projects",
-			"app",
-			"apps",
-			"page",
-			"pages",
-			"html",
-			"css",
-			"js",
-			"javascript",
-			"typescript",
-			"component",
-			"components",
-			"function",
-			"functions",
-			"class",
-			"classes",
-			"module",
-			"modules",
-			"script",
-			"scripts",
-			"directory",
-			"folder",
-			"repo",
-			"repository",
-			"website",
-			"web site",
-			"site",
-			"ui",
-			"interface",
-			"layout",
-			"navigation",
-			"route",
-			"routes",
-		];
-		const lower = text.toLowerCase();
-		return contextKeywords.some((keyword) => lower.includes(keyword));
-	}
-
-	/** Whether the assistant message contains language indicating it intends to act. */
-	private _assistantPromisedAction(text: string): boolean {
-		const phrases = [
-			"let me",
-			"i'll",
-			"i will",
-			"here's what i'll do",
-			"here is what i'll do",
-			"i am going to",
-			"i'm going to",
-			"i shall",
-			"i intend to",
-			"i plan to",
-		];
-		const lower = text.toLowerCase();
-		return phrases.some((phrase) => lower.includes(phrase));
-	}
-
-	/**
-	 * Detect the "plans but doesn't act" failure mode: the assistant emitted a normal
-	 * text response promising action, but included no tool calls. When this happens
-	 * after a user request that implies action in a coding/file context, we auto-continue
-	 * with a nudge so the harness doesn't idle.
-	 */
-	private _shouldAutoContinueAfterPlanning(message: AssistantMessage): boolean {
-		if (this._autoContinuedForCurrentPrompt) {
-			return false;
-		}
-		if (message.stopReason !== "stop") {
-			return false;
-		}
-		const toolCalls = message.content.filter((c) => c.type === "toolCall");
-		if (toolCalls.length > 0) {
-			return false;
-		}
-		const assistantText = this._getAssistantText(message);
-		if (!this._assistantPromisedAction(assistantText)) {
-			return false;
-		}
-		const userText = this._getLastUserMessageText();
-		if (!this._userMessageImpliesAction(userText)) {
-			return false;
-		}
-		if (!this._userMessageHasCodingContext(userText)) {
-			return false;
-		}
-		return true;
-	}
-
-	/** Find the last assistant message in agent state (including aborted ones) */
 	private _findLastAssistantMessage(): AssistantMessage | undefined {
 		const messages = this.agent.state.messages;
 		for (let i = messages.length - 1; i >= 0; i--) {
@@ -2019,15 +1872,6 @@ export class AgentSession {
 		}
 
 		if (await this._checkCompaction(msg)) {
-			return true;
-		}
-
-		// If the assistant described a plan but emitted no tool calls, nudge it to
-		// actually execute the work instead of idling. This fixes models that say
-		// things like "Let me build that now" and then stop.
-		if (this._shouldAutoContinueAfterPlanning(msg)) {
-			this._autoContinuedForCurrentPrompt = true;
-			await this._queueFollowUp("Please proceed with the planned changes using the available tools.");
 			return true;
 		}
 

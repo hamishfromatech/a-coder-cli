@@ -124,6 +124,10 @@
 - Fixed `Cannot continue from message role: assistant` thrown when a post-run retry followed an overflow compaction: compaction rebuilds context from the session and re-adds the trailing partial/error assistant message, which is now dropped again before `agent.continue()` so the retry proceeds.
 - Windows installer (`Install-A-Coder.ps1`) no longer aborts a self-update when a file is in use. Loaded native addons (`.node`) are renamed out of the way before copying (Windows allows renaming a loaded `.node`), and the archive is copied file-by-file so a single locked file can't brick the whole update. A file that still can't be replaced is staged as a `.new.<stamp>` sidecar and the version marker is not bumped, so re-running the installer after closing A-Coder Desktop / all a-coder-cli terminals finishes the swap instead of leaving a half-installed tree and skipping the desktop install.
 
+### Removed
+
+- Removed the fork-only "planning nudge" auto-continue: after a normal `stop` with no tool calls, the session no longer injects "Please proceed with the planned changes using the available tools." as a user message. The heuristic (any reply containing "I'll"/"let me" plus any action keyword in the prompt) false-positived on ordinary replies; upstream pi has no such behavior. The output-token-limit auto-continue is unaffected.
+
 ## [0.80.26] - 2026-08-22
 
 ## [0.80.25] - 2026-08-22
