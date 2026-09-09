@@ -208,6 +208,7 @@ export function createWriteToolDefinition(
 		promptSnippet: "Create or overwrite files",
 		promptGuidelines: ["Use write only for new files or complete rewrites."],
 		parameters: writeSchema,
+		constrainedSampling: { type: "json_schema", strict: "prefer" },
 		prepareArguments: prepareWriteArguments,
 		async execute(
 			_toolCallId,

@@ -411,6 +411,7 @@ export function createBashToolDefinition(
 			"Use background: true for long-running commands like dev servers, file watchers, or builds that should keep running while you continue other work. The tool returns immediately and output is captured to a temp file.",
 		],
 		parameters: bashSchema,
+		constrainedSampling: { type: "json_schema", strict: "prefer" },
 		async execute(
 			toolCallId,
 			{ command, timeout, background }: { command: string; timeout?: number; background?: boolean },

@@ -10,7 +10,6 @@ export const XAI_MODELS = {
 		api: "openai-completions",
 		provider: "xai",
 		baseUrl: "https://api.x.ai/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false},
 		reasoning: false,
 		input: ["text"],
 		cost: {
@@ -28,7 +27,6 @@ export const XAI_MODELS = {
 		api: "openai-completions",
 		provider: "xai",
 		baseUrl: "https://api.x.ai/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false},
 		reasoning: false,
 		input: ["text"],
 		cost: {
@@ -46,7 +44,6 @@ export const XAI_MODELS = {
 		api: "openai-completions",
 		provider: "xai",
 		baseUrl: "https://api.x.ai/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false},
 		reasoning: false,
 		input: ["text", "image"],
 		cost: {
@@ -64,7 +61,6 @@ export const XAI_MODELS = {
 		api: "openai-completions",
 		provider: "xai",
 		baseUrl: "https://api.x.ai/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -82,7 +78,6 @@ export const XAI_MODELS = {
 		api: "openai-completions",
 		provider: "xai",
 		baseUrl: "https://api.x.ai/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -100,7 +95,6 @@ export const XAI_MODELS = {
 		api: "openai-completions",
 		provider: "xai",
 		baseUrl: "https://api.x.ai/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -118,7 +112,6 @@ export const XAI_MODELS = {
 		api: "openai-completions",
 		provider: "xai",
 		baseUrl: "https://api.x.ai/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -136,7 +129,6 @@ export const XAI_MODELS = {
 		api: "openai-completions",
 		provider: "xai",
 		baseUrl: "https://api.x.ai/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -154,7 +146,6 @@ export const XAI_MODELS = {
 		api: "openai-completions",
 		provider: "xai",
 		baseUrl: "https://api.x.ai/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false},
 		reasoning: false,
 		input: ["text"],
 		cost: {

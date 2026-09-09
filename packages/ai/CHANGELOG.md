@@ -53,8 +53,7 @@
 
 ### Added
 
-- Added built-in keyless local model providers (LM Studio, llama.cpp, Ollama) that list models from each server's OpenAI-compatible `/v1/models` endpoint; Ollama models also discover their real context window from `/api/show`.
-- Added a `max_tokens`-cap retry for OpenAI-completions requests: when a provider rejects `max_tokens` as exceeding the model's real output cap (400), the request is retried once without `max_tokens` so the server picks a valid default.
+- Added provider-side constrained sampling for tools via `Tool.constrainedSampling`: strict JSON-schema enforcement for OpenAI and Anthropic tool calls, and OpenAI custom grammar tools (Lark/regex). Grammar tool capability comes from the model catalog's `supportsGrammarTools` compat flag, enabled for GPT-5+ models on OpenAI, OpenAI Codex, Azure OpenAI, GitHub Copilot, opencode, and Cloudflare AI Gateway ([#6341](https://github.com/earendil-works/pi/pull/6341)).
 - Added Claude Sonnet 5 to the GitHub Copilot model catalog ([#6200](https://github.com/earendil-works/pi/issues/6200)).
 - Added zstd request-body compression for the OpenAI Codex Responses SSE transport. Requests are sent with `Content-Encoding: zstd` when Node/Bun zstd support is available; the WebSocket transport is unchanged.
 - Added `ollama-context` helpers (`ollamaNativeOrigin`, `looksLikeOllama`, `parseOllamaContextLength`, `fetchOllamaContextWindow`) that discover a model's effective context window from the native Ollama `/api/show` endpoint.

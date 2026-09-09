@@ -4,6 +4,7 @@
 
 ### Added
 
+- Built-in `read`, `bash`, `edit`, and `write` tools prefer strict JSON-schema sampling by default (`constrainedSampling: { type: "json_schema", strict: "prefer" }`): providers that support strict tools enforce the schema; others fall back silently. Extensions can re-register tool definitions with `constrainedSampling: false` (upstream pi parity).
 - Compaction, branch-summarization, and retry spinners now render inside the editor top border alongside the working indicator (upstream pi parity), instead of occupying a separate status row. TUI editor borders gained centered scroll indicators via overridable `renderTopBorder`/`renderBottomBorder` hooks in `@earendil-works/pi-tui`, and custom editors opt in with `{ embedWorkingStatus: true }`.
 - Added the `/thinking` command (upstream pi parity): no argument opens a searchable thinking-level selector that marks the current level and the startup default, with Ctrl+S (new `app.thinking.save` keybinding) saving the selection as the startup default; a level argument sets it for the session only. `AgentSession.setThinkingLevel`/`cycleThinkingLevel` gained `{ persist }` options — session changes no longer rewrite the saved default implicitly; explicit save flows do.
 - Added `AGENTS.override.md` per-directory context overrides: when a directory contains `AGENTS.override.md`, it is loaded instead of that directory's `AGENTS.md`/`CLAUDE.md`; other directories layer normally (upstream pi #7681 parity).

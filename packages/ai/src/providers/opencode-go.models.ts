@@ -10,7 +10,7 @@ export const OPENCODE_GO_MODELS = {
 		api: "openai-completions",
 		provider: "opencode-go",
 		baseUrl: "https://opencode.ai/zen/go/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"maxTokensField":"max_tokens","requiresReasoningContentOnAssistantMessages":true,"thinkingFormat":"deepseek"},
+		compat: {"maxTokensField":"max_tokens","requiresReasoningContentOnAssistantMessages":true,"thinkingFormat":"deepseek"},
 		reasoning: true,
 		thinkingLevelMap: {"minimal":null,"low":null,"medium":null,"high":"high","xhigh":"max"},
 		input: ["text"],
@@ -29,7 +29,7 @@ export const OPENCODE_GO_MODELS = {
 		api: "openai-completions",
 		provider: "opencode-go",
 		baseUrl: "https://opencode.ai/zen/go/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"maxTokensField":"max_tokens","requiresReasoningContentOnAssistantMessages":true,"thinkingFormat":"deepseek"},
+		compat: {"maxTokensField":"max_tokens","requiresReasoningContentOnAssistantMessages":true,"thinkingFormat":"deepseek"},
 		reasoning: true,
 		thinkingLevelMap: {"minimal":null,"low":null,"medium":null,"high":"high","xhigh":"max"},
 		input: ["text", "image"],
@@ -48,7 +48,7 @@ export const OPENCODE_GO_MODELS = {
 		api: "openai-completions",
 		provider: "opencode-go",
 		baseUrl: "https://opencode.ai/zen/go/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"maxTokensField":"max_tokens","requiresReasoningContentOnAssistantMessages":true,"thinkingFormat":"deepseek"},
+		compat: {"maxTokensField":"max_tokens","requiresReasoningContentOnAssistantMessages":true,"thinkingFormat":"deepseek"},
 		reasoning: true,
 		thinkingLevelMap: {"minimal":null,"low":null,"medium":null,"high":"high","xhigh":"max"},
 		input: ["text"],
@@ -67,7 +67,7 @@ export const OPENCODE_GO_MODELS = {
 		api: "openai-completions",
 		provider: "opencode-go",
 		baseUrl: "https://opencode.ai/zen/go/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"maxTokensField":"max_tokens"},
+		compat: {"maxTokensField":"max_tokens"},
 		reasoning: true,
 		input: ["text"],
 		cost: {
@@ -85,7 +85,7 @@ export const OPENCODE_GO_MODELS = {
 		api: "openai-completions",
 		provider: "opencode-go",
 		baseUrl: "https://opencode.ai/zen/go/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"maxTokensField":"max_tokens"},
+		compat: {"maxTokensField":"max_tokens"},
 		reasoning: true,
 		thinkingLevelMap: {"off":null,"minimal":null,"low":null,"medium":null,"high":"high","xhigh":"max"},
 		input: ["text"],
@@ -104,7 +104,7 @@ export const OPENCODE_GO_MODELS = {
 		api: "openai-completions",
 		provider: "opencode-go",
 		baseUrl: "https://opencode.ai/zen/go/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"maxTokensField":"max_tokens"},
+		compat: {"maxTokensField":"max_tokens"},
 		reasoning: true,
 		input: ["text"],
 		cost: {
@@ -122,7 +122,7 @@ export const OPENCODE_GO_MODELS = {
 		api: "openai-completions",
 		provider: "opencode-go",
 		baseUrl: "https://opencode.ai/zen/go/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"maxTokensField":"max_tokens"},
+		compat: {"maxTokensField":"max_tokens"},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -175,7 +175,7 @@ export const OPENCODE_GO_MODELS = {
 		api: "openai-completions",
 		provider: "opencode-go",
 		baseUrl: "https://opencode.ai/zen/go/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"maxTokensField":"max_tokens"},
+		compat: {"maxTokensField":"max_tokens"},
 		reasoning: true,
 		input: ["text"],
 		cost: {
@@ -193,7 +193,7 @@ export const OPENCODE_GO_MODELS = {
 		api: "openai-completions",
 		provider: "opencode-go",
 		baseUrl: "https://opencode.ai/zen/go/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"maxTokensField":"max_tokens"},
+		compat: {"maxTokensField":"max_tokens"},
 		reasoning: true,
 		input: ["text"],
 		cost: {
@@ -211,7 +211,7 @@ export const OPENCODE_GO_MODELS = {
 		api: "openai-completions",
 		provider: "opencode-go",
 		baseUrl: "https://opencode.ai/zen/go/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"thinkingFormat":"deepseek","supportsReasoningEffort":false,"maxTokensField":"max_tokens","supportsLongCacheRetention":false},
+		compat: {"thinkingFormat":"deepseek","supportsReasoningEffort":false,"maxTokensField":"max_tokens","supportsLongCacheRetention":false},
 		reasoning: true,
 		thinkingLevelMap: {"minimal":null,"low":null,"medium":null},
 		input: ["text", "image"],
@@ -230,7 +230,7 @@ export const OPENCODE_GO_MODELS = {
 		api: "openai-completions",
 		provider: "opencode-go",
 		baseUrl: "https://opencode.ai/zen/go/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"maxTokensField":"max_tokens"},
+		compat: {"maxTokensField":"max_tokens"},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -248,7 +248,7 @@ export const OPENCODE_GO_MODELS = {
 		api: "openai-completions",
 		provider: "opencode-go",
 		baseUrl: "https://opencode.ai/zen/go/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"maxTokensField":"max_tokens"},
+		compat: {"maxTokensField":"max_tokens"},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -266,7 +266,7 @@ export const OPENCODE_GO_MODELS = {
 		api: "openai-completions",
 		provider: "opencode-go",
 		baseUrl: "https://opencode.ai/zen/go/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"maxTokensField":"max_tokens"},
+		compat: {"maxTokensField":"max_tokens"},
 		reasoning: true,
 		input: ["text"],
 		cost: {
@@ -284,7 +284,7 @@ export const OPENCODE_GO_MODELS = {
 		api: "openai-completions",
 		provider: "opencode-go",
 		baseUrl: "https://opencode.ai/zen/go/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"maxTokensField":"max_tokens"},
+		compat: {"maxTokensField":"max_tokens"},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -302,7 +302,7 @@ export const OPENCODE_GO_MODELS = {
 		api: "openai-completions",
 		provider: "opencode-go",
 		baseUrl: "https://opencode.ai/zen/go/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"maxTokensField":"max_tokens"},
+		compat: {"maxTokensField":"max_tokens"},
 		reasoning: true,
 		input: ["text"],
 		cost: {
@@ -320,7 +320,7 @@ export const OPENCODE_GO_MODELS = {
 		api: "openai-completions",
 		provider: "opencode-go",
 		baseUrl: "https://opencode.ai/zen/go/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"maxTokensField":"max_tokens"},
+		compat: {"maxTokensField":"max_tokens"},
 		reasoning: true,
 		input: ["text"],
 		cost: {
@@ -389,7 +389,7 @@ export const OPENCODE_GO_MODELS = {
 		api: "openai-completions",
 		provider: "opencode-go",
 		baseUrl: "https://opencode.ai/zen/go/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"maxTokensField":"max_tokens"},
+		compat: {"maxTokensField":"max_tokens"},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -407,7 +407,7 @@ export const OPENCODE_GO_MODELS = {
 		api: "openai-completions",
 		provider: "opencode-go",
 		baseUrl: "https://opencode.ai/zen/go/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"thinkingFormat":"qwen","maxTokensField":"max_tokens"},
+		compat: {"thinkingFormat":"qwen","maxTokensField":"max_tokens"},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -425,7 +425,7 @@ export const OPENCODE_GO_MODELS = {
 		api: "openai-completions",
 		provider: "opencode-go",
 		baseUrl: "https://opencode.ai/zen/go/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"maxTokensField":"max_tokens"},
+		compat: {"maxTokensField":"max_tokens"},
 		reasoning: true,
 		input: ["text"],
 		cost: {
@@ -443,7 +443,7 @@ export const OPENCODE_GO_MODELS = {
 		api: "openai-completions",
 		provider: "opencode-go",
 		baseUrl: "https://opencode.ai/zen/go/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"maxTokensField":"max_tokens"},
+		compat: {"maxTokensField":"max_tokens"},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -478,7 +478,7 @@ export const OPENCODE_GO_MODELS = {
 		api: "openai-completions",
 		provider: "opencode-go",
 		baseUrl: "https://opencode.ai/zen/go/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"maxTokensField":"max_tokens"},
+		compat: {"maxTokensField":"max_tokens"},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {

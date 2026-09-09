@@ -230,6 +230,7 @@ export function createReadToolDefinition(
 		promptSnippet: "Read file contents",
 		promptGuidelines: ["Use read to examine files instead of cat or sed."],
 		parameters: readSchema,
+		constrainedSampling: { type: "json_schema", strict: "prefer" },
 		prepareArguments: prepareReadArguments,
 		async execute(_toolCallId, params: ReadToolInput, signal?: AbortSignal, _onUpdate?, ctx?) {
 			return new Promise<{ content: (TextContent | ImageContent)[]; details: ReadToolDetails | undefined }>(

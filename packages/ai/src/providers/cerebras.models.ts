@@ -10,7 +10,6 @@ export const CEREBRAS_MODELS = {
 		api: "openai-completions",
 		provider: "cerebras",
 		baseUrl: "https://api.cerebras.ai/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false},
 		reasoning: true,
 		input: ["text"],
 		cost: {
@@ -28,7 +27,6 @@ export const CEREBRAS_MODELS = {
 		api: "openai-completions",
 		provider: "cerebras",
 		baseUrl: "https://api.cerebras.ai/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {

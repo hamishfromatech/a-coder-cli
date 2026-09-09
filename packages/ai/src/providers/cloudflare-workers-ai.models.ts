@@ -10,7 +10,7 @@ export const CLOUDFLARE_WORKERS_AI_MODELS = {
 		api: "openai-completions",
 		provider: "cloudflare-workers-ai",
 		baseUrl: "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsLongCacheRetention":false,"sendSessionAffinityHeaders":true,"requiresReasoningContentOnAssistantMessages":true,"thinkingFormat":"deepseek"},
+		compat: {"sendSessionAffinityHeaders":true,"requiresReasoningContentOnAssistantMessages":true,"thinkingFormat":"deepseek"},
 		reasoning: true,
 		thinkingLevelMap: {"minimal":null,"low":null,"medium":null,"high":"high","xhigh":"max"},
 		input: ["text"],
@@ -29,7 +29,7 @@ export const CLOUDFLARE_WORKERS_AI_MODELS = {
 		api: "openai-completions",
 		provider: "cloudflare-workers-ai",
 		baseUrl: "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsLongCacheRetention":false,"sendSessionAffinityHeaders":true,"requiresReasoningContentOnAssistantMessages":true,"thinkingFormat":"deepseek"},
+		compat: {"sendSessionAffinityHeaders":true,"requiresReasoningContentOnAssistantMessages":true,"thinkingFormat":"deepseek"},
 		reasoning: true,
 		thinkingLevelMap: {"minimal":null,"low":null,"medium":null,"high":"high","xhigh":"max"},
 		input: ["text"],
@@ -48,7 +48,7 @@ export const CLOUDFLARE_WORKERS_AI_MODELS = {
 		api: "openai-completions",
 		provider: "cloudflare-workers-ai",
 		baseUrl: "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsLongCacheRetention":false,"sendSessionAffinityHeaders":true},
+		compat: {"sendSessionAffinityHeaders":true},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -66,7 +66,7 @@ export const CLOUDFLARE_WORKERS_AI_MODELS = {
 		api: "openai-completions",
 		provider: "cloudflare-workers-ai",
 		baseUrl: "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsLongCacheRetention":false,"sendSessionAffinityHeaders":true},
+		compat: {"sendSessionAffinityHeaders":true},
 		reasoning: false,
 		input: ["text"],
 		cost: {
@@ -84,7 +84,7 @@ export const CLOUDFLARE_WORKERS_AI_MODELS = {
 		api: "openai-completions",
 		provider: "cloudflare-workers-ai",
 		baseUrl: "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsLongCacheRetention":false,"sendSessionAffinityHeaders":true},
+		compat: {"sendSessionAffinityHeaders":true},
 		reasoning: false,
 		input: ["text"],
 		cost: {
@@ -102,7 +102,7 @@ export const CLOUDFLARE_WORKERS_AI_MODELS = {
 		api: "openai-completions",
 		provider: "cloudflare-workers-ai",
 		baseUrl: "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsLongCacheRetention":false,"sendSessionAffinityHeaders":true},
+		compat: {"sendSessionAffinityHeaders":true},
 		reasoning: false,
 		input: ["text", "image"],
 		cost: {
@@ -120,7 +120,7 @@ export const CLOUDFLARE_WORKERS_AI_MODELS = {
 		api: "openai-completions",
 		provider: "cloudflare-workers-ai",
 		baseUrl: "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsLongCacheRetention":false,"sendSessionAffinityHeaders":true},
+		compat: {"sendSessionAffinityHeaders":true},
 		reasoning: false,
 		input: ["text"],
 		cost: {
@@ -138,7 +138,7 @@ export const CLOUDFLARE_WORKERS_AI_MODELS = {
 		api: "openai-completions",
 		provider: "cloudflare-workers-ai",
 		baseUrl: "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsLongCacheRetention":false,"sendSessionAffinityHeaders":true},
+		compat: {"sendSessionAffinityHeaders":true},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -156,7 +156,7 @@ export const CLOUDFLARE_WORKERS_AI_MODELS = {
 		api: "openai-completions",
 		provider: "cloudflare-workers-ai",
 		baseUrl: "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsLongCacheRetention":false,"sendSessionAffinityHeaders":true},
+		compat: {"sendSessionAffinityHeaders":true},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -174,7 +174,7 @@ export const CLOUDFLARE_WORKERS_AI_MODELS = {
 		api: "openai-completions",
 		provider: "cloudflare-workers-ai",
 		baseUrl: "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsLongCacheRetention":false,"sendSessionAffinityHeaders":true},
+		compat: {"sendSessionAffinityHeaders":true},
 		reasoning: true,
 		input: ["text"],
 		cost: {
@@ -192,7 +192,7 @@ export const CLOUDFLARE_WORKERS_AI_MODELS = {
 		api: "openai-completions",
 		provider: "cloudflare-workers-ai",
 		baseUrl: "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsLongCacheRetention":false,"sendSessionAffinityHeaders":true},
+		compat: {"sendSessionAffinityHeaders":true},
 		reasoning: true,
 		input: ["text"],
 		cost: {
@@ -210,7 +210,7 @@ export const CLOUDFLARE_WORKERS_AI_MODELS = {
 		api: "openai-completions",
 		provider: "cloudflare-workers-ai",
 		baseUrl: "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsLongCacheRetention":false,"sendSessionAffinityHeaders":true},
+		compat: {"sendSessionAffinityHeaders":true},
 		reasoning: true,
 		input: ["text"],
 		cost: {
@@ -228,7 +228,7 @@ export const CLOUDFLARE_WORKERS_AI_MODELS = {
 		api: "openai-completions",
 		provider: "cloudflare-workers-ai",
 		baseUrl: "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsLongCacheRetention":false,"sendSessionAffinityHeaders":true},
+		compat: {"sendSessionAffinityHeaders":true},
 		reasoning: true,
 		input: ["text"],
 		cost: {
@@ -246,7 +246,7 @@ export const CLOUDFLARE_WORKERS_AI_MODELS = {
 		api: "openai-completions",
 		provider: "cloudflare-workers-ai",
 		baseUrl: "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsLongCacheRetention":false,"sendSessionAffinityHeaders":true},
+		compat: {"sendSessionAffinityHeaders":true},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
@@ -264,7 +264,7 @@ export const CLOUDFLARE_WORKERS_AI_MODELS = {
 		api: "openai-completions",
 		provider: "cloudflare-workers-ai",
 		baseUrl: "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsLongCacheRetention":false,"sendSessionAffinityHeaders":true},
+		compat: {"sendSessionAffinityHeaders":true},
 		reasoning: true,
 		input: ["text"],
 		cost: {
@@ -282,7 +282,7 @@ export const CLOUDFLARE_WORKERS_AI_MODELS = {
 		api: "openai-completions",
 		provider: "cloudflare-workers-ai",
 		baseUrl: "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsLongCacheRetention":false,"sendSessionAffinityHeaders":true},
+		compat: {"sendSessionAffinityHeaders":true},
 		reasoning: true,
 		input: ["text"],
 		cost: {
@@ -300,7 +300,7 @@ export const CLOUDFLARE_WORKERS_AI_MODELS = {
 		api: "openai-completions",
 		provider: "cloudflare-workers-ai",
 		baseUrl: "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsLongCacheRetention":false,"sendSessionAffinityHeaders":true},
+		compat: {"sendSessionAffinityHeaders":true},
 		reasoning: true,
 		input: ["text"],
 		cost: {
@@ -318,7 +318,7 @@ export const CLOUDFLARE_WORKERS_AI_MODELS = {
 		api: "openai-completions",
 		provider: "cloudflare-workers-ai",
 		baseUrl: "https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsLongCacheRetention":false,"sendSessionAffinityHeaders":true},
+		compat: {"sendSessionAffinityHeaders":true},
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {

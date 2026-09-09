@@ -315,6 +315,7 @@ export function createEditToolDefinition(
 			"Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.",
 		],
 		parameters: editSchema,
+		constrainedSampling: { type: "json_schema", strict: "prefer" },
 		renderShell: "self",
 		prepareArguments: prepareEditArguments,
 		async execute(_toolCallId, rawInput: EditToolInput, signal?: AbortSignal, _onUpdate?, ctx?: ExtensionContext) {
