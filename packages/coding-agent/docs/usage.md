@@ -297,6 +297,9 @@ a-coder-cli --exclude-tools ask_question
 | `A_CODER_CLI_SKIP_VERSION_CHECK` | Skip the Pi version update check at startup. This prevents the `pi.dev` latest-version request |
 | `A_CODER_CLI_TELEMETRY` | Override install/update telemetry and provider attribution headers: `1`/`true`/`yes` or `0`/`false`/`no`. This does not disable update checks |
 | `PI_CACHE_RETENTION` | Set to `long` for extended prompt cache where supported |
+| `A_CODER_CLI_HYPERLINKS` / `PI_HYPERLINKS` | Override OSC 8 hyperlink detection: `1`, `0`, or unset for auto |
+| `A_CODER_CLI_IMAGE_PROTOCOL` / `PI_IMAGE_PROTOCOL` | Override inline image detection: `kitty`, `iterm2`, `none`, or unset for auto |
+| `A_CODER_CLI_TRUE_COLOR` / `PI_TRUE_COLOR` | Override truecolor detection: `1`, `0`, or unset for auto |
 | `VISUAL`, `EDITOR` | Fallback external editor for Ctrl+G when `externalEditor` is unset; defaults to Notepad on Windows and `nano` elsewhere |
 
 ## Design Principles

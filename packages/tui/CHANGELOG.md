@@ -4,6 +4,10 @@
 
 ### Added
 
+- Added environment and programmatic overrides for OSC 8 hyperlinks, inline image protocols, and truecolor terminal capabilities ([#8665](https://github.com/earendil-works/pi/issues/8665)).
+
+### Added
+
 - Mouse wheel scrolling: `Terminal.enableMouseTracking()/disableMouseTracking()` (DEC 1000 + SGR 1006) and `TUI.setMouseEnabled()`. The transcript overlay enables tracking while open — wheel up/down scroll the transcript 3 lines per tick (arrow-key dispatch to the focused component), clicks/motion are swallowed, multiple reports coalesced in one stdin chunk are each honored, X10 (`ESC [ M`) fallback supported, and `stop()` disables tracking as an exit safety net. Covered by `test/mouse-wheel.test.ts`.
 - Reduced-motion support: module-level `setReducedMotion()/isReducedMotion()` (easy-agent motionPrefs parity). The `Loader` renders a calm static frame (no interval churn) when enabled.
 
