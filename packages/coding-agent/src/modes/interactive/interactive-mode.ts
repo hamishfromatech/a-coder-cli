@@ -7,7 +7,11 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { type AgentMessage, estimateContextTokens } from "@earendil-works/pi-agent-core";
+import {
+	type AgentMessage,
+	estimateContextTokens,
+	type ThinkingLevel as SessionThinkingLevel,
+} from "@earendil-works/pi-agent-core";
 import type { ThinkingLevel } from "@earendil-works/pi-ai";
 import {
 	type AssistantMessage,
@@ -74,6 +78,7 @@ import {
 	disconnectComposioApp,
 	listComposioApps,
 } from "../../core/composio-apps.ts";
+import { DEFAULT_THINKING_LEVEL } from "../../core/defaults.ts";
 import type {
 	AutocompleteProviderFactory,
 	EditorFactory,
@@ -196,6 +201,7 @@ import {
 import { StatusLineComponent, type StatusLineContext } from "./components/status-line.ts";
 import { TaskListComponent } from "./components/task-list.ts";
 import { TaskPanelComponent } from "./components/task-panel.ts";
+import { ThinkingSelectorComponent } from "./components/thinking-selector.ts";
 import { readTodosFromBranch, TodoListComponent } from "./components/todo-list.ts";
 import { ToolExecutionComponent } from "./components/tool-execution.ts";
 import { TranscriptOverlayComponent } from "./components/transcript-overlay.ts";
@@ -709,6 +715,20 @@ export class InteractiveMode {
 		const thinkCommand = slashCommands.find((command) => command.name === "think");
 		if (thinkCommand) {
 			thinkCommand.getArgumentCompletions = (prefix: string): AutocompleteItem[] | null => {
+				const levels = this.session.getAvailableThinkingLevels().map((l) => String(l));
+				const filtered = levels.filter((l) => l.startsWith(prefix.toLowerCase()));
+				if (filtered.length === 0) return null;
+				return filtered.map((l) => ({
+					value: l,
+					label: l,
+					description: l === this.session.thinkingLevel ? "current" : undefined,
+				}));
+			};
+		}
+
+		const thinkingCommand = slashCommands.find((command) => command.name === "thinking");
+		if (thinkingCommand) {
+			thinkingCommand.getArgumentCompletions = (prefix: string): AutocompleteItem[] | null => {
 				const levels = this.session.getAvailableThinkingLevels().map((l) => String(l));
 				const filtered = levels.filter((l) => l.startsWith(prefix.toLowerCase()));
 				if (filtered.length === 0) return null;
@@ -3102,6 +3122,12 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
+			if (text === "/thinking" || text.startsWith("/thinking ")) {
+				const searchTerm = text.startsWith("/thinking ") ? text.slice("/thinking ".length).trim() : undefined;
+				this.editor.setText("");
+				this.handleThinkingCommand(searchTerm);
+				return;
+			}
 			if (text === "/export" || text.startsWith("/export ")) {
 				await this.handleExportCommand(text);
 				this.editor.setText("");
@@ -4421,6 +4447,56 @@ export class InteractiveMode {
 		this.footer.invalidate();
 		this.updateEditorBorderColor();
 		this.showStatus(`Thinking level: ${requested}`);
+	}
+
+	/** /thinking [level]: open the thinking selector, or set the level directly. */
+	private handleThinkingCommand(searchTerm?: string): void {
+		const availableLevels = this.session.getAvailableThinkingLevels();
+		if (!searchTerm) {
+			this.showThinkingSelector();
+			return;
+		}
+
+		const normalized = searchTerm.trim().toLowerCase();
+		const level = availableLevels.find((candidate) => candidate.toLowerCase() === normalized);
+		if (!level) {
+			this.showError(`Unknown thinking level "${searchTerm}". Available levels: ${availableLevels.join(", ")}.`);
+			return;
+		}
+
+		this.selectThinkingLevel(level, false);
+	}
+
+	private selectThinkingLevel(level: SessionThinkingLevel, persist: boolean): void {
+		try {
+			this.session.setThinkingLevel(level, { persist });
+			this.footer.invalidate();
+			this.updateEditorBorderColor();
+			this.showStatus(persist ? `Default thinking level: ${level}` : `Thinking level: ${level}`);
+		} catch (error) {
+			this.showError(error instanceof Error ? error.message : String(error));
+		}
+	}
+
+	private showThinkingSelector(): void {
+		this.showSelector((done) => {
+			const selectLevel = (level: SessionThinkingLevel, persist: boolean) => {
+				this.selectThinkingLevel(level, persist);
+				done();
+			};
+			const selector = new ThinkingSelectorComponent(
+				this.session.thinkingLevel ?? DEFAULT_THINKING_LEVEL,
+				this.session.getAvailableThinkingLevels(),
+				(level) => selectLevel(level, false),
+				() => {
+					done();
+					this.ui.requestRender();
+				},
+				(level) => selectLevel(level, true),
+				this.settingsManager.getDefaultThinkingLevel() ?? DEFAULT_THINKING_LEVEL,
+			);
+			return { component: selector, focus: selector };
+		});
 	}
 
 	private async cycleModel(direction: "forward" | "backward"): Promise<void> {

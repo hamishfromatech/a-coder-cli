@@ -113,6 +113,7 @@ Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, `ctrl+shift+alt+x`, `ctrl+1
 | `app.model.cycleBackward` | `shift+ctrl+p` | Cycle to previous model |
 | `app.thinking.cycle` | `shift+ctrl+m` | Cycle thinking level |
 | `app.thinking.toggle` | `ctrl+t` | Collapse or expand thinking blocks |
+| `app.thinking.save` | `ctrl+s` | Save thinking level (in /thinking selector) |
 | `app.permissionMode.select` | `shift+tab` | Open permission mode selector |
 
 ### Display and Message Queue

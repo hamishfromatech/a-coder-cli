@@ -22,6 +22,7 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "permissions", description: "Manage permission policy rules (allow / soft-deny / hard-deny)" },
 	{ name: "output-style", description: "Switch output style (reshapes how the agent answers)" },
 	{ name: "think", description: "Set thinking level (off/minimal/low/medium/high) - no arg shows current" },
+	{ name: "thinking", description: "Set thinking level (opens selector UI, Ctrl+S saves as default)" },
 	{ name: "scoped-models", description: "Enable/disable models for Ctrl+P cycling" },
 	{ name: "export", description: "Export session (HTML default, or specify path: .html/.jsonl)" },
 	{ name: "import", description: "Import and resume a session from a JSONL file" },
