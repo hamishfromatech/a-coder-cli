@@ -812,6 +812,7 @@ export class SessionManager {
 		sessionFile: string | undefined,
 		persist: boolean,
 		newSessionOptions?: NewSessionOptions,
+		entries?: FileEntry[],
 	) {
 		this.cwd = resolvePath(cwd);
 		this.sessionDir = normalizePath(sessionDir);
@@ -822,6 +823,8 @@ export class SessionManager {
 
 		if (sessionFile) {
 			this.setSessionFile(sessionFile);
+		} else if (entries?.length) {
+			this._loadEntries(entries, newSessionOptions);
 		} else {
 			this.newSession(newSessionOptions);
 		}
@@ -861,6 +864,28 @@ export class SessionManager {
 			this.newSession();
 			this.sessionFile = explicitPath; // preserve explicit path from --session flag
 		}
+	}
+
+	/**
+	 * Adopt externally stored entries, header included when present. Entries without
+	 * a header become the body of a fresh session built from the given options.
+	 */
+	private _loadEntries(entries: FileEntry[], options?: NewSessionOptions): void {
+		const header = entries.find((e) => e.type === "session") as SessionHeader | undefined;
+
+		if (header) {
+			this.fileEntries = entries;
+			this.sessionId = header.id;
+
+			if (migrateToCurrentVersion(this.fileEntries)) {
+				this._rewriteFile();
+			}
+		} else {
+			this.newSession(options);
+			this.fileEntries = this.fileEntries.concat(entries);
+		}
+
+		this._buildIndex();
 	}
 
 	/**
@@ -1525,8 +1550,8 @@ export class SessionManager {
 	}
 
 	/** Create an in-memory session (no file persistence) */
-	static inMemory(cwd: string = process.cwd(), options?: NewSessionOptions): SessionManager {
-		return new SessionManager(cwd, "", undefined, false, options);
+	static inMemory(cwd: string = process.cwd(), options?: NewSessionOptions, entries?: FileEntry[]): SessionManager {
+		return new SessionManager(cwd, "", undefined, false, options, entries);
 	}
 
 	/**

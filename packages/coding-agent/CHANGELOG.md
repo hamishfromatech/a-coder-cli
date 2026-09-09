@@ -5,6 +5,7 @@
 ### Added
 
 - Added `AGENTS.override.md` per-directory context overrides: when a directory contains `AGENTS.override.md`, it is loaded instead of that directory's `AGENTS.md`/`CLAUDE.md`; other directories layer normally (upstream pi #7681 parity).
+- Added `SessionManager.inMemory(cwd, options, entries)` for restoring sessions held outside the filesystem (e.g. a database): entries are adopted with their tree, labels and compaction structure intact, a stored session header carries its identity and version through migration, and headerless entries become the body of a fresh session (upstream pi #8980 parity).
 
 ### Fixed
 
