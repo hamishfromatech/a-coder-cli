@@ -5,6 +5,7 @@ import {
 	ChevronDown,
 	Coins,
 	Eye,
+	Hand,
 	Hash,
 	Loader2,
 	Lock,
@@ -63,6 +64,17 @@ const MODE_META: Record<
 export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
 	const { status, error, isStreaming, isCompacting, thinkingLevel, permissionMode, contextUsage, streamingVerb } = useSessionStore();
 	const subAgents = useSessionStore((s) => s.subAgents);
+	// Hermes-parity awaiting-input state: when the turn is parked on a tool
+	// approval for THIS session, it is paused on the user, not working — the
+	// streaming indicator stands down so the wait is not read as in-flight work.
+	const sessionFile = useSessionStore((s) => s.sessionFile);
+	const awaitingInput = useSessionStore((s) =>
+		s.uiRequests.some(
+			(r) =>
+				(r.kind === "permission" || r.method === "confirm") &&
+				(!r.sessionFile || r.sessionFile === sessionFile),
+		),
+	);
 	const { stats } = useStatsStore();
 
 	const runningAgents = subAgents.filter((a) => a.status === "running");
@@ -144,7 +156,17 @@ export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
 						<span className="font-medium uppercase tracking-wide">Compacting</span>
 					</div>
 				)}
-				{isStreaming && (
+				{awaitingInput && (
+					<div
+						className="flex items-center gap-1 rounded bg-pi-warning/10 px-1.5 py-0.5 text-pi-warning"
+						title="A tool is waiting for your approval"
+					>
+						<Hand className="h-2.5 w-2.5" />
+						<span className="font-medium uppercase tracking-wide">Waiting for you</span>
+					</div>
+				)}
+
+				{isStreaming && !awaitingInput && (
 					<div className="flex items-center gap-1 rounded bg-pi-accent-soft px-1.5 py-0.5 text-pi-accent">
 						<span className="flex items-center gap-0.5">
 							<span className="pi-dot h-1 w-1 rounded-full bg-pi-accent" />

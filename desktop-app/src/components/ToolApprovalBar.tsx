@@ -1,7 +1,8 @@
-import { type FC, useCallback, useEffect, useRef, useState } from "react";
+import { type FC, useCallback, useEffect, useState } from "react";
 import { AlertCircle, ChevronDown, Loader2 } from "lucide-react";
 import { useSessionStore, type UiRequest } from "../stores/session-store";
 import { triggerHaptic } from "../lib/haptics";
+import { rendererLog } from "../lib/renderer-log";
 
 // Tool-approval bar matching Hermes desktop's in-chat permission UI.
 //
@@ -28,10 +29,9 @@ interface ToolApprovalBarProps {
 
 export const ToolApprovalBar: FC<ToolApprovalBarProps> = ({ request, surface }) => {
 	const resolveUiRequest = useSessionStore((s) => s.resolveUiRequest);
-	const setApprovalInlineVisible = useSessionStore((s) => s.setApprovalInlineVisible);
+	const setApprovalInlineMounted = useSessionStore((s) => s.setApprovalInlineMounted);
 	const [submitting, setSubmitting] = useState<ApprovalChoice | null>(null);
 	const [showDetails, setShowDetails] = useState(false);
-	const inlineRef = useRef<HTMLDivElement | null>(null);
 
 	const busy = submitting !== null;
 	const hasDetails = (request.message ?? "").trim().length > 0;
@@ -54,29 +54,28 @@ export const ToolApprovalBar: FC<ToolApprovalBarProps> = ({ request, surface }) 
 		[busy, request.id, resolveUiRequest],
 	);
 
-	// Inline surface: report on-screen visibility so the floating fallback only
-	// appears when this bar is scrolled out of view.
+	useEffect(() => {
+		rendererLog(`APPROVAL ${surface} mount id=${request.id}`);
+		return () => rendererLog(`APPROVAL ${surface} unmount id=${request.id}`);
+	}, [surface, request.id]);
+
+	// Inline surface: signal mounted so the floating fallback stands down.
+	// Mirrors Hermes desktop's registerApprovalInlineAnchor: the fallback is
+	// gated on MOUNT STATE, not on-screen visibility. An IntersectionObserver
+	// here used to oscillate — the in-flow fallback card shifts the composer,
+	// which flips the inline row's observed visibility, which remounts the
+	// fallback — thrashing layout and the compositor every frame until the
+	// window blacked out on WKWebView. Mount state cannot oscillate: it only
+	// changes when tool rows mount/unmount (message events).
 	useEffect(() => {
 		if (surface !== "inline") return;
-		const el = inlineRef.current;
-		if (!el || typeof IntersectionObserver === "undefined") {
-			setApprovalInlineVisible(true);
-			return;
-		}
-		const observer = new IntersectionObserver(
-			(entries) => {
-				for (const entry of entries) {
-					setApprovalInlineVisible(entry.isIntersecting);
-				}
-			},
-			{ threshold: 0.1 },
-		);
-		observer.observe(el);
+		setApprovalInlineMounted(true);
+		rendererLog(`APPROVAL inline mount id=${request.id}`);
 		return () => {
-			observer.disconnect();
-			setApprovalInlineVisible(false);
+			setApprovalInlineMounted(false);
+			rendererLog(`APPROVAL inline unmount id=${request.id}`);
 		};
-	}, [surface, setApprovalInlineVisible]);
+	}, [surface, setApprovalInlineMounted, request.id]);
 
 	// Keyboard shortcuts live at the bar so they follow whichever surface is
 	// mounted. The store-guard in `respond` dedupes if both surfaces briefly
@@ -162,7 +161,7 @@ export const ToolApprovalBar: FC<ToolApprovalBarProps> = ({ request, surface }) 
 	);
 
 	if (surface === "inline") {
-		return <div ref={inlineRef}>{bar}</div>;
+		return bar;
 	}
 
 	// Floating fallback: a centered card sitting just above the composer, shown

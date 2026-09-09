@@ -126,8 +126,8 @@ export interface SessionState {
 	// under the pending tool row) sets this true while it is on screen, so the
 	// floating fallback above the composer only appears when the inline bar is
 	// scrolled out of view.
-	approvalInlineVisible: boolean;
-	setApprovalInlineVisible: (visible: boolean) => void;
+	approvalInlineMounted: boolean;
+	setApprovalInlineMounted: (mounted: boolean) => void;
 }
 
 export const useSessionStore = create<SessionState>((set) => ({
@@ -215,8 +215,8 @@ export const useSessionStore = create<SessionState>((set) => ({
 			questionRequest: null,
 		}),
 	uiRequests: [],
-	approvalInlineVisible: false,
-	setApprovalInlineVisible: (approvalInlineVisible) => set({ approvalInlineVisible }),
+	approvalInlineMounted: false,
+	setApprovalInlineMounted: (approvalInlineMounted) => set({ approvalInlineMounted }),
 	addUiRequest: (request) =>
 		new Promise((resolve) => {
 			set((state) => ({

@@ -60,6 +60,7 @@ import { Toaster } from "./components/Toaster";
 import { UpdateModal } from "./components/UpdateModal";
 import { ApprovalModal } from "./components/panels/ApprovalModal";
 import { ToolApprovalBar } from "./components/ToolApprovalBar";
+import { rendererLog } from "./lib/renderer-log";
 import { ConnectingOverlay } from "./components/ConnectingOverlay";
 
 const FALLBACK_CWD = "";
@@ -190,7 +191,7 @@ export default function App() {
 		uiRequests,
 		addUiRequest,
 		resolveUiRequest,
-		approvalInlineVisible,
+		approvalInlineMounted,
 	} = useSessionStore();
 	// Tool approvals (kind === "permission") render as an inline bar in the
 	// transcript (with a floating fallback above the composer when that row is
@@ -207,6 +208,9 @@ export default function App() {
 	const permissionRequest = uiRequests.find(
 		(r) => (r.kind === "permission" || r.method === "confirm") && requestIsForCurrentSession(r),
 	);
+	useEffect(() => {
+		rendererLog(`PERMISSION ${permissionRequest ? `pending id=${permissionRequest.id} tool=${permissionRequest.toolName ?? "?"}` : "cleared"}`);
+	}, [permissionRequest?.id]);
 	const modalRequest = uiRequests.find(
 		(r) => r.kind !== "permission" && r.method !== "confirm" && requestIsForCurrentSession(r),
 	);
@@ -1304,7 +1308,7 @@ export default function App() {
 						<TodoPanel />
 						<TaskPanel />
 						<RuntimePanel />
-						{permissionRequest && !approvalInlineVisible && (
+						{permissionRequest && !approvalInlineMounted && (
 							<ToolApprovalBar request={permissionRequest} surface="floating" />
 						)}
 						<Composer />
@@ -1828,7 +1832,11 @@ function ChatContainer({ children }: { children: React.ReactNode }) {
 
 	return (
 		<div
-			className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
+			// Hermes-parity paint/layout containment on the chat bounds: gives the
+			// transcript + approval surfaces their own compositing boundary, which
+			// the WKWebView layer tree needs to stay stable while tool rows and
+			// approval cards mount.
+			className="relative flex min-h-0 flex-1 flex-col overflow-hidden [contain:layout_paint]"
 			style={{
 				["--chat-gutter" as string]: `clamp(1rem, ${leftGutter}, 2.5rem)`,
 				["--chat-gutter-right" as string]: `calc(${rightGutter} + ${rightDrawerPadding}px)`,
