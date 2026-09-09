@@ -133,7 +133,7 @@ export function CommandCenter({
 		>
 			{/* Backdrop */}
 			<div
-				className="absolute inset-0 bg-black/60 backdrop-blur-[2px]"
+				className="absolute inset-0 bg-black/60"
 				onClick={onClose}
 			/>
 

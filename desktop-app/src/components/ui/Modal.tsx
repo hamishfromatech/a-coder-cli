@@ -30,8 +30,11 @@ export const ModalBackdrop = forwardRef<
 			role="dialog"
 			aria-modal="true"
 			onClick={onClick}
+			// No backdrop-filter here: full-screen backdrop-filter compositing
+			// blackens the whole window on this app's WKWebView. The plain
+			// bg-black/60 dim is the ceiling; never add blur to this layer.
 			className={cn(
-				"fixed inset-0 z-50 flex bg-black/60 p-4 backdrop-blur-sm transition-opacity duration-300 ease-out",
+				"fixed inset-0 z-50 flex bg-black/60 p-4 transition-opacity duration-300 ease-out",
 				position === "center" ? "items-center justify-center" : "items-start justify-center",
 				visible ? "opacity-100" : "opacity-0",
 				className,

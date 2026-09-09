@@ -26,7 +26,7 @@ function MarkdownImage({ className, src, alt, ...props }: ComponentProps<"img">)
 			</button>
 			{open && (
 				<div
-					className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm"
+					className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/85 p-4"
 					onClick={() => setOpen(false)}
 				>
 					<img

@@ -169,7 +169,7 @@ export const ToolApprovalBar: FC<ToolApprovalBarProps> = ({ request, surface }) 
 	// only when the inline bar is scrolled out of view.
 	return (
 		<div
-			className="mx-auto mb-2 w-full max-w-2xl rounded-xl border border-pi-accent/30 bg-pi-surface-overlay px-3 py-2 shadow-overlay backdrop-blur-xl"
+			className="mx-auto mb-2 w-full max-w-2xl rounded-xl border border-pi-accent/30 bg-pi-surface-overlay px-3 py-2 shadow-overlay"
 			data-slot="tool-approval-fallback"
 		>
 			<div className="flex min-w-0 items-center gap-2 text-sm text-pi-accent">

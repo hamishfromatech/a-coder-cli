@@ -139,7 +139,7 @@ export function CommandPalette({ open, commands, onClose }: CommandPaletteProps)
 		>
 			{/* Backdrop */}
 			<div
-				className="fixed inset-0 bg-black/50 backdrop-blur-[2px]"
+				className="fixed inset-0 bg-black/50"
 				onClick={onClose}
 			/>
 			{/* Panel */}
