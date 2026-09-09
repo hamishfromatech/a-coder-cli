@@ -3,8 +3,8 @@
  * task_update.
  *
  * Ports easy-agent's TaskCreate/TaskGet/TaskList/TaskUpdate toolchain into
- * pi-mono. Unlike the session-scoped `todo` tool (which the model rewrites in
- * full every call), tasks persist to disk under ~/.a-coder/cli/tasks/<session>
+ * pi-mono. Unlike the deprecated session-scoped `todo` tool (which the model
+ * rewrites in full every call and which lives only in the transcript), tasks persist to disk under ~/.a-coder/cli/tasks/<session>
  * with stable high-water-mark ids and a bidirectional blocks/blockedBy
  * dependency graph. `task_update` accepts status "deleted" as a pseudo-status
  * to delete a task and cascade reference cleanup. Every result snapshots the
@@ -32,7 +32,7 @@ import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 
 // ─── Schemas ───────────────────────────────────────────────────────
 
-const TASK_CREATE_SCHEMA = Type.Object(
+const TASK_SPEC_SCHEMA = Type.Object(
 	{
 		subject: Type.String({ minLength: 1, description: "Imperative one-line title, e.g. 'Fix login bug'." }),
 		description: Type.String({ minLength: 1, description: "What needs to be done. One or two paragraphs is fine." }),
@@ -47,6 +47,17 @@ const TASK_CREATE_SCHEMA = Type.Object(
 				description: "Free-form metadata attached to the task.",
 			}),
 		),
+	},
+	{ additionalProperties: false },
+);
+
+const TASK_CREATE_SCHEMA = Type.Object(
+	{
+		tasks: Type.Array(TASK_SPEC_SCHEMA, {
+			minItems: 1,
+			description:
+				"One or more task specs, created in order. Pass the complete task list in one call when planning multi-step work.",
+		}),
 	},
 	{ additionalProperties: false },
 );
@@ -205,25 +216,37 @@ export function createTaskCreateToolDefinition(): ToolDefinition<typeof TASK_CRE
 		name: "task_create",
 		label: "Task Create",
 		description:
-			"Create a task in the session's persistent task graph. Tasks survive restarts and conversation clears, and support dependencies via blocks/blockedBy. Use proactively for 3+ step work, multi-step plans, and any task list the user would want to see across sessions.",
+			"Create one or more tasks in the session's persistent task graph. Pass a tasks array to create a full task list in one call. Tasks survive restarts and conversation clears, and support dependencies via blocks/blockedBy (wire them afterwards with task_update). Use proactively for 3+ step work, multi-step plans, and any task list the user would want to see across sessions.",
 		promptSnippet: "Maintain a persistent task graph for multi-session work",
 		parameters: TASK_CREATE_SCHEMA,
 		async execute(_toolCallId, input: TaskCreateInput, _signal?, _onUpdate?, rawContext?) {
 			const taskListId = taskListIdFromContext(rawContext as ExtensionContext | undefined);
-			const id = await createTask(taskListId, {
-				subject: input.subject,
-				description: input.description,
-				activeForm: input.activeForm,
-				status: "pending",
-				blocks: [],
-				blockedBy: [],
-				...(input.metadata ? { metadata: input.metadata } : {}),
-			});
+			const createdIds: string[] = [];
+			for (const spec of input.tasks) {
+				const id = await createTask(taskListId, {
+					subject: spec.subject,
+					description: spec.description,
+					activeForm: spec.activeForm,
+					status: "pending",
+					blocks: [],
+					blockedBy: [],
+					...(spec.metadata ? { metadata: spec.metadata } : {}),
+				});
+				createdIds.push(id);
+			}
 			const tasks = await listTasks(taskListId);
-			return textResult(`Task #${id} created: ${input.subject}`, { tasks, taskId: id });
+			const text =
+				createdIds.length === 1
+					? `Task #${createdIds[0]} created: ${input.tasks[0].subject}`
+					: `${createdIds.length} tasks created: ${createdIds
+							.map((id, i) => `#${id}: ${input.tasks[i].subject}`)
+							.join(", ")}`;
+			return textResult(text, { tasks, taskId: createdIds.length === 1 ? createdIds[0] : undefined });
 		},
 		renderCall(args, theme, context) {
-			return renderToolCallRow("task_create", String(args.subject ?? ""), theme, context);
+			const specs = Array.isArray(args.tasks) ? args.tasks : [];
+			const summary = specs.length === 1 ? String(specs[0]?.subject ?? "") : `${specs.length} tasks`;
+			return renderToolCallRow("task_create", summary, theme, context);
 		},
 		renderResult(result, _options, theme, context) {
 			const text = (context as { lastComponent?: Text } | undefined)?.lastComponent ?? new Text("", 0, 0);

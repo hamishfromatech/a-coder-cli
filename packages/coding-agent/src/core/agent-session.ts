@@ -569,8 +569,12 @@ export class AgentSession {
 
 		// Track background bash processes so their termination (done/error/killed)
 		// notifies the agent like detached sub-agents do (<task-notification> wake).
-		// Lives for the session's lifetime — the store is process-wide.
-		subscribeBackgroundProcesses((id, record) => this._handleBackgroundProcessUpdate(id, record));
+		// Lives for the session's lifetime — the store is process-wide, so multiple
+		// sessions in one process each receive every event; owner filtering in
+		// _handleBackgroundProcessUpdate makes only the spawning session notify.
+		this._unsubscribeBackgroundProcesses = subscribeBackgroundProcesses((id, record) =>
+			this._handleBackgroundProcessUpdate(id, record),
+		);
 
 		// Turn-bound file history: bind the checkpoint store to this session's
 		// cwd+id, and prune stale per-session backup directories best-effort.
@@ -1593,6 +1597,12 @@ export class AgentSession {
 		} catch {
 			// Dispose must succeed even if an abort hook throws.
 		}
+		// Stop watching the process-wide background-process store: a disposed
+		// session must not enqueue notifications or fire wake turns (the global
+		// store outlives the session and would otherwise keep it subscribed).
+		this._unsubscribeBackgroundProcesses?.();
+		this._unsubscribeBackgroundProcesses = undefined;
+		this._stopWakeLoop();
 
 		this._extensionRunner.invalidate(
 			"This extension ctx is stale after session replacement or reload. Do not use a captured extension or command ctx after ctx.newSession(), ctx.fork(), ctx.switchSession(), or ctx.reload(). For newSession, fork, and switchSession, move post-replacement work into withSession and use the ctx passed to withSession. For reload, do not use the old ctx after await ctx.reload().",
@@ -3501,7 +3511,7 @@ export class AgentSession {
 		const previousActiveToolNames = this.getActiveToolNames();
 		const allowedToolNames = this._allowedToolNames;
 		const excludedToolNames = this._excludedToolNames;
-		const defaultBuiltIns = new Set(["read", "bash", "edit", "write", "todo", "plan_mode"]);
+		const defaultBuiltIns = new Set(["read", "bash", "edit", "write", "plan_mode"]);
 		const isAllowedTool = (name: string): boolean =>
 			(!allowedToolNames || allowedToolNames.has(name)) && !excludedToolNames?.has(name);
 		const isAutoEnabledBuiltIn = (name: string): boolean =>
@@ -3618,7 +3628,7 @@ export class AgentSession {
 				)
 			: createAllToolDefinitions(this._cwd, {
 					read: { autoResizeImages },
-					bash: { commandPrefix: shellCommandPrefix, shellPath },
+					bash: { commandPrefix: shellCommandPrefix, shellPath, sessionId: this.sessionId },
 					planMode: {
 						callbacks: {
 							getPlanMode: () => this._planMode,
@@ -3694,7 +3704,6 @@ export class AgentSession {
 					"bash",
 					"edit",
 					"write",
-					"todo",
 					"ask_user_question",
 					"task_create",
 					"task_get",
@@ -4399,6 +4408,10 @@ export class AgentSession {
 	private _pendingNotifications: string[] = [];
 	/** Last-known status per background process id — drives completion notifications. */
 	private _backgroundProcessStatuses = new Map<string, BackgroundProcessStatus>();
+	/** Background process ids this session has already enqueued a notification for. */
+	private _notifiedBackgroundProcessIds = new Set<string>();
+	/** Unsubscribes the process-wide background-process store watcher (dispose). */
+	private _unsubscribeBackgroundProcesses?: () => void;
 	/** Sub-agents terminated by an explicit kill (viewer / kill_subagent tool) — their notes skip the wake. */
 	private _killedSubAgentIds = new Set<string>();
 
@@ -4630,6 +4643,10 @@ export class AgentSession {
 				switch (event.type) {
 					case "tool_execution_start":
 						toolUseCount++;
+						// Commit to the record live so the inline agents panel and the
+						// running-tasks viewer show progress while the sub-agent runs
+						// (the completion block below only runs at the end).
+						record.toolUseCount = toolUseCount;
 						{
 							const ev: SubAgentProgressEvent = { type: "tool_use_start", toolName: event.toolName };
 							onProgress?.(ev);
@@ -4653,6 +4670,7 @@ export class AgentSession {
 						break;
 					case "turn_end":
 						turnCount++;
+						record.turnCount = turnCount;
 						{
 							const usage = event.usage;
 							if (usage) {
@@ -4911,6 +4929,20 @@ export class AgentSession {
 	}
 
 	/**
+	 * Stop the notification wake loop and drop pending notes. Used on dispose:
+	 * a disposed session must not keep retrying a wake prompt nobody will read.
+	 */
+	private _stopWakeLoop(): void {
+		if (this._subAgentWakeTimer) {
+			clearTimeout(this._subAgentWakeTimer);
+			this._subAgentWakeTimer = undefined;
+		}
+		this._subAgentWakeInFlight = false;
+		this._subAgentWakeBackoffUntil = 0;
+		this._pendingNotifications = [];
+	}
+
+	/**
 	 * Push pending background sub-agent notifications into the main loop as a
 	 * turn, so the model relays finished work without waiting for the user to
 	 * type or poll (easy-agent <task-notification> parity).
@@ -4971,8 +5003,15 @@ export class AgentSession {
 			return;
 		}
 		this._backgroundProcessStatuses.set(id, record.status);
-		const justTerminated = previous === "running" || (previous === undefined && record.status !== "running");
-		if (justTerminated) {
+		// Only the owning session notifies: the store is process-wide, so every
+		// coexisting session (parked runtimes, office coworker sessions, SDK
+		// sessions) receives this event, and each of them treating a terminal
+		// transition as freshly-terminated enqueued the same notification and
+		// fired its own wake turn.
+		const justTerminated =
+			previous === "running" && record.status !== "running" && record.ownerSessionId === this.sessionId;
+		if (justTerminated && !this._notifiedBackgroundProcessIds.has(id)) {
+			this._notifiedBackgroundProcessIds.add(id);
 			this._pendingNotifications.push(this._formatBackgroundProcessNotification(record));
 			// "killed" is only set by the interactive viewer's kill action — the
 			// user already knows, so don't spend a dedicated wake turn. The note

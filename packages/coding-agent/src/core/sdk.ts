@@ -250,7 +250,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		"bash",
 		"edit",
 		"write",
-		"todo",
 		"ask_user_question",
 		"task_create",
 		"task_get",

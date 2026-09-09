@@ -775,8 +775,16 @@ export async function main(args: string[], options?: MainOptions) {
 		// Merge the Composio helper tools into the session allow-list + custom
 		// tools. The tools are ToolDefinitions from @composio/experimental's
 		// PiProvider, built against this package's own ToolDefinition type.
+		// `tools` is a hard allow-list over every registered tool (built-ins, MCP,
+		// extensions) — only extend it when the user passed an explicit --tools
+		// list. Setting it unconditionally made a detected Composio API key
+		// disable every built-in and MCP tool. Without an explicit list the
+		// Composio tools register as custom tools and auto-enable alongside the
+		// defaults (includeAllExtensionTools).
 		if (composioIntegration) {
-			sessionOptions.tools = [...(sessionOptions.tools ?? []), ...composioIntegration.toolNames];
+			if (sessionOptions.tools) {
+				sessionOptions.tools = [...sessionOptions.tools, ...composioIntegration.toolNames];
+			}
 			sessionOptions.customTools = [...(sessionOptions.customTools ?? []), ...composioIntegration.tools];
 		}
 

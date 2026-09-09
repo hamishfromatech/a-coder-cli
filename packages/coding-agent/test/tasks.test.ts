@@ -109,8 +109,7 @@ describe("task tools", () => {
 	it("task_create persists and snapshots the list in details", async () => {
 		const tool = createTaskCreateTool();
 		const result = await tool.execute("t1", {
-			subject: "Fix bug",
-			description: "Fix the login bug",
+			tasks: [{ subject: "Fix bug", description: "Fix the login bug" }],
 		});
 		expect(result.content[0]).toMatchObject({ type: "text" });
 		const details = result.details as { tasks: Array<{ subject: string }>; taskId: string };
@@ -119,9 +118,27 @@ describe("task tools", () => {
 		expect(details.tasks[0].subject).toBe("Fix bug");
 	});
 
+	it("task_create batch-creates a full task list in one call", async () => {
+		const tool = createTaskCreateTool();
+		const result = await tool.execute("t1", {
+			tasks: [
+				{ subject: "First", description: "Do first" },
+				{ subject: "Second", description: "Do second", activeForm: "Doing second" },
+				{ subject: "Third", description: "Do third" },
+			],
+		});
+		const details = result.details as { tasks: Array<{ subject: string; activeForm?: string }>; taskId?: string };
+		expect(details.tasks).toHaveLength(3);
+		expect(details.tasks.map((t) => t.subject)).toEqual(["First", "Second", "Third"]);
+		expect(details.tasks[1].activeForm).toBe("Doing second");
+		// Batch creation has no single affected task.
+		expect(details.taskId).toBeUndefined();
+		expect(await listTasks(getTaskListId("default"))).toHaveLength(3);
+	});
+
 	it("task_update status=deleted removes the task", async () => {
 		const create = createTaskCreateTool();
-		await create.execute("t1", { subject: "A", description: "Do A" });
+		await create.execute("t1", { tasks: [{ subject: "A", description: "Do A" }] });
 		const update = createTaskUpdateTool();
 		const result = await update.execute("t2", { taskId: "1", status: "deleted" });
 		const details = result.details as { tasks: unknown[] };

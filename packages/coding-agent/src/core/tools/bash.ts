@@ -256,6 +256,9 @@ export interface BashToolOptions {
 	shellPath?: string;
 	/** Hook to adjust command, cwd, or env before execution */
 	spawnHook?: BashSpawnHook;
+	/** Session id recorded on background-process records so completion
+	 * notifications go to the session that started the process. */
+	sessionId?: string;
 }
 
 const BASH_PREVIEW_LINES = 5;
@@ -454,7 +457,7 @@ export function createBashToolDefinition(
 				if (bgChild.pid) trackDetachedChildPid(bgChild.pid);
 
 				const bgSnapshot = bgOutput.snapshot({ persistIfTruncated: true });
-				startBackgroundProcess(toolCallId, command, bgChild.pid, bgSnapshot.fullOutputPath);
+				startBackgroundProcess(toolCallId, command, bgChild.pid, bgSnapshot.fullOutputPath, options?.sessionId);
 
 				const bgOnData = (data: Buffer) => {
 					bgOutput.append(data);
@@ -600,7 +603,13 @@ export function createBashToolDefinition(
 					if (result.backgrounded && result.child) {
 						const bgChild = result.child;
 						const bgSnapshot = output.snapshot({ persistIfTruncated: true });
-						startBackgroundProcess(toolCallId, command, bgChild.pid, bgSnapshot.fullOutputPath);
+						startBackgroundProcess(
+							toolCallId,
+							command,
+							bgChild.pid,
+							bgSnapshot.fullOutputPath,
+							options?.sessionId,
+						);
 						const bgOnData = (data: Buffer) => {
 							appendBackgroundProcessOutput(toolCallId, data.toString());
 						};

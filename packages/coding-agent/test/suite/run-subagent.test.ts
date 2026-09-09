@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { fauxAssistantMessage } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ENV_TEAMS_DIR } from "../../src/config.ts";
 import type { InProcessSubAgentRecord } from "../../src/core/extensions/types.ts";
@@ -234,6 +234,39 @@ describe("AgentSession background sub-agents (in-process store)", () => {
 		// Harness cwd is a plain temp dir, so the worktree path must be absent and a warning recorded.
 		expect(record?.worktreePath).toBeUndefined();
 		expect(record?.error).toContain("worktree isolation failed");
+	});
+
+	it("commits tool-use and turn counters to the record while the run is live", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+
+		harness.setResponses([
+			{
+				...fauxAssistantMessage("running a tool"),
+				content: [fauxToolCall("bash", { command: "sleep 0.3" })],
+			},
+			fauxAssistantMessage("tool done"),
+		]);
+
+		const { id } = harness.session.runSubAgentBackground({ id: "bg-count", prompt: "use a tool", maxTurns: 5 });
+
+		// While the sub-agent is mid-tool, the record must already carry the count.
+		// The inline agents panel and the running-tasks viewer read these fields
+		// live; they used to stay at 0 until the run completed.
+		await vi.waitFor(
+			() => {
+				const record = harness.session.getSubAgent(id);
+				if (record?.status === "running" && record.toolUseCount > 0) return;
+				if (record?.status !== "running") throw new Error("run finished before a live count was observed");
+				throw new Error("tool-use count not committed while running");
+			},
+			{ timeout: 5000 },
+		);
+
+		const record = await harness.session.waitSubAgent(id);
+		expect(record?.status).toBe("completed");
+		expect(record?.toolUseCount).toBe(1);
+		expect(record?.turnCount).toBe(2);
 	});
 
 	it("accumulates token usage from turn_end onto the record", async () => {

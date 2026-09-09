@@ -95,8 +95,8 @@ export function createTodoToolDefinition(): ToolDefinition<typeof todoSchema, To
 		name: "todo",
 		label: "Todo",
 		description:
-			"Maintain a task list for multi-step work. Pass the COMPLETE, updated list on every call — this replaces the prior list entirely. Use it before starting non-trivial tasks (3+ steps), mark exactly one task in_progress while working on it, and mark completed immediately when done. Do not use for trivial single-step actions.",
-		promptSnippet: "Maintain a task list for multi-step work",
+			"Deprecated. Use task_create instead — it persists tasks across sessions and supports dependencies. Maintains a task list for multi-step work. Pass the COMPLETE, updated list on every call — this replaces the prior list entirely. Mark exactly one task in_progress while working on it, and mark completed immediately when done. Do not use for trivial single-step actions.",
+		promptSnippet: "Maintain a session task list (deprecated: prefer task_create)",
 		parameters: todoSchema,
 		async execute(_toolCallId, { todos }: TodoToolInput, _signal?, _onUpdate?, _ctx?) {
 			const normalized: TodoItem[] = Array.isArray(todos)

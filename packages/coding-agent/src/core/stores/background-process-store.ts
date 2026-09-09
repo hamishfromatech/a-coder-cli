@@ -31,6 +31,10 @@ export interface BackgroundProcessRecord {
 	endedAt: number | undefined;
 	/** Current status. */
 	status: BackgroundProcessStatus;
+	/** Session id of the session whose bash tool started the process. Only the
+	 * owning session enqueues a task-notification for it (the store is
+	 * process-wide and every coexisting session receives its events). */
+	ownerSessionId?: string;
 	/** Exit code (set on done/error). */
 	exitCode: number | undefined;
 	/** Tail of combined stdout+stderr (capped to MAX_TAIL_LINES). */
@@ -67,6 +71,7 @@ export function startBackgroundProcess(
 	command: string,
 	pid: number | undefined,
 	fullOutputPath?: string,
+	ownerSessionId?: string,
 ): BackgroundProcessRecord {
 	const record: BackgroundProcessRecord = {
 		id,
@@ -80,6 +85,7 @@ export function startBackgroundProcess(
 		totalLines: 0,
 		totalBytes: 0,
 		fullOutputPath,
+		ownerSessionId,
 	};
 	store.set(id, record);
 	return record;

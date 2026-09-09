@@ -191,7 +191,7 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 		case "ls":
 			return createLsToolDefinition(cwd, options?.ls);
 		case "memory":
-			return createMemoryToolDefinition();
+			return createMemoryToolDefinition(options?.memory);
 		case "plan_mode":
 			return createPlanModeToolDefinition(
 				options?.planMode?.callbacks ?? {
@@ -287,7 +287,7 @@ export function createCodingToolDefinitions(cwd: string, options?: ToolsOptions)
 		createTaskGetToolDefinition(),
 		createTaskListToolDefinition(),
 		createTaskUpdateToolDefinition(),
-		createMemoryToolDefinition(),
+		createMemoryToolDefinition(options?.memory),
 		createTeamCreateToolDefinition(),
 		createTeamDeleteToolDefinition(),
 		createSendMessageToolDefinition(),
@@ -300,7 +300,7 @@ export function createReadOnlyToolDefinitions(cwd: string, options?: ToolsOption
 		createGrepToolDefinition(cwd, options?.grep),
 		createFindToolDefinition(cwd, options?.find),
 		createLsToolDefinition(cwd, options?.ls),
-		createMemoryToolDefinition(),
+		createMemoryToolDefinition(options?.memory),
 	];
 }
 
@@ -323,7 +323,7 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 		task_get: createTaskGetToolDefinition(),
 		task_list: createTaskListToolDefinition(),
 		task_update: createTaskUpdateToolDefinition(),
-		memory: createMemoryToolDefinition(),
+		memory: createMemoryToolDefinition(options?.memory),
 		team_create: createTeamCreateToolDefinition(),
 		team_delete: createTeamDeleteToolDefinition(),
 		send_message: createSendMessageToolDefinition(),

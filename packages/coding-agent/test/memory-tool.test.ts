@@ -2,7 +2,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createMemoryTool } from "../src/core/tools/memory.ts";
+import type { ExtensionContext } from "../src/core/extensions/types.ts";
+import { createMemoryTool, createMemoryToolDefinition } from "../src/core/tools/memory.ts";
 
 describe("memory tool", () => {
 	let sessionDir: string;
@@ -47,6 +48,41 @@ describe("memory tool", () => {
 		const sessText = sess.content.find((c) => c.type === "text")?.text ?? "";
 		expect(sessText).toContain("session note");
 		expect(sessText).not.toContain("workspace note");
+	});
+
+	it("definition with context resolves workspace memory without a runtime context", async () => {
+		// AgentSession builds memory as a bare ToolDefinition via createAllToolDefinitions,
+		// and the agent loop invokes execute with no 5th context argument.
+		const definition = createMemoryToolDefinition({ sessionDir, sessionId: "session-1" });
+		await definition.execute(
+			"1",
+			{ action: "write", scope: "workspace", content: "definition note" },
+			undefined,
+			undefined,
+			undefined as unknown as ExtensionContext,
+		);
+		const result = await definition.execute(
+			"2",
+			{ action: "read", scope: "workspace" },
+			undefined,
+			undefined,
+			undefined as unknown as ExtensionContext,
+		);
+		const text = result.content.find((c) => c.type === "text")?.text ?? "";
+		expect(text).toContain("definition note");
+	});
+
+	it("bare definition still throws for workspace scope without any context", async () => {
+		const definition = createMemoryToolDefinition();
+		await expect(
+			definition.execute(
+				"1",
+				{ action: "read", scope: "workspace" },
+				undefined,
+				undefined,
+				undefined as unknown as ExtensionContext,
+			),
+		).rejects.toThrow("memory workspace scope requires a session directory");
 	});
 
 	it("persists different session memories under the same workspace", async () => {

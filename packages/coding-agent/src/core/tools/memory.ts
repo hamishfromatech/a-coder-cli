@@ -97,7 +97,9 @@ export interface MemoryToolContext {
 	sessionId?: string;
 }
 
-export function createMemoryToolDefinition(): ToolDefinition<typeof memorySchema, undefined> {
+export function createMemoryToolDefinition(
+	context?: MemoryToolContext,
+): ToolDefinition<typeof memorySchema, undefined> {
 	return {
 		name: "memory",
 		label: "memory",
@@ -112,8 +114,10 @@ export function createMemoryToolDefinition(): ToolDefinition<typeof memorySchema
 		],
 		parameters: memorySchema,
 		async execute(_toolCallId, params: MemoryToolInput, _signal, _onUpdate, rawContext?: ExtensionContext) {
-			const context = rawContext as MemoryToolContext | undefined;
-			const path = await ensureMemoryFile(resolveMemoryPath(params, context));
+			// Definitions created with a context close over it; bare definitions fall back
+			// to the runtime-provided context (agent loop passes none).
+			const resolvedContext = context ?? (rawContext as MemoryToolContext | undefined);
+			const path = await ensureMemoryFile(resolveMemoryPath(params, resolvedContext));
 			if (params.action === "read") {
 				const content = await readFile(path, "utf-8");
 				const text = content.trim() === "" ? "(memory file is empty)" : content;
@@ -179,5 +183,5 @@ export function createMemoryToolDefinition(): ToolDefinition<typeof memorySchema
 }
 
 export function createMemoryTool(context?: MemoryToolContext): AgentTool<typeof memorySchema> {
-	return wrapToolDefinition(createMemoryToolDefinition(), () => context as ExtensionContext);
+	return wrapToolDefinition(createMemoryToolDefinition(context));
 }
