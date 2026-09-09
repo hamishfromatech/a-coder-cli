@@ -992,9 +992,6 @@ export default function App() {
 		const onQuit = () => {
 			void getCurrentWindow().close();
 		};
-		const onCheckUpdates = () => {
-			window.dispatchEvent(new CustomEvent("a-coder:check-updates"));
-		};
 
 		window.addEventListener("a-coder:open-settings", onOpenSettings);
 		window.addEventListener("a-coder:find-in-page", onOpenFindBar);
@@ -1013,7 +1010,6 @@ export default function App() {
 		window.addEventListener("a-coder:show-changelog", onShowChangelog);
 		window.addEventListener("a-coder:reload", onReload);
 		window.addEventListener("a-coder:quit", onQuit);
-		window.addEventListener("a-coder:check-updates", onCheckUpdates);
 
 		return () => {
 			window.removeEventListener("a-coder:open-settings", onOpenSettings);
@@ -1033,7 +1029,6 @@ export default function App() {
 			window.removeEventListener("a-coder:show-changelog", onShowChangelog);
 			window.removeEventListener("a-coder:reload", onReload);
 			window.removeEventListener("a-coder:quit", onQuit);
-			window.removeEventListener("a-coder:check-updates", onCheckUpdates);
 		};
 	}, [setAvailableCommands]);
 
