@@ -4,11 +4,11 @@
  *
  *   ⚙ AGENTS · 2 running · 4 total
  *   SUB-AGENTS
- *   ⚡ Agent[Explore] · map the auth flow · 3 tools · 1.2k tok · 12s
- *   ✓ Agent[Coder] · done · 7 tools · 4 / 45s
+ *   ⚡ general-purpose · map the auth flow · running · last: Read · 3 tool uses · 1.2k tok · 12s
+ *   ✓ general-purpose · done · 7 tool uses · 4.2k tok · 45s
  *   BACKGROUND
  *   ▸ npm run dev · 12s · 1.2KB
- *   ✓ webpack --watch · done · 4 / 45s · 8.4KB
+ *   ✓ webpack --watch · done · 4 · 45s · 8.4KB
  *
  * Behavior:
  *   - foreground (non-detached) sub-agents render only while running — their
@@ -130,18 +130,21 @@ export class AgentsPanelComponent implements Component {
 	}
 
 	private subAgentLine(sub: InProcessSubAgentRecord, width: number): string {
-		const label = `Agent[${sub.teammateName ? `${sub.teammateName} · ` : ""}${sub.agentType}]`;
+		const label = sub.teammateName
+			? `${theme.fg("accent", `@${sub.teammateName}`)}${theme.fg("dim", " · ")}${theme.bold(sub.agentType)}`
+			: theme.bold(sub.agentType);
 		const tools = `${sub.toolUseCount} tool use${sub.toolUseCount === 1 ? "" : "s"}`;
 		const tokens = sub.totalTokens && sub.totalTokens > 0 ? ` · ${formatNumber(sub.totalTokens)} tok` : "";
-		const goal = sub.goal ? ` · ${oneLine(sub.goal, Math.max(16, Math.floor(width / 4)))}` : "";
+		const goal = sub.goal ? ` · ${oneLine(sub.goal, Math.max(20, Math.min(48, Math.floor(width / 3))))}` : "";
 
 		if (sub.status === "running") {
 			const last = sub.lastToolName ? ` · last: ${sub.lastToolName}` : "";
 			return (
 				theme.fg("accent", "⚡ ") +
-				theme.bold(label) +
+				label +
 				theme.fg("muted", goal) +
-				theme.fg("dim", ` · ${tools} · running${last}${tokens} · ${formatDuration(Date.now() - sub.startedAt)}`)
+				theme.fg("accent", " · running") +
+				theme.fg("dim", `${last} · ${tools}${tokens} · ${formatDuration(Date.now() - sub.startedAt)}`)
 			);
 		}
 		const prefix =

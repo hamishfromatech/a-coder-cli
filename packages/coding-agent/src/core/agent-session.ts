@@ -125,6 +125,7 @@ import {
 	type BackgroundProcessStatus,
 	subscribeBackgroundProcesses,
 } from "./stores/background-process-store.ts";
+import { deriveSubAgentGoal } from "./subagents/goal.ts";
 import {
 	appendTaskOutput,
 	ensureTaskOutputFile,
@@ -4450,7 +4451,7 @@ export class AgentSession {
 			createdAt: now,
 			startedAt: now,
 			updatedAt: now,
-			goal: params.prompt || undefined,
+			goal: deriveSubAgentGoal(params.prompt),
 			finalText: undefined,
 			toolUseCount: 0,
 			turnCount: 0,

@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import type { InProcessSubAgentRecord } from "../src/core/extensions/types.ts";
 import type { BackgroundProcessRecord } from "../src/core/stores/background-process-store.ts";
+import { deriveSubAgentGoal } from "../src/core/subagents/goal.ts";
 import { AgentsPanelComponent } from "../src/modes/interactive/components/agents-panel.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
 
@@ -59,10 +60,19 @@ describe("AgentsPanelComponent", () => {
 			}),
 		]);
 		expect(line).toContain("AGENTS");
-		expect(line).toContain("Agent[general-purpose]");
+		expect(line).toContain("general-purpose");
+		expect(line).not.toContain("Agent[");
 		expect(line).toContain("map the auth flow");
 		expect(line).toContain("3 tool uses");
 		expect(line).toContain("last: Read");
+		// State-first ordering: running comes before the counters.
+		expect(line.indexOf("running")).toBeLessThan(line.indexOf("3 tool uses"));
+	});
+
+	it("renders a teammate label as an @mention", () => {
+		const line = renderPanel([makeRecord({ status: "running", teammateName: "backend" })]);
+		expect(line).toContain("@backend");
+		expect(line).toContain("general-purpose");
 	});
 
 	it("renders a completed detached sub-agent with its summary", () => {
@@ -91,7 +101,7 @@ describe("AgentsPanelComponent", () => {
 				updatedAt: now - 1_000,
 			}),
 		]);
-		expect(line).not.toContain("Agent[general-purpose]");
+		expect(line, "empty panel renders no header").not.toContain("general-purpose");
 		expect(line, "empty panel renders no header").not.toContain("AGENTS");
 	});
 
@@ -135,5 +145,23 @@ describe("AgentsPanelComponent", () => {
 		const panel = new AgentsPanelComponent();
 		panel.update([], []);
 		expect(panel.render(120)).toEqual([]);
+	});
+});
+
+describe("deriveSubAgentGoal", () => {
+	it("skips persona preambles and surfaces the task line", () => {
+		const goal = deriveSubAgentGoal(
+			"You are a HyperFrames framework expert.\nYou're working inside a video repo.\n\nScaffold the highlights project",
+		);
+		expect(goal).toBe("Scaffold the highlights project");
+	});
+
+	it("returns the first line when there is no preamble", () => {
+		expect(deriveSubAgentGoal("map the auth flow\nsecond line")).toBe("map the auth flow");
+	});
+
+	it("returns undefined for empty or all-preamble prompts", () => {
+		expect(deriveSubAgentGoal(undefined)).toBeUndefined();
+		expect(deriveSubAgentGoal("You are an expert.\n\nYou are thorough.")).toBeUndefined();
 	});
 });
