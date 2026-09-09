@@ -661,6 +661,14 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				return success(id, "abort");
 			}
 
+			case "clear_queue": {
+				const target = runtimeHost.getSessionForPath(command.sessionPath);
+				if (!target) {
+					return error(id, "clear_queue", `Unknown session: ${command.sessionPath}`);
+				}
+				return success(id, "clear_queue", target.clearQueue());
+			}
+
 			case "new_session": {
 				const options = {
 					parentSession: command.parentSession,
