@@ -440,18 +440,18 @@ function AssistantMessageItem({
 				<Bot className="h-3.5 w-3.5" />
 			</div>
 			<div className="relative flex min-w-0 flex-1 flex-col gap-2.5">
-				{text.length > 0 && !isStreaming && (
-					<CopyReplyButton text={text} />
-				)}
-				{thinking.length > 0 && !hideThinkingBlock && (
-					<ThinkingBlocks thinking={thinking} />
-				)}
+				<div className="relative min-w-0">
+					{text.length > 0 && !isStreaming && <CopyReplyButton text={text} />}
+					{thinking.length > 0 && !hideThinkingBlock && (
+						<ThinkingBlocks thinking={thinking} />
+					)}
 
-				{text.length > 0 && (
-					<div className="min-w-0 break-words px-1 py-1 text-[13px] leading-relaxed text-pi-text">
-						<MarkdownTextContent text={text} isRunning={isStreaming && index === totalMessages - 1} />
-					</div>
-				)}
+					{text.length > 0 && (
+						<div className="min-w-0 break-words px-1 py-1 text-[13px] leading-relaxed text-pi-text">
+							<MarkdownTextContent text={text} isRunning={isStreaming && index === totalMessages - 1} />
+						</div>
+					)}
+				</div>
 
 				{toolCalls.map((toolCall, i) =>
 					toolCall.name === "ask_user_question" ? (
@@ -496,21 +496,46 @@ function ThinkingBlocks({
 	thinking: Array<{ type: "thinking"; thinking: string; signature?: string }>;
 }) {
 	const [open, setOpen] = useState(false);
+	const [copied, setCopied] = useState(false);
+	const thinkingText = useMemo(() => thinking.map((t) => t.thinking).join("\n\n"), [thinking]);
+	const onCopy = async (e: React.MouseEvent) => {
+		e.stopPropagation();
+		try {
+			await navigator.clipboard.writeText(thinkingText);
+			setCopied(true);
+			setTimeout(() => setCopied(false), 1400);
+		} catch {
+			// ignore
+		}
+	};
 	return (
 		<div className="group/think overflow-hidden rounded-lg border border-pi-border bg-pi-surface/50">
-			<button
-				onClick={() => setOpen((o) => !o)}
-				className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left text-2xs text-pi-text-faint transition-hover hover:text-pi-text-muted focus-visible:shadow-focus focus-visible:outline-none"
-			>
-				<Sparkles className="h-3 w-3 shrink-0 text-pi-accent" />
-				<span className="font-medium uppercase tracking-wide">Thinking</span>
-				<span className="font-mono text-3xs text-pi-text-faint">
-					{thinking.length} {thinking.length === 1 ? "block" : "blocks"}
-				</span>
+			{/* Sibling buttons, not nested: the label toggles the card, the copy
+				button owns the card's content and appears on card hover. */}
+			<div className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-2xs text-pi-text-faint">
+				<button
+					onClick={() => setOpen((o) => !o)}
+					className="flex min-w-0 flex-1 items-center gap-1.5 text-left transition-hover hover:text-pi-text-muted focus-visible:shadow-focus focus-visible:outline-none"
+				>
+					<Sparkles className="h-3 w-3 shrink-0 text-pi-accent" />
+					<span className="font-medium uppercase tracking-wide">Thinking</span>
+					<span className="font-mono text-3xs text-pi-text-faint">
+						{thinking.length} {thinking.length === 1 ? "block" : "blocks"}
+					</span>
+				</button>
+				<button
+					onClick={onCopy}
+					aria-label="Copy thinking"
+					className="flex shrink-0 items-center rounded p-0.5 text-pi-text-faint opacity-0 transition-opacity hover:text-pi-text group-hover/think:opacity-100 focus-visible:opacity-100 focus-visible:shadow-focus focus-visible:outline-none"
+				>
+					{copied ? <Check className="h-3 w-3 text-pi-success" /> : <Copy className="h-3 w-3" />}
+				</button>
 				<ChevronRight
-					className={`ml-auto h-3 w-3 shrink-0 text-pi-text-faint transition-transform duration-150 ${open ? "rotate-90 opacity-80" : "opacity-0 group-hover/think:opacity-80"}`}
+					aria-hidden
+					onClick={() => setOpen((o) => !o)}
+					className={`h-3 w-3 shrink-0 cursor-pointer text-pi-text-faint transition-transform duration-150 hover:text-pi-text ${open ? "rotate-90 opacity-80" : "opacity-60 group-hover/think:opacity-80"}`}
 				/>
-			</button>
+			</div>
 			{open && (
 				<div className="border-t border-pi-border px-2.5 py-2 font-mono text-2xs leading-relaxed text-pi-text-muted">
 					{thinking.map((t, i) => (
@@ -541,7 +566,7 @@ function CopyReplyButton({ text }: { text: string }) {
 			onClick={onCopy}
 
 			aria-label="Copy reply"
-			className="absolute -top-1 right-0 z-10 flex items-center gap-1 rounded-md border border-pi-border bg-pi-surface px-1.5 py-0.5 text-3xs text-pi-text-muted opacity-0 transition-hover hover:bg-pi-surface-overlay hover:text-pi-text group-hover/msg:opacity-100 focus-visible:shadow-focus focus-visible:outline-none"
+			className="absolute right-0 top-0 z-10 flex items-center gap-1 rounded-md border border-pi-border bg-pi-surface px-1.5 py-0.5 text-3xs text-pi-text-muted opacity-0 transition-hover hover:bg-pi-surface-overlay hover:text-pi-text group-hover/msg:opacity-100 focus-visible:shadow-focus focus-visible:outline-none"
 		>
 			{copied ? <Check className="h-3 w-3 text-pi-success" /> : <Copy className="h-3 w-3" />}
 			{copied && <span>Copied</span>}
