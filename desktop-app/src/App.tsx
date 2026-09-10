@@ -48,6 +48,7 @@ import { TodoPanel } from "./components/TodoPanel";
 import { RuntimePanel } from "./components/RuntimePanel";
 import { TaskPanel } from "./components/TaskPanel";
 import { SessionActions, Toolbar } from "./components/Toolbar";
+import { SessionList } from "./components/SessionList";
 import { SessionPicker } from "./components/SessionPicker";
 import { SessionTabs } from "./components/SessionTabs";
 import { SessionTree } from "./components/SessionTree";
@@ -1540,15 +1541,18 @@ function SidebarContent({
 				)}
 			</div>
 
-			{/* Sidebar content */}
+				{/* Sidebar content */}
 			<div className="flex-1 overflow-auto px-2 py-3">
-				<SidebarSection title="Projects">
+				<SidebarSection title="Sessions">
+					<SessionList />
+				</SidebarSection>
+				<SidebarSection title="Projects" className="mt-4">
 					<SidebarProjects onSelect={onPickProject} onAdd={onOpenPicker} />
 				</SidebarSection>
-				<SidebarSection title="Session" className="mt-5">
+				<SidebarSection title="Current session" className="mt-4">
 					<SessionActions />
 				</SidebarSection>
-				<SidebarSection title="Tree" className="mt-5">
+				<SidebarSection title="Tree" className="mt-4">
 					<SessionTree />
 				</SidebarSection>
 			</div>
