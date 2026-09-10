@@ -11,6 +11,7 @@ import { officeDeleteErrand, officeRunErrand } from "../../lib/rpc";
 import { useOfficeStore } from "../../stores/office-store";
 import { cn } from "../../lib/cn";
 import type { OfficeCoworker, OfficeHuddleSummary, OfficeMessage, OfficePrompt } from "../../lib/rpc";
+import { MarkdownTextContent } from "../markdown/MarkdownText";
 import { Face } from "./Face";
 import { FloorView } from "./FloorView";
 import { CoworkerEditor } from "./CoworkerEditor";
@@ -139,13 +140,15 @@ function MessageBubble({ message, coworker }: { message: OfficeMessage; coworker
 				</div>
 				<div
 					className={cn(
-						"inline-block whitespace-pre-wrap break-words rounded-lg px-2.5 py-1.5 text-xs leading-relaxed",
+						// Markdown-rendered (chat scale): the CSS var pins the prose
+						// typography to the bubble's 12px rhythm.
+						"inline-block max-w-full break-words rounded-lg px-2.5 py-1.5 text-xs leading-relaxed [--conversation-text-font-size:0.75rem]",
 						isUser
 							? "bg-pi-accent-soft text-pi-text"
 							: "bg-pi-surface-raised text-pi-text-secondary shadow-ring",
 					)}
 				>
-					{message.text}
+					<MarkdownTextContent text={message.text} isRunning={false} />
 				</div>
 				{message.images && message.images.length > 0 && (
 					<div className="mt-1 flex flex-wrap gap-1">
@@ -179,6 +182,8 @@ function HuddleChat({ huddleId }: { huddleId: string }) {
 	const byId = useMemo(() => new Map(coworkers.map((c) => [c.id, c])), [coworkers]);
 	const memberIds = snapshot?.huddles.find((h) => h.id === huddleId)?.members ?? [];
 	const dmTarget = memberIds.length === 1 ? byId.get(memberIds[0]) : undefined;
+	// The coworker currently generating the reply (running.current is a name).
+	const typingCoworker = working?.current ? coworkers.find((c) => c.name === working.current) : undefined;
 
 	useEffect(() => {
 		const node = scrollRef.current;
@@ -234,6 +239,33 @@ function HuddleChat({ huddleId }: { huddleId: string }) {
 						coworker={message.from.id ? byId.get(message.from.id) : undefined}
 					/>
 				))}
+				{/* In-chat typing indicator: the working coworker's face beside an
+					animated dots bubble — mirrors the header's working state inside
+					the conversation where the reply will land. */}
+				{working?.current && (
+					<div className="flex gap-2 px-3 py-1.5">
+						{typingCoworker ? (
+							<Face
+								handle={typingCoworker.handle}
+								name={typingCoworker.name}
+								face={typingCoworker.face}
+								size={24}
+							/>
+						) : (
+							<span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-pi-surface-raised text-2xs text-pi-text-muted">
+								·
+							</span>
+						)}
+						<div>
+							<div className="mb-0.5 text-2xs text-pi-text-faint">{working.current} is typing…</div>
+							<div className="inline-flex items-center gap-1 rounded-lg bg-pi-surface-raised px-3 py-2 shadow-ring">
+								<span className="h-1.5 w-1.5 animate-bounce rounded-full bg-pi-text-muted" style={{ animationDelay: "0ms" }} />
+								<span className="h-1.5 w-1.5 animate-bounce rounded-full bg-pi-text-muted/80" style={{ animationDelay: "150ms" }} />
+								<span className="h-1.5 w-1.5 animate-bounce rounded-full bg-pi-text-muted/60" style={{ animationDelay: "300ms" }} />
+							</div>
+						</div>
+					</div>
+				)}
 			</div>
 
 			<div className="border-t border-pi-border p-2">
