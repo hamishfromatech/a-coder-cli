@@ -11,11 +11,6 @@
 	},
 	"app": {
 		"security": {
-			// Stream local media/PDFs through the asset protocol instead of
-			// base64-over-IPC: any file size, Range-based video seeking, native
-			// PDF rendering. The scope covers common project locations; the app's
-			// IPC file commands already read arbitrary paths, so this does not
-			// widen the trust model.
 			"assetProtocol": {
 				"enable": true,
 				"scope": [
