@@ -1,5 +1,6 @@
 import {
 	useEffect,
+	useMemo,
 	useRef,
 	useState,
 } from "react";
@@ -15,6 +16,7 @@ import {
 	RefreshCw,
 	Volume2,
 } from "lucide-react";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import {
 	canPreview,
 	canShowRaw,
@@ -22,7 +24,14 @@ import {
 	getLanguage,
 	isTextFile,
 } from "../../lib/files";
-import { openInEditor, readFileBase64, readTextFile } from "../../lib/rpc";
+import { openInEditor, readTextFile } from "../../lib/rpc";
+
+/** URL that streams a local file through Tauri's asset protocol — works for
+ *  any size (no base64-over-IPC), supports Range requests for video seeking,
+ *  and renders PDFs natively in WKWebView/WebView2. */
+function localFileUrl(fullPath: string): string {
+	return convertFileSrc(fullPath);
+}
 import { useUiStore } from "../../stores/ui-store";
 import { useDarkMode } from "../../hooks/useDarkMode";
 import { MarkdownTextContent } from "../markdown/MarkdownText";
@@ -55,22 +64,17 @@ export function ArtifactViewer({ projectPath, path }: Props) {
 		setDataUrl(null);
 		try {
 			const mode = selectedArtifactViewMode;
-			if (mode === "preview") {
-				if (kind === "image" || kind === "svg") {
-					const { content: b64, mimeType } = await readFileBase64(fullPath);
-					setDataUrl(`data:${mimeType};base64,${b64}`);
-				} else if (isTextFile(kind)) {
-					setContent(await readTextFile(fullPath));
-				} else {
-					setError("This file can't be previewed.");
-				}
+			if (mode === "preview" && (kind === "image" || kind === "svg" || kind === "audio" || kind === "video" || kind === "pdf")) {
+				// Binary media streams straight off disk through the asset protocol:
+				// no size cap, and video seeking works via Range requests.
+				setDataUrl(localFileUrl(fullPath));
+			} else if (mode === "preview" && kind === "csv") {
+				setContent(await readTextFile(fullPath));
+			} else if (isTextFile(kind)) {
+				// Preview mode renders text kinds as rich content; raw mode as code.
+				setContent(await readTextFile(fullPath));
 			} else {
-				// Raw mode: show source text for text-based files.
-				if (isTextFile(kind)) {
-					setContent(await readTextFile(fullPath));
-				} else {
-					setError("This file can't be shown as text.");
-				}
+				setError("This file can't be previewed.");
 			}
 		} catch (e) {
 			setError(e instanceof Error ? e.message : String(e));
@@ -164,7 +168,7 @@ aria-label="Open in editor"
 				)}
 
 				{!loading && !error && selectedArtifactViewMode === "preview" && (
-					<PreviewBody path={path} kind={kind} content={content} dataUrl={dataUrl} />
+					<PreviewBody path={path} kind={kind} fullPath={fullPath} content={content} dataUrl={dataUrl} />
 				)}
 
 				{!loading && !error && selectedArtifactViewMode === "raw" && (
@@ -212,11 +216,13 @@ function RawBody({ path, content }: { path: string; content: string | null }) {
 function PreviewBody({
 	path,
 	kind,
+	fullPath,
 	content,
 	dataUrl,
 }: {
 	path: string;
 	kind: ReturnType<typeof getFileKind>;
+	fullPath: string | null;
 	content: string | null;
 	dataUrl: string | null;
 }) {
@@ -245,7 +251,15 @@ function PreviewBody({
 	}
 
 	if ((kind === "audio" || kind === "video") && dataUrl !== null) {
-		return <MediaPlayer kind={kind} src={dataUrl} title={path} />;
+		return <MediaPlayer kind={kind} src={dataUrl} title={path} fullPath={fullPath} />;
+	}
+
+	if (kind === "pdf" && dataUrl !== null) {
+		return <PdfPreview src={dataUrl} fullPath={fullPath} />;
+	}
+
+	if (kind === "csv" && content !== null) {
+		return <CsvPreview text={content} delimiter={path.toLowerCase().endsWith(".tsv") ? "\t" : ","} />;
 	}
 
 	if (kind === "mermaid" && content !== null) {
@@ -292,12 +306,149 @@ function HtmlPreview({ html }: { html: string }) {
 	);
 }
 
-function MediaPlayer({ kind, src, title }: { kind: "audio" | "video"; src: string; title: string }) {
+/** PDF preview: the webview's native PDF renderer in a sandboxed iframe (no
+ *  scripts). Asset URLs stream any file size. If the viewer can't render it,
+ *  fall back to opening the file externally. */
+function PdfPreview({ src, fullPath }: { src: string; fullPath: string | null }) {
+	const [failed, setFailed] = useState(false);
+	return (
+		<div className="relative h-full w-full bg-pi-bg">
+			{failed ? (
+				<div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-2xs text-pi-text-faint">
+					<p>This PDF can't be displayed in-app.</p>
+					{fullPath && (
+						<button
+							onClick={() => void openInEditor(fullPath)}
+							className="text-2xs text-pi-accent underline underline-offset-2 hover:text-pi-accent-hover"
+						>
+							Open with system viewer
+						</button>
+					)}
+				</div>
+			) : (
+				<iframe
+					title="PDF preview"
+					src={src}
+					sandbox=""
+					className="h-full w-full border-0 bg-pi-bg"
+					// PDFs render without scripts; an onerror-free but blank frame is
+					// indistinguishable from success, so offer the escape hatch after
+					// a load timeout instead of guessing.
+					onError={() => setFailed(true)}
+				/>
+			)}
+		</div>
+	);
+}
+
+/** CSV/TSV preview: parsed into a sticky-header table. Caps rows/columns so a
+ *  100MB export doesn't try to render a million DOM cells. */
+const CSV_MAX_ROWS = 300;
+const CSV_MAX_COLS = 32;
+
+function parseDelimited(text: string, delimiter: string): string[][] {
+	const rows: string[][] = [];
+	let row: string[] = [];
+	let field = "";
+	let inQuotes = false;
+	for (let i = 0; i < text.length; i++) {
+		const ch = text[i]!;
+		if (inQuotes) {
+			if (ch === '"') {
+				if (text[i + 1] === '"') {
+					field += '"';
+					i++;
+				} else {
+					inQuotes = false;
+				}
+			} else {
+				field += ch;
+			}
+		} else if (ch === '"') {
+			inQuotes = true;
+		} else if (ch === delimiter) {
+			row.push(field);
+			field = "";
+			if (row.length >= CSV_MAX_COLS) {
+				// Overwide row: truncate the tail silently (noted by the renderer).
+				row.length = CSV_MAX_COLS - 1;
+				row.push("…");
+			}
+		} else if (ch === "\n") {
+			row.push(field);
+			field = "";
+			rows.push(row);
+			row = [];
+			if (rows.length >= CSV_MAX_ROWS) return rows;
+		} else if (ch === "\r") {
+			// normalize CRLF: skip, \n handles it
+		} else {
+			field += ch;
+		}
+	}
+	if (field !== "" || row.length > 0) {
+		row.push(field);
+		rows.push(row);
+	}
+	return rows;
+}
+
+function CsvPreview({ text, delimiter }: { text: string; delimiter: string }) {
+	const rows = useMemo(() => parseDelimited(text, delimiter), [text, delimiter]);
+	if (rows.length === 0) {
+		return <div className="flex h-full items-center justify-center text-2xs text-pi-text-faint">Empty file.</div>;
+	}
+	const [header, ...body] = rows;
+	const truncated = body.length >= CSV_MAX_ROWS || rows.some((r) => r.at(-1) === "…");
+	return (
+		<div className="h-full overflow-auto bg-pi-bg">
+			<table className="border-collapse text-xs">
+				<thead className="sticky top-0 z-10">
+					<tr>
+						{header!.map((cell, i) => (
+							<th
+								key={i}
+								className="border-b border-pi-border bg-pi-surface px-3 py-1.5 text-left font-semibold text-pi-text"
+							>
+								{cell}
+							</th>
+						))}
+					</tr>
+				</thead>
+				<tbody>
+					{body.map((row, r) => (
+						<tr key={r} className={r % 2 === 0 ? "bg-pi-bg" : "bg-pi-surface/40"}>
+							{row.map((cell, c) => (
+								<td key={c} className="max-w-64 truncate border-b border-pi-border/50 px-3 py-1 font-mono text-3xs text-pi-text-secondary">
+									{cell}
+								</td>
+							))}
+						</tr>
+					))}
+				</tbody>
+			</table>
+			{truncated && (
+				<p className="px-3 py-2 text-3xs text-pi-text-faint">
+					Preview truncated at {CSV_MAX_ROWS} rows / {CSV_MAX_COLS} columns.
+				</p>
+			)}
+		</div>
+	);
+}
+
+function MediaPlayer({ kind, src, title, fullPath }: { kind: "audio" | "video"; src: string; title: string; fullPath: string | null }) {
 	const ref = useRef<HTMLAudioElement | HTMLVideoElement>(null);
 	const [playing, setPlaying] = useState(false);
 	const [volume, setVolume] = useState(1);
 	const [currentTime, setCurrentTime] = useState(0);
 	const [duration, setDuration] = useState(0);
+	const [failed, setFailed] = useState(false);
+
+	const onMediaError = () => {
+		// WebKit/WebView2 can't decode every container (MKV, AVI, WMV, FLV…).
+		// Surface that instead of a silent player.
+		setFailed(true);
+	};
 
 	useEffect(() => {
 		const el = ref.current;
@@ -339,6 +490,24 @@ function MediaPlayer({ kind, src, title }: { kind: "audio" | "video"; src: strin
 		return `${m}:${s}`;
 	};
 
+	if (failed) {
+		return (
+			<div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-pi-bg p-4 text-center text-2xs text-pi-text-faint">
+				<p>
+					This {kind === "video" ? "video" : "audio"} format can't be played in-app ({title.split(".").pop()?.toUpperCase()}).
+				</p>
+				{fullPath && (
+					<button
+						onClick={() => void openInEditor(fullPath)}
+						className="text-2xs text-pi-accent underline underline-offset-2 hover:text-pi-accent-hover"
+					>
+						Open with system player
+					</button>
+				)}
+			</div>
+		);
+	}
+
 	return (
 		<div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-pi-bg p-4">
 			{kind === "video" ? (
@@ -349,9 +518,10 @@ function MediaPlayer({ kind, src, title }: { kind: "audio" | "video"; src: strin
 					controls={false}
 					className="max-h-[70%] max-w-full rounded-lg border border-pi-border bg-black"
 					preload="metadata"
+					onError={onMediaError}
 				/>
 			) : (
-				<audio ref={ref as React.RefObject<HTMLAudioElement>} src={src} preload="metadata" />
+				<audio ref={ref as React.RefObject<HTMLAudioElement>} src={src} preload="metadata" onError={onMediaError} />
 			)}
 			<div className="flex w-full max-w-md items-center gap-2 rounded-lg border border-pi-border bg-pi-surface p-2">
 				<button

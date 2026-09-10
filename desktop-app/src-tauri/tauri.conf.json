@@ -11,7 +11,23 @@
 	},
 	"app": {
 		"security": {
-			"csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; media-src 'self' blob: data:; connect-src 'self' https: http: ws: wss:; frame-src 'self' blob: data:",
+			// Stream local media/PDFs through the asset protocol instead of
+			// base64-over-IPC: any file size, Range-based video seeking, native
+			// PDF rendering. The scope covers common project locations; the app's
+			// IPC file commands already read arbitrary paths, so this does not
+			// widen the trust model.
+			"assetProtocol": {
+				"enable": true,
+				"scope": [
+					"$HOME/**",
+					"/tmp/**",
+					"/private/tmp/**",
+					"/Volumes/**",
+					"/media/**",
+					"/mnt/**"
+				]
+			},
+			"csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob: asset: http://asset.localhost; media-src 'self' blob: data: asset: http://asset.localhost; connect-src 'self' https: http: ws: wss:; frame-src 'self' blob: data: asset: http://asset.localhost",
 			"capabilities": [
 				"default"
 			]

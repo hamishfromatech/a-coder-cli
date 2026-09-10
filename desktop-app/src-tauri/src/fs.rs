@@ -291,6 +291,10 @@ fn mime_type_from_path(path: &Path) -> String {
         Some("svg") => "image/svg+xml",
         Some("bmp") => "image/bmp",
         Some("ico") => "image/x-icon",
+        Some("avif") => "image/avif",
+        Some("heic") | Some("heif") => "image/heic",
+        Some("tif") | Some("tiff") => "image/tiff",
+        Some("jfif") => "image/jpeg",
         // Audio
         Some("mp3") => "audio/mpeg",
         Some("wav") => "audio/wav",
@@ -493,6 +497,30 @@ mod tests {
         assert_eq!(
             mime_type_from_path(Path::new("icon.svg")),
             "image/svg+xml"
+        );
+    }
+
+    #[test]
+    fn test_mime_type_from_path_new_image_formats() {
+        assert_eq!(
+            mime_type_from_path(Path::new("photo.avif")),
+            "image/avif"
+        );
+        assert_eq!(
+            mime_type_from_path(Path::new("shot.heic")),
+            "image/heic"
+        );
+        assert_eq!(
+            mime_type_from_path(Path::new("scan.tif")),
+            "image/tiff"
+        );
+        assert_eq!(
+            mime_type_from_path(Path::new("scan.tiff")),
+            "image/tiff"
+        );
+        assert_eq!(
+            mime_type_from_path(Path::new("pic.jfif")),
+            "image/jpeg"
         );
     }
 

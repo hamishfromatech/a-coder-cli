@@ -2,6 +2,7 @@ import {
 	ChevronDown,
 	ChevronRight,
 	FileAudio,
+	FileSpreadsheet,
 	FileText,
 	FileVideo,
 	Folder,
@@ -25,6 +26,8 @@ function fileIcon(path: string) {
 			return FileAudio;
 		case "video":
 			return FileVideo;
+		case "csv":
+			return FileSpreadsheet;
 		default:
 			return FileText;
 	}
