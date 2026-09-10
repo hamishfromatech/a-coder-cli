@@ -139,14 +139,7 @@ async fn install_cli_release(tag: &str) -> Result<PathBuf, String> {
 	tracing::info!("Updating a-coder-cli from {} to {}", tag, url);
 	download(&url, &tmp).await?;
 
-	let _ = std::fs::remove_dir_all(&lib_dir);
-	std::fs::create_dir_all(&lib_dir).map_err(|e| e.to_string())?;
-
-	if archive_ext == "zip" {
-		extract_zip(&tmp, &lib_dir)?;
-	} else {
-		extract_tarball(&tmp, &lib_dir)?;
-	}
+	stage_and_swap_archive(&tmp, &lib_dir, archive_ext == "zip")?;
 	let _ = std::fs::remove_file(&tmp);
 
 	let bin_name = if platform == "windows" { "pi.exe" } else { "pi" };
@@ -202,19 +195,7 @@ pub async fn bootstrap_cli() -> Result<String, String> {
 	let tmp = std::env::temp_dir().join(format!("ac-bootstrap-{}-{}", tag, asset));
 	download(&url, &tmp).await?;
 
-	// Clear + recreate the lib dir.
-	let _ = std::fs::remove_dir_all(&lib_dir);
-	std::fs::create_dir_all(&lib_dir).map_err(|e| e.to_string())?;
-
-	// Extract: shell out to `tar` (cross-platform — Windows 10 1803+ ships
-	// tar.exe and can read both tarballs and zips). The tarball wraps its
-	// contents in a top-level `pi/` dir; strip it so the binary + assets land
-	// directly in lib_dir.
-	if archive_ext == "zip" {
-		extract_zip(&tmp, &lib_dir)?;
-	} else {
-		extract_tarball(&tmp, &lib_dir)?;
-	}
+	stage_and_swap_archive(&tmp, &lib_dir, archive_ext == "zip")?;
 	let _ = std::fs::remove_file(&tmp);
 
 	// Locate the compiled binary.
@@ -273,6 +254,96 @@ async fn download(url: &str, out: &Path) -> Result<(), String> {
 	}
 	let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
 	std::fs::write(out, &bytes).map_err(|e| e.to_string())?;
+	Ok(())
+}
+
+/// Extract an archive beside the live install and swap it in via renames.
+///
+/// Windows locks running executables (and native addons they have loaded), so
+/// extracting over a live install fails with "Can't unlink already-existing
+/// object" the moment an engine is running — and the previous
+/// remove-then-extract approach could leave the install half-replaced. Instead:
+/// extract into a staging sibling, rename the live dir to a backup (rename
+/// works even while the binary is running), rename staging into place, then
+/// best-effort clean up the backup. A failed extraction never touches the live
+/// install, and leftover backups (still held by a running engine) are removed
+/// on a later update.
+fn stage_and_swap_archive(archive: &Path, lib_dir: &Path, is_zip: bool) -> Result<(), String> {
+	let parent = lib_dir
+		.parent()
+		.ok_or_else(|| format!("Invalid install dir: {}", lib_dir.display()))?;
+	let dir_name = lib_dir
+		.file_name()
+		.and_then(|n| n.to_str())
+		.ok_or_else(|| format!("Invalid install dir: {}", lib_dir.display()))?;
+
+	let staging = parent.join(format!(".{dir_name}.staging-{}", std::process::id()));
+	let _ = std::fs::remove_dir_all(&staging);
+	std::fs::create_dir_all(&staging)
+		.map_err(|e| format!("Failed to create staging dir {}: {}", staging.display(), e))?;
+
+	// Shell out to `tar` (cross-platform — Windows 10 1803+ ships tar.exe and
+	// can read both tarballs and zips). The tarball wraps its contents in a
+	// top-level `pi/` dir; strip it so the binary + assets land directly in
+	// the staging dir.
+	let extraction = if is_zip {
+		extract_zip(archive, &staging)
+	} else {
+		extract_tarball(archive, &staging)
+	};
+	if let Err(e) = extraction {
+		let _ = std::fs::remove_dir_all(&staging);
+		return Err(e);
+	}
+
+	// Clean stale backups from previous updates (best-effort). A backup held
+	// open by a still-running engine can't be removed; it is retried on the
+	// next update.
+	let backup_prefix = format!(".{dir_name}.old-");
+	if let Ok(entries) = std::fs::read_dir(parent) {
+		for entry in entries.filter_map(|e| e.ok()) {
+			let name = entry.file_name().to_string_lossy().into_owned();
+			if name.starts_with(&backup_prefix) {
+				let _ = std::fs::remove_dir_all(entry.path());
+			}
+		}
+	}
+
+	// Move the live dir out of the way first so the swap stays atomic from
+	// the shim's point of view (lib_dir either holds the old or the new
+	// engine, never a mix).
+	let mut backup: Option<PathBuf> = None;
+	if lib_dir.exists() {
+		let stamp = std::time::SystemTime::now()
+			.duration_since(std::time::UNIX_EPOCH)
+			.map(|d| d.as_millis())
+			.unwrap_or(0);
+		let backup_path = parent.join(format!("{backup_prefix}{}-{stamp}", std::process::id()));
+		std::fs::rename(lib_dir, &backup_path).map_err(|e| {
+			let _ = std::fs::remove_dir_all(&staging);
+			format!(
+				"Failed to move the current install aside ({}): {}. Close running a-coder-cli sessions and retry the update.",
+				lib_dir.display(),
+				e
+			)
+		})?;
+		backup = Some(backup_path);
+	}
+
+	if let Err(e) = std::fs::rename(&staging, lib_dir) {
+		// Put the old install back so the shim keeps working.
+		if let Some(backup_path) = &backup {
+			let _ = std::fs::rename(backup_path, lib_dir);
+		}
+		let _ = std::fs::remove_dir_all(&staging);
+		return Err(format!("Failed to move the new install into place ({}): {}", lib_dir.display(), e));
+	}
+
+	// Best-effort: the old dir may still be held open by a running engine.
+	if let Some(backup_path) = &backup {
+		let _ = std::fs::remove_dir_all(backup_path);
+	}
+
 	Ok(())
 }
 
@@ -381,5 +452,60 @@ mod tests {
 	fn cli_install_dir_nests_under_shared_root() {
 		let dir = cli_install_dir();
 		assert!(dir.ends_with(".a-coder/cli"));
+	}
+
+	#[test]
+	fn stage_and_swap_replaces_install_and_leaves_no_residue() {
+		let root = std::env::temp_dir().join(format!("ac-bootstrap-swap-test-{}", std::process::id()));
+		let _ = std::fs::remove_dir_all(&root);
+		let lib_dir = root.join("lib").join("a-coder-cli");
+		std::fs::create_dir_all(&lib_dir).unwrap();
+		std::fs::write(lib_dir.join("stale.txt"), b"old").unwrap();
+
+		// Build a tarball wrapping `pi/` the way release artifacts do.
+		let payload = root.join("payload").join("pi");
+		std::fs::create_dir_all(&payload).unwrap();
+		std::fs::write(payload.join("pi"), b"new engine").unwrap();
+		let archive = root.join("pi.tar.gz");
+		let status = std::process::Command::new("tar")
+			.arg("-czf")
+			.arg(&archive)
+			.arg("-C")
+			.arg(root.join("payload"))
+			.arg("pi")
+			.status()
+			.expect("tar available on test host");
+		assert!(status.success());
+
+		stage_and_swap_archive(&archive, &lib_dir, false).unwrap();
+		assert_eq!(std::fs::read_to_string(lib_dir.join("pi")).unwrap(), "new engine");
+		assert!(!lib_dir.join("stale.txt").exists());
+
+		// No staging dirs or leftover backups beside the install.
+		let residue: Vec<String> = std::fs::read_dir(lib_dir.parent().unwrap())
+			.unwrap()
+			.filter_map(|e| e.ok())
+			.map(|e| e.file_name().to_string_lossy().into_owned())
+			.filter(|n| n.starts_with(".a-coder-cli."))
+			.collect();
+		assert!(residue.is_empty(), "residue: {:?}", residue);
+
+		// A second update swaps again without error (stale-cleanup path).
+		std::fs::write(payload.join("pi"), b"newer engine").unwrap();
+		assert!(
+			std::process::Command::new("tar")
+				.arg("-czf")
+				.arg(&archive)
+				.arg("-C")
+				.arg(root.join("payload"))
+				.arg("pi")
+				.status()
+				.unwrap()
+				.success()
+		);
+		stage_and_swap_archive(&archive, &lib_dir, false).unwrap();
+		assert_eq!(std::fs::read_to_string(lib_dir.join("pi")).unwrap(), "newer engine");
+
+		let _ = std::fs::remove_dir_all(&root);
 	}
 }

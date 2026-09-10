@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Windows CLI updates from the desktop app no longer fail with "zip extraction failed: ... Can't unlink already-existing object: Permission denied". The updater destroyed the live install and extracted the new archive over it, which breaks the moment a running engine holds `pi.exe` or its loaded `win32-console-mode.node` open (Windows locks running executables; extraction then left the install half-replaced). The installer now stages the new files in a sibling directory and swaps via renames — extraction failures never touch the live install, the swap works even while the old engine is running (rename is allowed where unlink is not), leftover backups held by running engines are cleaned up on the next update, and a failed rename restores the old install instead of leaving it missing.
+
 ### Added
 
 - Office panel chat now renders messages as markdown (same Streamdown pipeline as the main chat, pinned to the bubble's 12px rhythm) and shows an in-chat typing indicator: the working coworker's face beside an animated dots bubble, labeled "{name} is typing…", driven by the huddle's running state. The roster's working spinner and header status are unchanged.
