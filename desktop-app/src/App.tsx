@@ -164,6 +164,10 @@ export default function App() {
 	 *  never paint over a newer switch (the A→B cross-paint bug hermes guards
 	 *  with resume request ids). */
 	const sessionStartGenerationRef = useRef(0);
+	/** The session file the current `sessionName` is authoritative for (set by
+	 *  syncEngineState). The tab-sync effect uses it to avoid applying a stale
+	 *  name to a newly activated tab. */
+	const namedSessionRef = useRef<string | null>(null);
 	const {
 		setStatus,
 		setCwd,
@@ -339,7 +343,13 @@ export default function App() {
 			if (s?.model) setModel(s.model as never);
 			if (s?.thinkingLevel) setThinkingLevel(s.thinkingLevel);
 			if (s?.permissionMode) setPermissionMode(s.permissionMode);
-			if (s?.sessionName) setSessionName(s.sessionName);
+			// Always apply the name, including clearing it: switching to an unnamed
+			// session must not inherit the previous session's name (the tab strip
+			// derives its labels from this field). The ref records which session
+			// the applied name is authoritative for, so the tab-sync effect below
+			// never relabels a tab with a name belonging to a different session.
+			setSessionName(s?.sessionName ?? null);
+			namedSessionRef.current = s?.sessionFile ?? null;
 			if (s?.sessionId) setSessionId(s.sessionId);
 			setSessionFile(s?.sessionFile ?? null);
 			setIsCompacting(s?.isCompacting ?? false);
@@ -1105,11 +1115,19 @@ export default function App() {
 	);
 	switchProjectRef.current = switchProject;
 
-	// Keep the session tab strip in sync with the active session: open/update a
-	// tab whenever the engine reports a session file (covers connect, resume,
-	// new session, fork, and renames).
+	// Keep the session tab strip in sync with the active session: ensure a tab
+	// exists whenever the engine reports a session file (connect, resume, new
+	// session, fork), and relabel it only once the name is authoritative for
+	// that session. The optimistic switch path sets activePath first — before
+	// get_state returns — so without this gate the effect would rename the
+	// freshly activated tab with the PREVIOUS session's stale name.
 	useEffect(() => {
-		if (sessionFile) openTab(sessionFile, sessionName ?? "Untitled session");
+		if (!sessionFile) return;
+		if (namedSessionRef.current === sessionFile) {
+			openTab(sessionFile, sessionName ?? "Untitled session");
+		} else {
+			openTab(sessionFile);
+		}
 	}, [sessionFile, sessionName, openTab]);
 
 	// A session the user switches to is no longer "finished while away".

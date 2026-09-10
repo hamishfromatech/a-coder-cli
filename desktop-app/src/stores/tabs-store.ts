@@ -9,9 +9,11 @@ export interface SessionTab {
 export interface TabsState {
 	tabs: SessionTab[];
 	activePath: string | null;
-	/** Ensure a tab exists for this session and mark it active. Updates the
-	 *  name if the tab already exists (handles renames + new sessions). */
-	openTab: (path: string, name: string) => void;
+	/** Ensure a tab exists for this session and mark it active. When `name` is
+	 *  provided the tab's label is updated (renames + new sessions); when
+	 *  omitted an existing tab keeps its current label — used while the engine
+	 *  name for the newly activated session is not yet authoritative. */
+	openTab: (path: string, name?: string) => void;
 	/** Remove a tab. Returns the path to activate next when the closed tab was
 	 *  active, otherwise null (no switch needed). */
 	closeTab: (path: string) => string | null;
@@ -27,7 +29,11 @@ export const useTabsStore = create<TabsState>((set, get) => ({
 		set((s) => {
 			const idx = s.tabs.findIndex((t) => t.path === path);
 			const tabs = [...s.tabs];
-			const label = name || "Untitled session";
+			const existing = idx >= 0 ? tabs[idx] : undefined;
+			const label =
+				name !== undefined
+					? name || "Untitled session"
+					: (existing?.name ?? "Untitled session");
 			if (idx >= 0) {
 				tabs[idx] = { path, name: label };
 			} else {
