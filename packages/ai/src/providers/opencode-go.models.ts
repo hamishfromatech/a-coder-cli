@@ -4,6 +4,24 @@
 import type { Model } from "../types.ts";
 
 export const OPENCODE_GO_MODELS = {
+	"deepseek-flash": {
+		id: "deepseek-flash",
+		name: "DeepSeek V4.1 Flash",
+		api: "openai-completions",
+		provider: "opencode-go",
+		baseUrl: "https://opencode.ai/zen/go/v1",
+		compat: {"maxTokensField":"max_tokens"},
+		reasoning: true,
+		input: ["text", "image"],
+		cost: {
+			input: 0.15,
+			output: 0.6,
+			cacheRead: 0.003,
+			cacheWrite: 0,
+		},
+		contextWindow: 1000000,
+		maxTokens: 384000,
+	} satisfies Model<"openai-completions">,
 	"deepseek-v4-flash": {
 		id: "deepseek-v4-flash",
 		name: "DeepSeek V4 Flash",
@@ -15,9 +33,9 @@ export const OPENCODE_GO_MODELS = {
 		thinkingLevelMap: {"minimal":null,"low":null,"medium":null,"high":"high","xhigh":"max"},
 		input: ["text"],
 		cost: {
-			input: 0.22,
-			output: 0.66,
-			cacheRead: 0.007,
+			input: 0.15,
+			output: 0.6,
+			cacheRead: 0.003,
 			cacheWrite: 0,
 		},
 		contextWindow: 1000000,
@@ -34,9 +52,9 @@ export const OPENCODE_GO_MODELS = {
 		thinkingLevelMap: {"minimal":null,"low":null,"medium":null,"high":"high","xhigh":"max"},
 		input: ["text", "image"],
 		cost: {
-			input: 0.22,
-			output: 0.66,
-			cacheRead: 0.007,
+			input: 0.15,
+			output: 0.6,
+			cacheRead: 0.003,
 			cacheWrite: 0,
 		},
 		contextWindow: 1000000,
@@ -383,24 +401,6 @@ export const OPENCODE_GO_MODELS = {
 		contextWindow: 1048576,
 		maxTokens: 131072,
 	} satisfies Model<"openai-responses">,
-	"omen-alpha": {
-		id: "omen-alpha",
-		name: "Omen Alpha",
-		api: "openai-completions",
-		provider: "opencode-go",
-		baseUrl: "https://opencode.ai/zen/go/v1",
-		compat: {"maxTokensField":"max_tokens"},
-		reasoning: true,
-		input: ["text", "image"],
-		cost: {
-			input: 0.2,
-			output: 0.66,
-			cacheRead: 0.04,
-			cacheWrite: 0,
-		},
-		contextWindow: 500000,
-		maxTokens: 128000,
-	} satisfies Model<"openai-completions">,
 	"qwen3.6-plus": {
 		id: "qwen3.6-plus",
 		name: "Qwen3.6 Plus",
