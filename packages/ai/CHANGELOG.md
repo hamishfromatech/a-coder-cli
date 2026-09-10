@@ -10,6 +10,7 @@
 
 ### Fixed
 
+- Fixed Ollama Cloud vision requests failing with 400 "failed to read request body" after 2-3 image reads: every turn re-sends the full conversation, so accumulated base64 images grew the body past the gateway's ~16MB limit. `OpenAICompletionsCompat` gained `maxImageBytesPerRequest`; when the serialized request exceeds it, the oldest image blocks are replaced with a text placeholder and the newest images are kept. Ollama Cloud models set a 12MB image budget.
 - Fixed Mistral Medium reasoning requests to use `reasoning_effort` for all reasoning-capable `mistral-medium-*` model IDs instead of the unsupported `prompt_mode` ([#8700](https://github.com/earendil-works/pi/issues/8700)).
 - Routed all GitHub Copilot GPT models through the Responses API (fixes #9209).
 - Added Claude Opus 5 support: adaptive thinking and prompt caching on Anthropic, Amazon Bedrock (inference-profile-only ids), and GitHub Copilot (minimal→low thinking override).

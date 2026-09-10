@@ -118,7 +118,7 @@ export const OPENCODE_GO_MODELS = {
 	} satisfies Model<"openai-completions">,
 	"glm-5.3-flash": {
 		id: "glm-5.3-flash",
-		name: "GLM-5.3-Flash (2x usage)",
+		name: "GLM-5.3-Flash",
 		api: "openai-completions",
 		provider: "opencode-go",
 		baseUrl: "https://opencode.ai/zen/go/v1",
@@ -126,9 +126,9 @@ export const OPENCODE_GO_MODELS = {
 		reasoning: true,
 		input: ["text", "image"],
 		cost: {
-			input: 0.075,
-			output: 0.25,
-			cacheRead: 0.015,
+			input: 0.15,
+			output: 0.5,
+			cacheRead: 0.03,
 			cacheWrite: 0,
 		},
 		contextWindow: 1000000,

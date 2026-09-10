@@ -550,6 +550,8 @@ export interface OpenAICompletionsCompat {
 	supportsOpenAIGrammarTools?: boolean;
 	/** Whether the provider supports the `strict` field in tool definitions. Default: true. */
 	supportsStrictMode?: boolean;
+	/** Maximum total base64 image payload (sum of data-URL lengths) allowed per request. When the serialized request exceeds this, the oldest image blocks are replaced with a text placeholder, keeping the newest images. Set for providers whose gateway rejects large request bodies (e.g. Ollama Cloud fails with 400 "failed to read request body" above ~16MB). */
+	maxImageBytesPerRequest?: number;
 	/** Cache control convention for prompt caching. "anthropic" applies Anthropic-style `cache_control` markers to the system prompt, last tool definition, and last user/assistant text content. */
 	cacheControlFormat?: "anthropic";
 	/** Whether to send known session-affinity headers (`session_id`, `x-client-request-id`, `x-session-affinity`) from `options.sessionId` when caching is enabled. Default: false. */

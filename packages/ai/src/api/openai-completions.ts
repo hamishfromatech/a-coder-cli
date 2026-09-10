@@ -131,8 +131,12 @@ interface OpenAICompatCacheControl {
 	ttl?: string;
 }
 
-type ResolvedOpenAICompletionsCompat = Omit<Required<OpenAICompletionsCompat>, "cacheControlFormat"> & {
+type ResolvedOpenAICompletionsCompat = Omit<
+	Required<OpenAICompletionsCompat>,
+	"cacheControlFormat" | "maxImageBytesPerRequest"
+> & {
 	cacheControlFormat?: OpenAICompletionsCompat["cacheControlFormat"];
+	maxImageBytesPerRequest?: OpenAICompletionsCompat["maxImageBytesPerRequest"];
 };
 
 type ResolvedChatTemplateKwargValue = string | number | boolean | null;
@@ -668,7 +672,10 @@ function buildParams(
 		compat.supportsOpenAIGrammarTools,
 	),
 ) {
-	const messages = convertMessages(model, context, compat, { grammarToolInputProperties });
+	const messages = enforceImageBudget(
+		convertMessages(model, context, compat, { grammarToolInputProperties }),
+		compat.maxImageBytesPerRequest ?? 0,
+	);
 	const cacheControl = getCompatCacheControl(compat, cacheRetention);
 
 	const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
@@ -1229,6 +1236,50 @@ export function convertMessages(
 	return params;
 }
 
+/** Text substituted for an elided image when the request would exceed the provider's image budget. */
+const IMAGE_ELIDED_NOTE =
+	"[image removed from older context to keep the request within the provider's request size limit; the most recent images are kept]";
+
+/**
+ * Replace the oldest image blocks with a text note until the total base64 image
+ * payload fits the provider's per-request budget. Images ride along in every
+ * subsequent request (the full history is re-sent each turn), so a session that
+ * reads several images grows monotonically until the provider's gateway rejects
+ * the body (Ollama Cloud: 400 "failed to read request body" above ~16MB).
+ * Newest images are always kept; only old ones are dropped.
+ */
+export function enforceImageBudget(
+	messages: ChatCompletionMessageParam[],
+	maxTotalBase64: number,
+): ChatCompletionMessageParam[] {
+	if (!(maxTotalBase64 > 0)) return messages;
+
+	type ImageRef = { content: OpenAI.Chat.Completions.ChatCompletionContentPart[]; index: number; url: string };
+	const images: ImageRef[] = [];
+	for (const message of messages) {
+		if (message.role !== "user") continue;
+		const content = message.content;
+		if (!Array.isArray(content)) continue;
+		for (let index = 0; index < content.length; index++) {
+			const part = content[index];
+			if (part.type === "image_url" && part.image_url.url.startsWith("data:")) {
+				images.push({ content, index, url: part.image_url.url });
+			}
+		}
+	}
+
+	let total = images.reduce((sum, image) => sum + image.url.length, 0);
+	if (total <= maxTotalBase64) return messages;
+
+	// Oldest first; the final image is never elided so at least one stays.
+	for (let i = 0; i < images.length - 1 && total > maxTotalBase64; i++) {
+		const image = images[i];
+		total -= image.url.length;
+		image.content[image.index] = { type: "text", text: IMAGE_ELIDED_NOTE };
+	}
+	return messages;
+}
+
 function convertTools(
 	tools: Tool[],
 	compat: ResolvedOpenAICompletionsCompat,
@@ -1407,6 +1458,7 @@ function detectCompat(model: Model<"openai-completions">): ResolvedOpenAIComplet
 		zaiToolStream: false,
 		supportsStrictMode: !isMoonshot && !isTogether && !isCloudflareAiGateway && !isNvidia,
 		supportsOpenAIGrammarTools: false,
+		maxImageBytesPerRequest: undefined,
 		cacheControlFormat,
 		sendSessionAffinityHeaders: false,
 		supportsLongCacheRetention: !(
@@ -1450,5 +1502,6 @@ function getCompat(model: Model<"openai-completions">): ResolvedOpenAICompletion
 		cacheControlFormat: model.compat.cacheControlFormat ?? detected.cacheControlFormat,
 		sendSessionAffinityHeaders: model.compat.sendSessionAffinityHeaders ?? detected.sendSessionAffinityHeaders,
 		supportsLongCacheRetention: model.compat.supportsLongCacheRetention ?? detected.supportsLongCacheRetention,
+		maxImageBytesPerRequest: model.compat.maxImageBytesPerRequest ?? detected.maxImageBytesPerRequest,
 	};
 }

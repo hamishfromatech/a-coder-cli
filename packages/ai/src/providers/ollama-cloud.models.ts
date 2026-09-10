@@ -10,7 +10,7 @@ export const OLLAMA_CLOUD_MODELS = {
 		api: "openai-completions",
 		provider: "ollama-cloud",
 		baseUrl: "https://ollama.com/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false,"maxTokensField":"max_tokens","supportsStrictMode":false,"supportsLongCacheRetention":false},
+		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false,"maxTokensField":"max_tokens","supportsStrictMode":false,"supportsLongCacheRetention":false,"maxImageBytesPerRequest":12582912},
 		reasoning: false,
 		input: ["text"],
 		cost: {
@@ -28,7 +28,7 @@ export const OLLAMA_CLOUD_MODELS = {
 		api: "openai-completions",
 		provider: "ollama-cloud",
 		baseUrl: "https://ollama.com/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false,"maxTokensField":"max_tokens","supportsStrictMode":false,"supportsLongCacheRetention":false},
+		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false,"maxTokensField":"max_tokens","supportsStrictMode":false,"supportsLongCacheRetention":false,"maxImageBytesPerRequest":12582912},
 		reasoning: false,
 		input: ["text"],
 		cost: {
@@ -46,7 +46,7 @@ export const OLLAMA_CLOUD_MODELS = {
 		api: "openai-completions",
 		provider: "ollama-cloud",
 		baseUrl: "https://ollama.com/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false,"maxTokensField":"max_tokens","supportsStrictMode":false,"supportsLongCacheRetention":false},
+		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false,"maxTokensField":"max_tokens","supportsStrictMode":false,"supportsLongCacheRetention":false,"maxImageBytesPerRequest":12582912},
 		reasoning: false,
 		input: ["text"],
 		cost: {
@@ -64,7 +64,7 @@ export const OLLAMA_CLOUD_MODELS = {
 		api: "openai-completions",
 		provider: "ollama-cloud",
 		baseUrl: "https://ollama.com/v1",
-		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false,"maxTokensField":"max_tokens","supportsStrictMode":false,"supportsLongCacheRetention":false},
+		compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false,"maxTokensField":"max_tokens","supportsStrictMode":false,"supportsLongCacheRetention":false,"maxImageBytesPerRequest":12582912},
 		reasoning: false,
 		input: ["text"],
 		cost: {

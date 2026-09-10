@@ -41,8 +41,10 @@ const compat = {
 	cacheControlFormat: undefined,
 	sendSessionAffinityHeaders: false,
 	supportsLongCacheRetention: true,
-} satisfies Required<Omit<OpenAICompletionsCompat, "cacheControlFormat">> & {
+	maxImageBytesPerRequest: undefined,
+} satisfies Required<Omit<OpenAICompletionsCompat, "cacheControlFormat" | "maxImageBytesPerRequest">> & {
 	cacheControlFormat?: OpenAICompletionsCompat["cacheControlFormat"];
+	maxImageBytesPerRequest?: OpenAICompletionsCompat["maxImageBytesPerRequest"];
 };
 
 function buildModel(baseUrl = "http://127.0.0.1:1"): Model<"openai-completions"> {

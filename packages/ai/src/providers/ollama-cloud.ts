@@ -52,6 +52,11 @@ export function createOllamaCloudModel(
 			maxTokensField: "max_tokens",
 			supportsStrictMode: false,
 			supportsLongCacheRetention: false,
+			// Ollama Cloud's gateway rejects request bodies above ~16MB with 400
+			// "failed to read request body". Images accumulate in history (every
+			// turn re-sends the full conversation), so cap the total image payload
+			// per request and elide the oldest images beyond it.
+			maxImageBytesPerRequest: 12 * 1024 * 1024,
 		},
 		reasoning: false,
 		input: caps?.vision ? ["text", "image"] : ["text"],
