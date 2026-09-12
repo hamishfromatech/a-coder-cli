@@ -165,15 +165,8 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 		id: "general",
 		navId: "general",
 		label: "General",
-		description: "Theme and startup behaviour.",
+		description: "Startup and system behaviour.",
 		fields: [
-			{
-				path: "theme",
-				label: "Appearance",
-				hint: "Pick how the app looks.",
-				kind: "custom",
-				widget: "theme",
-			},
 			{
 				path: "reopenLastProject",
 				label: "Reopen last project",
@@ -214,8 +207,8 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 	{
 		id: "ai-model",
 		navId: "ai-model",
-		label: "AI model",
-		description: "Choose which AI model to use and how hard it thinks.",
+		label: "Models",
+		description: "Choose which AI the assistant uses — default model, API providers, and local servers.",
 		fields: [
 			{
 				path: "defaultProvider",
@@ -252,18 +245,19 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 
 	// ---- Custom providers -------------------------------------------------
 	// No fields — fully custom UI editing models.json (not settings.json).
+	// Shares navId "ai-model": it renders as a card on the merged Models page.
 	{
 		id: "custom-providers",
-		navId: "custom-providers",
-		label: "Custom AI",
+		navId: "ai-model",
+		label: "API providers",
 		description: "Connect your own AI model or a service that isn't in the built-in list.",
 	},
 
 	// ---- Local providers --------------------------------------------------
 	{
 		id: "local-providers",
-		navId: "local-providers",
-		label: "Local AI",
+		navId: "ai-model",
+		label: "Local models",
 		description: "Point A-Coder at a local model server running on this computer.",
 		fields: [
 			{
@@ -291,9 +285,16 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 	{
 		id: "look-and-feel",
 		navId: "look-and-feel",
-		label: "Look & feel",
-		description: "How messages, images and the editor look.",
+		label: "Appearance",
+		description: "How the app, messages, images and the editor look.",
 		fields: [
+			{
+				path: "theme",
+				label: "Theme",
+				hint: "Pick how the app looks.",
+				kind: "custom",
+				widget: "theme",
+			},
 			{
 				path: "completionSound",
 				label: "Turn feedback",
@@ -393,7 +394,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 	{
 		id: "chat-behaviour",
 		navId: "chat-behaviour",
-		label: "Chat behaviour",
+		label: "Conversation",
 		description: "How new messages join an ongoing chat, and what to do when things go long.",
 		cards: [
 			{
@@ -531,7 +532,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 	{
 		id: "privacy",
 		navId: "privacy",
-		label: "Privacy",
+		label: "Privacy & network",
 		description: "What we send out, and how the network behaves.",
 		fields: [
 			{
@@ -584,7 +585,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 	{
 		id: "tools-and-permissions",
 		navId: "tools-and-permissions",
-		label: "Tools & permissions",
+		label: "Permissions",
 		description: "Decide what the AI is allowed to do on your computer.",
 		fields: [
 			{
@@ -729,7 +730,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 	{
 		id: "external-tools",
 		navId: "external-tools",
-		label: "External tools",
+		label: "Integrations",
 		description: "Connect the assistant to other apps and data sources.",
 		fields: [
 			{
@@ -743,9 +744,11 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 	},
 
 	// ---- Composio --------------------------------------------------------
+	// Shares navId "external-tools": it renders as a card on the merged
+	// Integrations page.
 	{
 		id: "composio",
-		navId: "composio",
+		navId: "external-tools",
 		label: "Composio",
 		description: "Connect the assistant to 1,000+ apps (GitHub, Gmail, Slack, …) via Composio.",
 		fields: [
@@ -809,8 +812,50 @@ export function findSection(navId: string): SettingsSection | undefined {
 	return SETTINGS_SECTIONS.find((s) => s.navId === navId);
 }
 
+/** Nav display order after consolidation. Sections sharing a navId merge into one page. */
+const NAV_ORDER: string[] = [
+	"account",
+	"ai-model",
+	"look-and-feel",
+	"chat-behaviour",
+	"tools-and-permissions",
+	"external-tools",
+	"resources",
+	"voice",
+	"privacy",
+	"keybindings",
+	"advanced",
+	"general",
+];
+
+/** Legacy section ids that now live on a merged page (deep-link compatibility). */
+const NAV_ALIAS: Record<string, string> = {
+	"custom-providers": "ai-model",
+	"local-providers": "ai-model",
+	composio: "external-tools",
+};
+
+/** Normalize a legacy deep-link hash to the page it now belongs to. */
+export function normalizeNavId(navId: string): string {
+	return NAV_ALIAS[navId] ?? navId;
+}
+
+/** All sections that render on the page identified by `navId` (after aliasing). */
+export function sectionsForNavId(navId: string): SettingsSection[] {
+	const id = normalizeNavId(navId);
+	return SETTINGS_SECTIONS.filter((s) => s.navId === id);
+}
+
 export function listNavItems(): { id: string; label: string }[] {
-	return SETTINGS_SECTIONS.map((s) => ({ id: s.navId, label: s.label }));
+	const firstByNav = new Map<string, { id: string; label: string }>();
+	for (const s of SETTINGS_SECTIONS) {
+		if (!firstByNav.has(s.navId)) {
+			firstByNav.set(s.navId, { id: s.navId, label: s.label });
+		}
+	}
+	return NAV_ORDER.map((navId) => firstByNav.get(navId)).filter(
+		(item): item is { id: string; label: string } => item !== undefined,
+	);
 }
 
 // ============================================================================

@@ -2,13 +2,12 @@ import {
 	ChevronDown,
 	ChevronRight,
 	FileText,
-	Image as ImageIcon,
 	Keyboard,
+	MessagesSquare,
 	Monitor,
-	Power,
+	Palette,
 	RotateCcw,
 	Search,
-	Server,
 	Settings as SettingsIcon,
 	Shield,
 	Sliders,
@@ -16,6 +15,7 @@ import {
 	User,
 	Brain,
 	Puzzle,
+	Wrench,
 	X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -30,9 +30,10 @@ import {
 import type { CliSettings, ThinkingLevel } from "../lib/settings.types";
 import {
 	applyRuntimeSync,
-	findSection,
 	listNavItems,
+	normalizeNavId,
 	readPath,
+	sectionsForNavId,
 	type CliSettingsFieldSpec,
 	type FieldOption,
 	type SettingsCard,
@@ -69,16 +70,14 @@ const NAV_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
 	general: Monitor,
 	account: User,
 	"ai-model": Sparkles,
-	"custom-providers": Server,
-	"local-providers": Server,
-	"look-and-feel": ImageIcon,
-	"chat-behaviour": Power,
+	"look-and-feel": Palette,
+	"chat-behaviour": MessagesSquare,
 	privacy: Shield,
 	"tools-and-permissions": Sliders,
 	"external-tools": Puzzle,
 	resources: Brain,
 	keybindings: Keyboard,
-	advanced: Server,
+	advanced: Wrench,
 };
 
 const FIRST_LAUNCH_KEY = "a-coder-first-launch-dismissed";
@@ -841,7 +840,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 	const [activeNavId, setActiveNavId] = useState<string>(() => {
 		if (typeof window !== "undefined" && window.location.hash) {
 			const h = window.location.hash.replace(/^#/, "");
-			if (h) return h;
+			if (h) return normalizeNavId(h);
 		}
 		return "general";
 	});
@@ -875,7 +874,15 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 	const activeSettings: CliSettings = scope === "global" ? cliGlobalSettings : cliProjectSettings;
 
 	const navItems = useMemo(() => listNavItems(), []);
-	const section = findSection(activeNavId);
+	const sections = useMemo(() => sectionsForNavId(activeNavId), [activeNavId]);
+	const section = sections[0];
+	// Merged pages (Models, Integrations) render several sections; the first
+	// provides the page heading, later ones get sub-headings in the body.
+	const isMergedPage = sections.length > 1;
+	const sectionFieldSpecs = useMemo(
+		() => sections.flatMap((s) => s.fields ?? s.cards?.flatMap((c) => c.fields) ?? []),
+		[sections],
+	);
 
 	// Load cli's settings.json once on mount.
 	useEffect(() => {
@@ -923,8 +930,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 			);
 
 			// Push runtime fields straight to the engine.
-			const allFields = section?.fields ?? section?.cards?.flatMap((c) => c.fields) ?? [];
-			const spec = allFields.find((f) => f.path === path);
+			const spec = sectionFieldSpecs.find((f) => f.path === path);
 			if (spec?.runtimeSync) {
 				applyRuntimeSync(path, value);
 			}
@@ -936,7 +942,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 				void persistCliSettings(scope, next);
 			}, 400);
 		},
-		[scope, section],
+		[scope, sectionFieldSpecs],
 	);
 
 	useEffect(
@@ -953,12 +959,6 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 		});
 	}, []);
 
-	const isAdvanced = activeNavId === "advanced";
-	const isAccount = activeNavId === "account";
-	const isCustomProviders = activeNavId === "custom-providers";
-	const isKeybindings = activeNavId === "keybindings";
-	const isResources = activeNavId === "resources";
-	const isVoice = activeNavId === "voice";
 	const showBanner = showFirstLaunch && authEmpty === true && !search.trim();
 
 	return (
@@ -1084,48 +1084,58 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 										onGoToAccount={() => setActiveNavId("account")}
 									/>
 								)}
-								{isAccount ? (
-									<AccountSection />
-								) : isCustomProviders ? (
-									<CustomProvidersSection />
-								) : isKeybindings ? (
-									<KeybindingsSection />
-								) : isResources ? (
-									<ResourcesSection search={search} />
-								) : isVoice ? (
-									<VoiceSection />
-								) : isAdvanced ? (
-									<section className="space-y-4">
-										<header>
-											<h2 className="text-[15px] font-semibold tracking-tight">
-												Advanced
-											</h2>
-											<p className="mt-0.5 text-2xs text-pi-text-muted">
-												Edit settings.json directly. Most people won't need to touch this.
-											</p>
-										</header>
-										<AdvancedJsonEditor scope={scope} onSaved={handleSaved} />
-									</section>
-								) : section?.cards ? (
-									<div className="space-y-3">
-										{section.cards.map((card) => (
-											<CardView
-												key={card.title}
-												card={card}
+								{sections.map((s, index) => (
+									<div key={s.id} className="space-y-6">
+										{isMergedPage && index > 0 && (
+											<header className="pt-2">
+												<h3 className="text-[15px] font-semibold tracking-tight">{s.label}</h3>
+												<p className="mt-0.5 text-2xs leading-relaxed text-pi-text-muted">{s.description}</p>
+											</header>
+										)}
+										{s.id === "account" ? (
+											<AccountSection />
+										) : s.id === "custom-providers" ? (
+											<CustomProvidersSection />
+										) : s.id === "keybindings" ? (
+											<KeybindingsSection />
+										) : s.id === "resources" ? (
+											<ResourcesSection search={search} />
+										) : s.id === "voice" ? (
+											<VoiceSection />
+										) : s.id === "advanced" ? (
+											<section className="space-y-4">
+												<header>
+													<h2 className="text-[15px] font-semibold tracking-tight">
+													Advanced
+													</h2>
+													<p className="mt-0.5 text-2xs text-pi-text-muted">
+													Edit settings.json directly. Most people won't need to touch this.
+													</p>
+												</header>
+												<AdvancedJsonEditor scope={scope} onSaved={handleSaved} />
+											</section>
+										) : s.cards ? (
+											<div className="space-y-3">
+												{s.cards.map((card) => (
+													<CardView
+														key={card.title}
+														card={card}
+														settings={activeSettings}
+														onUpdate={updateField}
+														search={search}
+													/>
+												))}
+											</div>
+										) : (
+											<SectionView
+												section={s}
 												settings={activeSettings}
 												onUpdate={updateField}
 												search={search}
 											/>
-										))}
+										)}
 									</div>
-								) : section ? (
-									<SectionView
-										section={section}
-										settings={activeSettings}
-										onUpdate={updateField}
-										search={search}
-									/>
-								) : null}
+								))}
 							</>
 						)}
 					</div>

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Consolidated the settings nav from 15 pages to 12 with clearer names. Three model-related pages (`AI model` / `Custom AI` / `Local AI`) merged into one **Models** page with sub-sections for the default model, API providers, and local servers; `External tools` + `Composio` merged into one **Integrations** page (MCP servers + Composio as sub-sections); `Look & feel` became **Appearance** and absorbed the theme picker from General (General is now startup/system toggles). Renames: `Chat behaviour` → **Conversation**, `Tools & permissions` → **Permissions**, `Privacy` → **Privacy & network**. Old deep-link hashes (`#custom-providers`, `#local-providers`, `#composio`) normalize to the merged pages. Nav icons de-duplicated.
+
 ### Fixed
 
 - Fixed empty native menus on Linux: the window menu bar and tray menu were built in `setup()`, before the glib main loop started servicing events, and GTK-backed menus (muda menubar, libappindicator tray menu) can render empty in that state. On Linux both are now built at `RunEvent::Ready`, after the event loop is live; macOS and Windows keep setup-time creation. Also added a tray tooltip (macOS/Windows; Linux tray tooltips are unsupported by libappindicator).
