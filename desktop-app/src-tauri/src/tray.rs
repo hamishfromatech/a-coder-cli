@@ -28,6 +28,7 @@ pub fn build_tray<R: Runtime>(app_handle: &AppHandle<R>) -> Result<TrayIcon<R>, 
     let tray = TrayIconBuilder::new()
         .icon(icon)
         .menu(&menu)
+        .tooltip("A-Coder Desktop")
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| {
             handle_tray_menu_event(app, event.id.as_ref());

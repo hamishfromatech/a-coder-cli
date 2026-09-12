@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed empty native menus on Linux: the window menu bar and tray menu were built in `setup()`, before the glib main loop started servicing events, and GTK-backed menus (muda menubar, libappindicator tray menu) can render empty in that state. On Linux both are now built at `RunEvent::Ready`, after the event loop is live; macOS and Windows keep setup-time creation. Also added a tray tooltip (macOS/Windows; Linux tray tooltips are unsupported by libappindicator).
+
 ### Changed
 
 - The model picker now keeps the catalog fresh on every open: opening it fires a forced provider refresh in the background (all fetchable providers re-fetch, bypassing TTL caches) and updates the list when it settles. The cached list still renders instantly — the picker never blocks on the network — and the manual refresh button keeps surfacing refresh errors; the automatic on-open refresh stays silent. This replaces the previous 1.5s re-fetch timer that only caught up with the engine's background warm-up.

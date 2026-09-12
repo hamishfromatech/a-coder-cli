@@ -85,14 +85,29 @@ fn main() {
 			let app_handle = app.handle().clone();
 
 			// Build and set the app menu.
-			let menu = menu::build_menu(&app_handle)?;
-			app_handle.set_menu(menu).map_err(|e| e.to_string())?;
+			// Register the menu event handler on every platform (cheap, no UI).
 			app_handle.on_menu_event(move |app, event| {
 				menu::handle_menu_event(app, event);
 			});
 
-			// Build the system tray.
-			let _tray = tray::build_tray(&app_handle)?;
+			// Build and set the app menu + tray. On Linux this is deferred to
+			// RunEvent::Ready (see the run handler below): GTK-backed menus
+			// (muda menubar, libappindicator tray menu) can render empty when
+			// their widgets are created before the glib main loop is servicing
+			// events. macOS and Windows are unaffected and keep setup-time
+			// creation so the app menu exists before the first window shows.
+			#[cfg(not(target_os = "linux"))]
+			{
+				let menu = menu::build_menu(&app_handle)?;
+				app_handle.set_menu(menu).map_err(|e| e.to_string())?;
+
+				// Build the system tray.
+				let _tray = tray::build_tray(&app_handle)?;
+			}
+			#[cfg(target_os = "linux")]
+			{
+				let _ = &app_handle;
+			};
 
 // Explicitly show and focus the main window on startup. Frameless
 			// windows (decorations=false on Windows/Linux; macOS uses the
@@ -122,6 +137,23 @@ fn main() {
 		.expect("error while building tauri application");
 
 	app.run(|app_handle, event| {
+		// On Linux, build the menu bar + tray only after the event loop is
+		// running. See the setup() comment for why.
+		#[cfg(target_os = "linux")]
+		if let tauri::RunEvent::Ready = event {
+			match menu::build_menu(app_handle) {
+				Ok(menu) => {
+					if let Err(e) = app_handle.set_menu(menu) {
+						eprintln!("linux: failed to set app menu: {e}");
+					}
+				}
+				Err(e) => eprintln!("linux: failed to build app menu: {e}"),
+			}
+			if let Err(e) = tray::build_tray(app_handle) {
+				eprintln!("linux: failed to build tray: {e}");
+			}
+		}
+
 		// On macOS, clicking the Dock icon when the app is running emits Reopen.
 		// Make sure the main window is shown and focused in that case.
 		#[cfg(target_os = "macos")]
