@@ -7,7 +7,7 @@
 		"": {
 			"name": "@earendil-works/pi-coding-agent",
 			"version": "0.80.85",
-			"license": "MIT",
+			"license": "SEE LICENSE IN LICENSE",
 			"dependencies": {
 				"@composio/core": "0.18.0",
 				"@composio/experimental": "0.2.3",
@@ -486,7 +486,7 @@
 		"node_modules/@earendil-works/pi-agent-core": {
 			"version": "0.80.85",
 			"resolved": "https://registry.npmjs.org/@earendil-works/pi-agent-core/-/pi-agent-core-0.80.85.tgz",
-			"license": "MIT",
+			"license": "SEE LICENSE IN LICENSE",
 			"dependencies": {
 				"@earendil-works/pi-ai": "^0.80.85",
 				"ignore": "7.0.5",
@@ -500,7 +500,7 @@
 		"node_modules/@earendil-works/pi-ai": {
 			"version": "0.80.85",
 			"resolved": "https://registry.npmjs.org/@earendil-works/pi-ai/-/pi-ai-0.80.85.tgz",
-			"license": "MIT",
+			"license": "SEE LICENSE IN LICENSE",
 			"dependencies": {
 				"@anthropic-ai/sdk": "0.91.1",
 				"@aws-sdk/client-bedrock-runtime": "3.1048.0",
@@ -524,7 +524,7 @@
 		"node_modules/@earendil-works/pi-tui": {
 			"version": "0.80.85",
 			"resolved": "https://registry.npmjs.org/@earendil-works/pi-tui/-/pi-tui-0.80.85.tgz",
-			"license": "MIT",
+			"license": "SEE LICENSE IN LICENSE",
 			"dependencies": {
 				"get-east-asian-width": "1.6.0",
 				"marked": "18.0.5"

@@ -2,6 +2,8 @@
   <a href="https://a-coder-cli.dev">
     <img alt="A-Coder logo" src="https://a-coder-cli.dev/logo-auto.svg" width="128">
   </a>
+  &nbsp;&nbsp;
+  <img alt="A-Coder Desktop logo" src="desktop-app/src-tauri/icons/icon.png" width="128">
 </p>
 <p align="center">
   <a href="https://discord.com/invite/3cU7Bz4UPx"><img alt="Discord" src="https://img.shields.io/badge/discord-community-5865F2?style=flat-square&logo=discord&logoColor=white" /></a>
@@ -17,6 +19,10 @@ A self-extensible AI coding agent by [The A-Tech Corporation PTY LTD](https://gi
 - **A-Coder Desktop** — a native Tauri desktop app (macOS, Windows, Linux) with project workspaces, a session tree, a model picker, and voice mode (speech-to-text / text-to-speech).
 
 Both share the same engine — the agent runtime, tools, and unified multi-provider LLM API — so providers, models, and sessions work identically across the CLI and the desktop app.
+
+<p align="center">
+  <img alt="A-Coder Desktop chat backdrop — cyanotype duotone engraving of a lone engineer with a glowing staff before a colossal broken arch" src="desktop-app/public/ds-assets/filler-bg0.jpg" width="640">
+</p>
 
 To learn more:
 
@@ -163,4 +169,9 @@ We treat npm dependency changes as reviewed code changes.
 
 ## License
 
-MIT &copy; The A-Tech Corporation PTY LTD
+Dual-licensed by The A-Tech Corporation PTY LTD:
+
+- **Free** for individuals, solo founders, and businesses with less than USD $10M in total annual revenue &mdash; MIT, open source, forever.
+- **The A-Tech Corporation License** required for organizations with USD $10M or more in annual revenue deploying A-Coder across departments and users. Contact [The A-Tech Corporation](https://theatechcorporation.com).
+
+See [LICENSE](LICENSE) for full terms.
