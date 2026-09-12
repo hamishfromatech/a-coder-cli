@@ -95,7 +95,11 @@ import type { InProcessSubAgentRecord, UserQuestion } from "../../core/extension
 import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/footer-data-provider.ts";
 import { configureHttpDispatcher, formatHttpIdleTimeoutMs } from "../../core/http-dispatcher.ts";
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.ts";
-import { KEYLESS_LOCAL_PROVIDER_ENV, KEYLESS_LOCAL_PROVIDERS } from "../../core/local-providers.ts";
+import {
+	KEYLESS_LOCAL_API_KEY,
+	KEYLESS_LOCAL_PROVIDER_ENV,
+	KEYLESS_LOCAL_PROVIDERS,
+} from "../../core/local-providers.ts";
 import { getMcpServerStates } from "../../core/mcp/status-store.ts";
 import { createCompactionSummaryMessage } from "../../core/messages.ts";
 import { defaultModelPerProvider, findExactModelReferenceMatch, resolveModelScope } from "../../core/model-resolver.ts";
@@ -6248,7 +6252,7 @@ export class InteractiveMode {
 
 			this.session.modelRegistry.authStorage.set(providerId, {
 				type: "api_key",
-				key: "not-needed",
+				key: KEYLESS_LOCAL_API_KEY,
 				env: { [envVar]: baseUrl },
 			});
 

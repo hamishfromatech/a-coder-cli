@@ -10,6 +10,9 @@ import type {
 } from "@earendil-works/pi-ai/compat";
 import { getApiProvider } from "@earendil-works/pi-ai/compat";
 import { getOAuthProvider } from "@earendil-works/pi-ai/oauth";
+import { createLlamaCppModel } from "@earendil-works/pi-ai/providers/llama-cpp";
+import { createLMStudioModel } from "@earendil-works/pi-ai/providers/lm-studio";
+import { createOllamaModel } from "@earendil-works/pi-ai/providers/ollama";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import { clearApiKeyCache, ModelRegistry, type ProviderConfigInput } from "../src/core/model-registry.ts";
@@ -1784,6 +1787,103 @@ describe("ModelRegistry", () => {
 					expect(auth.error).toContain('Failed to resolve API key for provider "custom-provider"');
 				}
 			});
+		});
+	});
+
+	describe("keyless local providers (ollama / lm-studio / llama.cpp)", () => {
+		/** Keyless models need no stored auth; these come from dynamic discovery, not models.json. */
+		function keylessModels() {
+			return [
+				createOllamaModel("llama3.2:latest"),
+				createLMStudioModel("lfm2.5-8b-a1b"),
+				createLlamaCppModel("qwen-coder"),
+			];
+		}
+
+		test("hasConfiguredAuth treats keyless local providers as configured without stored auth", () => {
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			for (const model of keylessModels()) {
+				expect(registry.hasConfiguredAuth(model)).toBe(true);
+			}
+			// A keyed provider without credentials stays unconfigured.
+			const openaiModel = keylessModels()[0]!;
+			expect(registry.hasConfiguredAuth({ ...openaiModel, provider: "openai", id: "gpt-5.2" })).toBe(false);
+		});
+
+		test("getAvailable includes keyless local models without stored auth", async () => {
+			const fetchMock = vi.fn(async (input: unknown): Promise<Response> => {
+				const url = typeof input === "string" ? input : (input as Request).url;
+				if (url === "http://localhost:11434/api/tags") {
+					return new Response(
+						JSON.stringify({
+							models: [{ name: "llama3.2:latest", model_info: { "llama.context_length": 131072 } }],
+						}),
+						{ status: 200, headers: { "content-type": "application/json" } },
+					);
+				}
+				throw new Error(`Unexpected fetch: ${url}`);
+			});
+			vi.stubGlobal("fetch", fetchMock);
+			try {
+				const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+				await registry.refreshDynamicModels(true);
+				expect(registry.getAvailable().some((m) => m.provider === "ollama" && m.id === "llama3.2:latest")).toBe(
+					true,
+				);
+			} finally {
+				vi.unstubAllGlobals();
+			}
+		});
+
+		test("getApiKeyAndHeaders supplies the no-key placeholder without stored auth", async () => {
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			const model = createOllamaModel("llama3.2:latest");
+
+			const auth = await registry.getApiKeyAndHeaders(model);
+			expect(auth).toEqual({ ok: true, apiKey: "not-needed", headers: undefined });
+		});
+
+		test("stored credentials win over the keyless placeholder", async () => {
+			authStorage.set("ollama", { type: "api_key", key: "stored-key" });
+			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+			const model = createOllamaModel("llama3.2:latest");
+
+			const auth = await registry.getApiKeyAndHeaders(model);
+			expect(auth).toEqual({ ok: true, apiKey: "stored-key", headers: undefined });
+		});
+
+		test("streamSimple reaches the server instead of failing on auth", async () => {
+			const fetchMock = vi.fn(
+				async () =>
+					new Response(JSON.stringify({ message: "model 'llama3.2:latest' not found" }), {
+						status: 404,
+						headers: { "content-type": "application/json" },
+					}),
+			);
+			vi.stubGlobal("fetch", fetchMock);
+			try {
+				const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+				const model = createOllamaModel("llama3.2:latest");
+				const context: Context = {
+					systemPrompt: "You are a test.",
+					messages: [{ role: "user", content: [{ type: "text", text: "hi" }], timestamp: Date.now() }],
+					tools: [],
+				};
+
+				const stream = await registry.streamSimple(model, context);
+				let errorMessage: string | undefined;
+				for await (const event of stream) {
+					if (event.type === "error") {
+						errorMessage = event.error.errorMessage;
+						break;
+					}
+				}
+				expect(errorMessage).toBeDefined();
+				expect(errorMessage).toContain("404");
+				expect(errorMessage).not.toContain("No API key");
+			} finally {
+				vi.unstubAllGlobals();
+			}
 		});
 	});
 });

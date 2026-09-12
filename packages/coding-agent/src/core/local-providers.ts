@@ -12,6 +12,14 @@
 export const KEYLESS_LOCAL_PROVIDERS: ReadonlySet<string> = new Set(["lm-studio", "llama-cpp", "ollama"]);
 
 /**
+ * Sentinel API key for keyless local providers. The API layer requires a
+ * non-empty key, so requests carry this placeholder (`Authorization: Bearer
+ * not-needed`), which local servers ignore. This is the same credential the
+ * `/login` base-URL dialog stores for these providers.
+ */
+export const KEYLESS_LOCAL_API_KEY = "not-needed";
+
+/**
  * Per-keyless-provider env var holding the base URL of the local server, as set
  * via /login (stored in auth.json) or via `settings.json` `localProviders.*`.
  * The single source of truth for the env-var name each provider reads.

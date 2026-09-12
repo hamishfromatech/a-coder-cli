@@ -36,7 +36,7 @@ import { getAgentDir } from "../config.ts";
 import { stripJsonComments } from "../utils/json.ts";
 import { normalizePath } from "../utils/paths.ts";
 import type { AuthStatus, AuthStorage } from "./auth-storage.ts";
-import { KEYLESS_LOCAL_PROVIDERS } from "./local-providers.ts";
+import { KEYLESS_LOCAL_API_KEY, KEYLESS_LOCAL_PROVIDERS } from "./local-providers.ts";
 import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "./provider-display-names.ts";
 
 import {
@@ -1063,8 +1063,13 @@ export class ModelRegistry {
 
 	/**
 	 * Get API key for a model.
+	 *
+	 * Keyless local providers (LM Studio, llama.cpp, Ollama local) never need
+	 * stored credentials — their auth resolver supplies a no-key credential —
+	 * so they are treated as configured here too, matching {@link getAvailable}.
 	 */
 	hasConfiguredAuth(model: Model<Api>): boolean {
+		if (KEYLESS_LOCAL_PROVIDERS.has(model.provider)) return true;
 		const providerApiKey = this.providerRequestConfigs.get(model.provider)?.apiKey;
 		return (
 			this.authStorage.hasAuth(model.provider) ||
@@ -1166,7 +1171,10 @@ export class ModelRegistry {
 							`API key for provider "${model.provider}"`,
 							providerEnv,
 						)
-					: undefined);
+					: undefined) ??
+				// Keyless local servers don't need a key, but the API layer requires a
+				// non-empty one; supply the same placeholder credential /login stores.
+				(KEYLESS_LOCAL_PROVIDERS.has(model.provider) ? KEYLESS_LOCAL_API_KEY : undefined);
 
 			const providerHeaders = resolveHeadersOrThrow(
 				providerConfig?.headers,
