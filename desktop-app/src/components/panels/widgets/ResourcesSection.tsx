@@ -156,8 +156,24 @@ function buildGroups(resolved: rpc.ResolvedPaths): ResourceGroup[] {
 // UI
 // ============================================================================
 
-export function ResourcesSection() {
+/** Keep only groups that still have matching items; drop empty subgroups. */
+function filterGroups(
+	groups: ResourceGroup[],
+	matches: (item: ResourceItem) => boolean,
+): ResourceGroup[] {
+	return groups
+		.map((group) => ({
+			...group,
+			subgroups: group.subgroups
+				.map((subgroup) => ({ ...subgroup, items: subgroup.items.filter(matches) }))
+				.filter((subgroup) => subgroup.items.length > 0),
+		}))
+		.filter((group) => group.subgroups.length > 0);
+}
+
+export function ResourcesSection({ search }: { search?: string }) {
 	const cwd = useSessionStore((s) => s.cwd);
+	const query = search?.trim().toLowerCase() ?? "";
 	const [groups, setGroups] = useState<ResourceGroup[]>([]);
 	const [packages, setPackages] = useState<rpc.ConfiguredPackage[]>([]);
 	const [loading, setLoading] = useState(false);
@@ -277,8 +293,31 @@ export function ResourcesSection() {
 		[groups],
 	);
 
-	const builtInGroups = groups.filter((g) => g.origin !== "package");
-	const packGroups = groups.filter((g) => g.origin === "package");
+	const visibleSkills = useMemo(() => {
+		if (query.length === 0) return allSkills;
+		return allSkills.filter(
+			(item) =>
+				item.displayName.toLowerCase().includes(query) ||
+				item.groupLabel.toLowerCase().includes(query),
+		);
+	}, [allSkills, query]);
+
+	const matchesQuery = useCallback(
+		(item: ResourceItem) =>
+			query.length === 0 ||
+			item.displayName.toLowerCase().includes(query) ||
+			getGroupLabel(item.metadata).toLowerCase().includes(query),
+		[query],
+	);
+
+	const builtInGroups = useMemo(
+		() => filterGroups(groups.filter((g) => g.origin !== "package"), matchesQuery),
+		[groups, matchesQuery],
+	);
+	const packGroups = useMemo(
+		() => filterGroups(groups.filter((g) => g.origin === "package"), matchesQuery),
+		[groups, matchesQuery],
+	);
 
 	return (
 		<div className="space-y-6">
@@ -294,7 +333,9 @@ export function ResourcesSection() {
 					<h3 className="text-xs font-semibold text-pi-text">
 						Skills
 						{totalSkills > 0 && (
-							<span className="ml-1 text-3xs font-normal text-pi-text-muted">{totalSkills}</span>
+							<span className="ml-1 text-3xs font-normal text-pi-text-muted">
+								{query.length > 0 ? `${visibleSkills.length}/${totalSkills}` : totalSkills}
+							</span>
 						)}
 					</h3>
 					<button
@@ -308,7 +349,7 @@ export function ResourcesSection() {
 					</button>
 				</div>
 
-				{allSkills.length === 0 && !loading && (
+				{allSkills.length === 0 && !loading && query.length === 0 && (
 					<div className="rounded-lg bg-pi-surface-raised px-4 py-6 text-center shadow-ring">
 						<div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-pi-accent-soft text-pi-accent">
 							<Brain className="h-5 w-5" />
@@ -320,8 +361,15 @@ export function ResourcesSection() {
 					</div>
 				)}
 
+				{allSkills.length > 0 && visibleSkills.length === 0 && (
+					<div className="rounded-lg bg-pi-surface-raised px-4 py-5 text-center shadow-ring">
+						<h4 className="text-xs font-medium text-pi-text">No matching skills</h4>
+						<p className="mt-1 text-2xs text-pi-text-muted">Nothing matches “{search?.trim()}”.</p>
+					</div>
+				)}
+
 				<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-					{allSkills.map((item) => (
+					{visibleSkills.map((item) => (
 						<SkillCard
 							key={item.path}
 							item={item}

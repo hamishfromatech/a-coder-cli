@@ -1091,7 +1091,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 								) : isKeybindings ? (
 									<KeybindingsSection />
 								) : isResources ? (
-									<ResourcesSection />
+									<ResourcesSection search={search} />
 								) : isVoice ? (
 									<VoiceSection />
 								) : isAdvanced ? (
