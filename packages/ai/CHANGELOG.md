@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed OpenAI Codex reliability when streaming over the WebSocket transport (upstream parity): a response that rejects the cached `previous_response_id` continuation (`previous_response_not_found`) now resets the connection's cached context and retries once with the full input instead of surfacing a hard error mid-session, and the `start` stream event is emitted at most once per request (previously a WS-to-SSE fallback or continuation retry could emit a duplicate). Codex requests that omit an explicit reasoning effort now send `reasoning.effort` mapped from the model's off level (`none` for built-in Codex models) instead of letting the backend default to medium effort (upstream #9191 parity).
+
 ### Added
 
 - Added OpenRouter OAuth login (upstream pi #6927/#7114 parity): `/login openrouter` runs a PKCE authorization flow against a one-shot loopback callback, raced against a manual-code prompt so remote/headless sessions can paste the final redirect URL (or bare authorization code) when the browser cannot reach the loopback host. The exchange mints a permanent, user-controlled OpenRouter API key. Both OpenRouter providers expose it alongside `OPENROUTER_API_KEY`; `OAuthAuth` gained an optional `loginLabel` for login menus.

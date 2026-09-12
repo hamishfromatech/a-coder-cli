@@ -1888,4 +1888,131 @@ describe("openai-codex streaming", () => {
 		expect(result.content.find((content) => content.type === "text")?.text).toBe("Hello");
 		expect(codexRequests).toBe(4);
 	});
+
+	it("retries with full context when the websocket rejects the cached previous_response_id", async () => {
+		const token = mockToken();
+		const sentBodies: Array<{ store?: boolean; previous_response_id?: string; input?: unknown[] }> = [];
+		let sendIndex = 0;
+
+		const fetchMock = vi.fn(async () => new Response("unexpected fetch", { status: 500 }));
+		vi.stubGlobal("fetch", fetchMock);
+
+		class MockWebSocket extends EventTarget {
+			constructor() {
+				super();
+				queueMicrotask(() => this.dispatchEvent(new Event("open")));
+			}
+
+			send(data: string): void {
+				const body = JSON.parse(data);
+				sentBodies.push(body);
+				const event =
+					sendIndex++ === 1
+						? { type: "error", code: "previous_response_not_found", message: "Previous response not found" }
+						: {
+								type: "response.completed",
+								response: {
+									id: `resp_${sendIndex}`,
+									status: "completed",
+									usage: { input_tokens: 5, output_tokens: 3, total_tokens: 8 },
+								},
+							};
+				queueMicrotask(() => {
+					this.dispatchEvent(Object.assign(new Event("message"), { data: JSON.stringify(event) }));
+				});
+			}
+
+			close(): void {}
+		}
+
+		vi.stubGlobal("WebSocket", MockWebSocket);
+
+		const model: Model<"openai-codex-responses"> = {
+			id: "gpt-5.1-codex",
+			name: "GPT-5.1 Codex",
+			api: "openai-codex-responses",
+			provider: "openai-codex",
+			baseUrl: "https://chatgpt.com/backend-api",
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 400000,
+			maxTokens: 128000,
+		};
+		const firstContext: Context = {
+			systemPrompt: "You are a helpful assistant.",
+			messages: [{ role: "user", content: "Say hello", timestamp: 1 }],
+		};
+
+		// First turn succeeds and seeds the pooled connection's cached continuation.
+		const first = await streamOpenAICodexResponses(model, firstContext, {
+			apiKey: token,
+			sessionId: "prev-not-found-test",
+			transport: "auto",
+		}).result();
+		expect(first.stopReason).toBe("stop");
+
+		// Second turn sends a delta referencing resp_1; the server rejects it.
+		const secondContext: Context = {
+			...firstContext,
+			messages: [...firstContext.messages, first, { role: "user", content: "Again", timestamp: 2 }],
+		};
+		const second = await streamOpenAICodexResponses(model, secondContext, {
+			apiKey: token,
+			sessionId: "prev-not-found-test",
+			transport: "auto",
+		}).result();
+
+		expect(second.stopReason).toBe("stop");
+		// Send 2 is the poisoned delta (previous_response_id), send 3 is the retry,
+		// which resends the full input with no previous_response_id.
+		expect(sentBodies).toHaveLength(3);
+		expect(sentBodies[0]?.previous_response_id).toBeUndefined();
+		expect(sentBodies[1]?.previous_response_id).toBe("resp_1");
+		expect(sentBodies[2]?.previous_response_id).toBeUndefined();
+		expect(sentBodies[2]?.input?.length).toBe(2);
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it("errors instead of returning a silent empty reply when the SSE stream ends without a terminal event", async () => {
+		const token = mockToken();
+
+		const sseWithoutCompletion = [
+			`data: ${JSON.stringify({ type: "response.created", response: { id: "resp_1" } })}`,
+			`data: ${JSON.stringify({ type: "response.output_text.delta", delta: "Hello" })}`,
+		].join("\n\n");
+		const fetchMock = vi.fn(
+			async () =>
+				new Response(sseWithoutCompletion, {
+					status: 200,
+					headers: { "content-type": "text/event-stream" },
+				}),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+
+		const model: Model<"openai-codex-responses"> = {
+			id: "gpt-5.1-codex",
+			name: "GPT-5.1 Codex",
+			api: "openai-codex-responses",
+			provider: "openai-codex",
+			baseUrl: "https://chatgpt.com/backend-api",
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 400000,
+			maxTokens: 128000,
+		};
+		const context: Context = {
+			systemPrompt: "",
+			messages: [{ role: "user", content: "Say hello", timestamp: Date.now() }],
+		};
+
+		const result = await streamOpenAICodexResponses(model, context, {
+			apiKey: token,
+			transport: "sse",
+		}).result();
+
+		expect(result.stopReason).toBe("error");
+		expect(result.errorMessage).toContain("ended before a terminal response");
+	});
 });
