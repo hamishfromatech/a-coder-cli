@@ -75,6 +75,38 @@ describe("isContextOverflow", () => {
 		expect(isContextOverflow(commaMessage, 256000)).toBe(true);
 	});
 
+	it("detects Anthropic request_too_large byte-size overflow (HTTP 413)", () => {
+		const message = createErrorMessage(
+			'413 {"error":{"type":"request_too_large","message":"Request exceeds the maximum size"}}',
+		);
+		expect(isContextOverflow(message, 200000)).toBe(true);
+	});
+
+	it("detects OpenAI-compatible gateway 'Request Entity Too Large' 413 with body", () => {
+		const message = createErrorMessage(
+			'413: {"message":"Request Entity Too Large (ref: b687c7a6-3033-4b41-9c6c-fd7e2f21674b)","type":"api_error","param":null,"code":null}',
+		);
+		expect(isContextOverflow(message, 200000)).toBe(true);
+	});
+
+	it("detects prefixed gateway 413 errors (provider prefix before status)", () => {
+		const message = createErrorMessage(
+			'Provider returned error: 413: {"message":"Request Entity Too Large","type":"api_error"}',
+		);
+		expect(isContextOverflow(message, 200000)).toBe(true);
+	});
+
+	it("detects nginx-style 'Payload Too Large' 413 errors", () => {
+		const message = createErrorMessage("413: <html><body>413 Payload Too Large</body></html>");
+		expect(isContextOverflow(message, 200000)).toBe(true);
+	});
+
+	it("does not treat token counts containing 413 as status overflow", () => {
+		// "4139" must not match the ^413[:\s] status-prefix pattern
+		const message = createErrorMessage("Prompt has 4139 tokens, model limit is 4096");
+		expect(isContextOverflow(message, 4096)).toBe(false);
+	});
+
 	it("does not treat generic non-overflow Ollama errors as overflow", () => {
 		const message = createErrorMessage("500 `model runner crashed unexpectedly`");
 		expect(isContextOverflow(message, 32768)).toBe(false);

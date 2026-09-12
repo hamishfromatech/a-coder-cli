@@ -10,6 +10,7 @@ import type { AssistantMessage } from "../types.ts";
  *
  * - Anthropic: "prompt is too long: 213462 tokens > 200000 maximum"
  * - Anthropic: "413 {\"error\":{\"type\":\"request_too_large\",\"message\":\"Request exceeds the maximum size\"}}"
+ * - OpenAI-compatible gateways: "413: {\"message\":\"Request Entity Too Large (ref: ...)\",\"type\":\"api_error\"}" (request body exceeds a proxy/provider size cap)
  * - OpenAI: "Your input exceeds the context window of this model"
  * - OpenAI/LiteLLM: "Requested token count exceeds the model's maximum context length of 131072 tokens"
  * - OpenAI-compatible: "Input length (265330) exceeds model's maximum context length (262144)."
@@ -36,6 +37,9 @@ import type { AssistantMessage } from "../types.ts";
 const OVERFLOW_PATTERNS = [
 	/prompt is too long/i, // Anthropic token overflow
 	/request_too_large/i, // Anthropic request byte-size overflow (HTTP 413)
+	/request entity too large/i, // OpenAI-compatible gateway 413 body (formatProviderError status+body shape)
+	/payload too large/i, // nginx / generic HTTP 413 reason phrase
+	/^413[:\s]/, // Bare HTTP 413 status prefix — always a payload-size rejection
 	/input is too long for requested model/i, // Amazon Bedrock
 	/exceeds the context window/i, // OpenAI (Completions & Responses API)
 	/exceeds (?:the )?(?:model'?s )?maximum context length(?: of [\d,]+ tokens?|\s*\([\d,]+\))/i, // OpenAI-compatible proxies (LiteLLM)
@@ -90,6 +94,7 @@ const NON_OVERFLOW_PATTERNS = [
  *
  * **Reliable detection (returns error with detectable message):**
  * - Anthropic: "prompt is too long: X tokens > Y maximum" or "request_too_large"
+ * - OpenAI-compatible gateways: "413: {\"message\":\"Request Entity Too Large ...\"}" — a proxy or provider size cap on the request body; compaction shrinks the payload just like a token overflow
  * - OpenAI (Completions & Responses): "exceeds the context window", "exceeds the model's maximum context length of X tokens", or "exceeds model's maximum context length (X)"
  * - Google Gemini: "input token count exceeds the maximum"
  * - xAI (Grok): "maximum prompt length is X but request contains Y"
