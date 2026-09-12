@@ -19,6 +19,7 @@ import {
 	printAuthCommandHelp,
 	validateAuthCommandArgs,
 } from "./cli/auth-command.ts";
+import { handleCloudCommand } from "./cli/cloud-command.ts";
 import { launchDesktop } from "./cli/desktop.ts";
 import { processFileArguments } from "./cli/file-processor.ts";
 import { buildInitialMessage } from "./cli/initial-message.ts";
@@ -601,6 +602,11 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 
 	if (await handleResourcesCommand(args, { extensionFactories: options?.extensionFactories })) {
+		process.exit(process.exitCode ?? 0);
+		return;
+	}
+
+	if (await handleCloudCommand(args)) {
 		process.exit(process.exitCode ?? 0);
 		return;
 	}

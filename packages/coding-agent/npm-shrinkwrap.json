@@ -13,6 +13,7 @@
 				"@composio/experimental": "0.2.3",
 				"@earendil-works/pi-agent-core": "^0.80.85",
 				"@earendil-works/pi-ai": "^0.80.85",
+				"@earendil-works/pi-cloud": "^0.80.85",
 				"@earendil-works/pi-tui": "^0.80.85",
 				"@modelcontextprotocol/sdk": "1.30.0",
 				"@silvia-odwyer/photon-node": "0.3.4",
@@ -519,6 +520,15 @@
 			},
 			"engines": {
 				"node": ">=22.19.0"
+			}
+		},
+		"node_modules/@earendil-works/pi-cloud": {
+			"version": "0.80.85",
+			"resolved": "https://registry.npmjs.org/@earendil-works/pi-cloud/-/pi-cloud-0.80.85.tgz",
+			"license": "SEE LICENSE IN LICENSE",
+			"dependencies": {},
+			"bin": {
+				"a-coder-cloud": "./dist/cli.js"
 			}
 		},
 		"node_modules/@earendil-works/pi-tui": {

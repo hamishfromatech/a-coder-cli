@@ -2,22 +2,53 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type {
-	AgentSessionEvent,
-	RpcCommand,
-	RpcExtensionUIRequest,
-	RpcExtensionUIResponse,
-	RpcResponse,
-} from "@earendil-works/pi-coding-agent";
 import { isBunBinary } from "./config.ts";
 
-interface PendingRequest {
-	resolve(response: RpcResponse): void;
-	reject(error: Error): void;
+/**
+ * Minimal JSONL RPC client for an a-coder child process (`--mode rpc`).
+ *
+ * Deliberately self-contained: cloud must not import types or classes from
+ * @earendil-works/pi-orchestrator or @earendil-works/pi-coding-agent, because
+ * both resolve their type surface back to the coding-agent package, which
+ * depends on this package — a type-level dependency cycle. Structural local
+ * types keep this package's declaration surface free of workspace references.
+ */
+
+/** Commands the cloud runner sends to the agent child. */
+export type CloudRpcCommand =
+	| { id?: string; type: "prompt"; message: string }
+	| { id?: string; type: "abort" }
+	| { id?: string; type: "get_state" }
+	| { id?: string; type: "refresh_models" }
+	| { id?: string; type: "set_model"; provider: string; modelId: string };
+
+/** Subset of the RPC response shape the runner consumes. */
+export interface CloudRpcResponse {
+	type: "response";
+	command: string;
+	success: boolean;
+	data?: unknown;
+	error?: string;
+	id?: string;
 }
 
-function toError(error: unknown): Error {
-	return error instanceof Error ? error : new Error(String(error));
+/** Agent session events are pass-through JSON; only `type` is guaranteed. */
+export type CloudRpcEvent = { type: string } & Record<string, unknown>;
+
+/** Extension UI request (interactive prompt from the agent). */
+export interface CloudUiRequest {
+	id: string;
+	type?: string;
+	[key: string]: unknown;
+}
+
+export interface CloudRpcProcessOptions {
+	cwd: string;
+}
+
+interface PendingRequest {
+	resolve(response: CloudRpcResponse): void;
+	reject(error: Error): void;
 }
 
 export class RpcProcessInstance {
@@ -28,9 +59,9 @@ export class RpcProcessInstance {
 	private stdoutBuffer = "";
 	private stderrBuffer = "";
 	private readonly pendingRequests = new Map<string, PendingRequest>();
-	private readonly eventListeners = new Set<(event: AgentSessionEvent) => void>();
+	private readonly eventListeners = new Set<(event: CloudRpcEvent) => void>();
 	private readonly exitListeners = new Set<(error?: Error) => void>();
-	private uiRequestHandler: ((request: RpcExtensionUIRequest) => void) | undefined;
+	private uiRequestHandler: ((request: CloudUiRequest) => void) | undefined;
 
 	constructor(options: { cwd: string }) {
 		const rpcCommand = this.getSpawnCommand();
@@ -54,9 +85,8 @@ export class RpcProcessInstance {
 		}
 		return {
 			command: process.execPath,
-			// import.meta.resolve uses ESM conditions (the rpc-entry export exposes
-			// "import" only); require.resolve cannot see it and throws
-			// ERR_PACKAGE_PATH_NOT_EXPORTED.
+			// import.meta.resolve uses ESM conditions; require.resolve cannot see
+			// "import"-only export subpaths.
 			args: [fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent/rpc-entry"))],
 		};
 	}
@@ -65,33 +95,26 @@ export class RpcProcessInstance {
 		this.process.stdout?.setEncoding("utf8");
 		this.process.stdout?.on("data", (chunk: string) => {
 			this.stdoutBuffer += chunk;
-			while (true) {
-				const newlineIndex = this.stdoutBuffer.indexOf("\n");
-				if (newlineIndex === -1) {
-					break;
-				}
+			let newlineIndex = this.stdoutBuffer.indexOf("\n");
+			while (newlineIndex !== -1) {
 				const line = this.stdoutBuffer.slice(0, newlineIndex).trim();
 				this.stdoutBuffer = this.stdoutBuffer.slice(newlineIndex + 1);
-				if (!line) {
-					continue;
+				if (line.length > 0) {
+					this.handleLine(line);
 				}
-				this.handleLine(line);
+				newlineIndex = this.stdoutBuffer.indexOf("\n");
 			}
 		});
-
 		this.process.stderr?.setEncoding("utf8");
 		this.process.stderr?.on("data", (chunk: string) => {
 			this.stderrBuffer += chunk;
 		});
-
-		this.process.once("error", (error) => {
-			this.exited = true;
-			const wrapped = new Error(`RPC process error: ${error.message}. Stderr: ${this.stderrBuffer}`);
-			this.rejectAllPending(wrapped);
-			this.notifyExit(wrapped);
+		this.process.on("error", (error) => {
+			const failure = new Error(`Failed to start RPC process: ${String(error)}. Stderr: ${this.stderrBuffer}`);
+			this.rejectAllPending(failure);
+			this.notifyExit(failure);
 		});
-
-		this.process.once("exit", (code, signal) => {
+		this.process.on("close", (code, signal) => {
 			this.exited = true;
 			const error = new Error(`RPC process exited (code=${code} signal=${signal}). Stderr: ${this.stderrBuffer}`);
 			this.rejectAllPending(error);
@@ -100,7 +123,12 @@ export class RpcProcessInstance {
 	}
 
 	private handleLine(line: string): void {
-		const parsed = JSON.parse(line) as { type?: string; id?: string };
+		let parsed: { type?: string; id?: string };
+		try {
+			parsed = JSON.parse(line) as { type?: string; id?: string };
+		} catch {
+			return;
+		}
 		switch (parsed.type) {
 			case "response": {
 				if (!parsed.id) {
@@ -111,18 +139,16 @@ export class RpcProcessInstance {
 					return;
 				}
 				this.pendingRequests.delete(parsed.id);
-				pending.resolve(parsed as RpcResponse);
+				pending.resolve(parsed as unknown as CloudRpcResponse);
 				return;
 			}
-
 			case "extension_ui_request": {
-				this.uiRequestHandler?.(parsed as RpcExtensionUIRequest);
+				this.uiRequestHandler?.(parsed as unknown as CloudUiRequest);
 				return;
 			}
-
 			default: {
 				for (const listener of this.eventListeners) {
-					listener(parsed as AgentSessionEvent);
+					listener(parsed as CloudRpcEvent);
 				}
 			}
 		}
@@ -141,36 +167,23 @@ export class RpcProcessInstance {
 		}
 	}
 
-	send(command: RpcCommand): Promise<RpcResponse> {
+	send(command: CloudRpcCommand): Promise<CloudRpcResponse> {
 		if (this.exited) {
 			throw new Error(`RPC process is not running. Stderr: ${this.stderrBuffer}`);
 		}
-		const id = command.id ?? `orchestrator_${++this.nextRequestId}_${randomUUID()}`;
-		const fullCommand = { ...command, id };
-		return new Promise<RpcResponse>((resolve, reject) => {
+		const id = command.id ?? `cloud_${++this.nextRequestId}_${randomUUID()}`;
+		const fullCommand = { ...command, id } as unknown as Record<string, unknown>;
+		return new Promise<CloudRpcResponse>((resolve, reject) => {
 			this.pendingRequests.set(id, { resolve, reject });
-			this.process.stdin?.write(`${JSON.stringify(fullCommand)}\n`, (error) => {
-				if (!error) {
-					return;
-				}
-				this.pendingRequests.delete(id);
-				reject(toError(error));
-			});
+			this.process.stdin?.write(`${JSON.stringify(fullCommand)}\n`);
 		});
 	}
 
-	handleUiResponse(response: RpcExtensionUIResponse): void {
-		if (this.exited) {
-			return;
-		}
-		this.process.stdin?.write(`${JSON.stringify(response)}\n`);
-	}
-
-	setUiRequestHandler(handler?: (request: RpcExtensionUIRequest) => void): void {
+	setUiRequestHandler(handler: ((request: CloudUiRequest) => void) | undefined): void {
 		this.uiRequestHandler = handler;
 	}
 
-	onEvent(listener: (event: AgentSessionEvent) => void): () => void {
+	onEvent(listener: (event: CloudRpcEvent) => void): () => void {
 		this.eventListeners.add(listener);
 		return () => {
 			this.eventListeners.delete(listener);
@@ -185,18 +198,11 @@ export class RpcProcessInstance {
 	}
 
 	async dispose(): Promise<void> {
-		this.uiRequestHandler = undefined;
-		this.rejectAllPending(new Error("RPC process disposed"));
 		if (this.exited) {
 			return;
 		}
-		this.process.kill("SIGTERM");
-		await new Promise<void>((resolve) => {
-			this.process.once("exit", () => resolve());
-		});
+		this.exited = true;
+		this.rejectAllPending(new Error("RPC process disposed"));
+		this.process.kill();
 	}
-}
-
-export function createRpcProcessInstance(options: { cwd: string }): RpcProcessInstance {
-	return new RpcProcessInstance(options);
 }

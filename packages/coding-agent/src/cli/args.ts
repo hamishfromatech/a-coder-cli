@@ -266,6 +266,9 @@ ${chalk.bold("Usage:")}
   ${APP_NAME} [options] [@files...] [messages...]
 
 ${chalk.bold("Commands:")}
+  ${APP_NAME} cloud spawn <repo> <prompt>   Run an always-on cloud agent task (a-coder cloud --help)
+  ${APP_NAME} cloud status|review|stop      Inspect or manage cloud tasks
+  ${APP_NAME} cloud serve                  Run the cloud daemon in the foreground
   ${APP_NAME} install <source> [-l]     Install extension source and add to settings
   ${APP_NAME} remove <source> [-l]      Remove extension source from settings
   ${APP_NAME} uninstall <source> [-l]   Alias for remove

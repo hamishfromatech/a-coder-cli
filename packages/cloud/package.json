@@ -1,0 +1,45 @@
+{
+	"name": "@earendil-works/pi-cloud",
+	"version": "0.80.85",
+	"description": "A-Coder Cloud control plane: always-on a-coder agents with git sync-back, reports, and session continuity",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./serve-entry": {
+			"types": "./dist/serve-entry.d.ts",
+			"import": "./dist/serve-entry.js"
+		}
+	},
+	"bin": {
+		"a-coder-cloud": "./dist/cli.js"
+	},
+	"files": [
+		"dist",
+		"README.md",
+		"CHANGELOG.md"
+	],
+	"scripts": {
+		"clean": "shx rm -rf dist",
+		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
+		"build": "tsgo -p tsconfig.build.json && shx chmod +x dist/cli.js",
+		"prepublishOnly": "npm run clean && npm run build",
+		"test": "vitest --run"
+	},
+	"keywords": [
+		"pi",
+		"cloud",
+		"agents"
+	],
+	"author": "The A-Tech Corporation PTY LTD",
+	"license": "SEE LICENSE IN LICENSE",
+	"dependencies": {},
+	"devDependencies": {
+		"shx": "0.4.0",
+		"vitest": "4.1.9"
+	}
+}
