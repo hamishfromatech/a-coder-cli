@@ -9,6 +9,7 @@ import type { ExtensionContext, ToolDefinition, ToolRenderResultOptions } from "
 import { withFileMutationQueue } from "./file-mutation-queue.ts";
 import { resolveToCwd } from "./path-utils.ts";
 import { normalizeDisplayText, renderToolPath, replaceTabs, str } from "./render-utils.ts";
+import { formatHeadline } from "./result-headline.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 
 const writeSchema = Type.Object(
@@ -181,9 +182,10 @@ function formatWriteCall(
 function formatWriteResult(
 	result: { content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>; isError?: boolean },
 	theme: Theme,
+	stats?: string,
 ): string | undefined {
 	if (!result.isError) {
-		return undefined;
+		return `\n${formatHeadline("success", theme, stats)}`;
 	}
 	const output = result.content
 		.filter((c) => c.type === "text")
@@ -278,7 +280,10 @@ export function createWriteToolDefinition(
 			return component;
 		},
 		renderResult(result, _options, theme, context) {
-			const output = formatWriteResult({ ...result, isError: context.isError }, theme);
+			const args = context.args as { path?: string; file_path?: string; content?: string } | undefined;
+			const fileContent = str(args?.content);
+			const stats = fileContent ? `${fileContent.split("\n").length} lines` : undefined;
+			const output = formatWriteResult({ ...result, isError: context.isError }, theme, stats);
 			if (!output) {
 				const component = (context.lastComponent as Container | undefined) ?? new Container();
 				component.clear();

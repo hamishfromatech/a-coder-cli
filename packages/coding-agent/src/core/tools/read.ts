@@ -6,7 +6,7 @@ import { constants } from "fs";
 import { access as fsAccess, readFile as fsReadFile } from "fs/promises";
 import { type Static, Type } from "typebox";
 import { getReadmePath } from "../../config.ts";
-import { keyHint, keyText } from "../../modes/interactive/components/keybinding-hints.ts";
+import { keyText } from "../../modes/interactive/components/keybinding-hints.ts";
 import { getLanguageFromPath, highlightCode, type Theme } from "../../modes/interactive/theme/theme.ts";
 import { processImage } from "../../utils/image-process.ts";
 import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.ts";
@@ -14,6 +14,7 @@ import { formatPathRelativeToCwdOrAbsolute } from "../../utils/paths.ts";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.ts";
 import { resolveReadPathAsync, resolveToCwd } from "./path-utils.ts";
 import { getTextOutput, renderToolPath, replaceTabs, str } from "./render-utils.ts";
+import { formatHeadline, moreLinesFooter } from "./result-headline.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateHead } from "./truncate.ts";
 
@@ -80,6 +81,9 @@ export interface ReadToolOptions {
 }
 
 type ReadRenderArgs = { path?: string; file_path?: string; offset?: number; limit?: number };
+
+/** Lines of file content shown on a collapsed settled read card. */
+const READ_PREVIEW_LINES = 3;
 
 function formatReadLineRange(args: ReadRenderArgs | undefined, theme: Theme): string {
 	if (args?.offset === undefined && args?.limit === undefined) return "";
@@ -187,12 +191,47 @@ function formatReadResult(
 	_cwd: string,
 	isError: boolean,
 ): string {
-	if (!options.expanded && !isError) {
-		return "";
-	}
-
 	const rawPath = str(args?.file_path ?? args?.path);
 	const output = getTextOutput(result, showImages);
+
+	if (!options.expanded && !isError) {
+		// Collapsed settled card: outcome headline + small preview. The
+		// headline counts stay truthful under tool-level truncation by
+		// preferring the truncation metadata over the displayed lines.
+		const lang = rawPath ? getLanguageFromPath(rawPath) : undefined;
+		if (!output.trim()) {
+			return `\n${formatHeadline("success", theme)}`;
+		}
+		const truncation = result.details?.truncation;
+		const totalLines =
+			truncation?.truncated && truncation.totalLines !== undefined ? truncation.totalLines : undefined;
+		const renderedLines = trimTrailingEmptyLines(
+			lang ? highlightCode(replaceTabs(output), lang) : output.split("\n"),
+		);
+		const headline = formatHeadline(
+			"success",
+			theme,
+			`${totalLines ?? renderedLines.length} line${(totalLines ?? renderedLines.length) === 1 ? "" : "s"}`,
+		);
+		// Compact-classified reads (AGENTS.md, SKILL.md, docs) are deliberate
+		// boilerplate reads — headline only, no content preview.
+		const compact = getCompactReadClassification(args, _cwd) !== undefined;
+		const previewLines = compact ? [] : renderedLines.slice(0, READ_PREVIEW_LINES);
+		const lines = [
+			"",
+			headline,
+			...previewLines.map((line) => (lang ? replaceTabs(line) : theme.fg("toolOutput", replaceTabs(line)))),
+		];
+		const remaining = renderedLines.length - previewLines.length;
+		if (remaining > 0) {
+			lines.push(`  ${moreLinesFooter(theme, remaining)}`);
+		}
+		if (truncation?.truncated) {
+			lines.push(`  ${formatReadTruncationNote(truncation, theme)}`);
+		}
+		return lines.join("\n");
+	}
+
 	const lang = rawPath ? getLanguageFromPath(rawPath) : undefined;
 	const renderedLines = lang ? highlightCode(replaceTabs(output), lang) : output.split("\n");
 	const lines = trimTrailingEmptyLines(renderedLines);
@@ -201,20 +240,30 @@ function formatReadResult(
 	const remaining = lines.length - maxLines;
 	let text = `\n${displayLines.map((line) => (lang ? replaceTabs(line) : theme.fg("toolOutput", replaceTabs(line)))).join("\n")}`;
 	if (remaining > 0) {
-		text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("app.tools.expand", "to expand")}${theme.fg("muted", ")")}`;
+		text += `\n  ${moreLinesFooter(theme, remaining)}`;
 	}
 
 	const truncation = result.details?.truncation;
 	if (truncation?.truncated) {
-		if (truncation.firstLineExceedsLimit) {
-			text += `\n${theme.fg("warning", `[First line exceeds ${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit]`)}`;
-		} else if (truncation.truncatedBy === "lines") {
-			text += `\n${theme.fg("warning", `[Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${truncation.maxLines ?? DEFAULT_MAX_LINES} line limit)]`)}`;
-		} else {
-			text += `\n${theme.fg("warning", `[Truncated: ${truncation.outputLines} lines shown (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit)]`)}`;
-		}
+		text += `\n  ${formatReadTruncationNote(truncation, theme)}`;
 	}
 	return text;
+}
+
+function formatReadTruncationNote(truncation: TruncationResult, theme: Theme): string {
+	if (truncation.firstLineExceedsLimit) {
+		return theme.fg("warning", `[First line exceeds ${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit]`);
+	}
+	if (truncation.truncatedBy === "lines") {
+		return theme.fg(
+			"warning",
+			`[Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${truncation.maxLines ?? DEFAULT_MAX_LINES} line limit)]`,
+		);
+	}
+	return theme.fg(
+		"warning",
+		`[Truncated: ${truncation.outputLines} lines shown (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit)]`,
+	);
 }
 
 export function createReadToolDefinition(

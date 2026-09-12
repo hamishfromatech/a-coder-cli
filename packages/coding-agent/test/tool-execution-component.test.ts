@@ -401,7 +401,7 @@ describe("ToolExecutionComponent parity", () => {
 		expect(rendered).not.toContain("two\n\n");
 	});
 
-	test("collapses ordinary read results until expanded", () => {
+	test("collapsed ordinary read shows headline + 3-line preview, rest until expanded", () => {
 		const component = new ToolExecutionComponent(
 			"read",
 			"tool-ordinary-read-collapsed",
@@ -412,14 +412,23 @@ describe("ToolExecutionComponent parity", () => {
 			process.cwd(),
 		);
 		component.updateResult(
-			{ content: [{ type: "text", text: "hidden content" }], details: undefined, isError: false },
+			{
+				content: [{ type: "text", text: "line one\nline two\nline three\nhidden content\nline five" }],
+				details: undefined,
+				isError: false,
+			},
 			false,
 		);
 
 		const collapsed = stripAnsi(component.render(120).join("\n"));
 		expect(collapsed).toContain("read");
 		expect(collapsed).toContain("notes.txt");
+		// Outcome headline + 3-line preview; the tail stays hidden.
+		expect(collapsed).toContain("✓");
+		expect(collapsed).toContain("5 lines");
+		expect(collapsed).toContain("line three");
 		expect(collapsed).not.toContain("hidden content");
+		expect(collapsed).toContain("2 more lines");
 
 		component.setExpanded(true);
 		const expanded = stripAnsi(component.render(120).join("\n"));

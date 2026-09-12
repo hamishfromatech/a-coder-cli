@@ -175,7 +175,9 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private additionalSkillPaths: string[];
 	private additionalPromptTemplatePaths: string[];
 	private additionalThemePaths: string[];
-	private extensionFactories: ExtensionFactory[];
+	private extensionFactories: ExtensionFactory[] = [];
+	/** Caller-injected factories (SDK options) — passed through untouched on rebuild. */
+	private injectedExtensionFactories: ExtensionFactory[];
 	private noExtensions: boolean;
 	private noSkills: boolean;
 	private noSubAgents: boolean;
@@ -237,14 +239,8 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.additionalSkillPaths = options.additionalSkillPaths ?? [];
 		this.additionalPromptTemplatePaths = options.additionalPromptTemplatePaths ?? [];
 		this.additionalThemePaths = options.additionalThemePaths ?? [];
-		const mcpServers = this.settingsManager.getMcpServers();
-		this.extensionFactories = [
-			...(mcpServers.length > 0
-				? [createMcpExtensionFactory({ servers: mcpServers, workspaceRoots: [this.cwd] })]
-				: []),
-			createSubagentExtensionFactory({}),
-			...(options.extensionFactories ?? []),
-		];
+		this.injectedExtensionFactories = options.extensionFactories ?? [];
+		this.rebuildInlineExtensionFactories();
 		this.noExtensions = options.noExtensions ?? false;
 		this.noSkills = options.noSkills ?? false;
 		this.noSubAgents = options.noSubAgents ?? false;
@@ -378,6 +374,22 @@ export class DefaultResourceLoader implements ResourceLoader {
 		return this.loadCurrentExtensionSet({ includeInlineFactories: true });
 	}
 
+	/**
+	 * (Re)assemble the inline extension factories from current settings. Called
+	 * by the constructor and by reload() so MCP servers added/changed/removed
+	 * in settings.json take effect without restarting the CLI.
+	 */
+	private rebuildInlineExtensionFactories(): void {
+		const mcpServers = this.settingsManager.getMcpServers();
+		this.extensionFactories = [
+			...(mcpServers.length > 0
+				? [createMcpExtensionFactory({ servers: mcpServers, workspaceRoots: [this.cwd] })]
+				: []),
+			createSubagentExtensionFactory({}),
+			...this.injectedExtensionFactories,
+		];
+	}
+
 	async reload(options?: ResourceLoaderReloadOptions): Promise<void> {
 		resetTimings("extensions");
 
@@ -394,6 +406,10 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 		// reload() preserves SettingsManager.projectTrusted and reloads settings for that trust state.
 		await this.settingsManager.reload();
+		// Rebuild inline factories from the fresh settings so MCP server
+		// additions/changes/removals take effect (stale factories would keep
+		// connecting the server list captured at construction time).
+		this.rebuildInlineExtensionFactories();
 		const resolvedPaths = await this.packageManager.resolve();
 		const cliExtensionPaths = await this.packageManager.resolveExtensionSources(this.additionalExtensionPaths, {
 			temporary: true,

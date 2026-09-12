@@ -142,11 +142,8 @@ import { getPiUserAgent } from "../../utils/pi-user-agent.ts";
 import { killProcessTree, killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { ensureTool } from "../../utils/tools-manager.ts";
 import { checkForNewPiVersion, type LatestPiRelease } from "../../utils/version-check.ts";
-import { AgentsPanelComponent } from "./components/agents-panel.ts";
 import { ArminComponent } from "./components/armin.ts";
 import { AssistantMessageComponent } from "./components/assistant-message.ts";
-import { BackgroundAgentsBarComponent } from "./components/background-agent-bar.ts";
-import { BackgroundProcessesBarComponent } from "./components/background-process-bar.ts";
 import { BashExecutionComponent } from "./components/bash-execution.ts";
 import { BorderedLoader } from "./components/bordered-loader.ts";
 import { BranchSummaryMessageComponent } from "./components/branch-summary-message.ts";
@@ -179,6 +176,7 @@ import {
 	MemoryPickerComponent,
 } from "./components/memory-picker.ts";
 import { ModelSelectorComponent } from "./components/model-selector.ts";
+import { NoticesComponent } from "./components/notices.ts";
 import { type AuthSelectorProvider, OAuthSelectorComponent } from "./components/oauth-selector.ts";
 import { OutputStyleSelectorComponent } from "./components/output-style-selector.ts";
 import { PermissionModeSelectorComponent } from "./components/permission-mode-selector.ts";
@@ -199,6 +197,7 @@ import {
 	WorkingStatusIndicator,
 } from "./components/status-indicator.ts";
 import { StatusLineComponent, type StatusLineContext } from "./components/status-line.ts";
+import { StatusRailComponent } from "./components/status-rail.ts";
 import { TaskListComponent } from "./components/task-list.ts";
 import { TaskPanelComponent } from "./components/task-panel.ts";
 import { ThinkingSelectorComponent } from "./components/thinking-selector.ts";
@@ -501,14 +500,13 @@ export class InteractiveMode {
 	// Track pending bash components (shown in pending area, moved to chat on submit)
 	private pendingBashComponents: BashExecutionComponent[] = [];
 
-	// In-process sub-agent progress cards (live UI for background sub-agents)
-	private agentsPanel = new AgentsPanelComponent();
+	// Background-activity status rail (sub-agents + background processes, one
+	// line flush below the editor) and the grouped end-of-transcript notices.
+	private statusRail = new StatusRailComponent();
+	private notices = new NoticesComponent();
+	private statusRailTimer: ReturnType<typeof setInterval> | undefined;
 	private taskPanel = new TaskPanelComponent();
-	private agentsPanelTimer: ReturnType<typeof setInterval> | undefined;
 	private unsubscribeSubAgents?: () => void;
-	private backgroundAgentsBar = new BackgroundAgentsBarComponent();
-	private backgroundAgentsBarTimer: ReturnType<typeof setInterval> | undefined;
-	private backgroundProcessesBar = new BackgroundProcessesBarComponent();
 	private unsubscribeBackgroundProcesses?: () => void;
 	private runningTasksViewer?: RunningTasksViewerComponent;
 
@@ -919,21 +917,20 @@ export class InteractiveMode {
 		this.ui.addChild(this.loadedResourcesContainer);
 
 		this.ui.addChild(this.chatContainer);
-		this.ui.addChild(this.agentsPanel);
+		this.ui.addChild(this.notices);
 		this.ui.addChild(this.pendingMessagesContainer);
 		this.ui.addChild(this.statusContainer);
-		this.ui.addChild(this.backgroundAgentsBar);
 		this.renderWidgets(); // Initialize with default spacer
 		this.ui.addChild(this.widgetContainerAbove);
 		this.ui.addChild(this.taskPanel);
 		this.ui.addChild(this.editorContainer);
+		this.ui.addChild(this.statusRail);
 		this.ui.addChild(this.widgetContainerBelow);
 		if (this.statusLineComponent) {
 			// Extra row above the hint (easy-agent statusLine placement).
 			this.ui.addChild(this.statusLineComponent);
 		}
 		this.ui.addChild(this.footer);
-		this.ui.addChild(this.backgroundProcessesBar);
 		this.ui.setFocus(this.editor);
 
 		this.setupKeyHandlers();
@@ -2015,17 +2012,12 @@ export class InteractiveMode {
 	private renderCurrentSessionState(): void {
 		this.loadedResourcesContainer.clear();
 		this.chatContainer.clear();
-		this.agentsPanel.update([], []);
+		this.notices.clear();
+		this.statusRail.update([], []);
 		this.taskPanel.update([], []);
-		this.backgroundAgentsBar.update([]);
-		if (this.backgroundAgentsBarTimer) {
-			clearInterval(this.backgroundAgentsBarTimer);
-			this.backgroundAgentsBarTimer = undefined;
-		}
-		this.backgroundProcessesBar.update([]);
-		if (this.agentsPanelTimer) {
-			clearInterval(this.agentsPanelTimer);
-			this.agentsPanelTimer = undefined;
+		if (this.statusRailTimer) {
+			clearInterval(this.statusRailTimer);
+			this.statusRailTimer = undefined;
 		}
 		this.pendingMessagesContainer.clear();
 		this.compactionQueuedMessages = [];
@@ -3444,41 +3436,39 @@ export class InteractiveMode {
 			this.refreshStatusLine();
 		});
 		this.unsubscribeSubAgents?.();
-		this.unsubscribeSubAgents = this.session.subscribeSubAgents((records) => this.syncAgentsPanel(records));
+		this.unsubscribeSubAgents = this.session.subscribeSubAgents((records) => this.syncStatusRail(records));
 
 		// Background processes: subscribe to the store; the merged sync keeps
-		// the footer bar, the inline panel and the task viewer live.
+		// the status rail and the task viewer live.
 		this.unsubscribeBackgroundProcesses?.();
 		this.unsubscribeBackgroundProcesses = subscribeBackgroundProcesses(() => {
-			this.syncAgentsPanel();
+			this.syncStatusRail();
 		});
-		this.syncAgentsPanel();
+		this.syncStatusRail();
 	}
 
 	/**
-	 * Sync the unified inline agents panel (sub-agents + background terminal
-	 * processes), the detached-agents footer bar and the running-tasks viewer.
+	 * Sync the consolidated status rail (sub-agents + background terminal
+	 * processes, one line below the editor) and the running-tasks viewer.
 	 * A shared 1s tick (while anything is running) keeps live durations moving
 	 * between progress events — the per-event refresh alone made elapsed time
 	 * freeze during quiet stretches.
 	 */
-	private syncAgentsPanel(records?: InProcessSubAgentRecord[]): void {
+	private syncStatusRail(records?: InProcessSubAgentRecord[]): void {
 		const subs = records ?? this.session.listSubAgents();
 		const processes = getBackgroundProcesses();
-		this.agentsPanel.update(subs, processes);
+		this.statusRail.update(subs, processes);
 		this.runningTasksViewer?.update(subs, processes);
-		this.backgroundProcessesBar.update(processes);
 
 		const anyRunning = subs.some((r) => r.status === "running") || processes.some((p) => p.status === "running");
-		if (anyRunning && !this.agentsPanelTimer) {
-			this.agentsPanelTimer = setInterval(() => {
-				this.backgroundAgentsBar.invalidate();
-				this.agentsPanel.invalidate();
+		if (anyRunning && !this.statusRailTimer) {
+			this.statusRailTimer = setInterval(() => {
+				this.statusRail.invalidate();
 				this.ui.requestRender();
 			}, 1000);
-		} else if (!anyRunning && this.agentsPanelTimer) {
-			clearInterval(this.agentsPanelTimer);
-			this.agentsPanelTimer = undefined;
+		} else if (!anyRunning && this.statusRailTimer) {
+			clearInterval(this.statusRailTimer);
+			this.statusRailTimer = undefined;
 		}
 
 		this.ui.requestRender();
@@ -3526,7 +3516,8 @@ export class InteractiveMode {
 
 			case "session_start":
 				this.chatContainer.clear();
-				this.agentsPanel.update([], []);
+				this.notices.clear();
+				this.statusRail.update([], []);
 				this.taskPanel.update([], []);
 				this.pendingMessagesContainer.clear();
 				this.compactionQueuedMessages = [];
@@ -4704,14 +4695,12 @@ export class InteractiveMode {
 	}
 
 	showError(errorMessage: string): void {
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Text(theme.fg("error", `Error: ${errorMessage}`), 1, 0));
+		this.notices.add("error", errorMessage);
 		this.ui.requestRender();
 	}
 
 	showWarning(warningMessage: string): void {
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Text(theme.fg("warning", `Warning: ${warningMessage}`), 1, 0));
+		this.notices.add("warning", warningMessage);
 		this.ui.requestRender();
 	}
 
@@ -6421,7 +6410,11 @@ export class InteractiveMode {
 		reloadBox.addChild(new DynamicBorder(borderColor));
 		reloadBox.addChild(new Spacer(1));
 		reloadBox.addChild(
-			new Text(theme.fg("muted", "Reloading keybindings, extensions, skills, prompts, themes..."), 1, 0),
+			new Text(
+				theme.fg("muted", "Reloading keybindings, extensions, skills, prompts, themes, MCP servers..."),
+				1,
+				0,
+			),
 		);
 		reloadBox.addChild(new Spacer(1));
 		reloadBox.addChild(new DynamicBorder(borderColor));
@@ -6492,8 +6485,8 @@ export class InteractiveMode {
 			}
 			this.showStatus(
 				savedImplicitProjectTrust
-					? "Reloaded keybindings, extensions, skills, prompts, themes; saved project trust"
-					: "Reloaded keybindings, extensions, skills, prompts, themes",
+					? "Reloaded keybindings, extensions, skills, prompts, themes, MCP servers; saved project trust"
+					: "Reloaded keybindings, extensions, skills, prompts, themes, MCP servers",
 			);
 			dismissReloadBox(this.editor as Component);
 			reloadBoxDismissed = true;
@@ -7421,17 +7414,13 @@ export class InteractiveMode {
 			this.unsubscribeSubAgents();
 			this.unsubscribeSubAgents = undefined;
 		}
-		if (this.backgroundAgentsBarTimer) {
-			clearInterval(this.backgroundAgentsBarTimer);
-			this.backgroundAgentsBarTimer = undefined;
+		if (this.statusRailTimer) {
+			clearInterval(this.statusRailTimer);
+			this.statusRailTimer = undefined;
 		}
 		if (this.unsubscribeBackgroundProcesses) {
 			this.unsubscribeBackgroundProcesses();
 			this.unsubscribeBackgroundProcesses = undefined;
-		}
-		if (this.agentsPanelTimer) {
-			clearInterval(this.agentsPanelTimer);
-			this.agentsPanelTimer = undefined;
 		}
 		if (this.taskStoreUnsubscribe) {
 			this.taskStoreUnsubscribe();

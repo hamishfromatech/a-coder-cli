@@ -2,6 +2,7 @@ import { Box, type Component, Container, getCapabilities, Image, Spacer, Text, t
 import type { ToolDefinition, ToolRenderContext } from "../../../core/extensions/types.ts";
 import { createAllToolDefinitions, type ToolName } from "../../../core/tools/index.ts";
 import { getTextOutput as getRenderedTextOutput } from "../../../core/tools/render-utils.ts";
+import { formatPreviewResult } from "../../../core/tools/result-headline.ts";
 import { getToolRendererOverride } from "../../../core/tools/tool-renderer-registry.ts";
 import { convertToPng } from "../../../utils/image-convert.ts";
 import { theme } from "../theme/theme.ts";
@@ -173,7 +174,15 @@ export class ToolExecutionComponent extends Container {
 		if (!output) {
 			return undefined;
 		}
-		return new Text(theme.fg("toolOutput", output), 0, 0);
+		// Expanded shows everything; a still-running tool streams raw without
+		// a settled headline.
+		if (this.expanded || this.isRunning()) {
+			return new Text(theme.fg("toolOutput", output), 0, 0);
+		}
+		// Collapsed settled MCP/extension fallback: outcome headline + small
+		// preview instead of the raw output dump.
+		const isError = this.result?.isError ?? false;
+		return new Text(formatPreviewResult(output.replace(/\r/g, "").split("\n"), isError, theme), 0, 0);
 	}
 
 	updateArgs(args: any): void {
@@ -421,13 +430,18 @@ export class ToolExecutionComponent extends Container {
 
 	private formatToolExecution(): string {
 		let text = theme.fg("toolTitle", theme.bold(this.toolName));
-		const content = JSON.stringify(this.args, null, 2);
-		if (content) {
-			text += `\n\n${content}`;
+		const expanded = this.expanded || this.isRunning();
+		if (expanded) {
+			const content = JSON.stringify(this.args, null, 2);
+			if (content) {
+				text += `\n\n${content}`;
+			}
 		}
 		const output = this.getTextOutput();
 		if (output) {
-			text += `\n${output}`;
+			text += expanded
+				? `\n${output}`
+				: formatPreviewResult(output.replace(/\r/g, "").split("\n"), this.result?.isError ?? false, theme);
 		}
 		return text;
 	}

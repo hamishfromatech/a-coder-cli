@@ -6,7 +6,6 @@ import type { ChildProcess } from "child_process";
 import { spawn } from "child_process";
 import { type Static, Type } from "typebox";
 import { BashProgressComponent } from "../../modes/interactive/components/bash-progress.ts";
-import { keyHint } from "../../modes/interactive/components/keybinding-hints.ts";
 import { truncateToVisualLines } from "../../modes/interactive/components/visual-truncate.ts";
 import { theme } from "../../modes/interactive/theme/theme.ts";
 import { formatDuration } from "../../utils/duration.ts";
@@ -31,6 +30,7 @@ import {
 import { bashIntentTarget, classifyBashIntent } from "./bash-intent.ts";
 import { OutputAccumulator } from "./output-accumulator.ts";
 import { getTextOutput, invalidArgText, str } from "./render-utils.ts";
+import { formatHeadline, moreLinesFooter } from "./result-headline.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult } from "./truncate.ts";
 
@@ -261,7 +261,7 @@ export interface BashToolOptions {
 	sessionId?: string;
 }
 
-const BASH_PREVIEW_LINES = 5;
+const BASH_PREVIEW_LINES = 3;
 const BASH_UPDATE_THROTTLE_MS = 100;
 
 type BashRenderState = {
@@ -313,11 +313,25 @@ function rebuildBashResultRenderComponent(
 	showImages: boolean,
 	startedAt: number | undefined,
 	endedAt: number | undefined,
+	isError: boolean,
 ): void {
 	const state = component.state;
 	component.clear();
 
+	// Outcome headline: ✓/✗ + duration (and exit code on failure), replacing
+	// the former trailing "Took" line. Non-zero exits and aborts are isError
+	// (execute() throws); exit code comes from the suffix execute() appends.
+	const endTime = endedAt ?? Date.now();
+	const duration = startedAt !== undefined ? formatDuration(endTime - startedAt) : undefined;
 	let output = getTextOutput(result as any, showImages).trim();
+	const exitMatch = /Command exited with code (\d+)/.exec(output);
+	const headlineStats = duration
+		? isError && exitMatch
+			? `exit ${exitMatch[1]} · ${duration}`
+			: duration
+		: undefined;
+	component.addChild(new Text(`\n${formatHeadline(isError ? "error" : "success", theme, headlineStats)}`, 0, 0));
+
 	const truncation = result.details?.truncation;
 	const fullOutputPath = result.details?.fullOutputPath;
 	if (!options.isPartial && truncation?.truncated && fullOutputPath && output.endsWith("]")) {
@@ -345,9 +359,7 @@ function rebuildBashResultRenderComponent(
 						state.cachedWidth = width;
 					}
 					if (state.cachedSkipped && state.cachedSkipped > 0) {
-						const hint =
-							theme.fg("muted", `... (${state.cachedSkipped} earlier lines,`) +
-							` ${keyHint("app.tools.expand", "to expand")}${theme.fg("muted", ")")}`;
+						const hint = moreLinesFooter(theme, state.cachedSkipped, "lines", { earlier: true });
 						return ["", truncateToWidth(hint, width, "..."), ...(state.cachedLines ?? [])];
 					}
 					return ["", ...(state.cachedLines ?? [])];
@@ -386,12 +398,6 @@ function rebuildBashResultRenderComponent(
 			}
 		}
 		component.addChild(new Text(`\n${theme.fg("warning", `[${warnings.join(". ")}]`)}`, 0, 0));
-	}
-
-	if (startedAt !== undefined) {
-		const label = options.isPartial ? "Elapsed" : "Took";
-		const endTime = endedAt ?? Date.now();
-		component.addChild(new Text(`\n${theme.fg("muted", `${label} ${formatDuration(endTime - startedAt)}`)}`, 0, 0));
 	}
 }
 
@@ -701,6 +707,7 @@ export function createBashToolDefinition(
 				context.showImages,
 				state.startedAt,
 				state.endedAt,
+				context.isError,
 			);
 			component.invalidate();
 			return component;

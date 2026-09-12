@@ -738,9 +738,9 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 			case "get_available_models": {
 				// Non-blocking: return the cached list immediately so the picker never
-				// waits on a fetch. The startup pre-fetch keeps dynamic (Ollama Cloud)
-				// models current; the picker re-fetches once shortly after open to pick
-				// up any models the background refresh added. The explicit
+				// waits on a fetch. A background refresh keeps the catalog warm; the
+				// desktop picker additionally fires the forced refresh_models command
+				// on open and updates its list when it settles. The explicit
 				// refresh_models command does a forced fetch.
 				void session.modelRegistry.refreshDynamicModels().catch(() => {});
 				const models = session.modelRegistry.getAvailable();

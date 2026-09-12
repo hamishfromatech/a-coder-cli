@@ -22,6 +22,7 @@ import {
 import { withFileMutationQueue } from "./file-mutation-queue.ts";
 import { resolveToCwd } from "./path-utils.ts";
 import { renderToolPath, str } from "./render-utils.ts";
+import { diffStats, formatDiffStats, formatHeadline } from "./result-headline.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 
 type EditPreview = EditDiffResult | EditDiffError;
@@ -267,6 +268,15 @@ function buildEditCallComponent(
 
 	if (!component.preview) {
 		return component;
+	}
+
+	// Settled success: ✓ +A −B outcome headline derived from the preview diff.
+	// Streaming previews (previewPending) have no settled outcome yet.
+	if (!component.previewPending && !component.settledError && !("error" in component.preview)) {
+		const { added, removed } = diffStats(component.preview.diff);
+		if (added > 0 || removed > 0) {
+			component.addChild(new Text(formatHeadline("success", theme, formatDiffStats(theme, added, removed)), 0, 0));
+		}
 	}
 
 	const body =

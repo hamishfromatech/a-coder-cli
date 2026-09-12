@@ -100,44 +100,56 @@ export class ModelSelectorComponent extends Container implements Focusable {
 		// Add bottom border
 		this.addChild(new DynamicBorder());
 
-		// Load models and do initial render
-		this.loadModels().then(() => {
-			if (initialSearchInput) {
-				this.filterModels(initialSearchInput);
-			} else {
-				this.updateList();
-			}
-			// Request re-render after models are loaded
-			this.tui.requestRender();
-		});
+		// Load models and do initial render. The cached catalog paints
+		// immediately; the forced refresh repaints when it lands.
+		void this.loadModels();
 	}
 
 	private async loadModels(): Promise<void> {
-		let models: ModelItem[];
+		// Phase 1: paint the cached catalog so the picker opens instantly,
+		// without blocking on a network fetch.
+		this.ingestModels();
+		// Phase 2: fetch the live catalog from every provider (bypassing TTL
+		// caches) and repaint so newly added models show up without any
+		// manual refresh.
+		await this.modelRegistry.refreshDynamicModels(true);
+		this.ingestModels();
+		this.tui.requestRender();
+	}
 
+	/** Rebuild the model lists from the registry and repaint. */
+	private ingestModels(): void {
 		// Load available models (built-in models still work even if models.json failed)
 		try {
-			await this.modelRegistry.refreshDynamicModels();
 			const availableModels = this.modelRegistry.getAvailable();
-			models = availableModels.map((model: Model<any>) => ({
+			const models = availableModels.map((model: Model<any>) => ({
 				provider: model.provider,
 				id: model.id,
 				model,
 			}));
+			this.allModels = this.sortModels(models);
+			this.activeModels = this.allModels;
+			this.filteredModels = this.activeModels;
+			const currentIndex = this.filteredModels.findIndex((item) => modelsAreEqual(this.currentModel, item.model));
+			this.selectedIndex =
+				currentIndex >= 0
+					? currentIndex
+					: Math.min(this.selectedIndex, Math.max(0, this.filteredModels.length - 1));
 		} catch (error) {
 			this.allModels = [];
 			this.activeModels = [];
 			this.filteredModels = [];
 			this.errorMessage = error instanceof Error ? error.message : String(error);
-			return;
 		}
 
-		this.allModels = this.sortModels(models);
-		this.activeModels = this.allModels;
-		this.filteredModels = this.activeModels;
-		const currentIndex = this.filteredModels.findIndex((item) => modelsAreEqual(this.currentModel, item.model));
-		this.selectedIndex =
-			currentIndex >= 0 ? currentIndex : Math.min(this.selectedIndex, Math.max(0, this.filteredModels.length - 1));
+		// Re-apply the live search query (not just the initial one) so a
+		// post-refresh repaint never clobbers what the user has typed.
+		const query = this.searchInput.getValue();
+		if (query) {
+			this.filterModels(query);
+		} else {
+			this.updateList();
+		}
 	}
 
 	private sortModels(models: ModelItem[]): ModelItem[] {

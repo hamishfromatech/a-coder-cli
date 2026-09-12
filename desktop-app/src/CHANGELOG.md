@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- The model picker now keeps the catalog fresh on every open: opening it fires a forced provider refresh in the background (all fetchable providers re-fetch, bypassing TTL caches) and updates the list when it settles. The cached list still renders instantly — the picker never blocks on the network — and the manual refresh button keeps surfacing refresh errors; the automatic on-open refresh stays silent. This replaces the previous 1.5s re-fetch timer that only caught up with the engine's background warm-up.
+
 ### Fixed
 
 - Windows CLI updates from the desktop app no longer fail with "zip extraction failed: ... Can't unlink already-existing object: Permission denied". The updater destroyed the live install and extracted the new archive over it, which breaks the moment a running engine holds `pi.exe` or its loaded `win32-console-mode.node` open (Windows locks running executables; extraction then left the install half-replaced). The installer now stages the new files in a sibling directory and swaps via renames — extraction failures never touch the live install, the swap works even while the old engine is running (rename is allowed where unlink is not), leftover backups held by running engines are cleaned up on the next update, and a failed rename restores the old install instead of leaving it missing.

@@ -1,7 +1,6 @@
 // UI Components for extensions
 export { ArminComponent } from "./armin.ts";
 export { AssistantMessageComponent } from "./assistant-message.ts";
-export { BackgroundProcessesBarComponent } from "./background-process-bar.ts";
 export { BashExecutionComponent } from "./bash-execution.ts";
 export { BashProgressComponent, createBashProgressRenderable } from "./bash-progress.ts";
 export { BorderedLoader } from "./bordered-loader.ts";
@@ -31,6 +30,7 @@ export { SessionSelectorComponent } from "./session-selector.ts";
 export { type SettingsCallbacks, type SettingsConfig, SettingsSelectorComponent } from "./settings-selector.ts";
 export { ShowImagesSelectorComponent } from "./show-images-selector.ts";
 export { SkillInvocationMessageComponent } from "./skill-invocation-message.ts";
+export { StatusRailComponent } from "./status-rail.ts";
 export { ThemeSelectorComponent } from "./theme-selector.ts";
 export { ThinkingSelectorComponent } from "./thinking-selector.ts";
 export { ToolExecutionComponent, type ToolExecutionOptions } from "./tool-execution.ts";

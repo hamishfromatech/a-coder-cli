@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Changed
+
+- The `/model` picker now fetches the live catalog from every provider on open: the cached list paints instantly (the picker never blocks on the network), then `refreshDynamicModels(force)` re-fetches all fetchable providers — Ollama Cloud, OpenAdapter, LM Studio, llama.cpp, and local Ollama — bypassing their 2–5 minute TTL caches, and the list repaints with any newly added models. The repaint re-applies the user's live search query so a late refresh never clobbers typing. `/scoped-models`, `/model <term>` and the post-login flow already fetched fresh via the registry cache reset; model cycling keeps its TTL cache on purpose so rapid cycling stays instant.
+- Redesigned settled tool call results as uniform three-layer cards: an outcome headline (✓/✗ glyph + tool-specific stats — `40 lines` for read, `6 matches in 2 files` for grep, `+12 −4` for edit, `N lines` for write, `N entries`/`N results` for ls/find, `exit 0 · 1.2s` for bash replacing the trailing Took line), a 3-line content preview with one unified `... N more <unit>, ctrl+shift+o to expand` footer everywhere, and errors that always break through. Compact-classified resource reads (AGENTS.md, SKILL.md, docs) stay headline-only. MCP and renderer-less extension tools collapse from a raw output dump to the same headline + preview block, and their args JSON now only shows when expanded.
+
+- Reorganized the interactive TUI layout into clean zones: background sub-agent and background-process status now render as one consolidated status rail — a single line flush below the editor (`⚡ 2 running · backend (5 tools, 8s) · npm run dev (12s)`) with a dim right-aligned `↓ tasks` hint for the running-tasks viewer — replacing the three scattered surfaces (the inline `⚙ AGENTS` transcript card, the `⚡` agents bar above the editor widgets, and the `▸` processes bar below the footer). Errors and warnings render as a grouped notice block pinned at the end of the transcript (`✗`/`⚠` icons, theme colors, hanging-indent wrapping, identical consecutive notices collapsed with a ×N count, only the 6 most recent shown) instead of naked `Error:` text lines spliced into the conversation.
+
 ### Added
 
 - Built-in `read`, `bash`, `edit`, and `write` tools prefer strict JSON-schema sampling by default (`constrainedSampling: { type: "json_schema", strict: "prefer" }`): providers that support strict tools enforce the schema; others fall back silently. Extensions can re-register tool definitions with `constrainedSampling: false` (upstream pi parity).
@@ -17,6 +24,7 @@
 
 ### Fixed
 
+- Fixed `/reload` not picking up MCP server changes: the inline extension factory list (including `createMcpExtensionFactory`) was assembled once at ResourceLoader construction, so adding, changing, or removing an MCP server in settings.json only took effect after restarting the CLI. `reload()` now rebuilds the inline factories from fresh settings; the previous connections close cleanly via the `session_shutdown` (reason `reload`) event that fires before the rebuild.
 - Fixed direct RPC `steer` and `follow_up` commands bypassing extension `input` handlers ([#8718](https://github.com/earendil-works/pi/issues/8718)): both now run through the same input-handler/queue path as interactive submissions, with `source: "rpc"`.
 - Fixed RPC `abort` reporting success without cancelling an in-progress manual compaction ([#8920](https://github.com/earendil-works/pi/issues/8920)): abort now also cancels compaction and branch summarization, and the session exposes `isIdle`/`waitForIdle()` so abort settles before responding.
 

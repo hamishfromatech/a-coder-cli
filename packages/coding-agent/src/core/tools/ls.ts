@@ -3,11 +3,11 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Text } from "@earendil-works/pi-tui";
 import nodePath from "path";
 import { type Static, Type } from "typebox";
-import { keyHint } from "../../modes/interactive/components/keybinding-hints.ts";
 import type { Theme } from "../../modes/interactive/theme/theme.ts";
 import type { ExtensionContext, ToolDefinition, ToolRenderResultOptions } from "../extensions/types.ts";
 import { pathExists, resolveToCwd } from "./path-utils.ts";
 import { getTextOutput, renderToolPath, str } from "./render-utils.ts";
+import { formatHeadline, moreLinesFooter } from "./result-headline.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 import { DEFAULT_MAX_BYTES, formatSize, type TruncationResult, truncateHead } from "./truncate.ts";
 
@@ -76,6 +76,9 @@ function formatLsCall(args: { path?: string; limit?: number } | undefined, theme
 	return text;
 }
 
+/** Output lines shown on a collapsed settled ls card. */
+const LS_PREVIEW_LINES = 3;
+
 function formatLsResult(
 	result: {
 		content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
@@ -86,15 +89,17 @@ function formatLsResult(
 	showImages: boolean,
 ): string {
 	const output = getTextOutput(result, showImages).trim();
-	let text = "";
+	const lines = output ? output.split("\n") : [];
+	const headline = formatHeadline("success", theme, `${lines.length} entr${lines.length === 1 ? "y" : "ies"}`);
+
+	let text = `\n${headline}`;
 	if (output) {
-		const lines = output.split("\n");
-		const maxLines = options.expanded ? lines.length : 20;
+		const maxLines = options.expanded ? lines.length : LS_PREVIEW_LINES;
 		const displayLines = lines.slice(0, maxLines);
-		const remaining = lines.length - maxLines;
-		text += `\n${displayLines.map((line) => theme.fg("toolOutput", line)).join("\n")}`;
+		const remaining = lines.length - displayLines.length;
+		text += displayLines.map((line) => `\n  ${theme.fg("toolOutput", line)}`).join("");
 		if (remaining > 0) {
-			text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("app.tools.expand", "to expand")}${theme.fg("muted", ")")}`;
+			text += `\n  ${moreLinesFooter(theme, remaining, "entries")}`;
 		}
 	}
 
@@ -104,7 +109,7 @@ function formatLsResult(
 		const warnings: string[] = [];
 		if (entryLimit) warnings.push(`${entryLimit} entries limit`);
 		if (truncation?.truncated) warnings.push(`${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit`);
-		text += `\n${theme.fg("warning", `[Truncated: ${warnings.join(", ")}]`)}`;
+		text += `\n  ${theme.fg("warning", `[Truncated: ${warnings.join(", ")}]`)}`;
 	}
 	return text;
 }

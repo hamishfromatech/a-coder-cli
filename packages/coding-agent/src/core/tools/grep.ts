@@ -6,12 +6,12 @@ import { execFile, spawn } from "child_process";
 import path from "path";
 import { type Static, Type } from "typebox";
 import { promisify } from "util";
-import { keyHint } from "../../modes/interactive/components/keybinding-hints.ts";
 import type { Theme } from "../../modes/interactive/theme/theme.ts";
 import { ensureTool } from "../../utils/tools-manager.ts";
 import type { ExtensionContext, ToolDefinition, ToolRenderResultOptions } from "../extensions/types.ts";
 import { resolveToCwd } from "./path-utils.ts";
 import { getTextOutput, invalidArgText, shortenPath, str } from "./render-utils.ts";
+import { formatHeadline, moreLinesFooter } from "./result-headline.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 import {
 	DEFAULT_MAX_BYTES,
@@ -227,6 +227,9 @@ function formatGrepCall(
 	return text;
 }
 
+/** Output lines shown on a collapsed settled grep card. */
+const GREP_PREVIEW_LINES = 3;
+
 function formatGrepResult(
 	result: {
 		content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
@@ -237,15 +240,35 @@ function formatGrepResult(
 	showImages: boolean,
 ): string {
 	const output = getTextOutput(result, showImages).trim();
-	let text = "";
+	const lines = output ? output.split("\n") : [];
+
+	// Outcome headline: match and file counts derived from the output's
+	// `file:line:` shape, so collapsed cards answer "how much, where".
+	let matchCount = 0;
+	const files = new Set<string>();
+	for (const line of lines) {
+		const match = /^(.+?):\d+:/.exec(line);
+		if (match?.[1]) {
+			files.add(match[1]);
+			matchCount++;
+		}
+	}
+	const headlineStats =
+		matchCount > 0
+			? `${matchCount} match${matchCount === 1 ? "" : "es"}${files.size > 1 ? ` in ${files.size} files` : ""}`
+			: output
+				? undefined
+				: "no matches";
+	const headline = formatHeadline("success", theme, headlineStats);
+
+	let text = `\n${headline}`;
 	if (output) {
-		const lines = output.split("\n");
-		const maxLines = options.expanded ? lines.length : 15;
+		const maxLines = options.expanded ? lines.length : GREP_PREVIEW_LINES;
 		const displayLines = lines.slice(0, maxLines);
-		const remaining = lines.length - maxLines;
-		text += `\n${displayLines.map((line) => theme.fg("toolOutput", line)).join("\n")}`;
+		const remaining = lines.length - displayLines.length;
+		text += displayLines.map((line) => `\n  ${theme.fg("toolOutput", line)}`).join("");
 		if (remaining > 0) {
-			text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("app.tools.expand", "to expand")}${theme.fg("muted", ")")}`;
+			text += `\n  ${moreLinesFooter(theme, remaining, "matches")}`;
 		}
 	}
 
@@ -257,7 +280,7 @@ function formatGrepResult(
 		if (matchLimit) warnings.push(`${matchLimit} matches limit`);
 		if (truncation?.truncated) warnings.push(`${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit`);
 		if (linesTruncated) warnings.push("some lines truncated");
-		text += `\n${theme.fg("warning", `[Truncated: ${warnings.join(", ")}]`)}`;
+		text += `\n  ${theme.fg("warning", `[Truncated: ${warnings.join(", ")}]`)}`;
 	}
 	return text;
 }
