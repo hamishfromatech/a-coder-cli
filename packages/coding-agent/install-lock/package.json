@@ -1,10 +1,10 @@
 {
 	"name": "@earendil-works/pi-coding-agent-install",
-	"version": "0.80.89",
+	"version": "0.80.90",
 	"private": true,
 	"description": "Lockfile root used by the A-Coder CLI installer and updater.",
 	"dependencies": {
-		"@earendil-works/pi-coding-agent": "0.80.89"
+		"@earendil-works/pi-coding-agent": "0.80.90"
 	},
 	"overrides": {
 		"rimraf": "6.1.2",
