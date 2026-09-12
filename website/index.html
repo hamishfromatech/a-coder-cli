@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>A-Coder — Agentic coding for IDE, terminal, and desktop</title>
+	<meta name="description" content="A-Coder is one self-extensible agent engine, three surfaces: an AI-native IDE, a terminal CLI, and a native desktop app. Bring your own model — Anthropic, OpenAI, Google, local, and more.">
+	<meta property="og:title" content="A-Coder — Agentic coding for IDE, terminal, and desktop">
+	<meta property="og:description" content="One self-extensible agent engine, three surfaces. Bring your own model.">
+	<meta property="og:image" content="assets/desktop-icon.png">
+	<meta property="og:type" content="website">
+	<link rel="icon" type="image/png" href="assets/favicon.png">
+	<script src="https://cdn.tailwindcss.com"></script>
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+	<script>
+		tailwind.config = {
+			theme: {
+				extend: {
+					colors: {
+						ink: { 950: '#050507', 900: '#0a0a0d', 800: '#101014', 700: '#17171c', 600: '#22222a' },
+						steel: { 200: '#dfe3ea', 300: '#c7ccd6', 400: '#9aa1ad', 500: '#71787f', 600: '#4a4f55', 700: '#2e3138' },
+					},
+					fontFamily: {
+						sans: ['Outfit', 'system-ui', 'sans-serif'],
+						mono: ['"JetBrains Mono"', 'monospace'],
+						serif: ['"Instrument Serif"', 'Georgia', 'serif'],
+					},
+				},
+			},
+		};
+	</script>
+	<style>
+		:root { --mx: 50%; --my: 40%; }
+		html { background: #050507; }
+		.chrome-text {
+			background: linear-gradient(178deg, #ffffff 0%, #e6e9ee 24%, #a7aeb9 47%, #f0f2f6 66%, #70757e 78%, #b9bec7 100%);
+			background-size: 100% 220%;
+			-webkit-background-clip: text;
+			background-clip: text;
+			color: transparent;
+			animation: sheen 9s ease-in-out infinite alternate;
+		}
+		@keyframes sheen { from { background-position: 0 0; } to { background-position: 0 100%; } }
+		.grain {
+			background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="180" height="180"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" stitchTiles="stitch"/></filter><rect width="100%" height="100%" filter="url(%23n)"/></svg>');
+			opacity: 0.055;
+			mix-blend-mode: overlay;
+		}
+		.smoke-a { background: radial-gradient(ellipse 55% 42% at 18% 8%, rgba(122,132,152,0.09), transparent 70%), radial-gradient(ellipse 48% 38% at 86% 28%, rgba(160,172,196,0.07), transparent 70%); }
+		.smoke-b { background: radial-gradient(ellipse 60% 50% at 50% 100%, rgba(130,140,164,0.08), transparent 72%), radial-gradient(ellipse 40% 34% at 8% 40%, rgba(120,130,150,0.05), transparent 70%); }
+		.hairline { border-color: rgba(255,255,255,0.08); }
+		.hairline-t { border-top: 1px solid rgba(255,255,255,0.08); }
+		.hairline-b { border-bottom: 1px solid rgba(255,255,255,0.08); }
+		.conic-ring {
+			background: conic-gradient(from 0deg, transparent 0deg, rgba(255,255,255,0.10) 26deg, rgba(199,204,214,0.22) 55deg, transparent 95deg, transparent 180deg, rgba(255,255,255,0.07) 210deg, transparent 250deg);
+			-webkit-mask: radial-gradient(closest-side, transparent 78%, #000 80.5%, #000 86%, transparent 89.5%);
+			mask: radial-gradient(closest-side, transparent 78%, #000 80.5%, #000 86%, transparent 89.5%);
+			animation: spin 26s linear infinite;
+		}
+		@keyframes spin { to { transform: rotate(360deg); } }
+		.spotlight { background: radial-gradient(600px circle at var(--mx) var(--my), rgba(210,220,240,0.055), transparent 65%); }
+		.marquee-track { animation: marquee 42s linear infinite; }
+		.marquee:hover .marquee-track { animation-play-state: paused; }
+		@keyframes marquee { to { transform: translateX(-50%); } }
+		.rise { opacity: 0; transform: translateY(18px); transition: opacity 0.8s cubic-bezier(.2,.6,.2,1), transform 0.8s cubic-bezier(.2,.6,.2,1); }
+		.rise.in { opacity: 1; transform: none; }
+		.lift { transition: transform .35s cubic-bezier(.2,.6,.2,1), border-color .35s, box-shadow .35s; }
+		.lift:hover { transform: translateY(-4px); border-color: rgba(255,255,255,0.16); box-shadow: 0 24px 70px -28px rgba(170,185,210,0.25); }
+		.caret::after { content: '▋'; margin-left: 2px; color: #dfe3ea; animation: blink 1s steps(1) infinite; font-weight: 400; }
+		@keyframes blink { 50% { opacity: 0; } }
+		.ghost-num { -webkit-text-stroke: 1px rgba(255,255,255,0.10); color: transparent; }
+		.grad-rule { background: linear-gradient(90deg, transparent, rgba(255,255,255,0.14), transparent); }
+		.hero-in { opacity: 0; transform: translateY(22px); animation: riseIn 1s cubic-bezier(.2,.65,.25,1) forwards; }
+		@keyframes riseIn { to { opacity: 1; transform: none; } }
+		.float-slow { animation: floaty 7s ease-in-out infinite alternate; }
+		@keyframes floaty { from { transform: translateY(-5px); } to { transform: translateY(6px); } }
+		@media (prefers-reduced-motion: reduce) {
+			.conic-ring, .marquee-track, .float-slow, .chrome-text { animation: none !important; }
+			.rise { opacity: 1; transform: none; transition: none; }
+			.hero-in { opacity: 1; transform: none; animation: none; }
+		}
+		::selection { background: #e6e9ee; color: #050507; }
+		::-webkit-scrollbar { width: 10px; }
+		::-webkit-scrollbar-track { background: #050507; }
+		::-webkit-scrollbar-thumb { background: #22222a; border-radius: 6px; }
+	</style>
+</head>
+<body class="bg-ink-950 text-steel-400 font-sans antialiased overflow-x-hidden">
+
+	<div class="grain fixed inset-0 z-[60] pointer-events-none"></div>
+
+	<!-- ══ Nav ══════════════════════════════════════════════ -->
+	<header class="fixed top-0 inset-x-0 z-50 bg-ink-950/70 backdrop-blur-xl">
+		<nav class="max-w-6xl mx-auto px-5 h-16 flex items-center justify-between border-b hairline">
+			<a href="#top" class="flex items-center gap-2.5 group">
+				<img src="assets/logo-trans.png" alt="A-Coder mark" class="w-7 h-7">
+				<span class="text-white font-semibold tracking-[0.08em]">A-CODER</span>
+			</a>
+			<div class="hidden md:flex items-center gap-8 text-[13px]">
+				<a href="#ide" class="text-steel-400 hover:text-white transition-colors">IDE</a>
+				<a href="#cli" class="text-steel-400 hover:text-white transition-colors">CLI</a>
+				<a href="#desktop" class="text-steel-400 hover:text-white transition-colors">Desktop</a>
+				<a href="#system" class="text-steel-400 hover:text-white transition-colors">System</a>
+				<a href="docs.html" class="text-steel-400 hover:text-white transition-colors">Docs</a>
+				<a href="pricing.html" class="text-steel-400 hover:text-white transition-colors">Pricing</a>
+				<a href="https://github.com/hamishfromatech/a-coder-cli" class="text-steel-400 hover:text-white transition-colors">GitHub</a>
+			</div>
+			<a href="#install" class="hidden md:inline-flex items-center rounded-full bg-white text-black text-[13px] font-medium px-4 py-1.5 hover:bg-steel-200 transition-colors">Get started</a>
+			<button id="menu-btn" class="md:hidden text-steel-300 p-1" aria-label="Toggle menu">
+				<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M4 7h16M4 12h16M4 17h16"/></svg>
+			</button>
+		</nav>
+		<div id="menu" class="hidden md:hidden bg-ink-950/95 border-b hairline px-5 py-4 flex flex-col gap-3 text-sm">
+			<a href="#ide" class="text-steel-300">IDE</a>
+			<a href="#cli" class="text-steel-300">CLI</a>
+			<a href="#desktop" class="text-steel-300">Desktop</a>
+			<a href="#system" class="text-steel-300">System</a>
+			<a href="docs.html" class="text-steel-300">Docs</a>
+			<a href="pricing.html" class="text-steel-300">Pricing</a>
+			<a href="#install" class="text-steel-300">Install</a>
+			<a href="https://github.com/hamishfromatech/a-coder-cli" class="text-steel-300">GitHub</a>
+		</div>
+	</header>
+
+	<!-- ══ Hero ═════════════════════════════════════════════ -->
+	<section id="top" class="relative min-h-screen flex flex-col smoke-a overflow-hidden">
+		<div class="spotlight absolute inset-0 pointer-events-none"></div>
+
+		<div class="max-w-6xl mx-auto px-5 w-full flex-1 flex flex-col items-center justify-center text-center pt-28 pb-10">
+			<!-- mark -->
+			<div class="hero-in relative mb-10" style="animation-delay:.05s">
+				<div class="conic-ring absolute -inset-6 rounded-full"></div>
+				<div class="absolute inset-0 -z-10 blur-3xl opacity-70" style="background: radial-gradient(circle at 50% 45%, rgba(165,178,200,0.28), transparent 62%)"></div>
+				<img src="assets/logo-trans.png" alt="A-Coder mark — nested chrome triangles" class="float-slow w-40 h-40 md:w-48 md:h-48">
+			</div>
+
+			<p class="hero-in font-mono text-[11px] tracking-[0.42em] uppercase text-steel-500 mb-6" style="animation-delay:.15s">One engine &nbsp;·&nbsp; Three surfaces</p>
+
+			<h1 class="hero-in text-[2.6rem] leading-[1.02] sm:text-6xl md:text-[4.6rem] md:leading-[0.98] font-semibold tracking-tight" style="animation-delay:.25s">
+				<span class="chrome-text">Agentic coding</span><br>
+				<span class="text-white"><em class="font-serif italic font-normal">everywhere</em> you work.</span>
+			</h1>
+
+			<p class="hero-in mt-7 max-w-xl text-[15px] md:text-lg text-steel-400 leading-relaxed" style="animation-delay:.35s">
+				One self-extensible agent engine, three surfaces — an AI-native
+				<span class="text-steel-200">IDE</span>, a terminal <span class="text-steel-200">agent</span>, and a native
+				<span class="text-steel-200">desktop app</span>. Bring your own model; or run fully local.
+			</p>
+
+			<div class="hero-in mt-9 flex flex-col sm:flex-row gap-3 justify-center" style="animation-delay:.45s">
+				<a href="#install" class="inline-flex justify-center items-center rounded-full bg-white text-black font-medium px-7 py-3 hover:bg-steel-200 transition-colors">Install now</a>
+				<a href="#system" class="inline-flex justify-center items-center rounded-full border hairline text-steel-200 font-medium px-7 py-3 hover:bg-white/5 hover:text-white transition-colors">Explore the system</a>
+			</div>
+			<div class="hero-in mt-6 flex flex-wrap justify-center gap-x-5 gap-y-1 font-mono text-[11px] text-steel-500" style="animation-delay:.55s">
+				<span>🇦🇺 Made in Australia</span><span class="text-steel-700">·</span><span>Project Infra</span><span class="text-steel-700">·</span><span>MCP-native</span><span class="text-steel-700">·</span><span>100+ models</span><span class="text-steel-700">·</span><span>Local-first</span>
+			</div>
+		</div>
+
+		<!-- stats rail -->
+		<div class="hero-in w-full border-t hairline" style="animation-delay:.6s">
+			<div class="max-w-6xl mx-auto px-5 grid grid-cols-2 md:grid-cols-4 divide-x hairline divide-white/[0.08]">
+				<div class="py-5 px-2 text-center"><p class="font-mono text-lg md:text-xl text-white"><span class="count" data-to="3">0</span></p><p class="font-mono text-[10px] tracking-[0.25em] uppercase text-steel-600 mt-1">Surfaces</p></div>
+				<div class="py-5 px-2 text-center"><p class="font-mono text-lg md:text-xl text-white"><span class="count" data-to="14">0</span>+</p><p class="font-mono text-[10px] tracking-[0.25em] uppercase text-steel-600 mt-1">Providers</p></div>
+				<div class="py-5 px-2 text-center border-t md:border-t-0 hairline"><p class="font-mono text-lg md:text-xl text-white"><span class="count" data-to="100">0</span>+</p><p class="font-mono text-[10px] tracking-[0.25em] uppercase text-steel-600 mt-1">Models</p></div>
+				<div class="py-5 px-2 text-center border-t md:border-t-0 hairline"><p class="font-mono text-lg md:text-xl text-white"><span class="count" data-to="0">0</span></p><p class="font-mono text-[10px] tracking-[0.25em] uppercase text-steel-600 mt-1">Middlemen</p></div>
+			</div>
+		</div>
+	</section>
+
+	<!-- ══ Provider marquee ═════════════════════════════════ -->
+	<section class="py-8 border-b hairline bg-ink-900/40 overflow-hidden">
+		<div class="marquee relative">
+			<div class="marquee-track flex gap-10 w-max items-center whitespace-nowrap will-change-transform">
+				<div class="flex gap-10 items-center" id="mq-a"></div>
+				<div class="flex gap-10 items-center" id="mq-b" aria-hidden="true"></div>
+			</div>
+			<div class="absolute inset-y-0 left-0 w-28 bg-gradient-to-r from-ink-950 to-transparent pointer-events-none"></div>
+			<div class="absolute inset-y-0 right-0 w-28 bg-gradient-to-l from-ink-950 to-transparent pointer-events-none"></div>
+		</div>
+	</section>
+
+	<!-- ══ System schematic ═════════════════════════════════ -->
+	<section id="system" class="relative py-24 scroll-mt-16">
+		<div class="max-w-6xl mx-auto px-5">
+			<div class="rise text-center mb-16">
+				<p class="font-mono text-[11px] tracking-[0.35em] uppercase text-steel-500 mb-4">The system</p>
+				<h2 class="text-3xl md:text-5xl font-semibold text-white tracking-tight">One engine. <em class="font-serif italic font-normal text-steel-300">Three ways in.</em></h2>
+			</div>
+
+			<!-- schematic -->
+			<div class="rise flex flex-col lg:flex-row items-center justify-center gap-10 lg:gap-0">
+				<!-- surfaces -->
+				<div class="flex lg:flex-col gap-3 order-1">
+					<div class="flex items-center gap-3 rounded-xl border hairline bg-ink-900 px-4 py-3 w-44"><img src="assets/logo-trans.png" alt="" class="w-6 h-6"><div><p class="text-[13px] text-white font-medium leading-4">IDE</p><p class="font-mono text-[10px] text-steel-600">editor</p></div></div>
+					<div class="flex items-center gap-3 rounded-xl border hairline bg-ink-900 px-4 py-3 w-44"><img src="assets/logo-trans.png" alt="" class="w-6 h-6"><div><p class="text-[13px] text-white font-medium leading-4">CLI</p><p class="font-mono text-[10px] text-steel-600">terminal</p></div></div>
+					<div class="flex items-center gap-3 rounded-xl border hairline bg-ink-900 px-4 py-3 w-44"><img src="assets/desktop-icon.png" alt="" class="w-6 h-6 rounded-md"><div><p class="text-[13px] text-white font-medium leading-4">Desktop</p><p class="font-mono text-[10px] text-steel-600">native</p></div></div>
+				</div>
+
+				<!-- bus -->
+				<div class="order-2 hidden lg:block relative w-40 self-stretch min-h-[220px]">
+					<div class="absolute inset-y-1/2 left-0 right-0 grad-rule h-px"></div>
+					<div class="absolute inset-y-1/2 left-1/2 -translate-x-1/2 h-full w-px grad-rule" style="background:linear-gradient(180deg,transparent,rgba(255,255,255,0.14),transparent)"></div>
+				</div>
+				<div class="order-2 lg:hidden"><p class="font-mono text-steel-600 text-sm">↕</p></div>
+
+				<!-- engine -->
+				<div class="order-3 relative shrink-0">
+					<div class="conic-ring absolute -inset-5 rounded-full"></div>
+					<div class="rounded-2xl border hairline bg-ink-900 p-5 glow-none relative">
+						<img src="assets/logo-trans.png" alt="A-Coder engine" class="w-16 h-16 mx-auto">
+						<p class="text-center font-mono text-[10px] tracking-[0.3em] uppercase text-steel-500 mt-3">Engine</p>
+					</div>
+				</div>
+
+				<!-- bus -->
+				<div class="order-4 hidden lg:block relative w-40 self-stretch">
+					<div class="absolute inset-y-1/2 left-0 right-0 grad-rule h-px"></div>
+					<div class="absolute inset-y-1/2 left-1/2 -translate-x-1/2 h-full w-px grad-rule" style="background:linear-gradient(180deg,transparent,rgba(255,255,255,0.14),transparent)"></div>
+				</div>
+				<div class="order-4 lg:hidden"><p class="font-mono text-steel-600 text-sm">↕</p></div>
+
+				<!-- capabilities -->
+				<div class="flex lg:flex-col gap-3 order-5">
+					<div class="rounded-xl border hairline bg-ink-900/70 px-4 py-3 w-44"><p class="text-[13px] text-steel-200 font-medium leading-4">Agent runtime</p><p class="font-mono text-[10px] text-steel-600">tools · loops · state</p></div>
+					<div class="rounded-xl border hairline bg-ink-900/70 px-4 py-3 w-44"><p class="text-[13px] text-steel-200 font-medium leading-4">MCP-native</p><p class="font-mono text-[10px] text-steel-600">any server, any tool</p></div>
+					<div class="rounded-xl border hairline bg-ink-900/70 px-4 py-3 w-44"><p class="text-[13px] text-steel-200 font-medium leading-4">Session graph</p><p class="font-mono text-[10px] text-steel-600">branch · resume · fork</p></div>
+				</div>
+			</div>
+
+			<p class="rise text-center mt-14 max-w-xl mx-auto text-sm text-steel-500 leading-relaxed">
+				Sessions, tools, providers, and skills are identical everywhere. Start a task in the terminal, finish it in the IDE, review it on the Desktop.
+			</p>
+		</div>
+	</section>
+
+	<!-- ══ Surfaces trio ════════════════════════════════════ -->
+	<section id="products" class="relative py-24 border-t hairline smoke-b">
+		<div class="max-w-6xl mx-auto px-5">
+			<div class="grid md:grid-cols-3 gap-px bg-white/[0.06] rounded-3xl overflow-hidden border hairline">
+				<!-- IDE -->
+				<article id="ide" class="relative bg-ink-950 hover:bg-ink-900 transition-colors p-8 group scroll-mt-20">
+					<p class="ghost-num font-mono text-6xl font-semibold absolute top-5 right-6 select-none">01</p>
+					<img src="assets/logo-trans.png" alt="A-Coder IDE mark" class="w-11 h-11 mb-6 group-hover:scale-110 transition-transform duration-500">
+					<h3 class="text-xl font-semibold text-white mb-1">A-Coder IDE</h3>
+					<p class="font-mono text-[10px] tracking-[0.2em] uppercase text-steel-600 mb-5">AI-native editor</p>
+					<p class="text-sm text-steel-400 leading-relaxed mb-6">A full editor on VS Code's foundation, transformed into an autonomous partner that reasons about your entire codebase.</p>
+					<ul class="space-y-2 text-[13px] text-steel-400 mb-7">
+						<li class="flex gap-2.5"><span class="text-steel-600 font-mono">▸</span>Chat · Plan · Agent · Learn modes</li>
+						<li class="flex gap-2.5"><span class="text-steel-600 font-mono">▸</span>Semantic search &amp; fast apply</li>
+						<li class="flex gap-2.5"><span class="text-steel-600 font-mono">▸</span>One-click migration from Cursor</li>
+					</ul>
+					<a href="#ide" class="text-[13px] text-white font-medium inline-flex items-center gap-1.5 group-hover:gap-3 transition-all">Explore the IDE <span aria-hidden="true">→</span></a>
+				</article>
+				<!-- CLI -->
+				<article id="cli" class="relative bg-ink-950 hover:bg-ink-900 transition-colors p-8 group border-x hairline scroll-mt-16">
+					<p class="ghost-num font-mono text-6xl font-semibold absolute top-5 right-6 select-none">02</p>
+					<img src="assets/logo-trans.png" alt="A-Coder CLI mark" class="w-11 h-11 mb-6 group-hover:scale-110 transition-transform duration-500">
+					<h3 class="text-xl font-semibold text-white mb-1">A-Coder CLI</h3>
+					<p class="font-mono text-[10px] tracking-[0.2em] uppercase text-steel-600 mb-5">Terminal agent</p>
+					<p class="text-sm text-steel-400 leading-relaxed mb-6">The self-extensible terminal agent. Reads your codebase, edits files, runs commands — and extends itself with MCP and skills.</p>
+					<ul class="space-y-2 text-[13px] text-steel-400 mb-7">
+						<li class="flex gap-2.5"><span class="text-steel-600 font-mono">▸</span>Background agents &amp; sub-agents</li>
+						<li class="flex gap-2.5"><span class="text-steel-600 font-mono">▸</span>Uniform tool results, expandable</li>
+						<li class="flex gap-2.5"><span class="text-steel-600 font-mono">▸</span>Hot reload for MCP &amp; skills</li>
+					</ul>
+					<a href="#cli" class="text-[13px] text-white font-medium inline-flex items-center gap-1.5 group-hover:gap-3 transition-all">Explore the CLI <span aria-hidden="true">→</span></a>
+				</article>
+				<!-- Desktop -->
+				<article id="desktop" class="relative bg-ink-950 hover:bg-ink-900 transition-colors p-8 group scroll-mt-16">
+					<p class="ghost-num font-mono text-6xl font-semibold absolute top-5 right-6 select-none">03</p>
+					<img src="assets/desktop-icon.png" alt="A-Coder Desktop icon" class="w-11 h-11 rounded-lg mb-6 group-hover:scale-110 transition-transform duration-500">
+					<h3 class="text-xl font-semibold text-white mb-1">A-Coder Desktop</h3>
+					<p class="font-mono text-[10px] tracking-[0.2em] uppercase text-steel-600 mb-5">Native app</p>
+					<p class="text-sm text-steel-400 leading-relaxed mb-6">The same engine in a fast Tauri shell — project workspaces, a session tree, a model picker, and voice mode.</p>
+					<ul class="space-y-2 text-[13px] text-steel-400 mb-7">
+						<li class="flex gap-2.5"><span class="text-steel-600 font-mono">▸</span>Multi-workspace sessions</li>
+						<li class="flex gap-2.5"><span class="text-steel-600 font-mono">▸</span>Voice mode — STT &amp; TTS</li>
+						<li class="flex gap-2.5"><span class="text-steel-600 font-mono">▸</span><code class="font-mono text-[11px] text-steel-500">a-coder-cli --desktop</code></li>
+					</ul>
+					<a href="#desktop" class="text-[13px] text-white font-medium inline-flex items-center gap-1.5 group-hover:gap-3 transition-all">Explore Desktop <span aria-hidden="true">→</span></a>
+				</article>
+			</div>
+		</div>
+	</section>
+
+	<!-- ══ IDE detail ═══════════════════════════════════════ -->
+	<section class="relative py-24 border-t hairline scroll-mt-16">
+		<div class="max-w-6xl mx-auto px-5 grid lg:grid-cols-[1fr_1.15fr] gap-14 items-start">
+			<div class="rise lg:sticky lg:top-28">
+				<p class="font-mono text-[11px] tracking-[0.35em] uppercase text-steel-500 mb-4">02 / IDE</p>
+				<h2 class="text-3xl md:text-4xl font-semibold text-white tracking-tight mb-5 leading-tight">Where agentic AI meets <em class="font-serif italic font-normal">professional</em> development.</h2>
+				<p class="text-steel-400 leading-relaxed mb-7 text-[15px]">Built on VS Code's battle-tested foundation. A-Coder IDE understands your whole project, researches solutions, and implements features while you stay in flow.</p>
+				<a href="https://github.com/hamishfromatech/A-Coder" class="text-sm text-white font-medium inline-flex items-center gap-1.5 hover:gap-3 transition-all">See the IDE repo <span aria-hidden="true">→</span></a>
+			</div>
+			<div class="grid sm:grid-cols-2 gap-4">
+				<div class="rise rounded-2xl border hairline bg-ink-900 p-6">
+					<p class="font-mono text-[10px] tracking-[0.25em] text-steel-600 mb-2">MODE 01</p>
+					<h4 class="text-white font-medium mb-1.5">Chat</h4>
+					<p class="text-[13px] text-steel-400">Balanced assistance for questions, quick fixes, and pairing.</p>
+				</div>
+				<div class="rise rounded-2xl border hairline bg-ink-900 p-6">
+					<p class="font-mono text-[10px] tracking-[0.25em] text-steel-600 mb-2">MODE 02</p>
+					<h4 class="text-white font-medium mb-1.5">Plan</h4>
+					<p class="text-[13px] text-steel-400">Deep research for understanding codebases and architecture.</p>
+				</div>
+				<div class="rise rounded-2xl border hairline bg-ink-900 p-6">
+					<p class="font-mono text-[10px] tracking-[0.25em] text-steel-600 mb-2">MODE 03</p>
+					<h4 class="text-white font-medium mb-1.5">Agent</h4>
+					<p class="text-[13px] text-steel-400">Full autonomy for multi-step features and complex refactors.</p>
+				</div>
+				<div class="rise rounded-2xl border hairline bg-ink-900 p-6">
+					<p class="font-mono text-[10px] tracking-[0.25em] text-steel-600 mb-2">MODE 04</p>
+					<h4 class="text-white font-medium mb-1.5">Learn</h4>
+					<p class="text-[13px] text-steel-400">A coding tutor — exercises, streaks, badges, adaptive hints at three levels.</p>
+				</div>
+				<div class="rise sm:col-span-2 rounded-2xl border hairline bg-ink-900/60 p-6 grid sm:grid-cols-3 gap-5">
+					<div>
+						<h4 class="text-white text-sm font-medium mb-1">Semantic context</h4>
+						<p class="text-[13px] text-steel-400">Fast codebase search, paginated reads, symbol outlines.</p>
+					</div>
+					<div>
+						<h4 class="text-white text-sm font-medium mb-1">Apply that works</h4>
+						<p class="text-[13px] text-steel-400">Exact-match edits, Morph fast apply, smart diffs.</p>
+					</div>
+					<div>
+						<h4 class="text-white text-sm font-medium mb-1">Context that survives</h4>
+						<p class="text-[13px] text-steel-400">TOON compression cuts tokens 30–70%.</p>
+					</div>
+				</div>
+				<div class="rise sm:col-span-2 rounded-2xl border hairline bg-ink-900/60 p-6 grid sm:grid-cols-2 gap-5">
+					<div>
+						<h4 class="text-white text-sm font-medium mb-1">Zero-friction migration</h4>
+						<p class="text-[13px] text-steel-400">Imports settings, keybindings, and extensions from VS Code, Cursor, or Windsurf in one click.</p>
+					</div>
+					<div>
+						<h4 class="text-white text-sm font-medium mb-1">Autocomplete &amp; quick edit</h4>
+						<p class="text-[13px] text-steel-400">Inline FIM completion, <kbd class="font-mono text-[11px] border hairline rounded px-1.5 py-0.5 text-steel-300">Ctrl+K</kbd> inline edits, vision, threads.</p>
+					</div>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<!-- ══ CLI detail ═══════════════════════════════════════ -->
+	<section class="relative py-24 border-t hairline smoke-a">
+		<div class="max-w-6xl mx-auto px-5 grid lg:grid-cols-2 gap-14 items-center">
+			<div class="rise order-2 lg:order-1">
+				<p class="font-mono text-[11px] tracking-[0.35em] uppercase text-steel-500 mb-4">03 / CLI</p>
+				<h2 class="text-3xl md:text-4xl font-semibold text-white tracking-tight mb-5 leading-tight">The agent that lives <em class="font-serif italic font-normal">in your terminal.</em></h2>
+				<p class="text-steel-400 leading-relaxed mb-8 text-[15px]">Self-extensible by design. It discovers your MCP servers, skills, and extensions at launch — and you can teach it new behavior mid-session. Background agents keep long jobs running while you keep working.</p>
+				<ul class="space-y-3.5 text-sm text-steel-400">
+					<li class="flex gap-3"><span class="font-mono text-steel-600 mt-0.5">▸</span><span><span class="text-steel-200">Uniform tool results</span> — glyph, timing, stats for every call, expandable inline.</span></li>
+					<li class="flex gap-3"><span class="font-mono text-steel-600 mt-0.5">▸</span><span><span class="text-steel-200">Parallel sub-agents</span> for search-heavy work, live status rail for background jobs.</span></li>
+					<li class="flex gap-3"><span class="font-mono text-steel-600 mt-0.5">▸</span><span><span class="text-steel-200">Fresh model catalog</span> every time you open the picker.</span></li>
+					<li class="flex gap-3"><span class="font-mono text-steel-600 mt-0.5">▸</span><span><span class="text-steel-200">Runs anywhere</span> Node 22+ or Bun does. One binary, no daemon.</span></li>
+				</ul>
+			</div>
+			<div class="rise order-1 lg:order-2">
+				<div class="rounded-2xl border hairline bg-ink-900 overflow-hidden glow-ring">
+					<div class="flex items-center gap-2 px-4 py-3 border-b hairline">
+						<span class="w-2.5 h-2.5 rounded-full bg-steel-700"></span>
+						<span class="w-2.5 h-2.5 rounded-full bg-steel-700"></span>
+						<span class="w-2.5 h-2.5 rounded-full bg-steel-700"></span>
+						<span class="ml-3 font-mono text-[11px] text-steel-600">a-coder-cli — ~/work/api-server</span>
+					</div>
+					<div class="p-5 font-mono text-[12.5px] leading-6 min-h-[280px]" id="term"></div>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<!-- ══ Desktop detail ═══════════════════════════════════ -->
+	<section class="relative py-24 border-t hairline">
+		<div class="max-w-6xl mx-auto px-5 grid lg:grid-cols-2 gap-14 items-center">
+			<div class="rise relative group">
+				<div class="absolute -inset-3 bg-gradient-to-tr from-transparent via-white/[0.04] to-transparent rounded-3xl pointer-events-none"></div>
+				<img src="assets/backdrop.jpg" alt="A-Coder Desktop backdrop — cyanotype engraving of a lone engineer with a glowing staff before a colossal broken arch" width="1440" height="808" class="rounded-2xl border hairline w-full h-auto object-cover" loading="lazy">
+				<p class="font-mono text-[10px] tracking-[0.2em] uppercase text-steel-600 mt-3 text-center">Backdrop — “the arch” · rendered with our own image pipeline</p>
+			</div>
+			<div class="rise">
+				<p class="font-mono text-[11px] tracking-[0.35em] uppercase text-steel-500 mb-4">04 / Desktop</p>
+				<h2 class="text-3xl md:text-4xl font-semibold text-white tracking-tight mb-5 leading-tight">The engine, <em class="font-serif italic font-normal">in a native window.</em></h2>
+				<p class="text-steel-400 leading-relaxed mb-8 text-[15px]">A fast Tauri shell — no browser, no daemon. Open it from the terminal with <code class="font-mono text-[13px] text-steel-200">a-coder-cli --desktop</code> and it picks up exactly where the CLI left off.</p>
+				<div class="grid sm:grid-cols-2 gap-4 text-sm">
+					<div class="lift rounded-xl border hairline bg-ink-900/60 p-4"><h4 class="text-white font-medium mb-1">Project workspaces</h4><p class="text-steel-400 text-[13px]">Multiple projects side by side, each with its own sessions.</p></div>
+					<div class="lift rounded-xl border hairline bg-ink-900/60 p-4"><h4 class="text-white font-medium mb-1">Session tree</h4><p class="text-steel-400 text-[13px]">Branch conversations, review diffs, resume anywhere.</p></div>
+					<div class="lift rounded-xl border hairline bg-ink-900/60 p-4"><h4 class="text-white font-medium mb-1">Voice mode</h4><p class="text-steel-400 text-[13px]">Speech-to-text and text-to-speech for hands-free coding.</p></div>
+					<div class="lift rounded-xl border hairline bg-ink-900/60 p-4"><h4 class="text-white font-medium mb-1">Model picker</h4><p class="text-steel-400 text-[13px]">Live catalog refresh across every connected provider.</p></div>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<!-- ══ Privacy band ═════════════════════════════════════ -->
+	<section class="relative py-24 border-t hairline smoke-b overflow-hidden">
+		<div class="max-w-6xl mx-auto px-5 text-center">
+			<p class="rise font-mono text-[11px] tracking-[0.35em] uppercase text-steel-500 mb-4">Your data, your rules</p>
+			<h2 class="rise text-3xl md:text-5xl font-semibold text-white tracking-tight leading-tight">Direct-to-provider.<br><em class="font-serif italic font-normal chrome-text">Zero retention.</em></h2>
+			<p class="rise mt-6 text-sm md:text-[15px] text-steel-400 max-w-xl mx-auto leading-relaxed">Messages go straight from your machine to the provider — no middleman, nothing stored, nothing trained on. Local models supported end to end.</p>
+			<div class="rise mt-8 flex flex-wrap justify-center gap-2 max-w-3xl mx-auto" id="provider-chips"></div>
+		</div>
+	</section>
+
+	<!-- ══ Sovereign band ══════════════════════════════════ -->
+	<section class="relative py-24 border-t hairline smoke-a overflow-hidden">
+		<div class="max-w-6xl mx-auto px-5">
+			<div class="rise text-center max-w-2xl mx-auto mb-14">
+				<p class="font-mono text-[11px] tracking-[0.35em] uppercase text-steel-500 mb-4">Project Infra · The A-Tech Corporation</p>
+				<h2 class="text-3xl md:text-5xl font-semibold text-white tracking-tight leading-tight">Sovereign AI begins with<br><em class="font-serif italic font-normal chrome-text">sovereign software.</em></h2>
+				<p class="mt-6 text-sm md:text-[15px] text-steel-400 leading-relaxed">A-Coder is built and maintained in Australia, as part of Project Infra's sovereign AI movement. Your code, your models, your data — no foreign middleman in the loop.</p>
+			</div>
+			<div class="grid md:grid-cols-3 gap-5">
+				<div class="rise rounded-2xl border hairline bg-ink-900 p-6">
+					<p class="text-2xl mb-3">🇦🇺</p>
+					<h3 class="text-white font-semibold mb-1.5">Built &amp; maintained in Australia</h3>
+					<p class="text-[13px] text-steel-400 leading-relaxed">Every line of A-Coder is written and shipped by The A-Tech Corporation from Australia — sovereign software by default, for Australian and New Zealand builders first.</p>
+				</div>
+				<div class="rise rounded-2xl border hairline bg-ink-900 p-6">
+					<p class="font-mono text-[10px] tracking-[0.3em] uppercase text-steel-500 mb-3">Project Infra</p>
+					<h3 class="text-white font-semibold mb-1.5">Own your AI stack</h3>
+					<p class="text-[13px] text-steel-400 leading-relaxed">The movement to run AI on infrastructure you own — open-source tools like llama.cpp and vLLM, on-premise, with data that never leaves your building. A-Coder is its software arm.</p>
+				</div>
+				<div class="rise rounded-2xl border hairline bg-ink-900 p-6">
+					<p class="font-mono text-[10px] tracking-[0.3em] uppercase text-steel-500 mb-3">SCX.ai × Amaara Cloud</p>
+					<h3 class="text-white font-semibold mb-1.5">Australian-hosted frontier models</h3>
+					<p class="text-[13px] text-steel-400 leading-relaxed">We're proud to partner with <a href="https://scx.ai" class="text-steel-200 underline decoration-white/20 hover:decoration-white">SCX.ai</a> to bring Australian-hosted frontier open-weight models to A-Coder — including Project MAGPiE, Australia's sovereign frontier model — courtesy of <a href="https://monitor.atechds.com" class="text-steel-200 underline decoration-white/20 hover:decoration-white">Amaara Cloud</a>, our models-as-a-service platform. One sign-up — the Amaara <a href="https://monitor.atechds.com/pricing/" class="text-steel-200 underline decoration-white/20 hover:decoration-white">Coding plan</a> — and your key works across the entire A-Coder ecosystem, and any other app you like.</p>
+				</div>
+			</div>
+			<div class="rise mt-8 flex flex-wrap justify-center gap-2">
+				<a href="https://theatechcorporation.com" class="font-mono text-xs px-3.5 py-1.5 rounded-lg border hairline bg-ink-900 text-steel-400 hover:text-white transition-colors">theatechcorporation.com ↗</a>
+				<a href="https://infra.atechds.com" class="font-mono text-xs px-3.5 py-1.5 rounded-lg border hairline bg-ink-900 text-steel-400 hover:text-white transition-colors">Project Infra ↗</a>
+				<a href="https://monitor.atechds.com" class="font-mono text-xs px-3.5 py-1.5 rounded-lg border hairline bg-ink-900 text-steel-400 hover:text-white transition-colors">Amaara Cloud ↗</a>
+				<a href="https://scx.ai" class="font-mono text-xs px-3.5 py-1.5 rounded-lg border hairline bg-ink-900 text-steel-400 hover:text-white transition-colors">SCX.ai ↗</a>
+			</div>
+		</div>
+	</section>
+
+	<!-- ══ Plans & services ═══════════════════════════════ -->
+	<section class="relative py-24 border-t hairline">
+		<div class="max-w-6xl mx-auto px-5">
+			<div class="rise text-center max-w-2xl mx-auto mb-14">
+				<p class="font-mono text-[11px] tracking-[0.35em] uppercase text-steel-500 mb-4">Plans &amp; services</p>
+				<h2 class="text-3xl md:text-5xl font-semibold text-white tracking-tight leading-tight">AI to 90%. <em class="font-serif italic font-normal">Humans</em> for the rest.</h2>
+				<p class="mt-6 text-sm md:text-[15px] text-steel-400 leading-relaxed">When the agent needs more power — or a human touch — the system has you covered.</p>
+			</div>
+			<div class="grid md:grid-cols-2 gap-5 max-w-4xl mx-auto">
+				<div class="rise rounded-2xl border hairline bg-ink-900 p-7 relative overflow-hidden">
+					<div class="absolute top-5 right-5 rounded-full bg-white text-black font-mono text-[10px] font-semibold tracking-widest px-2.5 py-1">PRO</div>
+					<p class="font-mono text-[10px] tracking-[0.3em] uppercase text-steel-500 mb-3">A-Coder Pro · $49/month</p>
+					<h3 class="text-white text-xl font-semibold mb-2">The full toolkit, one plan.</h3>
+					<p class="text-[13px] text-steel-400 leading-relaxed mb-5">Access to the best coding models, curated skills, MCP servers, and AI code reviews — powered by our partnership with <a href="https://senix.dev" class="text-steel-200 underline decoration-white/20 hover:decoration-white">Senix</a>, behavioral PR review with risk tags the moment you open a pull request. Also available standalone through Senix directly.</p>
+					<a href="https://senix.dev" class="text-sm text-white font-medium inline-flex items-center gap-1.5 hover:gap-3 transition-all">Explore Senix reviews <span aria-hidden="true">→</span></a>
+				</div>
+				<div class="rise rounded-2xl border hairline bg-ink-900 p-7">
+					<p class="font-mono text-[10px] tracking-[0.3em] uppercase text-steel-500 mb-3">A-Coder Tandem · with Innowise</p>
+					<h3 class="text-white text-xl font-semibold mb-2">3,500 human developers, on call.</h3>
+					<p class="text-[13px] text-steel-400 leading-relaxed mb-5">AI gets projects 80–90% complete. When your agent hits a wall it simply can't climb, Tandem escalates to real engineers — in partnership with <a href="https://innowise.com" class="text-steel-200 underline decoration-white/20 hover:decoration-white">Innowise</a>, a full-cycle software development company with 3,500+ IT professionals — who take you to 100%. Usually under $999. One-time fee, no subscription.</p>
+					<a href="https://theatechcorporation.com" class="text-sm text-white font-medium inline-flex items-center gap-1.5 hover:gap-3 transition-all">Escalate a project <span aria-hidden="true">→</span></a>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<!-- ══ Install ══════════════════════════════════════════ -->
+	<section id="install" class="relative py-24 border-t hairline scroll-mt-16">
+		<div class="max-w-6xl mx-auto px-5">
+			<div class="rise text-center mb-14">
+				<p class="font-mono text-[11px] tracking-[0.35em] uppercase text-steel-500 mb-4">Install</p>
+				<h2 class="text-3xl md:text-5xl font-semibold text-white tracking-tight">Up and running <em class="font-serif italic font-normal">in one command.</em></h2>
+			</div>
+			<div class="rise grid md:grid-cols-3 gap-5">
+				<!-- CLI -->
+				<div class="rise rounded-2xl border hairline bg-ink-900 p-6 flex flex-col">
+					<div class="flex items-center justify-between mb-4">
+						<h3 class="text-white font-semibold">A-Coder CLI</h3>
+						<p class="font-mono text-[10px] tracking-[0.2em] uppercase text-steel-600">macOS / Linux / Windows</p>
+					</div>
+					<div class="relative mt-2">
+						<pre class="font-mono text-[11px] leading-5 text-steel-300 bg-ink-950 border hairline rounded-xl p-4 pr-10 overflow-x-auto"><code id="cmd-cli-sh">curl -sSf https://raw.githubusercontent.com/hamishfromatech/a-coder-cli/feat/desktop-unified-release/install-a-coder.sh | bash</code></pre>
+						<button data-copy="cmd-cli-sh" class="copy-btn absolute top-2.5 right-2.5 text-steel-600 hover:text-white transition-colors" aria-label="Copy command">
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>
+						</button>
+					</div>
+					<div class="relative mt-2.5">
+						<pre class="font-mono text-[11px] leading-5 text-steel-300 bg-ink-950 border hairline rounded-xl p-4 pr-10 overflow-x-auto"><code id="cmd-cli-ps">powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/hamishfromatech/a-coder-cli/feat/desktop-unified-release/Install-A-Coder.ps1 | iex"</code></pre>
+						<button data-copy="cmd-cli-ps" class="copy-btn absolute top-2.5 right-2.5 text-steel-600 hover:text-white transition-colors" aria-label="Copy command">
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>
+						</button>
+					</div>
+					<p class="mt-4 text-[13px] text-steel-500">Then run <code class="font-mono text-steel-200">a-coder-cli</code> in any project. <a href="docs.html" class="text-steel-200 underline decoration-white/20 hover:decoration-white">Read the docs →</a></p>
+				</div>
+
+				<!-- Desktop -->
+				<div class="rise rounded-2xl border hairline bg-ink-900 p-6 flex flex-col">
+					<div class="flex items-center justify-between mb-4">
+						<h3 class="text-white font-semibold">A-Coder Desktop</h3>
+						<p class="font-mono text-[10px] tracking-[0.2em] uppercase text-steel-600">macOS / Win / Linux</p>
+					</div>
+					<img src="assets/desktop-icon.png" alt="A-Coder Desktop" class="w-20 h-20 rounded-2xl mb-5">
+					<p class="text-[13px] text-steel-400 leading-relaxed mb-5">Native installers from GitHub Releases — or, with the CLI installed, just run <code class="font-mono text-steel-200">a-coder-cli --desktop</code>.</p>
+					<a href="https://github.com/hamishfromatech/a-coder-cli/releases" class="mt-auto inline-flex justify-center items-center rounded-full bg-white text-black text-sm font-medium px-5 py-2.5 hover:bg-steel-200 transition-colors">Download installers</a>
+				</div>
+
+				<!-- IDE -->
+				<div class="rise rounded-2xl border hairline bg-ink-900 p-6">
+					<div class="flex items-center justify-between mb-4">
+						<h3 class="text-white font-semibold">A-Coder IDE</h3>
+						<p class="font-mono text-[10px] tracking-[0.2em] uppercase text-steel-600">macOS / Linux / Windows</p>
+					</div>
+					<div class="relative mt-2">
+						<pre class="font-mono text-[11px] leading-5 text-steel-300 bg-ink-950 border hairline rounded-xl p-4 pr-10 overflow-x-auto"><code id="cmd-ide-sh">curl -fsSL https://raw.githubusercontent.com/hamishfromatech/A-Coder/main/install.sh | bash</code></pre>
+						<button data-copy="cmd-ide-sh" class="copy-btn absolute top-2.5 right-2.5 text-steel-600 hover:text-white transition-colors" aria-label="Copy command">
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>
+						</button>
+					</div>
+					<div class="relative mt-2.5">
+						<pre class="font-mono text-[11px] leading-5 text-steel-300 bg-ink-950 border hairline rounded-xl p-4 pr-10 overflow-x-auto"><code id="cmd-ide-ps">irm https://raw.githubusercontent.com/hamishfromatech/A-Coder/main/install.ps1 | iex</code></pre>
+						<button data-copy="cmd-ide-ps" class="copy-btn absolute top-2.5 right-2.5 text-steel-600 hover:text-white transition-colors" aria-label="Copy command">
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>
+						</button>
+					</div>
+					<p class="mt-4 text-[13px] text-steel-500">Or grab <code class="font-mono text-steel-200">.dmg</code> / <code class="font-mono text-steel-200">.exe</code> / <code class="font-mono text-steel-200">.deb</code> from the <a href="https://github.com/hamishfromatech/A-Coder/releases/latest" class="text-steel-200 underline decoration-white/20 hover:decoration-white">latest release</a>. Checksum-verified.</p>
+				</div>
+				<p class="rise text-center font-mono text-[11px] text-steel-600 mt-6">Free forever for individuals, solo founders &amp; businesses under $10M USD revenue. Enterprises license A-Coder for company-wide use — <a href="pricing.html" class="text-steel-400 underline decoration-white/20 hover:text-white">see pricing</a>.</p>
+			</div>
+		</div>
+	</section>
+
+	<!-- ══ Final CTA ════════════════════════════════════════ -->
+	<section class="relative py-28 border-t hairline overflow-hidden">
+		<div class="absolute inset-0 smoke-a"></div>
+		<div class="relative max-w-4xl mx-auto px-5 text-center">
+			<img src="assets/logo-trans.png" alt="" class="rise w-14 h-14 mx-auto mb-8">
+			<h2 class="rise text-3xl md:text-5xl font-semibold text-white tracking-tight leading-tight">Code with an agent,<br><em class="font-serif italic chrome-text font-normal">not autocomplete.</em></h2>
+			<p class="rise mt-6 text-steel-400 text-[15px] max-w-lg mx-auto">One engine, three surfaces, your models. Free and open source.</p>
+			<div class="rise mt-9 flex flex-col sm:flex-row gap-3 justify-center">
+				<a href="#install" class="inline-flex justify-center items-center rounded-full bg-white text-black font-medium px-7 py-3 hover:bg-steel-200 transition-colors">Install A-Coder</a>
+				<a href="https://github.com/hamishfromatech/a-coder-cli" class="inline-flex justify-center items-center rounded-full border hairline text-steel-200 font-medium px-7 py-3 hover:bg-white/5 hover:text-white transition-colors">Star on GitHub</a>
+			</div>
+		</div>
+	</section>
+
+	<!-- ══ Footer ═══════════════════════════════════════════ -->
+	<footer class="border-t hairline py-14 bg-ink-900/40">
+		<div class="max-w-6xl mx-auto px-5 grid md:grid-cols-4 gap-10 mb-12">
+			<div>
+				<div class="flex items-center gap-2.5 mb-3">
+					<img src="assets/logo-trans.png" alt="A-Coder mark" class="w-7 h-7">
+					<p class="text-white font-semibold tracking-[0.08em] text-sm">A-CODER</p>
+				</div>
+				<p class="text-[12px] text-steel-600 leading-relaxed">One self-extensible agent engine.<br>IDE · CLI · Desktop.</p>
+			</div>
+			<div>
+				<p class="font-mono text-[10px] tracking-[0.3em] uppercase text-steel-600 mb-3">Products</p>
+				<ul class="space-y-2 text-sm">
+					<li><a href="#ide" class="text-steel-400 hover:text-white transition-colors">A-Coder IDE</a></li>
+					<li><a href="#cli" class="text-steel-400 hover:text-white transition-colors">A-Coder CLI</a></li>
+					<li><a href="#desktop" class="text-steel-400 hover:text-white transition-colors">A-Coder Desktop</a></li>
+						<li><a href="pricing.html" class="text-steel-400 hover:text-white transition-colors">Pricing</a></li>
+				</ul>
+			</div>
+			<div>
+				<p class="font-mono text-[10px] tracking-[0.3em] uppercase text-steel-600 mb-3">Resources</p>
+				<ul class="space-y-2 text-sm">
+					<li><a href="https://github.com/hamishfromatech/a-coder-cli" class="text-steel-400 hover:text-white transition-colors">CLI — GitHub</a></li>
+					<li><a href="https://github.com/hamishfromatech/A-Coder" class="text-steel-400 hover:text-white transition-colors">IDE — GitHub</a></li>
+					<li><a href="https://github.com/hamishfromatech/a-coder-cli/releases" class="text-steel-400 hover:text-white transition-colors">Releases</a></li>
+					<li><a href="https://senix.dev" class="text-steel-400 hover:text-white transition-colors">Senix — AI code reviews</a></li>
+					<li><a href="https://discord.com/invite/3cU7Bz4UPx" class="text-steel-400 hover:text-white transition-colors">Discord</a></li>
+				</ul>
+			</div>
+			<div>
+				<p class="font-mono text-[10px] tracking-[0.3em] uppercase text-steel-600 mb-3">Company</p>
+				<p class="text-[12px] text-steel-600 leading-relaxed">© 2026 The A-Tech Corporation PTY LTD.<br>Made in Australia. 🇦🇺<br>All rights reserved.</p>
+				<ul class="text-[12px] mt-3 space-y-1.5">
+					<li><a href="https://theatechcorporation.com" class="text-steel-500 hover:text-white transition-colors">The A-Tech Corporation ↗</a></li>
+					<li><a href="https://infra.atechds.com" class="text-steel-500 hover:text-white transition-colors">Project Infra ↗</a></li>
+					<li><a href="https://monitor.atechds.com" class="text-steel-500 hover:text-white transition-colors">Amaara Cloud ↗</a></li>
+				</ul>
+			</div>
+		</div>
+		<div class="max-w-6xl mx-auto px-5 pt-6 border-t hairline flex flex-col md:flex-row items-center justify-between gap-3">
+			<p class="font-mono text-[10px] text-steel-700">Built by the A-Coder agent, naturally.</p>
+			<p class="font-mono text-[10px] text-steel-700">v0.80.85 · feat/desktop-unified-release</p>
+		</div>
+	</footer>
+
+	<script>
+		const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+		// ── Mobile menu
+		const menuBtn = document.getElementById('menu-btn');
+		const menu = document.getElementById('menu');
+		menuBtn.addEventListener('click', () => menu.classList.toggle('hidden'));
+		menu.querySelectorAll('a').forEach((a) => a.addEventListener('click', () => menu.classList.add('hidden')));
+
+		// ── Copy buttons
+		document.querySelectorAll('.copy-btn').forEach((btn) => {
+			btn.addEventListener('click', () => {
+				const code = document.getElementById(btn.dataset.copy);
+				navigator.clipboard.writeText(code.textContent.trim()).then(() => {
+					btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>';
+					setTimeout(() => {
+						btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>';
+					}, 1600);
+				});
+			});
+		});
+
+		// ── Providers
+		const providers = ['Anthropic', 'OpenAI', 'Google', 'xAI', 'Mistral', 'Groq', 'DeepSeek', 'OpenRouter', 'Vertex AI', 'Azure', 'AWS Bedrock', 'Ollama', 'LM Studio', 'vLLM', 'llama.cpp', 'Amaara Cloud', 'SCX.ai'];
+		const chip = (name) => `<span class="font-mono text-xs px-3.5 py-1.5 rounded-lg border hairline bg-ink-900 text-steel-400">${name}</span>`;
+		document.getElementById('mq-a').innerHTML = providers.map(chip).join('');
+		document.getElementById('mq-b').innerHTML = providers.map(chip).join('');
+		document.getElementById('provider-chips').innerHTML = providers.map(chip).join('');
+
+		// ── Scroll reveal
+		const io = new IntersectionObserver((entries) => {
+			for (const e of entries) if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+		}, { threshold: 0.12 });
+		document.querySelectorAll('.rise').forEach((el, i) => {
+			el.style.transitionDelay = `${Math.min((i % 3) * 80, 160)}ms`;
+			io.observe(el);
+		});
+
+		// ── Count-up stats
+		const counters = document.querySelectorAll('.count');
+		const cio = new IntersectionObserver((entries) => {
+			for (const e of entries) {
+				if (!e.isIntersecting) continue;
+				const el = e.target; cio.unobserve(el);
+				const to = parseInt(el.dataset.to, 10);
+				if (reduced) { el.textContent = String(to); continue; }
+				const t0 = performance.now();
+				const tick = (t) => {
+					const p = Math.min((t - t0) / 1200, 1);
+					el.textContent = String(Math.round(to * (1 - Math.pow(1 - p, 3))));
+					if (p < 1) requestAnimationFrame(tick);
+				};
+				requestAnimationFrame(tick);
+			}
+		}, { threshold: 0.5 });
+		counters.forEach((c) => cio.observe(c));
+
+		// ── Hero spotlight
+		const hero = document.getElementById('top');
+		if (!reduced) hero.addEventListener('pointermove', (ev) => {
+			const r = hero.getBoundingClientRect();
+			document.documentElement.style.setProperty('--mx', `${((ev.clientX - r.left) / r.width) * 100}%`);
+			document.documentElement.style.setProperty('--my', `${((ev.clientY - r.top) / r.height) * 100}%`);
+		});
+
+		// ── Terminal typing loop
+		const term = document.getElementById('term');
+		const LINES = [
+			{ cls: 'text-steel-600', html: '<span class="text-steel-500">$</span> <span class="text-white">a-coder-cli</span>' },
+			{ cls: 'text-steel-500', html: '◆ A-Coder CLI · session #42 · anthropic/claude-sonnet-4-5', pauseAfter: 400 },
+			{ cls: 'text-steel-200', html: '› the auth tests are failing — find out why and fix it', pauseAfter: 350 },
+			{ cls: 'text-steel-400', html: '<span class="text-emerald-400/80">✓</span> read auth.spec.ts · 142 lines' },
+			{ cls: 'text-steel-400', html: '<span class="text-steel-500">⌕</span> grep "beforeEach" test/ · 8 matches' },
+			{ cls: 'text-steel-400', html: '<span class="text-amber-400/80">✎</span> edit auth.spec.ts · +12 −4' },
+			{ cls: 'text-steel-400', html: '<span class="text-emerald-400/80">✓</span> bash npm test · 3.2s' },
+			{ cls: 'text-steel-300', html: 'The mock registry was caching tokens between cases. Cleared it in <span class="text-white">beforeEach</span> — all <span class="text-white">14 tests</span> pass.', hold: 4200 },
+		];
+		if (reduced) {
+			term.innerHTML = LINES.map((l) => `<div class="${l.cls} mb-1">${l.html}</div>`).join('');
+		} else {
+			const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+			async function play() {
+				while (true) {
+					term.innerHTML = '';
+					for (const line of LINES) {
+						const div = document.createElement('div');
+						div.className = `${line.cls} mb-1 caret`;
+						term.appendChild(div);
+						const plain = line.html; // type by revealing tags progressively
+						let i = 0;
+						while (i < plain.length) {
+							const next = plain.indexOf('<', i);
+							if (next === i) {
+								const end = plain.indexOf('>', i);
+								i = end === -1 ? plain.length : end + 1;
+							} else if (next === -1) {
+								i = plain.length;
+							} else {
+								i = Math.min(next, i + 3);
+							}
+							div.innerHTML = plain.slice(0, i);
+							await sleep(14);
+						}
+						div.classList.remove('caret');
+						await sleep(line.pauseAfter || 120);
+					}
+					const last = term.lastElementChild;
+					last.classList.add('caret');
+					await sleep(LINES[LINES.length - 1].hold || 3000);
+				}
+			}
+			play();
+		}
+	</script>
+</body>
+</html>

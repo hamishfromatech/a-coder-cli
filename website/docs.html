@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Documentation — A-Coder IDE, CLI &amp; Desktop</title>
+	<meta name="description" content="Documentation for the A-Coder system: the AI-native IDE, the terminal CLI agent, and the native desktop app. Install, configure, and extend.">
+	<link rel="icon" type="image/png" href="assets/favicon.png">
+	<script src="https://cdn.tailwindcss.com"></script>
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+	<script>
+		tailwind.config = {
+			theme: {
+				extend: {
+					colors: {
+						ink: { 950: '#050507', 900: '#0a0a0d', 800: '#101014', 700: '#17171c', 600: '#22222a' },
+						steel: { 200: '#dfe3ea', 300: '#c7ccd6', 400: '#9aa1ad', 500: '#71787f', 600: '#4a4f55', 700: '#2e3138' },
+					},
+					fontFamily: {
+						sans: ['Outfit', 'system-ui', 'sans-serif'],
+						mono: ['"JetBrains Mono"', 'monospace'],
+						serif: ['"Instrument Serif"', 'Georgia', 'serif'],
+					},
+				},
+			},
+		};
+	</script>
+	<style>
+		.grain {
+			background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="180" height="180"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" stitchTiles="stitch"/></filter><rect width="100%" height="100%" filter="url(%23n)"/></svg>');
+			opacity: 0.055;
+			mix-blend-mode: overlay;
+		}
+		.hairline { border-color: rgba(255,255,255,0.08); }
+		.smoke-a { background: radial-gradient(ellipse 55% 42% at 18% 8%, rgba(122,132,152,0.09), transparent 70%), radial-gradient(ellipse 48% 38% at 86% 28%, rgba(160,172,196,0.07), transparent 70%); }
+		.doc-link { border-left: 1px solid transparent; }
+		.doc-link:hover { color: #fff; }
+		.doc-link.active { color: #fff; border-left-color: rgba(255,255,255,0.55); }
+		.doc-link { border-color: rgba(255,255,255,0.08); }
+		pre::-webkit-scrollbar { display: none; }
+		::selection { background: #e6e9ee; color: #050507; }
+		::-webkit-scrollbar { width: 10px; }
+		::-webkit-scrollbar-track { background: #050507; }
+		::-webkit-scrollbar-thumb { background: #22222a; border-radius: 6px; }
+		details summary::-webkit-details-marker { display: none; }
+	</style>
+</head>
+<body class="bg-ink-950 text-steel-400 font-sans antialiased">
+
+	<div class="grain fixed inset-0 z-[60] pointer-events-none"></div>
+
+	<!-- ══ Nav ══════════════════════════════════════════════ -->
+	<header class="fixed top-0 inset-x-0 z-50 bg-ink-950/70 backdrop-blur-xl">
+		<nav class="max-w-6xl mx-auto px-5 h-16 flex items-center justify-between border-b hairline">
+			<a href="index.html" class="flex items-center gap-2.5">
+				<img src="assets/logo-trans.png" alt="A-Coder mark" class="w-7 h-7">
+				<span class="text-white font-semibold tracking-[0.08em]">A-CODER</span>
+				<span class="font-mono text-[10px] text-steel-600 mt-0.5 hidden sm:inline">/ docs</span>
+			</a>
+			<div class="hidden md:flex items-center gap-8 text-[13px]">
+				<a href="index.html" class="text-steel-400 hover:text-white transition-colors">Home</a>
+				<a href="index.html#ide" class="text-steel-400 hover:text-white transition-colors">IDE</a>
+				<a href="index.html#cli" class="text-steel-400 hover:text-white transition-colors">CLI</a>
+				<a href="index.html#desktop" class="text-steel-400 hover:text-white transition-colors">Desktop</a>
+				<a href="https://github.com/hamishfromatech/a-coder-cli" class="text-steel-400 hover:text-white transition-colors">GitHub</a>
+				<a href="pricing.html" class="text-steel-400 hover:text-white transition-colors">Pricing</a>
+			</div>
+			<a href="index.html#install" class="hidden md:inline-flex items-center rounded-full bg-white text-black text-[13px] font-medium px-4 py-1.5 hover:bg-steel-200 transition-colors">Get started</a>
+			<button id="menu-btn" class="md:hidden text-steel-300 p-1" aria-label="Toggle menu">
+				<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M4 7h16M4 12h16M4 17h16"/></svg>
+			</button>
+		</nav>
+		<div id="menu" class="hidden md:hidden bg-ink-950/95 border-b hairline px-5 py-4 flex flex-col gap-3 text-sm">
+			<a href="index.html" class="text-steel-300">Home</a>
+			<a href="index.html#ide" class="text-steel-300">IDE</a>
+			<a href="index.html#cli" class="text-steel-300">CLI</a>
+			<a href="index.html#desktop" class="text-steel-300">Desktop</a>
+			<a href="index.html#install" class="text-steel-300">Install</a>
+			<a href="pricing.html" class="text-steel-300">Pricing</a>
+			<a href="https://github.com/hamishfromatech/a-coder-cli" class="text-steel-300">GitHub</a>
+		</div>
+	</header>
+
+	<!-- ══ Page header ══════════════════════════════════════ -->
+	<div class="pt-32 pb-10 smoke-a border-b hairline">
+		<div class="max-w-6xl mx-auto px-5">
+			<p class="font-mono text-[11px] tracking-[0.35em] uppercase text-steel-500 mb-4">Documentation</p>
+			<h1 class="text-3xl md:text-5xl font-semibold text-white tracking-tight">Everything <em class="font-serif italic font-normal">three surfaces</em> can do.</h1>
+			<p class="mt-4 max-w-2xl text-steel-400 leading-relaxed text-[15px]">Install, configure, and extend the A-Coder system. One engine — an AI-native IDE, a terminal agent, and a native desktop app.</p>
+		</div>
+	</div>
+
+	<!-- ══ Docs layout ══════════════════════════════════════ -->
+	<div class="max-w-6xl mx-auto px-5 pt-10 pb-24 flex gap-12">
+
+		<!-- Sidebar -->
+		<aside class="hidden lg:block w-56 shrink-0">
+			<nav id="toc" class="sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto pr-2 flex flex-col gap-1 text-[13px]" aria-label="Table of contents">
+				<a href="#overview" class="doc-link pl-4 py-1.5 text-steel-400">Overview</a>
+				<a href="#getting-started" class="doc-link pl-4 py-1.5 text-steel-400">Getting started</a>
+				<p class="font-mono text-[10px] tracking-[0.3em] uppercase text-steel-300 mt-5 mb-2 pl-4">A-Coder CLI</p>
+				<a href="#cli-tour" class="doc-link pl-4 py-1.5 text-steel-400">Interactive tour</a>
+				<a href="#cli-editor" class="doc-link pl-4 py-1.5 text-steel-400">The editor</a>
+				<a href="#cli-commands" class="doc-link pl-4 py-1.5 text-steel-400">Commands</a>
+				<a href="#cli-keys" class="doc-link pl-4 py-1.5 text-steel-400">Shortcuts &amp; queue</a>
+				<a href="#cli-sessions" class="doc-link pl-4 py-1.5 text-steel-400">Sessions &amp; branching</a>
+				<a href="#cli-settings" class="doc-link pl-4 py-1.5 text-steel-400">Settings &amp; trust</a>
+				<a href="#cli-context" class="doc-link pl-4 py-1.5 text-steel-400">Context files</a>
+				<a href="#cli-custom" class="doc-link pl-4 py-1.5 text-steel-400">Customization</a>
+				<a href="#cli-reference" class="doc-link pl-4 py-1.5 text-steel-400">CLI reference</a>
+				<p class="font-mono text-[10px] tracking-[0.3em] uppercase text-steel-300 mt-5 mb-2 pl-4">A-Coder IDE</p>
+				<a href="#ide-install" class="doc-link pl-4 py-1.5 text-steel-400">Install</a>
+				<a href="#ide-modes" class="doc-link pl-4 py-1.5 text-steel-400">Four modes</a>
+				<a href="#ide-features" class="doc-link pl-4 py-1.5 text-steel-400">Key features</a>
+				<p class="font-mono text-[10px] tracking-[0.3em] uppercase text-steel-300 mt-5 mb-2 pl-4">A-Coder Desktop</p>
+				<a href="#dt-install" class="doc-link pl-4 py-1.5 text-steel-400">Install</a>
+				<a href="#dt-interface" class="doc-link pl-4 py-1.5 text-steel-400">Interface &amp; settings</a>
+				<p class="font-mono text-[10px] tracking-[0.3em] uppercase text-steel-300 mt-5 mb-2 pl-4">Shared</p>
+				<a href="#providers" class="doc-link pl-4 py-1.5 text-steel-400">Models &amp; providers</a>
+				<a href="#mcp" class="doc-link pl-4 py-1.5 text-steel-400">MCP</a>
+				<a href="#plans" class="doc-link pl-4 py-1.5 text-steel-400">Plans &amp; services</a>
+				<a href="#licensing" class="doc-link pl-4 py-1.5 text-steel-400">Licensing</a>
+				<a href="#privacy" class="doc-link pl-4 py-1.5 text-steel-400">Privacy</a>
+			</nav>
+		</aside>
+
+		<!-- Content -->
+		<main class="min-w-0 flex-1 max-w-3xl">
+
+			<!-- Mobile TOC -->
+			<details class="lg:hidden mb-10 rounded-xl border hairline bg-ink-900">
+				<summary class="px-4 py-3 text-sm text-steel-200 cursor-pointer select-none">On this page ▾</summary>
+				<nav class="px-4 pb-4 flex flex-col gap-1 text-[13px] border-t hairline pt-3 mt-3">
+					<a href="#overview" class="py-1 text-steel-400">Overview</a>
+					<a href="#getting-started" class="py-1 text-steel-400">Getting started</a>
+					<a href="#cli-tour" class="py-1 text-steel-400">CLI — interactive tour</a>
+					<a href="#cli-commands" class="py-1 text-steel-400">CLI — commands</a>
+					<a href="#cli-sessions" class="py-1 text-steel-400">CLI — sessions</a>
+					<a href="#cli-custom" class="py-1 text-steel-400">CLI — customization</a>
+					<a href="#cli-reference" class="py-1 text-steel-400">CLI — reference</a>
+					<a href="#ide-modes" class="py-1 text-steel-400">IDE — modes &amp; features</a>
+					<a href="#dt-interface" class="py-1 text-steel-400">Desktop — interface</a>
+					<a href="#providers" class="py-1 text-steel-400">Models &amp; providers</a>
+					<a href="#mcp" class="py-1 text-steel-400">MCP</a>
+					<a href="#plans" class="py-1 text-steel-400">Plans &amp; services</a>
+					<a href="#licensing" class="py-1 text-steel-400">Licensing</a>
+					<a href="#privacy" class="py-1 text-steel-400">Privacy</a>
+				</nav>
+			</details>
+
+			<!-- ── Overview ── -->
+			<section id="overview" class="scroll-mt-24 mb-16">
+				<p class="font-mono text-[11px] tracking-[0.35em] uppercase text-steel-500 mb-3">01</p>
+				<h2 class="text-2xl md:text-3xl font-semibold text-white tracking-tight mb-4">One engine, three surfaces</h2>
+				<p class="text-[15px] leading-relaxed mb-4">Every A-Coder surface runs the same agent engine: the same tools, the same session format, the same provider configuration, the same extension model. Configure once — in <code class="font-mono text-[13px] text-steel-200">~/.a-coder/agent/</code> — and every surface picks it up.</p>
+				<div class="grid sm:grid-cols-3 gap-4">
+					<div class="rounded-xl border hairline bg-ink-900 p-4">
+						<p class="text-white text-sm font-medium mb-1">A-Coder CLI</p>
+						<p class="text-[13px] text-steel-400">The engine itself. Interactive terminal agent, scriptable in print/JSON/RPC modes.</p>
+					</div>
+					<div class="rounded-xl border hairline bg-ink-900 p-4">
+						<p class="text-white text-sm font-medium mb-1">A-Coder IDE</p>
+						<p class="text-[13px] text-steel-400">VS Code-based editor with the agent built into the sidebar and inline edits.</p>
+					</div>
+					<div class="rounded-xl border hairline bg-ink-900 p-4">
+						<p class="text-white text-sm font-medium mb-1">A-Coder Desktop</p>
+						<p class="text-[13px] text-steel-400">Native Tauri app wrapping the CLI engine — workspaces, session tree, voice.</p>
+					</div>
+				</div>
+			</section>
+
+			<!-- ── Getting started ── -->
+			<section id="getting-started" class="scroll-mt-24 mb-16">
+				<p class="font-mono text-[11px] tracking-[0.35em] uppercase text-steel-500 mb-3">02</p>
+				<h2 class="text-2xl md:text-3xl font-semibold text-white tracking-tight mb-6">Getting started</h2>
+
+				<h3 class="text-white font-medium mb-2">A-Coder CLI</h3>
+				<p class="text-[14px] mb-3">One-line install (self-contained binary), then run <code class="font-mono text-[13px] text-steel-200">a-coder-cli</code> in any project:</p>
+				<div class="relative mb-3">
+					<pre class="font-mono text-[12px] leading-6 text-steel-300 bg-ink-900 border hairline rounded-xl p-4 pr-10 overflow-x-auto"><code id="d-cmd-1">curl -sSf https://raw.githubusercontent.com/hamishfromatech/a-coder-cli/feat/desktop-unified-release/install-a-coder.sh | bash</code></pre>
+					<button data-copy="d-cmd-1" class="copy-btn absolute top-2.5 right-2.5 text-steel-600 hover:text-white" aria-label="Copy">
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>
+					</button>
+				</div>
+				<p class="text-[14px] mb-3">Authenticate with an API key or an existing subscription:</p>
+				<pre class="font-mono text-[12px] leading-6 text-steel-300 bg-ink-900 border hairline rounded-xl p-4 overflow-x-auto mb-6"><code>export ANTHROPIC_API_KEY=sk-ant-...
+a-coder-cli            # or: /login to use Claude Pro/Max, ChatGPT, Copilot</code></pre>
+
+				<h3 class="text-white font-medium mb-2">A-Coder IDE</h3>
+				<p class="text-[14px] mb-3">Installer script (macOS/Linux) — Windows uses <code class="font-mono text-[13px] text-steel-200">install.ps1</code>:</p>
+				<div class="relative mb-6">
+					<pre class="font-mono text-[12px] leading-6 text-steel-300 bg-ink-900 border hairline rounded-xl p-4 pr-10 overflow-x-auto"><code id="d-cmd-2">curl -fsSL https://raw.githubusercontent.com/hamishfromatech/A-Coder/main/install.sh | bash</code></pre>
+					<button data-copy="d-cmd-2" class="copy-btn absolute top-2.5 right-2.5 text-steel-600 hover:text-white" aria-label="Copy">
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>
+					</button>
+				</div>
+
+				<h3 class="text-white font-medium mb-2">A-Coder Desktop</h3>
+				<p class="text-[14px] mb-4">Requires the CLI on your <code class="font-mono text-[13px] text-steel-200">PATH</code> (Node 22+). Grab an installer from <a href="https://github.com/hamishfromatech/a-coder-cli/releases" class="text-steel-200 underline decoration-white/20 hover:decoration-white">GitHub Releases</a> — or launch it straight from the terminal:</p>
+				<pre class="font-mono text-[12px] leading-6 text-steel-300 bg-ink-900 border hairline rounded-xl p-4 overflow-x-auto mb-2"><code>a-coder-cli --desktop</code></pre>
+				<p class="text-[13px] text-steel-500">Set <code class="font-mono text-steel-300">A_CODER_DESKTOP_BINARY</code> to point at a custom build, or <code class="font-mono text-steel-300">A_CODER_DESKTOP_DEV=1</code> to run via <code class="font-mono text-steel-300">tauri dev</code> from a checkout.</p>
+			</section>
+
+			<!-- ════════ CLI ════════ -->
+			<section id="cli-tour" class="scroll-mt-24 mb-16 pt-10 border-t hairline">
+				<p class="font-mono text-[11px] tracking-[0.35em] uppercase text-steel-500 mb-3">A-Coder CLI</p>
+				<h2 class="text-2xl md:text-3xl font-semibold text-white tracking-tight mb-4">The interactive tour</h2>
+				<p class="text-[15px] leading-relaxed mb-5">From top to bottom:</p>
+				<ul class="space-y-3 text-[14px] leading-relaxed">
+					<li class="flex gap-3"><span class="font-mono text-steel-600 mt-0.5">▸</span><span><span class="text-steel-200">Startup header</span> — active shortcuts (<code class="font-mono text-[13px] text-steel-200">/hotkeys</code> for all), loaded <code class="font-mono text-[13px] text-steel-200">AGENTS.md</code> files, prompt templates, skills, and extensions.</span></li>
+					<li class="flex gap-3"><span class="font-mono text-steel-600 mt-0.5">▸</span><span><span class="text-steel-200">Messages</span> — your prompts, assistant replies, tool calls with glyph + stats result cards, notices, and extension UI.</span></li>
+					<li class="flex gap-3"><span class="font-mono text-steel-600 mt-0.5">▸</span><span><span class="text-steel-200">Editor</span> — where you type; the border color indicates the thinking level.</span></li>
+					<li class="flex gap-3"><span class="font-mono text-steel-600 mt-0.5">▸</span><span><span class="text-steel-200">Status rail &amp; footer</span> — background-agent status, working directory, token/cache usage, cost, context left, current model.</span></li>
+				</ul>
+			</section>
+
+			<section id="cli-editor" class="scroll-mt-24 mb-16">
+				<h2 class="text-2xl md:text-3xl font-semibold text-white tracking-tight mb-4">The editor</h2>
+				<div class="overflow-x-auto rounded-xl border hairline">
+					<table class="w-full text-[13px] min-w-[560px]">
+						<tbody class="divide-y hairline">
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 text-steel-300 font-mono whitespace-nowrap align-top">Type <span class="text-white">@</span></td><td class="px-4 py-2.5 text-steel-400">Fuzzy-search and reference project files</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 text-steel-300 font-mono whitespace-nowrap align-top">Tab</td><td class="px-4 py-2.5 text-steel-400">Complete paths</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 text-steel-300 font-mono whitespace-nowrap align-top">Shift+Enter</td><td class="px-4 py-2.5 text-steel-400">Multi-line input (Ctrl+Enter on Windows Terminal)</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 text-steel-300 font-mono whitespace-nowrap align-top">Ctrl+G</td><td class="px-4 py-2.5 text-steel-400">Open an external editor (<code class="font-mono text-steel-300">$VISUAL</code>/<code class="font-mono text-steel-300">$EDITOR</code>)</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 text-steel-300 font-mono whitespace-nowrap align-top">Ctrl+V</td><td class="px-4 py-2.5 text-steel-400">Paste images (Alt+V on Windows), or drag onto the terminal</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 text-steel-300 font-mono whitespace-nowrap align-top"><span class="text-white">!</span>command</td><td class="px-4 py-2.5 text-steel-400">Run bash and send output to the model; <span class="text-white">!!</span> runs without sending</td></tr>
+						</tbody>
+					</table>
+				</div>
+			</section>
+
+			<section id="cli-commands" class="scroll-mt-24 mb-16">
+				<h2 class="text-2xl md:text-3xl font-semibold text-white tracking-tight mb-4">Commands</h2>
+				<p class="text-[14px] mb-4">Type <code class="font-mono text-[13px] text-steel-200">/</code> in the editor. Skills appear as <code class="font-mono text-[13px] text-steel-200">/skill:name</code>, prompt templates expand as <code class="font-mono text-[13px] text-steel-200">/templatename</code>, and extensions can register their own.</p>
+				<div class="overflow-x-auto rounded-xl border hairline">
+					<table class="w-full text-[13px] min-w-[560px]">
+						<tbody class="divide-y hairline">
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap align-top">/login, /logout</td><td class="px-4 py-2.5 text-steel-400">OAuth authentication for subscriptions</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap align-top">/model</td><td class="px-4 py-2.5 text-steel-400">Switch models — fetches a fresh catalog from every provider each time it opens</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap align-top">/scoped-models</td><td class="px-4 py-2.5 text-steel-400">Enable/disable models for Ctrl+P cycling</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap align-top">/settings</td><td class="px-4 py-2.5 text-steel-400">Thinking level, theme, message delivery, transport</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap align-top">/resume, /new</td><td class="px-4 py-2.5 text-steel-400">Pick from previous sessions, or start fresh</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap align-top">/session</td><td class="px-4 py-2.5 text-steel-400">Session info — file, ID, messages, tokens, cost</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap align-top">/tree</td><td class="px-4 py-2.5 text-steel-400">Jump to any point in the session tree and continue from there</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap align-top">/fork, /clone</td><td class="px-4 py-2.5 text-steel-400">Branch a session from a previous message, or duplicate the current branch</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap align-top">/compact [prompt]</td><td class="px-4 py-2.5 text-steel-400">Manually compact context with optional instructions</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap align-top">/export, /import</td><td class="px-4 py-2.5 text-steel-400">Export session to HTML/JSONL, or import and resume one</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap align-top">/share</td><td class="px-4 py-2.5 text-steel-400">Upload as a private GitHub gist with a shareable HTML link</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap align-top">/reload</td><td class="px-4 py-2.5 text-steel-400">Hot-reload keybindings, extensions, skills, prompts, MCP servers, and context files</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap align-top">/trust</td><td class="px-4 py-2.5 text-steel-400">Save a project-trust decision for future sessions</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap align-top">/hotkeys</td><td class="px-4 py-2.5 text-steel-400">Show every keyboard shortcut</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap align-top">/changelog</td><td class="px-4 py-2.5 text-steel-400">Version history</td></tr>
+						</tbody>
+					</table>
+				</div>
+			</section>
+
+			<section id="cli-keys" class="scroll-mt-24 mb-16">
+				<h2 class="text-2xl md:text-3xl font-semibold text-white tracking-tight mb-4">Shortcuts &amp; the message queue</h2>
+				<p class="text-[14px] mb-4">Commonly used shortcuts (full list via <code class="font-mono text-[13px] text-steel-200">/hotkeys</code>, customizable in <code class="font-mono text-[13px] text-steel-200">~/.a-coder/agent/keybindings.json</code>):</p>
+				<div class="overflow-x-auto rounded-xl border hairline mb-8">
+					<table class="w-full text-[13px] min-w-[520px]">
+						<tbody class="divide-y hairline">
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap">Ctrl+L</td><td class="px-4 py-2.5 text-steel-400">Model selector</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap">Ctrl+P / Shift+Ctrl+P</td><td class="px-4 py-2.5 text-steel-400">Cycle scoped models forward / back</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap">Shift+Tab</td><td class="px-4 py-2.5 text-steel-400">Cycle thinking level</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap">Ctrl+O</td><td class="px-4 py-2.5 text-steel-400">Collapse / expand tool output</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap">Ctrl+T</td><td class="px-4 py-2.5 text-steel-400">Collapse / expand thinking blocks</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap">Escape ×2</td><td class="px-4 py-2.5 text-steel-400">Open the session tree</td></tr>
+						</tbody>
+					</table>
+				</div>
+				<p class="text-[14px] leading-relaxed">Submit messages while the agent is still working: <span class="text-steel-200">Enter</span> queues a <em class="font-serif italic text-steel-300">steering</em> message (delivered after the current tool loop), <span class="text-steel-200">Alt+Enter</span> queues a <em class="font-serif italic text-steel-300">follow-up</em> (delivered when all work finishes), <span class="text-steel-200">Alt+Up</span> pulls queued messages back into the editor. Delivery behavior is configurable in <code class="font-mono text-[13px] text-steel-200">/settings</code>.</p>
+			</section>
+
+			<section id="cli-sessions" class="scroll-mt-24 mb-16">
+				<h2 class="text-2xl md:text-3xl font-semibold text-white tracking-tight mb-4">Sessions &amp; branching</h2>
+				<p class="text-[15px] leading-relaxed mb-4">Sessions are JSONL trees — every entry has an <code class="font-mono text-[13px] text-steel-200">id</code> and <code class="font-mono text-[13px] text-steel-200">parentId</code>, so branching happens in place inside a single file. Auto-saved to <code class="font-mono text-[13px] text-steel-200">~/.a-coder/agent/sessions/</code> by working directory.</p>
+				<pre class="font-mono text-[12px] leading-6 text-steel-300 bg-ink-900 border hairline rounded-xl p-4 overflow-x-auto mb-5"><code>a-coder-cli -c                  # continue most recent session
+a-coder-cli -r                  # browse and select past sessions
+a-coder-cli --no-session        # ephemeral mode (don't save)
+a-coder-cli --name "my task"    # named session
+a-coder-cli --fork &lt;id&gt;         # fork a session into a new file</code></pre>
+				<p class="text-[14px] leading-relaxed mb-3"><span class="text-steel-200">Compaction</span> keeps long sessions inside the context window: manual via <code class="font-mono text-[13px] text-steel-200">/compact [instructions]</code>, or automatic by default (proactive near the limit, recover-and-retry on overflow). Compaction is lossy — the full history stays in the JSONL file, revisit anything with <code class="font-mono text-[13px] text-steel-200">/tree</code>.</p>
+			</section>
+
+			<section id="cli-settings" class="scroll-mt-24 mb-16">
+				<h2 class="text-2xl md:text-3xl font-semibold text-white tracking-tight mb-4">Settings &amp; project trust</h2>
+				<div class="overflow-x-auto rounded-xl border hairline mb-5">
+					<table class="w-full text-[13px] min-w-[520px]">
+						<tbody class="divide-y hairline">
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap">~/.a-coder/agent/settings.json</td><td class="px-4 py-2.5 text-steel-400">Global — all projects</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap">.pi/settings.json</td><td class="px-4 py-2.5 text-steel-400">Project — overrides global</td></tr>
+						</tbody>
+					</table>
+				</div>
+				<p class="text-[14px] leading-relaxed">A-Coder asks before <span class="text-steel-200">trusting</span> a project folder with local settings, resources, or skills — project-local extensions and settings only load after you trust it. Decisions persist to <code class="font-mono text-[13px] text-steel-200">~/.a-coder/agent/trust.json</code> (or use <code class="font-mono text-[13px] text-steel-200">--approve</code> / <code class="font-mono text-[13px] text-steel-200">--no-approve</code> per run). Non-interactive modes fall back to <code class="font-mono text-[13px] text-steel-200">defaultProjectTrust</code> in global settings.</p>
+			</section>
+
+			<section id="cli-context" class="scroll-mt-24 mb-16">
+				<h2 class="text-2xl md:text-3xl font-semibold text-white tracking-tight mb-4">Context files</h2>
+				<p class="text-[14px] leading-relaxed mb-4">At startup the agent loads <code class="font-mono text-[13px] text-steel-200">AGENTS.md</code> (or <code class="font-mono text-[13px] text-steel-200">CLAUDE.md</code>) from the global directory, parent directories, and the current directory — all matching files are concatenated. Disable with <code class="font-mono text-[13px] text-steel-200">--no-context-files</code>.</p>
+				<p class="text-[14px] leading-relaxed">Replace the default system prompt with <code class="font-mono text-[13px] text-steel-200">.pi/SYSTEM.md</code> (project) or <code class="font-mono text-[13px] text-steel-200">~/.a-coder/agent/SYSTEM.md</code> (global); append without replacing via <code class="font-mono text-[13px] text-steel-200">APPEND_SYSTEM.md</code>.</p>
+			</section>
+
+			<section id="cli-custom" class="scroll-mt-24 mb-16">
+				<h2 class="text-2xl md:text-3xl font-semibold text-white tracking-tight mb-4">Customization</h2>
+				<div class="space-y-4">
+					<div class="rounded-xl border hairline bg-ink-900 p-5">
+						<h3 class="text-white font-medium mb-1.5">Prompt templates</h3>
+						<p class="text-[13px] text-steel-400 leading-relaxed">Reusable prompts as Markdown with <code class="font-mono text-steel-300">{{placeholders}}</code>. Live in <code class="font-mono text-steel-300">~/.a-coder/agent/prompts/</code> or <code class="font-mono text-steel-300">.a-coder/prompts/</code>; expand by typing <code class="font-mono text-steel-300">/name</code>.</p>
+					</div>
+					<div class="rounded-xl border hairline bg-ink-900 p-5">
+						<h3 class="text-white font-medium mb-1.5">Skills</h3>
+						<p class="text-[13px] text-steel-400 leading-relaxed">On-demand capability packages following the <a href="https://agentskills.io" class="text-steel-200 underline decoration-white/20">Agent Skills standard</a> — a <code class="font-mono text-steel-300">SKILL.md</code> the agent loads automatically when relevant, or on demand via <code class="font-mono text-steel-300">/skill:name</code>. Live in <code class="font-mono text-steel-300">~/.a-coder/agent/skills/</code>, <code class="font-mono text-steel-300">.a-coder/skills/</code>, or <code class="font-mono text-steel-300">.agents/skills/</code>.</p>
+					</div>
+					<div class="rounded-xl border hairline bg-ink-900 p-5">
+						<h3 class="text-white font-medium mb-1.5">Extensions</h3>
+						<p class="text-[13px] text-steel-400 leading-relaxed mb-3">TypeScript modules with full access to the runtime — custom tools, commands, keybindings, event handlers, UI components, providers, MCP integration, sub-agents, sandboxing:</p>
+						<pre class="font-mono text-[11.5px] leading-5 text-steel-300 bg-ink-950 border hairline rounded-lg p-3.5 overflow-x-auto"><code>export default function (pi: ExtensionAPI) {
+	pi.registerTool({ name: "deploy", ... });
+	pi.registerCommand("stats", { ... });
+	pi.on("tool_call", async (event, ctx) =&gt; { ... });
+}</code></pre>
+						<p class="text-[13px] text-steel-400 leading-relaxed mt-3">Live in <code class="font-mono text-steel-300">~/.a-coder/agent/extensions/</code>, <code class="font-mono text-steel-300">.a-coder/extensions/</code>, or shared as packages. Load one-off with <code class="font-mono text-steel-300">-e ./my-ext.ts</code>.</p>
+					</div>
+					<div class="rounded-xl border hairline bg-ink-900 p-5">
+						<h3 class="text-white font-medium mb-1.5">Themes &amp; packages</h3>
+						<p class="text-[13px] text-steel-400 leading-relaxed">Themes hot-reload — edit the active theme file and changes apply instantly. Share any of the above as <span class="text-steel-200">packages</span>: <code class="font-mono text-steel-300">a-coder-cli install &lt;source&gt;</code>, <code class="font-mono text-steel-300">a-coder-cli update --all</code>, <code class="font-mono text-steel-300">a-coder-cli list</code>.</p>
+					</div>
+				</div>
+			</section>
+
+			<section id="cli-reference" class="scroll-mt-24 mb-16">
+				<h2 class="text-2xl md:text-3xl font-semibold text-white tracking-tight mb-4">CLI reference</h2>
+				<pre class="font-mono text-[12px] leading-6 text-steel-300 bg-ink-900 border hairline rounded-xl p-4 overflow-x-auto mb-6"><code>a-coder-cli [options] [@files...] [messages...]</code></pre>
+
+				<h3 class="text-white font-medium mb-2">Modes</h3>
+				<div class="overflow-x-auto rounded-xl border hairline mb-6">
+					<table class="w-full text-[13px] min-w-[520px]">
+						<tbody class="divide-y hairline">
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap">(default)</td><td class="px-4 py-2.5 text-steel-400">Interactive mode</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap">-p, --print</td><td class="px-4 py-2.5 text-steel-400">Print response and exit; also reads piped stdin</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap">--mode json</td><td class="px-4 py-2.5 text-steel-400">Emit all events as JSON lines</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap">--mode rpc</td><td class="px-4 py-2.5 text-steel-400">RPC mode for process integration (what Desktop speaks)</td></tr>
+						</tbody>
+					</table>
+				</div>
+
+				<h3 class="text-white font-medium mb-2">Model, session &amp; tool options</h3>
+				<div class="overflow-x-auto rounded-xl border hairline mb-6">
+					<table class="w-full text-[13px] min-w-[560px]">
+						<tbody class="divide-y hairline">
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap align-top">--provider &lt;name&gt;</td><td class="px-4 py-2.5 text-steel-400">anthropic, openai, google, …</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap align-top">--model &lt;pattern&gt;</td><td class="px-4 py-2.5 text-steel-400">Pattern or ID — <code class="font-mono">openai/gpt-4o</code>, <code class="font-mono">sonnet:high</code></td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap align-top">--thinking &lt;level&gt;</td><td class="px-4 py-2.5 text-steel-400">off · minimal · low · medium · high · xhigh</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap align-top">--models &lt;patterns&gt;</td><td class="px-4 py-2.5 text-steel-400">Comma-separated patterns for Ctrl+P cycling</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap align-top">--list-models [search]</td><td class="px-4 py-2.5 text-steel-400">List available models</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap align-top">-c / -r</td><td class="px-4 py-2.5 text-steel-400">Continue most recent / browse sessions</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap align-top">--session &lt;path|id&gt;</td><td class="px-4 py-2.5 text-steel-400">Use a specific session file or partial UUID</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap align-top">--tools / --exclude-tools</td><td class="px-4 py-2.5 text-steel-400">Allowlist / disable tools — built-ins: read, bash, edit, write, grep, find, ls</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap align-top">-e &lt;source&gt;</td><td class="px-4 py-2.5 text-steel-400">Load an extension from path, npm, or git (repeatable)</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap align-top">--offline</td><td class="px-4 py-2.5 text-steel-400">Disable all startup network operations</td></tr>
+						</tbody>
+					</table>
+				</div>
+
+				<h3 class="text-white font-medium mb-2">Examples</h3>
+				<pre class="font-mono text-[12px] leading-6 text-steel-300 bg-ink-900 border hairline rounded-xl p-4 overflow-x-auto mb-4"><code># Interactive with an initial prompt
+a-coder-cli "List all .ts files in src/"
+
+# One-shot, piped stdin
+cat README.md | a-coder-cli -p "Summarize this text"
+
+# Different model, provider prefix optional
+a-coder-cli --model openai/gpt-4o "Help me refactor"
+
+# Read-only review
+a-coder-cli --tools read,grep,find,ls -p "Review the code"
+
+# Attach files with @
+a-coder-cli -p @screenshot.png "What's in this image?"</code></pre>
+				<p class="text-[13px] text-steel-500">Files prefixed with <code class="font-mono text-steel-300">@</code> are attached to the message — text, code, or images.</p>
+			</section>
+
+			<!-- ════════ IDE ════════ -->
+			<section id="ide-modes" class="scroll-mt-24 mb-16 pt-10 border-t hairline">
+				<p class="font-mono text-[11px] tracking-[0.35em] uppercase text-steel-500 mb-3">A-Coder IDE</p>
+				<h2 class="text-2xl md:text-3xl font-semibold text-white tracking-tight mb-4">Four modes, any task</h2>
+				<div class="grid sm:grid-cols-2 gap-4 mb-8">
+					<div class="rounded-xl border hairline bg-ink-900 p-5">
+						<p class="font-mono text-[10px] tracking-[0.25em] text-steel-600 mb-1.5">MODE 01</p>
+						<h3 class="text-white font-medium mb-1">Chat</h3>
+						<p class="text-[13px] text-steel-400">Balanced assistance — general questions, quick fixes, pairing.</p>
+					</div>
+					<div class="rounded-xl border hairline bg-ink-900 p-5">
+						<p class="font-mono text-[10px] tracking-[0.25em] text-steel-600 mb-1.5">MODE 02</p>
+						<h3 class="text-white font-medium mb-1">Plan</h3>
+						<p class="text-[13px] text-steel-400">Deep research — understanding codebases, architectural decisions.</p>
+					</div>
+					<div class="rounded-xl border hairline bg-ink-900 p-5">
+						<p class="font-mono text-[10px] tracking-[0.25em] text-steel-600 mb-1.5">MODE 03</p>
+						<h3 class="text-white font-medium mb-1">Agent</h3>
+						<p class="text-[13px] text-steel-400">Full autonomy — multi-step features, complex refactoring.</p>
+					</div>
+					<div class="rounded-xl border hairline bg-ink-900 p-5">
+						<p class="font-mono text-[10px] tracking-[0.25em] text-steel-600 mb-1.5">MODE 04</p>
+						<h3 class="text-white font-medium mb-1">Learn</h3>
+						<p class="text-[13px] text-steel-400">Student mode — three difficulty levels, fill-in-the-blank and bug-fixing exercises, streaks and badges, adaptive hints.</p>
+					</div>
+				</div>
+			</section>
+
+			<section id="ide-features" class="scroll-mt-24 mb-16">
+				<h2 class="text-2xl md:text-3xl font-semibold text-white tracking-tight mb-4">Key features</h2>
+				<div class="space-y-3">
+					<div class="rounded-xl border hairline bg-ink-900/60 p-5">
+						<h3 class="text-white text-sm font-medium mb-1">Semantic context</h3>
+						<p class="text-[13px] text-steel-400 leading-relaxed">Fast codebase search, paginated reading for large files, directory-tree awareness, symbol outlining — the assistant sees what you see and more.</p>
+					</div>
+					<div class="rounded-xl border hairline bg-ink-900/60 p-5">
+						<h3 class="text-white text-sm font-medium mb-1">Code application that actually works</h3>
+						<p class="text-[13px] text-steel-400 leading-relaxed">Exact-match edits with clear error messages and uniqueness enforcement, Morph Fast Apply for high-speed application, and smart diff previews before anything lands.</p>
+					</div>
+					<div class="rounded-xl border hairline bg-ink-900/60 p-5">
+						<h3 class="text-white text-sm font-medium mb-1">Context management</h3>
+						<p class="text-[13px] text-steel-400 leading-relaxed">TOON compression cuts tool-output tokens 30–70%; rolling windows and intelligent summarization keep long conversations coherent.</p>
+					</div>
+					<div class="rounded-xl border hairline bg-ink-900/60 p-5">
+						<h3 class="text-white text-sm font-medium mb-1">Autocomplete &amp; quick edit</h3>
+						<p class="text-[13px] text-steel-400 leading-relaxed">Inline FIM completion, <kbd class="font-mono text-[11px] border hairline rounded px-1.5 py-0.5 text-steel-300">Ctrl+K</kbd> inline edits, vision support (drag images into chat), and multiple parallel threads.</p>
+					</div>
+					<div class="rounded-xl border hairline bg-ink-900/60 p-5">
+						<h3 class="text-white text-sm font-medium mb-1">Zero-friction migration</h3>
+						<p class="text-[13px] text-steel-400 leading-relaxed">One click imports settings, keybindings, and extensions from VS Code, Cursor, or Windsurf.</p>
+					</div>
+					<div class="rounded-xl border hairline bg-ink-900/60 p-5">
+						<h3 class="text-white text-sm font-medium mb-1">Git integration</h3>
+						<p class="text-[13px] text-steel-400 leading-relaxed">AI commit-message generation, repo tools (clone, pull, push, branch), and semantic search across git history.</p>
+					</div>
+				</div>
+			</section>
+
+			<!-- ════════ Desktop ════════ -->
+			<section id="dt-interface" class="scroll-mt-24 mb-16 pt-10 border-t hairline">
+				<p class="font-mono text-[11px] tracking-[0.35em] uppercase text-steel-500 mb-3">A-Coder Desktop</p>
+				<h2 class="text-2xl md:text-3xl font-semibold text-white tracking-tight mb-4">Interface &amp; settings</h2>
+				<p class="text-[15px] leading-relaxed mb-5">A native Tauri wrapper around the CLI engine (requires <code class="font-mono text-[13px] text-steel-200">a-coder-cli</code> on your <code class="font-mono text-[13px] text-steel-200">PATH</code>, Node 22+). Sessions persist across restarts, and auto-updates are opt-in.</p>
+				<div class="overflow-x-auto rounded-xl border hairline mb-6">
+					<table class="w-full text-[13px] min-w-[520px]">
+						<tbody class="divide-y hairline">
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 text-steel-300 whitespace-nowrap align-top">Project selector</td><td class="px-4 py-2.5 text-steel-400">Top bar shows the current project; click to switch workspaces</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 text-steel-300 whitespace-nowrap align-top">Chat panel</td><td class="px-4 py-2.5 text-steel-400">Full conversation history with markdown; type <code class="font-mono">@</code> to reference files</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 text-steel-300 whitespace-nowrap align-top">Session tree</td><td class="px-4 py-2.5 text-steel-400">Branch conversations, review diffs, resume anywhere</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 text-steel-300 whitespace-nowrap align-top">Voice mode</td><td class="px-4 py-2.5 text-steel-400">Speech-to-text and text-to-speech</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 text-steel-300 whitespace-nowrap align-top">Status bar</td><td class="px-4 py-2.5 text-steel-400">Current model, token usage, cost</td></tr>
+						</tbody>
+					</table>
+				</div>
+				<div class="overflow-x-auto rounded-xl border hairline mb-6">
+					<table class="w-full text-[13px] min-w-[520px]">
+						<tbody class="divide-y hairline">
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap">Cmd/Ctrl+L</td><td class="px-4 py-2.5 text-steel-400">Model selector — live catalog refresh</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap">Cmd/Ctrl+N</td><td class="px-4 py-2.5 text-steel-400">New session</td></tr>
+							<tr class="bg-ink-900/50"><td class="px-4 py-2.5 font-mono text-steel-200 whitespace-nowrap">Cmd/Ctrl+,</td><td class="px-4 py-2.5 text-steel-400">Settings — provider, model, thinking level, theme</td></tr>
+						</tbody>
+					</table>
+				</div>
+				<p class="text-[14px] leading-relaxed">Custom providers configured in <code class="font-mono text-[13px] text-steel-200">~/.a-coder/agent/models.json</code> sync automatically with the desktop app — same engine, same config.</p>
+			</section>
+
+			<!-- ════════ Shared ════════ -->
+			<section id="providers" class="scroll-mt-24 mb-16 pt-10 border-t hairline">
+				<p class="font-mono text-[11px] tracking-[0.35em] uppercase text-steel-500 mb-3">Shared</p>
+				<h2 class="text-2xl md:text-3xl font-semibold text-white tracking-tight mb-4">Models &amp; providers</h2>
+				<p class="text-[14px] leading-relaxed mb-5">Authenticate via subscription (<code class="font-mono text-[13px] text-steel-200">/login</code>) or API key, then pick any model with <code class="font-mono text-[13px] text-steel-200">/model</code> (Ctrl+L). The catalog refreshes live from every connected provider.</p>
+				<div class="grid sm:grid-cols-2 gap-4 mb-5">
+					<div class="rounded-xl border hairline bg-ink-900 p-5">
+						<h3 class="text-white text-sm font-medium mb-2.5">Subscriptions</h3>
+						<ul class="text-[13px] text-steel-400 space-y-1.5">
+							<li>Anthropic Claude Pro / Max</li>
+							<li>OpenAI ChatGPT Plus / Pro (Codex)</li>
+							<li>GitHub Copilot</li>
+						</ul>
+					</div>
+					<div class="rounded-xl border hairline bg-ink-900 p-5">
+						<h3 class="text-white text-sm font-medium mb-2.5">API keys</h3>
+						<ul class="text-[13px] text-steel-400 space-y-1.5">
+							<li>Anthropic · OpenAI · Google Gemini</li>
+							<li>Azure OpenAI · Google Vertex · AWS Bedrock</li>
+							<li>DeepSeek · Mistral · Groq · Cerebras · xAI</li>
+							<li>OpenRouter · NVIDIA NIM · Cloudflare AI</li>
+							<li>Fireworks · Together AI · MiniMax · Kimi</li>
+							<li>Hugging Face · Vercel AI Gateway · ZAI · more</li>
+						</ul>
+					</div>
+				</div>
+				<p class="text-[14px] leading-relaxed"><span class="text-steel-200">Local models:</span> Ollama, LM Studio, vLLM, and llama.cpp are auto-discovered when running. <span class="text-steel-200">Custom providers:</span> add them in <code class="font-mono text-[13px] text-steel-200">~/.a-coder/agent/models.json</code> if they speak OpenAI, Anthropic, or Google APIs — anything else via extensions.</p>
+
+				<div class="mt-6 rounded-xl border hairline bg-ink-900 p-5">
+					<p class="font-mono text-[10px] tracking-[0.3em] uppercase text-steel-300 mb-2">🇦🇺 Sovereign · Australian hosted</p>
+					<p class="text-[13px] text-steel-400 leading-relaxed mb-3">Through our partnership with <a href="https://scx.ai" class="text-steel-200 underline decoration-white/20 hover:decoration-white">SCX.ai</a>, Australian-hosted frontier open-weight models are available in A-Coder — including Project MAGPiE, Australia's sovereign frontier model — courtesy of <a href="https://monitor.atechds.com" class="text-steel-200 underline decoration-white/20 hover:decoration-white">Amaara Cloud</a>, The A-Tech Corporation's models-as-a-service platform. One OpenAI-compatible endpoint, request-credit billing, Australian owned and operated:</p></p>
+					<pre class="font-mono text-[11.5px] leading-5 text-steel-300 bg-ink-950 border hairline rounded-lg p-3.5 overflow-x-auto"><code>base_url = "https://amaara.atechds.com/v1"</code></pre>
+					<p class="text-[13px] text-steel-400 leading-relaxed mt-3">Sign up once with the <a href="https://monitor.atechds.com/pricing/" class="text-steel-200 underline decoration-white/20 hover:decoration-white">Amaara Cloud Coding plan</a> and the same key works across the A-Coder ecosystem — CLI, IDE, and Desktop — plus any other OpenAI-compatible app.</p>
+				</div>
+			</section>
+
+			<section id="mcp" class="scroll-mt-24 mb-16">
+				<h2 class="text-2xl md:text-3xl font-semibold text-white tracking-tight mb-4">Model Context Protocol</h2>
+				<p class="text-[14px] leading-relaxed mb-4">All three surfaces are MCP-native. Configure servers once and the agent discovers their tools automatically — internal APIs, knowledge bases, custom workflows.</p>
+				<ul class="space-y-2.5 text-[14px] leading-relaxed">
+					<li class="flex gap-3"><span class="font-mono text-steel-600 mt-0.5">▸</span><span><span class="text-steel-200">Hot reload</span> — <code class="font-mono text-[13px] text-steel-200">/reload</code> picks up new or changed MCP servers, skills, and system prompts mid-session.</span></li>
+					<li class="flex gap-3"><span class="font-mono text-steel-600 mt-0.5">▸</span><span><span class="text-steel-200">Uniform rendering</span> — MCP tool results render exactly like built-in tools: glyph, stats headline, expandable preview.</span></li>
+					<li class="flex gap-3"><span class="font-mono text-steel-600 mt-0.5">▸</span><span><span class="text-steel-200">Or build your own bridge</span> — extensions can integrate MCP servers directly for full control.</span></li>
+				</ul>
+			</section>
+
+			<section id="plans" class="scroll-mt-24 mb-16">
+				<h2 class="text-2xl md:text-3xl font-semibold text-white tracking-tight mb-4">Plans &amp; services</h2>
+				<div class="space-y-4">
+					<div class="rounded-xl border hairline bg-ink-900 p-5">
+						<div class="flex items-center justify-between mb-1.5">
+							<h3 class="text-white text-sm font-medium">A-Coder Pro</h3>
+							<span class="rounded-full bg-white text-black font-mono text-[10px] font-semibold tracking-widest px-2.5 py-0.5">$49/mo</span>
+						</div>
+						<p class="text-[13px] text-steel-400 leading-relaxed">One plan for the full toolkit: the best coding models, curated skills, MCP servers, and AI code reviews. Reviews are powered by our partnership with <a href="https://senix.dev" class="text-steel-200 underline decoration-white/20 hover:decoration-white">Senix</a> — behavioral PR summaries with risk tags posted the moment you open a pull request (analysis in ~150s, GitHub and IDE integrations). Senix is also available standalone at senix.dev.</p>
+					</div>
+					<div class="rounded-xl border hairline bg-ink-900 p-5">
+						<div class="flex items-center justify-between mb-1.5">
+							<h3 class="text-white text-sm font-medium">A-Coder Tandem</h3>
+							<span class="font-mono text-[10px] tracking-widest uppercase text-steel-500">with Innowise</span>
+						</div>
+						<p class="text-[13px] text-steel-400 leading-relaxed">Human escalation for the problems agents can't handle. AI gets projects 80–90% complete; escalate to 3,500+ human developers (in partnership with <a href="https://innowise.com" class="text-steel-200 underline decoration-white/20 hover:decoration-white">Innowise</a>, a full-cycle software development company) who take you to 100%. Usually under $999 — a one-time fee, not a subscription.</p>
+					</div>
+				</div>
+			</section>
+
+			<section id="licensing" class="scroll-mt-24 mb-16">
+				<h2 class="text-2xl md:text-3xl font-semibold text-white tracking-tight mb-4">Licensing</h2>
+				<p class="text-[14px] leading-relaxed">A-Coder is <span class="text-steel-200">dual-licensed</span> by The A-Tech Corporation:</p>
+				<div class="mt-4 grid sm:grid-cols-2 gap-4">
+					<div class="rounded-xl border hairline bg-ink-900 p-5">
+						<div class="flex items-center justify-between mb-1.5">
+							<h3 class="text-white text-sm font-medium">Free · forever</h3>
+							<span class="rounded-full bg-white text-black font-mono text-[10px] font-semibold tracking-widest px-2.5 py-0.5">$0</span>
+						</div>
+						<p class="text-[13px] text-steel-400 leading-relaxed">Individuals, solo founders, and businesses with less than USD $10M in total annual revenue. MIT open source — every feature, every surface, forever.</p>
+					</div>
+					<div class="rounded-xl border hairline bg-ink-900 p-5">
+						<div class="flex items-center justify-between mb-1.5">
+							<h3 class="text-white text-sm font-medium">The A-Tech Corporation License</h3>
+							<span class="font-mono text-[10px] tracking-widest uppercase text-steel-500">USD $10M+ revenue</span>
+						</div>
+						<p class="text-[13px] text-steel-400 leading-relaxed">Organizations at scale use A-Coder under The A-Tech Corporation License for company-wide deployment across departments and users. One agreement covers everyone — <a href="https://theatechcorporation.com" class="text-steel-200 underline decoration-white/20 hover:decoration-white">contact The A-Tech Corporation</a>.</p>
+					</div>
+				</div>
+				<p class="mt-4 text-[13px] text-steel-500 leading-relaxed">Full terms live in the LICENSE file of each product (CLI, IDE, Desktop). Third-party components remain under their own licenses.</p>
+			</section>
+
+			<section id="privacy" class="scroll-mt-24 mb-16">
+				<h2 class="text-2xl md:text-3xl font-semibold text-white tracking-tight mb-4">Privacy</h2>
+				<ul class="space-y-2.5 text-[14px] leading-relaxed mb-4">
+					<li class="flex gap-3"><span class="font-mono text-steel-600 mt-0.5">▸</span><span><span class="text-steel-200">Direct-to-provider</span> — messages go straight from your machine to the provider. No middleman, no proxy.</span></li>
+					<li class="flex gap-3"><span class="font-mono text-steel-600 mt-0.5">▸</span><span><span class="text-steel-200">Zero retention</span> — nothing stored, nothing trained on.</span></li>
+					<li class="flex gap-3"><span class="font-mono text-steel-600 mt-0.5">▸</span><span><span class="text-steel-200">Granular control</span> — approve edits, terminals, and MCP tools individually; auto-approval is per tool category.</span></li>
+					<li class="flex gap-3"><span class="font-mono text-steel-600 mt-0.5">▸</span><span><span class="text-steel-200">Fully local</span> — run entirely on Ollama, LM Studio, vLLM, or llama.cpp with <code class="font-mono text-[13px] text-steel-200">--offline</code> to disable all network extras.</span></li>
+				</ul>
+				<p class="text-[14px] leading-relaxed">Telemetry is opt-in and anonymous (no prompt content, paths, or identifiers beyond a random UUID) — disable with <code class="font-mono text-[13px] text-steel-200">enableAnalytics: false</code> or <code class="font-mono text-[13px] text-steel-200">A_CODER_CLI_ANALYTICS=0</code>. Update checks can be disabled separately with <code class="font-mono text-[13px] text-steel-200">A_CODER_CLI_SKIP_VERSION_CHECK=1</code>.</p>
+			</section>
+
+			<!-- bottom nav -->
+			<div class="pt-10 border-t hairline flex items-center justify-between">
+				<a href="index.html" class="text-sm text-steel-400 hover:text-white transition-colors inline-flex items-center gap-1.5">← Back to home</a>
+				<a href="https://github.com/hamishfromatech/a-coder-cli" class="text-sm text-steel-400 hover:text-white transition-colors inline-flex items-center gap-1.5">Full docs on GitHub →</a>
+			</div>
+		</main>
+	</div>
+
+	<!-- ══ Footer ═══════════════════════════════════════════ -->
+	<footer class="border-t hairline py-10 bg-ink-900/40">
+		<div class="max-w-6xl mx-auto px-5 flex flex-col md:flex-row items-center justify-between gap-4">
+			<div class="flex items-center gap-2.5">
+				<img src="assets/logo-trans.png" alt="A-Coder mark" class="w-6 h-6">
+				<p class="text-[12px] text-steel-600">© 2026 The A-Tech Corporation PTY LTD</p>
+			</div>
+			<div class="flex items-center gap-6 text-sm text-steel-400">
+				<a href="index.html" class="hover:text-white transition-colors">Home</a>
+				<a href="pricing.html" class="hover:text-white transition-colors">Pricing</a>
+				<a href="https://github.com/hamishfromatech/a-coder-cli" class="hover:text-white transition-colors">GitHub</a>
+				<a href="https://discord.com/invite/3cU7Bz4UPx" class="hover:text-white transition-colors">Discord</a>
+			</div>
+		</div>
+	</footer>
+
+	<script>
+		const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+		// Mobile menu
+		const menuBtn = document.getElementById('menu-btn');
+		const menu = document.getElementById('menu');
+		menuBtn.addEventListener('click', () => menu.classList.toggle('hidden'));
+		menu.querySelectorAll('a').forEach((a) => a.addEventListener('click', () => menu.classList.add('hidden')));
+
+		// Copy buttons
+		document.querySelectorAll('.copy-btn').forEach((btn) => {
+			btn.addEventListener('click', () => {
+				const code = document.getElementById(btn.dataset.copy);
+				navigator.clipboard.writeText(code.textContent.trim()).then(() => {
+					btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>';
+					setTimeout(() => {
+						btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>';
+					}, 1600);
+				});
+			});
+		});
+
+		// Scrollspy
+		const links = [...document.querySelectorAll('#toc a')];
+		const targets = links.map((a) => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+		const spy = new IntersectionObserver((entries) => {
+			for (const e of entries) {
+				if (!e.isIntersecting) continue;
+				links.forEach((l) => l.classList.toggle('active', l.getAttribute('href') === `#${e.target.id}`));
+			}
+		}, { rootMargin: '-15% 0px -70% 0px' });
+		targets.forEach((t) => spy.observe(t));
+	</script>
+</body>
+</html>

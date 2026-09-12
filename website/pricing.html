@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Pricing — A-Coder is free forever</title>
+	<meta name="description" content="A-Coder is free and open source, forever. We never charge for the software — only for models and external services we provide, and only if you want them.">
+	<meta property="og:title" content="Pricing — A-Coder is free forever">
+	<meta property="og:description" content="Free forever, open source. You only pay for models and services — never the software.">
+	<meta property="og:image" content="assets/desktop-icon.png">
+	<meta property="og:type" content="website">
+	<link rel="icon" type="image/png" href="assets/favicon.png">
+	<script src="https://cdn.tailwindcss.com"></script>
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+	<script>
+		tailwind.config = {
+			theme: {
+				extend: {
+					colors: {
+						ink: { 950: '#050507', 900: '#0a0a0d', 800: '#101014', 700: '#17171c', 600: '#22222a' },
+						steel: { 200: '#dfe3ea', 300: '#c7ccd6', 400: '#9aa1ad', 500: '#71787f', 600: '#4a4f55', 700: '#2e3138' },
+					},
+					fontFamily: {
+						sans: ['Outfit', 'system-ui', 'sans-serif'],
+						mono: ['"JetBrains Mono"', 'monospace'],
+						serif: ['"Instrument Serif"', 'Georgia', 'serif'],
+					},
+				},
+			},
+		};
+	</script>
+	<style>
+		:root { --mx: 50%; --my: 40%; }
+		html { background: #050507; }
+		.chrome-text {
+			background: linear-gradient(178deg, #ffffff 0%, #e6e9ee 24%, #a7aeb9 47%, #f0f2f6 66%, #70757e 78%, #b9bec7 100%);
+			background-size: 100% 220%;
+			-webkit-background-clip: text;
+			background-clip: text;
+			color: transparent;
+			animation: sheen 9s ease-in-out infinite alternate;
+		}
+		@keyframes sheen { from { background-position: 0 0; } to { background-position: 0 100%; } }
+		.grain {
+			background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="180" height="180"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" stitchTiles="stitch"/></filter><rect width="100%" height="100%" filter="url(%23n)"/></svg>');
+			opacity: 0.055;
+			mix-blend-mode: overlay;
+		}
+		.smoke-a { background: radial-gradient(ellipse 55% 42% at 18% 8%, rgba(122,132,152,0.09), transparent 70%), radial-gradient(ellipse 48% 38% at 86% 28%, rgba(160,172,196,0.07), transparent 70%); }
+		.smoke-b { background: radial-gradient(ellipse 60% 50% at 50% 100%, rgba(130,140,164,0.08), transparent 72%), radial-gradient(ellipse 40% 34% at 8% 40%, rgba(120,130,150,0.05), transparent 70%); }
+		.hairline { border-color: rgba(255,255,255,0.08); }
+		.hairline-t { border-top: 1px solid rgba(255,255,255,0.08); }
+		.hairline-b { border-bottom: 1px solid rgba(255,255,255,0.08); }
+		.conic-ring {
+			background: conic-gradient(from 0deg, transparent 0deg, rgba(255,255,255,0.10) 26deg, rgba(199,204,214,0.22) 55deg, transparent 95deg, transparent 180deg, rgba(255,255,255,0.07) 210deg, transparent 250deg);
+			-webkit-mask: radial-gradient(closest-side, transparent 78%, #000 80.5%, #000 86%, transparent 89.5%);
+			mask: radial-gradient(closest-side, transparent 78%, #000 80.5%, #000 86%, transparent 89.5%);
+			animation: spin 26s linear infinite;
+		}
+		@keyframes spin { to { transform: rotate(360deg); } }
+		.spotlight { background: radial-gradient(600px circle at var(--mx) var(--my), rgba(210,220,240,0.055), transparent 65%); }
+		.rise { opacity: 0; transform: translateY(18px); transition: opacity 0.8s cubic-bezier(.2,.6,.2,1), transform 0.8s cubic-bezier(.2,.6,.2,1); }
+		.rise.in { opacity: 1; transform: none; }
+		.lift { transition: transform .35s cubic-bezier(.2,.6,.2,1), border-color .35s, box-shadow .35s; }
+		.lift:hover { transform: translateY(-4px); border-color: rgba(255,255,255,0.16); box-shadow: 0 24px 70px -28px rgba(170,185,210,0.25); }
+		.ghost-num { -webkit-text-stroke: 1px rgba(255,255,255,0.10); color: transparent; }
+		.grad-rule { background: linear-gradient(90deg, transparent, rgba(255,255,255,0.14), transparent); }
+		.hero-in { opacity: 0; transform: translateY(22px); animation: riseIn 1s cubic-bezier(.2,.65,.25,1) forwards; }
+		@keyframes riseIn { to { opacity: 1; transform: none; } }
+		.float-slow { animation: floaty 7s ease-in-out infinite alternate; }
+		@keyframes floaty { from { transform: translateY(-5px); } to { transform: translateY(6px); } }
+		.faq summary::-webkit-details-marker { display: none; }
+		.faq details[open] .faq-x { transform: rotate(45deg); }
+		.faq-x { transition: transform .25s ease; }
+		@media (prefers-reduced-motion: reduce) {
+			.conic-ring, .float-slow, .chrome-text { animation: none !important; }
+			.rise { opacity: 1; transform: none; transition: none; }
+			.hero-in { opacity: 1; transform: none; animation: none; }
+		}
+		::selection { background: #e6e9ee; color: #050507; }
+		::-webkit-scrollbar { width: 10px; }
+		::-webkit-scrollbar-track { background: #050507; }
+		::-webkit-scrollbar-thumb { background: #22222a; border-radius: 6px; }
+	</style>
+</head>
+<body class="bg-ink-950 text-steel-400 font-sans antialiased overflow-x-hidden">
+
+	<div class="grain fixed inset-0 z-[60] pointer-events-none"></div>
+
+	<!-- ══ Nav ══════════════════════════════════════════════ -->
+	<header class="fixed top-0 inset-x-0 z-50 bg-ink-950/70 backdrop-blur-xl">
+		<nav class="max-w-6xl mx-auto px-5 h-16 flex items-center justify-between border-b hairline">
+			<a href="index.html" class="flex items-center gap-2.5 group">
+				<img src="assets/logo-trans.png" alt="A-Coder mark" class="w-7 h-7">
+				<span class="text-white font-semibold tracking-[0.08em]">A-CODER</span>
+			</a>
+			<div class="hidden md:flex items-center gap-8 text-[13px]">
+				<a href="index.html#ide" class="text-steel-400 hover:text-white transition-colors">IDE</a>
+				<a href="index.html#cli" class="text-steel-400 hover:text-white transition-colors">CLI</a>
+				<a href="index.html#desktop" class="text-steel-400 hover:text-white transition-colors">Desktop</a>
+				<a href="index.html#system" class="text-steel-400 hover:text-white transition-colors">System</a>
+				<a href="docs.html" class="text-steel-400 hover:text-white transition-colors">Docs</a>
+				<a href="pricing.html" class="text-white" aria-current="page">Pricing</a>
+				<a href="https://github.com/hamishfromatech/a-coder-cli" class="text-steel-400 hover:text-white transition-colors">GitHub</a>
+			</div>
+			<a href="index.html#install" class="hidden md:inline-flex items-center rounded-full bg-white text-black text-[13px] font-medium px-4 py-1.5 hover:bg-steel-200 transition-colors">Get started</a>
+			<button id="menu-btn" class="md:hidden text-steel-300 p-1" aria-label="Toggle menu">
+				<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M4 7h16M4 12h16M4 17h16"/></svg>
+			</button>
+		</nav>
+		<div id="menu" class="hidden md:hidden bg-ink-950/95 border-b hairline px-5 py-4 flex flex-col gap-3 text-sm">
+			<a href="index.html#ide" class="text-steel-300">IDE</a>
+			<a href="index.html#cli" class="text-steel-300">CLI</a>
+			<a href="index.html#desktop" class="text-steel-300">Desktop</a>
+			<a href="index.html#system" class="text-steel-300">System</a>
+			<a href="docs.html" class="text-steel-300">Docs</a>
+			<a href="pricing.html" class="text-white">Pricing</a>
+			<a href="index.html#install" class="text-steel-300">Install</a>
+			<a href="https://github.com/hamishfromatech/a-coder-cli" class="text-steel-300">GitHub</a>
+		</div>
+	</header>
+
+	<!-- ══ Hero ═════════════════════════════════════════════ -->
+	<section class="relative pt-40 pb-16 smoke-a overflow-hidden">
+		<div class="spotlight absolute inset-0 pointer-events-none"></div>
+		<div class="relative max-w-3xl mx-auto px-5 text-center">
+			<p class="hero-in font-mono text-[11px] tracking-[0.42em] uppercase text-steel-500 mb-6" style="animation-delay:.1s">Pricing</p>
+			<h1 class="hero-in text-4xl sm:text-6xl md:text-[4.2rem] md:leading-[0.98] font-semibold tracking-tight" style="animation-delay:.2s">
+				<span class="chrome-text">The software is free.</span><br>
+				<em class="font-serif italic font-normal text-white">Forever.</em>
+			</h1>
+			<p class="hero-in mt-6 text-sm md:text-[15px] text-steel-400 leading-relaxed max-w-xl mx-auto" style="animation-delay:.35s">
+				A-Coder is free and open source for individuals, solo founders, and businesses under $10M USD annual revenue — forever. Enterprises above that threshold license it for company-wide use. And the only other things you can ever pay for are models and services — always optional.
+			</p>
+			<div class="hero-in mt-6 flex flex-wrap justify-center gap-x-5 gap-y-1 font-mono text-[11px] text-steel-500" style="animation-delay:.5s">
+				<span>MIT licensed</span><span class="text-steel-700">·</span><span>Under $10M revenue: $0, forever</span><span class="text-steel-700">·</span><span>At scale: The A-Tech Corporation License</span>
+			</div>
+		</div>
+	</section>
+
+	<!-- ══ Tiers ════════════════════════════════════════════ -->
+	<section class="relative pb-24">
+		<div class="max-w-5xl mx-auto px-5">
+			<div class="grid md:grid-cols-[1.4fr_1fr] gap-5 items-stretch">
+				<div class="rise relative rounded-3xl border hairline bg-ink-900 overflow-hidden">
+					<div class="absolute inset-0 smoke-b pointer-events-none"></div>
+					<div class="relative p-8 md:p-10">
+						<div class="flex items-center gap-3 mb-4">
+							<span class="rounded-full bg-white text-black font-mono text-[10px] tracking-[0.25em] uppercase font-semibold px-3 py-1">Free · forever</span>
+							<span class="rounded-full border hairline bg-ink-950 font-mono text-[10px] tracking-[0.25em] uppercase text-steel-300 px-3 py-1">Open source · MIT</span>
+						</div>
+						<h2 class="text-white text-2xl md:text-3xl font-semibold tracking-tight mb-2">A-Coder CLI · IDE · Desktop</h2>
+						<p class="text-[14px] text-steel-400 leading-relaxed max-w-md">For individuals, solo founders, and businesses with less than USD $10M in total annual revenue. Every capability of every surface — nothing locked behind a plan, because there are no plans.</p>
+						<ul class="mt-6 grid sm:grid-cols-2 gap-x-8 gap-y-2.5 text-[13px] text-steel-300">
+							<li class="flex items-baseline"><span class="text-steel-600 mr-2.5">—</span>Unlimited projects, sessions &amp; branching</li>
+							<li class="flex items-baseline"><span class="text-steel-600 mr-2.5">—</span>Every provider, bring your own keys</li>
+							<li class="flex items-baseline"><span class="text-steel-600 mr-2.5">—</span>Local models auto-discovered</li>
+							<li class="flex items-baseline"><span class="text-steel-600 mr-2.5">—</span>MCP servers &amp; extensions</li>
+							<li class="flex items-baseline"><span class="text-steel-600 mr-2.5">—</span>Full offline mode — $0 spend possible</li>
+							<li class="flex items-baseline"><span class="text-steel-600 mr-2.5">—</span>Community support on Discord</li>
+						</ul>
+						<div class="mt-7 flex items-end gap-6">
+							<div>
+								<p class="font-mono text-[10px] tracking-[0.3em] uppercase text-steel-500 mb-1">You pay</p>
+								<p class="chrome-text font-mono font-semibold text-6xl md:text-7xl leading-none">$0</p>
+							</div>
+							<p class="font-mono text-[10px] tracking-[0.3em] uppercase text-steel-500 leading-relaxed">per month<br>per seat<br>forever</p>
+						</div>
+					</div>
+				</div>
+				<div class="rise rounded-3xl border hairline bg-ink-900 p-8 flex flex-col">
+					<p class="font-mono text-[10px] tracking-[0.3em] uppercase text-steel-500 mb-3">The A-Tech Corporation License · USD $10M+ revenue</p>
+					<h3 class="text-white text-2xl font-semibold tracking-tight mb-2">One license,<br>every department.</h3>
+					<p class="text-[13px] text-steel-400 leading-relaxed mb-4">Organizations at scale license A-Coder for their whole company — every department, every user, one agreement. Procurement-friendly, from the same team that builds the software.</p>
+					<ul class="mt-auto space-y-2 text-[13px] text-steel-300 mb-6">
+						<li class="flex gap-2.5 items-baseline"><span class="text-steel-600">—</span>Company-wide deployment rights</li>
+						<li class="flex gap-2.5 items-baseline"><span class="text-steel-600">—</span>Priority support &amp; direct access</li>
+						<li class="flex gap-2.5 items-baseline"><span class="text-steel-600">—</span>Australian owned &amp; operated</li>
+					</ul>
+					<a href="https://theatechcorporation.com" class="text-sm text-white font-medium inline-flex items-center gap-1.5 hover:gap-3 transition-all">Request The A-Tech Corporation License <span aria-hidden="true">→</span></a>
+				</div>
+			</div>
+			<p class="rise text-center font-mono text-[11px] text-steel-600 mt-5">Competitors charge $10–$200 per seat, per month, for software. We charge nothing until your company is at enterprise scale — and even then, one license covers everyone.</p>
+		</div>
+	</section>
+
+	<!-- ══ The promise ══════════════════════════════════════ -->
+	<section class="relative py-20 border-t hairline smoke-a overflow-hidden">
+		<div class="max-w-3xl mx-auto px-5 text-center">
+			<img src="assets/logo-trans.png" alt="" class="rise w-12 h-12 mx-auto mb-8 float-slow">
+			<p class="rise text-2xl md:text-4xl font-semibold text-white tracking-tight leading-snug">Builders never pay for the software.</p>
+			<p class="rise mt-5 text-sm md:text-[15px] text-steel-400 leading-relaxed max-w-xl mx-auto">Individuals, solo founders, and businesses under $10M USD annual revenue get everything, free and open source, <em class="font-serif italic text-steel-300">forever.</em> The A-Tech Corporation License at scale keeps it that way — the license funds the free tier, not feature gates.</p>
+			<div class="rise mt-8 flex flex-wrap justify-center gap-2">
+				<span class="font-mono text-xs px-3.5 py-1.5 rounded-lg border hairline bg-ink-900 text-steel-400">No seat licenses for individuals</span>
+				<span class="font-mono text-xs px-3.5 py-1.5 rounded-lg border hairline bg-ink-900 text-steel-400">No feature gates</span>
+				<span class="font-mono text-xs px-3.5 py-1.5 rounded-lg border hairline bg-ink-900 text-steel-400">No telemetry harvesting</span>
+				<span class="font-mono text-xs px-3.5 py-1.5 rounded-lg border hairline bg-ink-900 text-steel-400">No lock-in</span>
+			</div>
+		</div>
+	</section>
+
+	<!-- ══ Optional paid things ═════════════════════════════ -->
+	<section class="relative py-24 border-t hairline">
+		<div class="max-w-6xl mx-auto px-5">
+			<div class="rise text-center max-w-2xl mx-auto mb-14">
+				<p class="font-mono text-[11px] tracking-[0.35em] uppercase text-steel-500 mb-4">Optional · Only if you want it</p>
+				<h2 class="text-3xl md:text-5xl font-semibold text-white tracking-tight leading-tight">Beyond the license, the only things you can <em class="font-serif italic font-normal chrome-text">pay for.</em></h2>
+				<p class="mt-6 text-sm md:text-[15px] text-steel-400 leading-relaxed">Everything here is a service on top of the free software — models, compute, reviews, and human hands. Skip all of it and A-Coder still does everything.</p>
+			</div>
+			<div class="grid md:grid-cols-3 gap-5">
+				<div class="rise rounded-2xl border hairline bg-ink-900 p-6 lift flex flex-col">
+					<p class="font-mono text-[10px] tracking-[0.3em] uppercase text-steel-500 mb-3">🇦🇺 Amaara Cloud · Coding plan</p>
+					<h3 class="text-white text-lg font-semibold mb-2">Frontier models, Australian hosted</h3>
+					<p class="text-[13px] text-steel-400 leading-relaxed mb-5 flex-1">Open-weight frontier models — including SCX.ai's Project MAGPiE — via one OpenAI-compatible endpoint. Request-credit billing, pay per use, no subscription. Works across the A-Coder ecosystem and any other app.</p>
+					<p class="font-mono text-[11px] text-steel-600 mb-3">Pay per request-credit</p>
+					<a href="https://monitor.atechds.com/pricing/" class="text-sm text-white font-medium inline-flex items-center gap-1.5 hover:gap-3 transition-all mt-auto">See Amaara pricing <span aria-hidden="true">→</span></a>
+				</div>
+				<div class="rise rounded-2xl border hairline bg-ink-900 p-6 lift flex flex-col relative overflow-hidden">
+					<div class="absolute top-5 right-5 rounded-full bg-white text-black font-mono text-[10px] font-semibold tracking-widest px-2.5 py-1">PRO</div>
+					<p class="font-mono text-[10px] tracking-[0.3em] uppercase text-steel-500 mb-3">A-Coder Pro</p>
+					<h3 class="text-white text-lg font-semibold mb-2">The full toolkit, one plan</h3>
+					<p class="text-[13px] text-steel-400 leading-relaxed mb-5 flex-1">The best coding models, curated skills, MCP servers, and AI code reviews powered by our <a href="https://senix.dev" class="text-steel-200 underline decoration-white/20 hover:decoration-white">Senix</a> partnership — behavioral PR review with risk tags the moment you open a pull request.</p>
+					<p class="font-mono text-[11px] text-steel-600 mb-3">$49 / month · cancel anytime</p>
+					<a href="https://senix.dev" class="text-sm text-white font-medium inline-flex items-center gap-1.5 hover:gap-3 transition-all mt-auto">Explore Pro <span aria-hidden="true">→</span></a>
+				</div>
+				<div class="rise rounded-2xl border hairline bg-ink-900 p-6 lift flex flex-col">
+					<p class="font-mono text-[10px] tracking-[0.3em] uppercase text-steel-500 mb-3">A-Coder Tandem · with Innowise</p>
+					<h3 class="text-white text-lg font-semibold mb-2">Humans for the last mile</h3>
+					<p class="text-[13px] text-steel-400 leading-relaxed mb-5 flex-1">AI gets projects 80–90% complete. When your agent hits a wall, escalate to <a href="https://innowise.com" class="text-steel-200 underline decoration-white/20 hover:decoration-white">Innowise's</a> 3,500+ human developers who take you to 100%. One-time fee — not a subscription.</p>
+					<p class="font-mono text-[11px] text-steel-600 mb-3">Usually under $999 · one-time</p>
+					<a href="https://theatechcorporation.com" class="text-sm text-white font-medium inline-flex items-center gap-1.5 hover:gap-3 transition-all mt-auto">Escalate a project <span aria-hidden="true">→</span></a>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<!-- ══ FAQ ══════════════════════════════════════════════ -->
+	<section class="relative py-24 border-t hairline smoke-b">
+		<div class="max-w-3xl mx-auto px-5">
+			<div class="rise text-center mb-10">
+				<p class="font-mono text-[11px] tracking-[0.35em] uppercase text-steel-500 mb-4">Questions</p>
+				<h2 class="text-3xl md:text-4xl font-semibold text-white tracking-tight">Straight answers</h2>
+			</div>
+			<div class="faq rise space-y-3">
+				<details class="rounded-xl border hairline bg-ink-900 px-5 py-4" open>
+					<summary class="flex items-center justify-between cursor-pointer list-none text-white text-sm font-medium">Is the software really free forever?<svg class="faq-x w-4 h-4 text-steel-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M12 5v14M5 12h14"/></svg></summary>
+					<p class="mt-3 text-[13px] text-steel-400 leading-relaxed">For individuals, solo founders, and businesses with less than USD $10M in total annual revenue — yes, forever, MIT open source, no trials, no expiring features. Organizations above that threshold use A-Coder under The A-Tech Corporation License for company-wide use, which funds the free tier rather than gating features.</p>
+				</details>
+				<details class="rounded-xl border hairline bg-ink-900 px-5 py-4">
+					<summary class="flex items-center justify-between cursor-pointer list-none text-white text-sm font-medium">What counts as an enterprise?<svg class="faq-x w-4 h-4 text-steel-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M12 5v14M5 12h14"/></svg></summary>
+					<p class="mt-3 text-[13px] text-steel-400 leading-relaxed">A business with USD $10,000,000 or more in total annual revenue, including parent companies, subsidiaries, and affiliates. If you're below that — solo founder, startup, small or medium business — you're on the free tier permanently. No revenue verification at install time either; the license simply asks you to count honestly.</p>
+				</details>
+				<details class="rounded-xl border hairline bg-ink-900 px-5 py-4">
+					<summary class="flex items-center justify-between cursor-pointer list-none text-white text-sm font-medium">So what do I actually pay for?<svg class="faq-x w-4 h-4 text-steel-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M12 5v14M5 12h14"/></svg></summary>
+					<p class="mt-3 text-[13px] text-steel-400 leading-relaxed">Only models and external services: your own provider API keys (paid to those providers, not to us), the Amaara Cloud Coding plan if you want Australian-hosted frontier models, A-Coder Pro if you want the curated toolkit plus Senix reviews, and Tandem if a project needs human engineers. Enterprises pay for The A-Tech Corporation License itself. Everything else is free.</p>
+				</details>
+				<details class="rounded-xl border hairline bg-ink-900 px-5 py-4">
+					<summary class="flex items-center justify-between cursor-pointer list-none text-white text-sm font-medium">Can I run A-Coder with zero spend?<svg class="faq-x w-4 h-4 text-steel-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M12 5v14M5 12h14"/></svg></summary>
+					<p class="mt-3 text-[13px] text-steel-400 leading-relaxed">Yes. Point A-Coder at local models — Ollama, LM Studio, vLLM, or llama.cpp are auto-discovered — and run with <code class="font-mono text-[12px] text-steel-200">--offline</code> to disable all network extras. Every feature of the software works. Total cost: whatever your own hardware costs to run, nothing more.</p>
+				</details>
+				<details class="rounded-xl border hairline bg-ink-900 px-5 py-4">
+					<summary class="flex items-center justify-between cursor-pointer list-none text-white text-sm font-medium">Why give the software away?<svg class="faq-x w-4 h-4 text-steel-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M12 5v14M5 12h14"/></svg></summary>
+					<p class="mt-3 text-[13px] text-steel-400 leading-relaxed">Sovereign AI begins with sovereign software. A-Coder is part of Project Infra's movement: the tools themselves should never be the tollbooth for builders. We keep the software free for individuals and small-to-medium business, and charge enterprises at scale and hosted services at honest prices — that's the whole model.</p>
+				</details>
+			</div>
+		</div>
+	</section>
+
+	<!-- ══ Final CTA ════════════════════════════════════════ -->
+	<section class="relative py-28 border-t hairline overflow-hidden">
+		<div class="absolute inset-0 smoke-a"></div>
+		<div class="relative max-w-4xl mx-auto px-5 text-center">
+			<h2 class="rise text-3xl md:text-5xl font-semibold text-white tracking-tight leading-tight">Install once.<br><em class="font-serif italic chrome-text font-normal">Never see a paywall.</em></h2>
+			<p class="rise mt-6 text-steel-400 text-[15px] max-w-lg mx-auto">Free forever for individuals, founders, and small-to-medium business. Your models, your keys, your data.</p>
+			<div class="rise mt-9 flex flex-col sm:flex-row gap-3 justify-center">
+				<a href="index.html#install" class="inline-flex justify-center items-center rounded-full bg-white text-black font-medium px-7 py-3 hover:bg-steel-200 transition-colors">Install A-Coder</a>
+				<a href="https://github.com/hamishfromatech/a-coder-cli" class="inline-flex justify-center items-center rounded-full border hairline text-steel-200 font-medium px-7 py-3 hover:bg-white/5 hover:text-white transition-colors">Star on GitHub</a>
+			</div>
+		</div>
+	</section>
+
+	<!-- ══ Footer ═══════════════════════════════════════════ -->
+	<footer class="border-t hairline py-14 bg-ink-900/40">
+		<div class="max-w-6xl mx-auto px-5 grid md:grid-cols-4 gap-10 mb-12">
+			<div>
+				<div class="flex items-center gap-2.5 mb-3">
+					<img src="assets/logo-trans.png" alt="A-Coder mark" class="w-7 h-7">
+					<p class="text-white font-semibold tracking-[0.08em] text-sm">A-CODER</p>
+				</div>
+				<p class="text-[12px] text-steel-600 leading-relaxed">One self-extensible agent engine.<br>IDE · CLI · Desktop.</p>
+			</div>
+			<div>
+				<p class="font-mono text-[10px] tracking-[0.3em] uppercase text-steel-600 mb-3">Products</p>
+				<ul class="space-y-2 text-sm">
+					<li><a href="index.html#ide" class="text-steel-400 hover:text-white transition-colors">A-Coder IDE</a></li>
+					<li><a href="index.html#cli" class="text-steel-400 hover:text-white transition-colors">A-Coder CLI</a></li>
+					<li><a href="index.html#desktop" class="text-steel-400 hover:text-white transition-colors">A-Coder Desktop</a></li>
+					<li><a href="pricing.html" class="text-steel-400 hover:text-white transition-colors">Pricing</a></li>
+				</ul>
+			</div>
+			<div>
+				<p class="font-mono text-[10px] tracking-[0.3em] uppercase text-steel-600 mb-3">Resources</p>
+				<ul class="space-y-2 text-sm">
+					<li><a href="https://github.com/hamishfromatech/a-coder-cli" class="text-steel-400 hover:text-white transition-colors">CLI — GitHub</a></li>
+					<li><a href="https://github.com/hamishfromatech/A-Coder" class="text-steel-400 hover:text-white transition-colors">IDE — GitHub</a></li>
+					<li><a href="https://github.com/hamishfromatech/a-coder-cli/releases" class="text-steel-400 hover:text-white transition-colors">Releases</a></li>
+					<li><a href="https://senix.dev" class="text-steel-400 hover:text-white transition-colors">Senix — AI code reviews</a></li>
+					<li><a href="https://discord.com/invite/3cU7Bz4UPx" class="text-steel-400 hover:text-white transition-colors">Discord</a></li>
+				</ul>
+			</div>
+			<div>
+				<p class="font-mono text-[10px] tracking-[0.3em] uppercase text-steel-600 mb-3">Company</p>
+				<p class="text-[12px] text-steel-600 leading-relaxed">© 2026 The A-Tech Corporation PTY LTD.<br>Made in Australia. 🇦🇺<br>All rights reserved.</p>
+				<ul class="text-[12px] mt-3 space-y-1.5">
+					<li><a href="https://theatechcorporation.com" class="text-steel-500 hover:text-white transition-colors">The A-Tech Corporation ↗</a></li>
+					<li><a href="https://infra.atechds.com" class="text-steel-500 hover:text-white transition-colors">Project Infra ↗</a></li>
+					<li><a href="https://monitor.atechds.com" class="text-steel-500 hover:text-white transition-colors">Amaara Cloud ↗</a></li>
+				</ul>
+			</div>
+		</div>
+		<div class="max-w-6xl mx-auto px-5 pt-6 border-t hairline flex flex-col md:flex-row items-center justify-between gap-3">
+			<p class="font-mono text-[10px] text-steel-700">Built by the A-Coder agent, naturally.</p>
+			<p class="font-mono text-[10px] text-steel-700">MIT for individuals &amp; SMBs · The A-Tech Corporation License at scale · Made in Australia 🇦🇺</p>
+		</div>
+	</footer>
+
+	<script>
+		// ── Mobile menu
+		const menuBtn = document.getElementById('menu-btn');
+		const menu = document.getElementById('menu');
+		menuBtn.addEventListener('click', () => menu.classList.toggle('hidden'));
+		menu.querySelectorAll('a').forEach((a) => a.addEventListener('click', () => menu.classList.add('hidden')));
+
+		// ── Scroll reveal
+		const io = new IntersectionObserver((entries) => {
+			for (const e of entries) if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+		}, { threshold: 0.12 });
+		document.querySelectorAll('.rise').forEach((el) => io.observe(el));
+
+		// ── Mouse spotlight
+		if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+			document.addEventListener('pointermove', (e) => {
+				document.documentElement.style.setProperty('--mx', `${e.clientX}px`);
+				document.documentElement.style.setProperty('--my', `${e.clientY}px`);
+			}, { passive: true });
+		}
+	</script>
+</body>
+</html>
