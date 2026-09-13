@@ -23,6 +23,7 @@ dependencies = [
  "tracing",
  "uuid",
  "walkdir",
+ "webkit2gtk",
  "which",
 ]
 
