@@ -149,7 +149,7 @@ fn main() {
 								values.get(1).and_then(|v| v.get::<i32>().ok()),
 							);
 							let _ = handle.emit("desktop://webprocess-crashed", ());
-							if let Ok(view) = values.first().and_then(|v| v.get::<webkit2gtk::WebView>()) {
+							if let Some(Ok(view)) = values.first().map(|v| v.get::<webkit2gtk::WebView>()) {
 								view.reload();
 							}
 							None
