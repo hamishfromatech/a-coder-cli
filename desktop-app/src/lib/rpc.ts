@@ -790,6 +790,16 @@ export async function onMenuAction(handler: (action: string) => void): Promise<U
 	});
 }
 
+/** The CLI engine process exited unexpectedly (stdout closed). */
+export async function onCliExited(handler: () => void): Promise<UnlistenFn> {
+	return await listen("desktop://cli-exited", () => handler());
+}
+
+/** The WebKitGTK WebProcess crashed; the Rust shell already reloaded the webview. */
+export async function onWebProcessCrashed(handler: () => void): Promise<UnlistenFn> {
+	return await listen("desktop://webprocess-crashed", () => handler());
+}
+
 // ============================================================================
 // Git / filesystem utilities exposed by the Tauri shell.
 // ============================================================================

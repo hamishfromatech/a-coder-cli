@@ -26,6 +26,7 @@ import * as rpc from "../lib/rpc";
 import { MarkdownTextContent } from "./markdown/MarkdownText";
 import { AskUserQuestionCard } from "./tool-renderers/AskUserQuestionCard";
 import { RichToolCall } from "./tool-renderers";
+import { ErrorBoundary } from "./ErrorBoundary";
 
 /** Find the id of the tool call currently awaiting approval: the last tool call
  * in the transcript that has no result yet and whose name matches the pending
@@ -99,14 +100,16 @@ export function MessageList() {
 		<div ref={listRef} className="chat-surface flex-1 overflow-y-auto">
 			<div className="chat-column mx-auto flex flex-col gap-6 py-8">
 				{messages.map((msg, index) => (
-					<MessageItem
-						key={index}
-						message={msg}
-						index={index}
-						hideThinkingBlock={hideThinkingBlock}
-						approvalToolCallId={approvalToolCallId}
-						approvalRequest={approvalRequest}
-					/>
+					<ErrorBoundary key={index} label="message">
+						<MessageItem
+							key={index}
+							message={msg}
+							index={index}
+							hideThinkingBlock={hideThinkingBlock}
+							approvalToolCallId={approvalToolCallId}
+							approvalRequest={approvalRequest}
+						/>
+					</ErrorBoundary>
 				))}
 			</div>
 		</div>

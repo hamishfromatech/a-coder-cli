@@ -4951,4 +4951,13 @@ Initial public release.
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed desktop silently rendering a dead session when the CLI engine process exits mid-conversation: the RPC shell now emits a `desktop://cli-exited` event when the engine's stdout closes, and the app surfaces the boot-failure card with a Retry affordance instead of a frozen transcript whose sends silently time out.
+
+### Changed
+
+- Linux: disable WebKitGTK's DMABUF renderer by default (`WEBKIT_DISABLE_DMABUF_RENDERER=1`, env override respected) — black/blank webviews on bleeding-edge GPU stacks (new Mesa/NVIDIA on fresh distros) are the standard trigger for black screens, and the visual difference is imperceptible. Also recover from WebKitGTK WebProcess crashes: the shell logs the termination reason, notifies the frontend, and reloads the webview in place instead of leaving a permanently black window.
+- Added render error boundaries around the app root and every transcript message: a render exception in one message (bad tool result, malformed content) now shows an inline retry card for that message instead of unmounting the whole tree, which left the window as a black screen.
+
 ### Added

@@ -15,6 +15,7 @@ window.addEventListener("unhandledrejection", (e) => {
 
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { HapticsProvider } from "./components/HapticsProvider";
 import { primeAudio } from "./lib/completion-sound";
 import "./index.css";
@@ -33,8 +34,10 @@ document.addEventListener("a-coder:prime-audio", primeAudioOnce, { once: true })
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
 	<React.StrictMode>
-		<HapticsProvider>
-			<App />
-		</HapticsProvider>
+		<ErrorBoundary label="app">
+			<HapticsProvider>
+				<App />
+			</HapticsProvider>
+		</ErrorBoundary>
 	</React.StrictMode>,
 );

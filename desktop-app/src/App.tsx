@@ -952,6 +952,40 @@ export default function App() {
 		};
 	}, []);
 
+	// Listen for the native engine process exiting. Without this the window
+	// keeps rendering a dead session (sends time out silently). Surface the
+	// BootFailureCard with a Retry affordance instead.
+	useEffect(() => {
+		let unlisten: (() => void) | null = null;
+		rpc.onCliExited(() => {
+			useSessionStore.getState().setStatus(
+				"error",
+				"The engine process exited unexpectedly. Retry restarts it and reloads the conversation.",
+			);
+			useSessionStore.getState().setIsStreaming(false);
+		}).then((fn) => {
+			unlisten = fn;
+		});
+		return () => {
+			unlisten?.();
+		};
+	}, []);
+
+	// WebKitGTK WebProcess crash on Linux: the Rust shell logs the termination
+	// reason and reloads the webview in place. Nothing to restore here — the
+	// reload reconnects on boot.
+	useEffect(() => {
+		let unlisten: (() => void) | null = null;
+		rpc.onWebProcessCrashed(() => {
+			console.warn("[a-coder] webview process crashed; shell is reloading");
+		}).then((fn) => {
+			unlisten = fn;
+		});
+		return () => {
+			unlisten?.();
+		};
+	}, []);
+
 	const handleSelectModel = async (m: { provider: string; id: string }) => {
 		try {
 			await rpc.sendCommand({ type: "set_model", provider: m.provider, modelId: m.id });

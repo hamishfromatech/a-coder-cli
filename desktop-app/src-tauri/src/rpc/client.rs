@@ -203,6 +203,12 @@ impl RpcClient {
 				tracing::error!("cli stderr: {}", line);
 			}
 
+			// The CLI engine exited (stdout closed). Without this signal the
+			// frontend keeps rendering a dead session — sends silently time out and
+			// the window looks frozen. Tell it so it can surface a reconnect
+			// affordance.
+			let _ = app_handle.emit("desktop://cli-exited", ());
+
 			let _ = forwarder.await;
 		});
 

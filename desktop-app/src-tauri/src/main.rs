@@ -20,6 +20,19 @@ use rpc::commands as rpc_commands;
 use state::AppState;
 
 fn main() {
+	// Linux: WebKitGTK's DMABUF renderer can produce black/blank windows (or a
+	// black webview the moment GPU-accelerated CSS lands, e.g. backdrop-filter
+	// on a newly rendered message) on bleeding-edge GPU stacks — fresh distros
+	// like Ubuntu 26.04 with new Mesa or NVIDIA drivers. Tauri's standard
+	// workaround is disabling the DMABUF renderer; local compositing still uses
+	// accelerated paths, and the visual difference is imperceptible for a chat
+	// UI. Respect an explicit user override either way (they may set "0" or
+	// have their own environment reasons).
+	#[cfg(target_os = "linux")]
+	if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+		std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+	}
+
 	// On macOS, make sure the app is a foreground (regular) application before
 	// any windows are created. Without this, launching from certain contexts
 	// (terminal, installer, quarantined DMG) can leave the process running but
@@ -117,6 +130,32 @@ fn main() {
 				let _ = window.unminimize();
 				let _ = window.show();
 				let _ = window.set_focus();
+
+				// Linux: recover from WebKitGTK WebProcess crashes. A content-triggered
+				// crash (huge tool output, GPU-path failure on exotic drivers) otherwise
+				// leaves the window permanently black until a manual restart. The
+				// signal fires on the main thread; log the reason, tell the frontend,
+				// and reload the webview in place.
+				#[cfg(target_os = "linux")]
+				{
+					use tauri::Emitter;
+					let handle = app_handle.clone();
+					window.with_webview(move |platform| {
+						use webkit2gtk::prelude::*;
+						let wk = platform.inner();
+						let _ = wk.connect("web-process-terminated", false, move |values| {
+							eprintln!(
+								"linux: webview web process terminated (reason {:?}); reloading",
+								values.get(1).and_then(|v| v.get::<i32>().ok()),
+							);
+							let _ = handle.emit("desktop://webprocess-crashed", ());
+							if let Ok(view) = values.first().and_then(|v| v.get::<webkit2gtk::WebView>()) {
+								view.reload();
+							}
+							None
+						});
+					});
+				}
 			}
 
 			Ok(())
