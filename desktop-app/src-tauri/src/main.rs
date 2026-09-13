@@ -152,7 +152,7 @@ fn main() {
 							if let Some(Ok(view)) = values.first().map(|v| v.get::<webkit2gtk::WebView>()) {
 								// The pinned webkit2gtk 2.0.2 bindings name the reload binding
 								// `n` (gir mangling quirk); call the C symbol directly instead.
-								use glib::translate::ToGlibNone as _;
+								use glib::translate::ToGlibPtr as _;
 								unsafe {
 									webkit2gtk::ffi::webkit_web_view_reload(view.to_glib_none().0);
 								}
