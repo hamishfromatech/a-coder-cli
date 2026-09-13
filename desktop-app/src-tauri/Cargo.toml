@@ -30,9 +30,11 @@ reqwest = { version = "0.13", features = ["json", "multipart"] }
 objc = "0.2"
 
 # Linux: direct handle to the WebKitGTK webview for WebProcess-crash recovery
-# (must match wry's pinned version + features so the crate unifies).
+# (must match wry's pinned version + features so the crate unifies; glib is
+# needed for the raw web-process-terminated signal connect).
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = { version = "=2.0.2", features = ["v2_38"] }
+glib = "0.18"
 
 [dev-dependencies]
 tempfile = "3"

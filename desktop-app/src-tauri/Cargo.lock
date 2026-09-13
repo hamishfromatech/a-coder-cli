@@ -7,6 +7,7 @@ name = "a-coder-desktop"
 version = "0.80.64"
 dependencies = [
  "base64 0.22.1",
+ "glib",
  "objc",
  "reqwest",
  "serde",

@@ -138,10 +138,10 @@ fn main() {
 				// and reload the webview in place.
 				#[cfg(target_os = "linux")]
 				{
+					use glib::object::ObjectExt as _;
 					use tauri::Emitter;
 					let handle = app_handle.clone();
 					window.with_webview(move |platform| {
-						use webkit2gtk::prelude::*;
 						let wk = platform.inner();
 						let _ = wk.connect("web-process-terminated", false, move |values| {
 							eprintln!(
