@@ -19,6 +19,7 @@ import {
 	printAuthCommandHelp,
 	validateAuthCommandArgs,
 } from "./cli/auth-command.ts";
+import { handleBenchCommand } from "./cli/bench-command.ts";
 import { handleCloudCommand } from "./cli/cloud-command.ts";
 import { launchDesktop } from "./cli/desktop.ts";
 import { processFileArguments } from "./cli/file-processor.ts";
@@ -621,6 +622,11 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 
 	if (await handleCloudCommand(args)) {
+		process.exit(process.exitCode ?? 0);
+		return;
+	}
+
+	if (await handleBenchCommand(args)) {
 		process.exit(process.exitCode ?? 0);
 		return;
 	}

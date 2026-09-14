@@ -266,6 +266,7 @@ ${chalk.bold("Usage:")}
   ${APP_NAME} [options] [@files...] [messages...]
 
 ${chalk.bold("Commands:")}
+  ${APP_NAME} bench                     Interactive benchmark wizard (a-coder bench --help)
   ${APP_NAME} cloud spawn <repo> <prompt>   Run an always-on cloud agent task (a-coder cloud --help)
   ${APP_NAME} cloud status|review|stop      Inspect or manage cloud tasks
   ${APP_NAME} cloud serve                  Run the cloud daemon in the foreground
