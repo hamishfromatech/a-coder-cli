@@ -1,0 +1,8 @@
+{
+	"id": "005-refactor-extract",
+	"title": "Extract duplicated date-range clamping",
+	"instruction": "In lib/reports.js, the date range clamping logic is duplicated in three functions (weeklyReport, monthlyReport, quarterlyReport). Extract it into a new exported function `clampDateRange(startIso, endIso)` in a new file `lib/dateRange.js` that returns `{ start, end }` as ISO strings, and use it from all three functions. All existing behavior must be preserved - run `node main.js` to verify the demo output stays the same.",
+	"tags": ["refactor", "architecture"],
+	"timeoutSeconds": 360,
+	"grader": "grade.mjs"
+}

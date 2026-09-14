@@ -1,0 +1,8 @@
+{
+	"id": "004-precise-json-edit",
+	"title": "Precise JSON config edit",
+	"instruction": "Edit config.json: set the `payments` service's `port` to 8443, and change its `retries` from 0 to an object `{ \"count\": 3, \"backoff\": \"exponential\" }`. Do not change any other part of the file. Preserve 2-space indentation.",
+	"tags": ["edit-precision", "config"],
+	"timeoutSeconds": 240,
+	"grader": "grade.mjs"
+}

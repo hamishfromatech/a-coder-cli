@@ -1,0 +1,8 @@
+{
+	"id": "001-fix-crash",
+	"title": "Fix import crash",
+	"instruction": "Running `node main.js` in this directory crashes before printing anything. Fix the code so that `node main.js` prints exactly `12` (and nothing else) and exits cleanly. Keep main.js's output unchanged.",
+	"tags": ["bugfix", "starter", "debugging"],
+	"timeoutSeconds": 300,
+	"grader": "grade.mjs"
+}

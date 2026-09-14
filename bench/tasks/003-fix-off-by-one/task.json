@@ -1,0 +1,8 @@
+{
+	"id": "003-fix-off-by-one",
+	"title": "Fix pager off-by-one",
+	"instruction": "`pageItems` in lib/pager.js returns the wrong slice of items. Pages are 1-based: page 1 returns the first `pageSize` items, page 2 the next `pageSize`, and so on. Requesting a page beyond the last page returns an empty array. Fix the function so it follows that contract. Run `node main.js` to see the demo output.",
+	"tags": ["bugfix", "logic", "hidden-tests"],
+	"timeoutSeconds": 300,
+	"grader": "grade.mjs"
+}

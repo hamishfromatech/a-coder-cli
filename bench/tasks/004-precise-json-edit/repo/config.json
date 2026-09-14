@@ -1,0 +1,25 @@
+{
+  "name": "acme-backend",
+  "version": "1.4.2",
+  "services": {
+    "auth": {
+      "port": 3000,
+      "retries": 0,
+      "upstream": "internal-auth:9000"
+    },
+    "payments": {
+      "port": 8080,
+      "retries": 0,
+      "upstream": "billing-core:7000"
+    },
+    "search": {
+      "port": 9200,
+      "retries": 0,
+      "upstream": "indexer:9200"
+    }
+  },
+  "features": {
+    "darkMode": true,
+    "betaSearch": false
+  }
+}

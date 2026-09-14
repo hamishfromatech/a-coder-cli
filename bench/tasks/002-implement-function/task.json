@@ -1,0 +1,8 @@
+{
+	"id": "002-implement-function",
+	"title": "Implement slugify",
+	"instruction": "Implement the `slugify` function in lib/slugify.js so all cases in test.mjs pass. Run `node test.mjs` to check your work. Do not modify test.mjs.",
+	"tags": ["implement", "starter", "tdd"],
+	"timeoutSeconds": 300,
+	"grader": "grade.mjs"
+}
