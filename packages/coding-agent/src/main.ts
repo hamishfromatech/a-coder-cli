@@ -374,17 +374,17 @@ async function createSessionManager(
 	return SessionManager.create(cwd, sessionDir, { id: parsed.sessionId });
 }
 
-function buildSessionOptions(
+async function buildSessionOptions(
 	parsed: Args,
 	scopedModels: ScopedModel[],
 	hasExistingSession: boolean,
 	modelRegistry: ModelRegistry,
 	settingsManager: SettingsManager,
-): {
+): Promise<{
 	options: CreateAgentSessionOptions;
 	cliThinkingFromModel: boolean;
 	diagnostics: AgentSessionRuntimeDiagnostic[];
-} {
+}> {
 	const options: CreateAgentSessionOptions = {};
 	const diagnostics: AgentSessionRuntimeDiagnostic[] = [];
 	let cliThinkingFromModel = false;
@@ -393,12 +393,26 @@ function buildSessionOptions(
 	// - supports --provider <name> --model <pattern>
 	// - supports --model <provider>/<pattern>
 	if (parsed.model) {
-		const resolved = resolveCliModel({
-			cliProvider: parsed.provider,
-			cliModel: parsed.model,
-			cliThinking: parsed.thinking,
-			modelRegistry,
-		});
+		const resolve = () =>
+			resolveCliModel({
+				cliProvider: parsed.provider,
+				cliModel: parsed.model,
+				cliThinking: parsed.thinking,
+				modelRegistry,
+			});
+		let resolved = resolve();
+		if (resolved.error) {
+			// The spec may name a dynamic local provider (ollama, LM Studio,
+			// llama.cpp) whose models are only discovered by probing the local
+			// server. Headless paths never ran that discovery, so retry once
+			// after a refresh before reporting the failure.
+			try {
+				await modelRegistry.refreshDynamicModels();
+			} catch {
+				// best-effort: fall through to the original resolution error
+			}
+			resolved = resolve();
+		}
 		if (resolved.warning) {
 			diagnostics.push({ type: "warning", message: resolved.warning });
 		}
@@ -854,7 +868,7 @@ export async function main(args: string[], options?: MainOptions) {
 			options: sessionOptions,
 			cliThinkingFromModel,
 			diagnostics: sessionOptionDiagnostics,
-		} = buildSessionOptions(
+		} = await buildSessionOptions(
 			parsed,
 			scopedModels,
 			sessionManager.buildSessionContext().messages.length > 0,

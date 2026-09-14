@@ -42,3 +42,8 @@ collect.sh
 
 # Local a-coder-cli runtime config (secrets/sessions) — never commit
 .a-coder-cli/
+
+# A-Coder Bench run artifacts
+bench/runs/
+bench/results.jsonl
+bench/leaderboard.md
