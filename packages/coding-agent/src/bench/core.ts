@@ -13,6 +13,7 @@ import fs, { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { STARTER_TASK_FILES } from "./starter-tasks.generated.ts";
 import type {
 	BenchChildCommand,
 	BenchRunResult,
@@ -71,8 +72,55 @@ export function resultsPath(benchDir: string): string {
 	return join(benchDir, "results.jsonl");
 }
 
+export interface MaterializeSummary {
+	benchDir: string;
+	written: number;
+	skipped: number;
+	taskIds: string[];
+}
+
+/**
+ * Write the embedded starter tasks into destDir (typically <cwd>/bench).
+ * Never overwrites existing files, so user-modified tasks survive.
+ */
+export function materializeStarterTasks(destDir: string): MaterializeSummary {
+	const tasksRoot = join(destDir, "tasks");
+	fs.mkdirSync(tasksRoot, { recursive: true });
+	let written = 0;
+	let skipped = 0;
+	for (const [relative, content] of Object.entries(STARTER_TASK_FILES)) {
+		const target = join(tasksRoot, relative);
+		if (existsSync(target)) {
+			skipped++;
+			continue;
+		}
+		fs.mkdirSync(dirname(target), { recursive: true });
+		fs.writeFileSync(target, content);
+		written++;
+	}
+	return { benchDir: destDir, written, skipped, taskIds: loadTasks(destDir).map((t) => t.id) };
+}
+
+/**
+ * Resolve the bench directory to use: an explicit preferred dir (materialized
+ * when it has no tasks yet) or an existing bench/tasks near cwd; without a
+ * checkout, the embedded starter tasks are materialized into <cwd>/bench.
+ */
+export function ensureBenchDir(preferred?: string, materialize = true): MaterializeSummary | undefined {
+	if (!preferred) {
+		const existing = findBenchDir();
+		if (existing)
+			return { benchDir: existing, written: 0, skipped: 0, taskIds: loadTasks(existing).map((t) => t.id) };
+	}
+	const target = preferred ?? join(process.cwd(), "bench");
+	if (existsSync(join(target, "tasks")))
+		return { benchDir: target, written: 0, skipped: 0, taskIds: loadTasks(target).map((t) => t.id) };
+	if (!materialize) return undefined;
+	return materializeStarterTasks(target);
+}
+
 export function appendResult(benchDir: string, result: BenchRunResult): void {
-	fs.appendFileSync(resultsPath(benchDir), JSON.stringify(result) + "\n");
+	fs.appendFileSync(resultsPath(benchDir), `${JSON.stringify(result)}\n`);
 }
 
 export function loadResults(benchDir: string): BenchRunResult[] {
@@ -127,7 +175,7 @@ export function writeEndpointAgentDir(
 		},
 	};
 	fs.mkdirSync(agentDir, { recursive: true });
-	fs.writeFileSync(join(agentDir, "models.json"), JSON.stringify(modelsJson, null, 2) + "\n");
+	fs.writeFileSync(join(agentDir, "models.json"), `${JSON.stringify(modelsJson, null, 2)}\n`);
 	return agentDir;
 }
 
@@ -377,7 +425,7 @@ export async function runTaskOnce(options: RunTaskOptions): Promise<BenchRunResu
 		result.error = `agent exited ${agent.exitCode}: ${agent.stderr.trim().split("\n").slice(-3).join(" | ").slice(0, 500)}`;
 	}
 
-	fs.writeFileSync(join(runDir, "result.json"), JSON.stringify(result, null, 2) + "\n");
+	fs.writeFileSync(join(runDir, "result.json"), `${JSON.stringify(result, null, 2)}\n`);
 	appendResult(benchDir, result);
 	return result;
 }

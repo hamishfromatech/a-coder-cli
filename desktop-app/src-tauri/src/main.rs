@@ -58,6 +58,7 @@ fn main() {
 			cli::get_initial_workspace,
 			bootstrap::bootstrap_cli,
 			bench::bench_list_tasks,
+			bench::bench_scaffold,
 			bench::bench_start,
 			bench::bench_stop,
 			voice::voice_transcribe,

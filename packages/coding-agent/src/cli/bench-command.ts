@@ -25,9 +25,10 @@ import {
 } from "@earendil-works/pi-tui";
 import chalk from "chalk";
 import {
-	findBenchDir,
+	ensureBenchDir,
 	loadResults,
 	loadTasks,
+	materializeStarterTasks,
 	parseBenchModelSpec,
 	resolveBenchChildCommand,
 	runTaskOnce,
@@ -86,6 +87,7 @@ function printBenchHelp(): void {
 
 Usage:
   a-coder bench                            Interactive wizard (model -> options -> run)
+  a-coder bench init [--bench-dir <dir>]   Scaffold the embedded starter tasks (bench/tasks/)
   a-coder bench run --model <p>/<id>       Headless run (no UI); use with --json for machines
   a-coder bench --model <provider>/<id>    Skip model selection
   a-coder bench --endpoint <url>           Benchmark a self-hosted endpoint
@@ -98,6 +100,8 @@ Run-mode flags:
   --bench-dir <dir>      Bench directory (default: auto-detect from cwd)
   --json                 Emit NDJSON bench_progress / bench_summary events
 
+Without a repository checkout, the wizard and 'bench init' scaffold the
+embedded starter tasks into ./bench (existing files are never overwritten).
 The wizard always shows the health & safety confirmation before any model
 is invoked. Headless 'bench run' is for hosts that show their own warning
 (the desktop settings panel does).
@@ -150,6 +154,7 @@ class BenchWizardComponent extends Container implements Focusable {
 	private tasks: BenchTask[];
 	private flags: BenchFlags;
 	private child: BenchChildCommand;
+	private notice?: string;
 	private onFinish: () => void;
 
 	private step: WizardStep;
@@ -177,6 +182,7 @@ class BenchWizardComponent extends Container implements Focusable {
 			registry: ModelRegistry;
 			flags: BenchFlags;
 			child: BenchChildCommand;
+			notice?: string;
 			onFinish: () => void;
 		},
 	) {
@@ -187,6 +193,7 @@ class BenchWizardComponent extends Container implements Focusable {
 		this.registry = options.registry;
 		this.flags = options.flags;
 		this.child = options.child;
+		this.notice = options.notice;
 		this.onFinish = options.onFinish;
 		this.runs = options.flags.runs ?? 1;
 
@@ -336,6 +343,10 @@ class BenchWizardComponent extends Container implements Focusable {
 	}
 
 	private renderModelStep(): void {
+		if (this.notice) {
+			this.addChild(new Text(chalk.yellow(this.notice), 0, 0));
+			this.addChild(new Spacer(1));
+		}
 		this.addChild(new Text(chalk.dim("Type to filter · ↑/↓ to move · Enter to select · Esc to quit"), 0, 0));
 		this.addChild(new Spacer(1));
 		this.addChild(this.searchInput);
@@ -537,7 +548,7 @@ class BenchWizardComponent extends Container implements Focusable {
 		const leaderboard = buildLeaderboard(loadResults(this.benchDir));
 		try {
 			const { writeFileSync } = fs;
-			writeFileSync(join(this.benchDir, "leaderboard.md"), leaderboard + "\n");
+			writeFileSync(join(this.benchDir, "leaderboard.md"), `${leaderboard}\n`);
 		} catch {
 			// non-fatal: the summary still shows the leaderboard inline
 		}
@@ -618,6 +629,11 @@ function renderJobLine(job: JobProgress, spinnerFrame: number): string {
 // own safety UI and just want structured progress events.
 // ---------------------------------------------------------------------------
 
+/** Emit one NDJSON bench event on stdout (for headless runs). */
+function emitBenchEvent(event: Record<string, unknown>): void {
+	process.stdout.write(`${JSON.stringify(event)}\n`);
+}
+
 async function runBenchHeadless(
 	benchDir: string,
 	tasks: BenchTask[],
@@ -668,7 +684,7 @@ async function runBenchHeadless(
 	const leaderboardPath = join(benchDir, "leaderboard.md");
 	try {
 		const leaderboard = buildLeaderboard(loadResults(benchDir));
-		fs.writeFileSync(leaderboardPath, leaderboard + "\n");
+		fs.writeFileSync(leaderboardPath, `${leaderboard}\n`);
 	} catch {
 		// non-fatal: summary still reports counts
 	}
@@ -689,7 +705,7 @@ async function runBenchHeadless(
 // Wizard bootstrap
 // ---------------------------------------------------------------------------
 
-async function runBenchWizard(benchDir: string, tasks: BenchTask[], flags: BenchFlags): Promise<void> {
+async function runBenchWizard(benchDir: string, tasks: BenchTask[], flags: BenchFlags, notice?: string): Promise<void> {
 	const cwd = process.cwd();
 	const settingsManager = SettingsManager.create(cwd);
 	initTheme(settingsManager.getTheme(), false);
@@ -705,6 +721,7 @@ async function runBenchWizard(benchDir: string, tasks: BenchTask[], flags: Bench
 			registry,
 			flags,
 			child,
+			notice,
 			onFinish: () => {
 				if (done) return;
 				done = true;
@@ -725,6 +742,19 @@ async function runBenchWizard(benchDir: string, tasks: BenchTask[], flags: Bench
 
 export async function handleBenchCommand(args: string[]): Promise<boolean> {
 	if (args[0] !== "bench") return false;
+	if (args[1] === "init") {
+		const flags = parseBenchFlags(args.slice(2));
+		const target = flags.benchDir ?? join(process.cwd(), "bench");
+		const summary = materializeStarterTasks(target);
+		console.log(
+			`A-Coder Bench: scaffolded starter tasks in ${summary.benchDir} (${summary.written} written, ${summary.skipped} already existed).`,
+		);
+		console.log(`Tasks: ${summary.taskIds.join(", ")}`);
+		console.log(
+			"Run `a-coder bench` here to start benchmarking, or point the desktop Bench panel at this directory.",
+		);
+		return true;
+	}
 	if (args[1] === "run") {
 		const flags = parseBenchFlags(args.slice(2));
 		if (!flags.model) {
@@ -733,8 +763,8 @@ export async function handleBenchCommand(args: string[]): Promise<boolean> {
 			return true;
 		}
 		const spec = parseBenchModelSpec(flags.model);
-		const benchDir = flags.benchDir ?? findBenchDir();
-		if (!benchDir) {
+		const ensured = ensureBenchDir(flags.benchDir);
+		if (!ensured) {
 			console.error(
 				chalk.red("A-Coder Bench tasks not found.") +
 					" Run from a repository checkout with bench/tasks/ or pass --bench-dir.",
@@ -742,6 +772,12 @@ export async function handleBenchCommand(args: string[]): Promise<boolean> {
 			process.exitCode = 2;
 			return true;
 		}
+		if (ensured.written > 0) {
+			const note = `No bench/tasks found nearby - scaffolded ${ensured.written} starter task files into ${ensured.benchDir}.`;
+			if (flags.json) emitBenchEvent({ type: "bench_log", message: note });
+			else console.log(note);
+		}
+		const benchDir = ensured.benchDir;
 		const tasks = loadTasks(benchDir);
 		const selected =
 			flags.tasks && flags.tasks !== "all"
@@ -768,19 +804,24 @@ export async function handleBenchCommand(args: string[]): Promise<boolean> {
 	if (flags.model) {
 		parseBenchModelSpec(flags.model); // fail fast on malformed specs
 	}
-	const benchDir = findBenchDir();
-	if (!benchDir) {
+	const ensured = ensureBenchDir();
+	if (!ensured) {
 		console.error(
 			chalk.red("A-Coder Bench tasks not found.") +
 				" Run from an a-coder-cli repository checkout that has bench/tasks/.",
 		);
 		return true;
 	}
+	let wizardNotice: string | undefined;
+	if (ensured.written > 0) {
+		wizardNotice = `No bench/tasks found nearby - scaffolded the 5 starter tasks into ${ensured.benchDir}.`;
+	}
+	const benchDir = ensured.benchDir;
 	const tasks = loadTasks(benchDir);
 	if (tasks.length === 0) {
 		console.error(chalk.red("No bench tasks found in bench/tasks/."));
 		return true;
 	}
-	await runBenchWizard(benchDir, tasks, flags);
+	await runBenchWizard(benchDir, tasks, flags, wizardNotice);
 	return true;
 }

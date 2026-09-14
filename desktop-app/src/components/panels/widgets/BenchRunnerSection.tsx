@@ -2,6 +2,7 @@ import { AlertCircle, Eye, EyeOff, FlaskConical, Loader2, Play, Square, Trophy }
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
 	benchListTasks,
+	benchScaffold,
 	benchStart,
 	benchStop,
 	onBenchExit,
@@ -117,6 +118,7 @@ export function BenchRunnerSection() {
 	const [lines, setLines] = useState<BenchEvent[]>([]);
 	const [summary, setSummary] = useState<{ passed: number; total: number; leaderboardPath: string } | null>(null);
 	const [startError, setStartError] = useState<string | null>(null);
+	const [scaffolding, setScaffolding] = useState(false);
 	const logRef = useRef<HTMLDivElement>(null);
 
 	const benchDir = s.benchDir.trim() || (workspace ? `${workspace.replace(/\/$/, "")}/bench` : "");
@@ -167,6 +169,22 @@ export function BenchRunnerSection() {
 			setTaskError(e instanceof Error ? e.message : String(e));
 		}
 	}, [benchDir]);
+
+	const scaffold = async () => {
+		if (!benchDir.trim()) return;
+		setTaskError(null);
+		setScaffolding(true);
+		try {
+			await benchScaffold(benchDir.trim());
+			const list = await benchListTasks(benchDir.trim());
+			setTasks(list);
+			setSelectedTasks(new Set(list.map((t) => t.id)));
+		} catch (e) {
+			setTaskError(e instanceof Error ? e.message : String(e));
+		} finally {
+			setScaffolding(false);
+		}
+	};
 
 	const toggleTask = (id: string) => {
 		setSelectedTasks((prev) => {
@@ -296,10 +314,18 @@ export function BenchRunnerSection() {
 					Load tasks
 				</Button>
 				{taskError && (
-					<p className="flex items-start gap-1.5 text-2xs text-amber-400">
-						<AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
-						{taskError}
-					</p>
+					<div className="space-y-2">
+						<p className="flex items-start gap-1.5 text-2xs text-amber-400">
+							<AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
+							{taskError}
+						</p>
+						{benchDir.trim() !== "" && (
+							<Button variant="secondary" className="w-fit" disabled={running || scaffolding} onClick={() => void scaffold()}>
+								{scaffolding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FlaskConical className="h-3.5 w-3.5" />}
+								Scaffold starter tasks here
+							</Button>
+						)}
+					</div>
 				)}
 			</SectionCard>
 

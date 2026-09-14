@@ -43,6 +43,10 @@ export async function benchListTasks(benchDir: string): Promise<BenchTaskInfo[]>
 	return await invoke<BenchTaskInfo[]>("bench_list_tasks", { benchDir });
 }
 
+export async function benchScaffold(benchDir: string): Promise<string> {
+	return await invoke<string>("bench_scaffold", { benchDir });
+}
+
 export async function benchStart(config: BenchRunConfig): Promise<void> {
 	await invoke("bench_start", { config });
 }

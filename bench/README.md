@@ -9,6 +9,11 @@ a wall-clock timeout, and a grader that lives outside the repo (hidden from the
 agent). A `container` field can be added to `task.json` later without changing
 the runner's core.
 
+The 5 starter tasks are embedded in the CLI package: outside a checkout,
+`a-coder bench` (or `a-coder bench init`) scaffolds them into `./bench`
+(existing files are never overwritten). After editing tasks in this repo,
+regenerate the embedded snapshot with `node scripts/generate-bench-tasks.mjs`.
+
 ## Layout
 
 ```

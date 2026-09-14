@@ -218,6 +218,39 @@ pub async fn bench_start(app: AppHandle, state: State<'_, BenchState>, config: B
 	Ok("started".into())
 }
 
+/// Scaffold embedded starter tasks into a bench directory by invoking the
+/// CLI's `bench init --bench-dir`. Used by the settings panel when the
+/// selected bench directory has no tasks yet.
+#[tauri::command]
+pub async fn bench_scaffold(bench_dir: String) -> Result<String, String> {
+	let cli_path = crate::cli::resolve_cli_path(None)?;
+	let args: Vec<String> = vec![
+		"bench".into(),
+		"init".into(),
+		"--bench-dir".into(),
+		bench_dir.clone(),
+	];
+	let cwd = std::path::Path::new(&bench_dir)
+		.parent()
+		.map(|p| p.to_path_buf())
+		.unwrap_or_else(|| PathBuf::from("."));
+	let mut command = build_cli_command(&cli_path, &args)?;
+	command.env("PATH", reconstructed_path());
+	let output = tokio::process::Command::from(command)
+		.current_dir(&cwd)
+		.stdin(std::process::Stdio::null())
+		.stdout(std::process::Stdio::piped())
+		.stderr(std::process::Stdio::piped())
+		.output()
+		.await
+		.map_err(|e| format!("Failed to run bench init: {}", e))?;
+	if !output.status.success() {
+		let stderr = String::from_utf8_lossy(&output.stderr);
+		return Err(format!("bench init failed: {}", stderr.trim()));
+	}
+	Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
 /// Kill the running benchmark, if any.
 #[tauri::command]
 pub async fn bench_stop(state: State<'_, BenchState>) -> Result<String, String> {

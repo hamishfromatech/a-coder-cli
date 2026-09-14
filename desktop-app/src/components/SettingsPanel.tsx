@@ -1107,6 +1107,8 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 											<ResourcesSection search={search} />
 										) : s.id === "voice" ? (
 											<VoiceSection />
+										) : s.id === "bench" ? (
+											<BenchRunnerSection />
 										) : s.id === "advanced" ? (
 											<section className="space-y-4">
 												<header>
