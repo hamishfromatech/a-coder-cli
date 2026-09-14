@@ -187,8 +187,11 @@ export function writeEndpointAgentDir(
  */
 export function resolveBenchChildCommand(): BenchChildCommand {
 	if (isBunBinary) {
-		const exe = process.platform === "win32" ? "a-coder-cli.exe" : "a-coder-cli";
-		return { command: join(dirname(process.execPath), exe), baseArgs: [] };
+		// Compiled bun binary: process.execPath IS the CLI. Do not look for a
+		// sibling binary - installed layouts name it "pi" or "a-coder-cli"
+		// depending on the install path, and re-exec'ing ourselves is layout-
+		// independent. User args flow through as-is.
+		return { command: process.execPath, baseArgs: [] };
 	}
 	// Walk up from this module to the coding-agent package root.
 	let dir = dirname(fileURLToPath(import.meta.url));

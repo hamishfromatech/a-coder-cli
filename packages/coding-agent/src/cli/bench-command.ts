@@ -519,17 +519,46 @@ class BenchWizardComponent extends Container implements Focusable {
 			if (!job) break;
 			this.progress[i] = { label: `${job.task.id} · run ${job.runIndex}`, state: "running", detail: "" };
 			const spec = this.chosenModel ?? { provider: "", modelId: "" };
-			const result = await runTaskOnce({
-				benchDir: this.benchDir,
-				task: job.task,
-				provider: spec.provider,
-				modelId: spec.modelId,
-				runIndex: job.runIndex,
-				endpoint: this.flags.endpoint,
-				apiKey: this.flags.apiKey,
-				api: this.flags.api,
-				child: this.child,
-			});
+			let result: BenchRunResult;
+			try {
+				result = await runTaskOnce({
+					benchDir: this.benchDir,
+					task: job.task,
+					provider: spec.provider,
+					modelId: spec.modelId,
+					runIndex: job.runIndex,
+					endpoint: this.flags.endpoint,
+					apiKey: this.flags.apiKey,
+					api: this.flags.api,
+					child: this.child,
+				});
+			} catch (error) {
+				// e.g. child spawn failure - record a failed run so the loop
+				// continues and the UI shows the reason instead of hanging.
+				result = {
+					runId: `error_${job.task.id}_r${job.runIndex}`,
+					timestamp: new Date().toISOString(),
+					model: `${spec.provider}/${spec.modelId}`,
+					taskId: job.task.id,
+					taskTags: job.task.tags,
+					runIndex: job.runIndex,
+					pass: false,
+					timedOut: false,
+					agentExitCode: null,
+					graderExitCode: null,
+					gradeDetail: null,
+					durationMs: 0,
+					stats: {
+						toolCalls: 0,
+						toolErrors: 0,
+						editFailures: 0,
+						turns: 0,
+						usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+						finalText: "",
+					},
+					error: error instanceof Error ? error.message : String(error),
+				};
+			}
 			this.results.push(result);
 			const state: JobState = result.pass ? "pass" : result.timedOut ? "timeout" : "fail";
 			this.progress[i] = {
@@ -660,17 +689,44 @@ async function runBenchHeadless(
 		if (flags.json) {
 			emit({ type: "bench_progress", taskId: job.task.id, runIndex: job.runIndex, state: "running" });
 		}
-		const result = await runTaskOnce({
-			benchDir,
-			task: job.task,
-			provider: spec.provider,
-			modelId: spec.modelId,
-			runIndex: job.runIndex,
-			endpoint: flags.endpoint,
-			apiKey: flags.apiKey,
-			api: flags.api,
-			child,
-		});
+		let result: BenchRunResult;
+		try {
+			result = await runTaskOnce({
+				benchDir,
+				task: job.task,
+				provider: spec.provider,
+				modelId: spec.modelId,
+				runIndex: job.runIndex,
+				endpoint: flags.endpoint,
+				apiKey: flags.apiKey,
+				api: flags.api,
+				child,
+			});
+		} catch (error) {
+			result = {
+				runId: `error_${job.task.id}_r${job.runIndex}`,
+				timestamp: new Date().toISOString(),
+				model: `${spec.provider}/${spec.modelId}`,
+				taskId: job.task.id,
+				taskTags: job.task.tags,
+				runIndex: job.runIndex,
+				pass: false,
+				timedOut: false,
+				agentExitCode: null,
+				graderExitCode: null,
+				gradeDetail: null,
+				durationMs: 0,
+				stats: {
+					toolCalls: 0,
+					toolErrors: 0,
+					editFailures: 0,
+					turns: 0,
+					usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+					finalText: "",
+				},
+				error: error instanceof Error ? error.message : String(error),
+			};
+		}
 		results.push(result);
 		const state = result.pass ? "pass" : result.timedOut ? "timeout" : "fail";
 		const detail = `${Math.round(result.durationMs / 1000)}s · ${result.stats.usage.totalTokens} tok · ${result.stats.turns} turns`;
