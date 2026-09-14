@@ -85,6 +85,23 @@ export interface SettingsState {
 	voiceAutoSpeak: boolean;
 	setVoiceAutoSpeak: (enabled: boolean) => void;
 
+	// ---- A-Coder Bench (local UI pref; persisted) ----
+	/** Model to benchmark as "provider/model-id" (or a custom endpoint model). */
+	benchModel: string;
+	setBenchModel: (model: string) => void;
+	/** Optional self-hosted endpoint (OpenAI-compatible); empty = ambient auth. */
+	benchEndpoint: string;
+	setBenchEndpoint: (url: string) => void;
+	/** API key sent to the endpoint; ignored without an endpoint. */
+	benchApiKey: string;
+	setBenchApiKey: (key: string) => void;
+	/** Runs per task. */
+	benchRuns: number;
+	setBenchRuns: (runs: number) => void;
+	/** Bench directory; empty = auto-detect from the open project. */
+	benchDir: string;
+	setBenchDir: (dir: string) => void;
+
 	// ---- cli settings snapshot (not persisted; reloaded on connect) ----
 	cliGlobalSettings: CliSettings;
 	cliProjectSettings: CliSettings;
@@ -186,6 +203,18 @@ export const useSettingsStore = create<SettingsState>()(
 			voiceAutoSpeak: true,
 			setVoiceAutoSpeak: (voiceAutoSpeak) => set({ voiceAutoSpeak }),
 
+			// ---- A-Coder Bench ----
+			benchModel: "",
+			setBenchModel: (benchModel) => set({ benchModel }),
+			benchEndpoint: "",
+			setBenchEndpoint: (benchEndpoint) => set({ benchEndpoint }),
+			benchApiKey: "",
+			setBenchApiKey: (benchApiKey) => set({ benchApiKey }),
+			benchRuns: 1,
+			setBenchRuns: (benchRuns) => set({ benchRuns }),
+			benchDir: "",
+			setBenchDir: (benchDir) => set({ benchDir }),
+
 			chatBackdrop: true,
 			setChatBackdrop: (chatBackdrop) => set({ chatBackdrop }),
 
@@ -225,6 +254,11 @@ export const useSettingsStore = create<SettingsState>()(
 			voiceTtsVoice: state.voiceTtsVoice,
 			voiceAutoSubmit: state.voiceAutoSubmit,
 			voiceAutoSpeak: state.voiceAutoSpeak,
+			benchModel: state.benchModel,
+			benchEndpoint: state.benchEndpoint,
+			benchApiKey: state.benchApiKey,
+			benchRuns: state.benchRuns,
+			benchDir: state.benchDir,
 			chatBackdrop: state.chatBackdrop,
 			}),
 		},

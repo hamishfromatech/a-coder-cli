@@ -1,6 +1,7 @@
 // Prevents additional console window on Windows in release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod bench;
 mod bootstrap;
 mod cli;
 mod fs;
@@ -52,9 +53,13 @@ fn main() {
 		.plugin(tauri_plugin_updater::Builder::new().build())
 		.plugin(tauri_plugin_process::init())
 		.manage(AppState::default())
+		.manage(bench::BenchState::default())
 		.invoke_handler(tauri::generate_handler![
 			cli::get_initial_workspace,
 			bootstrap::bootstrap_cli,
+			bench::bench_list_tasks,
+			bench::bench_start,
+			bench::bench_stop,
 			voice::voice_transcribe,
 			voice::voice_synthesize,
 			rpc_commands::connect,

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added **A-Coder Bench** to the settings panel: a new Bench page hosting the benchmark runner. Configure the model under test (`provider/model-id`), an optional self-hosted OpenAI-compatible endpoint (vLLM, SGLang, LM Studio) with its API key, runs per task, and the bench directory (defaults to the open project's `bench/` folder); load tasks from `bench/tasks/`, select a subset, confirm the health & safety notes (allow-mode tool access, sandbox-is-not-a-security-boundary, real-token cost), and run. Runs execute the CLI headlessly (`bench run --json`) through new tauri commands (`bench_list_tasks`/`bench_start`/`bench_stop`) with streamed progress; the finish state links straight to the leaderboard file. Config persists in the local settings store.
+
 ### Changed
 
 - Consolidated the settings nav from 15 pages to 12 with clearer names. Three model-related pages (`AI model` / `Custom AI` / `Local AI`) merged into one **Models** page with sub-sections for the default model, API providers, and local servers; `External tools` + `Composio` merged into one **Integrations** page (MCP servers + Composio as sub-sections); `Look & feel` became **Appearance** and absorbed the theme picker from General (General is now startup/system toggles). Renames: `Chat behaviour` → **Conversation**, `Tools & permissions` → **Permissions**, `Privacy` → **Privacy & network**. Old deep-link hashes (`#custom-providers`, `#local-providers`, `#composio`) normalize to the merged pages. Nav icons de-duplicated.

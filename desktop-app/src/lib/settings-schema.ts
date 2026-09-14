@@ -63,7 +63,7 @@ export interface CliSettingsFieldSpec {
 	/** Number-only: step */
 	step?: number;
 	/** Custom-widget name when kind === "custom" */
-	widget?: "theme" | "thinking" | "models" | "defaultModel" | "mcpServers" | "permissionPolicies" | "packages" | "resources" | "completionSound";
+	widget?: "theme" | "thinking" | "models" | "defaultModel" | "mcpServers" | "permissionPolicies" | "packages" | "resources" | "completionSound" | "benchRunner";
 	/** If true, change is also pushed to the engine at runtime (not just persisted) */
 	runtimeSync?:
 		| "thinkingLevel"
@@ -90,6 +90,7 @@ export type SettingsSectionId =
 	| "resources"
 	| "keybindings"
 	| "voice"
+	| "bench"
 	| "advanced";
 
 export interface SettingsSection {
@@ -666,6 +667,16 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 		description: "Speech-to-text and text-to-speech endpoints (OpenAI-compatible).",
 	},
 
+	// ---- Bench -----------------------------------------------------------
+	// No static fields — the Bench section is a custom runner widget that owns
+	// its config form, task list, safety confirmation, and live progress.
+	{
+		id: "bench",
+		navId: "bench",
+		label: "Bench",
+		description: "Benchmark models against this harness: run tasks, grade outcomes, compare pass rates.",
+	},
+
 	// ---- Advanced ---------------------------------------------------------
 	{
 		id: "advanced",
@@ -824,6 +835,7 @@ const NAV_ORDER: string[] = [
 	"voice",
 	"privacy",
 	"keybindings",
+	"bench",
 	"advanced",
 	"general",
 ];

@@ -51,15 +51,20 @@ interface BenchFlags {
 	api: string;
 	apiKey: string;
 	runs?: number;
+	tasks?: string;
+	benchDir?: string;
+	json: boolean;
 }
 
 function parseBenchFlags(args: string[]): BenchFlags {
-	const flags: BenchFlags = { help: false, api: "openai-completions", apiKey: "bench" };
-	const valueFlags = new Set(["--model", "--endpoint", "--api", "--api-key", "--runs"]);
+	const flags: BenchFlags = { help: false, api: "openai-completions", apiKey: "bench", json: false };
+	const valueFlags = new Set(["--model", "--endpoint", "--api", "--api-key", "--runs", "--tasks", "--bench-dir"]);
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
 		if (arg === "--help" || arg === "-h") {
 			flags.help = true;
+		} else if (arg === "--json") {
+			flags.json = true;
 		} else if (valueFlags.has(arg)) {
 			const value = args[i + 1] ?? "";
 			i += 1;
@@ -68,6 +73,8 @@ function parseBenchFlags(args: string[]): BenchFlags {
 			else if (arg === "--api") flags.api = value;
 			else if (arg === "--api-key") flags.apiKey = value;
 			else if (arg === "--runs") flags.runs = Math.max(1, Number.parseInt(value, 10) || 1);
+			else if (arg === "--tasks") flags.tasks = value;
+			else if (arg === "--bench-dir") flags.benchDir = value;
 		}
 	}
 	return flags;
@@ -79,14 +86,21 @@ function printBenchHelp(): void {
 
 Usage:
   a-coder bench                            Interactive wizard (model -> options -> run)
+  a-coder bench run --model <p>/<id>       Headless run (no UI); use with --json for machines
   a-coder bench --model <provider>/<id>    Skip model selection
   a-coder bench --endpoint <url>           Benchmark a self-hosted endpoint
       [--api <api>]                        openai-completions | openai-responses | anthropic-messages
       [--api-key <key>]                    Written into a per-run models.json (default: "bench")
   a-coder bench --runs <n>                 Runs per task (default: 1)
 
+Run-mode flags:
+  --tasks <id,id|all>    Task subset (default: all)
+  --bench-dir <dir>      Bench directory (default: auto-detect from cwd)
+  --json                 Emit NDJSON bench_progress / bench_summary events
+
 The wizard always shows the health & safety confirmation before any model
-is invoked.
+is invoked. Headless 'bench run' is for hosts that show their own warning
+(the desktop settings panel does).
 
 Bench artifacts live under bench/ in an a-coder-cli checkout:
   bench/tasks/     task definitions (repo snapshot + hidden grader each)
@@ -600,6 +614,78 @@ function renderJobLine(job: JobProgress, spinnerFrame: number): string {
 }
 
 // ---------------------------------------------------------------------------
+// Headless run mode (`bench run`) — used by hosts (desktop) that show their
+// own safety UI and just want structured progress events.
+// ---------------------------------------------------------------------------
+
+async function runBenchHeadless(
+	benchDir: string,
+	tasks: BenchTask[],
+	spec: { provider: string; modelId: string },
+	flags: BenchFlags,
+): Promise<void> {
+	const runs = flags.runs ?? 1;
+	const jobs = tasks.flatMap((task) => Array.from({ length: runs }, (_, i) => ({ task, runIndex: i + 1 })));
+	const emit = (event: Record<string, unknown>): void => {
+		process.stdout.write(`${JSON.stringify(event)}\n`);
+	};
+	const log = (message: string): void => {
+		if (flags.json) emit({ type: "bench_log", message });
+		else console.log(message);
+	};
+
+	log(
+		`A-Coder Bench: model=${spec.provider}/${spec.modelId} tasks=${tasks.map((t) => t.id).join(",")} runs=${runs}` +
+			(flags.endpoint ? ` endpoint=${flags.endpoint}` : ""),
+	);
+	const child = resolveBenchChildCommand();
+	const results: BenchRunResult[] = [];
+	for (const job of jobs) {
+		if (flags.json) {
+			emit({ type: "bench_progress", taskId: job.task.id, runIndex: job.runIndex, state: "running" });
+		}
+		const result = await runTaskOnce({
+			benchDir,
+			task: job.task,
+			provider: spec.provider,
+			modelId: spec.modelId,
+			runIndex: job.runIndex,
+			endpoint: flags.endpoint,
+			apiKey: flags.apiKey,
+			api: flags.api,
+			child,
+		});
+		results.push(result);
+		const state = result.pass ? "pass" : result.timedOut ? "timeout" : "fail";
+		const detail = `${Math.round(result.durationMs / 1000)}s · ${result.stats.usage.totalTokens} tok · ${result.stats.turns} turns`;
+		if (flags.json) {
+			emit({ type: "bench_progress", taskId: job.task.id, runIndex: job.runIndex, state, detail });
+		} else {
+			log(`  [${job.task.id} r${job.runIndex}] ${state.toUpperCase()} (${detail})`);
+		}
+	}
+	const passed = results.filter((r) => r.pass).length;
+	const leaderboardPath = join(benchDir, "leaderboard.md");
+	try {
+		const leaderboard = buildLeaderboard(loadResults(benchDir));
+		fs.writeFileSync(leaderboardPath, leaderboard + "\n");
+	} catch {
+		// non-fatal: summary still reports counts
+	}
+	if (flags.json) {
+		emit({
+			type: "bench_summary",
+			passed: passed,
+			total: results.length,
+			leaderboardPath: leaderboardPath,
+		});
+	} else {
+		log(`done: ${passed}/${results.length} passed`);
+	}
+	process.exitCode = 0;
+}
+
+// ---------------------------------------------------------------------------
 // Wizard bootstrap
 // ---------------------------------------------------------------------------
 
@@ -639,6 +725,41 @@ async function runBenchWizard(benchDir: string, tasks: BenchTask[], flags: Bench
 
 export async function handleBenchCommand(args: string[]): Promise<boolean> {
 	if (args[0] !== "bench") return false;
+	if (args[1] === "run") {
+		const flags = parseBenchFlags(args.slice(2));
+		if (!flags.model) {
+			console.error(chalk.red("bench run requires --model <provider>/<model-id>"));
+			process.exitCode = 2;
+			return true;
+		}
+		const spec = parseBenchModelSpec(flags.model);
+		const benchDir = flags.benchDir ?? findBenchDir();
+		if (!benchDir) {
+			console.error(
+				chalk.red("A-Coder Bench tasks not found.") +
+					" Run from a repository checkout with bench/tasks/ or pass --bench-dir.",
+			);
+			process.exitCode = 2;
+			return true;
+		}
+		const tasks = loadTasks(benchDir);
+		const selected =
+			flags.tasks && flags.tasks !== "all"
+				? tasks.filter((t) =>
+						flags.tasks
+							?.split(",")
+							.map((s) => s.trim())
+							.includes(t.id),
+					)
+				: tasks;
+		if (selected.length === 0) {
+			console.error(chalk.red("No bench tasks matched."));
+			process.exitCode = 2;
+			return true;
+		}
+		await runBenchHeadless(benchDir, selected, spec, flags);
+		return true;
+	}
 	const flags = parseBenchFlags(args.slice(1));
 	if (flags.help) {
 		printBenchHelp();

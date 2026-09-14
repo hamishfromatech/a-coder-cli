@@ -14,6 +14,7 @@ import {
 	Sparkles,
 	User,
 	Brain,
+	FlaskConical,
 	Puzzle,
 	Wrench,
 	X,
@@ -53,6 +54,7 @@ import { PackagesEditor } from "./panels/widgets/PackagesEditor";
 import { PathListInput } from "./panels/widgets/PathListInput";
 import { PermissionPoliciesEditor } from "./panels/widgets/PermissionPoliciesEditor";
 import { ResourcesSection } from "./panels/widgets/ResourcesSection";
+import { BenchRunnerSection } from "./panels/widgets/BenchRunnerSection";
 import { VoiceSection } from "./panels/widgets/VoiceSection";
 import { CompletionSoundPicker } from "./panels/widgets/CompletionSoundPicker";
 import { Switch } from "./ui/Switch";
@@ -77,6 +79,7 @@ const NAV_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
 	"external-tools": Puzzle,
 	resources: Brain,
 	keybindings: Keyboard,
+	bench: FlaskConical,
 	advanced: Wrench,
 };
 
@@ -465,6 +468,8 @@ function renderCustom(
 			);
 		case "resources":
 			return <ResourcesSection />;
+		case "benchRunner":
+			return <BenchRunnerSection />;
 		case "completionSound":
 			return <CompletionSoundPicker />;
 		default:
