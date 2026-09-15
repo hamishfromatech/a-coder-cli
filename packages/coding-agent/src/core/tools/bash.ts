@@ -37,8 +37,14 @@ import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult
 const MAX_TIMEOUT_MS = 2_147_483_647;
 const MAX_TIMEOUT_SECONDS = MAX_TIMEOUT_MS / 1000;
 
+// Default when the caller omits `timeout`. Without this, a wedged child
+// process (hung interpreter, waiting-on-network one-liner, …) blocks the
+// agent turn FOREVER with no surface to the user. 120s matches common
+// coding-agent defaults; genuinely long work should use background: true.
+const DEFAULT_TIMEOUT_SECONDS = 120;
+
 function resolveTimeoutMs(timeout: number | undefined): number | undefined {
-	if (timeout === undefined) return undefined;
+	if (timeout === undefined) timeout = DEFAULT_TIMEOUT_SECONDS;
 	if (!Number.isFinite(timeout) || timeout <= 0) {
 		throw new Error("Invalid timeout: must be a finite number of seconds");
 	}
@@ -53,7 +59,7 @@ function resolveTimeoutMs(timeout: number | undefined): number | undefined {
 const bashSchema = Type.Object(
 	{
 		command: Type.String({ description: "Bash command to execute" }),
-		timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (optional, no default timeout)" })),
+		timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (default 120)" })),
 		background: Type.Optional(
 			Type.Boolean({
 				description:
