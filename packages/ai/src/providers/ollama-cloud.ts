@@ -31,14 +31,19 @@ export function createOllamaCloudModel(
 	const isKimi = idLower.includes("kimi");
 	const defaultContextWindow = isKimi ? 1048576 : 128000;
 	const contextWindow = caps?.contextWindow && caps.contextWindow > 0 ? caps.contextWindow : defaultContextWindow;
-	// Ollama Cloud's /api/show returns context_length (input + output budget),
-	// not the model's output-token cap, which the server enforces per model.
-	// Requesting more than the cap is rejected with 400
-	// "max_tokens exceeds model's maximum output tokens". DeepSeek models cap at
-	// 65536; keep a generous default for the rest and let an explicit cap win.
-	const defaultMaxTokens = isKimi ? 131072 : idLower.includes("deepseek") ? 65536 : 131072;
+	// Ollama Cloud's /api/show returns context_length (input + output budget) and
+	// exposes no output-token field. The server enforces the output cap per model
+	// with 400 "max_tokens exceeds model's maximum output tokens"; probed
+	// 2026-09: for glm-5.3-flash the cap equals context_length (1048576), and the
+	// API layer already retries without max_tokens for models whose cap is lower.
+	// So default the output budget to the full context window. DeepSeek models
+	// are the known exception: they cap at 65536.
 	const maxTokens =
-		caps?.maxTokens && caps.maxTokens > 0 && caps.maxTokens <= contextWindow ? caps.maxTokens : defaultMaxTokens;
+		caps?.maxTokens && caps.maxTokens > 0 && caps.maxTokens <= contextWindow
+			? caps.maxTokens
+			: idLower.includes("deepseek")
+				? Math.min(65536, contextWindow)
+				: contextWindow;
 	return {
 		id,
 		name: `Ollama Cloud: ${id}`,

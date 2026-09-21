@@ -1568,44 +1568,10 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 			}
 		}
 
-		// Process Kimi For Coding models
-		if (data["kimi-for-coding"]?.models) {
-			const kimiModels = data["kimi-for-coding"].models as Record<string, ModelsDevModel>;
-			const hasCanonicalModel = Object.prototype.hasOwnProperty.call(kimiModels, "kimi-for-coding");
-
-			const kimiAliases = new Set(["k2p5", "k2p6"]);
-
-			for (const [modelId, model] of Object.entries(kimiModels)) {
-				const m = model as ModelsDevModel;
-				if (m.tool_call !== true) continue;
-				// models.dev may expose versioned aliases (e.g. k2p5/k2p6).
-				// Normalize aliases to the canonical model id and drop duplicates when canonical exists.
-				if (kimiAliases.has(modelId) && hasCanonicalModel) continue;
-
-				const normalizedId = kimiAliases.has(modelId) ? "kimi-for-coding" : modelId;
-				const normalizedName = kimiAliases.has(modelId) ? "Kimi For Coding" : m.name || normalizedId;
-
-				models.push({
-					id: normalizedId,
-					name: normalizedName,
-					api: "anthropic-messages",
-					provider: "kimi-coding",
-					// Kimi For Coding's Anthropic-compatible API - SDK appends /v1/messages
-					baseUrl: "https://api.kimi.com/coding",
-					headers: { ...KIMI_STATIC_HEADERS },
-					reasoning: m.reasoning === true,
-					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
-					cost: {
-						input: m.cost?.input || 0,
-						output: m.cost?.output || 0,
-						cacheRead: m.cost?.cache_read || 0,
-						cacheWrite: m.cost?.cache_write || 0,
-					},
-					contextWindow: m.limit?.context || 4096,
-					maxTokens: m.limit?.output || 4096,
-				});
-			}
-		}
+		// Kimi For Coding models are hardcoded below ("Built-in providers not
+		// covered by upstream catalogs") — models.dev dropped the kimi-for-coding
+		// provider in favor of OpenAI-compatible kimi-code-plan-* entries; porting
+		// the provider to those endpoints is tracked separately.
 
 		// Process Moonshot AI models
 		const moonshotVariants = [
@@ -2156,8 +2122,10 @@ async function generateModels() {
 			reasoning: false,
 			input: ["text"],
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			// maxTokens = contextWindow: Ollama Cloud validates max_tokens against the
+			// model's context_length (its output cap), probed 2026-09.
 			contextWindow: 128000,
-			maxTokens: 131072,
+			maxTokens: 128000,
 			compat: OLLAMA_CLOUD_COMPAT,
 		},
 		{
@@ -2169,8 +2137,10 @@ async function generateModels() {
 			reasoning: false,
 			input: ["text"],
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			// maxTokens = contextWindow: Ollama Cloud validates max_tokens against the
+			// model's context_length (its output cap), probed 2026-09.
 			contextWindow: 128000,
-			maxTokens: 131072,
+			maxTokens: 128000,
 			compat: OLLAMA_CLOUD_COMPAT,
 		},
 		{
@@ -2182,8 +2152,10 @@ async function generateModels() {
 			reasoning: false,
 			input: ["text"],
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			// maxTokens = contextWindow: Ollama Cloud validates max_tokens against the
+			// model's context_length (its output cap), probed 2026-09.
 			contextWindow: 128000,
-			maxTokens: 131072,
+			maxTokens: 128000,
 			compat: OLLAMA_CLOUD_COMPAT,
 		},
 		{
@@ -2195,12 +2167,78 @@ async function generateModels() {
 			reasoning: false,
 			input: ["text"],
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			// maxTokens = contextWindow: Ollama Cloud validates max_tokens against the
+			// model's context_length (its output cap), probed 2026-09.
 			contextWindow: 128000,
-			maxTokens: 131072,
+			maxTokens: 128000,
 			compat: OLLAMA_CLOUD_COMPAT,
 		},
 	];
 	for (const model of ollamaCloudModels) {
+		if (!allModels.some((m) => m.provider === model.provider && m.id === model.id)) {
+			allModels.push(model);
+		}
+	}
+
+	// Kimi For Coding: models.dev dropped the "kimi-for-coding" provider (replaced
+	// by OpenAI-compatible "kimi-code-plan-global"/"kimi-code-plan-cn" entries);
+	// until the provider is ported to those endpoints, keep the last known
+	// Anthropic-compatible catalog hardcoded here.
+	const kimiCodingModels: Model<"anthropic-messages">[] = [
+		{
+			id: "k3",
+			name: "Kimi K3",
+			api: "anthropic-messages",
+			provider: "kimi-coding",
+			baseUrl: "https://api.kimi.com/coding",
+			headers: { ...KIMI_STATIC_HEADERS },
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 1048576,
+			maxTokens: 131072,
+		},
+		{
+			id: "k3-256k",
+			name: "Kimi K3-256K",
+			api: "anthropic-messages",
+			provider: "kimi-coding",
+			baseUrl: "https://api.kimi.com/coding",
+			headers: { ...KIMI_STATIC_HEADERS },
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 262144,
+			maxTokens: 131072,
+		},
+		{
+			id: "kimi-for-coding",
+			name: "Kimi K2.7 Code",
+			api: "anthropic-messages",
+			provider: "kimi-coding",
+			baseUrl: "https://api.kimi.com/coding",
+			headers: { ...KIMI_STATIC_HEADERS },
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 262144,
+			maxTokens: 32768,
+		},
+		{
+			id: "kimi-for-coding-highspeed",
+			name: "Kimi For Coding HighSpeed",
+			api: "anthropic-messages",
+			provider: "kimi-coding",
+			baseUrl: "https://api.kimi.com/coding",
+			headers: { ...KIMI_STATIC_HEADERS },
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 262144,
+			maxTokens: 32768,
+		},
+	];
+	for (const model of kimiCodingModels) {
 		if (!allModels.some((m) => m.provider === model.provider && m.id === model.id)) {
 			allModels.push(model);
 		}

@@ -20,7 +20,7 @@ export const OLLAMA_CLOUD_MODELS = {
 			cacheWrite: 0,
 		},
 		contextWindow: 128000,
-		maxTokens: 131072,
+		maxTokens: 128000,
 	} satisfies Model<"openai-completions">,
 	"mistral": {
 		id: "mistral",
@@ -38,7 +38,7 @@ export const OLLAMA_CLOUD_MODELS = {
 			cacheWrite: 0,
 		},
 		contextWindow: 128000,
-		maxTokens: 131072,
+		maxTokens: 128000,
 	} satisfies Model<"openai-completions">,
 	"phi4": {
 		id: "phi4",
@@ -56,7 +56,7 @@ export const OLLAMA_CLOUD_MODELS = {
 			cacheWrite: 0,
 		},
 		contextWindow: 128000,
-		maxTokens: 131072,
+		maxTokens: 128000,
 	} satisfies Model<"openai-completions">,
 	"qwen2.5-coder": {
 		id: "qwen2.5-coder",
@@ -74,6 +74,6 @@ export const OLLAMA_CLOUD_MODELS = {
 			cacheWrite: 0,
 		},
 		contextWindow: 128000,
-		maxTokens: 131072,
+		maxTokens: 128000,
 	} satisfies Model<"openai-completions">,
 } as const;

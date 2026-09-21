@@ -12,6 +12,11 @@
  * notices collapse into one line with a ×N count; only the most recent
  * MAX_VISIBLE are shown, with a dim "earlier hidden" marker when truncated.
  * Renders zero lines when there is nothing to show.
+ *
+ * Notices are transient: each entry auto-expires NOTICE_TTL_MS after it was
+ * last (re)seen, so transient errors — retry failures, timeouts, overflow
+ * notices — do not linger over the transcript indefinitely. Repeating the
+ * same notice refreshes its expiry. `clear()` removes everything at once.
  */
 
 import { type Component, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
@@ -24,32 +29,45 @@ export interface NoticeItem {
 	text: string;
 	/** Number of consecutive identical notices collapsed into this entry. */
 	count: number;
+	/** Epoch ms when this entry auto-expires (refreshed on identical repeats). */
+	expiresAt: number;
 }
 
 const MAX_VISIBLE = 6;
 const INDENT = "  ";
+/** How long a notice stays visible after it was last shown. */
+const NOTICE_TTL_MS = 8000;
 
 export class NoticesComponent implements Component {
 	private notices: NoticeItem[] = [];
 	private cachedWidth?: number;
 	private cachedLines?: string[];
+	private expireTimer?: ReturnType<typeof setTimeout>;
+
+	/** Called after expired notices are purged so the host can re-render. */
+	onExpire?: () => void;
 
 	/** Append a notice; collapses into the previous entry when identical. */
 	add(kind: NoticeKind, text: string): void {
+		const now = Date.now();
 		const last = this.notices[this.notices.length - 1];
 		if (last && last.kind === kind && last.text === text) {
 			last.count++;
+			last.expiresAt = now + NOTICE_TTL_MS;
 		} else {
-			this.notices.push({ kind, text, count: 1 });
+			this.notices.push({ kind, text, count: 1, expiresAt: now + NOTICE_TTL_MS });
 		}
-		this.cachedWidth = undefined;
-		this.cachedLines = undefined;
+		this.invalidate();
+		this.scheduleExpiry();
 	}
 
 	clear(): void {
+		if (this.expireTimer) {
+			clearTimeout(this.expireTimer);
+			this.expireTimer = undefined;
+		}
 		this.notices = [];
-		this.cachedWidth = undefined;
-		this.cachedLines = undefined;
+		this.invalidate();
 	}
 
 	invalidate(): void {
@@ -59,6 +77,27 @@ export class NoticesComponent implements Component {
 
 	handleInput(_data: string): void {
 		// No key handling — display only.
+	}
+
+	private scheduleExpiry(): void {
+		if (this.expireTimer) {
+			clearTimeout(this.expireTimer);
+			this.expireTimer = undefined;
+		}
+		if (this.notices.length === 0) return;
+		const earliest = Math.min(...this.notices.map((n) => n.expiresAt));
+		this.expireTimer = setTimeout(
+			() => {
+				this.expireTimer = undefined;
+				const now = Date.now();
+				if (!this.notices.some((n) => n.expiresAt <= now)) return;
+				this.notices = this.notices.filter((n) => n.expiresAt > now);
+				this.invalidate();
+				this.onExpire?.();
+				this.scheduleExpiry();
+			},
+			Math.max(0, earliest - Date.now()),
+		);
 	}
 
 	render(width: number): string[] {
@@ -86,6 +125,6 @@ export class NoticesComponent implements Component {
 		}
 
 		this.cachedLines = lines;
-		return this.cachedLines;
+		return lines;
 	}
 }

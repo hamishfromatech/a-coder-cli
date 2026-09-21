@@ -588,6 +588,8 @@ export class InteractiveMode {
 		});
 		this.version = VERSION;
 		this.ui = new TUI(new ProcessTerminal(), this.settingsManager.getShowHardwareCursor());
+		// Notices auto-expire after a few seconds; re-render when they do.
+		this.notices.onExpire = () => this.ui.requestRender();
 		this.officeTui = new OfficeTui(runtimeHost, (text) => this.printOfficeText(text));
 		this.ui.setClearOnShrink(this.settingsManager.getClearOnShrink());
 		setReducedMotion(this.settingsManager.getReducedMotion());
