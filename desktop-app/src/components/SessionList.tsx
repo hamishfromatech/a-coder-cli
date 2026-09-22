@@ -8,6 +8,7 @@ import { useTabsStore } from "../stores/tabs-store";
 import { toast } from "../stores/toast-store";
 import { useWorkspaceStore } from "../stores/workspace-store";
 import { triggerHaptic } from "../lib/haptics";
+import { adoptSwitchResult } from "../lib/adopt-session";
 
 /** Sessions shown before the list is capped (the full history lives behind the
  *  ⌘P picker). */
@@ -166,6 +167,7 @@ export function SessionList() {
 		try {
 			useTabsStore.getState().setActive(path);
 			const result = await rpc.switchSession(path);
+			adoptSwitchResult(result);
 			if (result.reattached && result.snapshot?.running) {
 				const store = useSessionStore.getState();
 				if (!store.isStreaming) {

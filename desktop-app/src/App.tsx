@@ -10,6 +10,8 @@ import { rafCoalesce } from "./lib/raf-coalesce";
 import { synthesize, playAudioBlob, type VoiceSettings } from "./lib/voice";
 import { pickLoadingVerb } from "./lib/loading-verbs";
 import { getCachedSessionMessages, setCachedSessionMessages } from "./lib/session-cache";
+import { adoptSwitchResult } from "./lib/adopt-session";
+import { isAuthoritativeSession, setAuthoritativeSession } from "./lib/session-authority";
 import { useRuntimeStatusStore } from "./stores/runtime-status-store";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { useSessionStore, type QuestionUiRequest } from "./stores/session-store";
@@ -164,10 +166,6 @@ export default function App() {
 	 *  never paint over a newer switch (the A→B cross-paint bug hermes guards
 	 *  with resume request ids). */
 	const sessionStartGenerationRef = useRef(0);
-	/** The session file the current `sessionName` is authoritative for (set by
-	 *  syncEngineState). The tab-sync effect uses it to avoid applying a stale
-	 *  name to a newly activated tab. */
-	const namedSessionRef = useRef<string | null>(null);
 	const {
 		setStatus,
 		setCwd,
@@ -260,6 +258,7 @@ export default function App() {
 	const { setTree } = useSessionTreeStore();
 	const openTab = useTabsStore((s) => s.openTab);
 	const sessionName = useSessionStore((s) => s.sessionName);
+	const cwd = useSessionStore((s) => s.cwd);
 	const { setStats } = useStatsStore();
 
 	// Apply a get_session_stats response to both the stats store and the
@@ -333,6 +332,7 @@ export default function App() {
 				sessionName?: string;
 				sessionId?: string;
 				sessionFile?: string;
+				cwd?: string;
 				isCompacting?: boolean;
 				autoCompactionEnabled?: boolean;
 				steeringMode?: import("./lib/settings.types").MessageDeliveryMode;
@@ -345,13 +345,15 @@ export default function App() {
 			if (s?.permissionMode) setPermissionMode(s.permissionMode);
 			// Always apply the name, including clearing it: switching to an unnamed
 			// session must not inherit the previous session's name (the tab strip
-			// derives its labels from this field). The ref records which session
-			// the applied name is authoritative for, so the tab-sync effect below
-			// never relabels a tab with a name belonging to a different session.
+			// derives its labels from this field). The authority marker records
+			// which session the applied name is authoritative for, so the tab-sync
+			// effect below never relabels a tab with a name belonging to a
+			// different session.
 			setSessionName(s?.sessionName ?? null);
-			namedSessionRef.current = s?.sessionFile ?? null;
+			setAuthoritativeSession(s?.sessionFile ?? null);
 			if (s?.sessionId) setSessionId(s.sessionId);
 			setSessionFile(s?.sessionFile ?? null);
+			if (s?.cwd) setCwd(s.cwd);
 			setIsCompacting(s?.isCompacting ?? false);
 			setAutoCompactionEnabled(s?.autoCompactionEnabled ?? true);
 			if (s?.steeringMode) setSteeringMode(s.steeringMode);
@@ -381,6 +383,7 @@ export default function App() {
 		setSessionName,
 		setSessionId,
 		setSessionFile,
+		setCwd,
 		setIsCompacting,
 		setAutoCompactionEnabled,
 		setSteeringMode,
@@ -1107,9 +1110,12 @@ export default function App() {
 		const target = needsInputPath ?? Object.keys(status.finishedWhileAway).find((p) => p !== sessionFile);
 		if (!target) return;
 		pushCurrentToClosedTabs();
-		void rpc.switchSession(target).catch((e) =>
-			toast.error("Failed to switch session", e instanceof Error ? e.message : String(e)),
-		);
+		void rpc
+			.switchSession(target)
+			.then((result) => adoptSwitchResult(result))
+			.catch((e) =>
+				toast.error("Failed to switch session", e instanceof Error ? e.message : String(e)),
+			);
 	}, [sessionFile, pushCurrentToClosedTabs]);
 
 	const handleReconnect = useCallback(async () => {
@@ -1142,7 +1148,8 @@ export default function App() {
 					.sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime())[0];
 				if (latest) {
 					pushCurrentToClosedTabs();
-					await rpc.switchSession(latest.path);
+					const result = await rpc.switchSession(latest.path);
+					adoptSwitchResult(result);
 				} else {
 					await rpc.newSession(undefined, path);
 				}
@@ -1162,12 +1169,28 @@ export default function App() {
 	// freshly activated tab with the PREVIOUS session's stale name.
 	useEffect(() => {
 		if (!sessionFile) return;
-		if (namedSessionRef.current === sessionFile) {
+		if (isAuthoritativeSession(sessionFile)) {
 			openTab(sessionFile, sessionName ?? "Untitled session");
-		} else {
-			openTab(sessionFile);
+			return;
 		}
-	}, [sessionFile, sessionName, openTab]);
+		// Name not authoritative yet (the switch response adoption or the
+		// session_start sync is still in flight, or the event was lost): open the
+		// tab unlabeled and pull the authoritative identity. get_state reflects
+		// the engine's CURRENT session, so this can never apply another
+		// session's name.
+		openTab(sessionFile);
+		void syncEngineState();
+	}, [sessionFile, sessionName, openTab, syncEngineState]);
+
+	// Keep the workspace indicator in sync with the ACTIVE SESSION's workspace:
+	// switching conversations across projects is a session switch, and the
+	// session's own cwd is the truth for "where does this session run".
+	useEffect(() => {
+		const dir = cwd?.replace(/\/+$/, "");
+		if (dir && dir !== projectPath) {
+			setProjectPath(dir);
+		}
+	}, [cwd, projectPath, setProjectPath]);
 
 	// A session the user switches to is no longer "finished while away".
 	useEffect(() => {

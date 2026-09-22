@@ -587,6 +587,13 @@ export interface SwitchSessionResult {
 	/** State of the re-attached runtime at switch time — lets the UI adopt an
 	 *  in-flight turn immediately instead of waiting for the next event. */
 	snapshot?: { running: boolean; needsInput: boolean; pendingMessageCount: number };
+	/** Authoritative identity of the switched-to session (absent when cancelled).
+	 *  Adopting these keeps tab labels and the workspace indicator correct even
+	 *  when the session_start event races the optimistic UI update. */
+	sessionFile?: string;
+	sessionId?: string;
+	sessionName?: string | null;
+	cwd?: string;
 }
 
 export interface NewSessionResult {

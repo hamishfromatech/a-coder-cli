@@ -13,6 +13,8 @@
 
 ### Fixed
 
+- Fixed the workspace breadcrumb showing a stale project when switching between conversations that live in different workspaces: the desktop never learned the active session's workspace (the RPC `get_state` payload had no `cwd`). The engine now reports `cwd` in `get_state` and the authoritative session identity (`sessionFile`/`sessionId`/`sessionName`/`cwd`) in the `switch_session` response; the desktop syncs its workspace indicator (and git-branch chip) to the session's own workspace on every switch — tab clicks, the session list, resume, background-session focus, and project switches.
+- Fixed session tabs staying on "Untitled session": tab labels are now applied from the switch response's authoritative identity (via a session-authority marker that replaces the previous in-component ref) and the tab-sync effect self-heals by re-pulling `get_state` when a session's name is not yet authoritative, so a lost or delayed `session_start` can no longer leave a tab unlabeled. Auto-named and `/name`-renamed sessions relabel their tab as before.
 - Fixed empty native menus on Linux: the window menu bar and tray menu were built in `setup()`, before the glib main loop started servicing events, and GTK-backed menus (muda menubar, libappindicator tray menu) can render empty in that state. On Linux both are now built at `RunEvent::Ready`, after the event loop is live; macOS and Windows keep setup-time creation. Also added a tray tooltip (macOS/Windows; Linux tray tooltips are unsupported by libappindicator).
 
 ### Changed
