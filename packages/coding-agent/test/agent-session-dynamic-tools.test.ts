@@ -76,7 +76,9 @@ describe("AgentSession dynamic tool registration", () => {
 			"Use dynamic_tool when the user asks for dynamic behavior tests.",
 		]);
 		expect(dynamicTool?.sourceInfo).toMatchObject({
-			path: "<inline:2>",
+			// inline numbering: subagent <inline:1>, workflow <inline:2>, the test's
+			// dynamically registered extension <inline:3>.
+			path: "<inline:3>",
 			source: "inline",
 			scope: "temporary",
 			origin: "top-level",

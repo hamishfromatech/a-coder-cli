@@ -713,13 +713,24 @@ describe("ModelRegistry", () => {
 		});
 
 		test("multiple model overrides on same provider", () => {
+			// Discover two model ids from the shipped catalog: the generated catalog
+			// regenerates from live provider data on build, so hardcoded upstream
+			// ids drift out of existence.
+			const candidates = getModelsForProvider(
+				ModelRegistry.create(authStorage, modelsJsonPath),
+				"openrouter",
+			).filter((m) => (m.compat as OpenAICompletionsCompat | undefined)?.openRouterRouting === undefined);
+			const [first, second] = candidates;
+			expect(first).toBeDefined();
+			expect(second).toBeDefined();
+
 			writeRawModelsJson({
 				openrouter: {
 					modelOverrides: {
-						"anthropic/claude-sonnet-4": {
+						[first.id]: {
 							compat: { openRouterRouting: { only: ["amazon-bedrock"] } },
 						},
-						"anthropic/claude-opus-4": {
+						[second.id]: {
 							compat: { openRouterRouting: { only: ["anthropic"] } },
 						},
 					},
@@ -729,22 +740,26 @@ describe("ModelRegistry", () => {
 			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
 			const models = getModelsForProvider(registry, "openrouter");
 
-			const sonnet = models.find((m) => m.id === "anthropic/claude-sonnet-4");
-			const opus = models.find((m) => m.id === "anthropic/claude-opus-4");
-
-			const sonnetCompat = sonnet?.compat as OpenAICompletionsCompat | undefined;
-			const opusCompat = opus?.compat as OpenAICompletionsCompat | undefined;
-			expect(sonnetCompat?.openRouterRouting).toEqual({ only: ["amazon-bedrock"] });
-			expect(opusCompat?.openRouterRouting).toEqual({ only: ["anthropic"] });
+			const firstCompat = models.find((m) => m.id === first.id)?.compat as OpenAICompletionsCompat | undefined;
+			const secondCompat = models.find((m) => m.id === second.id)?.compat as OpenAICompletionsCompat | undefined;
+			expect(firstCompat?.openRouterRouting).toEqual({ only: ["amazon-bedrock"] });
+			expect(secondCompat?.openRouterRouting).toEqual({ only: ["anthropic"] });
 		});
 
 		test("model override combined with baseUrl override", () => {
+			// Discover a model id from the shipped catalog (see the note in the
+			// multiple-overrides test — hardcoded upstream ids drift).
+			const base = getModelsForProvider(ModelRegistry.create(authStorage, modelsJsonPath), "openrouter");
+			const overridden = base[0];
+			const untouched = base[1];
+			expect(overridden).toBeDefined();
+			expect(untouched).toBeDefined();
 			writeRawModelsJson({
 				openrouter: {
 					baseUrl: "https://my-proxy.example.com/v1",
 					modelOverrides: {
-						"anthropic/claude-sonnet-4": {
-							name: "Proxied Sonnet",
+						[overridden.id]: {
+							name: "Proxied Model",
 						},
 					},
 				},
@@ -752,16 +767,16 @@ describe("ModelRegistry", () => {
 
 			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
 			const models = getModelsForProvider(registry, "openrouter");
-			const sonnet = models.find((m) => m.id === "anthropic/claude-sonnet-4");
+			const first = models.find((m) => m.id === overridden.id);
 
 			// Both overrides should apply
-			expect(sonnet?.baseUrl).toBe("https://my-proxy.example.com/v1");
-			expect(sonnet?.name).toBe("Proxied Sonnet");
+			expect(first?.baseUrl).toBe("https://my-proxy.example.com/v1");
+			expect(first?.name).toBe("Proxied Model");
 
 			// Other models should have the baseUrl but not the name override
-			const opus = models.find((m) => m.id === "anthropic/claude-opus-4");
-			expect(opus?.baseUrl).toBe("https://my-proxy.example.com/v1");
-			expect(opus?.name).not.toBe("Proxied Sonnet");
+			const other = models.find((m) => m.id === untouched.id);
+			expect(other?.baseUrl).toBe("https://my-proxy.example.com/v1");
+			expect(other?.name).not.toBe("Proxied Model");
 		});
 
 		test("model override for non-existent model ID is ignored", () => {

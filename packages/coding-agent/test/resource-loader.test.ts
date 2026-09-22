@@ -186,7 +186,10 @@ Project skill`,
 			await loader.reload();
 
 			const extensionsResult = loader.getExtensions();
-			expect(extensionsResult.extensions).toHaveLength(2);
+			// 2 file/inline extensions under test + the built-in workflow extension
+			// (<inline:2>, after the subagent factory's <inline:1>).
+			expect(extensionsResult.extensions).toHaveLength(3);
+			expect(extensionsResult.errors).toEqual([]);
 			expect(extensionsResult.errors).toEqual([]);
 
 			// mergePaths processes project paths before user paths, so the project
@@ -230,6 +233,7 @@ export default function(pi) {
 					expect(extensionsResult.extensions.map((extension) => extension.path)).toEqual([
 						join(userExtDir, "user.ts"),
 						"<inline:1>",
+						"<inline:2>",
 					]);
 					return true;
 				},
@@ -240,6 +244,7 @@ export default function(pi) {
 				join(cwd, ".a-coder-cli", "extensions", "project.ts"),
 				join(userExtDir, "user.ts"),
 				"<inline:1>",
+				"<inline:2>",
 			]);
 			expect(globalState[loadCountKey]).toBe(1);
 		});
@@ -282,7 +287,9 @@ export default function(pi) {
 			await loader.reload();
 
 			const extensionsResult = loader.getExtensions();
-			expect(extensionsResult.extensions).toHaveLength(3);
+			// 2 file extensions under test + the two built-in inline extensions
+			// (subagent <inline:1>, workflow <inline:2>).
+			expect(extensionsResult.extensions).toHaveLength(4);
 			expect(extensionsResult.errors.some((e) => e.error.includes('Command "/deploy" conflicts'))).toBe(false);
 
 			const sessionManager = SessionManager.inMemory();
@@ -302,11 +309,14 @@ export default function(pi) {
 			expect(runner.getCommand("user-only")?.description).toBe("user only");
 
 			const commands = runner.getRegisteredCommands();
+			// The built-in workflow extension's /workflows command sorts after the
+			// extension commands.
 			expect(commands.map((command) => command.invocationName)).toEqual([
 				"deploy:1",
 				"project-only",
 				"deploy:2",
 				"user-only",
+				"workflows",
 			]);
 		});
 
@@ -444,7 +454,7 @@ Project skill content`,
 				true,
 			);
 			expect(loader.getAgentsFiles().agentsFiles.some((file) => file.path === join(cwd, "AGENTS.md"))).toBe(true);
-			expect(loader.getExtensions().extensions).toHaveLength(1);
+			expect(loader.getExtensions().extensions).toHaveLength(2);
 			expect(loader.getExtensions().errors).toEqual([]);
 			expect(loader.getSkills().skills.some((skill) => skill.name === "project-skill")).toBe(false);
 			expect(loader.getPrompts().prompts.some((prompt) => prompt.name === "project")).toBe(false);
