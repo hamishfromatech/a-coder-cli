@@ -740,6 +740,11 @@ export default function App() {
 							useSessionStore.getState().setBackgroundProcesses(upd.processes ?? []);
 							break;
 						}
+						case "workflows_update": {
+							const upd = event as import("./lib/rpc").WorkflowsUpdateEvent;
+							useSessionStore.getState().setWorkflowRuns(upd.runs ?? []);
+							break;
+						}
 						case "extension_ui_request": {
 							const req = event as import("./lib/rpc").ExtensionUiRequestEvent;
 

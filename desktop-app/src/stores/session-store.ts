@@ -73,6 +73,9 @@ export interface SessionState {
 	/** Live snapshot of background bash processes (from background_processes_update events). */
 	backgroundProcesses: import("../lib/rpc").BackgroundProcessRecord[];
 	setBackgroundProcesses: (processes: import("../lib/rpc").BackgroundProcessRecord[]) => void;
+	/** Live snapshot of workflow runs (from workflows_update events). */
+	workflowRuns: import("../lib/rpc").WorkflowRunSummary[];
+	setWorkflowRuns: (runs: import("../lib/rpc").WorkflowRunSummary[]) => void;
 	streamingVerb: string;
 	/** True while a session switch / resume is loading its history — the chat
 	 *  area shows a loading state instead of the new-conversation EmptyState. */
@@ -156,6 +159,8 @@ export const useSessionStore = create<SessionState>((set) => ({
 	setSubAgents: (subAgents) => set({ subAgents }),
 	backgroundProcesses: [],
 	setBackgroundProcesses: (backgroundProcesses) => set({ backgroundProcesses }),
+	workflowRuns: [],
+	setWorkflowRuns: (workflowRuns) => set({ workflowRuns }),
 	streamingVerb: pickLoadingVerb(),
 	sessionLoading: false,
 	availableCommands: [],
@@ -200,6 +205,7 @@ export const useSessionStore = create<SessionState>((set) => ({
 			followUp: [],
 			subAgents: [],
 			backgroundProcesses: [],
+			workflowRuns: [],
 			streamingVerb: pickLoadingVerb(),
 			sessionLoading: false,
 			sessionName: null,

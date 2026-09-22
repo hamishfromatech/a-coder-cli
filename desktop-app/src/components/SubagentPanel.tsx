@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Loader2, Sparkles, Terminal, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Loader2, Sparkles, Square, Terminal, X } from "lucide-react";
 import { useModalA11y } from "../hooks/useModalA11y";
 import { useSessionStore } from "../stores/session-store";
-import type { BackgroundProcessRecord, SubAgentRecord, SubAgentTimelineEvent } from "../lib/rpc";
+import { stopWorkflowRun } from "../lib/rpc";
+import type { BackgroundProcessRecord, SubAgentRecord, SubAgentTimelineEvent, WorkflowRunSummary } from "../lib/rpc";
 import { IconButton } from "./ui/Button";
 import { ModalBackdrop, ModalPanel } from "./ui/Modal";
 
@@ -53,6 +54,13 @@ const STATUS_LABEL: Record<SubAgentRecord["status"], string> = {
 	completed: "Done",
 	failed: "Failed",
 	killed: "Stopped",
+};
+
+const WORKFLOW_RUN_GLYPHS: Record<WorkflowRunSummary["status"], string> = {
+	running: "▶",
+	completed: "●",
+	failed: "✗",
+	stopped: "■",
 };
 
 function TimelineEntry({ event }: { event: SubAgentTimelineEvent }) {
@@ -162,6 +170,87 @@ function SubagentRow({ record, now }: { record: SubAgentRecord; now: number }) {
 	);
 }
 
+function WorkflowRunRow({ run }: { run: WorkflowRunSummary }) {
+	const [open, setOpen] = useState(run.status === "running");
+	const [stopping, setStopping] = useState(false);
+	const failedSteps = Object.values(run.steps).filter((s) => s.error !== undefined);
+	const stepCount = Object.keys(run.steps).length;
+
+	const onStop = async (): Promise<void> => {
+		setStopping(true);
+		try {
+			await stopWorkflowRun(run.id);
+		} finally {
+			setStopping(false);
+		}
+	};
+
+	return (
+		<div className="rounded-lg bg-pi-surface-raised shadow-ring">
+			<button type="button" onClick={() => setOpen((v) => !v)} className="flex w-full items-start gap-2 p-3 text-left">
+				<span className="mt-0.5 shrink-0 font-mono text-3xs text-pi-text-muted">{WORKFLOW_RUN_GLYPHS[run.status]}</span>
+				<div className="min-w-0 flex-1">
+					<div className="flex items-center gap-2">
+						<span className="truncate font-mono text-xs font-medium text-pi-text">{run.workflowName}</span>
+						<span className="text-3xs text-pi-text-faint">{run.status}</span>
+					</div>
+					<p className="mt-1 font-mono text-3xs text-pi-text-muted">
+						{run.agentCount} agent(s)
+						{stepCount > 0 ? ` · ${stepCount} step(s)` : ""}
+						{run.error ? " · errored" : ""}
+					</p>
+					{run.error ? (
+						<p className="mt-1.5 rounded bg-pi-error/10 px-2 py-1 text-2xs text-pi-error">{run.error}</p>
+					) : null}
+				</div>
+				<div className="flex shrink-0 items-center gap-1">
+					{run.status === "running" ? (
+						<IconButton
+							variant="ghost"
+							size="sm"
+							icon={Square}
+							onClick={(e) => {
+								e.stopPropagation();
+								void onStop();
+							}}
+							aria-label={stopping ? "Stopping…" : "Stop workflow run"}
+							disabled={stopping}
+						/>
+					) : null}
+					{open ? (
+						<ChevronDown className="h-3.5 w-3.5 shrink-0 text-pi-text-faint" />
+					) : (
+						<ChevronRight className="h-3.5 w-3.5 shrink-0 text-pi-text-faint" />
+					)}
+				</div>
+			</button>
+			{open ? (
+				<div className="flex flex-col gap-1 border-t border-pi-border px-3 py-2">
+					{stepCount > 0 ? (
+						<>
+							<div className="text-3xs font-medium tracking-wider text-pi-text-faint uppercase">Steps</div>
+							{Object.values(run.steps).map((step) => (
+								<div key={step.stepId} className="font-mono text-3xs text-pi-text-secondary">
+									{failedSteps.some((f) => f.stepId === step.stepId) ? "✗" : "●"} {step.stepId}
+									<span className="text-pi-text-faint"> · {step.rounds} round(s)</span>
+									{step.error ? <span className="text-pi-error"> — {step.error}</span> : null}
+								</div>
+							))}
+						</>
+					) : (
+						<div className="text-3xs text-pi-text-faint">(no steps executed yet)</div>
+					)}
+					{run.status === "failed" || run.status === "stopped" ? (
+						<div className="mt-1 truncate font-mono text-3xs text-pi-text-faint">
+							{`resume: run_workflow { workflow: "${run.workflowName}", resume: "${run.id}" }`}
+						</div>
+					) : null}
+				</div>
+			) : null}
+		</div>
+	);
+}
+
 function BgProcessRow({ record, now }: { record: BackgroundProcessRecord; now: number }) {
 	const [open, setOpen] = useState(record.status === "running");
 	const elapsed = (record.endedAt ?? now) - record.startedAt;
@@ -232,17 +321,19 @@ export function SubagentPanel({ open, onClose }: SubagentPanelProps) {
 	useModalA11y(modalRef, open, onClose);
 	const subAgents = useSessionStore((s) => s.subAgents);
 	const backgroundProcesses = useSessionStore((s) => s.backgroundProcesses);
+	const workflowRuns = useSessionStore((s) => s.workflowRuns);
 	// Tick elapsed times every second while any sub-agent or process is running.
 	const [now, setNow] = useState(() => Date.now());
 	useEffect(() => {
 		if (!open) return;
 		const anyRunning =
 			subAgents.some((a) => a.status === "running") ||
-			backgroundProcesses.some((p) => p.status === "running");
+			backgroundProcesses.some((p) => p.status === "running") ||
+			workflowRuns.some((r) => r.status === "running");
 		if (!anyRunning) return;
 		const id = window.setInterval(() => setNow(Date.now()), 1000);
 		return () => window.clearInterval(id);
-	}, [open, subAgents, backgroundProcesses]);
+	}, [open, subAgents, backgroundProcesses, workflowRuns]);
 
 	const sortedAgents = useMemo(
 		() => [...subAgents].sort((a, b) => a.startedAt - b.startedAt),
@@ -252,10 +343,15 @@ export function SubagentPanel({ open, onClose }: SubagentPanelProps) {
 		() => [...backgroundProcesses].sort((a, b) => a.startedAt - b.startedAt),
 		[backgroundProcesses],
 	);
+	const sortedRuns = useMemo(
+		() => [...workflowRuns].sort((a, b) => b.startedAt - a.startedAt),
+		[workflowRuns],
+	);
 	const active =
 		sortedAgents.filter((a) => a.status === "running").length +
-		sortedProcesses.filter((p) => p.status === "running").length;
-	const total = sortedAgents.length + sortedProcesses.length;
+		sortedProcesses.filter((p) => p.status === "running").length +
+		sortedRuns.filter((r) => r.status === "running").length;
+	const total = sortedAgents.length + sortedProcesses.length + sortedRuns.length;
 
 	if (!open) return null;
 
@@ -278,12 +374,18 @@ export function SubagentPanel({ open, onClose }: SubagentPanelProps) {
 						<div className="py-10 text-center">
 							<p className="text-[13px] font-medium text-pi-text-secondary">No running tasks</p>
 							<p className="mt-2 text-2xs leading-relaxed text-pi-text-muted">
-								Background bash processes and delegated sub-agents show up here while they run. Ask the
-								assistant to delegate a task or background a command.
+								Background bash processes, delegated sub-agents, and workflow runs show up here while
+								they run. Ask the assistant to delegate a task, background a command, or run a workflow.
 							</p>
 						</div>
 					) : (
 						<div className="flex flex-col gap-2">
+							{sortedRuns.map((run) => (
+								<WorkflowRunRow key={run.id} run={run} />
+							))}
+							{sortedRuns.length > 0 && sortedAgents.length + sortedProcesses.length > 0 ? (
+								<div className="my-1 border-t border-pi-border" />
+							) : null}
 							{sortedAgents.map((agent) => (
 								<SubagentRow key={agent.id} record={agent} now={now} />
 							))}

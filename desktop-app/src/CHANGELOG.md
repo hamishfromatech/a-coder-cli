@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added a Workflows section to the Running tasks panel: workflow runs stream in live via the new `workflows_update` RPC event (per-run status, agent count, step results, errors), running runs get a stop button wired to the new `stop_workflow_run` RPC command, and failed/stopped runs show their resume invocation. Workflow agents keep their workflow-name badge.
 - Added **A-Coder Bench** to the settings panel: a new Bench page hosting the benchmark runner. Configure the model under test (`provider/model-id`), an optional self-hosted OpenAI-compatible endpoint (vLLM, SGLang, LM Studio) with its API key, runs per task, and the bench directory (defaults to the open project's `bench/` folder); load tasks from `bench/tasks/`, select a subset, confirm the health & safety notes (allow-mode tool access, sandbox-is-not-a-security-boundary, real-token cost), and run. Runs execute the CLI headlessly (`bench run --json`) through new tauri commands (`bench_list_tasks`/`bench_start`/`bench_stop`) with streamed progress; the finish state links straight to the leaderboard file. Config persists in the local settings store.
 
 ### Changed

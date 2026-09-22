@@ -212,6 +212,7 @@ export type RpcEvent =
 	| QueueUpdateEvent
 	| SubagentsUpdateEvent
 	| BackgroundProcessesUpdateEvent
+	| WorkflowsUpdateEvent
 	| AutoRetryStartEvent
 	| AutoRetryEndEvent
 	| CompactionStartEvent
@@ -317,6 +318,7 @@ export interface SubagentsUpdateEvent {
 	agents: SubAgentRecord[];
 }
 
+
 export type BackgroundProcessStatus = "running" | "done" | "error" | "killed";
 
 export interface BackgroundProcessRecord {
@@ -336,6 +338,30 @@ export interface BackgroundProcessRecord {
 export interface BackgroundProcessesUpdateEvent {
 	type: "background_processes_update";
 	processes: BackgroundProcessRecord[];
+}
+
+/** Structural mirror of a workflow run summary (see coding-agent workflows/registry.ts). */
+export interface WorkflowRunSummary {
+	id: string;
+	workflowName: string;
+	status: "running" | "completed" | "failed" | "stopped";
+	startedAt: number;
+	updatedAt: number;
+	agentCount: number;
+	error?: string;
+	steps: Record<
+		string,
+		{
+			stepId: string;
+			rounds: number;
+			error?: string;
+		}
+	>;
+}
+
+export interface WorkflowsUpdateEvent {
+	type: "workflows_update";
+	runs: WorkflowRunSummary[];
 }
 
 export interface SubAgentRecord {
@@ -702,6 +728,8 @@ export const getSessionsStatus = () =>
 	sendCommand({ type: "get_sessions_status" }) as Promise<{ sessions: RuntimeSessionStatus[] }>;
 export const abortSession = (sessionPath: string) =>
 	sendCommand({ type: "abort_session", sessionPath }) as Promise<{ found: boolean }>;
+export const stopWorkflowRun = (runId: string) =>
+	sendCommand({ type: "stop_workflow_run", runId }) as Promise<{ stopped: boolean }>;
 export const fork = (entryId: string) =>
 	sendCommand({ type: "fork", entryId }) as Promise<ForkResult>;
 export const clone = () => sendCommand({ type: "clone" }) as Promise<CloneResult>;
