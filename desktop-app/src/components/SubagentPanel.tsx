@@ -40,6 +40,14 @@ function StatusIcon({ status }: { status: SubAgentRecord["status"] }) {
 	return <AlertCircle className="h-3.5 w-3.5 shrink-0 text-pi-error" />;
 }
 
+/** Workflow run agents carry ids like <workflow>-<ts13>-<step>-r0-3(-v2). */
+const WORKFLOW_ID_RE = /^(.+)-\d{13}-[a-z0-9_-]+-r\d+-\d+(?:-v\d+)?$/;
+
+/** Extract the workflow name from a workflow-run agent id, or undefined. */
+function workflowNameFor(id: string): string | undefined {
+	return WORKFLOW_ID_RE.exec(id)?.[1];
+}
+
 const STATUS_LABEL: Record<SubAgentRecord["status"], string> = {
 	running: "Running",
 	completed: "Done",
@@ -90,6 +98,7 @@ function TimelineEntry({ event }: { event: SubAgentTimelineEvent }) {
 function SubagentRow({ record, now }: { record: SubAgentRecord; now: number }) {
 	const [open, setOpen] = useState(record.status === "running");
 	const name = record.teammateName ? `${record.teammateName} · ${record.agentType}` : record.agentType;
+	const workflow = workflowNameFor(record.id);
 	const subtitle = [
 		record.model,
 		record.toolUseCount > 0 ? `${record.toolUseCount} tools` : "",
@@ -110,6 +119,11 @@ function SubagentRow({ record, now }: { record: SubAgentRecord; now: number }) {
 				<div className="min-w-0 flex-1">
 					<div className="flex items-center gap-2">
 						<span className="truncate text-xs font-medium text-pi-text">{name}</span>
+						{workflow ? (
+							<span className="shrink-0 rounded bg-pi-accent/10 px-1.5 py-0.5 font-mono text-3xs text-pi-accent">
+								{workflow}
+							</span>
+						) : null}
 						<span className="text-3xs text-pi-text-faint">{STATUS_LABEL[record.status]}</span>
 					</div>
 					{record.goal ? <p className="mt-1 truncate text-2xs text-pi-text-secondary">{record.goal}</p> : null}
