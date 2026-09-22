@@ -40,6 +40,8 @@ Discovery rules:
 
 Disable discovery with `--no-skills` (explicit `--skill` paths still load).
 
+**SOPs:** a skill file named `*.sop.md` is treated as a Standard Operating Procedure — a parameterized, constraint-based workflow the model executes with discipline; a `workflow:` frontmatter block turns it into a declarative multi-agent workflow the `run_workflow` tool executes over background subagents. See [SOPs & Workflows](sops.md).
+
 ### Using Skills from Other Harnesses
 
 To use skills from Claude Code or OpenAI Codex, add their directories to settings:

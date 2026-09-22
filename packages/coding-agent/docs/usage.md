@@ -52,10 +52,23 @@ Type `/` in the editor to open command completion. Extensions can register custo
 | `/export [file]` | Export session to HTML or JSONL |
 | `/import <file>` | Import and resume a session from a JSONL file |
 | `/share` | Upload as private GitHub gist with shareable HTML link |
+| `/workflows` | List saved workflows and runs; drill into steps and live agents, stop runs |
 | `/reload` | Reload keybindings, extensions, skills, prompts, and context files |
 | `/hotkeys` | Show all keyboard shortcuts |
 | `/changelog` | Display version history |
 | `/quit` | Quit pi |
+
+## Dynamic Workflows
+
+A workflow is a saved `.sop.md` file whose frontmatter declares ordered steps (`run`, `fan-out` over a previous step's output, loop-until) that the model executes over background subagents — built for work larger than one context window: codebase audits, batch migrations, cross-checked research. You never write the orchestration yourself; the model authors the workflow, saves it to `.a-coder-cli/workflows/`, and runs it.
+
+Three ways to run one:
+
+- Ask the model to use a saved workflow by name (it invokes the `run_workflow` tool).
+- Include the keyword **ultracode** in a typed prompt — the model authors a workflow for the task and runs it instead of working turn by turn (disable with `workflowKeywordTrigger: false` in settings).
+- On the fleet side: `a-coder cloud spawn <repo> [prompt...] --workflow <name>` drives a headless cloud task with a saved workflow.
+
+While a run executes, a live per-step progress block renders below the editor; `/workflows` lists runs, drills into step results and live agents, and stops running ones. Interrupted runs resume from persisted state (`run_workflow` with `resume: "<runId>"`) reusing saved step results. See [SOPs](sops.md) for the format and worked examples.
 
 ## Message Queue
 

@@ -201,4 +201,6 @@ Monitor runs with `/workflows`: pick a run to see its step results and live agen
 
 Trigger keyword: with the default `workflowKeywordTrigger` setting on, a typed prompt containing "ultracode" is transformed so the model authors a workflow SOP for the task, saves it under `.a-coder-cli/workflows/`, and executes it via `run_workflow` instead of working turn by turn. Set `workflowKeywordTrigger: false` in settings to disable. See `examples/workflows/` for a worked example and `examples/skills/workflow-authoring/` for the authoring skill.
 
+Hosts and RPC clients follow runs programmatically: the `workflows_update` event streams output-free per-run summaries, and the `stop_workflow_run` command stops a running run (see `docs/rpc.md`). The desktop's Running tasks panel surfaces the same stream.
+
 See `examples/sops/` for a template and a worked example, and `examples/skills/sop-author/` for the authoring skill.

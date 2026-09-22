@@ -509,6 +509,23 @@ Response:
 {"type": "response", "command": "abort_bash", "success": true}
 ```
 
+### Workflows
+
+#### stop_workflow_run
+
+Stop a running declarative workflow (see `docs/sops.md`, "Workflows"): aborts the run's controller and kills its live sub-agents. Completed steps keep their persisted results and can be replayed with `run_workflow`'s `resume` parameter.
+
+```json
+{"type": "stop_workflow_run", "runId": "audit-routes-1727000000000"}
+```
+
+Response:
+```json
+{"type": "response", "command": "stop_workflow_run", "success": true, "data": {"stopped": true}}
+```
+
+`stopped` is `false` when the run is unknown or already finished.
+
 ### Session
 
 #### get_session_stats
@@ -1106,6 +1123,58 @@ Emitted when an extension throws an error.
   "error": "Error message..."
 }
 ```
+
+### Store snapshot events
+
+Three events stream full snapshots of process-level stores whenever they change (throttled to ~10 Hz), plus one initial snapshot when a session binds. Clients typically replace their local copy with the posted array.
+
+#### subagents_update
+
+Live snapshot of in-process background sub-agents (spawned by `spawn_subagent` or Agent Teams):
+
+```json
+{
+  "type": "subagents_update",
+  "agents": [ { "id": "scout", "agentType": "Explore", "status": "running", "goal": "Map the auth flow", "toolUseCount": 4, "timeline": [] } ]
+}
+```
+
+#### background_processes_update
+
+Live snapshot of backgrounded bash processes (bash with `background: true`):
+
+```json
+{
+  "type": "background_processes_update",
+  "processes": [ { "id": "bash-1", "command": "npm run dev", "pid": 1234, "status": "running", "output": "...", "totalLines": 42 } ]
+}
+```
+
+#### workflows_update
+
+Live snapshot of declarative workflow runs (see `docs/sops.md`, "Workflows"). Summaries are output-free: per-run status, agent count, and per-step rounds/errors.
+
+```json
+{
+  "type": "workflows_update",
+  "runs": [
+    {
+      "id": "audit-routes-1727000000000",
+      "workflowName": "audit-routes",
+      "status": "running",
+      "startedAt": 1727000000000,
+      "updatedAt": 1727000005000000,
+      "agentCount": 7,
+      "steps": {
+        "discover": { "stepId": "discover", "rounds": 1 },
+        "audit": { "stepId": "audit", "rounds": 1 }
+      }
+    }
+  ]
+}
+```
+
+Stop a run with the `stop_workflow_run` command.
 
 ## Extension UI Protocol
 
