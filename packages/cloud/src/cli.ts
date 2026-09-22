@@ -13,7 +13,7 @@ const packageJson = JSON.parse(readFileSync(join(__dirname, "../package.json"), 
 
 function printHelp(): void {
 	console.log(
-		`a-coder-cloud v${packageJson.version}\n\nUsage:\n  a-coder-cloud serve\n  a-coder-cloud spawn <repo> <prompt...> [--base <branch>] [--model <provider>/<id>] [--timeout <minutes>] [--push]\n  a-coder-cloud status\n  a-coder-cloud review <task-id>\n  a-coder-cloud stop <task-id>\n  a-coder-cloud --version\n`,
+		`a-coder-cloud v${packageJson.version}\n\nUsage:\n  a-coder-cloud serve\n  a-coder-cloud spawn <repo> [prompt...] [--workflow <name>] [--args <json>] [--base <branch>] [--model <provider>/<id>] [--timeout <minutes>] [--push]\n  a-coder-cloud status\n  a-coder-cloud review <task-id>\n  a-coder-cloud stop <task-id>\n  a-coder-cloud --version\n\nWith --workflow, the prompt is optional task context; the named workflow (a saved .sop.md on this machine, or an absolute path) is executed by the worker's run_workflow tool.\n`,
 	);
 }
 
@@ -39,14 +39,36 @@ async function main(argv: string[]): Promise<void> {
 			await serve();
 			return;
 		case "spawn": {
+			const workflowFlag = getFlagValue(rest, "--workflow");
+			const argsFlag = getFlagValue(rest, "--args");
+			let workflowArgs: Record<string, unknown> | undefined;
+			if (argsFlag !== undefined) {
+				try {
+					const parsed: unknown = JSON.parse(argsFlag);
+					if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+						throw new Error("not a JSON object");
+					}
+					workflowArgs = parsed as Record<string, unknown>;
+				} catch (error) {
+					console.error(`Invalid --args JSON: ${error instanceof Error ? error.message : String(error)}`);
+					process.exitCode = 1;
+					return;
+				}
+			}
 			const positional = rest.filter((arg, index) => {
 				const previous = rest[index - 1];
 				return (
-					!(previous === "--base" || previous === "--model" || previous === "--timeout") &&
-					!["--base", "--model", "--timeout", "--push"].includes(arg)
+					!(
+						previous === "--base" ||
+						previous === "--model" ||
+						previous === "--timeout" ||
+						previous === "--workflow" ||
+						previous === "--args"
+					) && !["--base", "--model", "--timeout", "--push", "--workflow", "--args"].includes(arg)
 				);
 			});
-			if (positional.length < 2) {
+			const needsPrompt = workflowFlag === undefined;
+			if (positional.length < 1 || (needsPrompt && positional.length < 2)) {
 				printHelp();
 				process.exitCode = 1;
 				return;
@@ -55,6 +77,8 @@ async function main(argv: string[]): Promise<void> {
 				type: "spawn_task",
 				repo: positional[0],
 				prompt: positional.slice(1).join(" "),
+				...(workflowFlag !== undefined ? { workflow: workflowFlag } : {}),
+				...(workflowArgs !== undefined ? { workflowArgs } : {}),
 				baseBranch: getFlagValue(rest, "--base"),
 				model: getFlagValue(rest, "--model")?.split("/")[1],
 				provider: getFlagValue(rest, "--model")?.split("/")[0],

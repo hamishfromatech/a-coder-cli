@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
 	CHECKPOINT_INTERVAL_MS,
 	DEFAULT_TIMEOUT_MINUTES,
@@ -14,6 +14,7 @@ import type { CloudRpcResponse, CloudUiRequest } from "./rpc-process.ts";
 import { RpcProcessInstance } from "./rpc-process.ts";
 import { getTask, upsertTask } from "./storage.ts";
 import type { CloudTask, SpawnTaskOptions, TaskStatus } from "./types.ts";
+import { collectWorkflowRuns, copyWorkflowArtifacts } from "./workflows.ts";
 
 function nowIso(): string {
 	return new Date().toISOString();
@@ -64,6 +65,8 @@ class TaskRunner {
 			baseSha: "",
 			branch: `${TASK_BRANCH_PREFIX}${id}`,
 			prompt: options.prompt,
+			...(options.workflow !== undefined ? { workflow: options.workflow } : {}),
+			...(options.workflowArgs !== undefined ? { workflowArgs: options.workflowArgs } : {}),
 			provider: options.provider,
 			model: options.model,
 			timeoutMinutes: options.timeoutMinutes ?? 0,
@@ -129,9 +132,10 @@ class TaskRunner {
 				await this.selectModel();
 			}
 
+			const baseMessage = this.baseMessage();
 			const message = this.task.warnings.some((warning) => warning.includes("re-queued"))
-				? `${this.task.prompt}\n\nNote: a previous attempt at this task made progress in this working tree (see git log and uncommitted changes). Continue the task from where it left off; do not redo finished work.`
-				: this.task.prompt;
+				? `${baseMessage}\n\nNote: a previous attempt at this task made progress in this working tree (see git log and uncommitted changes). Continue the task from where it left off; do not redo finished work.`
+				: baseMessage;
 
 			await this.rpcProcess.send({ type: "prompt", message });
 		} catch (error) {
@@ -186,6 +190,16 @@ class TaskRunner {
 	}
 
 	// ── agent wiring ─────────────────────────────────────────────────────
+
+	/** The message the task starts with: a workflow invocation, or the plain prompt. */
+	private baseMessage(): string {
+		const workflow = this.task.workflow;
+		if (!workflow) return this.task.prompt;
+		const args = this.task.workflowArgs;
+		const argsLine = args !== undefined ? ` with args: ${JSON.stringify(args)}` : "";
+		const context = this.task.prompt.trim().length > 0 ? ` Operator task context: ${this.task.prompt.trim()}` : "";
+		return `Execute the saved workflow "${workflow}" now using the run_workflow tool${argsLine}.${context} Report the workflow's final output. If the workflow cannot be resolved or a step fails, report exactly why.`;
+	}
 
 	/** Select the requested model on the worker; dynamic catalogs may need a refresh first. */
 	private async selectModel(): Promise<void> {
@@ -399,6 +413,17 @@ class TaskRunner {
 			}
 		} catch {
 			// agent process may be gone; the session path may have been recorded earlier
+		}
+
+		// Workflow continuity: summarize the session's workflow runs into the
+		// record and copy their state files into the task artifacts.
+		try {
+			const sessionDir = this.task.sessionFile ? dirname(this.task.sessionFile) : undefined;
+			const runs = collectWorkflowRuns(sessionDir);
+			if (runs.length > 0) this.task.workflowRuns = runs;
+			copyWorkflowArtifacts(sessionDir, getTaskArtifactsDir(this.task.id));
+		} catch {
+			// best-effort
 		}
 
 		if (this.task.push) {

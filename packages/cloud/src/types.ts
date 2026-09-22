@@ -17,6 +17,23 @@ export interface CommitSummary {
 	date: string;
 }
 
+/** Structural mirror of a workflow run's per-step result (cloud-side, no coding-agent import). */
+export interface WorkflowStepSummary {
+	id: string;
+	rounds: number;
+	error?: string;
+}
+
+/** Structural mirror of a workflow run state file (<sessionDir>/workflows/<runId>.json). */
+export interface WorkflowRunSummary {
+	id: string;
+	workflow: string;
+	status: string;
+	agentCount: number;
+	error?: string;
+	steps: WorkflowStepSummary[];
+}
+
 /** Structural subset of the git diff summary, so report building stays testable without spawning git. */
 export interface GitDiffSummaryLike {
 	commits: CommitSummary[];
@@ -38,6 +55,10 @@ export interface CloudTask {
 	baseSha: string;
 	branch: string;
 	prompt: string;
+	/** Saved workflow the task drives (via the worker's run_workflow tool), if any. */
+	workflow?: string;
+	/** Structured invocation input for the workflow, if any. */
+	workflowArgs?: Record<string, unknown>;
 	provider?: string;
 	model?: string;
 	timeoutMinutes: number;
@@ -51,6 +72,8 @@ export interface CloudTask {
 	diffStat?: string;
 	changedFiles: string[];
 	pushedToRemote?: boolean;
+	/** Workflow runs the task's agent executed, summarized at finalize. */
+	workflowRuns?: WorkflowRunSummary[];
 	reportMarkdown?: string;
 	usage: TaskUsage;
 	warnings: string[];
@@ -61,6 +84,10 @@ export interface CloudTask {
 export interface SpawnTaskOptions {
 	repo: string;
 	prompt: string;
+	/** Saved workflow name (or absolute .sop.md path) to run instead of working turn by turn. */
+	workflow?: string;
+	/** Structured invocation input for the workflow's args template references. */
+	workflowArgs?: Record<string, unknown>;
 	baseBranch?: string;
 	provider?: string;
 	model?: string;
@@ -76,6 +103,8 @@ export interface SpawnTaskRequest {
 	type: "spawn_task";
 	repo: string;
 	prompt: string;
+	workflow?: string;
+	workflowArgs?: Record<string, unknown>;
 	baseBranch?: string;
 	provider?: string;
 	model?: string;

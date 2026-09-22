@@ -11,8 +11,12 @@ export async function spawnTask(options: SpawnTaskOptions): Promise<CloudTask> {
 	if (!options.repo || options.repo.trim().length === 0) {
 		throw new Error("spawn requires a repo (local path or git URL)");
 	}
+	const hasWorkflow = options.workflow !== undefined && options.workflow.trim().length > 0;
 	if (!options.prompt || options.prompt.trim().length === 0) {
-		throw new Error("spawn requires a task prompt");
+		if (!hasWorkflow) {
+			throw new Error("spawn requires a task prompt (or --workflow)");
+		}
+		options.prompt = "";
 	}
 	const timeoutMinutes = options.timeoutMinutes ?? DEFAULT_TIMEOUT_MINUTES;
 	const task = TaskRunner.create({ ...options, timeoutMinutes });

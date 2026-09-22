@@ -15,12 +15,14 @@ interface ParsedCloudArgs {
 	model?: string;
 	provider?: string;
 	timeout?: number;
+	workflow?: string;
+	workflowArgs?: Record<string, unknown>;
 	push: boolean;
 	json: boolean;
 }
 
 function parseCloudArgs(args: string[]): ParsedCloudArgs {
-	const valueFlags = new Set(["--base", "--model", "--timeout"]);
+	const valueFlags = new Set(["--base", "--model", "--timeout", "--workflow", "--args"]);
 	const parsed: ParsedCloudArgs = { positionals: [], push: false, json: false };
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
@@ -33,6 +35,17 @@ function parseCloudArgs(args: string[]): ParsedCloudArgs {
 			i += 1;
 			if (arg === "--base") {
 				parsed.base = value;
+			} else if (arg === "--workflow") {
+				parsed.workflow = value;
+			} else if (arg === "--args") {
+				try {
+					const parsedValue: unknown = JSON.parse(value);
+					if (typeof parsedValue === "object" && parsedValue !== null && !Array.isArray(parsedValue)) {
+						parsed.workflowArgs = parsedValue as Record<string, unknown>;
+					}
+				} catch {
+					throw new Error(`Invalid --args JSON: ${value}`);
+				}
 			} else if (arg === "--model") {
 				const slash = value.indexOf("/");
 				if (slash > 0 && slash < value.length - 1) {
@@ -55,10 +68,13 @@ function printCloudHelp(): void {
 	console.log(
 		`A-Coder Cloud v${VERSION} — self-hosted always-on agent fleet\n
 Usage:
-  a-coder cloud spawn <repo> <prompt...> [--base <branch>] [--model <provider>/<model>] [--timeout <minutes>] [--push]
+  a-coder cloud spawn <repo> [prompt...] [--workflow <name>] [--args <json>] [--base <branch>] [--model <provider>/<model>] [--timeout <minutes>] [--push]
       Give the agent a repo and a task. It runs in a container-grade workspace
       under ~/.a-coder/cloud/, committing WIP checkpoints to branch ac-cloud/<task-id>
       as it works — even while your machine is away.
+      With --workflow, the worker executes a saved declarative workflow
+      (.sop.md from this machine, or an absolute path) via run_workflow instead
+      of working turn by turn; the prompt becomes optional task context.
   a-coder cloud status [--json]
       Overview of all cloud tasks.
   a-coder cloud review <task-id>
@@ -98,6 +114,18 @@ function printReview(task: CloudTask): void {
 			console.log(`  ${commit.hash.slice(0, 8)}  ${commit.subject}`);
 		}
 	}
+	if (task.workflowRuns !== undefined && task.workflowRuns.length > 0) {
+		console.log("");
+		console.log("workflow runs:");
+		for (const run of task.workflowRuns) {
+			console.log(`  ${run.workflow} — ${run.status} (run ${run.id}): ${run.agentCount} agent(s)`);
+			for (const step of run.steps) {
+				if (step.error !== undefined) {
+					console.log(chalk.yellow(`    step ${step.id}: ${step.error}`));
+				}
+			}
+		}
+	}
 	if (task.warnings.length > 0) {
 		console.log("");
 		console.log(chalk.yellow("warnings:"));
@@ -130,7 +158,8 @@ export async function handleCloudCommand(args: string[]): Promise<boolean> {
 			}
 			case "spawn": {
 				const parsed = parseCloudArgs(rest);
-				if (parsed.positionals.length < 2) {
+				const needsPrompt = parsed.workflow === undefined;
+				if (parsed.positionals.length < 1 || (needsPrompt && parsed.positionals.length < 2)) {
 					printCloudHelp();
 					process.exitCode = 1;
 					return true;
@@ -138,6 +167,8 @@ export async function handleCloudCommand(args: string[]): Promise<boolean> {
 				const task = await cloudSpawn({
 					repo: parsed.positionals[0],
 					prompt: parsed.positionals.slice(1).join(" "),
+					...(parsed.workflow !== undefined ? { workflow: parsed.workflow } : {}),
+					...(parsed.workflowArgs !== undefined ? { workflowArgs: parsed.workflowArgs } : {}),
 					baseBranch: parsed.base,
 					provider: parsed.provider,
 					model: parsed.model,

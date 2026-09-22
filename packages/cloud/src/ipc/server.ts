@@ -80,6 +80,8 @@ export const cloudRequestHandler: CloudRequestHandler = async (request) => {
 			const task = await tasks.spawnTask({
 				repo: request.repo,
 				prompt: request.prompt,
+				...(request.workflow !== undefined ? { workflow: request.workflow } : {}),
+				...(request.workflowArgs !== undefined ? { workflowArgs: request.workflowArgs } : {}),
 				baseBranch: request.baseBranch,
 				provider: request.provider,
 				model: request.model,

@@ -75,4 +75,38 @@ describe("report builder", () => {
 		expect(markdown).toContain("no origin remote");
 		expect(json.error).toBe("Timed out");
 	});
+
+	it("lists workflow runs and resume hints when the task executed workflows", () => {
+		const { markdown, json } = buildReport(
+			makeTask({
+				workflow: "audit-routes",
+				workflowArgs: { dir: "src/routes" },
+				workflowRuns: [
+					{
+						id: "audit-routes-1727000000000",
+						workflow: "audit-routes",
+						status: "failed",
+						agentCount: 7,
+						error: "fan-out step audit failed for all 3 items",
+						steps: [
+							{ id: "discover", rounds: 1 },
+							{ id: "audit", rounds: 1, error: "structured output failed validation after 5 retries" },
+						],
+					},
+				],
+			}),
+			diff,
+		);
+		expect(markdown).toContain("## Workflows");
+		expect(markdown).toContain("✗ **audit-routes** — failed");
+		expect(markdown).toContain("7 agent(s)");
+		expect(markdown).toContain('run_workflow { "workflow": "audit-routes", "resume": "audit-routes-1727000000000" }');
+		expect(json.workflow).toBe("audit-routes");
+		expect((json.workflowRuns as unknown[]).length).toBe(1);
+	});
+
+	it("omits the workflow section for plain tasks", () => {
+		const { markdown } = buildReport(makeTask(), diff);
+		expect(markdown).not.toContain("## Workflows");
+	});
 });

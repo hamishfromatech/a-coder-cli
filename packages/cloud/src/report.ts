@@ -1,4 +1,4 @@
-import type { CloudTask, GitDiffSummaryLike } from "./types.ts";
+import type { CloudTask, GitDiffSummaryLike, WorkflowRunSummary } from "./types.ts";
 
 export interface ReportPayload {
 	json: Record<string, unknown>;
@@ -26,6 +26,27 @@ function statusLine(task: CloudTask): string {
 		return `**${STATUS_LABELS[task.status] ?? task.status}** — ${task.error}`;
 	}
 	return `**${STATUS_LABELS[task.status] ?? task.status}**`;
+}
+
+const WORKFLOW_RUN_GLYPHS: Record<string, string> = {
+	running: "▶",
+	completed: "●",
+	failed: "✗",
+	stopped: "■",
+};
+
+function workflowRunLines(run: WorkflowRunSummary): string[] {
+	const glyph = WORKFLOW_RUN_GLYPHS[run.status] ?? "•";
+	const lines = [`- ${glyph} **${run.workflow}** — ${run.status} (run \`${run.id}\`): ${run.agentCount} agent(s)`];
+	if (run.error) {
+		lines.push(`  - error: ${run.error}`);
+	}
+	for (const step of run.steps) {
+		if (step.error !== undefined) {
+			lines.push(`  - step \`${step.id}\`: ${step.rounds} round(s) — ${step.error}`);
+		}
+	}
+	return lines;
 }
 
 /**
@@ -59,6 +80,9 @@ export function buildReport(task: CloudTask, diff: GitDiffSummaryLike): ReportPa
 		changedFiles: diff.changedFiles,
 		usage: usage,
 		warnings: task.warnings,
+		workflow: task.workflow,
+		workflowArgs: task.workflowArgs,
+		workflowRuns: task.workflowRuns ?? [],
 		sessionFile: task.sessionFile,
 	};
 
@@ -109,6 +133,15 @@ export function buildReport(task: CloudTask, diff: GitDiffSummaryLike): ReportPa
 		lines.push("");
 	}
 
+	if (task.workflowRuns !== undefined && task.workflowRuns.length > 0) {
+		lines.push("## Workflows");
+		lines.push("");
+		for (const run of task.workflowRuns) {
+			lines.push(...workflowRunLines(run));
+		}
+		lines.push("");
+	}
+
 	if (task.warnings.length > 0) {
 		lines.push("## Warnings");
 		lines.push("");
@@ -126,6 +159,16 @@ export function buildReport(task: CloudTask, diff: GitDiffSummaryLike): ReportPa
 	lines.push("");
 	lines.push("# Resume the exact agent session (continuity)");
 	lines.push(`cd ${task.workspacePath} && a-coder --resume`);
+
+	const resumable = (task.workflowRuns ?? []).filter((run) => run.status !== "completed" && run.status !== "running");
+	if (resumable.length > 0) {
+		lines.push("");
+		lines.push("# Resume an interrupted workflow run (reuses saved step results, reruns what changed)");
+		for (const run of resumable) {
+			lines.push(`# run_workflow { "workflow": "${run.workflow}", "resume": "${run.id}" }`);
+		}
+	}
+
 	lines.push("");
 	lines.push("# Merge the work into your base branch");
 	lines.push(`cd ${task.workspacePath} && git checkout ${task.baseBranch} && git merge --no-ff ${task.branch}`);
