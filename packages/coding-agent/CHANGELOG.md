@@ -4,6 +4,8 @@
 
 ### Changed
 
+- RPC: `get_state` now includes the active session's workspace (`cwd`), and `switch_session` responses carry the authoritative session identity (`sessionFile`, `sessionId`, `sessionName`, `cwd`) so clients can adopt tab labels and workspace indicators immediately without depending on `session_start` event ordering.
+
 - The running-tasks viewer (Down on an empty editor, `/subagents`) now scrolls: the picker renders a windowed list sized to the terminal (4–18 rows with `… N more above/below` markers) whose viewport follows the cursor, so a workflow's swarm of sub-agents or a pile of background processes can be navigated no matter how many there are. The bash-process live view gained ↑/↓ scrolling over the retained output tail (previously agent timelines only).
 
 - The `/model` picker now fetches the live catalog from every provider on open: the cached list paints instantly (the picker never blocks on the network), then `refreshDynamicModels(force)` re-fetches all fetchable providers — Ollama Cloud, OpenAdapter, LM Studio, llama.cpp, and local Ollama — bypassing their 2–5 minute TTL caches, and the list repaints with any newly added models. The repaint re-applies the user's live search query so a late refresh never clobbers typing. `/scoped-models`, `/model <term>` and the post-login flow already fetched fresh via the registry cache reset; model cycling keeps its TTL cache on purpose so rapid cycling stays instant.

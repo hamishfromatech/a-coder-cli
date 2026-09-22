@@ -715,6 +715,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					isCompacting: session.isCompacting,
 					steeringMode: session.steeringMode,
 					followUpMode: session.followUpMode,
+					cwd: session.sessionManager.getCwd(),
 					sessionFile: session.sessionFile,
 					sessionId: session.sessionId,
 					sessionName: session.sessionName,
@@ -924,7 +925,22 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				if (!result.cancelled) {
 					await rebindSession();
 				}
-				return success(id, "switch_session", result);
+				// Authoritative session identity in the response: clients that adopt
+				// it immediately (tab labels, workspace indicator) stay correct even
+				// when the session_start event races the optimistic UI update.
+				return success(
+					id,
+					"switch_session",
+					result.cancelled
+						? result
+						: {
+								...result,
+								sessionFile: session.sessionFile,
+								sessionId: session.sessionId,
+								sessionName: session.sessionName,
+								cwd: session.sessionManager.getCwd(),
+							},
+				);
 			}
 
 			case "get_sessions_status": {

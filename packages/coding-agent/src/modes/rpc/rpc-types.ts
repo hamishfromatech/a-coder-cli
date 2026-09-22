@@ -222,6 +222,8 @@ export interface RpcSessionState {
 	isCompacting: boolean;
 	steeringMode: "all" | "one-at-a-time";
 	followUpMode: "all" | "one-at-a-time";
+	/** Workspace the session runs in (clients sync their project indicator to it). */
+	cwd?: string;
 	sessionFile?: string;
 	sessionId: string;
 	sessionName?: string;
