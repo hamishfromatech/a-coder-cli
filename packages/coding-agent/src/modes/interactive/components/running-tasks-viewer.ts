@@ -25,6 +25,12 @@ import { formatDuration } from "../../../utils/duration.ts";
 import { theme } from "../theme/theme.ts";
 import { keyHint, rawKeyHint } from "./keybinding-hints.ts";
 
+/** The slice of TUI surface this component needs (render ticker + height). */
+interface TuiLike {
+	requestRender: () => void;
+	terminal: { rows: number };
+}
+
 interface AgentItem {
 	kind: "agent";
 	record: InProcessSubAgentRecord;
@@ -159,8 +165,10 @@ export class RunningTasksViewerComponent extends Container {
 	private showFinished: boolean = showFinishedDefault;
 	private mode: "picking" | "viewing" = "picking";
 	private selectedIndex = 0;
+	/** First visible picker row (the list window follows the cursor). */
+	private scrollOffset = 0;
 	private viewingId: string | undefined;
-	/** Lines back from the latest timeline event (0 = live tail) while viewing an agent. */
+	/** Lines back from the latest timeline event / output line (0 = live tail) while viewing. */
 	private viewScroll = 0;
 	private onClose: () => void;
 	private onKill: (item: TaskItem) => void;
@@ -169,19 +177,19 @@ export class RunningTasksViewerComponent extends Container {
 	private killedNotice: string | undefined;
 	/** 1s render ticker so elapsed/duration displays advance while idle. */
 	private elapsedTimer: ReturnType<typeof setInterval> | undefined;
-	private elapsedTui: { requestRender: () => void } | undefined;
+	private tui: TuiLike | undefined;
 
 	constructor(
 		subagents: InProcessSubAgentRecord[],
 		backgrounds: BackgroundProcessRecord[],
 		onClose: () => void,
 		onKill: (item: TaskItem) => void,
-		elapsedTui?: { requestRender: () => void },
+		tui?: TuiLike,
 	) {
 		super();
 		this.onClose = onClose;
 		this.onKill = onKill;
-		this.elapsedTui = elapsedTui;
+		this.tui = tui;
 		this.setItems(subagents, backgrounds);
 
 		this.addChild(new Spacer(1));
@@ -197,12 +205,12 @@ export class RunningTasksViewerComponent extends Container {
 
 	/** Start the 1s elapsed ticker; stop when no item is running (or disposed). */
 	private startElapsedTicker(): void {
-		if (!this.elapsedTui || this.elapsedTimer) return;
+		if (!this.tui || this.elapsedTimer) return;
 		this.elapsedTimer = setInterval(() => {
 			if (
 				this.items.some((i) => (i.kind === "agent" ? i.record.status === "running" : i.record.status === "running"))
 			) {
-				this.elapsedTui?.requestRender();
+				this.tui?.requestRender();
 			} else {
 				this.stopElapsedTicker();
 			}
@@ -240,6 +248,27 @@ export class RunningTasksViewerComponent extends Container {
 	private clampSelection(): void {
 		if (this.selectedIndex >= this.items.length) {
 			this.selectedIndex = Math.max(0, this.items.length - 1);
+		}
+		const maxOffset = Math.max(0, this.items.length - this.getViewportRows());
+		this.scrollOffset = Math.max(0, Math.min(this.scrollOffset, maxOffset));
+	}
+
+	/** Height of the picker's scroll window (rows), adapted to the terminal. */
+	private getViewportRows(): number {
+		const rows = this.tui?.terminal.rows ?? 24;
+		// Reserve room for the chat above, the viewer's chrome (header/spacers/
+		// hint), and the status rail; never tiny, never the whole screen.
+		const usable = rows - 10;
+		return Math.max(4, Math.min(18, usable));
+	}
+
+	/** Keep the picker cursor inside the rendered window. */
+	private keepCursorInWindow(): void {
+		const viewRows = this.getViewportRows();
+		if (this.selectedIndex < this.scrollOffset) {
+			this.scrollOffset = this.selectedIndex;
+		} else if (this.selectedIndex >= this.scrollOffset + viewRows) {
+			this.scrollOffset = this.selectedIndex - viewRows + 1;
 		}
 	}
 
@@ -289,7 +318,16 @@ export class RunningTasksViewerComponent extends Container {
 				),
 			);
 		}
-		for (let i = 0; i < this.items.length; i++) {
+		// Windowed list: the viewport follows the cursor so the viewer stays
+		// inside the terminal window no matter how many tasks exist.
+		const viewRows = this.getViewportRows();
+		this.scrollOffset = Math.max(0, Math.min(this.scrollOffset, this.items.length - viewRows));
+		const first = this.scrollOffset;
+		const last = Math.min(this.items.length, first + viewRows);
+		if (first > 0) {
+			this.bodyContainer.addChild(new Text(theme.fg("dim", `… ${first} more above`), 1, 1));
+		}
+		for (let i = first; i < last; i++) {
 			const item = this.items[i];
 			const isCursor = i === this.selectedIndex;
 			const kindTag = item.kind === "agent" ? theme.fg("dim", "agent") : theme.fg("dim", "bash");
@@ -298,6 +336,9 @@ export class RunningTasksViewerComponent extends Container {
 				`${theme.fg("muted", "[")}${kindTag} ${status}${theme.fg("muted", "]")} ` +
 				`${theme.fg("text", itemLabel(item))} ${theme.fg("dim", itemMeta(item))}`;
 			this.bodyContainer.addChild(new Text(isCursor ? `${theme.fg("accent", "→ ")}${line}` : `  ${line}`, 1, 1));
+		}
+		if (last < this.items.length) {
+			this.bodyContainer.addChild(new Text(theme.fg("dim", `… ${this.items.length - last} more below`), 1, 1));
 		}
 		this.hint.setText(
 			rawKeyHint("↑↓", "navigate") +
@@ -333,7 +374,9 @@ export class RunningTasksViewerComponent extends Container {
 				`${rawKeyHint("↑↓", "scroll")}  ${rawKeyHint("k", "kill")}  ${keyHint("tui.select.cancel", "back")}`,
 			);
 		} else {
-			this.hint.setText(`${keyHint("tui.select.cancel", "back")}  ${rawKeyHint("k", "kill")}`);
+			this.hint.setText(
+				`${rawKeyHint("↑↓", "scroll")}  ${rawKeyHint("k", "kill")}  ${keyHint("tui.select.cancel", "back")}`,
+			);
 		}
 	}
 
@@ -452,11 +495,17 @@ export class RunningTasksViewerComponent extends Container {
 
 		const bashTailLines = 15;
 		const lines = record.output.split("\n").filter((l) => l.length > 0);
-		const droppedLines = Math.max(0, lines.length - bashTailLines);
+		// ↑/↓ scroll back through the retained output tail, mirroring the agent
+		// timeline scroll (viewScroll counts lines back from the latest line).
+		const maxOffset = Math.max(0, lines.length - bashTailLines);
+		this.viewScroll = Math.min(this.viewScroll, maxOffset);
+		const windowStart = Math.max(0, lines.length - bashTailLines - this.viewScroll);
+		const windowEnd = lines.length - this.viewScroll;
+		const droppedLines = windowStart;
 		if (droppedLines > 0) {
 			this.bodyContainer.addChild(new Text(theme.fg("dim", `… ${droppedLines} earlier lines hidden`), 1, 1));
 		}
-		const tail = lines.slice(-bashTailLines);
+		const tail = lines.slice(windowStart, windowEnd);
 		if (tail.length === 0) {
 			this.bodyContainer.addChild(new Text(theme.fg("muted", "(no output yet)"), 1, 1));
 		} else {
@@ -487,9 +536,11 @@ export class RunningTasksViewerComponent extends Container {
 			}
 			if (kb.matches(keyData, "tui.select.up")) {
 				this.selectedIndex = Math.max(0, this.selectedIndex - 1);
+				this.keepCursorInWindow();
 				this.rerender();
 			} else if (kb.matches(keyData, "tui.select.down")) {
 				this.selectedIndex = Math.min(this.items.length - 1, this.selectedIndex + 1);
+				this.keepCursorInWindow();
 				this.rerender();
 			} else if (kb.matches(keyData, "tui.select.confirm") || keyData === "\n" || keyData === "\r") {
 				const item = this.selectedItem();
@@ -514,17 +565,15 @@ export class RunningTasksViewerComponent extends Container {
 			this.killedNotice = undefined;
 			this.rerender();
 		} else if (kb.matches(keyData, "tui.select.up") || kb.matches(keyData, "tui.select.down")) {
-			// Scroll the viewed agent's timeline (↑ = older, ↓ = newer toward live).
-			const item = this.viewItem();
-			if (item?.kind === "agent") {
-				const step = 3;
-				if (kb.matches(keyData, "tui.select.up")) {
-					this.viewScroll += step;
-				} else {
-					this.viewScroll = Math.max(0, this.viewScroll - step);
-				}
-				this.rerender();
+			// Scroll the viewed task (↑ = older, ↓ = newer toward live): the
+			// agent's timeline or the bash output tail.
+			const step = 3;
+			if (kb.matches(keyData, "tui.select.up")) {
+				this.viewScroll += step;
+			} else {
+				this.viewScroll = Math.max(0, this.viewScroll - step);
 			}
+			this.rerender();
 		} else if (keyData === "k") {
 			const item = this.viewItem();
 			if (item) {
