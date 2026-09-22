@@ -1,6 +1,7 @@
 import { PostHog } from "posthog-node";
 import { VERSION } from "../config.ts";
 import type { AppMode } from "./project-trust.ts";
+import { redactRecord } from "./security/redaction.ts";
 import type { SettingsManager } from "./settings-manager.ts";
 import { isTruthyEnvFlag } from "./telemetry.ts";
 
@@ -94,7 +95,12 @@ function safeCapture(settingsManager: SettingsManager, event: string, properties
 	const posthog = getClient(settingsManager);
 	if (!posthog) return;
 	try {
-		posthog.capture({ distinctId: settingsManager.getTrackingId() ?? "", event, properties });
+		// Redaction runs unconditionally — consent/bypass flags never disable it.
+		posthog.capture({
+			distinctId: settingsManager.getTrackingId() ?? "",
+			event,
+			properties: redactRecord(properties),
+		});
 	} catch {
 		// Analytics must never break the session.
 	}

@@ -7,6 +7,8 @@
  * lets tools and the runner answer "what team am I in?" without a disk read.
  */
 
+import type { HandoffGuard } from "./handoff-guard.ts";
+
 export interface TeamContext {
 	/** Canonical team name (equals TeamFile.name). */
 	teamName: string;
@@ -16,6 +18,8 @@ export interface TeamContext {
 	teamFilePath: string;
 	/** ms since epoch when the team was created. */
 	createdAt: number;
+	/** Repetitive-handoff detection state for this team (in-memory only). */
+	handoffGuard: HandoffGuard;
 }
 
 let current: TeamContext | null = null;

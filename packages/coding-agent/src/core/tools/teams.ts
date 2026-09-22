@@ -11,6 +11,7 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { type Static, Type } from "typebox";
 import type { ToolDefinition } from "../extensions/types.ts";
+import { HandoffGuard } from "../teams/handoff-guard.ts";
 import { writeToMailbox } from "../teams/mailbox.ts";
 import { clearActiveTeam, getActiveTeam, setActiveTeam } from "../teams/team-context.ts";
 import {
@@ -137,7 +138,7 @@ export function createTeamCreateToolDefinition(): ToolDefinition<
 			};
 			const teamFilePath = getTeamFilePath(teamName);
 			await writeTeamFile(teamName, file);
-			setActiveTeam({ teamName, leadAgentId, teamFilePath, createdAt });
+			setActiveTeam({ teamName, leadAgentId, teamFilePath, createdAt, handoffGuard: new HandoffGuard() });
 
 			const lines = [
 				`Team "${teamName}" created. You are the lead (${leadAgentId}).`,
@@ -263,11 +264,16 @@ export function createSendMessageToolDefinition(
 				if (recipients.length === 0) {
 					return textResult("No active teammates to broadcast to (you're the only active member).");
 				}
+				let advisory: string | undefined;
 				for (const r of recipients) {
 					await deliver(r.name);
+					advisory = active.handoffGuard.record(senderName, r.name) ?? advisory;
 				}
 				return textResult(
-					`Broadcast message to ${recipients.length} teammate(s): ${recipients.map((r) => r.name).join(", ")}.`,
+					[
+						`Broadcast message to ${recipients.length} teammate(s): ${recipients.map((r) => r.name).join(", ")}.`,
+						...(advisory ? [advisory] : []),
+					].join("\n"),
 					{ recipients: recipients.map((r) => r.name) },
 				);
 			}
@@ -282,14 +288,18 @@ export function createSendMessageToolDefinition(
 			}
 
 			await deliver(recipient.name);
+			const advisory = active.handoffGuard.record(senderName, recipient.name);
 
 			const offlineHint = recipient.isActive
 				? ""
 				: ` (note: "${to}" is not currently active — the message sits in their inbox until they are respawned.)`;
-			return textResult(`Message delivered to "${to}"'s inbox in team "${active.teamName}".${offlineHint}`, {
-				message,
-				recipients: [recipient.name],
-			});
+			return textResult(
+				[
+					`Message delivered to "${to}"'s inbox in team "${active.teamName}".${offlineHint}`,
+					...(advisory ? [advisory] : []),
+				].join("\n"),
+				{ message, recipients: [recipient.name] },
+			);
 		},
 	};
 }

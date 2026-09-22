@@ -66,6 +66,22 @@ export function createSubagentExtensionFactory(_options: SubagentToolOptions = {
 				),
 			}),
 			async execute(_toolCallId, params, _signal, _onUpdate, ctx): Promise<AgentToolResult<unknown>> {
+				// Guard against clobbering an in-flight subagent: re-spawning with a
+				// live id would silently overwrite the running record.
+				const requestedId = params.id as string;
+				const existing = ctx.getSubAgent(requestedId);
+				if (existing && existing.status === "running") {
+					return {
+						content: [
+							{
+								type: "text",
+								text: `Subagent id "${requestedId}" is already running (started from ${existing.agentType}). Pick a new unique id, or check/kill the existing one with get_subagent_status / kill_subagent instead of respawning over it.`,
+							},
+						],
+						details: existing ?? null,
+					};
+				}
+
 				// Resolve a named sub-agent type (if any) to its system prompt + model override.
 				// An explicit system_prompt/model param takes precedence over the agent definition.
 				const subagentType = params.subagent_type as string | undefined;
