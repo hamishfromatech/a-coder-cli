@@ -195,6 +195,10 @@ Step fields: `id`, `type` (`run` | `fan-out`), `prompt`, `schema` (JSON Schema; 
 
 Guards: agents run with this session's permission rules; launch requires the user's permission; concurrency is capped by `workflowMaxConcurrentAgents` (default 16); runs are bounded (agent cap, 50-minute budget); run state persists under the session directory.
 
-Invoke with the `run_workflow` tool (`{ "workflow": "audit-routes", "args": {...} }`); monitor with `/workflows`. See `examples/workflows/` for a worked example and `examples/skills/workflow-authoring/` for the authoring skill.
+Invoke with the `run_workflow` tool (`{ "workflow": "audit-routes", "args": {...} }`). Pass `resume: "<runId>"` to continue an earlier run from its persisted state: completed steps whose rendered inputs are unchanged return their saved results, and everything after a changed input reruns; a run refuses to resume while its agents are still live.
+
+Monitor runs with `/workflows`: pick a run to see its step results and live agents, and stop running ones (completed steps keep their results for a later resume). While a run executes, a live per-step progress block renders below the editor (and in the desktop's widget surface).
+
+Trigger keyword: with the default `workflowKeywordTrigger` setting on, a typed prompt containing "ultracode" is transformed so the model authors a workflow SOP for the task, saves it under `.a-coder-cli/workflows/`, and executes it via `run_workflow` instead of working turn by turn. Set `workflowKeywordTrigger: false` in settings to disable. See `examples/workflows/` for a worked example and `examples/skills/workflow-authoring/` for the authoring skill.
 
 See `examples/sops/` for a template and a worked example, and `examples/skills/sop-author/` for the authoring skill.

@@ -9,6 +9,7 @@ import { normalizePath, resolvePath } from "../utils/paths.ts";
 import { DEFAULT_HTTP_IDLE_TIMEOUT_MS, parseHttpIdleTimeoutMs } from "./http-dispatcher.ts";
 import type { McpServerConfig } from "./mcp/types.ts";
 import { defaultStderrSuppressPatterns } from "./mcp/types.ts";
+import { WORKFLOW_DEFAULT_MAX_CONCURRENT, WORKFLOW_MAX_CONCURRENT_LIMIT } from "./workflows/types.ts";
 
 export interface LocalProviderSettings {
 	lmStudioBaseUrl?: string;
@@ -210,6 +211,8 @@ export interface Settings {
 	memory?: MemoryInjectionSettings; // inject MEMORY.md contents into the system prompt
 	httpProxy?: string; // Proxy URL applied as HTTP_PROXY and HTTPS_PROXY for Pi-managed HTTP clients
 	httpIdleTimeoutMs?: number; // HTTP header/body idle timeout in milliseconds; 0 disables it
+	workflowMaxConcurrentAgents?: number; // Max concurrent agents per workflow run (1-256, default 16)
+	workflowKeywordTrigger?: boolean; // Authoring trigger keyword in typed prompts (default: true)
 	websocketConnectTimeoutMs?: number; // WebSocket connect/open handshake timeout in milliseconds; 0 disables it
 	localProviders?: LocalProviderSettings;
 }
@@ -965,6 +968,35 @@ export class SettingsManager {
 
 	getHttpIdleTimeoutMs(): number {
 		return parseTimeoutSetting(this.settings.httpIdleTimeoutMs, "httpIdleTimeoutMs") ?? DEFAULT_HTTP_IDLE_TIMEOUT_MS;
+	}
+
+	/** Max agents running at once within a single workflow run (1-256). */
+	getWorkflowMaxConcurrentAgents(): number {
+		const value = this.settings.workflowMaxConcurrentAgents;
+		if (typeof value !== "number" || !Number.isFinite(value)) {
+			return WORKFLOW_DEFAULT_MAX_CONCURRENT;
+		}
+		return Math.min(WORKFLOW_MAX_CONCURRENT_LIMIT, Math.max(1, Math.floor(value)));
+	}
+
+	/** Whether the workflow authoring trigger keyword is active in typed prompts. */
+	getWorkflowKeywordTrigger(): boolean {
+		return this.settings.workflowKeywordTrigger !== false;
+	}
+
+	setWorkflowKeywordTrigger(value: boolean): void {
+		this.globalSettings.workflowKeywordTrigger = value;
+		this.markModified("workflowKeywordTrigger");
+		this.save();
+	}
+
+	setWorkflowMaxConcurrentAgents(value: number): void {
+		if (!Number.isFinite(value) || value < 1 || value > WORKFLOW_MAX_CONCURRENT_LIMIT) {
+			throw new Error(`workflowMaxConcurrentAgents must be between 1 and ${WORKFLOW_MAX_CONCURRENT_LIMIT}`);
+		}
+		this.globalSettings.workflowMaxConcurrentAgents = Math.floor(value);
+		this.markModified("workflowMaxConcurrentAgents");
+		this.save();
 	}
 
 	setHttpIdleTimeoutMs(timeoutMs: number): void {

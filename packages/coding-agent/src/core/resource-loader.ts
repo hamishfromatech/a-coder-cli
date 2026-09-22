@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import chalk from "chalk";
-import { CONFIG_DIR_NAME } from "../config.ts";
+import { CONFIG_DIR_NAME, getAgentDir } from "../config.ts";
 import { loadThemeFromPath, type Theme } from "../modes/interactive/theme/theme.ts";
 import type { ResourceDiagnostic } from "./diagnostics.ts";
 
@@ -27,6 +27,7 @@ import { loadSkills } from "./skills.ts";
 import { createSourceInfo, type SourceInfo } from "./source-info.ts";
 import { createSubagentExtensionFactory } from "./subagents/inline-extension.ts";
 import { resetTimings } from "./timings.ts";
+import { createWorkflowExtensionFactory } from "./workflows/extension.ts";
 
 export interface ResourceExtensionPaths {
 	skillPaths?: Array<{ path: string; metadata: PathMetadata }>;
@@ -386,6 +387,11 @@ export class DefaultResourceLoader implements ResourceLoader {
 				? [createMcpExtensionFactory({ servers: mcpServers, workspaceRoots: [this.cwd] })]
 				: []),
 			createSubagentExtensionFactory({}),
+			createWorkflowExtensionFactory({
+				getMaxConcurrent: () => this.settingsManager.getWorkflowMaxConcurrentAgents(),
+				getAgentDir: () => getAgentDir(),
+				getKeywordTrigger: () => this.settingsManager.getWorkflowKeywordTrigger(),
+			}),
 			...this.injectedExtensionFactories,
 		];
 	}
