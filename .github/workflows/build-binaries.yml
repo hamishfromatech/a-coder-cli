@@ -15,6 +15,11 @@ on:
       source_ref:
         description: 'Source ref to build/publish (defaults to tag; use only for release recovery)'
         required: false
+      npm_publish_only:
+        description: 'Release recovery: skip builds and GitHub release staging/publishing, run only publish-npm (idempotent)'
+        required: false
+        type: boolean
+        default: false
         type: string
 
 permissions: {}
@@ -31,6 +36,7 @@ jobs:
   # a draft release first; cleanup removes the draft if later publishing fails.
   build:
     runs-on: ubuntu-latest
+    if: ${{ inputs.npm_publish_only != true }}
     permissions:
       contents: read
     env:
@@ -142,6 +148,7 @@ jobs:
   desktop-build:
     permissions:
       contents: write
+    if: ${{ inputs.npm_publish_only != true }}
     uses: ./.github/workflows/desktop-build.yml
     # Reusable workflows don't inherit secrets by default; forward them so
     # desktop-build gets TAURI_SIGNING_PRIVATE_KEY(_PASSWORD) for signing the
@@ -151,7 +158,7 @@ jobs:
   stage-github-release:
     runs-on: ubuntu-latest
     needs: [build, desktop-build]
-    if: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
+    if: ${{ (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && inputs.npm_publish_only != true }}
     permissions:
       actions: read
       contents: write
@@ -389,6 +396,9 @@ jobs:
   publish-npm:
     runs-on: ubuntu-latest
     needs: stage-github-release
+    # Release recovery (npm_publish_only): stage is skipped because the public
+    # release already exists, so run the (idempotent) npm publish standalone.
+    if: ${{ !cancelled() && (needs.stage-github-release.result == 'success' || inputs.npm_publish_only == true) }}
     environment: npm-publish
     permissions:
       contents: read
@@ -451,6 +461,7 @@ jobs:
   publish-github-release:
     runs-on: ubuntu-latest
     needs: stage-github-release
+    if: ${{ inputs.npm_publish_only != true }}
     permissions:
       contents: write
     env:
