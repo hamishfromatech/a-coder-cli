@@ -27,6 +27,12 @@ import { join } from "path";
 import { Type } from "typebox";
 import type { ExtensionContext, ExtensionFactory } from "../extensions/types.ts";
 import { findWorkflow, loadWorkflows } from "./loader.ts";
+import {
+	clearWorkflowStopHandler,
+	registerWorkflowStopHandler,
+	stopWorkflowRun,
+	updateWorkflowRun,
+} from "./registry.ts";
 import { type WorkflowAgentInvoker, WorkflowRunner } from "./runner.ts";
 import {
 	buildWorkflowAuthoringPrompt,
@@ -177,6 +183,18 @@ export function createWorkflowExtensionFactory(options: WorkflowExtensionOptions
 				signal?.addEventListener("abort", forwardAbort, { once: true });
 				activeControllers.set(runId, controller);
 
+				// Registry: live summaries for progress surfaces (desktop RPC stream)
+				// and the stop path for outside callers (stop_workflow_run RPC, /workflows).
+				const stopRun = (): void => {
+					controllerAbort(activeControllers, runId);
+					for (const agent of ctx.listSubAgents()) {
+						if (agent.id.startsWith(`${runId}-`) && agent.status === "running") {
+							ctx.killSubAgent(agent.id, "workflow stopped by user");
+						}
+					}
+				};
+				registerWorkflowStopHandler(runId, stopRun);
+
 				// Live progress block: per-step state rendered below the editor in the
 				// TUI and mirrored by the desktop's extension-widget surface. Cleared
 				// when the run ends (the result itself returns inline).
@@ -218,6 +236,8 @@ export function createWorkflowExtensionFactory(options: WorkflowExtensionOptions
 								push(`run ${event.status} after ${event.agents} agents`);
 								ctx.ui.setStatus("workflows", undefined);
 							}
+							// Live summary for registry subscribers (desktop RPC stream).
+							updateWorkflowRun(runner.state);
 						},
 						signal: controller.signal,
 						...(stateDir !== undefined ? { stateDir } : {}),
@@ -225,6 +245,7 @@ export function createWorkflowExtensionFactory(options: WorkflowExtensionOptions
 					runId,
 					resumeState,
 				);
+				updateWorkflowRun(runner.state);
 
 				try {
 					const state = await runner.run(params.args);
@@ -232,6 +253,8 @@ export function createWorkflowExtensionFactory(options: WorkflowExtensionOptions
 				} finally {
 					activeControllers.delete(runId);
 					signal?.removeEventListener("abort", forwardAbort);
+					clearWorkflowStopHandler(runId);
+					updateWorkflowRun(runner.state);
 					ctx.ui.setStatus("workflows", undefined);
 					ctx.ui.setWidget(widgetKey, undefined);
 				}
@@ -297,8 +320,7 @@ export function createWorkflowExtensionFactory(options: WorkflowExtensionOptions
 					`${running.length} agent(s) still running. Stopping marks the run stopped; completed steps keep their results and can be resumed.`,
 				);
 				if (!stop) return;
-				controllerAbort(activeControllers, runId);
-				for (const agent of running) ctx.killSubAgent(agent.id, "workflow stopped by user");
+				stopWorkflowRun(runId);
 				ctx.ui.notify(
 					`Stop requested for "${state.workflowName}" — resume later with run_workflow { workflow: "${state.workflowName}", resume: "${runId}" }.`,
 					"info",

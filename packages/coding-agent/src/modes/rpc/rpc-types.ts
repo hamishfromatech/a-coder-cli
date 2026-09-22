@@ -43,6 +43,7 @@ export type RpcCommand =
 	| { id?: string; type: "follow_up"; message: string; images?: ImageContent[]; sessionPath?: string }
 	| { id?: string; type: "abort"; sessionPath?: string }
 	| { id?: string; type: "clear_queue"; sessionPath?: string }
+	| { id?: string; type: "stop_workflow_run"; runId: string }
 	| { id?: string; type: "new_session"; parentSession?: string; cwd?: string }
 	| { id?: string; type: "clear_conversation" }
 

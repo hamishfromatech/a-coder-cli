@@ -33,6 +33,7 @@ import {
 } from "../../core/output-guard.ts";
 import { type SessionInfo, SessionManager } from "../../core/session-manager.ts";
 import { getBackgroundProcesses, subscribeBackgroundProcesses } from "../../core/stores/index.ts";
+import { getWorkflowRunSummaries, stopWorkflowRun, subscribeWorkflowRuns } from "../../core/workflows/registry.ts";
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { type Theme, theme } from "../interactive/theme/theme.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
@@ -67,6 +68,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	let unsubscribe: (() => void) | undefined;
 	let unsubscribeBackpressure: (() => void) | undefined;
 	let unsubscribeBackgroundProcesses: (() => void) | undefined;
+	let unsubscribeWorkflowRuns: (() => void) | undefined;
 
 	const output = (obj: RpcResponse | RpcExtensionUIRequest | object) => {
 		writeRawStdout(serializeJsonLine(obj));
@@ -536,6 +538,12 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		});
 		// Emit an initial snapshot so the desktop has the current state on (re)bind.
 		output({ type: "background_processes_update", processes: getBackgroundProcesses() });
+		// Stream workflow run summaries (live per-run status for the desktop's
+		// Running tasks panel).
+		unsubscribeWorkflowRuns = subscribeWorkflowRuns(() => {
+			output({ type: "workflows_update", runs: getWorkflowRunSummaries() });
+		});
+		output({ type: "workflows_update", runs: getWorkflowRunSummaries() });
 	};
 
 	const registerSignalHandlers = (): void => {
@@ -667,6 +675,10 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					return error(id, "clear_queue", `Unknown session: ${command.sessionPath}`);
 				}
 				return success(id, "clear_queue", target.clearQueue());
+			}
+
+			case "stop_workflow_run": {
+				return success(id, "stop_workflow_run", { stopped: stopWorkflowRun(command.runId) });
 			}
 
 			case "new_session": {
@@ -1293,6 +1305,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		unsubscribe?.();
 		unsubscribeBackpressure?.();
 		unsubscribeBackgroundProcesses?.();
+		unsubscribeWorkflowRuns?.();
 		await office.dispose();
 		await runtimeHost.dispose();
 		await captureCliSessionEnd(runtimeHost.session, runtimeHost.services.settingsManager).catch(() => undefined);
