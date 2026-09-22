@@ -5,6 +5,7 @@ import { CONFIG_DIR_NAME, getAgentDir } from "../config.ts";
 import { parseFrontmatter } from "../utils/frontmatter.ts";
 import { canonicalizePath, resolvePath } from "../utils/paths.ts";
 import type { ResourceDiagnostic } from "./diagnostics.ts";
+import { SOP_FILE_SUFFIX, validateSop } from "./sop.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
 
 /** Max name length per spec */
@@ -348,6 +349,12 @@ function loadSkillFromFile(
 		// Still load the skill even with warnings (unless description is completely missing)
 		if (!frontmatter.description || frontmatter.description.trim() === "") {
 			return { skill: null, diagnostics };
+		}
+
+		// SOP files (.sop.md) additionally get structural validation — warnings
+		// only, they still load as ordinary skills.
+		if (filePath.endsWith(SOP_FILE_SUFFIX)) {
+			diagnostics.push(...validateSop(rawContent, filePath));
 		}
 
 		return {
