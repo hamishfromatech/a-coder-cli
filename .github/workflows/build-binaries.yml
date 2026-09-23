@@ -29,6 +29,12 @@ concurrency:
 
 env:
   ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+  # CI installs from the committed, integrity-hashed lockfiles — including
+  # versions bumped in a release that are newer than .npmrc's min-release-age
+  # (the release flow itself sets npm_config_min_release_age=0 when it
+  # vets/builds those lockfiles). The publish-date gate would otherwise
+  # reject the exact vetted version and fail the install.
+  npm_config_min_release_age: 0
 
 jobs:
   # Keep the public GitHub Release publication last. Binary assets are staged in
