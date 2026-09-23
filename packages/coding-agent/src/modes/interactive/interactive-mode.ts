@@ -214,6 +214,7 @@ import { UserMessageComponent } from "./components/user-message.ts";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.ts";
 import { WelcomeBannerComponent } from "./components/welcome-banner.ts";
 import { buildContextBreakdownLines } from "./context-command.ts";
+import { CronTui } from "./cron-commands.ts";
 import { runDiffCommand } from "./diff-command.ts";
 import { getModelSearchText } from "./model-search.ts";
 import { OfficeTui } from "./office-commands.ts";
@@ -560,6 +561,7 @@ export class InteractiveMode {
 	private autoTrustOnReloadCwd: string | undefined;
 	private themeController: InteractiveThemeController;
 	private readonly officeTui: OfficeTui;
+	private readonly cronTui: CronTui;
 
 	// Convenience accessors
 	private get session(): AgentSession {
@@ -591,6 +593,7 @@ export class InteractiveMode {
 		// Notices auto-expire after a few seconds; re-render when they do.
 		this.notices.onExpire = () => this.ui.requestRender();
 		this.officeTui = new OfficeTui(runtimeHost, (text) => this.printOfficeText(text));
+		this.cronTui = new CronTui(runtimeHost, (text) => this.printCronText(text));
 		this.ui.setClearOnShrink(this.settingsManager.getClearOnShrink());
 		setReducedMotion(this.settingsManager.getReducedMotion());
 		this.headerContainer = new Container();
@@ -775,6 +778,26 @@ export class InteractiveMode {
 			officeCommand.getArgumentCompletions = (prefix: string): AutocompleteItem[] | null => {
 				const prefixLower = prefix.toLowerCase();
 				const filtered = officeVerbs.filter((v) => v.value.startsWith(prefixLower));
+				if (filtered.length === 0) return null;
+				return filtered.map((v) => ({ value: v.value, label: v.value, description: v.description }));
+			};
+		}
+
+		const cronCommand = slashCommands.find((command) => command.name === "cron");
+		if (cronCommand) {
+			const cronVerbs: Array<{ value: string; description: string }> = [
+				{
+					value: "add",
+					description: "Schedule a task (/cron add <name> every:30m|daily:HH:MM|once:<ISO> <prompt>)",
+				},
+				{ value: "run", description: "Run a task now (/cron run <name>)" },
+				{ value: "pause", description: "Pause a task (/cron pause <name>)" },
+				{ value: "resume", description: "Resume a task (/cron resume <name>)" },
+				{ value: "remove", description: "Delete a task (/cron remove <name>)" },
+			];
+			cronCommand.getArgumentCompletions = (prefix: string): AutocompleteItem[] | null => {
+				const prefixLower = prefix.toLowerCase();
+				const filtered = cronVerbs.filter((v) => v.value.startsWith(prefixLower));
 				if (filtered.length === 0) return null;
 				return filtered.map((v) => ({ value: v.value, label: v.value, description: v.description }));
 			};
@@ -3218,6 +3241,13 @@ export class InteractiveMode {
 				this.editor.setText("");
 				this.editor.addToHistory?.(text);
 				await this.officeTui.handle(arg);
+				return;
+			}
+			if (text === "/cron" || text.startsWith("/cron ")) {
+				const arg = text.startsWith("/cron ") ? text.slice("/cron ".length).trim() : undefined;
+				this.editor.setText("");
+				this.editor.addToHistory?.(text);
+				await this.cronTui.handle(arg);
 				return;
 			}
 			if (text === "/changelog") {
@@ -7004,6 +7034,11 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
+	/** Print a cron block into the chat transcript. */
+	private printCronText(text: string): void {
+		this.printOfficeText(text);
+	}
+
 	private handleSessionCommand(): void {
 		const stats = this.session.getSessionStats();
 		const sessionName = this.sessionManager.getSessionName();
@@ -7410,6 +7445,7 @@ export class InteractiveMode {
 		this.clearStatusIndicator();
 		this.themeController.disableAutoSync();
 		void this.officeTui.dispose();
+		void this.cronTui.dispose();
 		this.clearExtensionTerminalInputListeners();
 		this.footer.dispose();
 		this.footerDataProvider.dispose();

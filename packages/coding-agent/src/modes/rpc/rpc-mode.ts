@@ -17,6 +17,7 @@ import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import { captureCliSessionEnd } from "../../core/analytics.ts";
 import { resolveComposioConfig } from "../../core/composio.ts";
 import { connectComposioApp, disconnectComposioApp, listComposioApps } from "../../core/composio-apps.ts";
+import { CronService } from "../../core/cron/service.ts";
 import type {
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
@@ -40,6 +41,7 @@ import { type Theme, theme } from "../interactive/theme/theme.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
 import type {
 	RpcCommand,
+	RpcCronUpdateEvent,
 	RpcExtensionUIRequest,
 	RpcExtensionUIResponse,
 	RpcOfficeActivityEvent,
@@ -611,6 +613,26 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		.snapshot()
 		.then((snapshot) => {
 			output({ type: "office_update", snapshot } satisfies RpcOfficeUpdateEvent);
+		})
+		.catch(() => {});
+
+	// Cron — scheduled tasks for the main agent. Fires due jobs into the
+	// active session (project match) or a continuity side session; snapshots
+	// ride the same stdout stream.
+	const cron = new CronService({
+		runtime: runtimeHost,
+		onUpdate: (snapshot) => {
+			output({ type: "cron_update", jobs: snapshot.jobs } satisfies RpcCronUpdateEvent);
+		},
+	});
+	cron.start();
+	signalCleanupHandlers.push(() => {
+		void cron.dispose();
+	});
+	void cron
+		.snapshot()
+		.then((snapshot) => {
+			output({ type: "cron_update", jobs: snapshot.jobs } satisfies RpcCronUpdateEvent);
 		})
 		.catch(() => {});
 
@@ -1322,6 +1344,33 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			case "office_errand_run": {
 				await office.runErrandNow(command.errandId);
 				return success(id, "office_errand_run");
+			}
+
+			// =================================================================
+			// Cron (scheduled tasks for the main agent)
+			// =================================================================
+
+			case "cron_list":
+				return success(id, "cron_list", await cron.snapshot());
+
+			case "cron_create": {
+				const job = await cron.create(command.job);
+				return success(id, "cron_create", { job });
+			}
+
+			case "cron_update": {
+				const job = await cron.update(command.jobId, command.patch);
+				return success(id, "cron_update", { job });
+			}
+
+			case "cron_delete": {
+				await cron.remove(command.jobId);
+				return success(id, "cron_delete");
+			}
+
+			case "cron_run_now": {
+				await cron.runNow(command.jobId);
+				return success(id, "cron_run_now");
 			}
 			default:
 				return undefined;

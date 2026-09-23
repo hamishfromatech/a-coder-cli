@@ -53,6 +53,7 @@ Type `/` in the editor to open command completion. Extensions can register custo
 | `/import <file>` | Import and resume a session from a JSONL file |
 | `/share` | Upload as private GitHub gist with shareable HTML link |
 | `/workflows` | List saved workflows and runs; drill into agents, stop/pause runs, save a run's script as a command |
+| `/cron` | Scheduled tasks: `/cron add <name> every:30m\|daily:HH:MM\|once:<ISO> <prompt>`, plus run/pause/resume/remove |
 | `/reload` | Reload keybindings, extensions, skills, prompts, and context files |
 | `/hotkeys` | Show all keyboard shortcuts |
 | `/changelog` | Display version history |
@@ -82,6 +83,21 @@ You can submit messages while the agent is still working:
 On Windows Terminal, Alt+Enter is fullscreen by default. Remap it as described in [Terminal setup](terminal-setup.md) if you want a-coder-cli to receive the shortcut.
 
 Configure delivery in [Settings](settings.md) with `steeringMode` and `followUpMode`.
+
+## Scheduled Tasks (Cron)
+
+Cron jobs run a prompt on a schedule in a project, without you typing it. Create one from the desktop's **Scheduled** sidebar panel, or from the terminal:
+
+```
+/cron add "Morning CI triage" daily:09:00 Review overnight CI failures and summarize what needs attention.
+/cron add "Test loop" every:30m Run the test suite; fix or report failures.
+```
+
+Schedules are `every:<n>m|h|d` (minimum 5 minutes), `daily:HH:MM` local time, or `once:<ISO date>` (one-shot; disables itself after firing). Jobs are scoped to the project (cwd) they were created in and persist in `~/.a-coder/cli/agent/cron/jobs.json`.
+
+When a job fires, its prompt is delivered to the project's active session — queued behind a running turn — so the work and its report land right in your conversation. If the project has no open session, the run executes in a background session for that project (continuity: repeat runs reuse the same session) and lands in the session tree. Fires are bounded (15-minute abort) and run unattended with automatic tool permissions — only schedule work you trust the agent to do.
+
+Manage: `/cron` lists jobs, `/cron run|pause|resume|remove <name>`. The engine pushes live `cron_update` snapshots to RPC clients (the desktop panel stays in sync automatically).
 
 ## Sessions
 

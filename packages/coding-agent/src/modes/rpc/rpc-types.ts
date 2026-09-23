@@ -11,6 +11,7 @@ import type { SessionStats } from "../../core/agent-session.ts";
 import type { RuntimeSessionStatus } from "../../core/agent-session-runtime.ts";
 import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
+import type { CronJob, CronSchedule, CronSnapshot } from "../../core/cron/types.ts";
 import type {
 	Coworker,
 	Errand,
@@ -136,6 +137,13 @@ export type RpcCommand =
 	| { id?: string; type: "office_errand_save"; errand: OfficeRpcErrandInput }
 	| { id?: string; type: "office_errand_delete"; errandId: string }
 	| { id?: string; type: "office_errand_run"; errandId: string }
+
+	// Cron (scheduled tasks for the main agent)
+	| { id?: string; type: "cron_list" }
+	| { id?: string; type: "cron_create"; job: CronRpcJobInput }
+	| { id?: string; type: "cron_update"; jobId: string; patch: CronRpcJobPatch }
+	| { id?: string; type: "cron_delete"; jobId: string }
+	| { id?: string; type: "cron_run_now"; jobId: string }
 
 	// Commands (available for invocation via prompt)
 	| { id?: string; type: "get_commands" };
@@ -422,6 +430,13 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "office_errand_delete"; success: true }
 	| { id?: string; type: "response"; command: "office_errand_run"; success: true }
 
+	// Cron
+	| { id?: string; type: "response"; command: "cron_list"; success: true; data: CronSnapshot }
+	| { id?: string; type: "response"; command: "cron_create"; success: true; data: { job: CronJob } }
+	| { id?: string; type: "response"; command: "cron_update"; success: true; data: { job: CronJob } }
+	| { id?: string; type: "response"; command: "cron_delete"; success: true }
+	| { id?: string; type: "response"; command: "cron_run_now"; success: true }
+
 	// Error response (any command can fail)
 	| { id?: string; type: "response"; command: string; success: false; error: string };
 
@@ -546,6 +561,25 @@ export interface RpcOfficeActivityEvent {
 	type: "office_activity";
 	activity: OfficeActivityEvent;
 }
+
+/** Cron jobs changed (created, updated, edited, fired). Pushed on every mutation. */
+export interface RpcCronUpdateEvent {
+	type: "cron_update";
+	jobs: CronJob[];
+}
+
+/** Cron job create payload. */
+export interface CronRpcJobInput {
+	name: string;
+	prompt: string;
+	schedule: CronSchedule;
+	enabled?: boolean;
+	/** Project scope; defaults to the engine's cwd. */
+	cwd?: string;
+}
+
+/** Cron job update patch. */
+export type CronRpcJobPatch = Partial<Pick<CronJob, "name" | "prompt" | "schedule" | "enabled">>;
 
 // ============================================================================
 // Helper type for extracting command types

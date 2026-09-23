@@ -34,6 +34,7 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "context", description: "Show context window breakdown (system prompt / tools / history / free)" },
 	{ name: "diff", description: "Show working-tree changes and last-turn file edits (/diff [n])" },
 	{ name: "office", description: "Your Office — coworkers, huddles, errands (/office hire Atlas | Scout)" },
+	{ name: "cron", description: "Scheduled tasks for the agent (/cron add <name> every:30m <prompt>)" },
 	{ name: "changelog", description: "Show changelog entries" },
 	{ name: "hotkeys", description: "Show all keyboard shortcuts" },
 	{ name: "fork", description: "Create a new fork from a previous user message" },

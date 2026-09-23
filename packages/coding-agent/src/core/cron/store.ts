@@ -1,0 +1,80 @@
+/**
+ * Cron store — JSON persistence for the main agent's scheduled tasks.
+ *
+ * A single file at `<agentDir>/cron/jobs.json` holding CronJob[]. Writers
+ * rewrite atomically (tmp + rename) under a keyed lock, the same tolerance
+ * the office store uses for concurrent writers.
+ */
+
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { getAgentDir } from "../../config.ts";
+import { withKeyedLock } from "../../utils/async-mutex.ts";
+import type { CronJob } from "./types.ts";
+
+function jobsPath(): string {
+	return join(getAgentDir(), "cron", "jobs.json");
+}
+
+async function readJobs(path = jobsPath()): Promise<CronJob[]> {
+	try {
+		const content = await readFile(path, "utf-8");
+		const parsed = JSON.parse(content) as unknown;
+		return Array.isArray(parsed) ? (parsed as CronJob[]) : [];
+	} catch {
+		return [];
+	}
+}
+
+async function writeJobs(path: string, jobs: CronJob[]): Promise<void> {
+	await mkdir(dirname(path), { recursive: true });
+	const tmp = `${path}.${process.pid}.${Date.now()}.tmp`;
+	await writeFile(tmp, JSON.stringify(jobs, null, "\t"), "utf-8");
+	await rename(tmp, path);
+}
+
+function withFileLock<T>(path: string, fn: () => Promise<T>): Promise<T> {
+	return withKeyedLock(`cron:${path}`, fn);
+}
+
+export async function listJobs(): Promise<CronJob[]> {
+	return readJobs();
+}
+
+export async function saveJob(job: CronJob): Promise<void> {
+	const path = jobsPath();
+	await withFileLock(path, async () => {
+		const list = await readJobs(path);
+		const next = list.filter((j) => j.id !== job.id);
+		next.push(job);
+		await writeJobs(path, next);
+	});
+}
+
+export async function deleteJob(id: string): Promise<void> {
+	const path = jobsPath();
+	await withFileLock(path, async () => {
+		const list = await readJobs(path);
+		await writeJobs(
+			path,
+			list.filter((j) => j.id !== id),
+		);
+	});
+}
+
+/**
+ * Read-modify-write one job under the file lock. The mutator runs on the
+ * loaded record; a thrown mutator leaves the file untouched. Returns the
+ * updated job, or undefined when the id no longer exists.
+ */
+export async function updateJob(id: string, mutate: (job: CronJob) => void): Promise<CronJob | undefined> {
+	const path = jobsPath();
+	return withFileLock(path, async () => {
+		const list = await readJobs(path);
+		const job = list.find((j) => j.id === id);
+		if (!job) return undefined;
+		mutate(job);
+		await writeJobs(path, list);
+		return job;
+	});
+}

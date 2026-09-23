@@ -20,6 +20,7 @@ import { useWorkspaceStore } from "./stores/workspace-store";
 import { useSessionTreeStore } from "./stores/session-tree-store";
 import { useTabsStore } from "./stores/tabs-store";
 import { useOfficeStore } from "./stores/office-store";
+import { useCronStore } from "./stores/cron-store";
 import { useStatsStore, type SessionStats } from "./stores/stats-store";
 import { useUiStore } from "./stores/ui-store";
 import { useWidgetStore } from "./stores/widget-store";
@@ -517,6 +518,12 @@ export default function App() {
 							// Your Office roster changed.
 							useOfficeStore.getState().applySnapshot(
 								(event as import("./lib/rpc").OfficeUpdateEvent).snapshot,
+							);
+							break;
+						case "cron_update":
+							// Scheduled-task jobs changed (created, edited, fired).
+							useCronStore.getState().applyJobs(
+								(event as import("./lib/rpc").CronUpdateEvent).jobs,
 							);
 							break;
 						case "office_huddle":

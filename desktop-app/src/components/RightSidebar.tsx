@@ -1,10 +1,11 @@
-import { CalendarClock, FileText, GitBranch } from "lucide-react";
+import { AlarmClock, CalendarClock, FileText, GitBranch } from "lucide-react";
 import { useUiStore, type RightSidebarTab } from "../stores/ui-store";
 import { triggerHaptic } from "../lib/haptics";
 import { ArtifactViewer } from "./panels/ArtifactViewer";
 import { FileExplorer } from "./panels/FileExplorer";
 import { GitPanel } from "./panels/GitPanel";
 import { OfficePanel } from "./office/OfficePanel";
+import { CronPanel } from "./cron/CronPanel";
 
 interface Props {
 	projectPath: string | null;
@@ -18,6 +19,7 @@ const TABS: {
 	{ id: "files", label: "Files", icon: FileText },
 	{ id: "git", label: "Git changes", icon: GitBranch },
 	{ id: "office", label: "Office", icon: CalendarClock },
+	{ id: "cron", label: "Scheduled", icon: AlarmClock },
 ];
 
 export function RightSidebar({ projectPath }: Props) {
@@ -71,6 +73,7 @@ export function RightSidebar({ projectPath }: Props) {
 				)}
 				{rightSidebarTab === "git" && <GitPanel projectPath={projectPath} />}
 				{rightSidebarTab === "office" && <OfficePanel />}
+				{rightSidebarTab === "cron" && <CronPanel />}
 			</div>
 		</div>
 	);

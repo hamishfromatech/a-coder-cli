@@ -174,6 +174,46 @@ export interface OfficeActivityEvent {
 	activity: OfficeActivityItem;
 }
 
+// ---- Cron (scheduled tasks for the main agent) ---------------------------
+
+export type CronSchedule =
+	| { kind: "every"; minutes: number }
+	| { kind: "daily"; time: string }
+	| { kind: "once"; at: number };
+
+export interface CronJob {
+	id: string;
+	name: string;
+	prompt: string;
+	schedule: CronSchedule;
+	enabled: boolean;
+	/** Project the job runs in. */
+	cwd: string;
+	createdAt: number;
+	lastRunAt?: number;
+	nextRunAt?: number;
+	lastStatus?: "ok" | "error" | "timeout";
+	lastError?: string;
+	sessionFile?: string;
+}
+
+export interface CronJobInput {
+	name: string;
+	prompt: string;
+	schedule: CronSchedule;
+	enabled?: boolean;
+	cwd?: string;
+}
+
+export interface CronSnapshot {
+	jobs: CronJob[];
+}
+
+export interface CronUpdateEvent {
+	type: "cron_update";
+	jobs: CronJob[];
+}
+
 export interface OfficeCoworkerInput {
 	id?: string;
 	name: string;
@@ -222,7 +262,8 @@ export type RpcEvent =
 	| ThinkingLevelChangedEvent
 	| OfficeUpdateEvent
 	| OfficeHuddleEvent
-	| OfficeActivityEvent;
+	| OfficeActivityEvent
+	| CronUpdateEvent;
 
 /** The engine re-emits agent_end with a retry hint after a retryable failure. */
 export interface AgentEndWillRetry {
@@ -1286,6 +1327,20 @@ export const officeDeleteErrand = (id: string) =>
 	sendCommand({ type: "office_errand_delete", errandId: id });
 
 export const officeRunErrand = (id: string) => sendCommand({ type: "office_errand_run", errandId: id });
+
+// ---- Cron (scheduled tasks for the main agent) ---------------------------
+
+export const cronList = () => sendCommand({ type: "cron_list" }) as Promise<CronSnapshot>;
+
+export const cronCreate = (job: CronJobInput) =>
+	sendCommand({ type: "cron_create", job }) as Promise<{ job: CronJob }>;
+
+export const cronUpdate = (jobId: string, patch: Partial<Pick<CronJob, "name" | "prompt" | "schedule" | "enabled">>) =>
+	sendCommand({ type: "cron_update", jobId, patch }) as Promise<{ job: CronJob }>;
+
+export const cronDelete = (jobId: string) => sendCommand({ type: "cron_delete", jobId });
+
+export const cronRunNow = (jobId: string) => sendCommand({ type: "cron_run_now", jobId });
 
 
 
