@@ -41,6 +41,7 @@ import { type Theme, theme } from "../interactive/theme/theme.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
 import type {
 	RpcCommand,
+	RpcCronRunEvent,
 	RpcCronUpdateEvent,
 	RpcExtensionUIRequest,
 	RpcExtensionUIResponse,
@@ -623,6 +624,13 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		runtime: runtimeHost,
 		onUpdate: (snapshot) => {
 			output({ type: "cron_update", jobs: snapshot.jobs } satisfies RpcCronUpdateEvent);
+		},
+		onRunEvent: (event) => {
+			output({
+				type: "cron_run",
+				event: event.type === "run_started" ? "started" : "finished",
+				run: event.run,
+			} satisfies RpcCronRunEvent);
 		},
 	});
 	cron.start();
@@ -1371,6 +1379,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			case "cron_run_now": {
 				await cron.runNow(command.jobId);
 				return success(id, "cron_run_now");
+			}
+
+			case "cron_runs": {
+				const runs = await cron.listRuns(command.jobId);
+				return success(id, "cron_runs", { runs });
 			}
 			default:
 				return undefined;

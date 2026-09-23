@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-export type RightSidebarTab = "files" | "git" | "office" | "cron";
+export type RightSidebarTab = "files" | "git" | "office" | "cron" | "activity";
 export type ArtifactViewMode = "raw" | "preview";
 
 export interface UiState {
@@ -59,7 +59,8 @@ export const useUiStore = create<UiState>()(
 				// Older persisted states used tabs like "html" / "markdown" that no longer exist.
 				if (
 					state.rightSidebarTab !== "files" &&
-					state.rightSidebarTab !== "git"
+					state.rightSidebarTab !== "git" &&
+					state.rightSidebarTab !== "activity"
 				) {
 					state.rightSidebarTab = "files";
 				}

@@ -192,6 +192,42 @@ describe("CronService", () => {
 		await service.dispose();
 	});
 
+	it("records run history with lifecycle events and continue handles", async () => {
+		const events: Array<{ type: string; run: { id: string; status: string; sessionFile?: string } }> = [];
+		const service = new CronService({
+			runtime: makeRuntime("/other", makeFakeSession()),
+			onRunEvent: (event) => events.push(event),
+		});
+		const job = await service.create({
+			name: "Nightly",
+			prompt: "summarize",
+			schedule: { kind: "daily", time: "23:59" },
+			cwd: "/proj",
+		});
+
+		await service.runNow(job.id);
+
+		// Lifecycle: started (running) then finished (ok), same run id.
+		expect(events.map((e) => e.type)).toEqual(["run_started", "run_finished"]);
+		expect(events[0]?.run.status).toBe("running");
+		expect(events[1]?.run.status).toBe("ok");
+		expect(events[0]?.run.id).toBe(events[1]?.run.id);
+		expect(events[1]?.run.sessionFile).toBeTruthy();
+
+		// Persisted history mirrors the events and is queryable per job.
+		const runs = await service.listRuns(job.id);
+		expect(runs).toHaveLength(1);
+		expect(runs[0]?.jobName).toBe("Nightly");
+		expect(runs[0]?.trigger).toBe("manual");
+		expect(runs[0]?.delivery).toBe("background");
+		expect(runs[0]?.finishedAt).toBeGreaterThan(runs[0]?.startedAt ?? 0);
+
+		// History survives job deletion (names are snapshotted on the run).
+		await service.remove(job.id);
+		expect(await service.listRuns(job.id)).toHaveLength(1);
+		await service.dispose();
+	});
+
 	it("runs other-project jobs in a continuity side session with auto permissions", async () => {
 		const activeSession = makeFakeSession();
 		const service = new CronService({ runtime: makeRuntime("/other", activeSession) });

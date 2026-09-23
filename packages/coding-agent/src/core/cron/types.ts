@@ -46,3 +46,30 @@ export interface CronJob {
 export interface CronSnapshot {
 	jobs: CronJob[];
 }
+
+// ── Run history ──────────────────────────────────────────────────────────────
+
+export type CronRunStatus = "running" | "ok" | "error" | "timeout";
+export type CronRunTrigger = "schedule" | "manual";
+/** "session" delivered into the live conversation; "background" ran headless. */
+export type CronRunDelivery = "session" | "background";
+
+/** One execution of a cron job — the unit the activity inbox and run
+ *  history render (and the future audit log extends). */
+export interface CronRun {
+	id: string;
+	jobId: string;
+	/** Snapshot of the job name at fire time, so history outlives renames/deletes. */
+	jobName: string;
+	trigger: CronRunTrigger;
+	delivery: CronRunDelivery;
+	startedAt: number;
+	finishedAt?: number;
+	status: CronRunStatus;
+	error?: string;
+	/** Session the prompt ran in — the active conversation or the job's side session. */
+	sessionFile?: string;
+}
+
+/** Run lifecycle events pushed to hosts (the desktop activity inbox). */
+export type CronServiceEvent = { type: "run_started"; run: CronRun } | { type: "run_finished"; run: CronRun };

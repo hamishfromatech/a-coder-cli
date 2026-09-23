@@ -99,6 +99,8 @@ When a job fires, its prompt is delivered to the project's active session — qu
 
 Manage: `/cron` lists jobs, `/cron run|pause|resume|remove <name>`. The engine pushes live `cron_update` snapshots to RPC clients (the desktop panel stays in sync automatically).
 
+Every fire is recorded as a run (trigger, delivery, status, error, session file) in `~/.a-coder/cli/agent/cron/runs.json`. In the desktop, each task expands to its run history, and **Continue** reopens a run's session to pick that conversation back up. Run outcomes and pending approvals also surface in the desktop **Activity** inbox, which badges anything that needs you.
+
 ## Sessions
 
 Sessions are saved automatically to `~/.a-coder/cli/agent/sessions/`, organized by working directory.

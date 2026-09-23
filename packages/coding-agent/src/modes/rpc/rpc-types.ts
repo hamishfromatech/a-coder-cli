@@ -11,7 +11,7 @@ import type { SessionStats } from "../../core/agent-session.ts";
 import type { RuntimeSessionStatus } from "../../core/agent-session-runtime.ts";
 import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
-import type { CronJob, CronSchedule, CronSnapshot } from "../../core/cron/types.ts";
+import type { CronJob, CronRun, CronSchedule, CronSnapshot } from "../../core/cron/types.ts";
 import type {
 	Coworker,
 	Errand,
@@ -144,6 +144,7 @@ export type RpcCommand =
 	| { id?: string; type: "cron_update"; jobId: string; patch: CronRpcJobPatch }
 	| { id?: string; type: "cron_delete"; jobId: string }
 	| { id?: string; type: "cron_run_now"; jobId: string }
+	| { id?: string; type: "cron_runs"; jobId?: string }
 
 	// Commands (available for invocation via prompt)
 	| { id?: string; type: "get_commands" };
@@ -436,6 +437,7 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "cron_update"; success: true; data: { job: CronJob } }
 	| { id?: string; type: "response"; command: "cron_delete"; success: true }
 	| { id?: string; type: "response"; command: "cron_run_now"; success: true }
+	| { id?: string; type: "response"; command: "cron_runs"; success: true; data: { runs: CronRun[] } }
 
 	// Error response (any command can fail)
 	| { id?: string; type: "response"; command: string; success: false; error: string };
@@ -566,6 +568,13 @@ export interface RpcOfficeActivityEvent {
 export interface RpcCronUpdateEvent {
 	type: "cron_update";
 	jobs: CronJob[];
+}
+
+/** A cron run started or finished — the activity inbox consumes these. */
+export interface RpcCronRunEvent {
+	type: "cron_run";
+	event: "started" | "finished";
+	run: CronRun;
 }
 
 /** Cron job create payload. */

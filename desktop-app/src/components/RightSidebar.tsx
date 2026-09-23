@@ -1,11 +1,13 @@
-import { AlarmClock, CalendarClock, FileText, GitBranch } from "lucide-react";
+import { AlarmClock, CalendarClock, FileText, GitBranch, Inbox } from "lucide-react";
 import { useUiStore, type RightSidebarTab } from "../stores/ui-store";
+import { useActivityAttentionCount } from "../stores/activity-store";
 import { triggerHaptic } from "../lib/haptics";
 import { ArtifactViewer } from "./panels/ArtifactViewer";
 import { FileExplorer } from "./panels/FileExplorer";
 import { GitPanel } from "./panels/GitPanel";
 import { OfficePanel } from "./office/OfficePanel";
 import { CronPanel } from "./cron/CronPanel";
+import { ActivityPanel } from "./activity/ActivityPanel";
 
 interface Props {
 	projectPath: string | null;
@@ -20,10 +22,12 @@ const TABS: {
 	{ id: "git", label: "Git changes", icon: GitBranch },
 	{ id: "office", label: "Office", icon: CalendarClock },
 	{ id: "cron", label: "Scheduled", icon: AlarmClock },
+	{ id: "activity", label: "Activity", icon: Inbox },
 ];
 
 export function RightSidebar({ projectPath }: Props) {
 	const { rightSidebarTab, setRightSidebarTab, selectedArtifactPath } = useUiStore();
+	const attention = useActivityAttentionCount();
 
 
 	return (
@@ -53,7 +57,15 @@ export function RightSidebar({ projectPath }: Props) {
 							}`}
 						>
 							<Icon className="h-3.5 w-3.5 transition-smooth" />
-							<span className="truncate">{id === "files" ? "Files" : id === "git" ? "Git" : "Office"}</span>
+							<span className="truncate">{id === "files" ? "Files" : id === "git" ? "Git" : id === "cron" ? "Cron" : id === "activity" ? "Activity" : "Office"}</span>
+							{id === "activity" && attention > 0 && (
+								<span
+									className="absolute right-1 top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-pi-accent px-1 text-[9px] font-semibold leading-none text-white"
+									aria-label={`${attention} items need attention`}
+								>
+									{attention > 9 ? "9+" : attention}
+								</span>
+							)}
 							{active && (
 								<span className="absolute inset-x-2 -bottom-px h-px bg-pi-accent shadow-focus-inner" />
 							)}
@@ -74,6 +86,7 @@ export function RightSidebar({ projectPath }: Props) {
 				{rightSidebarTab === "git" && <GitPanel projectPath={projectPath} />}
 				{rightSidebarTab === "office" && <OfficePanel />}
 				{rightSidebarTab === "cron" && <CronPanel />}
+				{rightSidebarTab === "activity" && <ActivityPanel />}
 			</div>
 		</div>
 	);

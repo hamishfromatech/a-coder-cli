@@ -5,12 +5,13 @@
  */
 
 import { useEffect, useState } from "react";
-import { Bot, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
+import { Bot, ChevronDown, ChevronRight, History, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "../ui/Button";
 import { Switch } from "../ui/Switch";
-import { cronDelete, cronRunNow, cronUpdate, type CronJob } from "../../lib/rpc";
+import { cronDelete, cronRunNow, cronRuns, cronUpdate, type CronJob, type CronRun } from "../../lib/rpc";
 import { useCronStore } from "../../stores/cron-store";
 import { useSessionStore } from "../../stores/session-store";
+import { openSessionFile } from "../../lib/open-session";
 import { CronEditor } from "./CronEditor";
 
 function relativeTime(ms: number | undefined): string {
@@ -92,6 +93,21 @@ export function CronPanel() {
 
 function CronRow({ job, onEdit }: { job: CronJob; onEdit: () => void }) {
 	const [busy, setBusy] = useState(false);
+	const [expanded, setExpanded] = useState(false);
+	const [runs, setRuns] = useState<CronRun[] | null>(null);
+	const [runsLoading, setRunsLoading] = useState(false);
+
+	const toggleRuns = () => {
+		const next = !expanded;
+		setExpanded(next);
+		if (next && runs === null) {
+			setRunsLoading(true);
+			void cronRuns(job.id)
+				.then((result) => setRuns(result.runs))
+				.catch(() => setRuns([]))
+				.finally(() => setRunsLoading(false));
+		}
+	};
 
 	const runNow = async () => {
 		if (busy) return;
@@ -127,51 +143,113 @@ function CronRow({ job, onEdit }: { job: CronJob; onEdit: () => void }) {
 	const failed = job.lastStatus === "error" || job.lastStatus === "timeout";
 
 	return (
-		<div className="group flex w-full items-start gap-2 rounded-md px-1.5 py-1.5 transition-hover hover:bg-pi-surface-raised">
-			<div className="flex min-w-0 flex-1 flex-col gap-0.5 pt-0.5">
-				<div className="flex items-center gap-1.5 text-xs font-medium text-pi-text">
-					<span className="truncate">{job.name}</span>
-					{!job.enabled && <span className="shrink-0 text-2xs text-pi-text-faint">(paused)</span>}
-					{failed && (
-						<span
-							className="h-1.5 w-1.5 shrink-0 rounded-full bg-pi-error"
-							title={job.lastError ?? "Last run failed"}
-						/>
+		<div className="flex w-full flex-col rounded-md transition-hover hover:bg-pi-surface-raised">
+			<div className="group flex w-full items-start gap-2 px-1.5 py-1.5">
+				<button
+					type="button"
+					className="mt-1 flex h-4 w-4 shrink-0 items-center justify-center rounded text-pi-text-faint hover:bg-pi-surface hover:text-pi-text"
+					aria-label={expanded ? `Hide run history for ${job.name}` : `Show run history for ${job.name}`}
+					aria-expanded={expanded}
+					onClick={toggleRuns}
+				>
+					{expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+				</button>
+				<div className="flex min-w-0 flex-1 flex-col gap-0.5 pt-0.5">
+					<div className="flex items-center gap-1.5 text-xs font-medium text-pi-text">
+						<span className="truncate">{job.name}</span>
+						{!job.enabled && <span className="shrink-0 text-2xs text-pi-text-faint">(paused)</span>}
+						{failed && (
+							<span
+								className="h-1.5 w-1.5 shrink-0 rounded-full bg-pi-error"
+								title={job.lastError ?? "Last run failed"}
+							/>
+						)}
+					</div>
+					<div className="truncate text-2xs text-pi-text-muted">
+						{scheduleLabel(job.schedule)}
+						{nextRun ? ` · next ${nextRun}` : ""}
+						{job.lastRunAt ? ` · last ${relativeTime(job.lastRunAt)}` : ""}
+						{failed ? ` · ${job.lastError?.slice(0, 60) ?? "failed"}` : ""}
+					</div>
+					<div className="mt-0.5 line-clamp-2 text-2xs leading-relaxed text-pi-text-faint">{job.prompt}</div>
+				</div>
+				<div className="flex shrink-0 items-center gap-0.5">
+					<Button
+						variant="ghost"
+						size="icon-sm"
+						icon={busy ? Loader2 : Bot}
+						aria-label="Run now"
+						disabled={busy}
+						onClick={() => void runNow()}
+					/>
+					<Button variant="ghost" size="icon-sm" icon={Pencil} aria-label={`Edit ${job.name}`} onClick={onEdit} />
+					<Button
+						variant="ghost"
+						size="icon-sm"
+						icon={Trash2}
+						aria-label={`Delete ${job.name}`}
+						disabled={busy}
+						onClick={() => void remove()}
+					/>
+					<Switch
+						checked={job.enabled}
+						onChange={() => void toggle(!job.enabled)}
+						ariaLabel={job.enabled ? `Pause ${job.name}` : `Resume ${job.name}`}
+						size="sm"
+					/>
+				</div>
+			</div>
+			{expanded && <RunHistory runs={runs} loading={runsLoading} />}
+		</div>
+	);
+}
+
+const RUN_STATUS_DOT: Record<CronRun["status"], string> = {
+	running: "bg-pi-accent animate-pulse",
+	ok: "bg-pi-success",
+	error: "bg-pi-error",
+	timeout: "bg-pi-warning",
+};
+
+function RunHistory({ runs, loading }: { runs: CronRun[] | null; loading: boolean }) {
+	if (loading || runs === null) {
+		return (
+			<div className="flex items-center gap-1.5 px-6 pb-2 text-2xs text-pi-text-faint">
+				<Loader2 className="h-3 w-3 animate-spin" /> loading runs…
+			</div>
+		);
+	}
+	if (runs.length === 0) {
+		return <div className="px-6 pb-2 text-2xs text-pi-text-faint">No runs yet.</div>;
+	}
+	return (
+		<div className="mb-1.5 ml-6 mr-1.5 flex flex-col gap-0.5 border-l border-pi-border pl-2">
+			{runs.map((run) => (
+				<div key={run.id} className="flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-pi-surface-raised">
+					<span className={`h-1.5 w-1.5 shrink-0 rounded-full ${RUN_STATUS_DOT[run.status]}`} />
+					<span className="w-16 shrink-0 text-2xs text-pi-text-muted">{relativeTime(run.startedAt)}</span>
+					<span className="shrink-0 text-2xs text-pi-text-faint">
+						{run.trigger === "manual" ? "manual" : "schedule"} · {run.delivery === "session" ? "session" : "background"}
+					</span>
+					{run.error && (
+						<span className="min-w-0 flex-1 truncate text-2xs text-pi-error" title={run.error}>
+							{run.error}
+						</span>
+					)}
+					{run.sessionFile && run.status !== "running" && (
+						<Button
+							variant="ghost"
+							size="sm"
+							className="ml-auto shrink-0 text-2xs text-pi-text-muted"
+							aria-label="Continue run"
+							onClick={() => void openSessionFile(run.sessionFile!)}
+						>
+							<History className="h-3 w-3" />
+							Continue
+						</Button>
 					)}
 				</div>
-				<div className="truncate text-2xs text-pi-text-muted">
-					{scheduleLabel(job.schedule)}
-					{nextRun ? ` · next ${nextRun}` : ""}
-					{job.lastRunAt ? ` · last ${relativeTime(job.lastRunAt)}` : ""}
-					{failed ? ` · ${job.lastError?.slice(0, 60) ?? "failed"}` : ""}
-				</div>
-				<div className="mt-0.5 line-clamp-2 text-2xs leading-relaxed text-pi-text-faint">{job.prompt}</div>
-			</div>
-			<div className="flex shrink-0 items-center gap-0.5">
-				<Button
-					variant="ghost"
-					size="icon-sm"
-					icon={busy ? Loader2 : Bot}
-					aria-label="Run now"
-					disabled={busy}
-					onClick={() => void runNow()}
-				/>
-				<Button variant="ghost" size="icon-sm" icon={Pencil} aria-label={`Edit ${job.name}`} onClick={onEdit} />
-				<Button
-					variant="ghost"
-					size="icon-sm"
-					icon={Trash2}
-					aria-label={`Delete ${job.name}`}
-					disabled={busy}
-					onClick={() => void remove()}
-				/>
-				<Switch
-					checked={job.enabled}
-					onChange={() => void toggle(!job.enabled)}
-					ariaLabel={job.enabled ? `Pause ${job.name}` : `Resume ${job.name}`}
-					size="sm"
-				/>
-			</div>
+			))}
 		</div>
 	);
 }

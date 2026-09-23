@@ -214,6 +214,31 @@ export interface CronUpdateEvent {
 	jobs: CronJob[];
 }
 
+export type CronRunStatus = "running" | "ok" | "error" | "timeout";
+
+/** One execution of a cron job (mirrors core/cron/types.ts CronRun). */
+export interface CronRun {
+	id: string;
+	jobId: string;
+	/** Snapshot of the job name at fire time — history outlives renames/deletes. */
+	jobName: string;
+	trigger: "schedule" | "manual";
+	/** "session" ran in the live conversation; "background" ran headless. */
+	delivery: "session" | "background";
+	startedAt: number;
+	finishedAt?: number;
+	status: CronRunStatus;
+	error?: string;
+	/** Session the prompt ran in — switch here to continue the run. */
+	sessionFile?: string;
+}
+
+export interface CronRunEvent {
+	type: "cron_run";
+	event: "started" | "finished";
+	run: CronRun;
+}
+
 export interface OfficeCoworkerInput {
 	id?: string;
 	name: string;
@@ -263,7 +288,8 @@ export type RpcEvent =
 	| OfficeUpdateEvent
 	| OfficeHuddleEvent
 	| OfficeActivityEvent
-	| CronUpdateEvent;
+	| CronUpdateEvent
+	| CronRunEvent;
 
 /** The engine re-emits agent_end with a retry hint after a retryable failure. */
 export interface AgentEndWillRetry {
@@ -1341,6 +1367,9 @@ export const cronUpdate = (jobId: string, patch: Partial<Pick<CronJob, "name" | 
 export const cronDelete = (jobId: string) => sendCommand({ type: "cron_delete", jobId });
 
 export const cronRunNow = (jobId: string) => sendCommand({ type: "cron_run_now", jobId });
+
+export const cronRuns = (jobId?: string) =>
+	sendCommand({ type: "cron_runs", jobId }) as Promise<{ runs: CronRun[] }>
 
 
 

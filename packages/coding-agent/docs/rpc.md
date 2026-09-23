@@ -876,6 +876,37 @@ Response `data`: the full office snapshot — `coworkers` (roster records with f
 
 Answers a supervised prompt surfaced in the snapshot (approval or question). `null` denies/cancels.
 
+### Cron
+
+Scheduled tasks for the main agent. Jobs are project-scoped (`cwd`) and persist in `~/.a-coder/cli/agent/cron/jobs.json`; run history lands in `cron/runs.json` (last 20 per job).
+
+#### cron_list
+
+```json
+{"type": "cron_list"}
+```
+
+Response `data`: `{ jobs }` — every job with schedule, `nextRunAt`, `lastRunAt`, `lastStatus`, `lastError`, and the continuity `sessionFile` for background runs.
+
+#### cron_create / cron_update / cron_delete / cron_run_now
+
+```json
+{"type": "cron_create", "job": {"name": "Morning CI triage", "prompt": "Review overnight CI failures", "schedule": {"kind": "daily", "time": "09:00"}}}
+{"type": "cron_update", "jobId": "<id>", "patch": {"enabled": false}}
+{"type": "cron_delete", "jobId": "<id>"}
+{"type": "cron_run_now", "jobId": "<id>"}
+```
+
+Schedules: `{"kind": "every", "minutes": N}` (min 5), `{"kind": "daily", "time": "HH:MM"}` local, or `{"kind": "once", "at": <epoch ms>}`. `cron_run_now` awaits the fire (prompt delivery or the bounded background run).
+
+#### cron_runs
+
+```json
+{"type": "cron_runs", "jobId": "<id>"}
+```
+
+Response `data`: `{ runs }` — newest-first `CronRun` records (`id`, `jobId`, `jobName`, `trigger` schedule|manual, `delivery` session|background, `startedAt`, `finishedAt`, `status` running|ok|error|timeout, `error`, `sessionFile`). Omit `jobId` for every job's runs. `sessionFile` is the continue-a-run handle: switch the engine to it to reopen that run's conversation.
+
 ## Events (continued)
 
 Events are streamed to stdout as JSON lines during agent operation. Events do NOT include an `id` field (only responses do).
@@ -903,6 +934,8 @@ Events are streamed to stdout as JSON lines during agent operation. Events do NO
 | `sessions_update` | Runtime registry changed (background sessions) |
 | `office_update` | Your Office roster changed (coworkers, statuses, huddle summaries, errands, pending prompts) |
 | `office_huddle` | A huddle's log changed (new messages, drive running state) |
+| `cron_update` | Cron jobs changed (created, edited, fired) — full job list snapshot |
+| `cron_run` | A cron run started or finished (`event: "started"|"finished"`, `run: CronRun`) — feeds activity inboxes |
 
 ### agent_start
 

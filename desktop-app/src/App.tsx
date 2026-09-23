@@ -21,6 +21,7 @@ import { useSessionTreeStore } from "./stores/session-tree-store";
 import { useTabsStore } from "./stores/tabs-store";
 import { useOfficeStore } from "./stores/office-store";
 import { useCronStore } from "./stores/cron-store";
+import { useActivityStore } from "./stores/activity-store";
 import { useStatsStore, type SessionStats } from "./stores/stats-store";
 import { useUiStore } from "./stores/ui-store";
 import { useWidgetStore } from "./stores/widget-store";
@@ -526,6 +527,25 @@ export default function App() {
 								(event as import("./lib/rpc").CronUpdateEvent).jobs,
 							);
 							break;
+						case "cron_run": {
+							// A scheduled-task run started or finished — feed the inbox.
+							const cronRun = (event as import("./lib/rpc").CronRunEvent).run;
+							const started = (event as import("./lib/rpc").CronRunEvent).event === "started";
+							useActivityStore.getState().add({
+								kind: "cron",
+								severity: started ? "info" : cronRun.status === "ok" ? "success" : "error",
+								title: started ? `${cronRun.jobName}: run started` : `${cronRun.jobName}: run ${cronRun.status}`,
+								detail: started
+									? undefined
+									: cronRun.error ?? (cronRun.delivery === "background" ? "Ran in a background session" : undefined),
+								at: cronRun.startedAt,
+								sessionFile: cronRun.sessionFile,
+								jobId: cronRun.jobId,
+								runId: cronRun.id,
+								running: started,
+							});
+							break;
+						}
 						case "office_huddle":
 							// A huddle's log changed.
 							useOfficeStore.getState().applyHuddle(
@@ -757,6 +777,20 @@ export default function App() {
 						}
 						case "extension_ui_request": {
 							const req = event as import("./lib/rpc").ExtensionUiRequestEvent;
+
+							// Tool approvals surface in the activity inbox so they're
+							// visible even when this session isn't the focused tab.
+							if (req.method === "confirm" && "kind" in req && req.kind === "permission") {
+								const approvalSession = "sessionFile" in req ? req.sessionFile : undefined;
+								useActivityStore.getState().add({
+									kind: "approval",
+									severity: "action",
+									title: req.toolName ? `Approval needed: ${req.toolName}` : "Approval needed",
+									detail: "title" in req ? req.title : undefined,
+									at: Date.now(),
+									sessionFile: approvalSession ?? useSessionStore.getState().sessionFile ?? undefined,
+								});
+							}
 
 							// Structured question dialog (ask_user_question tool).
 							if (req.method === "question" && "questions" in req) {

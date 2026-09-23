@@ -20,7 +20,7 @@ import { noOpUIContext } from "../extensions/runner.ts";
 import { describeSchedule, isDue, nextRunAt } from "../office/errands.ts";
 import { getDefaultSessionDir, SessionManager } from "../session-manager.ts";
 import * as store from "./store.ts";
-import type { CronJob, CronSchedule, CronSnapshot } from "./types.ts";
+import type { CronJob, CronRun, CronRunTrigger, CronSchedule, CronServiceEvent, CronSnapshot } from "./types.ts";
 
 const TICK_MS = 30_000;
 /** Unattended side-session runs are bounded; stalled turns abort. */
@@ -31,6 +31,8 @@ export interface CronServiceOptions {
 	runtime: AgentRuntimeLike;
 	/** Pushed after every store mutation so hosts can refresh their UI. */
 	onUpdate?: (snapshot: CronSnapshot) => void;
+	/** Run lifecycle (started/finished) for activity feeds and run history. */
+	onRunEvent?: (event: CronServiceEvent) => void;
 }
 
 /** The slice of AgentSessionRuntime the cron service touches. */
@@ -57,6 +59,10 @@ export function mintJobId(): string {
 	return `cron_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function mintRunId(): string {
+	return `run_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
 /** Validate a schedule payload from an untrusted caller. */
 export function validateSchedule(schedule: CronSchedule): string | null {
 	if (!schedule || typeof schedule !== "object") return "Schedule is required";
@@ -80,6 +86,7 @@ export function validateSchedule(schedule: CronSchedule): string | null {
 export class CronService {
 	private readonly runtime: AgentRuntimeLike;
 	private readonly onUpdate?: (snapshot: CronSnapshot) => void;
+	private readonly onRunEvent?: (event: CronServiceEvent) => void;
 	private ticker: ReturnType<typeof setInterval> | undefined;
 	private disposed = false;
 	/** Live continuity sessions for off-session delivery, keyed by job id. */
@@ -87,6 +94,7 @@ export class CronService {
 	constructor(options: CronServiceOptions) {
 		this.runtime = options.runtime;
 		this.onUpdate = options.onUpdate;
+		this.onRunEvent = options.onRunEvent;
 	}
 
 	start(): void {
@@ -193,11 +201,16 @@ export class CronService {
 		await this.emitUpdate();
 	}
 
+	/** List runs for a job (newest first), or every job's runs when omitted. */
+	async listRuns(jobId?: string): Promise<CronRun[]> {
+		return store.listRuns(jobId);
+	}
+
 	/** Fire one job immediately (the client "run now" action). */
 	async runNow(id: string): Promise<void> {
 		const job = (await store.listJobs()).find((j) => j.id === id);
 		if (!job) throw new Error("Cron job not found");
-		await this.fireJob(job);
+		await this.fireJob(job, "manual");
 	}
 
 	// ── internals ───────────────────────────────────────────────────────────
@@ -225,7 +238,7 @@ export class CronService {
 		}
 	}
 
-	private async fireJob(job: CronJob): Promise<void> {
+	private async fireJob(job: CronJob, trigger: CronRunTrigger = "schedule"): Promise<void> {
 		// One fire at a time per job.
 		await withKeyedLock(`cron-fire:${job.id}`, async () => {
 			const fresh = (await store.listJobs()).find((j) => j.id === job.id);
@@ -234,15 +247,43 @@ export class CronService {
 			const head = `[Cron: ${fresh.name}] Scheduled task (${describeSchedule(fresh.schedule)}) from the user's cron schedule. Work in the current project context and report the result plainly.`;
 			const prompt = `${head}\n\n${fresh.prompt}`;
 
+			const run: CronRun = {
+				id: mintRunId(),
+				jobId: fresh.id,
+				jobName: fresh.name,
+				trigger,
+				delivery: this.runtime.cwd === fresh.cwd && Boolean(this.runtime.session) ? "session" : "background",
+				startedAt: Date.now(),
+				status: "running",
+			};
+			await store.appendRun(run);
+			this.emitRunEvent({ type: "run_started", run: { ...run } });
+
 			let status: "ok" | "error" | "timeout" = "ok";
 			let lastError: string | undefined;
 			try {
-				const session = await this.deliveryTarget(fresh);
-				await this.runPrompt(session, prompt);
+				const target = await this.resolveDelivery(fresh);
+				run.sessionFile = target.sessionFile;
+				if (run.sessionFile) {
+					await store.updateRun(run.jobId, run.id, (r) => {
+						r.sessionFile = run.sessionFile;
+					});
+				}
+				await this.runPrompt(target.session, prompt);
 			} catch (error_) {
 				status = error_ instanceof CronTimeoutError ? "timeout" : "error";
 				lastError = error_ instanceof Error ? error_.message : String(error_);
 			}
+
+			run.finishedAt = Date.now();
+			run.status = status;
+			run.error = lastError;
+			await store.updateRun(run.jobId, run.id, (r) => {
+				r.finishedAt = run.finishedAt;
+				r.status = status;
+				r.error = lastError;
+			});
+			this.emitRunEvent({ type: "run_finished", run: { ...run } });
 
 			await store.updateJob(fresh.id, (j) => {
 				j.lastRunAt = Date.now();
@@ -263,13 +304,17 @@ export class CronService {
 	/**
 	 * Where the prompt goes: the active session when it belongs to the job's
 	 * project (the reply lands in the live conversation), else the job's
-	 * continuity side session.
+	 * continuity side session. Returns the session file either way so the run
+	 * record can link to it ("continue any run").
 	 */
-	private async deliveryTarget(job: CronJob) {
+	private async resolveDelivery(
+		job: CronJob,
+	): Promise<{ session: import("../agent-session.ts").AgentSession; sessionFile?: string }> {
 		if (this.runtime.cwd === job.cwd && this.runtime.session) {
-			return this.runtime.session;
+			return { session: this.runtime.session, sessionFile: this.runtime.session.sessionFile };
 		}
-		return this.ensureSideSession(job);
+		const session = await this.ensureSideSession(job);
+		return { session, sessionFile: session.sessionFile };
 	}
 
 	/** Continuity side session for off-hours delivery, one per job. */
@@ -327,6 +372,15 @@ export class CronService {
 		if (!this.onUpdate) return;
 		try {
 			this.onUpdate(await this.snapshot());
+		} catch {
+			// UI push is best-effort
+		}
+	}
+
+	private emitRunEvent(event: CronServiceEvent): void {
+		if (!this.onRunEvent) return;
+		try {
+			this.onRunEvent(event);
 		} catch {
 			// UI push is best-effort
 		}
