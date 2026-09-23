@@ -90,6 +90,7 @@ export type SettingsSectionId =
 	| "resources"
 	| "keybindings"
 	| "voice"
+	| "updates"
 	| "bench"
 	| "advanced";
 
@@ -667,6 +668,16 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 		description: "Speech-to-text and text-to-speech endpoints (OpenAI-compatible).",
 	},
 
+	// ---- Updates ----------------------------------------------------------
+	// No fields — the Updates section is a custom widget (current version +
+	// manual check; found updates hand off to the app's UpdateModal flow).
+	{
+		id: "updates",
+		navId: "updates",
+		label: "Updates",
+		description: "Keep A-Coder Desktop current: check for new versions and install them.",
+	},
+
 	// ---- Bench -----------------------------------------------------------
 	// No static fields — the Bench section is a custom runner widget that owns
 	// its config form, task list, safety confirmation, and live progress.
@@ -838,6 +849,7 @@ const NAV_ORDER: string[] = [
 	"bench",
 	"advanced",
 	"general",
+	"updates",
 ];
 
 /** Legacy section ids that now live on a merged page (deep-link compatibility). */

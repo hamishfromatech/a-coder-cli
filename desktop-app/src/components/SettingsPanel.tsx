@@ -6,6 +6,7 @@ import {
 	MessagesSquare,
 	Monitor,
 	Palette,
+	RefreshCw,
 	RotateCcw,
 	Search,
 	Settings as SettingsIcon,
@@ -56,6 +57,7 @@ import { PermissionPoliciesEditor } from "./panels/widgets/PermissionPoliciesEdi
 import { ResourcesSection } from "./panels/widgets/ResourcesSection";
 import { BenchRunnerSection } from "./panels/widgets/BenchRunnerSection";
 import { VoiceSection } from "./panels/widgets/VoiceSection";
+import { UpdatesSection } from "./panels/widgets/UpdatesSection";
 import { CompletionSoundPicker } from "./panels/widgets/CompletionSoundPicker";
 import { Switch } from "./ui/Switch";
 import { Button, IconButton } from "./ui/Button";
@@ -81,6 +83,7 @@ const NAV_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
 	keybindings: Keyboard,
 	bench: FlaskConical,
 	advanced: Wrench,
+	updates: RefreshCw,
 };
 
 const FIRST_LAUNCH_KEY = "a-coder-first-launch-dismissed";
@@ -1107,6 +1110,8 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 											<ResourcesSection search={search} />
 										) : s.id === "voice" ? (
 											<VoiceSection />
+										) : s.id === "updates" ? (
+											<UpdatesSection />
 										) : s.id === "bench" ? (
 											<BenchRunnerSection />
 										) : s.id === "advanced" ? (
