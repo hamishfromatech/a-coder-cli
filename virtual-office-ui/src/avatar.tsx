@@ -29,7 +29,7 @@ function shapePath(shape: FaceShape, r: number): string {
 		case "triangle":
 			return `M0,${-r} L${r * 0.95},${r * 0.75} L${-r * 0.95},${r * 0.75} Z`;
 		case "drop":
-			return `M0,${-r} C ${r * 0.85},${-r * 0.35} ${r * 0.8},${r * 0.55} 0,${r * 0.85} C ${-r * 0.8},${r * 0.55} ${-r * 0.85},${-r * 0.35} 0,${-r} Z`;
+			return `M0,${-r} C ${r * 0.72},${-r * 0.52} ${r * 0.94},${r * 0.08} ${r * 0.94},${r * 0.36} C ${r * 0.94},${r * 0.86} ${r * 0.56},${r} 0,${r} C ${-r * 0.56},${r} ${-r * 0.94},${r * 0.88} ${-r * 0.94},${r * 0.38} C ${-r * 0.94},${r * 0.08} ${-r * 0.72},${-r * 0.52} 0,${-r} Z`;
 		case "cloud":
 			return `M${-r * 0.7},${r * 0.45} a ${r * 0.45},${r * 0.45} 0 0 1 ${-r * 0.15},${-r * 0.75} a ${r * 0.55},${r * 0.5} 0 0 1 ${r * 0.75},${-r * 0.45} a ${r * 0.5},${r * 0.5} 0 0 1 ${r * 0.8},${r * 0.35} a ${r * 0.42},${r * 0.42} 0 0 1 ${-r * 0.1},${r * 0.85} Z`;
 		default:
@@ -204,14 +204,9 @@ function body(visual: CoworkerVisual, speaking: boolean, errored: boolean) {
 			if (path) return <path d={path} fill={fill} />;
 			return <circle cx={0} cy={0} r={r} fill={fill} />;
 		})();
-		// A soft top light + bottom shade gives the flat fill a lit feel.
-		return (
-			<g>
-				{shapeNode}
-				<ellipse cx={-r * 0.32} cy={-r * 0.48} rx={r * 0.52} ry={r * 0.36} fill="#ffffff" opacity={0.16} />
-				<path d={`M ${-r * 0.72} ${r * 0.52} Q 0 ${r * 0.95} ${r * 0.72} ${r * 0.52} Q 0 ${r * 0.78} ${-r * 0.72} ${r * 0.52} Z`} fill="#000000" opacity={0.1} />
-			</g>
-		);
+		// Flat fill only — the bold shapes + white features ARE the look; lighting
+		// overlays read as skull sheens on the pointier silhouettes.
+		return shapeNode;
 	})();
 
 	const eyeY = -1.6;
