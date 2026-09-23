@@ -15,6 +15,7 @@ import {
 	Bot,
 	Check,
 	ChevronRight,
+	ChevronUp,
 	AlertCircle,
 	Copy,
 	Image as ImageIcon,
@@ -540,13 +541,24 @@ function ThinkingBlocks({
 				/>
 			</div>
 			{open && (
-				<div className="border-t border-pi-border px-2.5 py-2 font-mono text-2xs leading-relaxed text-pi-text-muted">
-					{thinking.map((t, i) => (
-						<pre key={i} className="m-0 whitespace-pre-wrap">
-							{t.thinking}
-						</pre>
-					))}
-				</div>
+				<>
+					<div className="border-t border-pi-border px-2.5 py-2 font-mono text-2xs leading-relaxed text-pi-text-muted">
+						{thinking.map((t, i) => (
+							<pre key={i} className="m-0 whitespace-pre-wrap">
+								{t.thinking}
+							</pre>
+						))}
+					</div>
+					{/* Collapse affordance at the card's foot — the header sits above
+						long content, so the way back is where the reading ends. */}
+					<button
+						onClick={() => setOpen(false)}
+						aria-label="Collapse thinking"
+						className="flex w-full items-center justify-center border-t border-pi-border py-1 text-pi-text-faint transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+					>
+						<ChevronUp className="h-3 w-3" />
+					</button>
+				</>
 			)}
 		</div>
 	);
