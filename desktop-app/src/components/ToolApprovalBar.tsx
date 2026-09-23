@@ -1,6 +1,7 @@
 import { type FC, useCallback, useEffect, useState } from "react";
-import { AlertCircle, ChevronDown, Loader2 } from "lucide-react";
+import { AlertCircle, ChevronDown, Loader2, Workflow } from "lucide-react";
 import { useSessionStore, type UiRequest } from "../stores/session-store";
+import { addSessionAllowRules } from "../lib/rpc";
 import { triggerHaptic } from "../lib/haptics";
 import { rendererLog } from "../lib/renderer-log";
 
@@ -20,7 +21,7 @@ import { rendererLog } from "../lib/renderer-log";
 const isMac =
 	typeof navigator !== "undefined" && /Mac|iP(hone|ad|od)/.test(navigator.platform);
 
-type ApprovalChoice = "allow" | "deny";
+type ApprovalChoice = "allow" | "always" | "deny";
 
 interface ToolApprovalBarProps {
 	request: UiRequest;
@@ -35,9 +36,10 @@ export const ToolApprovalBar: FC<ToolApprovalBarProps> = ({ request, surface }) 
 
 	const busy = submitting !== null;
 	const hasDetails = (request.message ?? "").trim().length > 0;
+	const isWorkflow = request.toolName === "run_workflow" && request.workflow !== undefined;
 
 	const respond = useCallback(
-		(choice: ApprovalChoice) => {
+		(choice: Exclude<ApprovalChoice, "always">) => {
 			// Another bar (or the keyboard path) may have already resolved this
 			// approval; the store is the single source of truth, so bail if the
 			// request is gone.
@@ -53,6 +55,25 @@ export const ToolApprovalBar: FC<ToolApprovalBarProps> = ({ request, surface }) 
 		},
 		[busy, request.id, resolveUiRequest],
 	);
+
+	// "Always allow" grants a session-scoped rule (`run_workflow(<name>)`) and
+	// approves this call; a rule that fails to persist still approves once.
+	const respondAlways = useCallback(async () => {
+		if (busy || !request.workflow) return;
+		const stillPending = useSessionStore
+			.getState()
+			.uiRequests.some((r) => r.id === request.id);
+		if (!stillPending) return;
+
+		setSubmitting("always");
+		try {
+			await addSessionAllowRules([`run_workflow(${request.workflow.name})`]);
+		} catch {
+			// Rule persistence is best-effort; approve this run regardless.
+		}
+		triggerHaptic("submit");
+		resolveUiRequest(request.id, { confirmed: true });
+	}, [busy, request.id, request.workflow, resolveUiRequest]);
 
 	useEffect(() => {
 		rendererLog(`APPROVAL ${surface} mount id=${request.id}`);
@@ -100,6 +121,33 @@ export const ToolApprovalBar: FC<ToolApprovalBarProps> = ({ request, surface }) 
 			className={surface === "inline" ? "mt-1 ps-5" : "mt-2"}
 			data-slot={surface === "inline" ? "tool-approval-inline" : "tool-approval-actions"}
 		>
+			{isWorkflow && request.workflow && (
+				<div
+					className="mb-2 rounded-lg border border-pi-accent/20 bg-pi-accent-soft/50 px-3 py-2"
+					data-slot="workflow-approval-header"
+				>
+					<div className="flex items-center gap-2 text-xs font-medium text-pi-text">
+						<Workflow className="h-3.5 w-3.5 shrink-0 text-pi-accent" />
+						<span>Workflow “{request.workflow.name}”</span>
+					</div>
+					{request.workflow.phases.length > 0 && (
+						<div className="mt-1.5 flex flex-wrap gap-1">
+							{request.workflow.phases.map((phase) => (
+								<span
+									key={phase}
+									className="rounded-full border border-pi-border bg-pi-surface px-2 py-0.5 text-[0.625rem] text-pi-text-muted"
+								>
+									{phase}
+								</span>
+							))}
+						</div>
+					)}
+					<p className="mt-1.5 flex items-center gap-1.5 text-[0.625rem] text-pi-text-muted">
+						<AlertCircle className="h-3 w-3 shrink-0" />
+						Spawns background subagents — a full run can use significant tokens.
+					</p>
+				</div>
+			)}
 			<div className="flex items-center gap-2.5">
 				<div className="inline-flex h-6 items-stretch overflow-hidden rounded-md border border-pi-accent/25 bg-pi-accent-soft text-pi-accent">
 					<button
@@ -111,7 +159,7 @@ export const ToolApprovalBar: FC<ToolApprovalBarProps> = ({ request, surface }) 
 						{submitting === "allow" ? (
 							<Loader2 className="h-3 w-3 animate-spin" />
 						) : (
-							"Allow"
+							isWorkflow ? "Allow once" : "Allow"
 						)}
 						{submitting !== "allow" && (
 							<span className="text-[0.625rem] text-pi-accent/60">
@@ -120,6 +168,21 @@ export const ToolApprovalBar: FC<ToolApprovalBarProps> = ({ request, surface }) 
 						)}
 					</button>
 				</div>
+
+				{isWorkflow && request.workflow && (
+					<button
+						type="button"
+						className="flex h-6 items-center gap-1.5 rounded-md px-1.5 text-xs font-normal text-pi-text-muted transition-smooth hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none disabled:opacity-60"
+						disabled={busy}
+						onClick={() => void respondAlways()}
+					>
+						{submitting === "always" ? (
+							<Loader2 className="h-3 w-3 animate-spin" />
+						) : (
+							"Always allow"
+						)}
+					</button>
+				)}
 
 				<button
 					type="button"

@@ -33,6 +33,7 @@ import {
 } from "../../core/output-guard.ts";
 import { type SessionInfo, SessionManager } from "../../core/session-manager.ts";
 import { getBackgroundProcesses, subscribeBackgroundProcesses } from "../../core/stores/index.ts";
+import { findWorkflow } from "../../core/workflows/loader.ts";
 import { getWorkflowRunSummaries, stopWorkflowRun, subscribeWorkflowRuns } from "../../core/workflows/registry.ts";
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { type Theme, theme } from "../interactive/theme/theme.ts";
@@ -486,10 +487,23 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			shutdownHandler: () => {
 				shutdownRequested = true;
 			},
-			permissionPromptHandler: async (toolName, reason) => {
+			permissionPromptHandler: async (toolName, reason, args) => {
 				const id = crypto.randomUUID();
 				runtimeHost.markSessionNeedsInput?.(boundSessionFile, true);
-				return new Promise((resolve) => {
+				// Workflow detail for the desktop's run_workflow approval card: the
+				// workflow name and its meta-declared phases.
+				let workflow: { name: string; phases: string[] } | undefined;
+				if (toolName === "run_workflow" && typeof args?.workflow === "string") {
+					const name = args.workflow;
+					const { workflow: spec } = findWorkflow(name, {
+						cwd: session.sessionManager.getCwd(),
+						agentDir: runtimeHost.services.agentDir,
+					});
+					if (spec) {
+						workflow = { name: spec.name, phases: spec.phases ?? [] };
+					}
+				}
+				return new Promise<boolean>((resolve) => {
 					pendingExtensionRequests.set(id, {
 						resolve: (response: RpcExtensionUIResponse) => {
 							runtimeHost.markSessionNeedsInput?.(boundSessionFile, false);
@@ -514,6 +528,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 						message: reason ?? `Permission required for "${toolName}"`,
 						kind: "permission",
 						toolName,
+						...(workflow !== undefined ? { workflow } : {}),
 						sessionFile: boundSessionFile,
 					} as RpcExtensionUIRequest);
 				});
@@ -801,6 +816,15 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 			case "get_permission_mode": {
 				return success(id, "get_permission_mode", { mode: session.permissionMode });
+			}
+
+			case "add_session_allow_rules": {
+				const rules = command.rules.filter((rule) => typeof rule === "string" && rule.trim().length > 0);
+				if (rules.length === 0) {
+					return error(id, "add_session_allow_rules", "No valid rules provided");
+				}
+				session.addSessionAllowRules(rules);
+				return success(id, "add_session_allow_rules");
 			}
 
 			case "set_plan_mode": {

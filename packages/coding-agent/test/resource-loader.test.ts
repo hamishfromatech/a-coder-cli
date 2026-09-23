@@ -309,14 +309,15 @@ export default function(pi) {
 			expect(runner.getCommand("user-only")?.description).toBe("user only");
 
 			const commands = runner.getRegisteredCommands();
-			// The built-in workflow extension's /workflows command sorts after the
-			// extension commands.
+			// The built-in workflow extension's /workflows and /ultracode commands
+			// sort after the extension commands.
 			expect(commands.map((command) => command.invocationName)).toEqual([
 				"deploy:1",
 				"project-only",
 				"deploy:2",
 				"user-only",
 				"workflows",
+				"ultracode",
 			]);
 		});
 

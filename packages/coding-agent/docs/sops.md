@@ -154,52 +154,41 @@ PR 123, focus on security
 </agent-sop>
 ```
 
-## Workflows (declarative multi-agent runs)
+## Workflows (script-orchestrated multi-agent runs)
 
-A workflow is an SOP whose frontmatter adds a machine-readable `workflow.steps` array executed by the `run_workflow` tool over background subagents. Each step is an agent-as-function over JSON — there is deliberately no scripting.
+A workflow is a plain JavaScript file — a `meta` block followed by a top-level-await body — that orchestrates many subagents from a script the model writes and you can rerun. Use them for codebase audits, large migrations, and cross-checked research: work larger than one context window, or the same step across many items.
 
-```yaml
----
-name: audit-routes
-description: Audit route handlers for missing auth checks
-workflow:
-  steps:
-    - id: discover
-      type: run
-      prompt: "List every .ts file under src/routes/ as JSON."
-      schema:
-        type: object
-        required: [files]
-        properties:
-          files:
-            type: array
-            items: { type: string }
-    - id: audit
-      type: fan-out
-      over: discover.files
-      label: "${item}"
-      prompt: "Audit ${item} for missing authentication checks."
-      schema:
-        type: object
-        required: [valid, finding]
-        properties:
-          valid: { type: boolean }
-          finding: { type: string }
-    - id: report
-      type: run
-      prompt: "Rank and dedupe these findings into one report: ${audit}"
----
+The script holds the plan — loops, conditionals, filtering, and intermediate results are plain JavaScript — so the model's context only sees the final answer. There is deliberately no DSL: the runtime injects a handful of primitives into a sandboxed context and everything else is standard JS.
+
+```js
+// .a-coder-cli/workflows/audit-routes.js
+export const meta = {
+  name: 'audit-routes',
+  description: 'Audit every route handler for missing auth checks',
+}
+
+const found = await agent('List every .ts file under src/routes/.', {
+  schema: { type: 'object', required: ['files'], properties: { files: { type: 'array', items: { type: 'string' } } } },
+})
+
+const audits = await pipeline(found.files, (file) =>
+  agent(`Audit ${file} for missing authentication checks.`, { label: file }),
+)
+
+return audits.filter(Boolean)
 ```
 
-Step fields: `id`, `type` (`run` | `fan-out`), `prompt`, `schema` (JSON Schema; validated output with retries), `over` (fan-out source array), `label`, `model`, `agent_type`, `until` (loop predicate), `max_rounds`, `stop_on_no_progress`.
+Runtime primitives (injected as globals): `agent(prompt, {schema?, label?, model?, agentType?})` spawns one subagent and resolves to its structured output (schema match, validated with retries) or final text — or `null` when the agent is stopped mid-run or fails unrecoverably. `pipeline(list, fn)` runs one `fn` per item concurrently and keeps failed slots as `null`. `parallel(tasks)` awaits a set of agent calls together. `phase(title)` groups the agents that follow in the progress view (declare them up front with `phases: ['...']` in meta so surfaces show the groups before the run); `log(msg)` prints a progress line; `args` is the invocation input. With a `schema`, a proven self-contradiction (a required key ruled out by `additionalProperties: false`) fails before the subagent starts; exhausted validation fails the call with an error.
 
-Guards: agents run with this session's permission rules; launch requires the user's permission; concurrency is capped by `workflowMaxConcurrentAgents` (default 16); runs are bounded (agent cap, 50-minute budget); run state persists under the session directory.
+Script rules: no `import()`/`require`, no filesystem or shell access (agents do the work; the script coordinates them), and `Date.now()` / `Math.random()` / no-argument `new Date()` throw so a relaunched run repeats the same `agent()` calls.
 
-Invoke with the `run_workflow` tool (`{ "workflow": "audit-routes", "args": {...} }`). Pass `resume: "<runId>"` to continue an earlier run from its persisted state: completed steps whose rendered inputs are unchanged return their saved results, and everything after a changed input reruns; a run refuses to resume while its agents are still live.
+Guards: agents run with this session's permission rules; launch requires the user's permission and flows through normal tool-permission evaluation — the desktop renders run_workflow prompts as a workflow approval card (name, meta-declared phases, token caution) with allow-once / always-allow (grants a session `run_workflow(<name>)` rule) / deny, and arg-scoped rules pre-approve runs by name (`run_workflow(audit-routes)`) or for every workflow (`run_workflow(*)`); concurrency is capped by `workflowMaxConcurrentAgents` (default 16); runs are bounded (4096 items per pipeline/parallel call, 1000 agents per run, 50-minute budget) and flagged past 25 agents; run state persists under the session directory.
 
-Monitor runs with `/workflows`: pick a run to see its step results and live agents, and stop running ones (completed steps keep their results for a later resume). While a run executes, a live per-step progress block renders below the editor (and in the desktop's widget surface).
+Invoke with the `run_workflow` tool (`{ "workflow": "audit-routes", "args": {...} }`), or run a saved script directly as the `/<name>` command. Saved workflow scripts register as slash commands — project `.a-coder-cli/workflows/*.js` wins name collisions over the personal dir, which wins over package-provided `workflows/*.js`. Pass `resume: "<runId>"` to continue an earlier run from its persisted state: each `agent()` call replays the run's start-ordered agent log — a completed agent whose prompt is unchanged returns its saved result, and everything from the first changed prompt onward reruns (an earlier agent that now returns something different shifts every downstream prompt); a run refuses to resume while its agents are still live.
 
-Trigger keyword: with the default `workflowKeywordTrigger` setting on, a typed prompt containing "ultracode" is transformed so the model authors a workflow SOP for the task, saves it under `.a-coder-cli/workflows/`, and executes it via `run_workflow` instead of working turn by turn. Set `workflowKeywordTrigger: false` in settings to disable. See `examples/workflows/` for a worked example and `examples/skills/workflow-authoring/` for the authoring skill.
+Monitor runs with `/workflows`: pick a run to see its agents (phase, status, tokens) and live sub-agents, stop the run or one agent, restart a running agent, pause/resume, and save the run's script as a command (`.a-coder-cli/workflows/` project-shared, or the personal dir — it registers as a command on the next reload). While a run executes, a live per-phase progress block renders below the editor (and in the desktop's widget surface).
+
+Trigger keyword: with the default `workflowKeywordTrigger` setting on, a typed prompt containing "ultracode" is transformed so the model authors a workflow script for the task, saves it under `.a-coder-cli/workflows/`, and executes it via `run_workflow` instead of working turn by turn. Set `workflowKeywordTrigger: false` in settings to disable. See `examples/workflows/` for a worked example and `examples/skills/workflow-authoring/` for the authoring skill.
 
 Hosts and RPC clients follow runs programmatically: the `workflows_update` event streams output-free per-run summaries, and the `stop_workflow_run` command stops a running run (see `docs/rpc.md`). The desktop's Running tasks panel surfaces the same stream.
 

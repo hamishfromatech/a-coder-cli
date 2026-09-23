@@ -177,6 +177,8 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private additionalPromptTemplatePaths: string[];
 	private additionalThemePaths: string[];
 	private extensionFactories: ExtensionFactory[] = [];
+	/** Workflow scripts resolved from packages/settings (set during resolve; read by the workflow extension). */
+	private packageWorkflowPaths: string[] = [];
 	/** Caller-injected factories (SDK options) — passed through untouched on rebuild. */
 	private injectedExtensionFactories: ExtensionFactory[];
 	private noExtensions: boolean;
@@ -389,8 +391,11 @@ export class DefaultResourceLoader implements ResourceLoader {
 			createSubagentExtensionFactory({}),
 			createWorkflowExtensionFactory({
 				getMaxConcurrent: () => this.settingsManager.getWorkflowMaxConcurrentAgents(),
+				getStaggerMs: () => this.settingsManager.getWorkflowPrefixStaggerMs(),
 				getAgentDir: () => getAgentDir(),
 				getKeywordTrigger: () => this.settingsManager.getWorkflowKeywordTrigger(),
+				getCwd: () => this.cwd,
+				getPackageWorkflowPaths: () => this.packageWorkflowPaths,
 			}),
 			...this.injectedExtensionFactories,
 		];
@@ -417,6 +422,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		// connecting the server list captured at construction time).
 		this.rebuildInlineExtensionFactories();
 		const resolvedPaths = await this.packageManager.resolve();
+		this.packageWorkflowPaths = resolvedPaths.workflows.filter((r) => r.enabled).map((r) => r.path);
 		const cliExtensionPaths = await this.packageManager.resolveExtensionSources(this.additionalExtensionPaths, {
 			temporary: true,
 		});
@@ -556,6 +562,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 	private async loadCurrentExtensionSet(options: { includeInlineFactories: boolean }): Promise<LoadExtensionsResult> {
 		const resolvedPaths = await this.packageManager.resolve();
+		this.packageWorkflowPaths = resolvedPaths.workflows.filter((r) => r.enabled).map((r) => r.path);
 		const cliExtensionPaths = await this.packageManager.resolveExtensionSources(this.additionalExtensionPaths, {
 			temporary: true,
 		});

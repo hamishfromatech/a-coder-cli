@@ -419,6 +419,8 @@ export type ExtensionUiRequestEvent =
 			timeout?: number;
 			kind?: "permission";
 			toolName?: string;
+			/** Present on run_workflow permission prompts: workflow name + declared phases. */
+			workflow?: { name: string; phases: string[] };
 			sessionFile?: string;
 	  }
 	| {
@@ -694,6 +696,10 @@ export const getPermissionMode = () =>
 	sendCommand({ type: "get_permission_mode" }) as Promise<{ mode: PermissionMode }>;
 export const setPermissionMode = (mode: PermissionMode) =>
 	sendCommand({ type: "set_permission_mode", mode });
+
+/** Grant session-scoped allow rules (the approval card's "Always allow"). */
+export const addSessionAllowRules = (rules: string[]) =>
+	sendCommand({ type: "add_session_allow_rules", rules }) as Promise<{ success: boolean }>
 
 // ---- auth ----
 export const reloadAuth = () => sendCommand({ type: "reload_auth" });

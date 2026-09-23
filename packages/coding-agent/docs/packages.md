@@ -160,6 +160,7 @@ If no `a-coder-cli` manifest is present, a-coder-cli auto-discovers resources fr
 - `skills/` recursively finds `SKILL.md` folders and loads top-level `.md` files as skills
 - `prompts/` loads `.md` files
 - `themes/` loads `.json` files
+- `workflows/` loads `.js` workflow scripts (run with `run_workflow` or as `/<name>`; project and personal workflows win name collisions over package ones)
 
 ## Dependencies
 

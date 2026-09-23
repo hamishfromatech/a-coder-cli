@@ -822,6 +822,10 @@ export default function App() {
 								prefill: "prefill" in req ? req.prefill : undefined,
 							kind: "kind" in req ? req.kind : undefined,
 							toolName: "toolName" in req ? req.toolName : undefined,
+							workflow:
+								"workflow" in req && req.workflow
+									? { name: req.workflow.name, phases: req.workflow.phases }
+									: undefined,
 							sessionFile: "sessionFile" in req ? req.sessionFile : undefined,
 							}).then((response) => {
 								const cancelled = response.cancelled === true;

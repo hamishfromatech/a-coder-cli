@@ -1,231 +1,246 @@
 /**
- * Workflow SOP discovery and loading.
+ * Workflow script discovery and loading.
  *
- * Workflows live in the same shape as Claude Code's saved workflows, adapted
- * to our config layout:
- *   project: `<cwd>/.a-coder-cli/workflows/*.sop.md`  (shared with the repo; wins collisions)
- *   user:    `<agentDir>/workflows/*.sop.md`           (personal, every project)
+ * A workflow is a plain JavaScript file with `export const meta = { name,
+ * description }` followed by a top-level-await body that orchestrates
+ * subagents through the runtime primitives (see runtime.ts). Scripts live in
+ * the same shape as Claude Code's saved workflows, adapted to our config
+ * layout:
+ *   project: `<cwd>/.a-coder-cli/workflows/*.js`  (shared with the repo; wins collisions)
+ *   user:    `<agentDir>/workflows/*.js`           (personal, every project)
  *
- * A workflow file is an ordinary SOP (validated by sop.ts on skill load) whose
- * frontmatter adds a machine-readable `workflow.steps` array. Loading here is
- * strict about step wiring — a workflow whose references dangle would fail
- * mid-run, so those surface as load diagnostics instead.
+ * Loading is strict about the static contract — a script that uses import(),
+ * require, or a broken/missing meta block would fail mid-run or register a
+ * broken command, so those surface as load diagnostics instead.
  */
 
 import { existsSync, readdirSync, readFileSync } from "fs";
 import { resolve } from "path";
 import { CONFIG_DIR_NAME } from "../../config.ts";
-import { parseFrontmatter } from "../../utils/frontmatter.ts";
 import type { ResourceDiagnostic } from "../diagnostics.ts";
-import type { WorkflowPredicate, WorkflowSpec, WorkflowStep } from "./types.ts";
+import { staticScriptViolations } from "./runtime.ts";
+import type { WorkflowSource, WorkflowSpec } from "./types.ts";
 
-const WORKFLOW_FILE_SUFFIX = ".sop.md";
+const WORKFLOW_FILE_SUFFIX = ".js";
 
-function parsePredicate(value: unknown, diagnostics: ResourceDiagnostic[]): WorkflowPredicate | undefined {
-	if (typeof value !== "object" || value === null) {
-		diagnostics.push({ type: "warning", message: `workflow 'until' must be an object`, path: undefined });
-		return undefined;
-	}
-	const p = value as WorkflowPredicate;
-	if (p.equals === undefined && p.notEquals === undefined && p.exists === undefined) {
-		diagnostics.push({
-			type: "warning",
-			message: `workflow 'until' predicate has no criterion (equals / notEquals / exists)`,
-			path: undefined,
-		});
-		return undefined;
-	}
-	return p;
+interface WorkflowMeta {
+	name: string;
+	description: string;
+	phases?: string[];
 }
 
-/** Parse + validate the `workflow.steps` frontmatter into a WorkflowSpec. */
+/**
+ * Extract and evaluate the `export const meta = {...}` block. The literal must
+ * evaluate to a plain object with a kebab-case `name`; anything else (missing,
+ * non-literal, malformed) fails the file with a diagnostic.
+ */
+export function extractWorkflowMeta(source: string): { meta?: WorkflowMeta; error?: string } {
+	const marker = /(?:^|\n)\s*export\s+const\s+meta\s*=\s*/.exec(source);
+	if (!marker) return { error: "workflow scripts must start with `export const meta = { name, description }`" };
+
+	const literal = matchBracedLiteral(source, marker.index + marker[0].length);
+	if (!literal) return { error: "meta block is not a plain object literal" };
+
+	try {
+		const value = new Function(`return (${literal})`)() as unknown;
+		if (typeof value !== "object" || value === null || Array.isArray(value)) {
+			return { error: "meta must be a plain object literal" };
+		}
+		const record = value as Record<string, unknown>;
+		const name = typeof record.name === "string" ? record.name : undefined;
+		if (!name || !/^[a-z][a-z0-9_-]*$/.test(name)) {
+			return { error: "meta.name must be a lowercase kebab-case string" };
+		}
+		const description = typeof record.description === "string" ? record.description : "";
+
+		let phases: string[] | undefined;
+		if (record.phases !== undefined) {
+			if (!Array.isArray(record.phases) || record.phases.some((p) => typeof p !== "string" || p.length === 0)) {
+				return { error: "meta.phases must be an array of non-empty strings" };
+			}
+			phases = [...new Set(record.phases as string[])];
+		}
+
+		return { meta: { name, description, ...(phases !== undefined ? { phases } : {}) } };
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		return { error: `meta block must be a plain literal: ${message}` };
+	}
+}
+
+/**
+ * Match a `{...}` literal starting at `start`, tracking strings, template
+ * literals, comments, and escapes. Returns the literal including braces, or
+ * undefined when unbalanced (non-literal meta blocks fail evaluation instead).
+ */
+function matchBracedLiteral(source: string, start: number): string | undefined {
+	if (source[start] !== "{") return undefined;
+	let depth = 0;
+	let inString: string | undefined;
+	for (let i = start; i < source.length; i++) {
+		const char = source[i];
+		if (inString) {
+			if (char === "\\" && inString !== "`") {
+				i++; // skip escaped character
+				continue;
+			}
+			if (inString === "`" && char === "$" && source[i + 1] === "{") {
+				// template expression: skip to its closing brace, tracking strings inside
+				const end = skipTemplateExpression(source, i + 2);
+				if (end === undefined) return undefined;
+				i = end;
+				continue;
+			}
+			if (char === inString) inString = undefined;
+			continue;
+		}
+		if (char === '"' || char === "'" || char === "`") {
+			inString = char;
+			continue;
+		}
+		if (char === "/" && source[i + 1] === "/") {
+			const newline = source.indexOf("\n", i);
+			if (newline === -1) return undefined;
+			i = newline;
+			continue;
+		}
+		if (char === "/" && source[i + 1] === "*") {
+			const end = source.indexOf("*/", i + 2);
+			if (end === -1) return undefined;
+			i = end + 1;
+			continue;
+		}
+		if (char === "{") depth++;
+		if (char === "}") {
+			depth--;
+			if (depth === 0) return source.slice(start, i + 1);
+		}
+	}
+	return undefined;
+}
+
+/** Skip a `${...}` expression inside a template literal; returns the `}` index. */
+function skipTemplateExpression(source: string, start: number): number | undefined {
+	let depth = 1;
+	let inString: string | undefined;
+	for (let i = start; i < source.length; i++) {
+		const char = source[i];
+		if (inString) {
+			if (char === "\\") {
+				i++;
+				continue;
+			}
+			if (char === inString) inString = undefined;
+			continue;
+		}
+		if (char === '"' || char === "'" || char === "`") {
+			inString = char;
+			continue;
+		}
+		if (char === "{") depth++;
+		if (char === "}") {
+			depth--;
+			if (depth === 0) return i;
+		}
+	}
+	return undefined;
+}
+
+/** Parse + validate one workflow script into a WorkflowSpec. */
 export function parseWorkflowSpec(
-	rawContent: string,
+	content: string,
 	filePath: string,
-	source: "project" | "user",
+	source: WorkflowSource,
 	diagnostics: ResourceDiagnostic[],
 ): WorkflowSpec | null {
-	const { frontmatter } = parseFrontmatter<Record<string, unknown>>(rawContent);
-	const name = typeof frontmatter.name === "string" && frontmatter.name ? frontmatter.name : undefined;
-	const description = typeof frontmatter.description === "string" ? frontmatter.description : "";
+	const violations = staticScriptViolations(content);
+	if (violations.length > 0) {
+		diagnostics.push({ type: "warning", message: `${violations[0]} (${filePath})`, path: filePath });
+		return null;
+	}
 
-	const workflow = frontmatter.workflow;
-	if (typeof workflow !== "object" || workflow === null) {
+	const extracted = extractWorkflowMeta(content);
+	if (!extracted.meta) {
 		diagnostics.push({
 			type: "warning",
-			message: "workflow file has no 'workflow:' frontmatter block",
+			message: `${extracted.error ?? "invalid meta block"} (${filePath})`,
 			path: filePath,
 		});
 		return null;
 	}
-	const steps = (workflow as Record<string, unknown>).steps;
-	if (!Array.isArray(steps) || steps.length === 0) {
-		diagnostics.push({ type: "warning", message: "workflow.steps is empty or missing", path: filePath });
-		return null;
-	}
-
-	const parsed: WorkflowStep[] = [];
-	const ids = new Set<string>();
-	let valid = true;
-
-	for (const [index, raw] of steps.entries()) {
-		if (typeof raw !== "object" || raw === null) {
-			diagnostics.push({ type: "warning", message: `workflow.steps[${index}] is not an object`, path: filePath });
-			valid = false;
-			continue;
-		}
-		const step = raw as Record<string, unknown>;
-		const id = typeof step.id === "string" ? step.id : undefined;
-		const type = step.type;
-		const prompt = typeof step.prompt === "string" ? step.prompt : undefined;
-
-		if (!id || !/^[a-z][a-z0-9_-]*$/.test(id)) {
-			diagnostics.push({
-				type: "warning",
-				message: `workflow.steps[${index}].id must be a lowercase kebab-case string`,
-				path: filePath,
-			});
-			valid = false;
-			continue;
-		}
-		if (ids.has(id)) {
-			diagnostics.push({ type: "warning", message: `duplicate workflow step id "${id}"`, path: filePath });
-			valid = false;
-			continue;
-		}
-		if (type !== "run" && type !== "fan-out") {
-			diagnostics.push({
-				type: "warning",
-				message: `workflow step "${id}" has unknown type "${String(type)}" (expected "run" or "fan-out")`,
-				path: filePath,
-			});
-			valid = false;
-			continue;
-		}
-		if (!prompt) {
-			diagnostics.push({ type: "warning", message: `workflow step "${id}" has no prompt`, path: filePath });
-			valid = false;
-			continue;
-		}
-
-		let over: string | undefined;
-		if (type === "fan-out") {
-			over = typeof step.over === "string" ? step.over : undefined;
-			if (!over) {
-				diagnostics.push({ type: "warning", message: `fan-out step "${id}" is missing 'over'`, path: filePath });
-				valid = false;
-				continue;
-			}
-			const overStep = over.split(".")[0];
-			if (!ids.has(over) && !parsed.some((p) => p.id === overStep)) {
-				diagnostics.push({
-					type: "warning",
-					message: `fan-out step "${id}" references "${over}", which is not a previous step`,
-					path: filePath,
-				});
-				valid = false;
-				continue;
-			}
-		}
-
-		let until: WorkflowPredicate | undefined;
-		if (step.until !== undefined) {
-			const parsedPredicate = parsePredicate(step.until, diagnostics);
-			if (!parsedPredicate) {
-				valid = false;
-			} else {
-				until = parsedPredicate;
-			}
-		}
-
-		ids.add(id);
-		parsed.push({
-			id,
-			type,
-			prompt,
-			...(over !== undefined ? { over } : {}),
-			...(typeof step.label === "string" ? { label: step.label } : {}),
-			...(typeof step.model === "string" ? { model: step.model } : {}),
-			...(typeof step.agent_type === "string" ? { agent_type: step.agent_type } : {}),
-			...(step.schema && typeof step.schema === "object" ? { schema: step.schema as Record<string, unknown> } : {}),
-			...(until !== undefined ? { until } : {}),
-			...(typeof step.max_rounds === "number" && step.max_rounds > 0
-				? { max_rounds: Math.floor(step.max_rounds) }
-				: {}),
-			...(typeof step.stop_on_no_progress === "number" && step.stop_on_no_progress > 0
-				? { stop_on_no_progress: Math.floor(step.stop_on_no_progress) }
-				: {}),
-		});
-	}
-
-	if (!valid || parsed.length === 0) return null;
 
 	return {
-		name:
-			name ??
-			filePath
-				.replace(/\\/g, "/")
-				.split("/")
-				.pop()!
-				.replace(/\.sop\.md$/, ""),
-		description,
+		name: extracted.meta.name,
+		description: extracted.meta.description,
+		...(extracted.meta.phases !== undefined ? { phases: extracted.meta.phases } : {}),
 		filePath,
 		source,
-		steps: parsed,
+		content,
 	};
 }
 
-/** Discover workflow SOPs from the project and user directories. */
-export function loadWorkflows(options: { cwd: string; agentDir: string }): {
+/**
+ * Discover workflow scripts from the project and user directories, plus any
+ * extra files (package-provided workflows) given as absolute paths. Standard
+ * dirs win name collisions over package files.
+ */
+export function loadWorkflows(options: { cwd: string; agentDir: string; extraFiles?: string[] }): {
 	workflows: WorkflowSpec[];
 	diagnostics: ResourceDiagnostic[];
 } {
 	const diagnostics: ResourceDiagnostic[] = [];
 	const byName = new Map<string, WorkflowSpec>();
 
-	const scan = (dir: string, source: "project" | "user") => {
+	const addFile = (filePath: string, source: WorkflowSource) => {
+		try {
+			const content = readFileSync(filePath, "utf-8");
+			const spec = parseWorkflowSpec(content, filePath, source, diagnostics);
+			if (!spec) return;
+			const existing = byName.get(spec.name);
+			if (existing) {
+				diagnostics.push({
+					type: "collision",
+					message: `workflow "${spec.name}" collision`,
+					path: filePath,
+					collision: {
+						resourceType: "extension",
+						name: spec.name,
+						winnerPath: existing.filePath,
+						loserPath: filePath,
+					},
+				});
+				// Project wins over user wins over package; on same-source
+				// collisions first wins (sorted).
+				if (existing.source === "project" || source !== "project") return;
+				byName.delete(spec.name);
+			}
+			byName.set(spec.name, spec);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			diagnostics.push({ type: "warning", message, path: filePath });
+		}
+	};
+
+	const scanDir = (dir: string, source: "project" | "user") => {
 		if (!existsSync(dir)) return;
 		let entries: string[];
 		try {
 			entries = readdirSync(dir)
-				.filter((f) => f.endsWith(WORKFLOW_FILE_SUFFIX))
+				.filter((f) => f.endsWith(WORKFLOW_FILE_SUFFIX) && !f.endsWith(".test.js"))
 				.sort();
 		} catch {
 			return;
 		}
 		for (const file of entries) {
-			const filePath = resolve(dir, file);
-			try {
-				const raw = readFileSync(filePath, "utf-8");
-				const spec = parseWorkflowSpec(raw, filePath, source, diagnostics);
-				if (!spec) continue;
-				const existing = byName.get(spec.name);
-				if (existing) {
-					diagnostics.push({
-						type: "collision",
-						message: `workflow "${spec.name}" collision`,
-						path: filePath,
-						collision: {
-							resourceType: "extension",
-							name: spec.name,
-							winnerPath: existing.filePath,
-							loserPath: filePath,
-						},
-					});
-					// Project wins over user; on same-source collisions first wins (sorted).
-					if (existing.source === "project" || source !== "project") continue;
-					byName.delete(spec.name);
-				}
-				byName.set(spec.name, spec);
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				diagnostics.push({ type: "warning", message, path: filePath });
-			}
+			addFile(resolve(dir, file), source);
 		}
 	};
 
-	scan(resolve(options.cwd, CONFIG_DIR_NAME, "workflows"), "project");
-	scan(resolve(options.agentDir, "workflows"), "user");
+	scanDir(resolve(options.cwd, CONFIG_DIR_NAME, "workflows"), "project");
+	scanDir(resolve(options.agentDir, "workflows"), "user");
+	for (const file of (options.extraFiles ?? []).filter((f) => !f.endsWith(".test.js")).sort()) {
+		addFile(file, "package");
+	}
 
 	return { workflows: Array.from(byName.values()), diagnostics };
 }

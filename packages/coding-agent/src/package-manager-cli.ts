@@ -1136,7 +1136,7 @@ export async function handlePackageCommand(
 
 export type ResourcesCommand = "resolve" | "install" | "remove" | "update" | "list" | "toggle";
 
-type ResourcesResourceType = "extensions" | "skills" | "prompts" | "themes";
+type ResourcesResourceType = "extensions" | "skills" | "prompts" | "themes" | "workflows";
 
 interface ResourcesCommandOptions {
 	command: ResourcesCommand;
@@ -1262,11 +1262,13 @@ function toggleTopLevelResource(
 		else if (resourceType === "skills") settingsManager.setProjectSkillPaths(updated);
 		else if (resourceType === "prompts") settingsManager.setProjectPromptTemplatePaths(updated);
 		else if (resourceType === "themes") settingsManager.setProjectThemePaths(updated);
+		else if (resourceType === "workflows") settingsManager.setProjectWorkflowPaths(updated);
 	} else {
 		if (resourceType === "extensions") settingsManager.setExtensionPaths(updated);
 		else if (resourceType === "skills") settingsManager.setSkillPaths(updated);
 		else if (resourceType === "prompts") settingsManager.setPromptTemplatePaths(updated);
 		else if (resourceType === "themes") settingsManager.setThemePaths(updated);
+		else if (resourceType === "workflows") settingsManager.setWorkflowPaths(updated);
 	}
 }
 
@@ -1308,7 +1310,7 @@ function togglePackageResource(
 	});
 	updated.push(enabled ? `+${pattern}` : `-${pattern}`);
 
-	const hasFilters = (["extensions", "skills", "prompts", "themes"] as const).some(
+	const hasFilters = (["extensions", "skills", "prompts", "themes", "workflows"] as const).some(
 		(k) => (pkg as Record<string, unknown>)[k] !== undefined,
 	);
 	if (!hasFilters) {

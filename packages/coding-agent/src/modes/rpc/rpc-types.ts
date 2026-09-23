@@ -64,6 +64,9 @@ export type RpcCommand =
 	| { id?: string; type: "set_permission_mode"; mode: PermissionMode }
 	| { id?: string; type: "get_permission_mode" }
 
+	// Session allow rules (e.g. the desktop approval card's "Always allow")
+	| { id?: string; type: "add_session_allow_rules"; rules: string[] }
+
 	// Plan mode
 	| { id?: string; type: "set_plan_mode"; enabled: boolean }
 	| { id?: string; type: "get_plan_mode" }
@@ -299,6 +302,7 @@ export type RpcResponse =
 			success: true;
 			data: { mode: PermissionMode };
 	  }
+	| { id?: string; type: "response"; command: "add_session_allow_rules"; success: true }
 
 	// Auth
 	| { id?: string; type: "response"; command: "reload_auth"; success: true }
@@ -445,9 +449,12 @@ export type RpcExtensionUIRequest =
 			timeout?: number;
 			/** "permission" marks a built-in tool-approval prompt (vs a generic extension
 			 * confirm). Desktop clients use it to render an inline approval bar instead
-			 * of a modal. `toolName` names the tool awaiting approval. */
+			 * of a modal. `toolName` names the tool awaiting approval. For run_workflow
+			 * prompts, `workflow` carries the workflow name and declared phases so the
+			 * desktop can render a workflow-specific approval card. */
 			kind?: "permission";
 			toolName?: string;
+			workflow?: { name: string; phases: string[] };
 	  }
 	| {
 			type: "extension_ui_request";

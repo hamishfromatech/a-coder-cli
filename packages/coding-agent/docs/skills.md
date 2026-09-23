@@ -40,7 +40,7 @@ Discovery rules:
 
 Disable discovery with `--no-skills` (explicit `--skill` paths still load).
 
-**SOPs:** a skill file named `*.sop.md` is treated as a Standard Operating Procedure — a parameterized, constraint-based workflow the model executes with discipline; a `workflow:` frontmatter block turns it into a declarative multi-agent workflow the `run_workflow` tool executes over background subagents. See [SOPs & Workflows](sops.md).
+**SOPs:** a skill file named `*.sop.md` is treated as a Standard Operating Procedure — a parameterized, constraint-based workflow the model executes with discipline. See [SOPs & Workflows](sops.md). For multi-agent orchestration, workflow scripts (`.js` files with a meta block) are executed by the `run_workflow` tool over background subagents and run as `/<name>` slash commands.
 
 ### Using Skills from Other Harnesses
 

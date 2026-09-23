@@ -71,6 +71,7 @@ export interface ResolvedPaths {
 	skills: ResolvedResource[];
 	prompts: ResolvedResource[];
 	themes: ResolvedResource[];
+	workflows: ResolvedResource[];
 }
 
 export type MissingSourceAction = "install" | "skip" | "error";
@@ -160,6 +161,7 @@ interface PiManifest {
 	skills?: string[];
 	prompts?: string[];
 	themes?: string[];
+	workflows?: string[];
 }
 
 interface ResourceAccumulator {
@@ -167,6 +169,7 @@ interface ResourceAccumulator {
 	skills: Map<string, { metadata: PathMetadata; enabled: boolean }>;
 	prompts: Map<string, { metadata: PathMetadata; enabled: boolean }>;
 	themes: Map<string, { metadata: PathMetadata; enabled: boolean }>;
+	workflows: Map<string, { metadata: PathMetadata; enabled: boolean }>;
 }
 
 /**
@@ -192,17 +195,19 @@ interface PackageFilter {
 	skills?: string[];
 	prompts?: string[];
 	themes?: string[];
+	workflows?: string[];
 }
 
-type ResourceType = "extensions" | "skills" | "prompts" | "themes";
+type ResourceType = "extensions" | "skills" | "prompts" | "themes" | "workflows";
 
-const RESOURCE_TYPES: ResourceType[] = ["extensions", "skills", "prompts", "themes"];
+const RESOURCE_TYPES: ResourceType[] = ["extensions", "skills", "prompts", "themes", "workflows"];
 
 const FILE_PATTERNS: Record<ResourceType, RegExp> = {
 	extensions: /\.(ts|js)$/,
 	skills: /\.md$/,
 	prompts: /\.md$/,
 	themes: /\.json$/,
+	workflows: /\.js$/,
 };
 
 const IGNORE_FILE_NAMES = [".gitignore", ".ignore", ".fdignore"];
@@ -2460,6 +2465,8 @@ export class DefaultPackageManager implements PackageManager {
 				return accumulator.prompts;
 			case "themes":
 				return accumulator.themes;
+			case "workflows":
+				return accumulator.workflows;
 			default:
 				throw new Error(`Unknown resource type: ${resourceType}`);
 		}
@@ -2483,6 +2490,7 @@ export class DefaultPackageManager implements PackageManager {
 			skills: new Map(),
 			prompts: new Map(),
 			themes: new Map(),
+			workflows: new Map(),
 		};
 	}
 
@@ -2511,6 +2519,7 @@ export class DefaultPackageManager implements PackageManager {
 			skills: mapToResolved(accumulator.skills),
 			prompts: mapToResolved(accumulator.prompts),
 			themes: mapToResolved(accumulator.themes),
+			workflows: mapToResolved(accumulator.workflows),
 		};
 	}
 

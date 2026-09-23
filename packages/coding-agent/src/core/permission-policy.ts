@@ -116,6 +116,11 @@ export function toolCallMatchValue(toolName: string, args: Record<string, unknow
 		case "ls": {
 			return stringArg("path") ?? stringArg("file_path") ?? "";
 		}
+		case "run_workflow": {
+			// Arg-scoped rules match the workflow name: `run_workflow(audit-routes)`
+			// pre-approves one saved workflow, `run_workflow(*)` every workflow.
+			return stringArg("workflow") ?? "";
+		}
 		default: {
 			return JSON.stringify(record);
 		}

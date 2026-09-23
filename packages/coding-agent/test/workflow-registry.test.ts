@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-	clearWorkflowStopHandler,
+	clearWorkflowHandlers,
 	getWorkflowRunSummaries,
+	pauseWorkflowRun,
+	registerWorkflowPauseHandler,
 	registerWorkflowStopHandler,
 	removeWorkflowRun,
 	stopWorkflowRun,
@@ -14,12 +16,14 @@ function makeState(id: string, overrides?: Partial<WorkflowRunState>): WorkflowR
 	return {
 		id,
 		workflowName: "sweep",
-		filePath: "/tmp/sweep.sop.md",
 		status: "running",
 		startedAt: 1000,
 		updatedAt: 1000,
-		steps: {},
 		agentCount: 0,
+		phases: [],
+		steps: {},
+		agents: [],
+		scriptContent: "export const meta = { name: 'sweep', description: '' }",
 		...overrides,
 	};
 }
@@ -30,22 +34,47 @@ afterEach(() => {
 });
 
 describe("workflow run registry", () => {
-	it("publishes summaries that strip step outputs", () => {
+	it("publishes summaries that strip agent prompts and results", () => {
 		updateWorkflowRun(
 			makeState("r1", {
-				agentCount: 4,
+				agentCount: 2,
+				phases: ["discover", "verify"],
 				steps: {
-					discover: { stepId: "discover", rounds: 1, outputs: [{ files: ["a", "b"] }], lastPrompt: "list" },
-					audit: { stepId: "audit", rounds: 2, outputs: [null, null], error: "boom" },
+					discover: { stepId: "discover", rounds: 1 },
+					verify: { stepId: "verify", rounds: 1, error: "agent 1 failed" },
 				},
+				agents: [
+					{
+						seq: 0,
+						prompt: "list every file",
+						label: "list",
+						phase: "discover",
+						status: "completed",
+						result: { files: ["a", "b"] },
+					},
+					{
+						seq: 1,
+						prompt: "verify a",
+						label: "verify",
+						phase: "verify",
+						status: "failed",
+						error: "agent 1 failed",
+					},
+				],
 			}),
 		);
 		const runs = getWorkflowRunSummaries();
 		expect(runs.map((r) => r.id)).toEqual(["r1"]);
 		const run = runs[0]!;
-		expect(run.agentCount).toBe(4);
+		expect(run.agentCount).toBe(2);
+		expect(run.phases).toEqual(["discover", "verify"]);
 		expect(run.steps.discover).toEqual({ stepId: "discover", rounds: 1 });
-		expect(run.steps.audit).toEqual({ stepId: "audit", rounds: 2, error: "boom" });
+		expect(run.steps.verify).toEqual({ stepId: "verify", rounds: 1, error: "agent 1 failed" });
+		// Prompts and results are stripped; labels and statuses are kept.
+		const summary = JSON.stringify(run);
+		expect(summary).not.toContain("list every file");
+		expect(summary).not.toContain('"result"');
+		expect(run.agents[0]).toMatchObject({ seq: 0, label: "list", phase: "discover", status: "completed" });
 	});
 
 	it("notifies subscribers with the summary and stops on unsubscribe", () => {
@@ -61,28 +90,36 @@ describe("workflow run registry", () => {
 		expect(listener).toHaveBeenCalledTimes(1);
 	});
 
-	it("routes stop requests through the registered handler and clears it", () => {
+	it("routes stop and pause requests through the registered handlers and clears them", () => {
 		const stop = vi.fn();
+		const pause = vi.fn();
 		updateWorkflowRun(makeState("r1"));
 		registerWorkflowStopHandler("r1", stop);
+		registerWorkflowPauseHandler("r1", pause);
 		expect(stopWorkflowRun("r1")).toBe(true);
 		expect(stop).toHaveBeenCalledTimes(1);
 		// The handler is consumed: a second stop is a no-op.
 		expect(stopWorkflowRun("r1")).toBe(false);
 
 		registerWorkflowStopHandler("r1", stop);
-		clearWorkflowStopHandler("r1");
+		registerWorkflowPauseHandler("r1", pause);
+		expect(pauseWorkflowRun("r1", true)).toBe(true);
+		expect(pause).toHaveBeenCalledWith(true);
+		clearWorkflowHandlers("r1");
 		expect(stopWorkflowRun("r1")).toBe(false);
+		expect(pauseWorkflowRun("r1", false)).toBe(false);
 		expect(stopWorkflowRun("ghost")).toBe(false);
 	});
 
 	it("keeps the summary's terminal status after the run ends", () => {
 		updateWorkflowRun(makeState("r1"));
 		registerWorkflowStopHandler("r1", () => {});
-		updateWorkflowRun(makeState("r1", { status: "failed", error: "step audit failed", agentCount: 3 }));
+		updateWorkflowRun(
+			makeState("r1", { status: "failed", error: 'agent "audit" failed schema validation', agentCount: 3 }),
+		);
 		const run = getWorkflowRunSummaries()[0]!;
 		expect(run.status).toBe("failed");
-		expect(run.error).toBe("step audit failed");
+		expect(run.error).toBe('agent "audit" failed schema validation');
 		removeWorkflowRun("r1");
 		expect(getWorkflowRunSummaries()).toHaveLength(0);
 	});

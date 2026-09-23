@@ -513,7 +513,7 @@ Response:
 
 #### stop_workflow_run
 
-Stop a running declarative workflow (see `docs/sops.md`, "Workflows"): aborts the run's controller and kills its live sub-agents. Completed steps keep their persisted results and can be replayed with `run_workflow`'s `resume` parameter.
+Stop a running workflow (see `docs/sops.md`, "Workflows"): aborts the run's controller and kills its live sub-agents. Completed agents keep their persisted results and can be replayed with `run_workflow`'s `resume` parameter.
 
 ```json
 {"type": "stop_workflow_run", "runId": "audit-routes-1727000000000"}
@@ -1152,7 +1152,7 @@ Live snapshot of backgrounded bash processes (bash with `background: true`):
 
 #### workflows_update
 
-Live snapshot of declarative workflow runs (see `docs/sops.md`, "Workflows"). Summaries are output-free: per-run status, agent count, and per-step rounds/errors.
+Live snapshot of workflow runs (see `docs/sops.md`, "Workflows"). Summaries are output-free: per-run status, agent count, per-phase rounds/errors, and per-agent status (no prompts or results).
 
 ```json
 {

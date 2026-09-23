@@ -84,9 +84,9 @@ export interface CloudTask {
 export interface SpawnTaskOptions {
 	repo: string;
 	prompt: string;
-	/** Saved workflow name (or absolute .sop.md path) to run instead of working turn by turn. */
+	/** Saved workflow name (or absolute .js script path) to run instead of working turn by turn. */
 	workflow?: string;
-	/** Structured invocation input for the workflow's args template references. */
+	/** Structured invocation input for the workflow's args global. */
 	workflowArgs?: Record<string, unknown>;
 	baseBranch?: string;
 	provider?: string;

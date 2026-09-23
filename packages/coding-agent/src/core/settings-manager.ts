@@ -9,7 +9,12 @@ import { normalizePath, resolvePath } from "../utils/paths.ts";
 import { DEFAULT_HTTP_IDLE_TIMEOUT_MS, parseHttpIdleTimeoutMs } from "./http-dispatcher.ts";
 import type { McpServerConfig } from "./mcp/types.ts";
 import { defaultStderrSuppressPatterns } from "./mcp/types.ts";
-import { WORKFLOW_DEFAULT_MAX_CONCURRENT, WORKFLOW_MAX_CONCURRENT_LIMIT } from "./workflows/types.ts";
+import {
+	WORKFLOW_DEFAULT_MAX_CONCURRENT,
+	WORKFLOW_DEFAULT_STAGGER_MS,
+	WORKFLOW_MAX_CONCURRENT_LIMIT,
+	WORKFLOW_MAX_STAGGER_MS,
+} from "./workflows/types.ts";
 
 export interface LocalProviderSettings {
 	lmStudioBaseUrl?: string;
@@ -154,6 +159,7 @@ export type PackageSource =
 			skills?: string[];
 			prompts?: string[];
 			themes?: string[];
+			workflows?: string[];
 	  };
 
 export type AutoUpdateMode = "off" | "auto";
@@ -189,6 +195,7 @@ export interface Settings {
 	skills?: string[]; // Array of local skill file paths or directories
 	prompts?: string[]; // Array of local prompt template paths or directories
 	themes?: string[]; // Array of local theme file paths or directories
+	workflows?: string[]; // Array of local workflow script paths or directories
 	enableSkillCommands?: boolean; // default: true - register skills as /skill:name commands
 	terminal?: TerminalSettings;
 	images?: ImageSettings;
@@ -212,6 +219,7 @@ export interface Settings {
 	httpProxy?: string; // Proxy URL applied as HTTP_PROXY and HTTPS_PROXY for Pi-managed HTTP clients
 	httpIdleTimeoutMs?: number; // HTTP header/body idle timeout in milliseconds; 0 disables it
 	workflowMaxConcurrentAgents?: number; // Max concurrent agents per workflow run (1-256, default 16)
+	workflowPrefixStaggerMs?: number; // Hold matching fan-out agents until the first response begins (0 disables, default 5000)
 	workflowKeywordTrigger?: boolean; // Authoring trigger keyword in typed prompts (default: true)
 	websocketConnectTimeoutMs?: number; // WebSocket connect/open handshake timeout in milliseconds; 0 disables it
 	localProviders?: LocalProviderSettings;
@@ -984,6 +992,19 @@ export class SettingsManager {
 		return this.settings.workflowKeywordTrigger !== false;
 	}
 
+	/**
+	 * How long a fan-out's matching agents are held until the first response
+	 * begins, so siblings' first requests read the shared prompt-cache prefix
+	 * instead of each processing it uncached (0 disables).
+	 */
+	getWorkflowPrefixStaggerMs(): number {
+		const value = this.settings.workflowPrefixStaggerMs;
+		if (typeof value !== "number" || !Number.isFinite(value)) {
+			return WORKFLOW_DEFAULT_STAGGER_MS;
+		}
+		return Math.min(WORKFLOW_MAX_STAGGER_MS, Math.max(0, Math.floor(value)));
+	}
+
 	setWorkflowKeywordTrigger(value: boolean): void {
 		this.globalSettings.workflowKeywordTrigger = value;
 		this.markModified("workflowKeywordTrigger");
@@ -1266,6 +1287,22 @@ export class SettingsManager {
 	setProjectThemePaths(paths: string[]): void {
 		this.updateProjectSettings("themes", (settings) => {
 			settings.themes = paths;
+		});
+	}
+
+	getWorkflowPaths(): string[] {
+		return [...(this.settings.workflows ?? [])];
+	}
+
+	setWorkflowPaths(paths: string[]): void {
+		this.globalSettings.workflows = paths;
+		this.markModified("workflows");
+		this.save();
+	}
+
+	setProjectWorkflowPaths(paths: string[]): void {
+		this.updateProjectSettings("workflows", (settings) => {
+			settings.workflows = paths;
 		});
 	}
 

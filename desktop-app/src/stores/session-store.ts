@@ -20,6 +20,8 @@ export interface UiRequest {
 	 * these as an inline approval bar instead of a modal. */
 	kind?: "permission";
 	toolName?: string;
+	/** Present on run_workflow permission prompts: workflow name + declared phases. */
+	workflow?: { name: string; phases: string[] };
 	/** The session this request belongs to (Phase 2 session-scoped routing).
 	 * Requests for other sessions stay queued until that session is active. */
 	sessionFile?: string;

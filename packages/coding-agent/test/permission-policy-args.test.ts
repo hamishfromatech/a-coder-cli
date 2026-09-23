@@ -25,6 +25,11 @@ describe("toolCallMatchValue", () => {
 		// Unknown shapes serialize the args.
 		expect(toolCallMatchValue("mcp__x__t", { url: "https://x" })).toContain("https://x");
 	});
+
+	it("uses the workflow name for run_workflow", () => {
+		expect(toolCallMatchValue("run_workflow", { workflow: "audit-routes" })).toBe("audit-routes");
+		expect(toolCallMatchValue("run_workflow", {})).toBe("");
+	});
 });
 
 describe("matcherRuleMatches", () => {
@@ -39,6 +44,14 @@ describe("matcherRuleMatches", () => {
 		const parsed = parsePolicyRule("write(*.env)")!;
 		expect(matcherRuleMatches(parsed, "write", { path: "prod.env" })).toBe(true);
 		expect(matcherRuleMatches(parsed, "write", { path: "src/index.ts" })).toBe(false);
+	});
+
+	it("pre-approves one workflow by name or every workflow with a wildcard", () => {
+		const one = parsePolicyRule("run_workflow(audit-routes)")!;
+		expect(matcherRuleMatches(one, "run_workflow", { workflow: "audit-routes", args: { x: 1 } })).toBe(true);
+		expect(matcherRuleMatches(one, "run_workflow", { workflow: "deep-research" })).toBe(false);
+		const all = parsePolicyRule("run_workflow(*)")!;
+		expect(matcherRuleMatches(all, "run_workflow", { workflow: "anything" })).toBe(true);
 	});
 });
 

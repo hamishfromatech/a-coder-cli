@@ -13,7 +13,7 @@ const packageJson = JSON.parse(readFileSync(join(__dirname, "../package.json"), 
 
 function printHelp(): void {
 	console.log(
-		`a-coder-cloud v${packageJson.version}\n\nUsage:\n  a-coder-cloud serve\n  a-coder-cloud spawn <repo> [prompt...] [--workflow <name>] [--args <json>] [--base <branch>] [--model <provider>/<id>] [--timeout <minutes>] [--push]\n  a-coder-cloud status\n  a-coder-cloud review <task-id>\n  a-coder-cloud stop <task-id>\n  a-coder-cloud --version\n\nWith --workflow, the prompt is optional task context; the named workflow (a saved .sop.md on this machine, or an absolute path) is executed by the worker's run_workflow tool.\n`,
+		`a-coder-cloud v${packageJson.version}\n\nUsage:\n  a-coder-cloud serve\n  a-coder-cloud spawn <repo> [prompt...] [--workflow <name>] [--args <json>] [--base <branch>] [--model <provider>/<id>] [--timeout <minutes>] [--push]\n  a-coder-cloud status\n  a-coder-cloud review <task-id>\n  a-coder-cloud stop <task-id>\n  a-coder-cloud --version\n\nWith --workflow, the prompt is optional task context; the named workflow (a saved .js workflow script on this machine, or an absolute path) is executed by the worker's run_workflow tool.\n`,
 	);
 }
 

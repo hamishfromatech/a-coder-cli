@@ -72,9 +72,9 @@ Usage:
       Give the agent a repo and a task. It runs in a container-grade workspace
       under ~/.a-coder/cloud/, committing WIP checkpoints to branch ac-cloud/<task-id>
       as it works — even while your machine is away.
-      With --workflow, the worker executes a saved declarative workflow
-      (.sop.md from this machine, or an absolute path) via run_workflow instead
-      of working turn by turn; the prompt becomes optional task context.
+      With --workflow, the worker executes a saved workflow script (.js from
+      this machine, or an absolute path) via run_workflow instead of working
+      turn by turn; the prompt becomes optional task context.
   a-coder cloud status [--json]
       Overview of all cloud tasks.
   a-coder cloud review <task-id>
