@@ -35,8 +35,8 @@ export function meetingSeat(tableIndex: number, seat: number): Point {
 	if (!table) return { x: 122, y: 18 };
 	const angle = (-90 + seat * 120) * (Math.PI / 180);
 	return {
-		x: table.x + Math.cos(angle) * 9,
-		y: table.y + Math.sin(angle) * 9,
+		x: table.x + Math.cos(angle) * 11.5,
+		y: table.y + Math.sin(angle) * 11.5,
 	};
 }
 

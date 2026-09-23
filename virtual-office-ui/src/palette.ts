@@ -3,6 +3,11 @@
  * views. Status hues follow the same visual grammar as the office events
  * they represent: thinking blue, tool work orange, speech purple, trouble
  * red, presence green.
+ *
+ * Art direction: a warm, crafted studio shell (deep slate walls, wood
+ * furniture) lit by cool daylight through the north windows and warm pools
+ * from the ceiling fixtures. The dark theme leans cozy — amber light against
+ * a cool night shell; the light theme is a calm daylight studio.
  */
 
 export type FloorTheme = "dark" | "light";
@@ -20,31 +25,53 @@ export const STATUS_COLORS = {
 export interface Palette {
 	/* floor */
 	floor: string;
+	/** Soft radial wash over the floor center (warm pool). */
+	floorGlow: string;
+	floorEdge: string;
 	zoneDesk: string;
+	zoneDeskEdge: string;
 	zoneMeeting: string;
+	zoneMeetingEdge: string;
 	zoneLounge: string;
+	zoneLoungeEdge: string;
 	corridor: string;
 	grid: string;
+	/** Shell around the slab + walls. */
 	wall: string;
+	wallDeep: string;
 	wallEdge: string;
+	baseboard: string;
 	/* furniture */
 	wood: string;
 	woodTop: string;
 	chair: string;
 	chairSeat: string;
+	chairBack: string;
 	monitor: string;
 	monitorBezel: string;
 	monitorOn: string;
+	/** Screen glow while the desk is in use. */
+	screenGlow: string;
 	metal: string;
 	table: string;
+	tableTop: string;
 	rug: string;
 	rugRing: string;
 	sofa: string;
+	cushion: string;
 	plant: string;
 	plantDark: string;
 	plantPot: string;
 	whiteboard: string;
 	whiteboardInk: string;
+	/* architecture */
+	windowFrame: string;
+	windowGlass: string;
+	/** Light shafts + pools (used with opacity). */
+	shaft: string;
+	lightPool: string;
+	lampGlow: string;
+	door: string;
 	/* chrome */
 	label: string;
 	labelMuted: string;
@@ -52,74 +79,111 @@ export interface Palette {
 	bubbleBg: string;
 	bubbleText: string;
 	accent: string;
+	accentSoft: string;
 }
 
 export const THEMES: Record<FloorTheme, Palette> = {
 	dark: {
-		floor: "#0e1626",
-		zoneDesk: "#16233b",
-		zoneMeeting: "#131f38",
-		zoneLounge: "#1a1830",
-		corridor: "#0b1120",
-		grid: "#1c2740",
-		wall: "#3b4a63",
-		wallEdge: "#4c5d7a",
-		wood: "#3b4a63",
-		woodTop: "#4c5d7a",
-		chair: "#26324a",
-		chairSeat: "#31405c",
+		floor: "#131c2e",
+		floorGlow: "rgba(255, 190, 120, 0.05)",
+		floorEdge: "#0a1220",
+		zoneDesk: "#18263f",
+		zoneDeskEdge: "#243754",
+		zoneMeeting: "#152340",
+		zoneMeetingEdge: "#233a5e",
+		zoneLounge: "#1d1a33",
+		zoneLoungeEdge: "#2d2850",
+		corridor: "#101a2d",
+		grid: "#22304d",
+		wall: "#2a3650",
+		wallDeep: "#1c2540",
+		wallEdge: "#43537a",
+		baseboard: "#3a4a6e",
+		wood: "#8a6a48",
+		woodTop: "#b08a5c",
+		chair: "#232f4b",
+		chairSeat: "#2e3d5e",
+		chairBack: "#374a70",
 		monitor: "#0d1526",
-		monitorBezel: "#141d31",
+		monitorBezel: "#151f33",
 		monitorOn: "#1d2b45",
-		metal: "#8898a8",
-		table: "#4c5d7a",
-		rug: "#182236",
-		rugRing: "#2c3b5c",
-		sofa: "#31405c",
-		plant: "#2f7d4f",
-		plantDark: "#245c3c",
-		plantPot: "#8a5a3b",
-		whiteboard: "#1b2540",
-		whiteboardInk: "#64748b",
+		screenGlow: "#ffd9a0",
+		metal: "#8fa0b4",
+		table: "#8a6a4a",
+		tableTop: "#b08a5c",
+		rug: "#1f2b46",
+		rugRing: "#3a4f78",
+		sofa: "#3c4f75",
+		cushion: "#d9975f",
+		plant: "#3f9e63",
+		plantDark: "#2c744a",
+		plantPot: "#a06a40",
+		whiteboard: "#e9edf4",
+		whiteboardInk: "#5b6b85",
+		windowFrame: "#1a2438",
+		windowGlass: "#1d3050",
+		shaft: "#7ea6d8",
+		lightPool: "#ffce8f",
+		lampGlow: "#ffc987",
+		door: "#6e5638",
 		label: "#e2e8f0",
 		labelMuted: "#7d8aa3",
 		link: "#38bdf8",
-		bubbleBg: "#101a2e",
+		bubbleBg: "#121c30",
 		bubbleText: "#dbe4f0",
 		accent: "#38bdf8",
+		accentSoft: "rgba(56, 189, 248, 0.16)",
 	},
 	light: {
-		floor: "#eef2f7",
-		zoneDesk: "#f6f4ee",
-		zoneMeeting: "#eaf1fb",
-		zoneLounge: "#f3eff8",
-		corridor: "#e2e8f0",
-		grid: "#dfe6ef",
-		wall: "#93a3b8",
-		wallEdge: "#aebccf",
-		wood: "#c9b28f",
-		woodTop: "#dcc9a7",
-		chair: "#8fa1b8",
-		chairSeat: "#a8b7cc",
-		monitor: "#7d8fa8",
+		floor: "#f1ece2",
+		floorGlow: "rgba(255, 244, 214, 0.5)",
+		floorEdge: "#d8d0c0",
+		zoneDesk: "#faf6ec",
+		zoneDeskEdge: "#e7ddc8",
+		zoneMeeting: "#eaf2fb",
+		zoneMeetingEdge: "#cfdff2",
+		zoneLounge: "#f5eee6",
+		zoneLoungeEdge: "#e2d4c0",
+		corridor: "#e8e2d4",
+		grid: "#e0d8c6",
+		wall: "#b6c2d2",
+		wallDeep: "#93a3b8",
+		wallEdge: "#cdd6e2",
+		baseboard: "#9fb0c4",
+		wood: "#c9a678",
+		woodTop: "#e2c497",
+		chair: "#7d8fa8",
+		chairSeat: "#9aaec6",
+		chairBack: "#b4c4d8",
+		monitor: "#5c6b80",
 		monitorBezel: "#93a3b8",
-		monitorOn: "#eaf2fc",
+		monitorOn: "#f4f8fd",
+		screenGlow: "#ffdf9e",
 		metal: "#aab8c8",
-		table: "#b8c6d8",
-		rug: "#e3eaf3",
-		rugRing: "#c3d2e2",
-		sofa: "#9fb0c6",
-		plant: "#4c9a68",
-		plantDark: "#3b7a51",
-		plantPot: "#c19a6f",
+		table: "#d9b98a",
+		tableTop: "#eccf9f",
+		rug: "#f3ead9",
+		rugRing: "#d9c8a8",
+		sofa: "#8fa3bd",
+		cushion: "#e8a86b",
+		plant: "#57a874",
+		plantDark: "#3f855a",
+		plantPot: "#c98f5c",
 		whiteboard: "#ffffff",
-		whiteboardInk: "#94a3b8",
+		whiteboardInk: "#8fa0b4",
+		windowFrame: "#ffffff",
+		windowGlass: "#cfe6fb",
+		shaft: "#ffe9b8",
+		lightPool: "#fff3d0",
+		lampGlow: "#ffdf9e",
+		door: "#a8815a",
 		label: "#1e293b",
 		labelMuted: "#64748b",
 		link: "#0284c7",
 		bubbleBg: "#ffffff",
 		bubbleText: "#26324a",
 		accent: "#0284c7",
+		accentSoft: "rgba(2, 132, 199, 0.1)",
 	},
 };
 
@@ -139,4 +203,6 @@ export const SCENE_STYLES = `
 @keyframes vo-dot { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
 .vo-steam { animation: vo-steam 2.4s ease-in-out infinite; }
 @keyframes vo-steam { 0% { opacity: 0; transform: translateY(0); } 40% { opacity: .7; } 100% { opacity: 0; transform: translateY(-2.4); } }
+.vo-blink { animation: vo-blink 4.2s ease-in-out infinite; transform-origin: center -1.6px; }
+@keyframes vo-blink { 0%, 94%, 100% { transform: scaleY(1); } 97% { transform: scaleY(.08); } }
 `;

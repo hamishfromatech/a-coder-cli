@@ -1,8 +1,9 @@
 /**
  * Procedural coworker avatars — the engine's Face model (shape + color, user
  * uploads override) drawn as SVG with status-driven features: an animated
- * status ring, walk bob and stand/sit scale, thinking dots, tool chip, and
- * name label.
+ * status ring, walk bob with little feet, blink, thinking dots, tool chip,
+ * and a name label. Faces stay the brand's bold geometry; motion does the
+ * storytelling.
  */
 
 import { STATUS_COLORS, type Palette } from "./palette.ts";
@@ -45,6 +46,9 @@ export function CoworkerAvatar({ visual, now, theme }: { visual: CoworkerVisual;
 	const speaking = visual.bubble !== null && visual.bubble.until > now;
 	const errored = visual.bubble?.text.startsWith("Hit an error") ?? false;
 	const spawnActive = visual.spawnUntil > 0 && now - visual.spawnUntil < SPAWN_MS;
+	const walking = visual.walkT !== null;
+	// Seated coworkers tuck in slightly so pod clusters stay readable.
+	const seatedScale = visual.inMeeting && !walking ? 0.85 : 1;
 
 	const statusColor = errored
 		? STATUS_COLORS.error
@@ -59,8 +63,8 @@ export function CoworkerAvatar({ visual, now, theme }: { visual: CoworkerVisual;
 	// Walk bob: gentle sine across the walk; stand-up / sit-down scale.
 	let bobY = 0;
 	let scale = 1;
-	if (visual.walkT !== null) {
-		const t = visual.walkT;
+	if (walking) {
+		const t = visual.walkT ?? 0;
 		bobY = Math.sin(t * Math.PI * 2 * BOB_CYCLES) * 0.9;
 		if (t < 0.1) scale = 0.9 + t;
 		else if (t > 0.9) {
@@ -68,10 +72,18 @@ export function CoworkerAvatar({ visual, now, theme }: { visual: CoworkerVisual;
 			scale = 1 - 0.06 * Math.sin(tail * Math.PI);
 		}
 	}
+	// Little feet scissor while walking.
+	const stride = walking ? Math.sin((visual.walkT ?? 0) * Math.PI * 2 * BOB_CYCLES) : 0;
+	const feet = walking ? (
+		<g transform={`translate(0, 7.6)`}>
+			<ellipse cx={-1.7 + stride} cy={0.2} rx={1.15} ry={0.75} fill={theme.chairBack} opacity={0.9} />
+			<ellipse cx={1.7 - stride} cy={0.2} rx={1.15} ry={0.75} fill={theme.chairBack} opacity={0.9} />
+		</g>
+	) : null;
 
 	const ring = (() => {
 		if (visual.status === "idle" && !speaking && !errored) {
-			return <circle r={9.2} fill="none" stroke={STATUS_COLORS.idle} strokeWidth={0.55} opacity={0.5} />;
+			return <circle r={9.2} fill="none" stroke={STATUS_COLORS.idle} strokeWidth={0.55} opacity={0.45} />;
 		}
 		const cls =
 			visual.status === "thinking" && !speaking
@@ -101,7 +113,10 @@ export function CoworkerAvatar({ visual, now, theme }: { visual: CoworkerVisual;
 				<circle r={10} fill="none" stroke={STATUS_COLORS.spawn} strokeWidth={0.8} className="vo-spawn" />
 			)}
 			{ring}
-			<g transform={`translate(0, ${bobY.toFixed(2)}) scale(${scale.toFixed(3)})`}>{body(visual, speaking, errored)}</g>
+			<g transform={`translate(0, ${bobY.toFixed(2)}) scale(${(scale * seatedScale).toFixed(3)})`}>
+				{body(visual, speaking, errored)}
+				{feet}
+			</g>
 			{visual.currentTool && !speaking && (
 				<g transform={`translate(${R + 1}, -${R - 1})`}>
 					<rect
@@ -127,17 +142,29 @@ export function CoworkerAvatar({ visual, now, theme }: { visual: CoworkerVisual;
 					))}
 				</g>
 			)}
-			<text
-				x={0}
-				y={R + 6}
-				textAnchor="middle"
-				fontSize={4}
-				fontWeight={600}
-				fill={theme.label}
-				fontFamily="system-ui, sans-serif"
-			>
-				{visual.name}
-			</text>
+			{/* name plate */}
+			<g transform={`translate(0, ${(R + 5.4) * seatedScale})`}>
+				<rect
+					x={-(visual.name.length * 1.28 + 3.4) * seatedScale}
+					y={-3.1 * seatedScale}
+					width={(visual.name.length * 2.56 + 6.8) * seatedScale}
+					height={5.6 * seatedScale}
+					rx={3.5 * seatedScale}
+					fill={theme.bubbleBg}
+					opacity={0.82}
+				/>
+				<text
+					x={0}
+					y={1.3 * seatedScale}
+					textAnchor="middle"
+					fontSize={3.7 * seatedScale}
+					fontWeight={600}
+					fill={theme.label}
+					fontFamily="system-ui, sans-serif"
+				>
+					{visual.name}
+				</text>
+			</g>
 		</g>
 	);
 }
@@ -167,14 +194,24 @@ function body(visual: CoworkerVisual, speaking: boolean, errored: boolean) {
 		}
 		const fill = visual.color;
 		const path = shapePath(visual.shape, r);
-		if (visual.shape === "circle") return <circle cx={0} cy={0} r={r} fill={fill} />;
-		if (visual.shape === "squircle") {
-			return (
-				<rect x={-r * 0.92} y={-r * 0.92} width={r * 1.84} height={r * 1.84} rx={r * 0.55} fill={fill} />
-			);
-		}
-		if (path) return <path d={path} fill={fill} />;
-		return <circle cx={0} cy={0} r={r} fill={fill} />;
+		const shapeNode = (() => {
+			if (visual.shape === "circle") return <circle cx={0} cy={0} r={r} fill={fill} />;
+			if (visual.shape === "squircle") {
+				return (
+					<rect x={-r * 0.92} y={-r * 0.92} width={r * 1.84} height={r * 1.84} rx={r * 0.55} fill={fill} />
+				);
+			}
+			if (path) return <path d={path} fill={fill} />;
+			return <circle cx={0} cy={0} r={r} fill={fill} />;
+		})();
+		// A soft top light + bottom shade gives the flat fill a lit feel.
+		return (
+			<g>
+				{shapeNode}
+				<ellipse cx={-r * 0.32} cy={-r * 0.48} rx={r * 0.52} ry={r * 0.36} fill="#ffffff" opacity={0.16} />
+				<path d={`M ${-r * 0.72} ${r * 0.52} Q 0 ${r * 0.95} ${r * 0.72} ${r * 0.52} Q 0 ${r * 0.78} ${-r * 0.72} ${r * 0.52} Z`} fill="#000000" opacity={0.1} />
+			</g>
+		);
 	})();
 
 	const eyeY = -1.6;
@@ -186,7 +223,7 @@ function body(visual: CoworkerVisual, speaking: boolean, errored: boolean) {
 			<line x1={3.8} y1={eyeY - 1.2} x2={1.6} y2={eyeY + 1} />
 		</g>
 	) : (
-		<g fill="#fff">
+		<g fill="#fff" className="vo-blink">
 			<circle cx={-2.6} cy={eyeY} r={1.05} />
 			<circle cx={2.6} cy={eyeY} r={1.05} />
 		</g>
@@ -199,7 +236,7 @@ function body(visual: CoworkerVisual, speaking: boolean, errored: boolean) {
 	) : visual.status === "thinking" ? (
 		<circle cx={2.4} cy={3.4} r={1.1} fill="none" stroke="#fff" strokeWidth={1} />
 	) : (
-		<line x1={-1.8} y1={3.4} x2={1.8} y2={3.4} stroke="#fff" strokeWidth={1.1} strokeLinecap="round" />
+		<path d="M-1.9,3.2 Q0,4.6 1.9,3.4" stroke="#fff" strokeWidth={1.1} fill="none" strokeLinecap="round" />
 	);
 
 	return (

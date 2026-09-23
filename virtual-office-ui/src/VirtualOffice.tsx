@@ -1,17 +1,36 @@
 /**
  * The virtual office floor — 2D scene.
  *
- * Zones with distinct floor treatments (planked desk area, carpeted meeting
- * pods, lounge rug, tiled corridor), dressed furniture with shadows, curved
- * collaboration links with glow and flowing dashes, and walk-animated
- * coworker avatars with status rings, thinking dots, tool chips, and speech
- * bubbles. Pure derivation from the feed; motion lives in the store's rAF.
+ * A warm, crafted studio: planked workstation floor under soft ceiling pools,
+ * carpeted meeting pods with hanging pendants, a lounge with rug and lamp,
+ * a tiled entry corridor with a welcome mat, and north windows that cast
+ * light shafts across the floor. Curved collaboration links with glow and
+ * flowing dashes, walk-animated coworker avatars with status rings, thinking
+ * dots, tool chips, and speech bubbles. Pure derivation from the feed; motion
+ * lives in the store's rAF.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CoworkerAvatar } from "./avatar.tsx";
-import { Bookshelf, Chair, CoffeeMachine, Desk, MeetingTable, Plant, Sofa, WallClock, Whiteboard } from "./furniture2d.tsx";
-import { CORRIDOR_ENTRANCE, DESK_SLOTS, MEETING_TABLES, SEATS_PER_TABLE, meetingSeat } from "./geometry.ts";
+import {
+	Bookshelf,
+	Chair,
+	CoffeeMachine,
+	CoffeeTable,
+	Desk,
+	Entrance,
+	FloorLamp,
+	MeetingTable,
+	Pendant,
+	Plant,
+	Rug,
+	Sofa,
+	WallArt,
+	WallClock,
+	Whiteboard,
+	Window,
+} from "./furniture2d.tsx";
+import { DESK_SLOTS, MEETING_TABLES, SEATS_PER_TABLE, meetingSeat } from "./geometry.ts";
 import { SCENE_STYLES, THEMES, type Palette } from "./palette.ts";
 import { createFloorStore, useFloor } from "./store.ts";
 import type { VirtualOfficeProps } from "./types.ts";
@@ -39,12 +58,26 @@ function wrapText(text: string, maxChars: number, maxLines: number): string[] {
 	return lines;
 }
 
-function SpeechBubbleTag({ text, color, theme }: { text: string; color: string; theme: Palette }) {
+function SpeechBubbleTag({
+	text,
+	color,
+	theme,
+	originX,
+}: {
+	text: string;
+	color: string;
+	theme: Palette;
+	originX: number;
+}) {
 	const lines = wrapText(text, 34, 3);
 	const width = Math.min(64, Math.max(26, ...lines.map((line) => line.length * 2.1 + 6)));
-	const height = lines.length * 4.4 + 4.5;
+	const height = lines.length * 4.4 + 5;
+	// Keep the bubble inside the floor: nudge it when it would clip an edge.
+	let dx = 0;
+	if (originX - width / 2 < 3) dx = 3 - (originX - width / 2);
+	if (originX + width / 2 > 157) dx = 157 - (originX + width / 2);
 	return (
-		<g className="vo-bubble" transform="translate(0, -21)">
+		<g className="vo-bubble" transform={`translate(${dx.toFixed(2)}, -21)`}>
 			<path
 				d={`M -1.4 ${height / 2 - 0.2} L 0 ${height / 2 + 3.2} L 1.4 ${height / 2 - 0.2} Z`}
 				fill={theme.bubbleBg}
@@ -67,7 +100,7 @@ function SpeechBubbleTag({ text, color, theme }: { text: string; color: string; 
 				<text
 					key={`${i}-${line.slice(0, 6)}`}
 					x={-width / 2 + 4}
-					y={-height / 2 + 4.6 + i * 4.4}
+					y={-height / 2 + 4.8 + i * 4.4}
 					fontSize={3.6}
 					fill={theme.bubbleText}
 					fontFamily="system-ui, sans-serif"
@@ -146,9 +179,16 @@ export function VirtualOffice({ feed, theme: themeName = "dark", className, styl
 	const theme = THEMES[themeName];
 	const roomLabel = feed.roomRunning ? feed.roomName : undefined;
 	const activeTable = feed.roomRunning ? Math.floor((feed.roomMembers.length - 1) / 3) % MEETING_TABLES.length : -1;
+	const wallNow = useMemo(() => new Date(now), [now]);
 
 	return (
-		<svg viewBox="0 0 160 100" className={className} style={style} role="img" aria-label="Virtual office floor">
+		<svg
+			viewBox="0 -28 160 128"
+			className={className}
+			style={style}
+			role="img"
+			aria-label="Virtual office floor"
+		>
 			<defs>
 				{/* desk-zone planks */}
 				<pattern id="vo-planks" width="12" height="5" patternUnits="userSpaceOnUse">
@@ -171,6 +211,22 @@ export function VirtualOffice({ feed, theme: themeName = "dark", className, styl
 					<rect width="3.2" height="3.2" fill={theme.zoneLounge} />
 					<line x1="0" y1="0" x2="0" y2="3.2" stroke={theme.grid} strokeWidth="0.3" opacity="0.5" />
 				</pattern>
+				{/* ceiling light pool */}
+				<radialGradient id="vo-pool" cx="50%" cy="50%" r="50%">
+					<stop offset="0%" stopColor={theme.lightPool} stopOpacity={0.16} />
+					<stop offset="70%" stopColor={theme.lightPool} stopOpacity={0.05} />
+					<stop offset="100%" stopColor={theme.lightPool} stopOpacity={0} />
+				</radialGradient>
+				{/* window light shaft */}
+				<linearGradient id="vo-shaft" x1="0" y1="0" x2="0" y2="1">
+					<stop offset="0%" stopColor={theme.shaft} stopOpacity={0.13} />
+					<stop offset="100%" stopColor={theme.shaft} stopOpacity={0} />
+				</linearGradient>
+				{/* scene vignette */}
+				<radialGradient id="vo-vignette" cx="50%" cy="42%" r="75%">
+					<stop offset="62%" stopColor="#000" stopOpacity={0} />
+					<stop offset="100%" stopColor="#000" stopOpacity={themeName === "dark" ? 0.34 : 0.14} />
+				</radialGradient>
 				<filter id="vo-soft" x="-20%" y="-20%" width="140%" height="140%">
 					<feGaussianBlur stdDeviation="0.5" />
 				</filter>
@@ -179,33 +235,53 @@ export function VirtualOffice({ feed, theme: themeName = "dark", className, styl
 			<style>{SCENE_STYLES}</style>
 
 			{/* building shell */}
-			<rect x={0} y={0} width={160} height={100} fill={theme.wall} />
-			<rect x={1.6} y={1.6} width={156.8} height={96.8} rx={2.5} fill={theme.floor} stroke={theme.wallEdge} strokeWidth={0.5} />
+			<rect x={-4} y={-28} width={168} height={136} fill={theme.wallDeep} />
+			<rect x={-4} y={-28} width={168} height={136} fill="url(#vo-vignette)" opacity={0.5} />
+			{/* slab with drop shadow */}
+			<rect x={2.6} y={2.6} width={156.8} height={96.8} rx={3} fill="#000" opacity={0.35} />
+			<rect x={1.6} y={1.6} width={156.8} height={96.8} rx={2.5} fill={theme.floor} stroke={theme.floorEdge} strokeWidth={0.6} />
+			<rect x={1.6} y={1.6} width={156.8} height={96.8} rx={2.5} fill={theme.floorGlow} />
 
 			{/* zone floors */}
-			<rect x={9} y={8} width={72} height={68} fill="url(#vo-planks)" />
-			<rect x={9} y={8} width={72} height={68} fill="none" stroke={theme.rugRing} strokeWidth={0.35} opacity={0.5} rx={1.5} />
+			<rect x={9} y={8} width={72} height={68} fill="url(#vo-planks)" rx={1.5} />
+			<rect x={9} y={8} width={72} height={68} fill="none" stroke={theme.zoneDeskEdge} strokeWidth={0.35} opacity={0.8} rx={1.5} />
+			<rect x={9} y={8} width={72} height={1.1} fill={theme.wallEdge} opacity={0.18} rx={0.55} />
 			<rect x={88} y={6} width={66} height={58} fill="url(#vo-carpet)" rx={2} />
-			<rect x={90} y={66} width={64} height={28} fill="url(#vo-weave)" rx={2} />
-			<rect x={6} y={80} width={22} height={15} fill="url(#vo-tiles)" rx={1} />
+			<rect x={88} y={6} width={66} height={58} fill="none" stroke={theme.zoneMeetingEdge} strokeWidth={0.35} opacity={0.8} rx={2} />
+			<rect x={88} y={6} width={66} height={1.1} fill={theme.wallEdge} opacity={0.18} rx={0.55} />
+			<rect x={88} y={66} width={66} height={28} fill="url(#vo-weave)" rx={2} />
+			<rect x={88} y={66} width={66} height={28} fill="none" stroke={theme.zoneLoungeEdge} strokeWidth={0.35} opacity={0.8} rx={2} />
+			{/* corridor: full-width tiled band + entry alcove */}
+			<rect x={1.6} y={78} width={156.8} height={20.4} fill="url(#vo-tiles)" rx={2.5} />
+			<line x1={1.6} y1={78} x2={158.4} y2={78} stroke={theme.baseboard} strokeWidth={0.5} opacity={0.55} />
+			<rect x={4} y={79} width={22} height={17.4} fill="url(#vo-tiles)" rx={1} />
 
 			{/* zone labels */}
-			<text x={12} y={12.6} fontSize={2.8} fontWeight={700} letterSpacing={0.6} fill={theme.labelMuted} fontFamily="system-ui, sans-serif">
+			<text x={17} y={13.1} fontSize={2.7} fontWeight={700} letterSpacing={0.7} fill={theme.labelMuted} opacity={0.85} fontFamily="system-ui, sans-serif">
 				WORKSTATIONS
 			</text>
-			<text x={148} y={62.4} textAnchor="end" fontSize={2.8} fontWeight={700} letterSpacing={0.6} fill={theme.labelMuted} fontFamily="system-ui, sans-serif">
+			<text x={151} y={61.2} textAnchor="end" fontSize={2.7} fontWeight={700} letterSpacing={0.7} fill={theme.labelMuted} opacity={0.85} fontFamily="system-ui, sans-serif">
 				MEETING PODS
 			</text>
-			<text x={152} y={69.4} textAnchor="end" fontSize={2.8} fontWeight={700} letterSpacing={0.6} fill={theme.labelMuted} fontFamily="system-ui, sans-serif">
+			<text x={151} y={69.6} textAnchor="end" fontSize={2.7} fontWeight={700} letterSpacing={0.7} fill={theme.labelMuted} opacity={0.85} fontFamily="system-ui, sans-serif">
 				LOUNGE
 			</text>
-			<text x={17} y={93.4} textAnchor="middle" fontSize={2.6} fill={theme.labelMuted} fontFamily="system-ui, sans-serif">
-				entrance
-			</text>
 
-			{/* wall dressing */}
-			<WallClock x={64} y={13.5} theme={theme} />
-			<Whiteboard x={120} y={12} theme={theme} />
+			{/* north wall: windows + light shafts */}
+			<Window x={30} y={-6.4} theme={theme} withShaft />
+			<Window x={76} y={-6.4} theme={theme} withShaft />
+			<Window x={106} y={-6.4} theme={theme} w={10} />
+			<WallClock x={57} y={-1.8} theme={theme} now={wallNow} />
+			<WallArt x={140} y={-1} theme={theme} variant={0} />
+			<WallArt x={148.6} y={-1} theme={theme} variant={1} />
+
+			{/* ceiling light pools over the zones */}
+			<ellipse cx={44} cy={30} rx={26} ry={20} fill="url(#vo-pool)" />
+			<ellipse cx={121} cy={34} rx={24} ry={19} fill="url(#vo-pool)" />
+			<ellipse cx={121} cy={80} rx={22} ry={12} fill="url(#vo-pool)" />
+
+			{/* whiteboard in the meeting area */}
+			<Whiteboard x={97} y={12} theme={theme} />
 
 			{/* desks + chairs (empty slots stay made-up) */}
 			{DESK_SLOTS.map((slot, i) => {
@@ -220,9 +296,10 @@ export function VirtualOffice({ feed, theme: themeName = "dark", className, styl
 				);
 			})}
 
-			{/* meeting pods */}
+			{/* meeting pods with hanging pendants */}
 			{MEETING_TABLES.map((table, i) => (
 				<g key={`table-${i}`}>
+					<Pendant x={table.x} y={table.y - 9.4} theme={theme} on={i === activeTable && feed.roomRunning} />
 					{Array.from({ length: SEATS_PER_TABLE }, (_, seat) => {
 						const pos = meetingSeat(i, seat);
 						const angle = (Math.atan2(table.y - pos.y, table.x - pos.x) * 180) / Math.PI;
@@ -232,18 +309,24 @@ export function VirtualOffice({ feed, theme: themeName = "dark", className, styl
 				</g>
 			))}
 
-			{/* lounge */}
-			<Sofa x={122} y={84} theme={theme} />
-			<Plant x={100} y={88} theme={theme} size={1.25} />
-			<Plant x={148} y={90} theme={theme} size={1.1} />
+			{/* lounge: rug, sofa, coffee table, lamp, plants */}
+			<Rug x={122} y={83.4} theme={theme} r={11.5} />
+			<FloorLamp x={108.4} y={78.6} theme={theme} />
+			<Sofa x={126} y={85.4} theme={theme} />
+			<CoffeeTable x={124} y={92.6} theme={theme} />
+			<Plant x={146} y={90} theme={theme} size={1.1} variant={1} />
+			<Plant x={99} y={88} theme={theme} size={1.2} variant={2} />
 
-			{/* plants + coffee + shelf */}
-			<Plant x={12} y={13} theme={theme} />
-			<Plant x={78} y={12.5} theme={theme} size={0.85} />
+			{/* greenery + coffee bar + shelf */}
+			<Plant x={10.6} y={13.4} theme={theme} variant={1} />
+			<Plant x={78} y={12.5} theme={theme} size={0.85} variant={2} />
 			<Plant x={88} y={60} theme={theme} />
-			<Plant x={150} y={10} theme={theme} size={0.85} />
-			<CoffeeMachine x={86} y={8} theme={theme} />
-			<Bookshelf x={150} y={44} theme={theme} />
+			<Plant x={152} y={10.6} theme={theme} size={0.9} variant={1} />
+			<CoffeeMachine x={68} y={82} theme={theme} />
+			<Bookshelf x={150} y={42} theme={theme} />
+
+			{/* entrance */}
+			<Entrance x={17} y={84.4} theme={theme} />
 
 			{/* collaboration links */}
 			{floor.links.map((link) => {
@@ -270,30 +353,34 @@ export function VirtualOffice({ feed, theme: themeName = "dark", className, styl
 				<g key={visual.id} transform={`translate(${visual.pos.x}, ${visual.pos.y})`}>
 					<CoworkerAvatar visual={visual} now={now} theme={theme} />
 					{visual.bubble && visual.bubble.until > now && (
-						<SpeechBubbleTag text={visual.bubble.text} color={visual.color} theme={theme} />
+						<SpeechBubbleTag
+							text={visual.bubble.text}
+							color={visual.color}
+							theme={theme}
+							originX={visual.pos.x}
+						/>
 					)}
 				</g>
 			))}
 
-			{/* room banner */}
+			{/* room banner — a status pill in the corridor, clear of bubbles */}
 			{roomLabel && (
 				<g>
 					<rect
 						x={49}
-						y={0.9}
+						y={89.6}
 						width={62}
-						height={6.6}
-						rx={3.3}
+						height={7}
+						rx={3.5}
 						fill={theme.bubbleBg}
 						opacity={0.96}
 						stroke={theme.accent}
 						strokeWidth={0.5}
 					/>
-					<circle cx={54.5} cy={4} r={1.3} fill={THEMES[themeName].labelMuted} className="vo-pulse" />
-					<circle cx={54.5} cy={4} r={1.3} fill="#22c55e" />
+					<circle cx={54.5} cy={93.1} r={1.3} fill="#22c55e" className="vo-pulse" />
 					<text
 						x={57}
-						y={5.3}
+						y={94.5}
 						fontSize={3.6}
 						fill={theme.bubbleText}
 						fontFamily="system-ui, sans-serif"
@@ -303,8 +390,6 @@ export function VirtualOffice({ feed, theme: themeName = "dark", className, styl
 					</text>
 				</g>
 			)}
-
-			<circle cx={CORRIDOR_ENTRANCE.x} cy={CORRIDOR_ENTRANCE.y} r={0.8} fill={theme.labelMuted} opacity={0.6} />
 		</svg>
 	);
 }
