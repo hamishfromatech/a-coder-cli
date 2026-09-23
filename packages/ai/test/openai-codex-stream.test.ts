@@ -2015,4 +2015,254 @@ describe("openai-codex streaming", () => {
 		expect(result.stopReason).toBe("error");
 		expect(result.errorMessage).toContain("ended before a terminal response");
 	});
+
+	// Regression coverage for the customer-reported desktop hang: a Codex
+	// WebSocket that opens but never sends events must fall back to SSE after
+	// the idle bound instead of wedging the turn forever.
+	it("falls back to SSE when the websocket opens but stays silent past the idle timeout", async () => {
+		vi.useFakeTimers();
+		const token = mockToken();
+		const encoder = new TextEncoder();
+		const sse = buildSSEPayload({ status: "completed" });
+
+		const fetchMock = vi.fn(async () => {
+			return new Response(
+				new ReadableStream<Uint8Array>({
+					start(controller) {
+						controller.enqueue(encoder.encode(sse));
+						controller.close();
+					},
+				}),
+				{ status: 200, headers: { "content-type": "text/event-stream" } },
+			);
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		class SilentWebSocket {
+			private listeners = new Map<string, Set<(event: unknown) => void>>();
+
+			constructor() {
+				queueMicrotask(() => this.dispatch("open", {}));
+			}
+
+			addEventListener(type: string, listener: (event: unknown) => void): void {
+				let listeners = this.listeners.get(type);
+				if (!listeners) {
+					listeners = new Set();
+					this.listeners.set(type, listeners);
+				}
+				listeners.add(listener);
+			}
+
+			removeEventListener(type: string, listener: (event: unknown) => void): void {
+				this.listeners.get(type)?.delete(listener);
+			}
+
+			send(): void {
+				// Accepts the request but never responds.
+			}
+
+			close(): void {}
+
+			private dispatch(type: string, event: unknown): void {
+				for (const listener of this.listeners.get(type) ?? []) {
+					listener(event);
+				}
+			}
+		}
+		vi.stubGlobal("WebSocket", SilentWebSocket);
+
+		const model: Model<"openai-codex-responses"> = {
+			id: "gpt-5.1-codex",
+			name: "GPT-5.1 Codex",
+			api: "openai-codex-responses",
+			provider: "openai-codex",
+			baseUrl: "https://chatgpt.com/backend-api",
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 400000,
+			maxTokens: 128000,
+		};
+		const context: Context = {
+			systemPrompt: "",
+			messages: [{ role: "user", content: "Say hello", timestamp: Date.now() }],
+		};
+
+		const resultPromise = streamOpenAICodexResponses(model, context, {
+			apiKey: token,
+			sessionId: "ws-silent-timeout",
+			transport: "auto",
+		}).result();
+
+		// Advance past the default 120s idle bound; the WS attempt gives up and
+		// the SSE path completes the request.
+		await vi.advanceTimersByTimeAsync(120_000);
+		const result = await resultPromise;
+
+		expect(result.stopReason).toBe("stop");
+		expect(result.content.find((content) => content.type === "text")?.text).toBe("Hello");
+		expect(getOpenAICodexWebSocketDebugStats("ws-silent-timeout")).toMatchObject({
+			websocketFailures: 1,
+			sseFallbacks: 1,
+		});
+	});
+
+	it("clamps session ids longer than 64 characters in transport headers", async () => {
+		const token = mockToken();
+		let capturedWebSocketHeaders: Record<string, string> | undefined;
+		let capturedSseHeaders: Record<string, string> | undefined;
+
+		const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit) => {
+			capturedSseHeaders = Object.fromEntries(new Headers(init?.headers).entries());
+			return new Response(buildSSEPayload({ status: "completed" }), {
+				status: 200,
+				headers: { "content-type": "text/event-stream" },
+			});
+		});
+		vi.stubGlobal("fetch", fetchMock);
+		// WebSocket handshake fails so the request exercises the SSE path.
+		class FailingWebSocket {
+			constructor() {
+				queueMicrotask(() => this.dispatch("error", { message: "handshake refused" }));
+			}
+			addEventListener(type: string, listener: (event: unknown) => void): void {
+				this.listeners.get(type)?.add(listener);
+			}
+			removeEventListener(): void {}
+			send(): void {}
+			close(): void {}
+			private listeners = new Map<string, Set<(event: unknown) => void>>();
+			private dispatch(type: string, event: unknown): void {
+				for (const listener of this.listeners.get(type) ?? []) listener(event);
+			}
+		}
+		vi.stubGlobal("WebSocket", FailingWebSocket);
+
+		const model: Model<"openai-codex-responses"> = {
+			id: "gpt-5.1-codex",
+			name: "GPT-5.1 Codex",
+			api: "openai-codex-responses",
+			provider: "openai-codex",
+			baseUrl: "https://chatgpt.com/backend-api",
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 400000,
+			maxTokens: 128000,
+		};
+		const context: Context = {
+			systemPrompt: "",
+			messages: [{ role: "user", content: "Say hello", timestamp: Date.now() }],
+		};
+		const longSessionId = `sess-${"x".repeat(80)}`;
+
+		const result = await streamOpenAICodexResponses(model, context, {
+			apiKey: token,
+			sessionId: longSessionId,
+			transport: "sse",
+		}).result();
+		expect(result.stopReason).toBe("stop");
+		expect(capturedSseHeaders?.["session-id"]).toHaveLength(64);
+		expect(capturedSseHeaders?.["session-id"]).toBe(longSessionId.slice(0, 64));
+		void capturedWebSocketHeaders;
+	});
+
+	it("scopes pooled websocket reuse to the ChatGPT account in the token", async () => {
+		const tokenFor = (accountId: string): string => {
+			const payload = Buffer.from(
+				JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: accountId } }),
+				"utf8",
+			).toString("base64");
+			return `aaa.${payload}.bbb`;
+		};
+		const sentBodies: unknown[] = [];
+		const fetchMock = vi.fn(async () => new Response("unexpected fetch", { status: 500 }));
+		vi.stubGlobal("fetch", fetchMock);
+
+		class MockWebSocket {
+			private listeners = new Map<string, Set<(event: unknown) => void>>();
+
+			constructor() {
+				queueMicrotask(() => this.dispatch("open", {}));
+			}
+
+			addEventListener(type: string, listener: (event: unknown) => void): void {
+				let set = this.listeners.get(type);
+				if (!set) {
+					set = new Set();
+					this.listeners.set(type, set);
+				}
+				set.add(listener);
+			}
+
+			removeEventListener(type: string, listener: (event: unknown) => void): void {
+				this.listeners.get(type)?.delete(listener);
+			}
+
+			send(data: string): void {
+				sentBodies.push(JSON.parse(data));
+				queueMicrotask(() => {
+					this.dispatch("message", {
+						data: JSON.stringify({ type: "response.completed", response: { status: "completed" } }),
+					});
+				});
+			}
+
+			close(): void {}
+
+			private dispatch(type: string, event: unknown): void {
+				for (const listener of this.listeners.get(type) ?? []) listener(event);
+			}
+		}
+		vi.stubGlobal("WebSocket", MockWebSocket);
+
+		const model: Model<"openai-codex-responses"> = {
+			id: "gpt-5.1-codex",
+			name: "GPT-5.1 Codex",
+			api: "openai-codex-responses",
+			provider: "openai-codex",
+			baseUrl: "https://chatgpt.com/backend-api",
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 400000,
+			maxTokens: 128000,
+		};
+		const context: Context = {
+			systemPrompt: "",
+			messages: [{ role: "user", content: "Say hello", timestamp: Date.now() }],
+		};
+
+		// Two turns on the same session with the same account: socket reused.
+		await streamOpenAICodexResponses(model, context, {
+			apiKey: tokenFor("acc_a"),
+			sessionId: "session-acct",
+			transport: "auto",
+		}).result();
+		await streamOpenAICodexResponses(model, context, {
+			apiKey: tokenFor("acc_a"),
+			sessionId: "session-acct",
+			transport: "auto",
+		}).result();
+		expect(getOpenAICodexWebSocketDebugStats("session-acct")).toMatchObject({
+			requests: 2,
+			connectionsCreated: 1,
+			connectionsReused: 1,
+		});
+
+		// Account rotates (re-login with a different account): a fresh socket
+		// must be opened for the new account instead of reusing the old one.
+		await streamOpenAICodexResponses(model, context, {
+			apiKey: tokenFor("acc_b"),
+			sessionId: "session-acct",
+			transport: "auto",
+		}).result();
+		expect(getOpenAICodexWebSocketDebugStats("session-acct")).toMatchObject({
+			requests: 3,
+			connectionsCreated: 2,
+			connectionsReused: 1,
+		});
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
 });

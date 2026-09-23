@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Fixed OpenAI Codex requests hanging forever with no error in environments where the WebSocket transport actually engages (the desktop ships the Bun engine, where the WebSocket connects with auth headers; Node-based CLI runs always failed the handshake and fell back to SSE). Silent sockets can no longer wedge a turn: an idle Codex WebSocket now gives up after 120s (configurable via the provider `timeoutMs` retry setting) and falls back to SSE; pooled sockets are keyed by ChatGPT account within a session so an account rotation (re-login/plan switch) can no longer reuse a socket authenticated for the previous account (upstream #7284 parity); cached sockets are recycled after 55 minutes; and `session-id` / `x-client-request-id` headers are clamped to the 64 characters Codex accepts (upstream #6653 parity).
 - Fixed OpenAI Codex reliability when streaming over the WebSocket transport (upstream parity): a response that rejects the cached `previous_response_id` continuation (`previous_response_not_found`) now resets the connection's cached context and retries once with the full input instead of surfacing a hard error mid-session, and the `start` stream event is emitted at most once per request (previously a WS-to-SSE fallback or continuation retry could emit a duplicate). Codex requests that omit an explicit reasoning effort now send `reasoning.effort` mapped from the model's off level (`none` for built-in Codex models) instead of letting the backend default to medium effort (upstream #9191 parity).
 
 ### Added
