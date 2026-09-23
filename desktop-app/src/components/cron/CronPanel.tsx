@@ -31,6 +31,7 @@ function scheduleLabel(schedule: CronJob["schedule"]): string {
 		return `every ${minutes}m`;
 	}
 	if (schedule.kind === "daily") return `daily ${schedule.time}`;
+	if (schedule.kind === "event") return schedule.trigger === "turn_end" ? "on turn end" : "on commit";
 	return "once";
 }
 
@@ -141,6 +142,7 @@ function CronRow({ job, onEdit }: { job: CronJob; onEdit: () => void }) {
 
 	const nextRun = job.enabled && job.nextRunAt ? new Date(job.nextRunAt).toLocaleString() : undefined;
 	const failed = job.lastStatus === "error" || job.lastStatus === "timeout";
+	const isEvent = job.schedule.kind === "event";
 
 	return (
 		<div className="flex w-full flex-col rounded-md transition-hover hover:bg-pi-surface-raised">
@@ -167,7 +169,7 @@ function CronRow({ job, onEdit }: { job: CronJob; onEdit: () => void }) {
 					</div>
 					<div className="truncate text-2xs text-pi-text-muted">
 						{scheduleLabel(job.schedule)}
-						{nextRun ? ` · next ${nextRun}` : ""}
+						{nextRun ? ` · next ${nextRun}` : isEvent ? " · awaiting event" : ""}
 						{job.lastRunAt ? ` · last ${relativeTime(job.lastRunAt)}` : ""}
 						{failed ? ` · ${job.lastError?.slice(0, 60) ?? "failed"}` : ""}
 					</div>

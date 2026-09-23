@@ -176,10 +176,13 @@ export interface OfficeActivityEvent {
 
 // ---- Cron (scheduled tasks for the main agent) ---------------------------
 
+export type CronEventTrigger = "turn_end" | "git_commit";
+
 export type CronSchedule =
 	| { kind: "every"; minutes: number }
 	| { kind: "daily"; time: string }
-	| { kind: "once"; at: number };
+	| { kind: "once"; at: number }
+	| { kind: "event"; trigger: CronEventTrigger; cooldownMinutes?: number };
 
 export interface CronJob {
 	id: string;
@@ -195,6 +198,8 @@ export interface CronJob {
 	lastStatus?: "ok" | "error" | "timeout";
 	lastError?: string;
 	sessionFile?: string;
+	/** Watermark for `git_commit` event jobs: the last commit head fired on. */
+	lastGitHead?: string;
 }
 
 export interface CronJobInput {
@@ -222,7 +227,7 @@ export interface CronRun {
 	jobId: string;
 	/** Snapshot of the job name at fire time — history outlives renames/deletes. */
 	jobName: string;
-	trigger: "schedule" | "manual";
+	trigger: "schedule" | "manual" | "event";
 	/** "session" ran in the live conversation; "background" ran headless. */
 	delivery: "session" | "background";
 	startedAt: number;

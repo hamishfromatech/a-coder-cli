@@ -5,7 +5,8 @@
  * the desktop's Cron panel; here you list, add, run, pause/resume, and remove
  * jobs from the terminal.
  *
- * Schedules: `every:30m`, `daily:HH:MM`, `once:<ISO-or-epoch>`.
+ * Schedules: `every:30m`, `daily:HH:MM`, `once:<ISO-or-epoch>`,
+ * `on:turn-end`, `on:commit` (event triggers).
  */
 
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
@@ -29,6 +30,9 @@ function errorText(text: string): string {
 function scheduleText(schedule: CronSchedule): string {
 	if (schedule.kind === "every") return `every ${Math.max(5, Math.floor(schedule.minutes))}m`;
 	if (schedule.kind === "daily") return `daily ${schedule.time}`;
+	if (schedule.kind === "event") {
+		return schedule.trigger === "turn_end" ? "on turn end" : "on commit";
+	}
 	return `once at ${new Date(schedule.at).toLocaleString()}`;
 }
 
@@ -41,7 +45,8 @@ function formatCronList(snapshot: CronSnapshot, cwd: string): string {
 		lines.push(dim("  (none — /cron add <name> every:30m <what to do>)"));
 	}
 	const renderJob = (job: CronJob) => {
-		const next = job.nextRunAt ? new Date(job.nextRunAt).toLocaleString() : "—";
+		const isEvent = job.schedule.kind === "event";
+		const next = job.nextRunAt ? new Date(job.nextRunAt).toLocaleString() : isEvent ? "awaiting event" : "—";
 		const status =
 			job.lastStatus === "error" || job.lastStatus === "timeout"
 				? ` · ${job.lastStatus}${job.lastError ? `: ${job.lastError.slice(0, 60)}` : ""}`
@@ -94,6 +99,14 @@ export function parseCronSchedule(raw: string): CronSchedule | undefined {
 		if (!Number.isFinite(epoch) || epoch <= Date.now()) return undefined;
 		return { kind: "once", at: epoch };
 	}
+	if (value.startsWith("on:")) {
+		const trigger = value.slice("on:".length).trim();
+		if (trigger === "turn-end" || trigger === "turn_end") return { kind: "event", trigger: "turn_end" };
+		if (trigger === "commit" || trigger === "git-commit" || trigger === "git_commit") {
+			return { kind: "event", trigger: "git_commit" };
+		}
+		return undefined;
+	}
 	return undefined;
 }
 
@@ -113,6 +126,14 @@ export class CronTui {
 			this.service.start();
 		}
 		return this.service;
+	}
+
+	/** Session hook: a turn ended naturally — may fire on:turn-end jobs. */
+	notifyTurnEnd(): void {
+		// Lazy: only spins the service up when an event-triggered job exists
+		// or was created before. No service yet means nothing can match.
+		if (!this.service) return;
+		this.service.notifyEvent({ type: "turn_end", cwd: this.runtimeHost.cwd });
 	}
 
 	async dispose(): Promise<void> {
@@ -203,6 +224,6 @@ export class CronTui {
 	}
 }
 
-const USAGE = "Usage: /cron add <name> <every:30m|daily:HH:MM|once:<ISO>> <prompt>";
+const USAGE = "Usage: /cron add <name> <every:30m|daily:HH:MM|once:<ISO>|on:turn-end|on:commit> <prompt>";
 
 export { parseCronSchedule as _parseCronScheduleForTests, USAGE as CRON_ADD_USAGE };

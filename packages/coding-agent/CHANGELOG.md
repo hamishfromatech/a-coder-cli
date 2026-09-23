@@ -8,6 +8,8 @@
 
 - Run history + activity inbox. Every cron run is persisted (`~/.a-coder/cli/agent/cron/runs.json`, last 20 per job: trigger, delivery, status, error, session file) and pushed to RPC clients as `cron_run` started/finished events; `cron_runs` fetches a job's history. The desktop Scheduled panel grows a per-job run history (status dots, expand, and Continue — one click reopens the run's session to pick the conversation back up), and a new Activity right-sidebar tab aggregates the inbox: pending approvals and run outcomes sort to "Needs attention" with an unread badge; anything with a session opens it on click.
 
+- Cron event triggers (Loops-style): jobs can fire on workspace events beside schedules — `on:turn-end` (after the agent finishes a turn in the project, coalesced by a quiet period, default 30 min) and `on:commit` (once per new commit, deduped by a persisted head watermark). Surface: `/cron add <name> on:turn-end|on:commit <prompt>`, an "On event" schedule kind in the desktop editor, and the `event` schedule kind over RPC.
+
 ### Changed
 
 - RPC: `get_state` now includes the active session's workspace (`cwd`), and `switch_session` responses carry the authoritative session identity (`sessionFile`, `sessionId`, `sessionName`, `cwd`) so clients can adopt tab labels and workspace indicators immediately without depending on `session_start` event ordering.

@@ -26,7 +26,7 @@ beforeEach(async () => {
 // be set before the dynamic imports below.
 const store = await import("../src/core/cron/store.ts");
 const { CronService, validateSchedule, mintJobId } = await import("../src/core/cron/service.ts");
-const { nextRunAt, describeSchedule } = await import("../src/core/office/errands.ts");
+const { nextRunAt, describeSchedule, isDue } = await import("../src/core/office/errands.ts");
 type AgentSession = import("../src/core/agent-session.ts").AgentSession;
 type SessionManagerRef = import("../src/core/session-manager.ts").SessionManager;
 
@@ -305,6 +305,92 @@ describe("CronService", () => {
 		expect(side).toBeDefined();
 		await service.remove(job.id);
 		expect((side as unknown as { dispose: ReturnType<typeof vi.fn> }).dispose).toHaveBeenCalled();
+	});
+});
+
+describe("cron event triggers", () => {
+	it("validates event schedules", () => {
+		expect(validateSchedule({ kind: "event", trigger: "turn_end" })).toBeNull();
+		expect(validateSchedule({ kind: "event", trigger: "git_commit", cooldownMinutes: 15 })).toBeNull();
+		expect(validateSchedule({ kind: "event", trigger: "bogus" as never })).toMatch(/Unknown event trigger/);
+		expect(validateSchedule({ kind: "event", trigger: "turn_end", cooldownMinutes: Number.NaN })).toMatch(/Cooldown/);
+	});
+
+	it("event jobs are never time-due and have no next fire", () => {
+		const schedule = { kind: "event" as const, trigger: "turn_end" as const };
+		expect(nextRunAt(schedule, Date.now())).toBeUndefined();
+		expect(isDue({ enabled: true, schedule }, Date.now())).toBe(false);
+		expect(describeSchedule(schedule)).toBe("on turn end");
+		expect(describeSchedule({ kind: "event", trigger: "git_commit" })).toBe("on commit");
+	});
+
+	it("fires turn_end jobs for the matching project, coalesced by cooldown", async () => {
+		const session = makeFakeSession();
+		const service = new CronService({ runtime: makeRuntime("/proj", session) });
+		const job = await service.create({
+			name: "Reviewer",
+			prompt: "review the latest diff",
+			schedule: { kind: "event", trigger: "turn_end", cooldownMinutes: 30 },
+		});
+
+		await service.notifyEvent({ type: "turn_end", cwd: "/proj" });
+		const sent = (session as unknown as { __sent: Array<{ text: string; deliverAs?: string }> }).__sent;
+		expect(sent).toHaveLength(1);
+		expect(sent[0]?.text).toContain("review the latest diff");
+
+		// Coalesced: another turn inside the cooldown window fires nothing.
+		await service.notifyEvent({ type: "turn_end", cwd: "/proj" });
+		expect(sent).toHaveLength(1);
+
+		// Other projects never fire this job.
+		await service.notifyEvent({ type: "turn_end", cwd: "/elsewhere" });
+		expect(sent).toHaveLength(1);
+
+		const runs = await service.listRuns(job.id);
+		expect(runs).toHaveLength(1);
+		expect(runs[0]?.trigger).toBe("event");
+		await service.dispose();
+	});
+
+	it("fires git_commit jobs once per new head via the watermark", async () => {
+		let head = "aaa111";
+		const service = new CronService({
+			runtime: makeRuntime("/other", makeFakeSession()),
+			resolveGitHead: async () => head,
+		});
+		const job = await service.create({
+			name: "Release notes",
+			prompt: "draft release notes",
+			schedule: { kind: "event", trigger: "git_commit" },
+			cwd: "/proj",
+		});
+
+		// First head → fires. Same head again → nothing. New head → fires.
+		await service.notifyEvent({ type: "git_commit", cwd: "/proj", head });
+		expect((await service.listRuns(job.id)).length).toBe(1);
+		await service.notifyEvent({ type: "git_commit", cwd: "/proj", head });
+		expect((await service.listRuns(job.id)).length).toBe(1);
+		head = "bbb222";
+		await service.notifyEvent({ type: "git_commit", cwd: "/proj", head });
+		expect((await service.listRuns(job.id)).length).toBe(2);
+
+		const fresh = (await store.listJobs()).find((j) => j.id === job.id);
+		expect(fresh?.lastGitHead).toBe("bbb222");
+		await service.dispose();
+	});
+
+	it("paused event jobs resume armed (no nextRunAt needed)", async () => {
+		const service = new CronService({ runtime: makeRuntime("/proj", makeFakeSession()) });
+		const job = await service.create({
+			name: "Watcher",
+			prompt: "x",
+			schedule: { kind: "event", trigger: "git_commit" },
+		});
+		await service.update(job.id, { enabled: false });
+		const resumed = await service.update(job.id, { enabled: true });
+		expect(resumed.enabled).toBe(true);
+		expect(resumed.nextRunAt).toBeUndefined();
+		await service.dispose();
 	});
 });
 

@@ -1,8 +1,8 @@
 /**
  * Cron create/edit dialog — a scheduled task for the main coding agent:
- * interval, daily, or one-shot. The job fires into this project's active
- * session (or a background session when the project isn't open), so the
- * result lands right in the conversation or the session tree.
+ * interval, daily, one-shot, or event-triggered. The job fires into this
+ * project's active session (or a background session when the project isn't
+ * open), so the result lands right in the conversation or the session tree.
  */
 
 import { useState } from "react";
@@ -10,7 +10,7 @@ import { ModalBackdrop, ModalPanel } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { useCronStore } from "../../stores/cron-store";
-import { cronCreate, cronUpdate, type CronJob } from "../../lib/rpc";
+import { cronCreate, cronUpdate, type CronEventTrigger, type CronJob } from "../../lib/rpc";
 
 export function CronEditor({ job, onClose }: { job?: CronJob; onClose: () => void }) {
 	const refresh = useCronStore((s) => s.refresh);
@@ -19,6 +19,14 @@ export function CronEditor({ job, onClose }: { job?: CronJob; onClose: () => voi
 	const [kind, setKind] = useState<CronJob["schedule"]["kind"]>(job?.schedule.kind ?? "every");
 	const [minutes, setMinutes] = useState(job?.schedule.kind === "every" ? String(job.schedule.minutes) : "60");
 	const [dailyTime, setDailyTime] = useState(job?.schedule.kind === "daily" ? job.schedule.time : "09:00");
+	const [trigger, setTrigger] = useState<CronEventTrigger>(
+		job?.schedule.kind === "event" ? job.schedule.trigger : "turn_end",
+	);
+	const [cooldown, setCooldown] = useState(
+		job?.schedule.kind === "event" && job.schedule.cooldownMinutes !== undefined
+			? String(job.schedule.cooldownMinutes)
+			: "",
+	);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
@@ -32,7 +40,13 @@ export function CronEditor({ job, onClose }: { job?: CronJob; onClose: () => voi
 					? ({ kind: "every", minutes: Math.max(5, Number.parseInt(minutes, 10) || 60) } as const)
 					: kind === "daily"
 						? ({ kind: "daily", time: dailyTime } as const)
-						: ({ kind: "once", at: job?.schedule.kind === "once" ? job.schedule.at : Date.now() + 60_000 } as const);
+						: kind === "event"
+							? ({
+									kind: "event",
+									trigger,
+									...(cooldown.trim() ? { cooldownMinutes: Math.max(5, Number.parseInt(cooldown, 10) || 30) } : {}),
+								} as const)
+							: ({ kind: "once", at: job?.schedule.kind === "once" ? job.schedule.at : Date.now() + 60_000 } as const);
 			if (job) {
 				await cronUpdate(job.id, { name: name.trim(), prompt: prompt.trim(), schedule });
 			} else {
@@ -73,14 +87,20 @@ export function CronEditor({ job, onClose }: { job?: CronJob; onClose: () => voi
 					/>
 
 					<div className="flex items-center gap-1.5">
-						{(["every", "daily", "once"] as const).map((scheduleKind) => (
+						{(["every", "daily", "once", "event"] as const).map((scheduleKind) => (
 							<Button
 								key={scheduleKind}
 								variant={kind === scheduleKind ? "secondary" : "outline"}
 								size="sm"
 								onClick={() => setKind(scheduleKind)}
 							>
-								{scheduleKind === "every" ? "Every" : scheduleKind === "daily" ? "Daily" : "Once"}
+								{scheduleKind === "every"
+									? "Every"
+									: scheduleKind === "daily"
+										? "Daily"
+										: scheduleKind === "event"
+											? "On event"
+											: "Once"}
 							</Button>
 						))}
 						{kind === "every" && (
@@ -106,9 +126,41 @@ export function CronEditor({ job, onClose }: { job?: CronJob; onClose: () => voi
 							/>
 						)}
 					</div>
+					{kind === "event" && (
+						<div className="flex items-center gap-1.5">
+							<select
+								value={trigger}
+								onChange={(e) => setTrigger(e.target.value as CronEventTrigger)}
+								className="rounded-md bg-pi-surface-raised px-2 py-1 text-xs text-pi-text shadow-ring focus:shadow-focus focus:outline-none"
+							>
+								<option value="turn_end">when the agent finishes a turn</option>
+								<option value="git_commit">when a commit lands</option>
+							</select>
+							{trigger === "turn_end" && (
+								<span className="flex items-center gap-1 text-2xs text-pi-text-muted">
+									<Input
+										scale="sm"
+										mono
+										className="w-14"
+										placeholder="30"
+										value={cooldown}
+										onChange={(e) => setCooldown(e.target.value.replace(/[^0-9]/g, ""))}
+									/>
+									min cooldown (min 5)
+								</span>
+							)}
+						</div>
+					)}
 					{kind === "once" && !job && (
 						<div className="text-2xs text-pi-text-faint">
 							One-shot tasks run about a minute from now (pause or edit before then to change it).
+						</div>
+					)}
+					{kind === "event" && (
+						<div className="text-2xs text-pi-text-faint">
+							{trigger === "turn_end"
+								? "Runs after the agent finishes a turn in this project (quiet period applies so the task's own runs don't loop)."
+								: "Runs once per new commit in this project (multiple commits between checks coalesce into one run)."}
 						</div>
 					)}
 

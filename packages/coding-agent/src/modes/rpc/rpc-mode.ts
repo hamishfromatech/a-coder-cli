@@ -69,6 +69,7 @@ export type {
 export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<never> {
 	takeOverStdout();
 	let session = runtimeHost.session;
+	let cronService: import("../../core/cron/service.ts").CronService | undefined;
 	let unsubscribe: (() => void) | undefined;
 	let unsubscribeBackpressure: (() => void) | undefined;
 	let unsubscribeBackgroundProcesses: (() => void) | undefined;
@@ -546,6 +547,12 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		unsubscribeBackgroundProcesses?.();
 		unsubscribe = session.subscribe((event) => {
 			output(event);
+			// Session events double as cron event triggers: a finished turn
+			// (natural end, not a retry-in-progress) may fire `on:turn-end` jobs
+			// for this project. CronService coalesces via cooldowns.
+			if (event.type === "agent_end" && event.willRetry !== true) {
+				cronService?.notifyEvent({ type: "turn_end", cwd: session.sessionManager.getCwd() });
+			}
 		});
 		unsubscribeBackpressure = session.agent.subscribe(async () => {
 			await waitForRawStdoutBackpressure();
@@ -633,6 +640,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			} satisfies RpcCronRunEvent);
 		},
 	});
+	cronService = cron;
 	cron.start();
 	signalCleanupHandlers.push(() => {
 		void cron.dispose();

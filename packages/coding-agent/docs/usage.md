@@ -91,9 +91,10 @@ Cron jobs run a prompt on a schedule in a project, without you typing it. Create
 ```
 /cron add "Morning CI triage" daily:09:00 Review overnight CI failures and summarize what needs attention.
 /cron add "Test loop" every:30m Run the test suite; fix or report failures.
+/cron add "Commit watch" on:commit Summarize the latest commit and flag anything that needs a follow-up issue.
 ```
 
-Schedules are `every:<n>m|h|d` (minimum 5 minutes), `daily:HH:MM` local time, or `once:<ISO date>` (one-shot; disables itself after firing). Jobs are scoped to the project (cwd) they were created in and persist in `~/.a-coder/cli/agent/cron/jobs.json`.
+Schedules are `every:<n>m|h|d` (minimum 5 minutes), `daily:HH:MM` local time, `once:<ISO date>` (one-shot; disables itself after firing), or an **event trigger**: `on:turn-end` (fires after the agent finishes a turn in the project — coalesced by a quiet period, default 30 minutes, so the task's own runs don't loop) or `on:commit` (fires once per new commit in the project; several commits between checks coalesce into one run). Jobs are scoped to the project (cwd) they were created in and persist in `~/.a-coder/cli/agent/cron/jobs.json`.
 
 When a job fires, its prompt is delivered to the project's active session — queued behind a running turn — so the work and its report land right in your conversation. If the project has no open session, the run executes in a background session for that project (continuity: repeat runs reuse the same session) and lands in the session tree. Fires are bounded (15-minute abort) and run unattended with automatic tool permissions — only schedule work you trust the agent to do.
 

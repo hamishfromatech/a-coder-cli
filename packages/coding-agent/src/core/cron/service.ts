@@ -14,17 +14,40 @@
  * Schedule math is shared with office errands (every / daily / once).
  */
 
+import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { withKeyedLock } from "../../utils/async-mutex.ts";
 import { noOpUIContext } from "../extensions/runner.ts";
 import { describeSchedule, isDue, nextRunAt } from "../office/errands.ts";
 import { getDefaultSessionDir, SessionManager } from "../session-manager.ts";
 import * as store from "./store.ts";
-import type { CronJob, CronRun, CronRunTrigger, CronSchedule, CronServiceEvent, CronSnapshot } from "./types.ts";
+import type {
+	CronEventTrigger,
+	CronJob,
+	CronRun,
+	CronRunTrigger,
+	CronSchedule,
+	CronServiceEvent,
+	CronSnapshot,
+} from "./types.ts";
 
 const TICK_MS = 30_000;
 /** Unattended side-session runs are bounded; stalled turns abort. */
 const RUN_TIMEOUT_MS = 15 * 60_000;
+
+/** Minimum cooldown for event jobs — protects the engine from event storms
+ *  (including the job's own runs ending turns). */
+const MIN_EVENT_COOLDOWN_MS = 5 * 60_000;
+/** Default quiet period for turn_end jobs: the job's own fires end turns too. */
+const DEFAULT_TURN_END_COOLDOWN_MINUTES = 30;
+
+/** A host-observed event the cron service matches jobs against. `head` is the
+ *  git commit head for `git_commit` events (the watermark). */
+export interface CronHostEvent {
+	type: CronEventTrigger;
+	cwd: string;
+	head?: string;
+}
 
 export interface CronServiceOptions {
 	/** The runtime whose active session receives matching jobs. */
@@ -33,6 +56,8 @@ export interface CronServiceOptions {
 	onUpdate?: (snapshot: CronSnapshot) => void;
 	/** Run lifecycle (started/finished) for activity feeds and run history. */
 	onRunEvent?: (event: CronServiceEvent) => void;
+	/** Git head resolver for `git_commit` jobs (overridable in tests). */
+	resolveGitHead?: (cwd: string) => Promise<string | null>;
 }
 
 /** The slice of AgentSessionRuntime the cron service touches. */
@@ -80,6 +105,18 @@ export function validateSchedule(schedule: CronSchedule): string | null {
 	if (schedule.kind === "once") {
 		return typeof schedule.at === "number" && Number.isFinite(schedule.at) ? null : "Once requires a timestamp";
 	}
+	if (schedule.kind === "event") {
+		if (schedule.trigger !== "turn_end" && schedule.trigger !== "git_commit") {
+			return "Unknown event trigger";
+		}
+		if (
+			schedule.cooldownMinutes !== undefined &&
+			(typeof schedule.cooldownMinutes !== "number" || !Number.isFinite(schedule.cooldownMinutes))
+		) {
+			return "Cooldown minutes must be a number";
+		}
+		return null;
+	}
 	return "Unknown schedule kind";
 }
 
@@ -87,6 +124,7 @@ export class CronService {
 	private readonly runtime: AgentRuntimeLike;
 	private readonly onUpdate?: (snapshot: CronSnapshot) => void;
 	private readonly onRunEvent?: (event: CronServiceEvent) => void;
+	private readonly resolveGitHead: (cwd: string) => Promise<string | null>;
 	private ticker: ReturnType<typeof setInterval> | undefined;
 	private disposed = false;
 	/** Live continuity sessions for off-session delivery, keyed by job id. */
@@ -95,6 +133,7 @@ export class CronService {
 		this.runtime = options.runtime;
 		this.onUpdate = options.onUpdate;
 		this.onRunEvent = options.onRunEvent;
+		this.resolveGitHead = options.resolveGitHead ?? defaultGitHead;
 	}
 
 	start(): void {
@@ -180,8 +219,9 @@ export class CronService {
 				if (patch.enabled) {
 					const next = nextRunAt(job.schedule, Date.now());
 					job.nextRunAt = next;
-					// A once-job whose moment already passed stays paused.
-					if (next === undefined) job.enabled = false;
+					// A once-job whose moment already passed stays paused. Event
+					// jobs legitimately have no nextRunAt — they stay armed.
+					if (next === undefined && job.schedule.kind === "once") job.enabled = false;
 				}
 			}
 		});
@@ -236,6 +276,55 @@ export class CronService {
 				await this.emitUpdate();
 			}
 		}
+		await this.pollGitJobs(jobs);
+	}
+
+	/** Poll git heads for enabled `git_commit` jobs; fire on a new head. */
+	private async pollGitJobs(jobs: CronJob[]): Promise<void> {
+		const gitJobs = jobs.filter(
+			(j) => j.enabled && j.schedule.kind === "event" && j.schedule.trigger === "git_commit",
+		);
+		if (gitJobs.length === 0) return;
+		const heads = await Promise.all(
+			gitJobs.map(async (job) => ({ job, head: await this.resolveGitHead(job.cwd).catch(() => null) })),
+		);
+		for (const { job, head } of heads) {
+			if (!head || head === job.lastGitHead) continue;
+			await this.handleEvent({ type: "git_commit", cwd: job.cwd, head });
+		}
+	}
+
+	/** Entry point for hosts: session/git events matching jobs by cwd + trigger.
+	 *  Awaiting is optional; hosts may fire-and-forget. */
+	notifyEvent(event: CronHostEvent): Promise<void> {
+		return this.handleEvent(event);
+	}
+
+	private async handleEvent(event: CronHostEvent): Promise<void> {
+		if (this.disposed) return;
+		const jobs = await store.listJobs();
+		for (const job of jobs) {
+			if (!job.enabled) continue;
+			if (job.schedule.kind !== "event" || job.schedule.trigger !== event.type) continue;
+			if (job.cwd !== event.cwd) continue;
+			if (event.type === "git_commit") {
+				// Watermark dedupes: one fire per new head, however many commits.
+				if (!event.head || event.head === job.lastGitHead) continue;
+				await store.updateJob(job.id, (j) => {
+					j.lastGitHead = event.head;
+				});
+			} else {
+				// Coalesce: one fire per cooldown window, no matter how many
+				// turns ended — including the job's own.
+				const cooldown = eventCooldownMs(job.schedule);
+				if (job.lastRunAt !== undefined && Date.now() - job.lastRunAt < cooldown) continue;
+			}
+			try {
+				await this.fireJob(job, "event");
+			} catch {
+				// fireJob records its own failures
+			}
+		}
 	}
 
 	private async fireJob(job: CronJob, trigger: CronRunTrigger = "schedule"): Promise<void> {
@@ -244,7 +333,7 @@ export class CronService {
 			const fresh = (await store.listJobs()).find((j) => j.id === job.id);
 			if (!fresh || !fresh.enabled) return;
 
-			const head = `[Cron: ${fresh.name}] Scheduled task (${describeSchedule(fresh.schedule)}) from the user's cron schedule. Work in the current project context and report the result plainly.`;
+			const head = `[Cron: ${fresh.name}] ${fresh.schedule.kind === "event" ? "Event-triggered task" : "Scheduled task"} (${describeSchedule(fresh.schedule)}) from the user's cron schedule. Work in the current project context and report the result plainly.`;
 			const prompt = `${head}\n\n${fresh.prompt}`;
 
 			const run: CronRun = {
@@ -392,4 +481,20 @@ class CronTimeoutError extends Error {
 		super("Cron run timed out");
 		this.name = "CronTimeoutError";
 	}
+}
+
+/** Cooldown window for an event job (clamped to the minimum). */
+function eventCooldownMs(schedule: Extract<CronSchedule, { kind: "event" }>): number {
+	const minutes =
+		schedule.cooldownMinutes ?? (schedule.trigger === "turn_end" ? DEFAULT_TURN_END_COOLDOWN_MINUTES : 0);
+	return Math.max(MIN_EVENT_COOLDOWN_MS, minutes * 60_000);
+}
+
+/** Resolve the current git HEAD of a project; null when not a repo. */
+function defaultGitHead(cwd: string): Promise<string | null> {
+	return new Promise((resolve) => {
+		execFile("git", ["rev-parse", "HEAD"], { cwd, timeout: 5_000 }, (error, stdout) => {
+			resolve(error ? null : stdout.trim() || null);
+		});
+	});
 }

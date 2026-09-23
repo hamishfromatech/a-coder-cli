@@ -3787,6 +3787,11 @@ export class InteractiveMode {
 				// Branch commits tool results at turn end — refresh the inline
 				// task board now (mid-turn branch reads were stale/empty).
 				void this.syncTaskPanel();
+				// Session events double as cron event triggers (`on:turn-end`
+				// jobs for this project); CronService coalesces via cooldowns.
+				if (event.willRetry !== true) {
+					this.cronTui.notifyTurnEnd();
+				}
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(false);
 				}

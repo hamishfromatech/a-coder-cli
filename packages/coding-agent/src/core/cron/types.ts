@@ -11,11 +11,15 @@
  * (cwd) they were created from.
  */
 
-/** Same three schedule kinds as office errands — the math is shared. */
+/** Same schedule family as office errands — the math is shared — plus
+ *  event triggers fired by the host (a turn ending, a commit landing). */
+export type CronEventTrigger = "turn_end" | "git_commit";
+
 export type CronSchedule =
 	| { kind: "every"; minutes: number }
 	| { kind: "daily"; time: string }
-	| { kind: "once"; at: number };
+	| { kind: "once"; at: number }
+	| { kind: "event"; trigger: CronEventTrigger; cooldownMinutes?: number };
 
 export type CronJobStatus = "ok" | "error" | "timeout";
 
@@ -41,6 +45,8 @@ export interface CronJob {
 	 * off-session fire; reused so repeat runs share context (continuity).
 	 */
 	sessionFile?: string;
+	/** Watermark for `git_commit` event jobs: the last commit head fired on. */
+	lastGitHead?: string;
 }
 
 export interface CronSnapshot {
@@ -50,7 +56,7 @@ export interface CronSnapshot {
 // ── Run history ──────────────────────────────────────────────────────────────
 
 export type CronRunStatus = "running" | "ok" | "error" | "timeout";
-export type CronRunTrigger = "schedule" | "manual";
+export type CronRunTrigger = "schedule" | "manual" | "event";
 /** "session" delivered into the live conversation; "background" ran headless. */
 export type CronRunDelivery = "session" | "background";
 

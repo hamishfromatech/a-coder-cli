@@ -897,7 +897,7 @@ Response `data`: `{ jobs }` — every job with schedule, `nextRunAt`, `lastRunAt
 {"type": "cron_run_now", "jobId": "<id>"}
 ```
 
-Schedules: `{"kind": "every", "minutes": N}` (min 5), `{"kind": "daily", "time": "HH:MM"}` local, or `{"kind": "once", "at": <epoch ms>}`. `cron_run_now` awaits the fire (prompt delivery or the bounded background run).
+Schedules: `{"kind": "every", "minutes": N}` (min 5), `{"kind": "daily", "time": "HH:MM"}` local, `{"kind": "once", "at": <epoch ms>}`, or event triggers — `{"kind": "event", "trigger": "turn_end"}` (fires after the agent finishes a turn in the job's project; default 30-minute quiet period, set `cooldownMinutes` to override, min 5) and `{"kind": "git_commit"}` jobs use `{"kind": "event", "trigger": "git_commit"}` (fires once per new commit; the `lastGitHead` watermark coalesces). `cron_run_now` awaits the fire (prompt delivery or the bounded background run).
 
 #### cron_runs
 

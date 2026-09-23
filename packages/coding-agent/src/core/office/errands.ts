@@ -16,13 +16,28 @@ export const MIN_INTERVAL_MINUTES = 5;
 
 export const DAY_MS = 24 * 60 * 60 * 1000;
 
+/** Event-triggered schedules (cron Loops-style jobs) — fired by host events,
+ *  never by time. The office never creates these; the math accepts them so
+ *  the cron service can share this module. */
+export interface EventScheduleLike {
+	kind: "event";
+	trigger: string;
+	cooldownMinutes?: number;
+}
+
+export type ScheduleLike = ErrandSchedule | EventScheduleLike;
+
 /** Validate a "HH:MM" local-time string. */
 export function isValidDailyTime(time: string): boolean {
 	return /^([01]\d|2[0-3]):[0-5]\d$/.test(time);
 }
 
-/** Compute the first fire strictly after `from` (epoch ms). */
-export function nextRunAt(schedule: ErrandSchedule, from: number): number | undefined {
+/** Compute the first fire strictly after `from` (epoch ms). Event schedules
+ *  have no time-based next fire (undefined). */
+export function nextRunAt(schedule: ScheduleLike, from: number): number | undefined {
+	if (schedule.kind === "event") {
+		return undefined;
+	}
 	if (schedule.kind === "once") {
 		return schedule.at > from ? schedule.at : undefined;
 	}
@@ -48,7 +63,12 @@ export function nextRunAt(schedule: ErrandSchedule, from: number): number | unde
 }
 
 /** Human-readable schedule line for the roster. */
-export function describeSchedule(schedule: ErrandSchedule): string {
+export function describeSchedule(schedule: ScheduleLike): string {
+	if (schedule.kind === "event") {
+		if (schedule.trigger === "turn_end") return "on turn end";
+		if (schedule.trigger === "git_commit") return "on commit";
+		return `on ${schedule.trigger.replace(/_/g, " ")}`;
+	}
 	if (schedule.kind === "once") {
 		return new Date(schedule.at).toLocaleString();
 	}
@@ -61,12 +81,11 @@ export function describeSchedule(schedule: ErrandSchedule): string {
 	return `daily at ${schedule.time}`;
 }
 
-/** Whether an errand is due as of `now` and enabled. */
-export function isDue(
-	errand: { enabled: boolean; schedule: ErrandSchedule; nextRunAt?: number },
-	now: number,
-): boolean {
+/** Whether an errand is due as of `now` and enabled. Event schedules are
+ *  never time-due — the host fires them through notifyEvent. */
+export function isDue(errand: { enabled: boolean; schedule: ScheduleLike; nextRunAt?: number }, now: number): boolean {
 	if (!errand.enabled) return false;
+	if (errand.schedule.kind === "event") return false;
 	const next = errand.nextRunAt ?? nextRunAt(errand.schedule, now);
 	return next !== undefined && next <= now;
 }
