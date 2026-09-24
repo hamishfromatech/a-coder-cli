@@ -16,9 +16,21 @@
 A self-extensible AI coding agent by [The A-Tech Corporation PTY LTD](https://github.com/hamishfromatech), available two ways:
 
 - **A-Coder CLI** (`a-coder-cli`) — the terminal coding agent. Runs anywhere Node 22+ or Bun does.
-- **A-Coder Desktop** — a native Tauri desktop app (macOS, Windows, Linux) with project workspaces, a session tree, a model picker, and voice mode (speech-to-text / text-to-speech).
+- **A-Coder Desktop** — a native Tauri desktop app (macOS, Windows, Linux) with project workspaces, a session tree, a model picker, a virtual-office team view, scheduled tasks with run history, an activity inbox, and voice mode (speech-to-text / text-to-speech).
 
 Both share the same engine — the agent runtime, tools, and unified multi-provider LLM API — so providers, models, and sessions work identically across the CLI and the desktop app.
+
+### Highlights
+
+- **Multi-provider** — OpenAI, Anthropic, Google, OpenRouter, Ollama, and custom OpenAI-compatible providers; switch models per session or hotkey cycle.
+- **Sessions** — automatic persistence, resume, tree navigation, forking, sharing, and compaction.
+- **Extensions, skills, and prompt templates** — TypeScript extensions that register tools and commands; skills as loadable playbooks; reusable prompt templates.
+- **Workflows** — saved multi-agent JavaScript scripts that orchestrate background subagents; trigger by including the keyword **ultracode** in a prompt, authoring with the `run_workflow` tool, or running a saved workflow as its own slash command. Interrupted runs resume from persisted state.
+- **Your Office** — a virtual office where you hire AI coworkers that take errands, join huddles, and are visible working in 2D or 3D.
+- **Scheduled tasks (cron)** — run prompts on a schedule (`every:30m`, `daily:09:00`, one-shot) or on events (`on:turn-end`, `on:commit`); every run is recorded, inspectable, and one click to continue. Unattended runs land in continuity sessions with automatic tool permissions.
+- **Activity inbox** (desktop) — pending approvals, run outcomes, and failures in one place with an unread badge.
+- **Headless + RPC** — `a-coder-cli -p "prompt"` for scripting, `--mode rpc` (JSON over stdio) drives the same engine programmatically — it's what the desktop app speaks.
+- **A-Coder Cloud** (optional) — a self-hosted daemon that clones a repo, runs the agent headlessly against a task, checkpoints to a branch, and returns a report and resumable session.
 
 <p align="center">
   <img alt="A-Coder Desktop chat backdrop — cyanotype duotone engraving of a lone engineer with a glowing staff before a colossal broken arch" src="desktop-app/public/ds-assets/filler-bg0.jpg" width="640">
@@ -38,6 +50,8 @@ To learn more:
 | **[agent](packages/agent)** | Agent runtime with tool calling and state management |
 | **[ai](packages/ai)** | Unified multi-provider LLM API (OpenAI, Anthropic, Google, etc.) |
 | **[tui](packages/tui)** | Terminal UI library with differential rendering |
+| **[cloud](packages/cloud)** | A-Coder Cloud daemon — self-hosted headless agent fleet on a repo |
+| **[orchestrator](packages/orchestrator)** | Experimental orchestration package (unstable) |
 
 ## Install
 
@@ -107,7 +121,7 @@ plus a Composio system-prompt section that teaches the model the discover → co
 Composio is opt-in. Provide a Composio API key (create one at [composio.dev](https://composio.dev)) any of these ways:
 
 - **Environment variable** (takes precedence): `export COMPOSIO_API_KEY=...`
-- **CLI settings** — `~/.a-coder-cli/settings.json`:
+- **CLI settings** — `~/.a-coder/cli/agent/settings.json` (project-scope alternative: `<project>/.a-coder-cli/settings.json`):
 
   ```json
   { "composio": { "enabled": true, "apiKey": "ck_..." } }
@@ -129,9 +143,9 @@ The agent calls `composio_search_tools` to resolve the right GitHub slugs, `comp
 
 ## Permissions & Containerization
 
-A-Coder does not include a built-in permission system for restricting filesystem, process, network, or credential access. By default, it runs with the permissions of the user and process that launched it.
+The agent ships a tool-permission layer: permission modes (`ask`, `allow`, `read-only`, and `auto`, which classifies tool calls against policy rules), a `/permissions` command to manage allow / soft-deny / hard-deny rules, session-scoped "Always allow" rules from the desktop approval bar, and approval cards for workflow runs. The desktop renders inline approval bars for tools, ask questions, and workflow phases.
 
-If you need stronger boundaries, containerize or sandbox the CLI. See [packages/coding-agent/docs/containerization.md](packages/coding-agent/docs/containerization.md) for three patterns:
+These approvals govern *the agent's tools*, not OS-level boundaries — for stronger isolation of filesystem, process, network, or credential access, containerize or sandbox the CLI. See [packages/coding-agent/docs/containerization.md](packages/coding-agent/docs/containerization.md) for three patterns:
 
 - **Gondolin extension**: keep `a-coder-cli` and provider auth on the host while routing built-in tools and `!` commands into a local Linux micro-VM.
 - **Plain Docker**: run the whole `a-coder-cli` process in a local container for simple isolation.
@@ -144,11 +158,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines and [AGENTS.m
 ## Development
 
 ```bash
-npm install --ignore-scripts  # Install all dependencies without running lifecycle scripts
-npm run build        # Build all packages
-npm run check        # Lint, format, and type check
-./test.sh            # Run tests (skips LLM-dependent tests without API keys)
-./pi-test.sh         # Run a-coder-cli from sources (can be run from any directory)
+npm install --ignore-scripts  # Install all dependencies without lifecycle scripts
+npm run build                 # Build all packages
+npm run check                 # Lint, format, and type check
+./test.sh                     # Run tests (skips LLM-dependent tests without API keys)
+./pi-test.sh                  # Run a-coder-cli from sources (can be run from any directory)
 ```
 
 Desktop development lives in [`desktop-app/`](desktop-app) — see its [README](desktop-app/README.md) for Tauri build/run details.
@@ -164,7 +178,7 @@ We treat npm dependency changes as reviewed code changes.
 - The published CLI package includes `packages/coding-agent/npm-shrinkwrap.json`, generated from the root lockfile, to pin transitive deps for npm users.
 - Release smoke tests use `npm run release:local` to build, pack, and create isolated npm and Bun installs outside the repo before tagging a release.
 - Local release installs, documented npm installs, and `a-coder-cli update --self` use `--ignore-scripts` where supported.
-- CI installs with `npm ci --ignore-scripts`, and a scheduled GitHub workflow runs `npm audit --omit=dev` plus `npm audit signatures --omit=dev`.
+- CI installs with `npm ci --ignore-scripts` from the committed lockfiles (npm's publish-date window is disabled in CI because the lockfile — not fresh resolution — is the vetted artifact), and a scheduled GitHub workflow runs `npm audit --omit=dev` plus `npm audit signatures --omit=dev`.
 - Shrinkwrap generation has an explicit allowlist for dependency lifecycle scripts; new lifecycle-script deps fail checks until reviewed.
 
 ## License
