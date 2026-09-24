@@ -744,6 +744,9 @@ export const abort = (sessionPath?: string) => sendCommand({ type: "abort", sess
 /** Retrieve and remove queued steering/follow-up text — for Esc-to-dequeue, restore the result in the editor. */
 export const clearQueue = (sessionPath?: string) =>
 	sendCommand({ type: "clear_queue", sessionPath }) as Promise<{ steering: string[]; followUp: string[] }>;
+/** Remove a single queued message by kind and index (order as reported by queue_update). */
+export const removeQueued = (kind: "steering" | "followUp", index: number, sessionPath?: string) =>
+	sendCommand({ type: "queue_remove", kind, index, sessionPath }) as Promise<{ removed: boolean }>;
 export const newSession = (parentSession?: string, cwd?: string) =>
 	sendCommand({ type: "new_session", parentSession, cwd });
 export const clearConversation = () =>

@@ -10,6 +10,7 @@ import {
 import type { ToolResultMessage } from "@earendil-works/pi-ai";
 import { useSessionStore, type UiRequest } from "../../stores/session-store";
 import { ToolApprovalBar } from "../ToolApprovalBar";
+import { diffStats, EditDiff } from "./EditDiff";
 
 export interface RichToolCallProps {
 	toolCall: {
@@ -72,6 +73,20 @@ function resultText(result: ToolResultMessage | undefined): string {
 		.trim();
 }
 
+/** Details shape emitted by the edit tool (`details.diff` holds the display diff). */
+interface EditToolResultDetails {
+	diff?: unknown;
+	patch?: unknown;
+	firstChangedLine?: unknown;
+}
+
+function editResultDiff(result: ToolResultMessage | undefined): string | undefined {
+	if (!result || result.isError) return undefined;
+	const details = result.details as EditToolResultDetails | undefined;
+	if (typeof details?.diff !== "string" || details.diff.trim().length === 0) return undefined;
+	return details.diff;
+}
+
 export function RichToolCall({ toolCall, approvalRequest }: RichToolCallProps) {
 	const [open, setOpen] = useState(false);
 	const [copied, setCopied] = useState(false);
@@ -100,6 +115,8 @@ export function RichToolCall({ toolCall, approvalRequest }: RichToolCallProps) {
 	const argsJson = useMemo(() => JSON.stringify(toolCall.arguments, null, 2), [toolCall.arguments]);
 	const summary = summarizeArgs(toolCall.name, toolCall.arguments);
 	const output = resultText(result);
+	const diff = editResultDiff(result);
+	const stats = useMemo(() => (diff ? diffStats(diff) : undefined), [diff]);
 
 	const onCopy = async (e: React.MouseEvent) => {
 		e.stopPropagation();
@@ -138,6 +155,12 @@ export function RichToolCall({ toolCall, approvalRequest }: RichToolCallProps) {
 						{summary}
 					</span>
 				)}
+				{stats && (stats.added > 0 || stats.removed > 0) && (
+					<span className="ml-auto flex shrink-0 items-center gap-1.5 font-mono text-2xs">
+						{stats.added > 0 && <span className="text-pi-success">+{stats.added}</span>}
+						{stats.removed > 0 && <span className="text-pi-error">−{stats.removed}</span>}
+					</span>
+				)}
 				<span
 					onClick={onCopy}
 					role="button"
@@ -161,29 +184,51 @@ export function RichToolCall({ toolCall, approvalRequest }: RichToolCallProps) {
 			</button>
 			{open && (
 				<div className="border-t border-pi-border bg-pi-bg/40">
-					{argsJson && (
-						<div>
-							<div className="px-2.5 pt-1.5 text-4xs font-medium uppercase tracking-[0.08em] text-pi-text-faint">
-								Args
+					{diff ? (
+						<>
+							<div className="flex items-center justify-between px-2.5 pt-1.5">
+								<span className="text-4xs font-medium uppercase tracking-[0.08em] text-pi-text-faint">
+									Changes
+								</span>
+								{stats && (stats.added > 0 || stats.removed > 0) && (
+									<span className="font-mono text-2xs">
+										{stats.added > 0 && <span className="text-pi-success">+{stats.added}</span>}
+										{stats.added > 0 && stats.removed > 0 && (
+											<span className="text-pi-text-faint"> </span>
+										)}
+										{stats.removed > 0 && <span className="text-pi-error">−{stats.removed}</span>}
+									</span>
+								)}
 							</div>
-							<pre className="max-h-48 overflow-auto px-2.5 py-1.5 font-mono text-2xs leading-relaxed text-pi-text-secondary">
-								{argsJson}
-							</pre>
-						</div>
-					)}
-					{output && (
-						<div>
-							<div className="px-2.5 pt-1.5 text-4xs font-medium uppercase tracking-[0.08em] text-pi-text-faint">
-								{result?.isError ? "Error" : "Result"}
-							</div>
-							<pre
-								className={`max-h-64 overflow-auto px-2.5 py-1.5 font-mono text-2xs leading-relaxed ${
-									result?.isError ? "text-pi-error" : "text-pi-text-secondary"
-								}`}
-							>
-								{output}
-							</pre>
-						</div>
+							<EditDiff diff={diff} />
+						</>
+					) : (
+						<>
+							{argsJson && (
+								<div>
+									<div className="px-2.5 pt-1.5 text-4xs font-medium uppercase tracking-[0.08em] text-pi-text-faint">
+										Args
+									</div>
+									<pre className="max-h-48 overflow-auto px-2.5 py-1.5 font-mono text-2xs leading-relaxed text-pi-text-secondary">
+										{argsJson}
+									</pre>
+								</div>
+							)}
+							{output && (
+								<div>
+									<div className="px-2.5 pt-1.5 text-4xs font-medium uppercase tracking-[0.08em] text-pi-text-faint">
+										{result?.isError ? "Error" : "Result"}
+									</div>
+									<pre
+										className={`max-h-64 overflow-auto px-2.5 py-1.5 font-mono text-2xs leading-relaxed ${
+											result?.isError ? "text-pi-error" : "text-pi-text-secondary"
+										}`}
+									>
+										{output}
+									</pre>
+								</div>
+							)}
+						</>
 					)}
 				</div>
 			)}
