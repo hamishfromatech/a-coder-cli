@@ -71,6 +71,22 @@ function createDeferred(): {
 }
 
 describe("Agent", () => {
+	it("removes queued steering and follow-up messages by index", () => {
+		const agent = new Agent();
+		agent.steer({ role: "user", content: [{ type: "text", text: "s1" }], timestamp: 1 });
+		agent.steer({ role: "user", content: [{ type: "text", text: "s2" }], timestamp: 2 });
+		agent.followUp({ role: "user", content: [{ type: "text", text: "f1" }], timestamp: 3 });
+
+		expect(agent.removeSteeringAt(0)).toBe(true);
+		expect(agent.hasQueuedMessages()).toBe(true);
+		expect(agent.removeSteeringAt(1)).toBe(false); // out of range after removal
+		expect(agent.removeSteeringAt(0)).toBe(true);
+		expect(agent.hasQueuedMessages()).toBe(true); // follow-up still queued
+		expect(agent.removeFollowUpAt(0)).toBe(true);
+		expect(agent.hasQueuedMessages()).toBe(false);
+		expect(agent.removeFollowUpAt(0)).toBe(false);
+	});
+
 	it("should create an agent instance with default state", () => {
 		const agent = new Agent();
 

@@ -730,6 +730,16 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				return success(id, "clear_queue", target.clearQueue());
 			}
 
+			case "queue_remove": {
+				const target = runtimeHost.getSessionForPath(command.sessionPath);
+				if (!target) {
+					return error(id, "queue_remove", `Unknown session: ${command.sessionPath}`);
+				}
+				return success(id, "queue_remove", {
+					removed: target.removeQueuedMessage(command.kind, command.index),
+				});
+			}
+
 			case "stop_workflow_run": {
 				return success(id, "stop_workflow_run", { stopped: stopWorkflowRun(command.runId) });
 			}

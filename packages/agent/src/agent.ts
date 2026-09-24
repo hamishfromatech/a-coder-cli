@@ -154,6 +154,13 @@ class PendingMessageQueue {
 	clear(): void {
 		this.messages = [];
 	}
+
+	/** Remove the message at index. Returns true when an item was removed. */
+	removeAt(index: number): boolean {
+		if (index < 0 || index >= this.messages.length) return false;
+		this.messages = this.messages.filter((_, i) => i !== index);
+		return true;
+	}
 }
 
 type ActiveRun = {
@@ -294,6 +301,16 @@ export class Agent {
 	clearAllQueues(): void {
 		this.clearSteeringQueue();
 		this.clearFollowUpQueue();
+	}
+
+	/** Remove the queued steering message at index. Returns true when removed. */
+	removeSteeringAt(index: number): boolean {
+		return this.steeringQueue.removeAt(index);
+	}
+
+	/** Remove the queued follow-up message at index. Returns true when removed. */
+	removeFollowUpAt(index: number): boolean {
+		return this.followUpQueue.removeAt(index);
 	}
 
 	/** Returns true when either queue still contains pending messages. */

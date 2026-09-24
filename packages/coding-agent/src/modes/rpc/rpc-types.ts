@@ -44,6 +44,7 @@ export type RpcCommand =
 	| { id?: string; type: "follow_up"; message: string; images?: ImageContent[]; sessionPath?: string }
 	| { id?: string; type: "abort"; sessionPath?: string }
 	| { id?: string; type: "clear_queue"; sessionPath?: string }
+	| { id?: string; type: "queue_remove"; kind: "steering" | "followUp"; index: number; sessionPath?: string }
 	| { id?: string; type: "stop_workflow_run"; runId: string }
 	| { id?: string; type: "new_session"; parentSession?: string; cwd?: string }
 	| { id?: string; type: "clear_conversation" }
@@ -262,6 +263,13 @@ export type RpcResponse =
 			command: "clear_queue";
 			success: true;
 			data: { steering: string[]; followUp: string[] };
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "queue_remove";
+			success: true;
+			data: { removed: boolean };
 	  }
 	| { id?: string; type: "response"; command: "new_session"; success: true; data: { cancelled: boolean } }
 

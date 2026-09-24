@@ -2394,6 +2394,23 @@ export class AgentSession {
 		return { steering, followUp };
 	}
 
+	/**
+	 * Remove the queued steering/follow-up message at index (order as reported
+	 * by queue_update). Returns true when an item was removed.
+	 */
+	removeQueuedMessage(kind: "steering" | "followUp", index: number): boolean {
+		const queue = kind === "steering" ? this._steeringMessages : this._followUpMessages;
+		if (index < 0 || index >= queue.length) return false;
+		queue.splice(index, 1);
+		if (kind === "steering") {
+			this.agent.removeSteeringAt(index);
+		} else {
+			this.agent.removeFollowUpAt(index);
+		}
+		this._emitQueueUpdate();
+		return true;
+	}
+
 	/** Number of pending messages (includes both steering and follow-up) */
 	get pendingMessageCount(): number {
 		return this._steeringMessages.length + this._followUpMessages.length;

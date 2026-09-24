@@ -122,6 +122,41 @@ describe("AgentSession queue characterization", () => {
 		expect(getAssistantTexts(harness)).toContain("saw steer");
 	});
 
+	it("removes a single queued steering message without delivering it", async () => {
+		const { harness, waitForToolStart, promptPromise, releaseToolExecution } = await createWaitingHarness();
+		harnesses.push(harness);
+		const session = harness.session;
+
+		harness.setResponses([
+			fauxAssistantMessage(fauxToolCall("wait", {}), { stopReason: "toolUse" }),
+			(context) => {
+				const sawKeep = context.messages.some(
+					(message) => message.role === "user" && getMessageText(message) === "keep me",
+				);
+				const sawDrop = context.messages.some(
+					(message) => message.role === "user" && getMessageText(message) === "drop me",
+				);
+				return fauxAssistantMessage(sawKeep && !sawDrop ? "kept only keep me" : "wrong queue state");
+			},
+		]);
+
+		await waitForToolStart;
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		await session.steer("drop me");
+		await session.steer("keep me");
+		expect(session.pendingMessageCount).toBe(2);
+
+		expect(session.removeQueuedMessage("steering", 0)).toBe(true);
+		expect(session.removeQueuedMessage("steering", 5)).toBe(false); // out of range
+		expect(session.pendingMessageCount).toBe(1);
+
+		releaseToolExecution();
+		await promptPromise;
+
+		expect(getUserTexts(harness)).toEqual(["start", "keep me"]);
+		expect(getAssistantTexts(harness)).toContain("kept only keep me");
+	});
+
 	it("delivers follow-up messages only after the current run finishes", async () => {
 		const waiting = await createWaitingHarness();
 		const { harness, waitForToolStart, promptPromise, releaseToolExecution } = waiting;
