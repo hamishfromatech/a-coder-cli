@@ -26,7 +26,7 @@ const PLACEHOLDER_MODEL: Model<"openai-completions"> = {
 		cacheWrite: 0,
 	},
 	contextWindow: 128000,
-	maxTokens: 4096,
+	maxTokens: 128000,
 };
 
 function llamaCppAuth(): ApiKeyAuth {
@@ -91,7 +91,7 @@ export function createLlamaCppModel(id: string, baseUrl?: string, contextWindow?
 			cacheWrite: 0,
 		},
 		contextWindow: contextWindow !== undefined && contextWindow > 0 ? contextWindow : 128000,
-		maxTokens: 4096,
+		maxTokens: 128000,
 	};
 }
 
