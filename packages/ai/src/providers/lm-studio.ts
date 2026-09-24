@@ -130,9 +130,10 @@ async function fetchLMStudioLoadedModels(
 	const list = json.data ?? [];
 	const models: Model<"openai-completions">[] = [];
 	for (const entry of list) {
-		// Only currently-loaded LM models can serve requests; embeddings are
-		// not chat models.
-		if (!entry.id || entry.type !== "llm" || entry.state !== "loaded") continue;
+		// Only currently-loaded chat models can serve requests. LM Studio
+		// reports plain models as "llm" and vision-capable ones as "vlm";
+		// embeddings are not chat models.
+		if (!entry.id || (entry.type !== "llm" && entry.type !== "vlm") || entry.state !== "loaded") continue;
 		models.push(createLMStudioModel(entry.id, baseUrl, contextWindowFromV0(entry)));
 	}
 	return models;

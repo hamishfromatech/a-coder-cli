@@ -33,6 +33,14 @@ describe("LM Studio provider", () => {
 								loaded_context_length: 131072,
 								capabilities: ["tool_use"],
 							},
+							// Vision-capable models report type "vlm" (e.g. mimo-v2.6 distills).
+							{
+								id: "mimo-v2.6-distill-qwen-9b",
+								type: "vlm",
+								state: "loaded",
+								max_context_length: 262144,
+								loaded_context_length: 262144,
+							},
 							{ id: "big-model", type: "llm", state: "loaded", max_context_length: 262144 },
 							{ id: "dozing", type: "llm", state: "not-loaded", max_context_length: 8192 },
 							{ id: "nomic-embed", type: "embedding", state: "loaded", max_context_length: 2048 },
@@ -47,9 +55,10 @@ describe("LM Studio provider", () => {
 
 		const models = await fetchLMStudioModels();
 		expect(fetchMock).toHaveBeenCalledTimes(1);
-		expect(models.map((m) => m.id)).toEqual(["lfm2.5-8b-a1b", "big-model"]);
+		expect(models.map((m) => m.id)).toEqual(["lfm2.5-8b-a1b", "mimo-v2.6-distill-qwen-9b", "big-model"]);
 		expect(models[0]?.contextWindow).toBe(131072); // served instance context wins
-		expect(models[1]?.contextWindow).toBe(262144); // catalog max as fallback
+		expect(models[1]?.contextWindow).toBe(262144); // vlm with served context
+		expect(models[2]?.contextWindow).toBe(262144); // catalog max as fallback
 
 		vi.unstubAllGlobals();
 	});
