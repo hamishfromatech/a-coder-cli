@@ -37,12 +37,32 @@ function isKeyboardProtocolNegotiationSequencePrefix(sequence: string): boolean 
 	return sequence === "\x1b[" || /^\x1b\[\?[\d;]*$/.test(sequence);
 }
 
+/**
+ * Legacy ctrl+<letter> byte (0x01-0x1a maps to ctrl+a..ctrl+z), excluding
+ * Tab (0x09), LF (0x0a) and CR (0x0d) which carry their own meanings.
+ */
+function isLegacyCtrlLetterByte(data: string): boolean {
+	if (data.length !== 1) return false;
+	const code = data.charCodeAt(0);
+	return code >= 0x01 && code <= 0x1a && code !== 0x09 && code !== 0x0a && code !== 0x0d;
+}
+
 export function isAppleTerminalSession(): boolean {
 	return process.platform === "darwin" && process.env.TERM_PROGRAM === "Apple_Terminal";
 }
 
 export function normalizeAppleTerminalInput(data: string, isAppleTerminal: boolean, isShiftPressed: boolean): string {
-	if (isAppleTerminal && data === "\r" && isShiftPressed) return APPLE_TERMINAL_SHIFT_ENTER_SEQUENCE;
+	if (!isAppleTerminal) return data;
+	if (data === "\r" && isShiftPressed) return APPLE_TERMINAL_SHIFT_ENTER_SEQUENCE;
+	// Apple Terminal supports neither the kitty keyboard protocol nor xterm
+	// modifyOtherKeys, so ctrl+shift+<letter> arrives as the exact same legacy
+	// byte as ctrl+<letter> and the shift is unrecoverable from the stream.
+	// When the native Shift probe reports Shift is held, rewrite the byte to
+	// its kitty CSI-u ctrl+shift encoding so bindings like ctrl+shift+o match.
+	if (isShiftPressed && isLegacyCtrlLetterByte(data)) {
+		const code = data.charCodeAt(0);
+		return `\x1b[${code + 0x60};6u`;
+	}
 	return data;
 }
 
@@ -374,13 +394,14 @@ export class ProcessTerminal implements Terminal {
 
 	private forwardInputSequence(sequence: string): void {
 		if (!this.inputHandler) return;
-		const isAppleTerminal = sequence === "\r" && isAppleTerminalSession();
-		const input = normalizeAppleTerminalInput(
-			sequence,
-			isAppleTerminal,
-			isAppleTerminal && isNativeModifierPressed("shift"),
-		);
-		this.inputHandler(input);
+		if (isAppleTerminalSession()) {
+			// Probe the native modifier state so legacy bytes that cannot encode
+			// Shift (ctrl+letter, Return) can be disambiguated.
+			const input = normalizeAppleTerminalInput(sequence, true, isNativeModifierPressed("shift"));
+			this.inputHandler(input);
+			return;
+		}
+		this.inputHandler(sequence);
 	}
 
 	private enableModifyOtherKeys(): void {

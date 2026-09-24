@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed ctrl+shift+<letter> keybindings (e.g. `app.tools.expand` on ctrl+shift+o, `app.transcript.toggle` on ctrl+shift+t) never firing on Apple Terminal: it supports neither the kitty keyboard protocol nor xterm modifyOtherKeys, so ctrl+shift+<letter> arrived as the same legacy byte as ctrl+<letter> and the shift was unrecoverable from the input stream. The existing native-modifier bridge (previously only used to synthesize Shift+Enter) now probes the physical Shift key for every input sequence and rewrites ctrl+letter bytes to their kitty CSI-u ctrl+shift encoding when Shift is held, so the whole ctrl+shift+<letter> class is distinguishable again. Tab, LF and CR are excluded from the rewrite (Enter keeps its dedicated Shift+Enter path).
+
 ### Added
 
 - Added environment and programmatic overrides for OSC 8 hyperlinks, inline image protocols, and truecolor terminal capabilities ([#8665](https://github.com/earendil-works/pi/issues/8665)).

@@ -20,6 +20,31 @@ describe("normalizeAppleTerminalInput", () => {
 		assert.equal(normalizeAppleTerminalInput("\x1b[13;2u", true, true), "\x1b[13;2u");
 		assert.equal(normalizeAppleTerminalInput("a", true, true), "a");
 	});
+
+	it("rewrites ctrl+letter bytes to kitty ctrl+shift CSI-u when Shift is pressed", () => {
+		// ctrl+o (0x0f) -> ctrl+shift+o (letter = 0x0f + 0x60 = 111, mods 6)
+		assert.equal(normalizeAppleTerminalInput("\x0f", true, true), "\x1b[111;6u");
+		// ctrl+t (0x14) -> ctrl+shift+t
+		assert.equal(normalizeAppleTerminalInput("\x14", true, true), "\x1b[116;6u");
+	});
+
+	it("leaves ctrl+letter bytes unchanged when Shift is not pressed", () => {
+		assert.equal(normalizeAppleTerminalInput("\x0f", true, false), "\x0f");
+	});
+
+	it("leaves Tab/LF/CR unchanged even when Shift is pressed", () => {
+		assert.equal(normalizeAppleTerminalInput("\t", true, true), "\t");
+		assert.equal(normalizeAppleTerminalInput("\n", true, true), "\n");
+		assert.equal(normalizeAppleTerminalInput("\r", true, true), "\x1b[13;2u"); // handled by the shift+enter path
+	});
+
+	it("leaves multi-byte sequences unchanged even when Shift is pressed", () => {
+		assert.equal(normalizeAppleTerminalInput("\x1b[A", true, true), "\x1b[A");
+	});
+
+	it("leaves ctrl+letter bytes unchanged on non-Apple Terminals", () => {
+		assert.equal(normalizeAppleTerminalInput("\x0f", false, true), "\x0f");
+	});
 });
 
 describe("ProcessTerminal Kitty keyboard protocol negotiation", () => {
