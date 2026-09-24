@@ -76,6 +76,6 @@ export const MOONSHOTAI_MODELS = {
 			cacheWrite: 0,
 		},
 		contextWindow: 1048576,
-		maxTokens: 131072,
+		maxTokens: 1048576,
 	} satisfies Model<"openai-completions">,
 } as const;

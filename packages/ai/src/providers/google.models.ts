@@ -52,8 +52,8 @@ export const GOOGLE_MODELS = {
 			cacheRead: 0,
 			cacheWrite: 0,
 		},
-		contextWindow: 131072,
-		maxTokens: 65536,
+		contextWindow: 128000,
+		maxTokens: 64000,
 	} satisfies Model<"google-generative-ai">,
 	"gemini-2.5-flash": {
 		id: "gemini-2.5-flash",
@@ -158,7 +158,7 @@ export const GOOGLE_MODELS = {
 			cacheWrite: 0,
 		},
 		contextWindow: 65536,
-		maxTokens: 65536,
+		maxTokens: 4096,
 	} satisfies Model<"google-generative-ai">,
 	"gemini-3.1-flash-lite-preview": {
 		id: "gemini-3.1-flash-lite-preview",

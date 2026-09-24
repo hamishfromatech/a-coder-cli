@@ -310,7 +310,7 @@ export const CLOUDFLARE_WORKERS_AI_MODELS = {
 			cacheWrite: 0,
 		},
 		contextWindow: 1310720,
-		maxTokens: 1310720,
+		maxTokens: 1048576,
 	} satisfies Model<"openai-completions">,
 	"@cf/zai-org/glm-5.3-flash": {
 		id: "@cf/zai-org/glm-5.3-flash",

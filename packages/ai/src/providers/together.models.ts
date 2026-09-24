@@ -20,7 +20,7 @@ export const TOGETHER_MODELS = {
 			cacheRead: 0.06,
 			cacheWrite: 0,
 		},
-		contextWindow: 202752,
+		contextWindow: 196608,
 		maxTokens: 131072,
 	} satisfies Model<"openai-completions">,
 	"MiniMaxAI/MiniMax-M3": {
@@ -132,7 +132,7 @@ export const TOGETHER_MODELS = {
 			cacheRead: 0.03,
 			cacheWrite: 0,
 		},
-		contextWindow: 1000000,
+		contextWindow: 1048576,
 		maxTokens: 384000,
 	} satisfies Model<"openai-completions">,
 	"deepseek-ai/DeepSeek-V4-Pro": {
@@ -378,7 +378,7 @@ export const TOGETHER_MODELS = {
 			cacheRead: 0.26,
 			cacheWrite: 0,
 		},
-		contextWindow: 512000,
+		contextWindow: 1048575,
 		maxTokens: 164000,
 	} satisfies Model<"openai-completions">,
 	"zai-org/GLM-5.3": {

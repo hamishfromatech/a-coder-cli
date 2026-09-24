@@ -123,6 +123,23 @@ export const XAI_MODELS = {
 		contextWindow: 500000,
 		maxTokens: 500000,
 	} satisfies Model<"openai-completions">,
+	"grok-4.7": {
+		id: "grok-4.7",
+		name: "Grok 4.7",
+		api: "openai-completions",
+		provider: "xai",
+		baseUrl: "https://api.x.ai/v1",
+		reasoning: true,
+		input: ["text", "image"],
+		cost: {
+			input: 2,
+			output: 6,
+			cacheRead: 0.5,
+			cacheWrite: 0,
+		},
+		contextWindow: 500000,
+		maxTokens: 500000,
+	} satisfies Model<"openai-completions">,
 	"grok-build-0.1": {
 		id: "grok-build-0.1",
 		name: "Grok Build 0.1",
