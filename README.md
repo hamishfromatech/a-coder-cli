@@ -6,6 +6,9 @@
 <p align="center">
   <a href="https://discord.com/invite/3cU7Bz4UPx"><img alt="Discord" src="https://img.shields.io/badge/discord-community-5865F2?style=flat-square&logo=discord&logoColor=white" /></a>
 </p>
+<p align="center">
+  <img alt="A-Coder CLI — the self-extensible coding agent: workflows, your office, scheduled tasks, activity inbox, and cloud runs" src="website/assets/readme-hero.gif" width="100%">
+</p>
 
 > New issues and PRs from new contributors are auto-closed by default. Maintainers review auto-closed issues daily. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
