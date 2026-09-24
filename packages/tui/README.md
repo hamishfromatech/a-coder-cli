@@ -1,4 +1,7 @@
-# @earendil-works/pi-tui
+# A-Coder TUI (pi-tui)
+
+> **Package name:** the npm package is still `@earendil-works/pi-tui` — the scope is inherited from the upstream pi project this codebase was forked from. It will move to `@the-atech-corp/...` when npm publishing is enabled.
+
 
 Minimal terminal UI framework with differential rendering and synchronized output for flicker-free interactive CLI applications.
 

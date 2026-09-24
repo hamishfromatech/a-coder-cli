@@ -1,4 +1,7 @@
-# @earendil-works/pi-ai
+# A-Coder AI (pi-ai)
+
+> **Package name:** the npm package is still `@earendil-works/pi-ai` — the scope is inherited from the upstream pi project this codebase was forked from. It will move to `@the-atech-corp/...` when npm publishing is enabled.
+
 
 Unified LLM API with provider collections, automatic auth resolution, token and cost tracking, and simple context persistence and hand-off to other models mid-session.
 

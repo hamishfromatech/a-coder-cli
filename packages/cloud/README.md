@@ -1,4 +1,7 @@
-# @earendil-works/pi-cloud
+# A-Coder Cloud
+
+> **Package name:** the npm package is still `@earendil-works/pi-cloud` — the scope is inherited from the upstream pi project this codebase was forked from. It will move to `@the-atech-corp/...` when npm publishing is enabled.
+
 
 A-Coder Cloud (Sovereign Edition) control plane: self-hosted always-on agent
 fleet built on the Open-PC architecture. The daemon clones a repo into an

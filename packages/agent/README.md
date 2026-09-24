@@ -1,4 +1,7 @@
-# @earendil-works/pi-agent-core
+# A-Coder Agent Core
+
+> **Package name:** the npm package is still `@earendil-works/pi-agent-core` — the scope is inherited from the upstream pi project this codebase was forked from. It will move to `@the-atech-corp/...` when npm publishing is enabled.
+
 
 Stateful agent with tool execution and event streaming. Built on `@earendil-works/pi-ai`.
 
