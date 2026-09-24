@@ -1,9 +1,7 @@
 <p align="center">
-  <a href="https://a-coder-cli.dev">
-    <img alt="A-Coder logo" src="https://a-coder-cli.dev/logo-auto.svg" width="128">
+  <a href="https://github.com/hamishfromatech/a-coder-cli">
+    <img alt="A-Coder" src="website/assets/logo-trans.png" width="128">
   </a>
-  &nbsp;&nbsp;
-  <img alt="A-Coder Desktop logo" src="desktop-app/src-tauri/icons/icon.png" width="128">
 </p>
 <p align="center">
   <a href="https://discord.com/invite/3cU7Bz4UPx"><img alt="Discord" src="https://img.shields.io/badge/discord-community-5865F2?style=flat-square&logo=discord&logoColor=white" /></a>
@@ -38,8 +36,8 @@ Both share the same engine — the agent runtime, tools, and unified multi-provi
 
 To learn more:
 
-* [Visit a-coder-cli.dev](https://a-coder-cli.dev), the project website with demos
-* [Read the documentation](https://a-coder-cli.dev/docs/latest), or just ask the agent to explain itself
+* Browse the repository on [GitHub](https://github.com/hamishfromatech/a-coder-cli)
+* Read the [documentation](packages/coding-agent/docs/index.md), or just ask the agent to explain itself
 
 ## All Packages
 
