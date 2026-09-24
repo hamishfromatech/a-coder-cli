@@ -63,7 +63,7 @@ export interface CliSettingsFieldSpec {
 	/** Number-only: step */
 	step?: number;
 	/** Custom-widget name when kind === "custom" */
-	widget?: "theme" | "thinking" | "models" | "defaultModel" | "mcpServers" | "permissionPolicies" | "packages" | "resources" | "completionSound" | "benchRunner";
+	widget?: "theme" | "thinking" | "models" | "defaultModel" | "mcpServers" | "permissionPolicies" | "packages" | "resources" | "completionSound" | "benchRunner" | "onboardingTour";
 	/** If true, change is also pushed to the engine at runtime (not just persisted) */
 	runtimeSync?:
 		| "thinkingLevel"
@@ -192,6 +192,13 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 				label: "Keep running in the menu bar",
 				hint: "When you close the window, A-Coder stays in the menu bar so you can reopen it quickly.",
 				kind: "toggle",
+			},
+			{
+				path: "onboardingTour",
+				label: "Welcome tour",
+				hint: "Replay the guided walkthrough of the app.",
+				kind: "custom",
+				widget: "onboardingTour",
 			},
 		],
 	},

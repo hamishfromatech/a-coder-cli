@@ -59,6 +59,7 @@ import { BenchRunnerSection } from "./panels/widgets/BenchRunnerSection";
 import { VoiceSection } from "./panels/widgets/VoiceSection";
 import { UpdatesSection } from "./panels/widgets/UpdatesSection";
 import { CompletionSoundPicker } from "./panels/widgets/CompletionSoundPicker";
+import { replayOnboarding } from "../lib/onboarding";
 import { Switch } from "./ui/Switch";
 import { Button, IconButton } from "./ui/Button";
 import { Input, Textarea, Select } from "./ui/Input";
@@ -475,6 +476,8 @@ function renderCustom(
 			return <BenchRunnerSection />;
 		case "completionSound":
 			return <CompletionSoundPicker />;
+		case "onboardingTour":
+			return <Button variant="secondary" size="md" onClick={() => replayOnboarding()}>Watch the tour</Button>;
 		default:
 			return null;
 	}

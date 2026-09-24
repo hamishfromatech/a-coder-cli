@@ -44,6 +44,7 @@ import { AppsPanel } from "./components/AppsPanel";
 import { MessageList } from "./components/MessageList";
 import { MemoryModal } from "./components/MemoryModal";
 import { ModelPicker } from "./components/ModelPicker";
+import { REPLAY_ONBOARDING_EVENT, isOnboardingComplete } from "./lib/onboarding";
 import { OnboardingModal } from "./components/OnboardingModal";
 import { ProjectPicker } from "./components/ProjectPicker";
 import { RightSidebar } from "./components/RightSidebar";
@@ -69,16 +70,6 @@ import { rendererLog } from "./lib/renderer-log";
 import { ConnectingOverlay } from "./components/ConnectingOverlay";
 
 const FALLBACK_CWD = "";
-
-const ONBOARDING_FLAG = "onboarding-complete";
-
-function isOnboardingComplete(): boolean {
-	try {
-		return localStorage.getItem(ONBOARDING_FLAG) === "true";
-	} catch {
-		return false;
-	}
-}
 
 /** Minimum gap between office turn-end cues: several coworkers finishing a
  *  huddle round at once should chime once, not machine-gun. */
@@ -156,6 +147,16 @@ export default function App() {
 	const [showChangelog, setShowChangelog] = useState(false);
 	const [showMemory, setShowMemory] = useState(false);
 	const [showOnboarding, setShowOnboarding] = useState(() => !isOnboardingComplete());
+
+	// Settings > General > Welcome tour re-opens the onboarding overlay.
+	useEffect(() => {
+		const handler = () => {
+			setShowSettings(false);
+			setShowOnboarding(true);
+		};
+		window.addEventListener(REPLAY_ONBOARDING_EVENT, handler);
+		return () => window.removeEventListener(REPLAY_ONBOARDING_EVENT, handler);
+	}, []);
 	const [trustPrompt, setTrustPrompt] = useState<string | null>(null);
 	// Gate first connect on the initial-workspace lookup so a `pi --desktop`
 	// launch preselects the terminal's folder before the engine boots.
@@ -1456,7 +1457,7 @@ export default function App() {
 			{showOnboarding && (
 				<OnboardingModal
 					onComplete={(path) => {
-						setProjectPath(path);
+						if (path) setProjectPath(path);
 						setShowOnboarding(false);
 					}}
 				/>

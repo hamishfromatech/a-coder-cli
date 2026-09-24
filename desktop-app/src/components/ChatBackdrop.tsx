@@ -1,7 +1,5 @@
+import { assetPath } from "../lib/asset-path";
 import { useSettingsStore } from "../stores/settings-store";
-
-const assetPath = (path: string) =>
-	`${import.meta.env.BASE_URL}${path.replace(/^\/+/, "")}`;
 
 /** Faint image backdrop behind the chat surface.
  *
