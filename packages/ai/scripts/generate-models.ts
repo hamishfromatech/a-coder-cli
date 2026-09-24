@@ -2244,34 +2244,6 @@ async function generateModels() {
 		}
 	}
 
-	const openadapterModels: Model<"openai-completions">[] = [
-		{
-			id: "openadapter/auto",
-			name: "OpenAdapter: Auto",
-			api: "openai-completions",
-			provider: "openadapter",
-			baseUrl: "https://api.openadapter.in/v1",
-			reasoning: false,
-			input: ["text"],
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-			contextWindow: 128000,
-			maxTokens: 4096,
-			compat: {
-				supportsStore: false,
-				supportsDeveloperRole: false,
-				supportsReasoningEffort: false,
-				maxTokensField: "max_tokens",
-				supportsStrictMode: false,
-				supportsLongCacheRetention: false,
-			},
-		},
-	];
-	for (const model of openadapterModels) {
-		if (!allModels.some((m) => m.provider === model.provider && m.id === model.id)) {
-			allModels.push(model);
-		}
-	}
-
 	// Azure Foundry deploys these with larger context windows than OpenAI's own API,
 	// which caps gpt-5.4/gpt-5.5 at 272k. See models-sold-directly-by-azure docs.
 	const AZURE_CONTEXT_WINDOW_OVERRIDES: Record<string, number> = {

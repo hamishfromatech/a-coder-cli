@@ -26,7 +26,6 @@ import { fetchLMStudioModels } from "@earendil-works/pi-ai/providers/lm-studio";
 import { fetchOllamaModels } from "@earendil-works/pi-ai/providers/ollama";
 import { fetchOllamaCloudModels } from "@earendil-works/pi-ai/providers/ollama-cloud";
 import { fetchOllamaContextWindow, looksLikeOllama } from "@earendil-works/pi-ai/providers/ollama-context";
-import { fetchOpenAdapterModels } from "@earendil-works/pi-ai/providers/openadapter";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { type Static, Type } from "typebox";
@@ -399,11 +398,6 @@ export class ModelRegistry {
 	private ollamaCloudLastAttempt = 0;
 	private static readonly OLLAMA_CLOUD_REFRESH_MS = 5 * 60 * 1000;
 	private static readonly OLLAMA_CLOUD_FAILURE_RETRY_MS = 30 * 1000;
-	private openadapterRefreshPromise: Promise<void> | undefined;
-	private openadapterLastSuccess = 0;
-	private openadapterLastAttempt = 0;
-	private static readonly OPENADAPTER_REFRESH_MS = 5 * 60 * 1000;
-	private static readonly OPENADAPTER_FAILURE_RETRY_MS = 30 * 1000;
 	private lmStudioRefreshPromise: Promise<void> | undefined;
 	private lmStudioLastSuccess = 0;
 	private lmStudioLastAttempt = 0;
@@ -463,9 +457,6 @@ export class ModelRegistry {
 		this.ollamaCloudLastSuccess = 0;
 		this.ollamaCloudLastAttempt = 0;
 		this.ollamaCloudRefreshPromise = undefined;
-		this.openadapterLastSuccess = 0;
-		this.openadapterLastAttempt = 0;
-		this.openadapterRefreshPromise = undefined;
 		this.lmStudioLastSuccess = 0;
 		this.lmStudioLastAttempt = 0;
 		this.lmStudioRefreshPromise = undefined;
@@ -746,8 +737,8 @@ export class ModelRegistry {
 	}
 
 	/**
-	 * Refresh dynamic provider model lists. Ollama Cloud and OpenAdapter fetch
-	 * their /v1/models endpoints when auth is configured. Best-effort: failures
+	 * Refresh dynamic provider model lists. Ollama Cloud, LM Studio, llama.cpp,
+	 * and Ollama fetch their model lists when configured. Best-effort: failures
 	 * leave the existing static models in place. Concurrent calls share one
 	 * in-flight fetch per provider.
 	 *
@@ -759,8 +750,6 @@ export class ModelRegistry {
 		const errors: string[] = [];
 		const ollamaError = await this.refreshOllamaCloudModels(force);
 		if (ollamaError) errors.push(ollamaError);
-		const openadapterError = await this.refreshOpenAdapterModels(force);
-		if (openadapterError) errors.push(openadapterError);
 		const lmStudioError = await this.refreshLMStudioModels(force);
 		if (lmStudioError) errors.push(lmStudioError);
 		const llamaCppError = await this.refreshLlamaCppModels(force);
@@ -819,67 +808,6 @@ export class ModelRegistry {
 			}
 		})();
 		const promise = this.ollamaCloudRefreshPromise;
-
-		if (force) {
-			try {
-				await promise;
-			} catch (error) {
-				return error instanceof Error ? error.message : String(error);
-			}
-		}
-
-		return promise.then(() => undefined);
-	}
-
-	/**
-	 * Refresh OpenAdapter's model list from https://api.openadapter.in/v1/models.
-	 * Best-effort: on failure the existing (static) models remain. Concurrent
-	 * calls share one in-flight fetch.
-	 *
-	 * @param force When true, bypass the success/failure caches and fetch
-	 * immediately. Returns an error message if the refresh fails.
-	 */
-	private async refreshOpenAdapterModels(force = false): Promise<string | undefined> {
-		if (!this.hasConfiguredAuthForProvider("openadapter")) return;
-
-		const now = Date.now();
-		const recentlySucceeded = now - this.openadapterLastSuccess < ModelRegistry.OPENADAPTER_REFRESH_MS;
-		const recentlyAttempted = now - this.openadapterLastAttempt < ModelRegistry.OPENADAPTER_FAILURE_RETRY_MS;
-		if (!force && (this.openadapterRefreshPromise || recentlyAttempted)) {
-			return (this.openadapterRefreshPromise ?? Promise.resolve()).then(() => undefined);
-		}
-
-		this.openadapterRefreshPromise = (async () => {
-			this.openadapterLastAttempt = Date.now();
-			// Automatic background refreshes can skip when we recently succeeded
-			// and already have live OpenAdapter models. Explicit forced refreshes
-			// bypass this cache.
-			if (!force && recentlySucceeded && this.models.some((m) => m.provider === "openadapter")) {
-				this.openadapterRefreshPromise = undefined;
-				return;
-			}
-			try {
-				const apiKey = await this.getApiKeyForProvider("openadapter");
-				if (!apiKey) return;
-
-				const refreshed = await fetchOpenAdapterModels(apiKey);
-				if (refreshed.length === 0) return;
-
-				// Replace existing openadapter models with the refreshed list.
-				this.models = this.models.filter((m) => m.provider !== "openadapter");
-				this.models.push(...refreshed);
-				this.openadapterLastSuccess = Date.now();
-			} catch (error) {
-				// Leave last-known models in place. Failures retry after a short
-				// delay so a user can recover by saving a key and retrying /model.
-				const message = error instanceof Error ? error.message : String(error);
-				console.error("Failed to refresh OpenAdapter models:", error);
-				throw new Error(message);
-			} finally {
-				this.openadapterRefreshPromise = undefined;
-			}
-		})();
-		const promise = this.openadapterRefreshPromise;
 
 		if (force) {
 			try {

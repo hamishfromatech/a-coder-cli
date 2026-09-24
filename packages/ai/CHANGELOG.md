@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Removed
+
+- Removed the OpenAdapter provider (models, `/v1/models` dynamic refresh, `openadapter` provider id, and the `OPENADAPTER_API_KEY` desktop entry).
+
 ### Fixed
 
 - Fixed OpenAI Codex requests hanging forever with no error in environments where the WebSocket transport actually engages (the desktop ships the Bun engine, where the WebSocket connects with auth headers; Node-based CLI runs always failed the handshake and fell back to SSE). Silent sockets can no longer wedge a turn: an idle Codex WebSocket now gives up after 120s (configurable via the provider `timeoutMs` retry setting) and falls back to SSE; pooled sockets are keyed by ChatGPT account within a session so an account rotation (re-login/plan switch) can no longer reuse a socket authenticated for the previous account (upstream #7284 parity); cached sockets are recycled after 55 minutes; and `session-id` / `x-client-request-id` headers are clamped to the 64 characters Codex accepts (upstream #6653 parity).

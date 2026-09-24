@@ -23,7 +23,6 @@ import { MOONSHOTAI_MODELS } from "./providers/moonshotai.models.ts";
 import { MOONSHOTAI_CN_MODELS } from "./providers/moonshotai-cn.models.ts";
 import { NVIDIA_MODELS } from "./providers/nvidia.models.ts";
 import { OLLAMA_CLOUD_MODELS } from "./providers/ollama-cloud.models.ts";
-import { OPENADAPTER_MODELS } from "./providers/openadapter.models.ts";
 import { OPENAI_MODELS } from "./providers/openai.models.ts";
 import { OPENAI_CODEX_MODELS } from "./providers/openai-codex.models.ts";
 import { OPENCODE_MODELS } from "./providers/opencode.models.ts";
@@ -62,7 +61,6 @@ export const MODELS = {
 	"moonshotai-cn": MOONSHOTAI_CN_MODELS,
 	"nvidia": NVIDIA_MODELS,
 	"ollama-cloud": OLLAMA_CLOUD_MODELS,
-	"openadapter": OPENADAPTER_MODELS,
 	"openai": OPENAI_MODELS,
 	"openai-codex": OPENAI_CODEX_MODELS,
 	"opencode": OPENCODE_MODELS,

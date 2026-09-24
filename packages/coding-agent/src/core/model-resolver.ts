@@ -48,7 +48,6 @@ export const defaultModelPerProvider: Record<KnownProvider, string> = {
 	"xiaomi-token-plan-ams": "mimo-v2.5-pro",
 	"xiaomi-token-plan-sgp": "mimo-v2.5-pro",
 	"ollama-cloud": "llama3.3",
-	openadapter: "openadapter/auto",
 };
 
 export interface ScopedModel {

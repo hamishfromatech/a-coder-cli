@@ -27,7 +27,6 @@ import { moonshotaiCnProvider } from "./moonshotai-cn.ts";
 import { nvidiaProvider } from "./nvidia.ts";
 import { ollamaProvider } from "./ollama.ts";
 import { ollamaCloudProvider } from "./ollama-cloud.ts";
-import { openadapterProvider } from "./openadapter.ts";
 import { openaiProvider } from "./openai.ts";
 import { openaiCodexProvider } from "./openai-codex.ts";
 import { opencodeProvider } from "./opencode.ts";
@@ -99,7 +98,6 @@ export function builtinProviders(): Provider[] {
 		nvidiaProvider(),
 		ollamaCloudProvider(),
 		ollamaProvider(),
-		openadapterProvider(),
 		openaiProvider(),
 		openaiCodexProvider(),
 		opencodeProvider(),

@@ -376,15 +376,6 @@ export const PROVIDER_SPECS: ProviderSpec[] = [
 		group: "Specialty",
 	},
 	{
-		id: "openadapter",
-		label: "OpenAdapter",
-		hint: "OpenAdapter's free tier.",
-		oauth: false,
-		envVars: ["OPENADAPTER_API_KEY"],
-		consoleUrl: "https://openadapter.in",
-		group: "Specialty",
-	},
-	{
 		id: "ant-ling",
 		label: "Ant Ling",
 		hint: "Ant Ling open-source access.",

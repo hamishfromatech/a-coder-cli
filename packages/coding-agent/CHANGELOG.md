@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Removed
+
+- Removed the OpenAdapter provider: model list, default model mapping, provider display name, dynamic `/v1/models` refresh, and its desktop provider entry.
+
 ### Added
 
 - Cron — scheduled tasks for the main coding agent. Jobs pair a name, a prompt, and a schedule (`every:<n>m|h|d` minimum 5 minutes, `daily:HH:MM`, or one-shot `once:<date>`), persist in `~/.a-coder/cli/agent/cron/jobs.json` scoped to the project they were created in, and fire on a process ticker: the prompt is delivered to the project's active session (queued behind a running turn) or — when the project has no open session — to a continuity background session that repeat runs reuse. Fires are bounded by a 15-minute abort and run unattended with automatic tool permissions. Surface: `/cron` (list/add/run/pause/resume/remove), new RPC commands (`cron_list`/`cron_create`/`cron_update`/`cron_delete`/`cron_run_now`) with live `cron_update` snapshots, and a Scheduled panel in the desktop right sidebar (run-now, pause/resume, edit, delete).
