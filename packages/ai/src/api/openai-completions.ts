@@ -178,7 +178,17 @@ function isMaxTokensExceedsLimitError(error: unknown): boolean {
 	const norm = normalizeProviderError(error);
 	if (norm.status !== 400) return false;
 	const text = `${norm.message} ${norm.body ?? ""}`.toLowerCase();
-	if (!text.includes("max_tokens") && !text.includes("max_completion_tokens")) return false;
+	const mentionsMaxTokensField = text.includes("max_tokens") || text.includes("max_completion_tokens");
+	// Combined-limit rejections describe the completion budget without naming the
+	// request field, e.g. OpenRouter/Cloudflare: "Requested token count exceeds the
+	// model's maximum context length of N tokens. You requested a total of M
+	// tokens: X tokens from the input messages and Y tokens for the completion."
+	// (also the classic OpenAI shape "... N tokens in the completion"). Dropping
+	// max_tokens lets the server pick a budget that fits next to the prompt.
+	const mentionsCompletionBudget =
+		text.includes("maximum context length") &&
+		(text.includes("for the completion") || text.includes("in the completion"));
+	if (!mentionsMaxTokensField && !mentionsCompletionBudget) return false;
 	return /exceed|maximum|too (large|high)|greater than|must be (less|at most|smaller)|\blimit\b/.test(text);
 }
 

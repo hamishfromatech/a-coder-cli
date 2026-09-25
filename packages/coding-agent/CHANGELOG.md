@@ -54,6 +54,8 @@
 
 ### Fixed
 
+- Fixed OpenRouter (and other OpenAI-completions) models failing with combined context-length 400s like "Requested token count exceeds the model's maximum context length ... 107115 tokens from the input messages and 943718 tokens for the completion" (seen on glm-5.3-flash, whose advertised completion cap exceeds what the backend accepts next to the prompt): the existing retry-without-max_tokens recovery now also matches these combined-limit rejections that describe the completion budget without naming the request field, both the OpenRouter/Cloudflare shape and the classic OpenAI "N tokens in the completion" shape. Prompt-only overflows still surface immediately instead of retrying.
+
 - Fixed the post-self-update relaunch dying with `setRawMode failed with errno: 5` (EIO): the updating process used to exit the moment the new binary spawned, handing the terminal's foreground process group back to the shell while the child was still booting, so the relaunched TUI called setRawMode from a background process group. The parent now stays alive (holding the foreground) until the relaunched CLI exits and mirrors its exit status, so the update handoff is seamless.
 
 - Fixed local-provider models (Ollama, LM Studio, llama.cpp) being unresolvable in headless/print mode: `--provider ollama --model <id>` failed with `Unknown provider` because CLI model resolution ran against a registry that had never probed the local server — `refreshDynamicModels()` is awaited in `--list-models` and interactive mode but was never called in the print path. Model resolution now retries once after a dynamic-model refresh, so headless runs discover local-provider models exactly like the interactive picker does (no added latency when the spec already resolves).
