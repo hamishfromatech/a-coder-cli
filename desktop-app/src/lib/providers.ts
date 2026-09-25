@@ -192,6 +192,15 @@ export const PROVIDER_SPECS: ProviderSpec[] = [
 		group: "Major",
 	},
 	{
+		id: "inception",
+		label: "Inception Labs",
+		hint: "Mercury diffusion language models.",
+		oauth: false,
+		envVars: ["INCEPTION_API_KEY"],
+		consoleUrl: "https://docs.inceptionlabs.ai/get-started/models",
+		group: "Major",
+	},
+	{
 		id: "vercel-ai-gateway",
 		label: "Vercel AI Gateway",
 		hint: "Vercel's multi-provider gateway.",

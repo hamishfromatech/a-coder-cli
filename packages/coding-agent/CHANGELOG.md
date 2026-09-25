@@ -56,6 +56,8 @@
 
 ### Fixed
 
+- Fixed the Inception Labs provider being unreachable in the UI: it was missing from the CLI's built-in provider display names, which excluded it from the `/login` provider list (so no key could be added) and therefore from the `/model` picker and desktop provider list. It now appears in `/login` (API key), `/model`, and the desktop account providers.
+
 - Fixed the CLI crashing at startup when a dynamic provider (Ollama Cloud, LM Studio, llama.cpp, Ollama) was unreachable: a failed background model-list refresh used to reject through `refreshDynamicModels()` and escape to the top level, killing the CLI with a stack trace. Refreshes are now genuinely best-effort — the failure is logged as a single-line warning, the last known models stay available, and only an explicit forced refresh (e.g. from the model picker) surfaces the error message to the UI.
 
 - Fixed OpenRouter (and other OpenAI-completions) models failing with combined context-length 400s like "Requested token count exceeds the model's maximum context length ... 107115 tokens from the input messages and 943718 tokens for the completion" (seen on glm-5.3-flash, whose advertised completion cap exceeds what the backend accepts next to the prompt): the existing retry-without-max_tokens recovery now also matches these combined-limit rejections that describe the completion budget without naming the request field, both the OpenRouter/Cloudflare shape and the classic OpenAI "N tokens in the completion" shape. Prompt-only overflows still surface immediately instead of retrying.
