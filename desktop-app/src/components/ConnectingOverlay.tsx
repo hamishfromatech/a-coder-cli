@@ -133,6 +133,7 @@ function BootFailureCard({ message }: { message: string }) {
 	const [bootstrapping, setBootstrapping] = useState(false);
 	const [bootstrapError, setBootstrapError] = useState<string | null>(null);
 	const needsEngine = message.toLowerCase().includes("not found in path");
+	const autoStartedRef = useRef(false);
 
 	const pickWorkspace = async () => {
 		try {
@@ -162,12 +163,26 @@ function BootFailureCard({ message }: { message: string }) {
 		}
 	};
 
+	// Fully automatic first-install bootstrap: when the engine is missing, start
+	// the install without waiting for a click. The buttons below remain as the
+	// fallback if the automatic install fails.
+	useEffect(() => {
+		if (!needsEngine || autoStartedRef.current) return;
+		autoStartedRef.current = true;
+		void installEngine();
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [needsEngine]);
+
 	return (
 		<div className="fixed inset-0 z-[1200] grid place-items-center bg-pi-bg p-6">
 			<div className="pi-card-overlay w-full max-w-xl overflow-hidden p-6">
 				<ErrorState
-					title="Engine failed to start"
-					description="The coding agent backend could not be reached."
+					title={needsEngine && bootstrapping ? "Installing the CLI engine" : "Engine failed to start"}
+					description={
+						needsEngine && bootstrapping
+							? "Downloading and installing the A-Coder CLI — this only happens once. The app reloads when done."
+							: "The coding agent backend could not be reached."
+					}
 				>
 					<div className="rounded-xl border border-pi-error/30 bg-pi-error-soft px-4 py-3 text-xs text-pi-error font-mono break-all">
 						{message}
