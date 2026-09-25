@@ -395,6 +395,8 @@ export class ModelRegistry {
 	private modelsJsonPath: string | undefined;
 	private ollamaCloudRefreshPromise: Promise<void> | undefined;
 	private ollamaCloudLastSuccess = 0;
+	/** Last refresh failure message, surfaced only for forced (explicit) refreshes. */
+	private ollamaCloudLastError: string | undefined = undefined;
 	private ollamaCloudLastAttempt = 0;
 	private static readonly OLLAMA_CLOUD_REFRESH_MS = 5 * 60 * 1000;
 	private static readonly OLLAMA_CLOUD_FAILURE_RETRY_MS = 30 * 1000;
@@ -456,6 +458,7 @@ export class ModelRegistry {
 		// cached list or skipping because static entries exist.
 		this.ollamaCloudLastSuccess = 0;
 		this.ollamaCloudLastAttempt = 0;
+		this.ollamaCloudLastError = undefined;
 		this.ollamaCloudRefreshPromise = undefined;
 		this.lmStudioLastSuccess = 0;
 		this.lmStudioLastAttempt = 0;
@@ -779,6 +782,7 @@ export class ModelRegistry {
 
 		this.ollamaCloudRefreshPromise = (async () => {
 			this.ollamaCloudLastAttempt = Date.now();
+			this.ollamaCloudLastError = undefined;
 			// Automatic background refreshes can skip when we recently succeeded
 			// and already have live Ollama Cloud models. Explicit forced refreshes
 			// bypass this cache.
@@ -798,26 +802,23 @@ export class ModelRegistry {
 				this.models.push(...refreshed);
 				this.ollamaCloudLastSuccess = Date.now();
 			} catch (error) {
-				// Leave last-known models in place. Failures retry after a short
-				// delay so a user can recover by saving a key and retrying /model.
+				// Best-effort: leave last-known models in place and keep the CLI
+				// running. A rejected refresh used to escape to the top level and
+				// crash the CLI at startup when the provider was unreachable.
 				const message = error instanceof Error ? error.message : String(error);
-				console.error("Failed to refresh Ollama Cloud models:", error);
-				throw new Error(message);
+				console.error(
+					`Failed to refresh Ollama Cloud models — keeping last known models. (${message.split("\n")[0]})`,
+				);
+				this.ollamaCloudLastError = message;
 			} finally {
 				this.ollamaCloudRefreshPromise = undefined;
 			}
 		})();
 		const promise = this.ollamaCloudRefreshPromise;
 
-		if (force) {
-			try {
-				await promise;
-			} catch (error) {
-				return error instanceof Error ? error.message : String(error);
-			}
-		}
-
-		return promise.then(() => undefined);
+		await promise;
+		if (force && this.ollamaCloudLastError) return this.ollamaCloudLastError;
+		return undefined;
 	}
 
 	/**

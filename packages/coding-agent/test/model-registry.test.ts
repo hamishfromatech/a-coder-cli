@@ -1902,3 +1902,73 @@ describe("ModelRegistry", () => {
 		});
 	});
 });
+
+describe("ModelRegistry ollama-cloud refresh resilience", () => {
+	let tempDir: string;
+	let authStorage: AuthStorage;
+
+	beforeEach(() => {
+		tempDir = join(tmpdir(), `pi-test-model-registry-ollama-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		mkdirSync(tempDir, { recursive: true });
+		authStorage = AuthStorage.create(join(tempDir, "auth.json"));
+	});
+
+	afterEach(() => {
+		if (tempDir && existsSync(tempDir)) {
+			rmSync(tempDir, { recursive: true });
+		}
+		clearApiKeyCache();
+		vi.restoreAllMocks();
+	});
+
+	function stubOllamaCloudUnreachable(): void {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (input: unknown) => {
+				const url = typeof input === "string" ? input : (input as Request).url;
+				if (url.includes("ollama.com")) {
+					// Simulate the network-unreachable failure (ConnectionRefused).
+					throw new Error(
+						'Unable to connect. Is the computer able to access the url?\n  path: "https://ollama.com/api/tags",\n  code: "ConnectionRefused"',
+					);
+				}
+				throw new Error(`Unexpected fetch: ${url}`);
+			}),
+		);
+	}
+
+	test("startup refresh failure does not reject — CLI keeps running with static models", async () => {
+		stubOllamaCloudUnreachable();
+		authStorage.set("ollama-cloud", { type: "api_key", key: "test-key" });
+		const registry = ModelRegistry.create(authStorage, join(tempDir, "models.json"));
+		const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			// Previously this rejected and crashed the CLI at startup.
+			await expect(registry.refreshDynamicModels()).resolves.toBeUndefined();
+			// The registry remains usable.
+			expect(typeof registry.getAvailable).toBe("function");
+			expect(registry.getAvailable()).toBeDefined();
+			// A single-line warning was logged.
+			expect(
+				consoleError.mock.calls.some((c) => String(c[0]).includes("Failed to refresh Ollama Cloud models")),
+			).toBe(true);
+		} finally {
+			consoleError.mockRestore();
+			vi.unstubAllGlobals();
+		}
+	});
+
+	test("forced refresh surfaces the failure as a returned message (not a throw)", async () => {
+		stubOllamaCloudUnreachable();
+		authStorage.set("ollama-cloud", { type: "api_key", key: "test-key" });
+		const registry = ModelRegistry.create(authStorage, join(tempDir, "models.json"));
+		const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			const errorMessage = await registry.refreshDynamicModels(true);
+			expect(errorMessage).toContain("ConnectionRefused");
+		} finally {
+			consoleError.mockRestore();
+			vi.unstubAllGlobals();
+		}
+	});
+});
