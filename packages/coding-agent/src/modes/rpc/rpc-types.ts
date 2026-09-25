@@ -107,7 +107,7 @@ export type RpcCommand =
 	| { id?: string; type: "get_tree" }
 	| { id?: string; type: "list_sessions" }
 	| { id?: string; type: "get_last_assistant_text" }
-	| { id?: string; type: "set_session_name"; name: string }
+	| { id?: string; type: "set_session_name"; name: string; sessionPath?: string }
 	| { id?: string; type: "set_entry_label"; entryId: string; label: string | undefined }
 
 	// Messages

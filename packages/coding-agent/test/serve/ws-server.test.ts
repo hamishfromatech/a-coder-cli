@@ -64,21 +64,6 @@ function wsConnect(path: string, headers: Record<string, string> = {}): Promise<
 	});
 }
 
-/** Collect the next n messages as strings. */
-function collect(ws: WebSocket, n: number): Promise<string[]> {
-	const lines: string[] = [];
-	return new Promise((resolve, reject) => {
-		const timer = setTimeout(() => reject(new Error(`timeout collecting ${n} messages (got ${lines.length})`)), 2000);
-		ws.on("message", (data) => {
-			lines.push(data.toString());
-			if (lines.length >= n) {
-				clearTimeout(timer);
-				resolve(lines);
-			}
-		});
-	});
-}
-
 describe("BridgeWsServer HTTP endpoints", () => {
 	it("serves /health without auth", async () => {
 		const res = await httpGet("/health");
@@ -151,6 +136,38 @@ describe("BridgeWsServer auth", () => {
 });
 
 describe("BridgeWsServer clients + framing", () => {
+	it("sends a server_version handshake frame to each connecting client", async () => {
+		// The frame can arrive in the same socket read as the 101 handshake, so
+		// the collector must be attached before connecting.
+		const frames: string[] = [];
+		const ws = new WebSocket(`ws://127.0.0.1:${port}/rpc?token=${TOKEN}`);
+		ws.on("message", (data) => frames.push(data.toString()));
+		await new Promise<void>((resolve, reject) => {
+			ws.on("open", () => resolve());
+			ws.on("error", reject);
+		});
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		expect(frames.length).toBeGreaterThanOrEqual(1);
+		const frame = JSON.parse(frames[0]!);
+		expect(frame.type).toBe("bridge");
+		expect(frame.event).toBe("server_version");
+		expect(frame.version).toBe("0.80.104");
+		ws.close();
+
+		// Per-client handshake: a fresh connection gets its own frame.
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		const secondFrames: string[] = [];
+		const second = new WebSocket(`ws://127.0.0.1:${port}/rpc?token=${TOKEN}`);
+		second.on("message", (data) => secondFrames.push(data.toString()));
+		await new Promise<void>((resolve, reject) => {
+			second.on("open", () => resolve());
+			second.on("error", reject);
+		});
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		expect(JSON.parse(secondFrames[0]!).event).toBe("server_version");
+		second.close();
+	});
+
 	it("enforces maxClients with 503", async () => {
 		const first = await wsConnect(`/rpc?token=${TOKEN}`);
 		await expect(wsConnect(`/rpc?token=${TOKEN}`)).rejects.toThrow("handshake rejected: 503");
@@ -159,12 +176,22 @@ describe("BridgeWsServer clients + framing", () => {
 	});
 
 	it("broadcasts lines to connected clients", async () => {
-		const first = await wsConnect(`/rpc?token=${TOKEN}`);
-		const received = collect(first, 2);
+		// Collector attached before connecting so the handshake frame is captured.
+		const pre: string[] = [];
+		const ws = new WebSocket(`ws://127.0.0.1:${port}/rpc?token=${TOKEN}`);
+		ws.on("message", (data) => pre.push(data.toString()));
+		await new Promise<void>((resolve, reject) => {
+			ws.on("open", () => resolve());
+			ws.on("error", reject);
+		});
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		// Drain the per-client server_version handshake frame first.
+		expect(JSON.parse(pre[0]!).event).toBe("server_version");
 		server.broadcast(`{"id":"1","type":"response"}\n`);
 		server.broadcast(`{"id":"2","type":"response"}\n`);
-		expect(await received).toEqual([`{"id":"1","type":"response"}\n`, `{"id":"2","type":"response"}\n`]);
-		first.close();
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		expect(pre.slice(1)).toEqual([`{"id":"1","type":"response"}\n`, `{"id":"2","type":"response"}\n`]);
+		ws.close();
 	});
 
 	it("skips closed clients on broadcast", async () => {

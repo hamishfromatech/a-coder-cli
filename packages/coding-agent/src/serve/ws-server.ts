@@ -11,6 +11,7 @@ import type { IncomingMessage, Server } from "node:http";
 import http from "node:http";
 import type { Socket } from "node:net";
 import { type WebSocket, WebSocketServer } from "ws";
+import { bridgeFrame } from "./control-frames.ts";
 import { bearerFromHeader, tokenFromUrl, tokenMatches } from "./pairing.ts";
 
 const RATE_WINDOW_MS = 15 * 60 * 1000;
@@ -36,7 +37,7 @@ export interface WsServerOptions {
 	machineId: string;
 	friendlyName: string;
 	onClientMessage: (data: string) => void;
-	onClientConnected: () => void;
+	onClientConnected: (ws: WebSocket) => void;
 	onClientDisconnected: () => void;
 }
 
@@ -117,6 +118,16 @@ export class BridgeWsServer {
 			}
 			ws.send(line);
 		}
+	}
+
+	/** Send one NDJSON line to a single authenticated client (handshake frames). */
+	sendTo(ws: WebSocket, line: string): void {
+		if (ws.readyState !== ws.OPEN) return;
+		if (ws.bufferedAmount > MAX_CLIENT_BUFFER_BYTES) {
+			ws.close(1008, "slow client");
+			return;
+		}
+		ws.send(line);
 	}
 
 	// ---- HTTP endpoints ----------------------------------------------------
@@ -207,7 +218,10 @@ export class BridgeWsServer {
 			ws.on("message", (data) => {
 				this.options.onClientMessage(data.toString());
 			});
-			this.options.onClientConnected();
+			this.options.onClientConnected(ws);
+			// Per-client handshake frame: the client treats this as auth-complete
+			// and starts its initial sync.
+			this.sendTo(ws, bridgeFrame({ type: "bridge", event: "server_version", version: this.options.version }));
 		});
 	}
 

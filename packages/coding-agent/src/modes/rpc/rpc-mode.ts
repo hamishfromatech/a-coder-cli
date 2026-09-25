@@ -1117,7 +1117,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				if (!name) {
 					return error(id, "set_session_name", "Session name cannot be empty");
 				}
-				session.setSessionName(name);
+				if (command.sessionPath && runtimeHost.getSessionForPath(command.sessionPath) === undefined) {
+					return error(id, "set_session_name", `Unknown session: ${command.sessionPath}`);
+				}
+				const targetSession = runtimeHost.getSessionForPath(command.sessionPath) ?? session;
+				targetSession.setSessionName(name);
 				return success(id, "set_session_name");
 			}
 
