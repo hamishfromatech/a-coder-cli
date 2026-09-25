@@ -1,6 +1,6 @@
 {
 	"name": "@earendil-works/pi-coding-agent",
-	"version": "0.80.107",
+	"version": "0.80.108",
 	"description": "Coding agent CLI with read, bash, edit, write tools and session management",
 	"type": "module",
 	"piConfig": {
@@ -43,10 +43,10 @@
 	"dependencies": {
 		"@composio/core": "0.20.0",
 		"@composio/experimental": "0.2.5",
-		"@earendil-works/pi-agent-core": "^0.80.107",
-		"@earendil-works/pi-ai": "^0.80.107",
-		"@earendil-works/pi-cloud": "^0.80.107",
-		"@earendil-works/pi-tui": "^0.80.107",
+		"@earendil-works/pi-agent-core": "^0.80.108",
+		"@earendil-works/pi-ai": "^0.80.108",
+		"@earendil-works/pi-cloud": "^0.80.108",
+		"@earendil-works/pi-tui": "^0.80.108",
 		"@modelcontextprotocol/sdk": "1.30.0",
 		"@silvia-odwyer/photon-node": "0.3.4",
 		"bonjour-service": "1.4.4",
