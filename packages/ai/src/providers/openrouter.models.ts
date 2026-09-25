@@ -1106,9 +1106,9 @@ export const OPENROUTER_MODELS = {
 		thinkingLevelMap: {"minimal":null,"low":null,"medium":null,"high":"high","xhigh":"xhigh"},
 		input: ["text", "image"],
 		cost: {
-			input: 0.3,
-			output: 1.2,
-			cacheRead: 0.006,
+			input: 0.15,
+			output: 0.6,
+			cacheRead: 0.003,
 			cacheWrite: 0,
 		},
 		contextWindow: 1048576,
@@ -2879,13 +2879,13 @@ export const OPENROUTER_MODELS = {
 		reasoning: true,
 		input: ["text"],
 		cost: {
-			input: 0.08,
+			input: 0.07,
 			output: 0.2,
 			cacheRead: 0.04,
 			cacheWrite: 0,
 		},
 		contextWindow: 262144,
-		maxTokens: 131072,
+		maxTokens: 235929,
 	} satisfies Model<"openai-completions">,
 	"nvidia/nemotron-3.5-lightning:free": {
 		id: "nvidia/nemotron-3.5-lightning:free",
@@ -6541,7 +6541,7 @@ export const OPENROUTER_MODELS = {
 		reasoning: true,
 		input: ["text"],
 		cost: {
-			input: 0.09984,
+			input: 0.2528,
 			output: 2.88,
 			cacheRead: 0.08832,
 			cacheWrite: 0,
