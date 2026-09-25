@@ -67,6 +67,7 @@ import {
 	handlePackageCommand,
 	handleResourcesCommand,
 } from "./package-manager-cli.ts";
+import { handleServeCommand } from "./serve/serve-command.ts";
 import { isLocalPath, normalizePath, resolvePath } from "./utils/paths.ts";
 import { cleanupWindowsSelfUpdateQuarantine } from "./utils/windows-self-update.ts";
 
@@ -628,6 +629,11 @@ export async function main(args: string[], options?: MainOptions) {
 
 	if (await handleBenchCommand(args)) {
 		process.exit(process.exitCode ?? 0);
+		return;
+	}
+
+	if (await handleServeCommand(args)) {
+		// serve stays alive (its own shutdown path exits); --help drains naturally.
 		return;
 	}
 
