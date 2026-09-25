@@ -15,6 +15,7 @@ import { GOOGLE_MODELS } from "./providers/google.models.ts";
 import { GOOGLE_VERTEX_MODELS } from "./providers/google-vertex.models.ts";
 import { GROQ_MODELS } from "./providers/groq.models.ts";
 import { HUGGINGFACE_MODELS } from "./providers/huggingface.models.ts";
+import { INCEPTION_MODELS } from "./providers/inception.models.ts";
 import { KIMI_CODING_MODELS } from "./providers/kimi-coding.models.ts";
 import { MINIMAX_MODELS } from "./providers/minimax.models.ts";
 import { MINIMAX_CN_MODELS } from "./providers/minimax-cn.models.ts";
@@ -53,6 +54,7 @@ export const MODELS = {
 	"google-vertex": GOOGLE_VERTEX_MODELS,
 	"groq": GROQ_MODELS,
 	"huggingface": HUGGINGFACE_MODELS,
+	"inception": INCEPTION_MODELS,
 	"kimi-coding": KIMI_CODING_MODELS,
 	"minimax": MINIMAX_MODELS,
 	"minimax-cn": MINIMAX_CN_MODELS,

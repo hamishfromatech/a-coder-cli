@@ -397,6 +397,7 @@ ${chalk.bold("Environment Variables:")}
   CEREBRAS_API_KEY                 - Cerebras API key
   XAI_API_KEY                      - xAI Grok API key
   FIREWORKS_API_KEY                - Fireworks API key
+  INCEPTION_API_KEY                - Inception Labs API key (Mercury diffusion models)
   TOGETHER_API_KEY                 - Together AI API key
   OPENROUTER_API_KEY               - OpenRouter API key
   AI_GATEWAY_API_KEY               - Vercel AI Gateway API key

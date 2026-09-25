@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- New provider: Inception Labs (`inception`, `INCEPTION_API_KEY`) — OpenAI-compatible Chat Completions at `https://api.inceptionlabs.ai/v1`, serving the Mercury diffusion model family (Mercury 2, Mercury 2.5; 260K context on Mercury 2.5). Also available through OpenRouter as `inception/mercury-2.5`.
+
 ### Removed
 
 - Removed the OpenAdapter provider (models, `/v1/models` dynamic refresh, `openadapter` provider id, and the `OPENADAPTER_API_KEY` desktop entry).

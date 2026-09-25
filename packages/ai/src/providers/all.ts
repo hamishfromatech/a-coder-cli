@@ -16,6 +16,7 @@ import { googleProvider } from "./google.ts";
 import { googleVertexProvider } from "./google-vertex.ts";
 import { groqProvider } from "./groq.ts";
 import { huggingfaceProvider } from "./huggingface.ts";
+import { inceptionProvider } from "./inception.ts";
 import { kimiCodingProvider } from "./kimi-coding.ts";
 import { llamaCppProvider } from "./llama-cpp.ts";
 import { lmStudioProvider } from "./lm-studio.ts";
@@ -87,6 +88,7 @@ export function builtinProviders(): Provider[] {
 		googleVertexProvider(),
 		groqProvider(),
 		huggingfaceProvider(),
+		inceptionProvider(),
 		kimiCodingProvider(),
 		lmStudioProvider(),
 		llamaCppProvider(),

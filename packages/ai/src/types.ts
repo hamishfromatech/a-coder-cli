@@ -55,6 +55,7 @@ export type KnownProvider =
 	| "moonshotai-cn"
 	| "huggingface"
 	| "fireworks"
+	| "inception"
 	| "together"
 	| "opencode"
 	| "opencode-go"
