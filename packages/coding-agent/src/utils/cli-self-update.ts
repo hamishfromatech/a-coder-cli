@@ -137,8 +137,14 @@ async function runWindowsInstaller(tag: string): Promise<InstallerResult> {
  * Re-exec the CLI with the same user args so the user lands on the
  * freshly-installed version. Callers must have already restored the terminal
  * (cooked mode) before calling this, so the child starts in a clean terminal.
- * The process exits via the child's `spawn` event; a safety timer covers any
- * edge case where neither `spawn` nor `error` fires.
+ *
+ * The parent must stay alive until the child exits: exiting as soon as the
+ * child spawns hands the terminal's foreground process group back to the
+ * shell while the child is still booting, so the child's TUI then calls
+ * setRawMode from a background process group and dies with `setRawMode
+ * failed with errno: 5` (EIO). Holding the foreground costs nothing — the
+ * child shares this process group for its whole lifetime, and the parent
+ * mirrors its exit status (re-raising signals) when it terminates.
  */
 export function relaunchSelf(): void {
 	// argv layouts differ per runtime:
@@ -156,11 +162,18 @@ export function relaunchSelf(): void {
 		.find((arg) => arg.includes("$bunfs") || arg.includes("~BUN") || arg.includes("%7EBUN"));
 	const args = embeddedEntry ? process.argv.filter((arg) => arg !== embeddedEntry).slice(1) : process.argv.slice(1);
 	const child = spawn(process.execPath, args, { stdio: "inherit" });
-	child.once("spawn", () => process.exit(0));
+	child.once("exit", (code, signal) => {
+		if (signal) {
+			// Mirror a signal death by killing ourselves with the same signal.
+			process.removeAllListeners("SIGINT");
+			process.removeAllListeners("SIGTERM");
+			process.kill(process.pid, signal);
+			return;
+		}
+		process.exit(code ?? 0);
+	});
 	child.once("error", (error) => {
 		console.error(`Failed to relaunch ${process.execPath}: ${error.message}`);
 		process.exit(1);
 	});
-	// Safety net: don't hang forever if the child never emits spawn/error.
-	setTimeout(() => process.exit(0), 5000);
 }
