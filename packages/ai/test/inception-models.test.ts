@@ -28,8 +28,13 @@ describe("Inception models", () => {
 			cacheRead: 0.004,
 			cacheWrite: 0,
 		});
-		// Inception's /v1/chat/completions expects the classic max_tokens field.
+		// Inception's /v1/chat/completions expects the classic max_tokens field,
+		// classic message roles (system, not developer), and no reasoning/store
+		// extensions.
 		expect(model.compat?.maxTokensField).toBe("max_tokens");
+		expect(model.compat?.supportsDeveloperRole).toBe(false);
+		expect(model.compat?.supportsReasoningEffort).toBe(false);
+		expect(model.compat?.supportsStore).toBe(false);
 	});
 
 	it("registers Mercury 2", () => {

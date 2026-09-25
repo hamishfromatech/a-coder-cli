@@ -10,7 +10,7 @@ export const INCEPTION_MODELS = {
 		api: "openai-completions",
 		provider: "inception",
 		baseUrl: "https://api.inceptionlabs.ai/v1",
-		compat: {"maxTokensField":"max_tokens"},
+		compat: {"maxTokensField":"max_tokens","supportsDeveloperRole":false,"supportsReasoningEffort":false,"supportsStore":false},
 		reasoning: true,
 		input: ["text"],
 		cost: {
@@ -28,7 +28,7 @@ export const INCEPTION_MODELS = {
 		api: "openai-completions",
 		provider: "inception",
 		baseUrl: "https://api.inceptionlabs.ai/v1",
-		compat: {"maxTokensField":"max_tokens"},
+		compat: {"maxTokensField":"max_tokens","supportsDeveloperRole":false,"supportsReasoningEffort":false,"supportsStore":false},
 		reasoning: true,
 		input: ["text"],
 		cost: {

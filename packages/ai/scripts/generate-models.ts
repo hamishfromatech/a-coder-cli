@@ -1234,6 +1234,11 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 					},
 					compat: {
 						maxTokensField: "max_tokens",
+						// Inception's /v1/chat/completions accepts only the classic
+						// message roles and no OpenAI reasoning/store extensions.
+						supportsDeveloperRole: false,
+						supportsReasoningEffort: false,
+						supportsStore: false,
 					},
 					contextWindow: m.limit?.context || 4096,
 					maxTokens: m.limit?.output || 4096,
