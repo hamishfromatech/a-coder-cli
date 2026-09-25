@@ -90,6 +90,7 @@ export type SettingsSectionId =
 	| "resources"
 	| "keybindings"
 	| "voice"
+	| "mobile"
 	| "updates"
 	| "bench"
 	| "advanced";
@@ -675,6 +676,16 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 		description: "Speech-to-text and text-to-speech endpoints (OpenAI-compatible).",
 	},
 
+	// ---- Mobile access ----------------------------------------------------
+	// No static fields — the Mobile section is a custom widget that owns the
+	// bridge lifecycle (start/stop `a-coder-cli serve`) and the pairing QR.
+	{
+		id: "mobile",
+		navId: "mobile",
+		label: "Mobile access",
+		description: "Pair the A-Coder mobile app to this workspace over the local network.",
+	},
+
 	// ---- Updates ----------------------------------------------------------
 	// No fields — the Updates section is a custom widget (current version +
 	// manual check; found updates hand off to the app's UpdateModal flow).
@@ -851,6 +862,7 @@ const NAV_ORDER: string[] = [
 	"external-tools",
 	"resources",
 	"voice",
+	"mobile",
 	"privacy",
 	"keybindings",
 	"bench",

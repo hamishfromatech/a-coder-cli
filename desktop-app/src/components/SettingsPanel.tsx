@@ -57,6 +57,7 @@ import { PermissionPoliciesEditor } from "./panels/widgets/PermissionPoliciesEdi
 import { ResourcesSection } from "./panels/widgets/ResourcesSection";
 import { BenchRunnerSection } from "./panels/widgets/BenchRunnerSection";
 import { VoiceSection } from "./panels/widgets/VoiceSection";
+import { MobileAccessSection } from "./panels/widgets/MobileAccessSection";
 import { UpdatesSection } from "./panels/widgets/UpdatesSection";
 import { CompletionSoundPicker } from "./panels/widgets/CompletionSoundPicker";
 import { replayOnboarding } from "../lib/onboarding";
@@ -1113,6 +1114,8 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 											<ResourcesSection search={search} />
 										) : s.id === "voice" ? (
 											<VoiceSection />
+										) : s.id === "mobile" ? (
+											<MobileAccessSection />
 										) : s.id === "updates" ? (
 											<UpdatesSection />
 										) : s.id === "bench" ? (

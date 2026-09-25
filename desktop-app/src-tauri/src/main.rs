@@ -9,6 +9,7 @@ mod git;
 mod menu;
 mod resources;
 mod rpc;
+mod serve;
 mod settings;
 mod share;
 mod state;
@@ -54,6 +55,7 @@ fn main() {
 		.plugin(tauri_plugin_process::init())
 		.manage(AppState::default())
 		.manage(bench::BenchState::default())
+		.manage(serve::ServeState::default())
 		.invoke_handler(tauri::generate_handler![
 			cli::get_initial_workspace,
 			bootstrap::bootstrap_cli,
@@ -61,6 +63,9 @@ fn main() {
 			bench::bench_scaffold,
 			bench::bench_start,
 			bench::bench_stop,
+			serve::serve_start,
+			serve::serve_stop,
+			serve::serve_status,
 			voice::voice_transcribe,
 			voice::voice_synthesize,
 			rpc_commands::connect,
