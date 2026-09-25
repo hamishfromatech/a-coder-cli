@@ -1216,23 +1216,6 @@ export const OPENCODE_MODELS = {
 		contextWindow: 1048576,
 		maxTokens: 131072,
 	} satisfies Model<"openai-responses">,
-	"muse-spark-1.2-contributor-free": {
-		id: "muse-spark-1.2-contributor-free",
-		name: "Muse Spark 1.2 Free",
-		api: "openai-responses",
-		provider: "opencode",
-		baseUrl: "https://opencode.ai/zen/v1",
-		reasoning: true,
-		input: ["text", "image"],
-		cost: {
-			input: 0,
-			output: 0,
-			cacheRead: 0,
-			cacheWrite: 0,
-		},
-		contextWindow: 1048576,
-		maxTokens: 131072,
-	} satisfies Model<"openai-responses">,
 	"muse-spark-1.3": {
 		id: "muse-spark-1.3",
 		name: "Muse Spark 1.3",

@@ -35,7 +35,7 @@ export const CEREBRAS_MODELS = {
 			cacheRead: 0,
 			cacheWrite: 0,
 		},
-		contextWindow: 65536,
-		maxTokens: 32768,
+		contextWindow: 131072,
+		maxTokens: 40960,
 	} satisfies Model<"openai-completions">,
 } as const;

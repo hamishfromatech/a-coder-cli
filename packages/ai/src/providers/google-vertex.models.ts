@@ -36,7 +36,7 @@ export const GOOGLE_VERTEX_MODELS = {
 			cacheWrite: 0,
 		},
 		contextWindow: 1048576,
-		maxTokens: 65536,
+		maxTokens: 65535,
 	} satisfies Model<"google-vertex">,
 	"gemini-2.5-pro": {
 		id: "gemini-2.5-pro",
