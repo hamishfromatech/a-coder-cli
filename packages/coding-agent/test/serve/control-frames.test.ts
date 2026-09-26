@@ -16,7 +16,8 @@ describe("bridge control frames", () => {
 			{ type: "bridge", event: "shutting_down" },
 			{ type: "bridge", event: "engine_exited", code: 3 },
 			{ type: "bridge", event: "engine_failed", attempts: 2 },
-			{ type: "bridge", event: "server_version", version: "1.0" },
+			{ type: "bridge", event: "engine_unavailable" },
+			{ type: "bridge", event: "server_version", version: "1.0", contract: 1 },
 		];
 		for (const event of events) {
 			expect(isBridgeFrame(JSON.parse(bridgeFrame(event)))).toBe(true);

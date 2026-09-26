@@ -11,7 +11,7 @@ import type { IncomingMessage, Server } from "node:http";
 import http from "node:http";
 import type { Socket } from "node:net";
 import { type WebSocket, WebSocketServer } from "ws";
-import { bridgeFrame } from "./control-frames.ts";
+import { BRIDGE_CONTRACT, bridgeFrame } from "./control-frames.ts";
 import { bearerFromHeader, tokenFromUrl, tokenMatches } from "./pairing.ts";
 
 const RATE_WINDOW_MS = 15 * 60 * 1000;
@@ -36,7 +36,7 @@ export interface WsServerOptions {
 	version: string;
 	machineId: string;
 	friendlyName: string;
-	onClientMessage: (data: string) => void;
+	onClientMessage: (data: string, ws: WebSocket) => void;
 	onClientConnected: (ws: WebSocket) => void;
 	onClientDisconnected: () => void;
 }
@@ -153,6 +153,7 @@ export class BridgeWsServer {
 				kind: "acoder-serve",
 				name: this.options.friendlyName,
 				version: this.options.version,
+				contract: BRIDGE_CONTRACT,
 				engine: "a-coder-cli",
 				machineId: this.options.machineId,
 				requiresAuth: this.options.requireAuth,
@@ -216,12 +217,21 @@ export class BridgeWsServer {
 				// Transport errors end in a close event; nothing further to do.
 			});
 			ws.on("message", (data) => {
-				this.options.onClientMessage(data.toString());
+				this.options.onClientMessage(data.toString(), ws);
 			});
 			this.options.onClientConnected(ws);
 			// Per-client handshake frame: the client treats this as auth-complete
-			// and starts its initial sync.
-			this.sendTo(ws, bridgeFrame({ type: "bridge", event: "server_version", version: this.options.version }));
+			// and starts its initial sync. `contract` lets the client verify it
+			// speaks a compatible bridge protocol before driving the engine.
+			this.sendTo(
+				ws,
+				bridgeFrame({
+					type: "bridge",
+					event: "server_version",
+					version: this.options.version,
+					contract: BRIDGE_CONTRACT,
+				}),
+			);
 		});
 	}
 

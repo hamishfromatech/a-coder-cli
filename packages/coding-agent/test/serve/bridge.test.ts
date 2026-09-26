@@ -3,7 +3,7 @@ import os from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
-import { isBridgeFrame } from "../../src/serve/control-frames.ts";
+import { bridgeFrame, isBridgeFrame } from "../../src/serve/control-frames.ts";
 import { EngineProcess } from "../../src/serve/engine-process.ts";
 import { BridgeWsServer, type WsServerOptions } from "../../src/serve/ws-server.ts";
 
@@ -98,11 +98,13 @@ async function startBridge(engineSource: string = FAKE_ENGINE_SOURCE): Promise<{
 	});
 	server = new BridgeWsServer({
 		...makeServerOptions(),
-		onClientMessage: (data) => {
+		onClientMessage: (data: string, ws: WebSocket) => {
 			for (const line of data.split("\n")) {
 				const trimmed = line.endsWith("\r") ? line.slice(0, -1) : line;
 				if (trimmed.length === 0) continue;
-				engine!.writeLine(trimmed);
+				if (!engine!.writeLine(trimmed)) {
+					server!.sendTo(ws, bridgeFrame({ type: "bridge", event: "engine_unavailable" }));
+				}
 			}
 		},
 		onClientConnected: () => {
@@ -246,6 +248,44 @@ describe("bridge conformance (server + engine over the wire)", () => {
 			.map((f) => (f as { id: string }).id);
 		expect(ids).toContain("m1");
 		expect(ids).toContain("m2");
+		ws.close();
+	});
+
+	it("refuses client lines with an engine_unavailable frame while the engine is down", async () => {
+		fs.writeFileSync(FAKE_ENGINE_PATH, FAKE_ENGINE_SOURCE);
+		engine = new EngineProcess({
+			cwd: tempDir,
+			continueSession: false,
+			commandOverride: { command: process.execPath, baseArgs: [FAKE_ENGINE_PATH] },
+			onLine: () => {},
+			onExit: () => {},
+			log: () => {},
+		});
+		server = new BridgeWsServer({
+			...makeServerOptions(),
+			// Production wiring (serve-command.ts): a line the engine cannot
+			// accept is refused back to the sender as a bridge control frame.
+			onClientMessage: (data: string, ws: WebSocket) => {
+				for (const line of data.split("\n")) {
+					const trimmed = line.endsWith("\r") ? line.slice(0, -1) : line;
+					if (trimmed.length === 0) continue;
+					if (!engine!.writeLine(trimmed)) {
+						server!.sendTo(ws, bridgeFrame({ type: "bridge", event: "engine_unavailable" }));
+					}
+				}
+			},
+			onClientConnected: () => {}, // engine deliberately never started
+		});
+		await server.start();
+		const { port } = { port: server.address!.port };
+		const ws = await connect(port);
+		ws.send(`{"id":"x","type":"command","command":"ping"}\n`);
+		const frames = await collectUntil(ws, (all) =>
+			all.some((f) => (f as { event?: string }).event === "engine_unavailable"),
+		);
+		const refused = frames.find((f) => (f as { event?: string }).event === "engine_unavailable");
+		expect(refused).toBeDefined();
+		expect(isBridgeFrame(refused)).toBe(true);
 		ws.close();
 	});
 

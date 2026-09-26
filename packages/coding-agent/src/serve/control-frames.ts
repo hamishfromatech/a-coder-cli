@@ -6,11 +6,19 @@
  * clients can route transport-level notices separately from engine events.
  */
 
+/**
+ * Bridge protocol contract version. Bump when the bridge frame vocabulary or
+ * delivery semantics change incompatibly; clients compare it against the range
+ * they support after the server_version handshake.
+ */
+export const BRIDGE_CONTRACT = 1;
+
 export type BridgeEvent =
-	| { type: "bridge"; event: "server_version"; version: string }
+	| { type: "bridge"; event: "server_version"; version: string; contract: number }
 	| { type: "bridge"; event: "connected"; clients: number }
 	| { type: "bridge"; event: "engine_exited"; code: number | null }
 	| { type: "bridge"; event: "engine_failed"; attempts: number }
+	| { type: "bridge"; event: "engine_unavailable" }
 	| { type: "bridge"; event: "shutting_down" };
 
 export function bridgeFrame(event: BridgeEvent): string {

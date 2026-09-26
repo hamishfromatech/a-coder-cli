@@ -94,6 +94,12 @@ export class EngineProcess {
 		});
 		this.child = child;
 
+		// Absorb stdin EPIPE so a write racing the child's death can't emit an
+		// unhandled 'error' event and crash the whole serve bridge process.
+		child.stdin?.on("error", (error) => {
+			this.options.log(`[engine] stdin error: ${error instanceof Error ? error.message : String(error)}`);
+		});
+
 		const out = child.stdout;
 		if (out) {
 			const unsubscribe = attachJsonlLineReader(out, (line) => {
@@ -121,10 +127,24 @@ export class EngineProcess {
 		});
 	}
 
-	/** Write one NDJSON command line to the engine's stdin. */
-	writeLine(line: string): void {
-		if (!this.child?.stdin || this.child.exitCode !== null) return;
-		this.child.stdin.write(`${line}\n`);
+	/**
+	 * Write one NDJSON command line to the engine's stdin.
+	 *
+	 * Returns false when the line could NOT be delivered (no engine yet, engine
+	 * exited, or stdin closed). Callers must surface that — silently dropping a
+	 * client message (e.g. an approval response) leaves the agent blocked on a
+	 * prompt nobody can answer.
+	 */
+	writeLine(line: string): boolean {
+		if (!this.child?.stdin || this.child.exitCode !== null) return false;
+		try {
+			this.child.stdin.write(`${line}\n`);
+			return true;
+		} catch {
+			// write() throws synchronously only after the stream is already
+			// destroyed; the exit handler owns recovery from here.
+			return false;
+		}
 	}
 
 	/** Graceful stop: SIGTERM, then SIGKILL after the grace period. */

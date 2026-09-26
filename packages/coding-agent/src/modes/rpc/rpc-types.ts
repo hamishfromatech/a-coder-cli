@@ -545,6 +545,22 @@ export interface RpcUserQuestion {
 // Runtime registry events (stdout)
 // ============================================================================
 
+/**
+ * Engine protocol contract version. Bump when the RPC event/command vocabulary
+ * changes incompatibly; embedded clients compare it against the range they
+ * support when the engine_info event arrives. Clients that predate this field
+ * ignore the event and treat the engine as contract 1.
+ */
+export const RPC_CONTRACT = 1;
+
+/** First event on the stdout stream: identifies the engine and its protocol
+ *  contract so clients can detect engine/client skew early. */
+export interface RpcEngineInfoEvent {
+	type: "engine_info";
+	version: string;
+	contract: number;
+}
+
 /** Emitted whenever the runtime registry changes: a session detaches (switched
  *  away mid-turn), a background turn starts/ends, or a background runtime is
  *  reaped. Push a snapshot via the `get_sessions_status` response shape. */

@@ -466,6 +466,18 @@ export default function App() {
 				const unlisten = await rpc.onRpcEvent((event) => {
 					if ("type" in event === false) return;
 					switch (event.type) {
+						case "engine_info": {
+							// Engine/client skew guard: the engine's first event names its
+							// protocol contract. Missing event = legacy engine = contract 1.
+							if (event.contract !== rpc.ENGINE_RPC_CONTRACT) {
+								const newer = event.contract > rpc.ENGINE_RPC_CONTRACT;
+								toast.warning(
+									newer ? "Engine newer than this app" : "Engine older than this app",
+									`The CLI engine (v${event.version}) speaks protocol contract ${event.contract}; this app expects ${rpc.ENGINE_RPC_CONTRACT}. Update the ${newer ? "app" : "CLI"}.`,
+								);
+							}
+							break;
+						}
 						case "agent_start":
 							setIsStreaming(true);
 							setStreamingVerb(pickLoadingVerb());
@@ -876,7 +888,14 @@ export default function App() {
 									: "value" in response
 										? { type: "extension_ui_response", id: req.id, value: response.value ?? "" }
 										: { type: "extension_ui_response", id: req.id, confirmed: response.confirmed ?? false };
-								void rpc.sendUiResponse(res);
+								rpc.sendUiResponse(res).catch(() => {
+									// A dropped response leaves the agent blocked on a prompt
+									// nobody can answer — surface it instead of failing silently.
+									toast.error(
+										"Response not delivered",
+										"The engine is not running, so the agent never received this response. Restart the engine and resend.",
+									);
+								});
 							});
 							break;
 						}
@@ -1019,6 +1038,20 @@ export default function App() {
 			useSessionStore.getState().setIsStreaming(false);
 		}).then((fn) => {
 			unlisten = fn;
+		});
+		// The CLI engine is newer than this desktop build (bootstrap keeps it
+		// instead of downgrading); make the skew visible.
+		rpc.onEngineVersionSkew(({ cli, desktop }) => {
+			toast.warning(
+				"Engine newer than this app",
+				`The installed CLI (v${cli}) is newer than A-Coder Desktop (v${desktop}). Most features work; update the app when convenient.`,
+			);
+		}).then((fn) => {
+			const previous = unlisten;
+			unlisten = () => {
+				fn();
+				previous?.();
+			};
 		});
 		return () => {
 			unlisten?.();

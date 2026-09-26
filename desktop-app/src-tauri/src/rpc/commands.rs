@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use serde_json::Value;
-use tauri::{command, State};
+use serde_json::{json, Value};
+use tauri::{command, AppHandle, Emitter, State};
 
 use crate::rpc::RpcClient;
 use crate::state::AppState;
@@ -25,15 +25,22 @@ pub async fn connect(
 	args: ConnectArgs,
 ) -> Result<String, String> {
 	// If the user supplied an explicit CLI override, honor it without updating.
-	// Otherwise make sure the globally installed CLI matches the desktop app's
-	// version so resumed sessions don't run against a stale engine.
-	let cli_path = if let Some(override_path) = args.cli_path {
-		PathBuf::from(override_path)
+	// Otherwise make sure the globally installed CLI is usable against this
+	// desktop build: older engines get re-downloaded to the matching release,
+	// while a newer engine is kept and the skew is surfaced to the user.
+	let resolution = if let Some(override_path) = args.cli_path {
+		crate::bootstrap::CliResolution { path: PathBuf::from(override_path), newer_engine: None }
 	} else {
 		crate::bootstrap::ensure_cli_version_matches().await?
 	};
+	if let Some(cli_version) = &resolution.newer_engine {
+		let _ = app_handle.emit(
+			"desktop://engine-version-skew",
+			json!({ "cli": cli_version, "desktop": env!("CARGO_PKG_VERSION") }),
+		);
+	}
 	let client = RpcClient::spawn(
-		cli_path,
+		resolution.path,
 		Some(args.cwd),
 		args.provider,
 		args.model,

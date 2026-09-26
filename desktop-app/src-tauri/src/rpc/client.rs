@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use crate::cli::{build_cli_command, reconstructed_path};
@@ -24,6 +25,11 @@ pub(crate) struct PendingRequest {
 pub struct RpcClient {
 	stdin_tx: mpsc::Sender<String>,
 	pending: Arc<Mutex<HashMap<String, PendingRequest>>>,
+	/// False once the stdout reader loop has ended (engine exited). Guards
+	/// fire-and-forget sends: without it, a UI response written to a dead
+	/// engine's stdin fails silently and the agent blocks on a prompt nobody
+	/// can answer.
+	alive: Arc<AtomicBool>,
 	_app_handle: AppHandle,
 	_io_handle: JoinHandle<()>,
 	// Retain the Child so kill_on_drop keeps the CLI alive for the client's
@@ -72,11 +78,13 @@ impl RpcClient {
 
 		let pending: Arc<Mutex<HashMap<String, PendingRequest>>> = Arc::new(Mutex::new(HashMap::new()));
 		let (stdin_tx, stdin_rx) = mpsc::channel::<String>(64);
-		let io_handle = Self::start_io(&mut child, stdin_rx, pending.clone(), app_handle.clone())?;
+		let alive = Arc::new(AtomicBool::new(true));
+		let io_handle = Self::start_io(&mut child, stdin_rx, pending.clone(), alive.clone(), app_handle.clone())?;
 
 		Ok(Self {
 			stdin_tx,
 			pending,
+			alive,
 			_app_handle: app_handle,
 			_io_handle: io_handle,
 			_child: child,
@@ -142,7 +150,12 @@ impl RpcClient {
 	}
 
 	/// Send a raw line without waiting for a response (used for extension UI responses).
+	/// Fails when the engine is no longer running so callers can surface the
+	/// loss instead of writing into a closed pipe.
 	pub async fn send_raw(&self, line: String) -> Result<(), String> {
+		if !self.alive.load(Ordering::SeqCst) {
+			return Err("Engine is not running".to_string());
+		}
 		self.stdin_tx
 			.send(line)
 			.await
@@ -153,6 +166,7 @@ impl RpcClient {
 		child: &mut Child,
 		mut stdin_rx: mpsc::Receiver<String>,
 		pending: Arc<Mutex<HashMap<String, PendingRequest>>>,
+		alive: Arc<AtomicBool>,
 		app_handle: AppHandle,
 	) -> Result<JoinHandle<()>, String> {
 		let stdout = child.stdout.take().expect("stdout pipe");
@@ -206,7 +220,9 @@ impl RpcClient {
 			// The CLI engine exited (stdout closed). Without this signal the
 			// frontend keeps rendering a dead session — sends silently time out and
 			// the window looks frozen. Tell it so it can surface a reconnect
-			// affordance.
+			// affordance. The alive flag flips first so any send racing the exit
+			// is refused (an error) rather than silently dropped.
+			alive.store(false, Ordering::SeqCst);
 			let _ = app_handle.emit("desktop://cli-exited", ());
 
 			let _ = forwarder.await;

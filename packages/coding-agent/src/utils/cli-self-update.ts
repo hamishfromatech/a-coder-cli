@@ -15,7 +15,7 @@
  */
 
 import { type ChildProcess, spawn } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getAgentDir, getInstallerScriptUrl } from "../config.ts";
 
@@ -27,6 +27,54 @@ const COOLDOWN_MS = 24 * 60 * 60 * 1000;
 interface AutoUpdateState {
 	lastAttemptedTag?: string;
 	lastAttemptAt?: number;
+}
+
+// ---- Update handoff marker -------------------------------------------------
+// Written right before a self-update tears the process down, read + cleared on
+// the next startup so the relaunched CLI can report what happened: the new tag
+// when the update landed, or an "update did not complete" note when the
+// running version doesn't match (failed installer, interrupted relaunch).
+
+const HANDOFF_FILE_NAME = "update-handoff.json";
+
+export interface UpdateHandoff {
+	tag: string;
+	startedAt: number;
+}
+
+function handoffFilePath(): string {
+	return join(getAgentDir(), HANDOFF_FILE_NAME);
+}
+
+/** Record that a self-update to `version` is about to relaunch the CLI. Best-effort. */
+export function writeUpdateHandoff(version: string): void {
+	try {
+		mkdirSync(getAgentDir(), { recursive: true });
+		writeFileSync(handoffFilePath(), JSON.stringify({ tag: normalizeTag(version), startedAt: Date.now() }), "utf8");
+	} catch {
+		// A missing marker only means no update note after the relaunch.
+	}
+}
+
+/**
+ * Read + clear the handoff marker written before a self-update relaunch.
+ * Returns null when no update was in flight. Always clears so the note
+ * doesn't repeat on later startups.
+ */
+export function takeUpdateHandoff(): UpdateHandoff | null {
+	let parsed: Partial<UpdateHandoff> | undefined;
+	try {
+		parsed = JSON.parse(readFileSync(handoffFilePath(), "utf8")) as Partial<UpdateHandoff>;
+	} catch {
+		return null;
+	}
+	try {
+		unlinkSync(handoffFilePath());
+	} catch {
+		// Clearing is best-effort; a stale marker just re-reports once.
+	}
+	if (typeof parsed?.tag !== "string" || parsed.tag.length === 0) return null;
+	return { tag: parsed.tag, startedAt: typeof parsed.startedAt === "number" ? parsed.startedAt : 0 };
 }
 
 function normalizeTag(version: string): string {

@@ -198,12 +198,17 @@ export async function handleServeCommand(args: string[]): Promise<boolean> {
 		version,
 		machineId: id,
 		friendlyName,
-		onClientMessage: (data) => {
-			// Inbound: strict JSONL — split on LF only, forward each line.
+		onClientMessage: (data, ws) => {
+			// Inbound: strict JSONL — split on LF only, forward each line. A line
+			// the engine cannot accept (not started, exited, restarting) is refused
+			// back to the sender: the client must learn its message was dropped
+			// instead of waiting forever for a response that never comes.
 			for (const rawLine of data.split("\n")) {
 				const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
 				if (line.length === 0) continue;
-				engine?.writeLine(line);
+				if (!engine?.writeLine(line)) {
+					server.sendTo(ws, bridgeFrame({ type: "bridge", event: "engine_unavailable" }));
+				}
 			}
 		},
 		onClientConnected: () => {

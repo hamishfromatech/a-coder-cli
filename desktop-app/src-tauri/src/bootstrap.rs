@@ -20,14 +20,20 @@ struct Release {
 	tag_name: String,
 }
 
-/// Verify that the resolved CLI matches the desktop app's own version. If
-/// the CLI is older (or otherwise mismatched), re-bootstrap it from the
-/// matching GitHub release so resumed sessions always run against the same
-/// a-coder-cli version that shipped with this desktop build.
+/// Verify that the resolved CLI is usable against this desktop build.
 ///
-/// Returns the resolved/updated CLI path, or an error if the CLI could not be
-/// resolved or updated.
-pub async fn ensure_cli_version_matches() -> Result<PathBuf, String> {
+/// Policy: the CLI must never be OLDER than the desktop (resumed sessions
+/// would run against a stale engine), so that case re-bootstraps the matching
+/// release. A NEWER CLI is kept as-is — silently downgrading an engine the
+/// user deliberately installed is hostile; the skew is reported to the caller
+/// instead. Unparseable versions fall back to the conservative re-install.
+pub struct CliResolution {
+	pub path: PathBuf,
+	/// Some(cli_version) when the installed CLI is newer than this desktop build.
+	pub newer_engine: Option<String>,
+}
+
+pub async fn ensure_cli_version_matches() -> Result<CliResolution, String> {
 	let installed = crate::cli::resolve_cli_path(None)?;
 
 	let installed_version = get_cli_version(&installed).await?;
@@ -36,12 +42,23 @@ pub async fn ensure_cli_version_matches() -> Result<PathBuf, String> {
 
 	// Already matches? Use it.
 	if installed_version == normalized_desktop {
-		return Ok(installed);
+		return Ok(CliResolution { path: installed, newer_engine: None });
 	}
 
-	// Mismatch: download the CLI release matching the desktop version. We
-	// can't rely on `latest` because the user may be on a pre-release or the
-	// GitHub latest pointer may have moved ahead of this desktop build.
+	// A newer engine is fine — use it and let the caller surface the skew.
+	if compare_dotted_versions(&installed_version, &normalized_desktop) == Some(std::cmp::Ordering::Greater) {
+		tracing::info!(
+			"CLI {} is newer than desktop {}; using it as-is",
+			installed_version,
+			normalized_desktop
+		);
+		return Ok(CliResolution { path: installed, newer_engine: Some(installed_version) });
+	}
+
+	// Older (or incomparable): download the CLI release matching the desktop
+	// version. We can't rely on `latest` because the user may be on a
+	// pre-release or the GitHub latest pointer may have moved ahead of this
+	// desktop build.
 	let tag = format!("v{}", normalized_desktop);
 	let updated_path = install_cli_release(&tag).await?;
 
@@ -54,7 +71,25 @@ pub async fn ensure_cli_version_matches() -> Result<PathBuf, String> {
 		));
 	}
 
-	Ok(updated_path)
+	Ok(CliResolution { path: updated_path, newer_engine: None })
+}
+
+/// Compare two dotted numeric versions ("0.80.113"). Returns None when either
+/// side can't be parsed as dot-separated integers (pre-release suffixes etc.),
+/// in which case the caller falls back to the conservative re-install path.
+fn compare_dotted_versions(a: &str, b: &str) -> Option<std::cmp::Ordering> {
+	let parse = |v: &str| -> Option<Vec<u64>> { v.split('.').map(|p| p.parse::<u64>().ok()).collect() };
+	let (a, b) = (parse(a)?, parse(b)?);
+	let len = a.len().max(b.len());
+	for i in 0..len {
+		let x = a.get(i).copied().unwrap_or(0);
+		let y = b.get(i).copied().unwrap_or(0);
+		match x.cmp(&y) {
+			std::cmp::Ordering::Equal => continue,
+			other => return Some(other),
+		}
+	}
+	Some(std::cmp::Ordering::Equal)
 }
 
 async fn get_cli_version(path: &Path) -> Result<String, String> {
@@ -507,5 +542,22 @@ mod tests {
 		assert_eq!(std::fs::read_to_string(lib_dir.join("pi")).unwrap(), "newer engine");
 
 		let _ = std::fs::remove_dir_all(&root);
+	}
+
+	#[test]
+	fn compare_dotted_versions_orders_semantically() {
+		use std::cmp::Ordering;
+		assert_eq!(compare_dotted_versions("0.80.113", "0.80.113"), Some(Ordering::Equal));
+		assert_eq!(compare_dotted_versions("0.80.114", "0.80.113"), Some(Ordering::Greater));
+		assert_eq!(compare_dotted_versions("0.80.9", "0.80.113"), Some(Ordering::Less));
+		assert_eq!(compare_dotted_versions("0.81", "0.80.113"), Some(Ordering::Greater));
+		assert_eq!(compare_dotted_versions("1.0", "0.99.99"), Some(Ordering::Greater));
+	}
+
+	#[test]
+	fn compare_dotted_versions_rejects_unparseable() {
+		assert_eq!(compare_dotted_versions("0.81.0-beta.1", "0.81.0"), None);
+		assert_eq!(compare_dotted_versions("dev", "0.80.113"), None);
+		assert_eq!(compare_dotted_versions("", "0.80.113"), None);
 	}
 }

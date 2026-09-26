@@ -276,6 +276,7 @@ export interface OfficeErrandInput {
 
 export type RpcEvent =
 	| AgentEvent
+	| EngineInfoEvent
 	| SessionStartEvent
 	| SessionInfoChangedEvent
 	| ExtensionUiRequestEvent
@@ -295,6 +296,19 @@ export type RpcEvent =
 	| OfficeActivityEvent
 	| CronUpdateEvent
 	| CronRunEvent;
+
+/** First event on the engine stream: identifies the engine and its protocol
+ *  contract so the app can detect engine/client skew early. Older engines
+ *  never send it — treat those as contract 1. */
+export interface EngineInfoEvent {
+	type: "engine_info";
+	version: string;
+	contract: number;
+}
+
+/** Contract version this desktop build speaks. Bump alongside the CLI when the
+ *  RPC event/command vocabulary changes incompatibly. */
+export const ENGINE_RPC_CONTRACT = 1;
 
 /** The engine re-emits agent_end with a retry hint after a retryable failure. */
 export interface AgentEndWillRetry {
@@ -909,6 +923,15 @@ export async function onMenuAction(handler: (action: string) => void): Promise<U
 /** The CLI engine process exited unexpectedly (stdout closed). */
 export async function onCliExited(handler: () => void): Promise<UnlistenFn> {
 	return await listen("desktop://cli-exited", () => handler());
+}
+
+/** The installed CLI engine is newer than this desktop build (kept, not downgraded). */
+export async function onEngineVersionSkew(
+	handler: (info: { cli: string; desktop: string }) => void,
+): Promise<UnlistenFn> {
+	return await listen<{ cli: string; desktop: string }>("desktop://engine-version-skew", (payload) => {
+		handler(payload.payload);
+	});
 }
 
 /** The WebKitGTK WebProcess crashed; the Rust shell already reloaded the webview. */

@@ -13,6 +13,7 @@
 
 import * as crypto from "node:crypto";
 import { getOAuthProvider } from "@earendil-works/pi-ai/oauth";
+import { VERSION } from "../../config.ts";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import { captureCliSessionEnd } from "../../core/analytics.ts";
 import { resolveComposioConfig } from "../../core/composio.ts";
@@ -43,6 +44,7 @@ import type {
 	RpcCommand,
 	RpcCronRunEvent,
 	RpcCronUpdateEvent,
+	RpcEngineInfoEvent,
 	RpcExtensionUIRequest,
 	RpcExtensionUIResponse,
 	RpcOfficeActivityEvent,
@@ -52,6 +54,7 @@ import type {
 	RpcSessionState,
 	RpcSlashCommand,
 } from "./rpc-types.ts";
+import { RPC_CONTRACT } from "./rpc-types.ts";
 
 // Re-export types for consumers
 export type {
@@ -78,6 +81,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	const output = (obj: RpcResponse | RpcExtensionUIRequest | object) => {
 		writeRawStdout(serializeJsonLine(obj));
 	};
+
+	// Handshake: the first frame identifies the engine and its protocol
+	// contract so embedded clients (desktop, mobile bridge) can detect
+	// engine/client skew early instead of failing cryptically downstream.
+	output({ type: "engine_info", version: VERSION, contract: RPC_CONTRACT } satisfies RpcEngineInfoEvent);
 
 	const success = <T extends RpcCommand["type"]>(
 		id: string | undefined,
