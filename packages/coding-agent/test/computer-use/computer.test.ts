@@ -158,6 +158,93 @@ describe("computer tool conformance against a fake cua-driver MCP server", () =>
 		expect(payload.code).toBe("input_target_mismatch");
 	});
 
+	it("maps the type action to the driver's type_text tool", async () => {
+		await execute({ action: "capture" } as ComputerToolInput);
+		const result = await execute({ action: "type", text: "hello world" } as ComputerToolInput);
+		const payload = JSON.parse(result.content[0]?.type === "text" ? result.content[0].text : "{}") as {
+			ok: boolean;
+		};
+		expect(payload.ok).toBe(true);
+		const calls = readCalls().filter((call) => call.name === "type_text");
+		expect(calls).toHaveLength(1);
+		expect(calls[0]?.args.text).toBe("hello world");
+	});
+
+	it("fails with driver_tool_unavailable when the driver no longer advertises a mapped tool", async () => {
+		process.env.FAKE_HIDE_TOOLS = "type_text";
+		try {
+			await execute({ action: "capture" } as ComputerToolInput);
+			const result = await execute({ action: "type", text: "hi" } as ComputerToolInput);
+			const payload = JSON.parse(result.content[0]?.type === "text" ? result.content[0].text : "{}") as {
+				ok: boolean;
+				code?: string;
+			};
+			expect(payload.ok).toBe(false);
+			expect(payload.code).toBe("driver_tool_unavailable");
+			expect(readCalls().filter((call) => call.name === "type_text")).toHaveLength(0);
+		} finally {
+			delete process.env.FAKE_HIDE_TOOLS;
+		}
+	});
+
+	it("translates driver permission refusals into an explanatory verdict", async () => {
+		process.env.FAKE_REFUSE_TOOLS = "click";
+		try {
+			await execute({ action: "capture" } as ComputerToolInput);
+			const result = await execute({ action: "click", element: 1 } as ComputerToolInput);
+			const payload = JSON.parse(result.content[0]?.type === "text" ? result.content[0].text : "{}") as {
+				ok: boolean;
+				verdict: { decision: string; code?: string; hint?: string };
+			};
+			expect(payload.ok).toBe(false);
+			expect(payload.verdict.code).toBe("driver_permission_refused");
+			expect(payload.verdict.hint).toContain("permission mode");
+		} finally {
+			delete process.env.FAKE_REFUSE_TOOLS;
+		}
+	});
+
+	it("doctor reports driver health without approval", async () => {
+		const result = await execute({ action: "doctor" } as ComputerToolInput);
+		const payload = JSON.parse(result.content[0]?.type === "text" ? result.content[0].text : "{}") as {
+			ok: boolean;
+			overall?: string;
+			driverVersion?: string;
+		};
+		expect(payload.ok).toBe(true);
+		expect(payload.overall).toBe("ok");
+		expect(payload.driverVersion).toBe("0.0.0");
+		// doctor never drives input: no click-family calls logged.
+		expect(readCalls().filter((call) => call.name === "click")).toHaveLength(0);
+	});
+
+	it("dedups byte-identical captures of the same target with a streak cap", async () => {
+		const payloadOf = (result: Awaited<ReturnType<typeof execute>>) => {
+			const text = result.content[0];
+			return {
+				hasImage: result.content.some((block) => block.type === "image"),
+				text: text?.type === "text" ? text.text : "",
+			};
+		};
+		// First capture delivers pixels.
+		const first = payloadOf(await execute({ action: "capture" } as ComputerToolInput));
+		expect(first.hasImage).toBe(true);
+		// Same target, identical bytes → image omitted with an explicit note.
+		const second = payloadOf(await execute({ action: "capture" } as ComputerToolInput));
+		expect(second.hasImage).toBe(false);
+		expect(second.text).toContain("screen unchanged");
+		// Streak still under cap → omitted again (at most 2 consecutive omissions).
+		const third = payloadOf(await execute({ action: "capture" } as ComputerToolInput));
+		expect(third.hasImage).toBe(false);
+		// Streak cap reached → pixels again.
+		const fourth = payloadOf(await execute({ action: "capture" } as ComputerToolInput));
+		expect(fourth.hasImage).toBe(true);
+		// A different target re-delivers immediately.
+		const other = payloadOf(await execute({ action: "capture", app: "Notes" } as ComputerToolInput));
+		expect(other.hasImage).toBe(true);
+		expect(other.text).not.toContain("screen unchanged");
+	});
+
 	it("routes bare keys to press_key and chords to hotkey", async () => {
 		await execute({ action: "capture" } as ComputerToolInput);
 		await execute({ action: "key", keys: "return" } as ComputerToolInput);

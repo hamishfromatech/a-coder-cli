@@ -44,7 +44,7 @@ export {
 } from "./ls.ts";
 
 import { createAskUserQuestionTool, createAskUserQuestionToolDefinition } from "./ask-user-question.ts";
-import { computerUseEnabled, createComputerTool, createComputerToolDefinition } from "./computer-use/computer.ts";
+import { createComputerTool, createComputerToolDefinition } from "./computer-use/computer.ts";
 import {
 	createTaskCreateTool,
 	createTaskCreateToolDefinition,
@@ -277,29 +277,6 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
-}
-
-export function createCodingToolDefinitions(cwd: string, options?: ToolsOptions): ToolDef[] {
-	return [
-		createReadToolDefinition(cwd, options?.read),
-		createBashToolDefinition(cwd, options?.bash),
-		createEditToolDefinition(cwd, options?.edit),
-		createWriteToolDefinition(cwd, options?.write),
-		createPlanModeToolDefinition(
-			options?.planMode?.callbacks ?? { getPlanMode: () => false, setPlanMode: () => {}, getPlanFilePath: () => "" },
-		),
-		createTodoToolDefinition(),
-		createAskUserQuestionToolDefinition(),
-		createTaskCreateToolDefinition(),
-		createTaskGetToolDefinition(),
-		createTaskListToolDefinition(),
-		createTaskUpdateToolDefinition(),
-		createMemoryToolDefinition(options?.memory),
-		createTeamCreateToolDefinition(),
-		createTeamDeleteToolDefinition(),
-		createSendMessageToolDefinition(),
-		...(computerUseEnabled() ? [createComputerToolDefinition()] : []),
-	];
 }
 
 export function createReadOnlyToolDefinitions(cwd: string, options?: ToolsOptions): ToolDef[] {

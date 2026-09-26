@@ -18,6 +18,7 @@
  * claiming success.
  */
 
+import { createHash } from "node:crypto";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { type Static, Type } from "typebox";
@@ -47,10 +48,11 @@ const computerSchema = Type.Object(
 				"list_apps",
 				"list_windows",
 				"focus_app",
+				"doctor",
 			],
 			{
 				description:
-					"Which action to perform. capture (free, no side effects) returns a screenshot plus interactable elements; prefer clicking elements by index over pixel coordinates. All other actions except list/wait/focus require approval.",
+					"Which action to perform. capture (free, no side effects) returns a screenshot plus interactable elements; prefer clicking elements by index over pixel coordinates. doctor (free) reports driver health + TCC grants. All other actions except list/wait/focus/doctor require approval.",
 			},
 		),
 		mode: Type.Optional(
@@ -245,6 +247,17 @@ let cachedClient: CuaDriverClient | null = null;
 let stickyTarget: { pid: number; window_id: number | null; app: string } | null = null;
 let snapshotTokens = new Map<number, string>();
 
+// Screenshot dedup: a tight capture→act→capture loop on a static screen resends the
+// same image every step. When a capture of the SAME target (app, window) returns
+// bytes identical to the last DELIVERED frame, the image block is omitted in favor
+// of an explicit "screen unchanged" note. Append-only (no transcript rewriting),
+// and bounded by a streak cap so full pixels are re-delivered after at most
+// MAX_UNCHANGED_STREAK consecutive omissions.
+let lastCaptureDigest: string | null = null;
+let lastCaptureTarget = "";
+let unchangedStreak = 0;
+const MAX_UNCHANGED_STREAK = 2;
+
 function getClient(): CuaDriverClient {
 	cachedClient ??= new CuaDriverClient();
 	return cachedClient;
@@ -253,6 +266,9 @@ function getClient(): CuaDriverClient {
 function clearTarget(): void {
 	stickyTarget = null;
 	snapshotTokens = new Map();
+	lastCaptureDigest = null;
+	lastCaptureTarget = "";
+	unchangedStreak = 0;
 }
 
 function positiveInt(value: unknown): number | null {
@@ -324,9 +340,14 @@ function parseWindows(raw: unknown): WindowEntry[] {
 interface Verdict {
 	decision: "done" | "verify_fresh_state" | "escalate";
 	hint?: string;
+	code?: string;
 }
 
-function classifyVerdict(result: { isError: boolean; structured: Record<string, unknown> | null }): Verdict {
+function classifyVerdict(result: {
+	isError: boolean;
+	structured: Record<string, unknown> | null;
+	message?: string;
+}): Verdict {
 	const structured = result.structured ?? {};
 	if (result.isError) {
 		const code = typeof structured.code === "string" ? structured.code : "";
@@ -334,6 +355,30 @@ function classifyVerdict(result: { isError: boolean; structured: Record<string, 
 			return {
 				decision: "escalate",
 				hint: "The action's outcome is unknown — it may have landed. Capture fresh state before any retry; do not repeat the input.",
+			};
+		}
+		// Driver-side authorization refusals happen BEFORE execution (no side
+		// effects, no capture needed) — explain the mode boundary instead.
+		const message = result.message ?? "";
+		if (/no reviewed risk classification/.test(message)) {
+			return {
+				decision: "verify_fresh_state",
+				code: "driver_permission_refused",
+				hint: "The driver's permission mode refuses this tool (no reviewed risk classification in standard mode). Nothing was executed; run the driver with a permission mode that allows it, or use a different approach.",
+			};
+		}
+		if (/outside the capability manifest/.test(message)) {
+			return {
+				decision: "verify_fresh_state",
+				code: "driver_permission_refused",
+				hint: "The driver runs in bounded mode and this tool is outside its capability manifest. Nothing was executed; widen the manifest or use an allowed tool.",
+			};
+		}
+		if (/unbounded_operation_requires_unrestricted|requires unrestricted/.test(message)) {
+			return {
+				decision: "verify_fresh_state",
+				code: "driver_permission_refused",
+				hint: "This operation is unbounded and requires the driver to run in unrestricted mode (trusted launch-time risk acceptance). Nothing was executed.",
 			};
 		}
 		return {
@@ -377,8 +422,8 @@ function actionPayload(
 		ok: !result.isError,
 		action,
 		...(result.message ? { message: result.message } : {}),
-		verdict: classifyVerdict(result),
 		...(result.structured ?? {}),
+		verdict: classifyVerdict(result),
 	};
 }
 
@@ -460,6 +505,21 @@ async function doCapture(args: ComputerToolInput): Promise<AgentToolResult<Recor
 	const visible = elements.slice(0, MAX_VISIBLE_ELEMENTS);
 	const image = result.images[0];
 	const truncated = elements.length - visible.length;
+	// Dedup gate: omit the image when this frame is byte-identical to the last
+	// delivered one for the same target and the omission streak is under cap.
+	let omittedAsUnchanged = false;
+	const targetKey = `${target.pid}:${target.window_id}`;
+	if (image && mode !== "ax") {
+		const digest = createHash("sha256").update(`${image.mimeType}:${image.data}`).digest("hex");
+		if (digest === lastCaptureDigest && targetKey === lastCaptureTarget && unchangedStreak < MAX_UNCHANGED_STREAK) {
+			unchangedStreak += 1;
+			omittedAsUnchanged = true;
+		} else {
+			lastCaptureDigest = digest;
+			lastCaptureTarget = targetKey;
+			unchangedStreak = 0;
+		}
+	}
 	const lines = [
 		`capture mode=${mode} app=${JSON.stringify(target.app || "frontmost")}`,
 		`${elements.length} interactable element(s):`,
@@ -468,11 +528,16 @@ async function doCapture(args: ComputerToolInput): Promise<AgentToolResult<Recor
 	if (truncated > 0) {
 		lines.push(`  (+${truncated} more; pass app= to narrow)`);
 	}
+	if (omittedAsUnchanged) {
+		lines.push(
+			`screen unchanged (${unchangedStreak === 1 ? "identical" : `identical for the ${unchangedStreak}th consecutive capture`}) — image omitted to save context; element indices and tokens above are still current.`,
+		);
+	}
 	if (mode === "ax") {
 		lines.push("(ax mode: tree only — no image; element indices still work for input actions)");
 	}
 	const content: AgentToolResult<Record<string, unknown>>["content"] = [{ type: "text", text: lines.join("\n") }];
-	if (image && mode !== "ax") {
+	if (image && mode !== "ax" && !omittedAsUnchanged) {
 		content.push({ type: "image", data: image.data, mimeType: image.mimeType });
 	}
 	return {
@@ -501,6 +566,73 @@ async function doList(kind: "apps" | "windows"): Promise<AgentToolResult<Record<
 	};
 	const payload = raw[kind] ?? raw.data?.[kind] ?? [];
 	return textResult({ ok: true, action: tool, [kind]: payload, count: Array.isArray(payload) ? payload.length : 0 });
+}
+
+/**
+ * Read-only self-diagnosis: driver health_report when the connected build
+ * advertises it (schema_version 1 contract), with a minimal fallback from
+ * check_permissions. No input actions, no capture — safe to run any time.
+ */
+async function doDoctor(): Promise<AgentToolResult<Record<string, unknown>>> {
+	const client = getClient();
+	// hasTool reads the discovery map, which is populated on first connect —
+	// doctor may be the very first call of the session, so start explicitly.
+	await client.start();
+	if (client.hasTool("health_report")) {
+		const result = await client.callTool("health_report", {});
+		if (result.isError) {
+			return textResult(actionPayload("doctor", result));
+		}
+		const sc = (result.structured ?? {}) as {
+			driver_version?: string;
+			overall?: string;
+			checks?: Array<{ name: string; status: string; message?: string; hint?: string }>;
+		};
+		const lines = [
+			`doctor overall=${sc.overall ?? "unknown"} driver=${sc.driver_version ?? "?"}`,
+			...(sc.checks ?? []).map(
+				(c) =>
+					`  [${c.status}] ${c.name}${c.message ? ` — ${c.message}` : ""}${c.hint ? `\n         hint: ${c.hint}` : ""}`,
+			),
+		];
+		return textResult({
+			ok: sc.overall === "ok",
+			action: "doctor",
+			overall: sc.overall,
+			driverVersion: sc.driver_version,
+			checks: sc.checks,
+			message: lines.join("\n"),
+		});
+	}
+	// Older builds: assemble a minimal report from what they do advertise.
+	if (client.hasTool("check_permissions")) {
+		const perms = await client.callTool("check_permissions", { prompt: false });
+		const sc = (perms.structured ?? {}) as {
+			accessibility?: boolean;
+			screen_recording?: boolean;
+			source?: string;
+		};
+		const lines = [
+			"doctor overall=degraded driver=<pre-health_report build>",
+			`  [${sc.accessibility ? "pass" : "fail"}] tcc_accessibility`,
+			`  [${sc.screen_recording ? "pass" : "fail"}] tcc_screen_recording`,
+			...(sc.source ? [`  (reported by ${sc.source})`] : []),
+		];
+		return textResult({
+			ok: sc.accessibility === true && sc.screen_recording === true,
+			action: "doctor",
+			checks: [
+				{ name: "tcc_accessibility", status: sc.accessibility ? "pass" : "fail" },
+				{ name: "tcc_screen_recording", status: sc.screen_recording ? "pass" : "fail" },
+			],
+			message: lines.join("\n"),
+		});
+	}
+	return textResult({
+		ok: false,
+		action: "doctor",
+		error: "The connected cua-driver advertises neither health_report nor check_permissions; cannot self-diagnose.",
+	});
 }
 
 async function doInput(args: ComputerToolInput): Promise<AgentToolResult<Record<string, unknown>>> {
@@ -599,6 +731,7 @@ async function doInput(args: ComputerToolInput): Promise<AgentToolResult<Record<
 			if (typeof args.text !== "string" || args.text.length === 0) {
 				return textResult({ ok: false, action, error: "type requires text." });
 			}
+			tool = "type_text";
 			toolArgs.text = args.text;
 			break;
 		}
@@ -677,6 +810,17 @@ async function doInput(args: ComputerToolInput): Promise<AgentToolResult<Record<
 			toolArgs.element_token = token;
 		}
 	}
+	// A driver build may rename tools (e.g. "type" → "type_text"); calling an
+	// unadvertised name surfaces as a confusing permission refusal downstream,
+	// so fail here with the actionable name mismatch instead.
+	if (!client.hasTool(tool)) {
+		return textResult({
+			ok: false,
+			action,
+			code: "driver_tool_unavailable",
+			error: `The connected cua-driver does not advertise a '${tool}' tool — its build may have renamed it. Check the driver version and update this tool's action mapping.`,
+		});
+	}
 	// Foreground delivery is only sent when the live schema accepts it; older
 	// drivers must not silently downgrade to background.
 	if (args.delivery_mode === "foreground") {
@@ -725,6 +869,9 @@ async function dispatch(action: string, params: ComputerToolInput): Promise<Agen
 		await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
 		return textResult({ ok: true, action: "wait", seconds });
 	}
+	if (action === "doctor") {
+		return doDoctor();
+	}
 	return doInput(params);
 }
 
@@ -761,6 +908,7 @@ export function createComputerToolDefinition(): ToolDefinition<typeof computerSc
 					action,
 					code: "backend_unavailable",
 					error: error instanceof Error ? error.message : String(error),
+					hint: "If the driver is installed, check the computerUse setting and the A_CODER_CUA_DRIVER_CMD path; once the driver connects, action='doctor' reports its health and TCC grants.",
 				});
 			}
 		},
@@ -782,12 +930,4 @@ export function resetComputerToolState(): void {
 export function computerUseAvailability(): { installed: boolean; command?: string } {
 	const availability = resolveDriverCommand();
 	return { installed: availability.installed, command: availability.command };
-}
-
-/**
- * Opt-in gate: the computer tool only registers when explicitly enabled.
- * Desktop control is a high-trust capability — never ship it on by default.
- */
-export function computerUseEnabled(): boolean {
-	return process.env.A_CODER_CLI_COMPUTER_USE === "1";
 }

@@ -14,6 +14,12 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprot
 
 const LOG = process.argv[2] ?? "";
 
+// Test knobs: FAKE_HIDE_TOOLS filters the advertised list (exercises the
+// client's stale-mapping guard); FAKE_REFUSE_TOOLS answers calls with the
+// driver's standard-mode permission refusal (exercises verdict translation).
+const HIDE = new Set((process.env.FAKE_HIDE_TOOLS ?? "").split(",").filter(Boolean));
+const REFUSE = new Set((process.env.FAKE_REFUSE_TOOLS ?? "").split(",").filter(Boolean));
+
 const tools = [
 	{ name: "start_session", inputSchema: { type: "object", properties: { session: { type: "string" } } } },
 	{ name: "end_session", inputSchema: { type: "object", properties: { session: { type: "string" } } } },
@@ -41,6 +47,14 @@ const tools = [
 		name: "type_text",
 		inputSchema: { type: "object", properties: { pid: {}, window_id: {}, text: {}, delivery_mode: {}, session: {} } },
 	},
+	{
+		name: "check_permissions",
+		inputSchema: { type: "object", properties: { prompt: {} } },
+	},
+	{
+		name: "health_report",
+		inputSchema: { type: "object", properties: { include: {}, skip: {} } },
+	},
 ];
 
 const WINDOWS = [
@@ -57,6 +71,12 @@ const IMAGE = { type: "image", data: "aGVsbG8=", mimeType: "image/png" };
 
 function handleCall(name, args) {
 	appendFileSync(LOG, `${JSON.stringify({ name, args })}\n`);
+	if (REFUSE.has(name)) {
+		return {
+			content: [{ type: "text", text: `Permission denied: tool '${name}' has no reviewed risk classification` }],
+			isError: true,
+		};
+	}
 	switch (name) {
 		case "list_windows":
 			return { content: [], structuredContent: { windows: WINDOWS } };
@@ -67,13 +87,30 @@ function handleCall(name, args) {
 		case "hotkey":
 		case "type_text":
 			return { content: [], structuredContent: { ok: true, effect: "confirmed" } };
+		case "check_permissions":
+			return { content: [], structuredContent: { accessibility: true, screen_recording: true, source: "CuaDriver daemon" } };
+		case "health_report":
+			return {
+				content: [],
+				structuredContent: {
+					schema_version: "1",
+					platform: "darwin",
+					driver_version: "0.0.0",
+					overall: "ok",
+					checks: [
+						{ name: "binary_version", status: "pass", message: "0.0.0" },
+						{ name: "tcc_accessibility", status: "pass", message: "granted" },
+						{ name: "tcc_screen_recording", status: "pass", message: "granted" },
+					],
+				},
+			};
 		default:
 			return { content: [{ type: "text", text: `unknown tool ${name}` }], isError: true };
 	}
 }
 
 const server = new Server({ name: "fake-cua-driver", version: "0.0.0" }, { capabilities: { tools: {} } });
-server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
+server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: tools.filter((t) => !HIDE.has(t.name)) }));
 server.setRequestHandler(CallToolRequestSchema, async (request) =>
 	handleCall(request.params.name, request.params.arguments ?? {}));
 await server.connect(new StdioServerTransport());
