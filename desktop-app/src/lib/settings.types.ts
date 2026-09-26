@@ -180,6 +180,8 @@ export interface CliSettings {
 	minimizeToTray?: boolean;
 	/** Local provider base URLs. */
 	localProviders?: LocalProviderSettings;
+	/** Experimental desktop control via cua-driver. Default: false. */
+	computerUse?: boolean;
 	/** Allow unknown keys so users can hand-edit raw JSON without losing data. */
 	[key: string]: unknown;
 }

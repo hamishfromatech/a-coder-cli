@@ -52,6 +52,7 @@ import { CustomProvidersSection } from "./panels/widgets/CustomProvidersSection"
 import { KeybindingsSection } from "./panels/widgets/KeybindingsSection";
 import { McpServersEditor } from "./panels/widgets/McpServersEditor";
 import { PackagesEditor } from "./panels/widgets/PackagesEditor";
+import { ComputerUseWidget } from "./panels/widgets/ComputerUseWidget";
 import { PathListInput } from "./panels/widgets/PathListInput";
 import { PermissionPoliciesEditor } from "./panels/widgets/PermissionPoliciesEditor";
 import { ResourcesSection } from "./panels/widgets/ResourcesSection";
@@ -479,6 +480,8 @@ function renderCustom(
 			return <CompletionSoundPicker />;
 		case "onboardingTour":
 			return <Button variant="secondary" size="md" onClick={() => replayOnboarding()}>Watch the tour</Button>;
+		case "computerUse":
+			return <ComputerUseWidget value={value} onChange={onChange} />;
 		default:
 			return null;
 	}

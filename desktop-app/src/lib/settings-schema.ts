@@ -63,7 +63,7 @@ export interface CliSettingsFieldSpec {
 	/** Number-only: step */
 	step?: number;
 	/** Custom-widget name when kind === "custom" */
-	widget?: "theme" | "thinking" | "models" | "defaultModel" | "mcpServers" | "permissionPolicies" | "packages" | "resources" | "completionSound" | "benchRunner" | "onboardingTour";
+	widget?: "theme" | "thinking" | "models" | "defaultModel" | "mcpServers" | "permissionPolicies" | "packages" | "resources" | "completionSound" | "benchRunner" | "onboardingTour" | "computerUse";
 	/** If true, change is also pushed to the engine at runtime (not just persisted) */
 	runtimeSync?:
 		| "thinkingLevel"
@@ -611,6 +611,12 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 				hint: "Ask first, run tools automatically, read only, or use custom permission policies.",
 				kind: "select",
 				options: permissionOptions,
+			},
+			{
+				path: "computerUse",
+				label: "Computer use (experimental)",
+				kind: "custom",
+				widget: "computerUse",
 			},
 			{
 				path: "doubleEscapeAction",

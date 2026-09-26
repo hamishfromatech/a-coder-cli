@@ -137,6 +137,9 @@ import {
 	relaunchSelf,
 	runInstallerSelfUpdate,
 	shouldAttemptAutoUpdate,
+	takeUpdateHandoff,
+	type UpdateHandoff,
+	writeUpdateHandoff,
 } from "../../utils/cli-self-update.ts";
 import { copyToClipboard } from "../../utils/clipboard.ts";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.ts";
@@ -1092,6 +1095,13 @@ export class InteractiveMode {
 	 */
 	async run(): Promise<void> {
 		await this.init();
+
+		// Report the outcome of a previous self-update (writeUpdateHandoff runs
+		// right before the update relaunch). Cleared on read so it shows once.
+		const updateHandoff = takeUpdateHandoff();
+		if (updateHandoff) {
+			this.showUpdateHandoffNote(updateHandoff);
+		}
 
 		// Start version check asynchronously. In "auto" mode (default), a new
 		// release triggers the one-shot installer and a re-exec so the user lands
@@ -4747,13 +4757,14 @@ export class InteractiveMode {
 
 	/**
 	 * Auto-update on startup: if a newer release is available and we're not
-	 * mid-response, tear down the TUI, run the one-shot installer, and re-exec
-	 * the CLI. Guarded by a per-tag cooldown (see {@link shouldAttemptAutoUpdate})
-	 * so a failed/partial update doesn't yank the TUI on every startup.
+	 * mid-response or mid-compaction, tear down the TUI, run the one-shot
+	 * installer, and re-exec the CLI. Guarded by a per-tag cooldown (see
+	 * {@link shouldAttemptAutoUpdate}) so a failed/partial update doesn't yank
+	 * the TUI on every startup.
 	 */
 	private async maybeAutoSelfUpdate(release: LatestPiRelease): Promise<void> {
-		// Don't interrupt an active response; defer to the next startup.
-		if (this.streamingComponent) {
+		// Don't interrupt an active response or compaction; defer to the next startup.
+		if (this.streamingComponent || this.session.isCompacting) {
 			this.showNewVersionNotification(release);
 			return;
 		}
@@ -4786,6 +4797,9 @@ export class InteractiveMode {
 		} catch {}
 
 		process.stdout.write(`\n${chalk.cyan(`Updating ${APP_NAME} to v${version}…`)}\n`);
+		// Handoff marker: written before the installer so the relaunched CLI (or
+		// the next manual start after a failed install) can report what happened.
+		writeUpdateHandoff(version);
 		const result = await runInstallerSelfUpdate(version);
 		if (!result.ok) {
 			process.stderr.write(`${chalk.red(`\nAuto-update failed${result.error ? `: ${result.error}` : ""}.`)}\n`);
@@ -4794,6 +4808,28 @@ export class InteractiveMode {
 		}
 		process.stdout.write(`${chalk.green(`\nUpdated to v${version}. Restarting…`)}\n`);
 		relaunchSelf();
+	}
+
+	/**
+	 * Report the outcome of a previous self-update handoff. Matching tag: the
+	 * update landed — confirm it. Mismatch: the installer ran but the relaunch
+	 * is still on the old version — surface the failure with a retry hint.
+	 */
+	private showUpdateHandoffNote(handoff: UpdateHandoff): void {
+		const currentTag = this.version.startsWith("v") ? this.version : `v${this.version}`;
+		if (handoff.tag === currentTag) {
+			this.chatContainer.addChild(new Text(theme.fg("success", `${APP_NAME} updated to ${handoff.tag}.`), 1, 0));
+		} else {
+			const retry = theme.fg("accent", `${APP_NAME} update`);
+			this.chatContainer.addChild(
+				new Text(
+					`${theme.fg("warning", `An update to ${handoff.tag} did not complete.`)} ${theme.fg("muted", `This session is running ${currentTag}. Run `)}${retry}`,
+					1,
+					0,
+				),
+			);
+		}
+		this.ui.requestRender();
 	}
 
 	showNewVersionNotification(release: LatestPiRelease): void {
@@ -5071,6 +5107,7 @@ export class InteractiveMode {
 					autoResizeImages: this.settingsManager.getImageAutoResize(),
 					blockImages: this.settingsManager.getBlockImages(),
 					enableSkillCommands: this.settingsManager.getEnableSkillCommands(),
+					computerUse: this.settingsManager.getComputerUseEnabled(),
 					steeringMode: this.session.steeringMode,
 					followUpMode: this.session.followUpMode,
 					transport: this.settingsManager.getTransport(),
@@ -5129,6 +5166,11 @@ export class InteractiveMode {
 					onEnableSkillCommandsChange: (enabled) => {
 						this.settingsManager.setEnableSkillCommands(enabled);
 						this.setupAutocompleteProvider();
+					},
+					onComputerUseChange: (enabled) => {
+						// Persisted here; takes effect when a session (re)builds its tool
+						// runtime (new session or /reload).
+						this.settingsManager.setComputerUseEnabled(enabled);
 					},
 					onSteeringModeChange: (mode) => {
 						this.session.setSteeringMode(mode);

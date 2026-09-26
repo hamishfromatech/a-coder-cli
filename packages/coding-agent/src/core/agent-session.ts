@@ -105,6 +105,13 @@ import type { BashExecutionMessage, CustomMessage } from "./messages.ts";
 import type { ModelRegistry } from "./model-registry.ts";
 import { applyPersistedOutputStyle, getOutputStylePrompt, loadOutputStyles } from "./output-styles.ts";
 import { classifyToolCall } from "./permission-classifier.ts";
+import { COMPUTER_INPUT_ACTIONS } from "./tools/computer-use/computer.ts";
+
+/** Read the `action` arg off a computer-tool call (empty when absent). */
+function getComputerActionArg(args: Record<string, unknown> | undefined): string {
+	return typeof args?.action === "string" ? args.action : "";
+}
+
 import {
 	AUTO_MODE_SAFE_TOOL_NAMES,
 	DEFAULT_MUTATING_TOOL_NAMES,
@@ -772,6 +779,16 @@ export class AgentSession {
 		// exit plan mode without needing a separate approval step.
 		if (toolName === "plan_mode") {
 			return { decision: "approve" };
+		}
+
+		// The computer tool is args-aware: read actions (capture, list, wait)
+		// are free, but input actions (click/type/key/...) and focus changes
+		// weigh like mutating tools in every mode. In read-only mode they are
+		// blocked outright; other modes fall through to the normal handling.
+		if (toolName === "computer" && COMPUTER_INPUT_ACTIONS.has(getComputerActionArg(args))) {
+			if (modeOverride === "read-only" || (!modeOverride && this._permissionMode === "read-only")) {
+				return { decision: "deny", reason: `computer ${getComputerActionArg(args)} is blocked in read-only mode` };
+			}
 		}
 
 		// When plan mode is active, mutating tools require explicit approval
@@ -3709,6 +3726,7 @@ export class AgentSession {
 					"team_create",
 					"team_delete",
 					"send_message",
+					...(this.settingsManager.getComputerUseEnabled() ? ["computer"] : []),
 				];
 		const baseActiveToolNames = options.activeToolNames ?? defaultActiveToolNames;
 		this._refreshToolRegistry({

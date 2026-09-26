@@ -223,6 +223,7 @@ export interface Settings {
 	workflowKeywordTrigger?: boolean; // Authoring trigger keyword in typed prompts (default: true)
 	websocketConnectTimeoutMs?: number; // WebSocket connect/open handshake timeout in milliseconds; 0 disables it
 	localProviders?: LocalProviderSettings;
+	computerUse?: boolean; // Enable the experimental `computer` tool (desktop control via cua-driver). Default: false; env A_CODER_CLI_COMPUTER_USE=1 also enables.
 }
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -1328,6 +1329,21 @@ export class SettingsManager {
 	setEnableSkillCommands(enabled: boolean): void {
 		this.globalSettings.enableSkillCommands = enabled;
 		this.markModified("enableSkillCommands");
+		this.save();
+	}
+
+	/**
+	 * Whether the experimental `computer` tool (desktop control via cua-driver)
+	 * is enabled: the settings toggle, or the A_CODER_CLI_COMPUTER_USE=1 env
+	 * override. Takes effect when a session (re)builds its tool runtime.
+	 */
+	getComputerUseEnabled(): boolean {
+		return this.settings.computerUse === true || process.env.A_CODER_CLI_COMPUTER_USE === "1";
+	}
+
+	setComputerUseEnabled(enabled: boolean): void {
+		this.globalSettings.computerUse = enabled;
+		this.markModified("computerUse");
 		this.save();
 	}
 

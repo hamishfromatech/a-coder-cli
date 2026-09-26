@@ -4,6 +4,13 @@
 
 ### Added
 
+- **Computer use (experimental)** settings card under Permissions: a looping animated explainer showing how desktop control works — a mock window gets numbered element badges, a cursor glides over and clicks one, an approval chip taps in, and the three steps (it looks / it asks / it acts) light up in sync — with the enable switch and an explicit confirm step (parity with the CLI's disclaimer). Reduced-motion aware. Writes the CLI's `computerUse` settings key; the engine picks it up when a session rebuilds its tool runtime.
+- Engine/client skew detection: the engine's first RPC event is now `engine_info` (version + protocol contract), and the desktop warns on a contract mismatch — a newer engine or an older engine than this build understands — instead of failing cryptically downstream. Legacy engines without the event are treated as contract 1 (no warning).
+- Connect-time version policy: a CLI engine NEWER than the desktop build is now kept as-is (with an "Engine newer than this app" warning toast) instead of being silently re-downgraded to the desktop's version. Older engines still re-download the matching release.
+- UI responses (approvals, prompts, questions) are verified for delivery: `send_ui_response` fails when the engine is no longer running instead of writing into a closed pipe, and the failure surfaces as a "Response not delivered" toast — previously a response answered just as the engine died was silently lost and the agent blocked on the prompt forever.
+
+### Added
+
 - Inception Labs appears in the desktop account providers list (API key setup with console link), matching the new `inception` engine provider.
 - Queued messages render as the same Hermes-style collapsible card as the task graph and the agents panel: an Inbox-titled "Queued" section above the composer with one row per queued message (steer/follow-up tag, restore-to-composer affordance, remove button). Rows act per item — clicking restores the text into the composer after removing it from the queue (previously clicking "sent" a copy while the engine still delivered the original, risking a duplicate), and X removes just that item. Backed by a new `queue_remove` RPC command and `AgentSession.removeQueuedMessage` (with per-index removal in the agent queue), since the engine previously only supported clearing the whole queue.
 - Edit tool results render as a real diff: expanding an `edit` tool row shows a GitHub-style diff view (green/red tinted rows, marker gutter, line numbers, collapsed-region markers) built from the tool result's `details.diff`, with a `+A −R` stats chip on both the collapsed row and the diff header, replacing the raw Args/Result dump for successful edits. Error results keep the existing error rendering.

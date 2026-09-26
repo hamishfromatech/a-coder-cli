@@ -10,6 +10,44 @@ describe("SettingsManager", () => {
 	const agentDir = join(testDir, "agent");
 	const projectDir = join(testDir, "project");
 
+	describe("computerUse", () => {
+		const SAVED_ENV = process.env.A_CODER_CLI_COMPUTER_USE;
+
+		afterEach(() => {
+			if (SAVED_ENV !== undefined) {
+				process.env.A_CODER_CLI_COMPUTER_USE = SAVED_ENV;
+			} else {
+				delete process.env.A_CODER_CLI_COMPUTER_USE;
+			}
+		});
+
+		it("defaults to off, persists the toggle, and honors the env override", async () => {
+			delete process.env.A_CODER_CLI_COMPUTER_USE;
+			const manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.getComputerUseEnabled()).toBe(false);
+
+			manager.setComputerUseEnabled(true);
+			// Persisted to disk for the next session/engine (writes are enqueued).
+			const settingsPath = join(agentDir, "settings.json");
+			let persisted = false;
+			for (let attempt = 0; attempt < 50 && !persisted; attempt++) {
+				await new Promise((resolve) => setTimeout(resolve, 20));
+				try {
+					persisted = JSON.parse(readFileSync(settingsPath, "utf8")).computerUse === true;
+				} catch {
+					// not written yet
+				}
+			}
+			expect(persisted).toBe(true);
+			expect(SettingsManager.create(projectDir, agentDir).getComputerUseEnabled()).toBe(true);
+
+			// Env override wins even when the setting is off.
+			manager.setComputerUseEnabled(false);
+			process.env.A_CODER_CLI_COMPUTER_USE = "1";
+			expect(manager.getComputerUseEnabled()).toBe(true);
+		});
+	});
+
 	beforeEach(() => {
 		// Clean up and create fresh directories
 		if (existsSync(testDir)) {

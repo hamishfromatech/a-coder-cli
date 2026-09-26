@@ -44,6 +44,7 @@ export {
 } from "./ls.ts";
 
 import { createAskUserQuestionTool, createAskUserQuestionToolDefinition } from "./ask-user-question.ts";
+import { computerUseEnabled, createComputerTool, createComputerToolDefinition } from "./computer-use/computer.ts";
 import {
 	createTaskCreateTool,
 	createTaskCreateToolDefinition,
@@ -134,6 +135,7 @@ export type ToolName =
 	| "task_update"
 	| "memory"
 	| "plan_mode"
+	| "computer"
 	| "team_create"
 	| "team_delete"
 	| "send_message";
@@ -148,6 +150,7 @@ export const allToolNames: Set<ToolName> = new Set([
 	"ls",
 	"todo",
 	"ask_user_question",
+	"computer",
 	"task_create",
 	"task_get",
 	"task_list",
@@ -202,6 +205,8 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			);
 		case "todo":
 			return createTodoToolDefinition();
+		case "computer":
+			return createComputerToolDefinition();
 		case "ask_user_question":
 			return createAskUserQuestionToolDefinition();
 		case "task_create":
@@ -251,6 +256,8 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 			);
 		case "todo":
 			return createTodoTool();
+		case "computer":
+			return createComputerTool();
 		case "ask_user_question":
 			return createAskUserQuestionTool();
 		case "task_create":
@@ -291,6 +298,7 @@ export function createCodingToolDefinitions(cwd: string, options?: ToolsOptions)
 		createTeamCreateToolDefinition(),
 		createTeamDeleteToolDefinition(),
 		createSendMessageToolDefinition(),
+		...(computerUseEnabled() ? [createComputerToolDefinition()] : []),
 	];
 }
 
@@ -318,6 +326,7 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 			options?.planMode?.callbacks ?? { getPlanMode: () => false, setPlanMode: () => {}, getPlanFilePath: () => "" },
 		),
 		todo: createTodoToolDefinition(),
+		computer: createComputerToolDefinition(),
 		ask_user_question: createAskUserQuestionToolDefinition(),
 		task_create: createTaskCreateToolDefinition(),
 		task_get: createTaskGetToolDefinition(),
@@ -375,6 +384,7 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 			options?.planMode?.callbacks ?? { getPlanMode: () => false, setPlanMode: () => {}, getPlanFilePath: () => "" },
 		),
 		todo: createTodoTool(),
+		computer: createComputerTool(),
 		ask_user_question: createAskUserQuestionTool(),
 		task_create: createTaskCreateTool(),
 		task_get: createTaskGetTool(),

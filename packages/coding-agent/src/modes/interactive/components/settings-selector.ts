@@ -56,6 +56,7 @@ export interface SettingsConfig {
 	autoResizeImages: boolean;
 	blockImages: boolean;
 	enableSkillCommands: boolean;
+	computerUse: boolean;
 	steeringMode: "all" | "one-at-a-time";
 	followUpMode: "all" | "one-at-a-time";
 	transport: Transport;
@@ -90,6 +91,7 @@ export interface SettingsCallbacks {
 	onAutoResizeImagesChange: (enabled: boolean) => void;
 	onBlockImagesChange: (blocked: boolean) => void;
 	onEnableSkillCommandsChange: (enabled: boolean) => void;
+	onComputerUseChange: (enabled: boolean) => void;
 	onSteeringModeChange: (mode: "all" | "one-at-a-time") => void;
 	onFollowUpModeChange: (mode: "all" | "one-at-a-time") => void;
 	onTransportChange: (transport: Transport) => void;
@@ -157,6 +159,81 @@ class WarningSettingsSubmenu extends Container {
 
 	handleInput(data: string): void {
 		this.settingsList.handleInput(data);
+	}
+}
+
+/**
+ * Computer-use disclaimer submenu: shown before the tool can be enabled from
+ * the TUI. Explains how desktop control works (cua-driver sees via labeled
+ * screenshots, acts without stealing focus, asks per the permission mode) and
+ * what is hard-blocked, then requires an explicit enable choice.
+ */
+class ComputerUseDisclaimerSubmenu extends Container {
+	private selectList: SelectList;
+
+	constructor(currentlyEnabled: boolean, done: (selectedValue?: string) => void) {
+		super();
+
+		this.addChild(new DynamicBorder());
+		this.addChild(
+			new Text(
+				theme.bold(theme.fg("accent", currentlyEnabled ? "Disable computer use" : "Enable computer use?")),
+				1,
+				0,
+			),
+		);
+
+		if (!currentlyEnabled) {
+			for (const line of [
+				"How it works:",
+				`${theme.fg("text", "· See: ")}the agent takes screenshots of your screen and reads a labeled list of UI elements.`,
+				`${theme.fg("text", "· Act: ")}clicks and keystrokes are delivered to one target window without stealing your cursor or keyboard.`,
+				`${theme.fg("text", "· Ask first: ")}read actions (screenshots) are free; every click, keystroke, or focus change follows your permission mode.`,
+				`${theme.fg("text", "· Hard limits: ")}destructive shortcuts (logout/lock/empty trash) and shell-payload typing are blocked outright.`,
+				`${theme.fg("muted", "Requires the cua-driver binary (cua repo). Applies to new sessions.")}`,
+			]) {
+				this.addChild(new Text(line, 0, 0));
+			}
+			this.addChild(new Spacer(1));
+		}
+
+		const items: SelectItem[] = currentlyEnabled
+			? [
+					{
+						value: "false",
+						label: "Disable computer use",
+						description: "The agent loses desktop access in new sessions",
+					},
+					{ value: "__cancel", label: "Cancel", description: "Keep it enabled" },
+				]
+			: [
+					{
+						value: "true",
+						label: "I understand — enable computer use",
+						description: "New sessions can take screenshots and drive the desktop",
+					},
+					{ value: "__cancel", label: "Cancel", description: "Leave it off" },
+				];
+
+		this.selectList = new SelectList(items, items.length, {
+			selectedPrefix: (t) => theme.fg("accent", t),
+			selectedText: (t) => theme.fg("accent", t),
+			description: (t) => theme.fg("muted", t),
+			scrollInfo: (t) => theme.fg("dim", t),
+			noMatch: (t) => theme.fg("warning", t),
+		});
+		this.selectList.onSelect = (item) => {
+			done(item.value === "__cancel" ? undefined : item.value);
+		};
+		this.selectList.onCancel = () => done(undefined);
+		this.addChild(this.selectList);
+		this.addChild(new Spacer(1));
+		this.addChild(new Text(theme.fg("dim", "  Enter to select · Esc to go back"), 0, 0));
+		this.addChild(new DynamicBorder());
+	}
+
+	handleInput(data: string): void {
+		this.selectList.handleInput(data);
 	}
 }
 
@@ -669,9 +746,19 @@ export class SettingsSelectorComponent extends Container {
 			values: ["true", "false"],
 		});
 
-		// Hardware cursor toggle (insert after skill-commands)
+		// Computer use toggle (experimental desktop control via cua-driver)
 		const skillCommandsIndex = items.findIndex((item) => item.id === "skill-commands");
 		items.splice(skillCommandsIndex + 1, 0, {
+			id: "computer-use",
+			label: "Computer use (experimental)",
+			description: "Let the agent drive the desktop via cua-driver. Opens an explainer before enabling.",
+			currentValue: config.computerUse ? "true" : "false",
+			submenu: (_currentValue, done) => new ComputerUseDisclaimerSubmenu(config.computerUse, done),
+		});
+
+		// Hardware cursor toggle (insert after computer-use)
+		const computerUseIndex = items.findIndex((item) => item.id === "computer-use");
+		items.splice(computerUseIndex + 1, 0, {
 			id: "show-hardware-cursor",
 			label: "Show hardware cursor",
 			description: "Show the terminal cursor while still positioning it for IME support",
@@ -768,6 +855,9 @@ export class SettingsSelectorComponent extends Container {
 						break;
 					case "skill-commands":
 						callbacks.onEnableSkillCommandsChange(newValue === "true");
+						break;
+					case "computer-use":
+						callbacks.onComputerUseChange(newValue === "true");
 						break;
 					case "steering-mode":
 						callbacks.onSteeringModeChange(newValue as "all" | "one-at-a-time");
