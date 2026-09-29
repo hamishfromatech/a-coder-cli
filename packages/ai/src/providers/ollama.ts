@@ -59,6 +59,14 @@ export function resolveOllamaBaseUrl(override?: string): string {
 }
 
 export function createOllamaModel(id: string, baseUrl?: string, contextWindow?: number): Model<"openai-completions"> {
+	const resolvedContextWindow = contextWindow && contextWindow > 0 ? contextWindow : 128000;
+	// `:cloud` models run on Ollama's hosted backend — the same servers as the
+	// ollama-cloud provider, where the per-model output cap equals the context
+	// window (probed 2026-09). The generic local default (4096, Ollama's
+	// num_predict fallback) actively truncated these models mid-answer; the API
+	// layer still retries without max_tokens if the server rejects the budget.
+	const isCloudModel = id.toLowerCase().endsWith(":cloud");
+	const maxTokens = isCloudModel ? resolvedContextWindow : 4096;
 	return {
 		id,
 		name: `Ollama: ${id}`,
@@ -81,8 +89,8 @@ export function createOllamaModel(id: string, baseUrl?: string, contextWindow?: 
 			cacheRead: 0,
 			cacheWrite: 0,
 		},
-		contextWindow: contextWindow && contextWindow > 0 ? contextWindow : 128000,
-		maxTokens: 4096,
+		contextWindow: resolvedContextWindow,
+		maxTokens,
 	};
 }
 
@@ -125,6 +133,11 @@ export async function fetchOllamaModels(
 			const probed = await fetchOllamaContextWindow(resolvedBaseUrl, name, { signal });
 			if (probed && probed > 0) {
 				base.contextWindow = probed;
+				// :cloud models budget output to the (probed) context window; the
+				// constructed default was derived from the assumed 128k context.
+				if (name.toLowerCase().endsWith(":cloud")) {
+					base.maxTokens = probed;
+				}
 			}
 		}
 

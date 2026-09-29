@@ -183,6 +183,17 @@ describe("Ollama provider", () => {
 		delete process.env.OLLAMA_BASE_URL;
 	});
 
+	it("removes the 4096 output cap for :cloud models (same backend as the ollama-cloud provider)", () => {
+		const cloud = createOllamaModel("glm-5.3-flash:cloud", undefined, 1048576);
+		expect(cloud.maxTokens).toBe(1048576);
+		// Without a probed context window the budget still fits the default.
+		const cloudDefault = createOllamaModel("qwen3:cloud");
+		expect(cloudDefault.maxTokens).toBe(128000);
+		// Local (non-cloud) models keep the generic Ollama num_predict default.
+		const local = createOllamaModel("llama3.2:latest");
+		expect(local.maxTokens).toBe(4096);
+	});
+
 	it("fetches models from the native /api/tags endpoint and probes /api/show for context windows", async () => {
 		const fetchMock = vi.fn(async (input: unknown): Promise<Response> => {
 			const url = typeof input === "string" ? input : (input as Request).url;
