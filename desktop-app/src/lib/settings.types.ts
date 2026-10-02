@@ -31,6 +31,7 @@ export interface LocalProviderSettings {
 	lmStudioBaseUrl?: string;
 	llamaCppBaseUrl?: string;
 	ollamaBaseUrl?: string;
+	unslothBaseUrl?: string;
 }
 
 export interface CompactionSettings {

@@ -25,6 +25,7 @@ export const BUILT_IN_PROVIDER_DISPLAY_NAMES: Record<string, string> = {
 	nvidia: "NVIDIA NIM",
 	"lm-studio": "LM Studio",
 	"llama-cpp": "llama.cpp",
+	unsloth: "Unsloth",
 	opencode: "OpenCode Zen",
 	"opencode-go": "OpenCode Go",
 	openai: "OpenAI",

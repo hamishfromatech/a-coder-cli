@@ -288,6 +288,12 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 				hint: "Leave blank to use the default http://localhost:11434/v1.",
 				kind: "text",
 			},
+			{
+				path: "localProviders.unslothBaseUrl",
+				label: "Unsloth address",
+				hint: "Leave blank to use the default http://localhost:8888/v1.",
+				kind: "text",
+			},
 		],
 	},
 

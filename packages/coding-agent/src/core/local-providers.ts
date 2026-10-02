@@ -9,7 +9,7 @@
  * Keep this list in sync with the built-in providers registered in
  * `@earendil-works/pi-ai` (`lm-studio`, `llama-cpp`, `ollama`).
  */
-export const KEYLESS_LOCAL_PROVIDERS: ReadonlySet<string> = new Set(["lm-studio", "llama-cpp", "ollama"]);
+export const KEYLESS_LOCAL_PROVIDERS: ReadonlySet<string> = new Set(["lm-studio", "llama-cpp", "ollama", "unsloth"]);
 
 /**
  * Sentinel API key for keyless local providers. The API layer requires a
@@ -28,4 +28,5 @@ export const KEYLESS_LOCAL_PROVIDER_ENV: Record<string, string> = {
 	"lm-studio": "LM_STUDIO_BASE_URL",
 	"llama-cpp": "LLAMACPP_BASE_URL",
 	ollama: "OLLAMA_BASE_URL",
+	unsloth: "UNSLOTH_BASE_URL",
 };

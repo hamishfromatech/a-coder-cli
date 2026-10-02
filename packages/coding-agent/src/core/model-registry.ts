@@ -27,6 +27,7 @@ import { fetchOllamaModels } from "@earendil-works/pi-ai/providers/ollama";
 import { fetchOllamaCloudModels } from "@earendil-works/pi-ai/providers/ollama-cloud";
 import { fetchOllamaContextWindow, looksLikeOllama } from "@earendil-works/pi-ai/providers/ollama-context";
 import { fetchOpenAdapterModels } from "@earendil-works/pi-ai/providers/openadapter";
+import { fetchUnslothModels } from "@earendil-works/pi-ai/providers/unsloth";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { type Static, Type } from "typebox";
@@ -416,6 +417,11 @@ export class ModelRegistry {
 	private llamaCppLastAttempt = 0;
 	private static readonly LLAMA_CPP_REFRESH_MS = 2 * 60 * 1000;
 	private static readonly LLAMA_CPP_FAILURE_RETRY_MS = 15 * 1000;
+	private unslothRefreshPromise: Promise<void> | undefined;
+	private unslothLastSuccess = 0;
+	private unslothLastAttempt = 0;
+	private static readonly UNSLOTH_REFRESH_MS = 2 * 60 * 1000;
+	private static readonly UNSLOTH_FAILURE_RETRY_MS = 15 * 1000;
 	private ollamaRefreshPromise: Promise<void> | undefined;
 	private ollamaLastSuccess = 0;
 	private ollamaLastAttempt = 0;
@@ -475,6 +481,9 @@ export class ModelRegistry {
 		this.llamaCppLastSuccess = 0;
 		this.llamaCppLastAttempt = 0;
 		this.llamaCppRefreshPromise = undefined;
+		this.unslothLastSuccess = 0;
+		this.unslothLastAttempt = 0;
+		this.unslothRefreshPromise = undefined;
 		this.ollamaLastSuccess = 0;
 		this.ollamaLastAttempt = 0;
 		this.ollamaRefreshPromise = undefined;
@@ -768,6 +777,8 @@ export class ModelRegistry {
 		if (lmStudioError) errors.push(lmStudioError);
 		const llamaCppError = await this.refreshLlamaCppModels(force);
 		if (llamaCppError) errors.push(llamaCppError);
+		const unslothError = await this.refreshUnslothModels(force);
+		if (unslothError) errors.push(unslothError);
 		const ollamaLocalError = await this.refreshOllamaModels(force);
 		if (ollamaLocalError) errors.push(ollamaLocalError);
 		return errors.length > 0 ? errors.join("; ") : undefined;
@@ -964,6 +975,43 @@ export class ModelRegistry {
 		})();
 
 		await this.llamaCppRefreshPromise;
+		return undefined;
+	}
+
+	/**
+	 * Refresh the Unsloth server's model list from the configured /v1/models
+	 * endpoint. Keyless local provider: always attempts to reach the server. A
+	 * missing server is expected and is silently ignored.
+	 */
+	private async refreshUnslothModels(force = false): Promise<string | undefined> {
+		const now = Date.now();
+		const recentlySucceeded = now - this.unslothLastSuccess < ModelRegistry.UNSLOTH_REFRESH_MS;
+		const recentlyAttempted = now - this.unslothLastAttempt < ModelRegistry.UNSLOTH_FAILURE_RETRY_MS;
+		if (!force && (this.unslothRefreshPromise || recentlyAttempted)) {
+			return (this.unslothRefreshPromise ?? Promise.resolve()).then(() => undefined);
+		}
+
+		this.unslothRefreshPromise = (async () => {
+			this.unslothLastAttempt = Date.now();
+			if (!force && recentlySucceeded && this.models.some((m) => m.provider === "unsloth")) {
+				this.unslothRefreshPromise = undefined;
+				return;
+			}
+			try {
+				const env = this.authStorage.getProviderEnv("unsloth");
+				const refreshed = await fetchUnslothModels(env?.UNSLOTH_BASE_URL);
+				if (refreshed.length === 0) return;
+				this.models = this.models.filter((m) => m.provider !== "unsloth");
+				this.models.push(...refreshed);
+				this.unslothLastSuccess = Date.now();
+			} catch {
+				// Server not running is expected for a keyless local provider.
+			} finally {
+				this.unslothRefreshPromise = undefined;
+			}
+		})();
+
+		await this.unslothRefreshPromise;
 		return undefined;
 	}
 

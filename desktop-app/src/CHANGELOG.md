@@ -4,6 +4,10 @@
 
 ### Added
 
+- Settings → Models → Local models: an "Unsloth address" field for the CLI's new `unsloth` local provider (defaults to `http://localhost:8888/v1`), alongside LM Studio / llama.cpp / Ollama. Writes the same `localProviders.unslothBaseUrl` setting the CLI engine applies at startup.
+
+### Added
+
 - **Computer use (experimental)** settings card under Permissions: a looping animated explainer showing how desktop control works — a mock window gets numbered element badges, a cursor glides over and clicks one, an approval chip taps in, and the three steps (it looks / it asks / it acts) light up in sync — with the enable switch and an explicit confirm step (parity with the CLI's disclaimer). Reduced-motion aware. Writes the CLI's `computerUse` settings key; the engine picks it up when a session rebuilds its tool runtime.
 - Engine/client skew detection: the engine's first RPC event is now `engine_info` (version + protocol contract), and the desktop warns on a contract mismatch — a newer engine or an older engine than this build understands — instead of failing cryptically downstream. Legacy engines without the event are treated as contract 1 (no warning).
 - Connect-time version policy: a CLI engine NEWER than the desktop build is now kept as-is (with an "Engine newer than this app" warning toast) instead of being silently re-downgraded to the desktop's version. Older engines still re-download the matching release.

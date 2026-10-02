@@ -20,6 +20,7 @@ export interface LocalProviderSettings {
 	lmStudioBaseUrl?: string;
 	llamaCppBaseUrl?: string;
 	ollamaBaseUrl?: string;
+	unslothBaseUrl?: string;
 }
 
 export interface CompactionSettings {
@@ -627,6 +628,9 @@ export class SettingsManager {
 		}
 		if (local.ollamaBaseUrl) {
 			process.env.OLLAMA_BASE_URL = local.ollamaBaseUrl;
+		}
+		if (local.unslothBaseUrl) {
+			process.env.UNSLOTH_BASE_URL = local.unslothBaseUrl;
 		}
 	}
 

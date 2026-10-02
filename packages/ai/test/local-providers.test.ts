@@ -8,6 +8,13 @@ import {
 } from "../src/providers/llama-cpp.ts";
 import { createLMStudioModel, fetchLMStudioModels, lmStudioProvider } from "../src/providers/lm-studio.ts";
 import { createOllamaModel, fetchOllamaModels, ollamaProvider, resolveOllamaBaseUrl } from "../src/providers/ollama.ts";
+import {
+	createUnslothModel,
+	fetchUnslothModels,
+	resolveUnslothBaseUrl,
+	unslothContextWindow,
+	unslothProvider,
+} from "../src/providers/unsloth.ts";
 
 describe("LM Studio provider", () => {
 	it("creates a placeholder model with default base URL", () => {
@@ -155,6 +162,71 @@ describe("llama.cpp provider", () => {
 	it("provider exposes the placeholder model and dynamic refresh", () => {
 		const provider = llamaCppProvider();
 		expect(provider.id).toBe("llama-cpp");
+		expect(provider.getModels()).toHaveLength(1);
+		expect(provider.refreshModels).toBeDefined();
+	});
+});
+
+describe("Unsloth provider", () => {
+	it("uses the default base URL when no env override is set", () => {
+		delete process.env.UNSLOTH_BASE_URL;
+		expect(resolveUnslothBaseUrl()).toBe("http://localhost:8888/v1");
+	});
+
+	it("reads base URL from UNSLOTH_BASE_URL env var", () => {
+		process.env.UNSLOTH_BASE_URL = "http://192.168.1.10:8888/v1";
+		expect(resolveUnslothBaseUrl()).toBe("http://192.168.1.10:8888/v1");
+		delete process.env.UNSLOTH_BASE_URL;
+	});
+
+	it("creates a model using the resolved base URL", () => {
+		process.env.UNSLOTH_BASE_URL = "http://custom:8888/v1";
+		const model = createUnslothModel("unsloth/Qwen3.8-27B-GGUF");
+		expect(model.provider).toBe("unsloth");
+		expect(model.api).toBe("openai-completions");
+		expect(model.baseUrl).toBe("http://custom:8888/v1");
+		delete process.env.UNSLOTH_BASE_URL;
+	});
+
+	it("fetches models from /v1/models and reads the context metadata", async () => {
+		const fetchMock = vi.fn().mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				object: "list",
+				data: [
+					{ id: "unsloth/Qwen3.8-27B-GGUF", context_length: 262144, loaded: true, quant: "UD-IQ2_S" },
+					{ id: "unsloth/Qwen3.5-0.8B-GGUF", max_context_length: 131072 },
+					{ id: "unsloth/no-meta" },
+				],
+			}),
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		const models = await fetchUnslothModels();
+		expect(models).toHaveLength(3);
+		expect(models[0]?.contextWindow).toBe(262144); // context_length
+		expect(models[1]?.contextWindow).toBe(131072); // max_context_length fallback
+		expect(models[2]?.contextWindow).toBe(128000); // no meta: default
+		expect(models[0]?.maxTokens).toBe(128000); // llama.cpp-style output budget
+		expect(fetchMock).toHaveBeenCalledWith(
+			"http://localhost:8888/v1/models",
+			expect.objectContaining({ headers: { accept: "application/json" } }),
+		);
+
+		vi.unstubAllGlobals();
+	});
+
+	it("createUnslothModel applies a discovered context window", () => {
+		expect(createUnslothModel("m", undefined, 262144).contextWindow).toBe(262144);
+		expect(createUnslothModel("m", undefined, 0).contextWindow).toBe(128000);
+		expect(unslothContextWindow({ id: "x", context_length: 4096 })).toBe(4096);
+		expect(unslothContextWindow({ id: "x", max_context_length: 8192 })).toBe(8192);
+		expect(unslothContextWindow({ id: "x" })).toBeUndefined();
+	});
+
+	it("provider exposes the placeholder model and dynamic refresh", () => {
+		const provider = unslothProvider();
+		expect(provider.id).toBe("unsloth");
 		expect(provider.getModels()).toHaveLength(1);
 		expect(provider.refreshModels).toBeDefined();
 	});

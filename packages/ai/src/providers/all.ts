@@ -36,6 +36,7 @@ import { opencodeGoProvider } from "./opencode-go.ts";
 import { openrouterProvider } from "./openrouter.ts";
 import { openrouterImagesProvider } from "./openrouter-images.ts";
 import { togetherProvider } from "./together.ts";
+import { unslothProvider } from "./unsloth.ts";
 import { vercelAIGatewayProvider } from "./vercel-ai-gateway.ts";
 import { xaiProvider } from "./xai.ts";
 import { xiaomiProvider } from "./xiaomi.ts";
@@ -108,6 +109,7 @@ export function builtinProviders(): Provider[] {
 		opencodeGoProvider(),
 		openrouterProvider(),
 		togetherProvider(),
+		unslothProvider(),
 		vercelAIGatewayProvider(),
 		xaiProvider(),
 		xiaomiProvider(),
