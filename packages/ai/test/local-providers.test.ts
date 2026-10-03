@@ -9,12 +9,26 @@ import {
 import { createLMStudioModel, fetchLMStudioModels, lmStudioProvider } from "../src/providers/lm-studio.ts";
 import { createOllamaModel, fetchOllamaModels, ollamaProvider, resolveOllamaBaseUrl } from "../src/providers/ollama.ts";
 import {
+	createSgLangModel,
+	fetchSgLangModels,
+	resolveSgLangBaseUrl,
+	sgLangContextWindow,
+	sgLangProvider,
+} from "../src/providers/sglang.ts";
+import {
 	createUnslothModel,
 	fetchUnslothModels,
 	resolveUnslothBaseUrl,
 	unslothContextWindow,
 	unslothProvider,
 } from "../src/providers/unsloth.ts";
+import {
+	createVllmModel,
+	fetchVllmModels,
+	resolveVllmBaseUrl,
+	vllmContextWindow,
+	vllmProvider,
+} from "../src/providers/vllm.ts";
 
 describe("LM Studio provider", () => {
 	it("creates a placeholder model with default base URL", () => {
@@ -227,6 +241,154 @@ describe("Unsloth provider", () => {
 	it("provider exposes the placeholder model and dynamic refresh", () => {
 		const provider = unslothProvider();
 		expect(provider.id).toBe("unsloth");
+		expect(provider.getModels()).toHaveLength(1);
+		expect(provider.refreshModels).toBeDefined();
+	});
+});
+
+describe("vLLM provider", () => {
+	it("uses the default base URL when no env override is set", () => {
+		delete process.env.VLLM_BASE_URL;
+		expect(resolveVllmBaseUrl()).toBe("http://localhost:8000/v1");
+	});
+
+	it("reads base URL from VLLM_BASE_URL env var", () => {
+		process.env.VLLM_BASE_URL = "http://192.168.1.10:8000/v1";
+		expect(resolveVllmBaseUrl()).toBe("http://192.168.1.10:8000/v1");
+		delete process.env.VLLM_BASE_URL;
+	});
+
+	it("creates a model using the resolved base URL", () => {
+		process.env.VLLM_BASE_URL = "http://custom:8000/v1";
+		const model = createVllmModel("meta-llama/Llama-3.1-8B-Instruct");
+		expect(model.provider).toBe("vllm");
+		expect(model.api).toBe("openai-completions");
+		expect(model.baseUrl).toBe("http://custom:8000/v1");
+		delete process.env.VLLM_BASE_URL;
+	});
+
+	it("fetches models from /v1/models and reads the served context length", async () => {
+		const fetchMock = vi.fn(async (input: unknown): Promise<Response> => {
+			const url = typeof input === "string" ? input : (input as Request).url;
+			if (url === "http://localhost:8000/v1/models") {
+				return new Response(
+					JSON.stringify({
+						object: "list",
+						data: [
+							{
+								id: "meta-llama/Llama-3.1-8B-Instruct",
+								object: "model",
+								max_model_len: 131072,
+							},
+							{ id: "Qwen/Qwen3-32B", object: "model", max_model_len: 40960 },
+							{ id: "old-vllm-model" },
+						],
+					}),
+					{ status: 200, headers: { "content-type": "application/json" } },
+				);
+			}
+			throw new Error(`Unexpected fetch: ${url}`);
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		const models = await fetchVllmModels();
+		expect(models).toHaveLength(3);
+		expect(models[0]?.contextWindow).toBe(131072);
+		// vLLM caps prompt + completion against the served window.
+		expect(models[0]?.maxTokens).toBe(131072);
+		expect(models[1]?.contextWindow).toBe(40960);
+		expect(models[2]?.contextWindow).toBe(128000); // no metadata: default
+		expect(fetchMock).toHaveBeenCalledWith(
+			"http://localhost:8000/v1/models",
+			expect.objectContaining({ headers: { accept: "application/json" } }),
+		);
+
+		vi.unstubAllGlobals();
+	});
+
+	it("createVllmModel applies a discovered context window", () => {
+		expect(createVllmModel("m", undefined, 262144).contextWindow).toBe(262144);
+		expect(createVllmModel("m", undefined, 0).contextWindow).toBe(128000);
+		expect(vllmContextWindow({ id: "x", max_model_len: 4096 })).toBe(4096);
+		expect(vllmContextWindow({ id: "x" })).toBeUndefined();
+	});
+
+	it("provider exposes the placeholder model and dynamic refresh", () => {
+		const provider = vllmProvider();
+		expect(provider.id).toBe("vllm");
+		expect(provider.getModels()).toHaveLength(1);
+		expect(provider.refreshModels).toBeDefined();
+	});
+});
+
+describe("SGLang provider", () => {
+	it("uses the default base URL when no env override is set", () => {
+		delete process.env.SGLANG_BASE_URL;
+		expect(resolveSgLangBaseUrl()).toBe("http://localhost:30000/v1");
+	});
+
+	it("reads base URL from SGLANG_BASE_URL env var", () => {
+		process.env.SGLANG_BASE_URL = "http://192.168.1.10:30000/v1";
+		expect(resolveSgLangBaseUrl()).toBe("http://192.168.1.10:30000/v1");
+		delete process.env.SGLANG_BASE_URL;
+	});
+
+	it("creates a model using the resolved base URL", () => {
+		process.env.SGLANG_BASE_URL = "http://custom:30000/v1";
+		const model = createSgLangModel("meta-llama/Llama-3.2-3B-Instruct");
+		expect(model.provider).toBe("sglang");
+		expect(model.api).toBe("openai-completions");
+		expect(model.baseUrl).toBe("http://custom:30000/v1");
+		delete process.env.SGLANG_BASE_URL;
+	});
+
+	it("fetches models from /v1/models and reads the context metadata when reported", async () => {
+		const fetchMock = vi.fn(async (input: unknown): Promise<Response> => {
+			const url = typeof input === "string" ? input : (input as Request).url;
+			if (url === "http://localhost:30000/v1/models") {
+				return new Response(
+					JSON.stringify({
+						object: "list",
+						data: [
+							{
+								id: "meta-llama/Llama-3.1-70B-Instruct",
+								object: "model",
+								owned_by: "sglang",
+								max_model_len: 131072,
+							},
+							{ id: "reported-by-older-sglang" },
+						],
+					}),
+					{ status: 200, headers: { "content-type": "application/json" } },
+				);
+			}
+			throw new Error(`Unexpected fetch: ${url}`);
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		const models = await fetchSgLangModels();
+		expect(models).toHaveLength(2);
+		expect(models[0]?.contextWindow).toBe(131072);
+		expect(models[0]?.maxTokens).toBe(131072);
+		expect(models[1]?.contextWindow).toBe(128000); // no metadata: default
+		expect(fetchMock).toHaveBeenCalledWith(
+			"http://localhost:30000/v1/models",
+			expect.objectContaining({ headers: { accept: "application/json" } }),
+		);
+
+		vi.unstubAllGlobals();
+	});
+
+	it("createSgLangModel applies a discovered context window", () => {
+		expect(createSgLangModel("m", undefined, 262144).contextWindow).toBe(262144);
+		expect(createSgLangModel("m", undefined, 0).contextWindow).toBe(128000);
+		expect(sgLangContextWindow({ id: "x", max_model_len: 4096 })).toBe(4096);
+		expect(sgLangContextWindow({ id: "x" })).toBeUndefined();
+	});
+
+	it("provider exposes the placeholder model and dynamic refresh", () => {
+		const provider = sgLangProvider();
+		expect(provider.id).toBe("sglang");
 		expect(provider.getModels()).toHaveLength(1);
 		expect(provider.refreshModels).toBeDefined();
 	});

@@ -7,9 +7,16 @@
  *     base-URL dialog.
  *
  * Keep this list in sync with the built-in providers registered in
- * `@earendil-works/pi-ai` (`lm-studio`, `llama-cpp`, `ollama`).
+ * `@earendil-works/pi-ai` (`lm-studio`, `llama-cpp`, `ollama`, `unsloth`, `vllm`, `sglang`).
  */
-export const KEYLESS_LOCAL_PROVIDERS: ReadonlySet<string> = new Set(["lm-studio", "llama-cpp", "ollama", "unsloth"]);
+export const KEYLESS_LOCAL_PROVIDERS: ReadonlySet<string> = new Set([
+	"lm-studio",
+	"llama-cpp",
+	"ollama",
+	"unsloth",
+	"vllm",
+	"sglang",
+]);
 
 /**
  * Sentinel API key for keyless local providers. The API layer requires a
@@ -29,4 +36,6 @@ export const KEYLESS_LOCAL_PROVIDER_ENV: Record<string, string> = {
 	"llama-cpp": "LLAMACPP_BASE_URL",
 	ollama: "OLLAMA_BASE_URL",
 	unsloth: "UNSLOTH_BASE_URL",
+	vllm: "VLLM_BASE_URL",
+	sglang: "SGLANG_BASE_URL",
 };

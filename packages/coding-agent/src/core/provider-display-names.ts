@@ -31,6 +31,8 @@ export const BUILT_IN_PROVIDER_DISPLAY_NAMES: Record<string, string> = {
 	"lm-studio": "LM Studio",
 	"llama-cpp": "llama.cpp",
 	unsloth: "Unsloth",
+	vllm: "vLLM",
+	sglang: "SGLang",
 	opencode: "OpenCode Zen",
 	"opencode-go": "OpenCode Go",
 	openai: "OpenAI",

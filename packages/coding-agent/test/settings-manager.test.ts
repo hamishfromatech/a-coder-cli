@@ -602,6 +602,8 @@ describe("SettingsManager", () => {
 						llamaCppBaseUrl: "http://llama:8080/v1",
 						ollamaBaseUrl: "http://ollama:11434/v1",
 						unslothBaseUrl: "http://unsloth:8888/v1",
+						vllmBaseUrl: "http://vllm:8000/v1",
+						sglangBaseUrl: "http://sglang:30000/v1",
 					},
 				}),
 			);
@@ -610,6 +612,8 @@ describe("SettingsManager", () => {
 			expect(process.env.LLAMACPP_BASE_URL).toBe("http://llama:8080/v1");
 			expect(process.env.OLLAMA_BASE_URL).toBe("http://ollama:11434/v1");
 			expect(process.env.UNSLOTH_BASE_URL).toBe("http://unsloth:8888/v1");
+			expect(process.env.VLLM_BASE_URL).toBe("http://vllm:8000/v1");
+			expect(process.env.SGLANG_BASE_URL).toBe("http://sglang:30000/v1");
 		});
 
 		it("leaves a shell-exported env var intact when the setting is absent", () => {

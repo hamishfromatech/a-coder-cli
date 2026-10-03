@@ -27,7 +27,9 @@ import { fetchOllamaModels } from "@earendil-works/pi-ai/providers/ollama";
 import { fetchOllamaCloudModels } from "@earendil-works/pi-ai/providers/ollama-cloud";
 import { fetchOllamaContextWindow, looksLikeOllama } from "@earendil-works/pi-ai/providers/ollama-context";
 import { fetchOpenAdapterModels } from "@earendil-works/pi-ai/providers/openadapter";
+import { fetchSgLangModels } from "@earendil-works/pi-ai/providers/sglang";
 import { fetchUnslothModels } from "@earendil-works/pi-ai/providers/unsloth";
+import { fetchVllmModels } from "@earendil-works/pi-ai/providers/vllm";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { type Static, Type } from "typebox";
@@ -422,6 +424,16 @@ export class ModelRegistry {
 	private unslothLastAttempt = 0;
 	private static readonly UNSLOTH_REFRESH_MS = 2 * 60 * 1000;
 	private static readonly UNSLOTH_FAILURE_RETRY_MS = 15 * 1000;
+	private vllmRefreshPromise: Promise<void> | undefined;
+	private vllmLastSuccess = 0;
+	private vllmLastAttempt = 0;
+	private static readonly VLLM_REFRESH_MS = 2 * 60 * 1000;
+	private static readonly VLLM_FAILURE_RETRY_MS = 15 * 1000;
+	private sgLangRefreshPromise: Promise<void> | undefined;
+	private sgLangLastSuccess = 0;
+	private sgLangLastAttempt = 0;
+	private static readonly SGLANG_REFRESH_MS = 2 * 60 * 1000;
+	private static readonly SGLANG_FAILURE_RETRY_MS = 15 * 1000;
 	private ollamaRefreshPromise: Promise<void> | undefined;
 	private ollamaLastSuccess = 0;
 	private ollamaLastAttempt = 0;
@@ -484,6 +496,12 @@ export class ModelRegistry {
 		this.unslothLastSuccess = 0;
 		this.unslothLastAttempt = 0;
 		this.unslothRefreshPromise = undefined;
+		this.vllmLastSuccess = 0;
+		this.vllmLastAttempt = 0;
+		this.vllmRefreshPromise = undefined;
+		this.sgLangLastSuccess = 0;
+		this.sgLangLastAttempt = 0;
+		this.sgLangRefreshPromise = undefined;
 		this.ollamaLastSuccess = 0;
 		this.ollamaLastAttempt = 0;
 		this.ollamaRefreshPromise = undefined;
@@ -809,6 +827,10 @@ export class ModelRegistry {
 		if (llamaCppError) errors.push(llamaCppError);
 		const unslothError = await this.refreshUnslothModels(force);
 		if (unslothError) errors.push(unslothError);
+		const vllmError = await this.refreshVllmModels(force);
+		if (vllmError) errors.push(vllmError);
+		const sgLangError = await this.refreshSgLangModels(force);
+		if (sgLangError) errors.push(sgLangError);
 		const ollamaLocalError = await this.refreshOllamaModels(force);
 		if (ollamaLocalError) errors.push(ollamaLocalError);
 		return errors.length > 0 ? errors.join("; ") : undefined;
@@ -1042,6 +1064,83 @@ export class ModelRegistry {
 		})();
 
 		await this.unslothRefreshPromise;
+		return undefined;
+	}
+
+	/**
+	 * Refresh the local vLLM server's model list from /v1/models.
+	 * Keyless local provider: always attempts to reach the server. A missing
+	 * server is expected and is silently ignored. The served context window
+	 * arrives in the model entry (`max_model_len`); older builds omit it and
+	 * the default applies.
+	 */
+	private async refreshVllmModels(force = false): Promise<string | undefined> {
+		const now = Date.now();
+		const recentlySucceeded = now - this.vllmLastSuccess < ModelRegistry.VLLM_REFRESH_MS;
+		const recentlyAttempted = now - this.vllmLastAttempt < ModelRegistry.VLLM_FAILURE_RETRY_MS;
+		if (!force && (this.vllmRefreshPromise || recentlyAttempted)) {
+			return (this.vllmRefreshPromise ?? Promise.resolve()).then(() => undefined);
+		}
+		if (!force && recentlySucceeded && this.models.some((m) => m.provider === "vllm")) {
+			this.vllmRefreshPromise = undefined;
+			return;
+		}
+
+		this.vllmRefreshPromise = (async () => {
+			this.vllmLastAttempt = Date.now();
+			try {
+				const env = this.authStorage.getProviderEnv("vllm");
+				const refreshed = await fetchVllmModels(env?.VLLM_BASE_URL);
+				if (refreshed.length === 0) return;
+				this.models = this.models.filter((m) => m.provider !== "vllm");
+				this.models.push(...refreshed);
+				this.vllmLastSuccess = Date.now();
+			} catch {
+				// Server not running is expected for a keyless local provider.
+			} finally {
+				this.vllmRefreshPromise = undefined;
+			}
+		})();
+
+		await this.vllmRefreshPromise;
+		return undefined;
+	}
+
+	/**
+	 * Refresh the local SGLang server's model list from /v1/models.
+	 * Keyless local provider: always attempts to reach the server. A missing
+	 * server is expected and is silently ignored. SGLang reports the served
+	 * window (`max_model_len`) on newer builds; otherwise the default applies.
+	 */
+	private async refreshSgLangModels(force = false): Promise<string | undefined> {
+		const now = Date.now();
+		const recentlySucceeded = now - this.sgLangLastSuccess < ModelRegistry.SGLANG_REFRESH_MS;
+		const recentlyAttempted = now - this.sgLangLastAttempt < ModelRegistry.SGLANG_FAILURE_RETRY_MS;
+		if (!force && (this.sgLangRefreshPromise || recentlyAttempted)) {
+			return (this.sgLangRefreshPromise ?? Promise.resolve()).then(() => undefined);
+		}
+		if (!force && recentlySucceeded && this.models.some((m) => m.provider === "sglang")) {
+			this.sgLangRefreshPromise = undefined;
+			return;
+		}
+
+		this.sgLangRefreshPromise = (async () => {
+			this.sgLangLastAttempt = Date.now();
+			try {
+				const env = this.authStorage.getProviderEnv("sglang");
+				const refreshed = await fetchSgLangModels(env?.SGLANG_BASE_URL);
+				if (refreshed.length === 0) return;
+				this.models = this.models.filter((m) => m.provider !== "sglang");
+				this.models.push(...refreshed);
+				this.sgLangLastSuccess = Date.now();
+			} catch {
+				// Server not running is expected for a keyless local provider.
+			} finally {
+				this.sgLangRefreshPromise = undefined;
+			}
+		})();
+
+		await this.sgLangRefreshPromise;
 		return undefined;
 	}
 

@@ -294,6 +294,18 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 				hint: "Leave blank to use the default http://localhost:8888/v1.",
 				kind: "text",
 			},
+			{
+				path: "localProviders.vllmBaseUrl",
+				label: "vLLM address",
+				hint: "Leave blank to use the default http://localhost:8000/v1.",
+				kind: "text",
+			},
+			{
+				path: "localProviders.sglangBaseUrl",
+				label: "SGLang address",
+				hint: "Leave blank to use the default http://localhost:30000/v1.",
+				kind: "text",
+			},
 		],
 	},
 

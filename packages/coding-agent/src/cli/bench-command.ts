@@ -136,7 +136,7 @@ interface JobProgress {
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const EMBED_MODEL_PATTERN = /(^|[-_])(embed|bge-|minilm|rerank)|(^|[-_])embed/i;
-const KEYLESS_PROVIDERS = new Set(["ollama", "lm-studio", "llama-cpp"]);
+const KEYLESS_PROVIDERS = new Set(["ollama", "lm-studio", "llama-cpp", "unsloth", "vllm", "sglang"]);
 const STEP_TITLES: Record<WizardStep, string> = {
 	model: "1/4 · select model",
 	runs: "2/4 · runs per task",

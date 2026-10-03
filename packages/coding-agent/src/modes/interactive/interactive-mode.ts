@@ -355,6 +355,9 @@ const KEYLESS_LOGIN_DEFAULT_URLS: Record<string, string> = {
 	"lm-studio": "http://localhost:1234/v1",
 	"llama-cpp": "http://localhost:8080/v1",
 	ollama: "http://localhost:11434/v1",
+	unsloth: "http://localhost:8888/v1",
+	vllm: "http://localhost:8000/v1",
+	sglang: "http://localhost:30000/v1",
 };
 
 export function isApiKeyLoginProvider(

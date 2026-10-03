@@ -28,6 +28,8 @@ export interface LocalProviderSettings {
 	llamaCppBaseUrl?: string;
 	ollamaBaseUrl?: string;
 	unslothBaseUrl?: string;
+	vllmBaseUrl?: string;
+	sglangBaseUrl?: string;
 }
 
 export interface CompactionModelOverride {
@@ -741,7 +743,7 @@ export class SettingsManager {
 	}
 
 	/** Apply local-provider base URLs from settings to process.env so the
-	 * built-in LM Studio, llama.cpp, and Ollama providers pick them up. Only
+	 * built-in keyless local providers pick them up. Only
 	 * sets env vars when the setting is present; a shell-exported value is left
 	 * intact when the setting is absent. */
 	private applyLocalProviderEnv(): void {
@@ -758,6 +760,12 @@ export class SettingsManager {
 		}
 		if (local.unslothBaseUrl) {
 			process.env.UNSLOTH_BASE_URL = local.unslothBaseUrl;
+		}
+		if (local.vllmBaseUrl) {
+			process.env.VLLM_BASE_URL = local.vllmBaseUrl;
+		}
+		if (local.sglangBaseUrl) {
+			process.env.SGLANG_BASE_URL = local.sglangBaseUrl;
 		}
 	}
 
