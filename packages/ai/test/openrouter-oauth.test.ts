@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InMemoryCredentialStore } from "../src/auth/credential-store.ts";
+import { openRouterOAuth } from "../src/auth/oauth/openrouter.ts";
 import { createImagesModels } from "../src/images-models.ts";
 import { createModels } from "../src/models.ts";
 import { openrouterProvider } from "../src/providers/openrouter.ts";
 import { openrouterImagesProvider } from "../src/providers/openrouter-images.ts";
-import { openRouterOAuth } from "../src/utils/oauth/openrouter.ts";
 
 const TOKEN_URL = "https://openrouter.ai/api/v1/auth/keys";
 const nativeFetch = globalThis.fetch;
+const neverAbortedSignal = new AbortController().signal;
 
 function jsonResponse(body: unknown, status = 200): Response {
 	return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -47,12 +48,8 @@ describe.sequential("OpenRouter OAuth", () => {
 		const imageModels = createImagesModels({ credentials });
 		imageModels.setProvider(openrouterImagesProvider());
 
-		const textModel = textModels.getModels("openrouter")[0];
-		const imageModel = imageModels.getModels("openrouter")[0];
-		expect(textModel).toBeDefined();
-		expect(imageModel).toBeDefined();
-		expect((await textModels.getAuth(textModel!))?.auth.apiKey).toBe("sk-or-stored");
-		expect((await imageModels.getAuth(imageModel!))?.auth.apiKey).toBe("sk-or-stored");
+		expect((await textModels.getAuth("openrouter"))?.auth.apiKey).toBe("sk-or-stored");
+		expect((await imageModels.getAuth("openrouter"))?.auth.apiKey).toBe("sk-or-stored");
 	});
 
 	it("runs PKCE on a one-shot loopback callback and exchanges the code for a permanent API key", async () => {
@@ -69,6 +66,7 @@ describe.sequential("OpenRouter OAuth", () => {
 		let callbackResponse: Promise<Response> | undefined;
 		let manualSignal: AbortSignal | undefined;
 		const credential = await openRouterOAuth.login({
+			signal: neverAbortedSignal,
 			prompt: (prompt) => {
 				manualSignal = prompt.signal;
 				return new Promise<string>(() => {});
@@ -117,6 +115,7 @@ describe.sequential("OpenRouter OAuth", () => {
 
 		let callbackResponse: Promise<Response> | undefined;
 		const login = openRouterOAuth.login({
+			signal: neverAbortedSignal,
 			prompt: () => new Promise<string>(() => {}),
 			notify: (event) => {
 				if (event.type !== "auth_url") return;
@@ -127,6 +126,63 @@ describe.sequential("OpenRouter OAuth", () => {
 		});
 
 		await expect(login).rejects.toThrow("OpenRouter OAuth key exchange failed (HTTP 403): invalid code");
+		expect((await callbackResponse)?.status).toBe(502);
+	});
+
+	it("allows only one token exchange for a callback", async () => {
+		let completeExchange = (_response: Response): void => {
+			throw new Error("Token exchange did not start");
+		};
+		const fetchMock = vi.fn(
+			async () =>
+				new Promise<Response>((resolve) => {
+					completeExchange = resolve;
+				}),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+
+		let callbackUrl: URL | undefined;
+		let firstCallback: Promise<Response> | undefined;
+		const login = openRouterOAuth.login({
+			signal: neverAbortedSignal,
+			prompt: () => new Promise<string>(() => {}),
+			notify: (event) => {
+				if (event.type !== "auth_url") return;
+				callbackUrl = new URL(new URL(event.url).searchParams.get("callback_url") ?? "");
+				callbackUrl.searchParams.set("code", "authorization-code");
+				firstCallback = nativeFetch(callbackUrl);
+			},
+		});
+
+		await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+		if (!callbackUrl) throw new Error("OpenRouter did not provide a callback URL");
+		expect((await nativeFetch(callbackUrl)).status).toBe(409);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		completeExchange(jsonResponse({ key: "sk-or-test" }));
+
+		await expect(login).resolves.toMatchObject({ access: "sk-or-test" });
+		expect((await firstCallback)?.status).toBe(200);
+	});
+
+	it("rejects a successful response that does not contain a key", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => jsonResponse({ user_id: "user-1" })),
+		);
+
+		let callbackResponse: Promise<Response> | undefined;
+		const login = openRouterOAuth.login({
+			signal: neverAbortedSignal,
+			prompt: () => new Promise<string>(() => {}),
+			notify: (event) => {
+				if (event.type !== "auth_url") return;
+				const callbackUrl = new URL(new URL(event.url).searchParams.get("callback_url") ?? "");
+				callbackUrl.searchParams.set("code", "code-without-key");
+				callbackResponse = nativeFetch(callbackUrl);
+			},
+		});
+
+		await expect(login).rejects.toThrow('OpenRouter OAuth response carries no "key"');
 		expect((await callbackResponse)?.status).toBe(502);
 	});
 
@@ -142,6 +198,7 @@ describe.sequential("OpenRouter OAuth", () => {
 
 		let callbackUrl: string | undefined;
 		const credential = await openRouterOAuth.login({
+			signal: neverAbortedSignal,
 			prompt: async (prompt) => {
 				if (prompt.type !== "manual_code") throw new Error(`Unexpected prompt: ${prompt.type}`);
 				return `${callbackUrl}?code=manual-code`;
@@ -173,6 +230,7 @@ describe.sequential("OpenRouter OAuth", () => {
 		vi.stubGlobal("fetch", fetchMock);
 
 		const credential = await openRouterOAuth.login({
+			signal: neverAbortedSignal,
 			prompt: async () => "  manual-code  ",
 			notify: () => {},
 		});
@@ -187,6 +245,7 @@ describe.sequential("OpenRouter OAuth", () => {
 
 		await expect(
 			openRouterOAuth.login({
+				signal: neverAbortedSignal,
 				prompt: async () => {
 					throw new Error("Login cancelled");
 				},
@@ -202,6 +261,7 @@ describe.sequential("OpenRouter OAuth", () => {
 
 		await expect(
 			openRouterOAuth.login({
+				signal: neverAbortedSignal,
 				prompt: async () => "   ",
 				notify: () => {},
 			}),
@@ -209,67 +269,12 @@ describe.sequential("OpenRouter OAuth", () => {
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
-	it("allows only one token exchange for a callback", async () => {
-		let completeExchange = (_response: Response): void => {
-			throw new Error("Token exchange did not start");
-		};
-		const fetchMock = vi.fn(
-			async () =>
-				new Promise<Response>((resolve) => {
-					completeExchange = resolve;
-				}),
-		);
-		vi.stubGlobal("fetch", fetchMock);
-
-		let callbackUrl: URL | undefined;
-		let firstCallback: Promise<Response> | undefined;
-		const login = openRouterOAuth.login({
-			prompt: () => new Promise<string>(() => {}),
-			notify: (event) => {
-				if (event.type !== "auth_url") return;
-				callbackUrl = new URL(new URL(event.url).searchParams.get("callback_url") ?? "");
-				callbackUrl.searchParams.set("code", "authorization-code");
-				firstCallback = nativeFetch(callbackUrl);
-			},
-		});
-
-		await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-		if (!callbackUrl) throw new Error("OpenRouter did not provide a callback URL");
-		expect((await nativeFetch(callbackUrl)).status).toBe(409);
-		expect(fetchMock).toHaveBeenCalledTimes(1);
-		completeExchange(jsonResponse({ key: "sk-or-test" }));
-
-		await expect(login).resolves.toMatchObject({ access: "sk-or-test" });
-		expect((await firstCallback)?.status).toBe(200);
-	});
-
-	it("rejects a successful response that does not contain a key", async () => {
-		vi.stubGlobal(
-			"fetch",
-			vi.fn(async () => jsonResponse({ user_id: "user-1" })),
-		);
-
-		let callbackResponse: Promise<Response> | undefined;
-		const login = openRouterOAuth.login({
-			prompt: () => new Promise<string>(() => {}),
-			notify: (event) => {
-				if (event.type !== "auth_url") return;
-				const callbackUrl = new URL(new URL(event.url).searchParams.get("callback_url") ?? "");
-				callbackUrl.searchParams.set("code", "code-without-key");
-				callbackResponse = nativeFetch(callbackUrl);
-			},
-		});
-
-		await expect(login).rejects.toThrow('OpenRouter OAuth response carries no "key"');
-		expect((await callbackResponse)?.status).toBe(502);
-	});
-
 	it("closes the pending callback when login is cancelled", async () => {
 		const controller = new AbortController();
 		let callbackUrl: URL | undefined;
 		const login = openRouterOAuth.login({
 			signal: controller.signal,
-			prompt: async () => "",
+			prompt: () => new Promise<string>(() => {}),
 			notify: (event) => {
 				if (event.type !== "auth_url") return;
 				callbackUrl = new URL(new URL(event.url).searchParams.get("callback_url") ?? "");
@@ -303,7 +308,7 @@ describe.sequential("OpenRouter OAuth", () => {
 		let callbackUrl: URL | undefined;
 		const login = openRouterOAuth.login({
 			signal: controller.signal,
-			prompt: async () => "",
+			prompt: () => new Promise<string>(() => {}),
 			notify: (event) => {
 				if (event.type !== "auth_url") return;
 				callbackUrl = new URL(new URL(event.url).searchParams.get("callback_url") ?? "");

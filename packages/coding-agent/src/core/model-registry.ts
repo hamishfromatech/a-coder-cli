@@ -6,11 +6,11 @@ import {
 	type AnthropicMessagesCompat,
 	type Api,
 	type AssistantMessageEventStream,
+	builtinProviders,
 	type Context,
 	createAssistantMessageEventStream,
 	getModels,
 	getProviders,
-	type KnownProvider,
 	type Model,
 	type OAuthProviderInterface,
 	type OpenAICompletionsCompat,
@@ -520,7 +520,7 @@ export class ModelRegistry {
 		for (const oauthProvider of this.authStorage.getOAuthProviders()) {
 			const cred = this.authStorage.get(oauthProvider.id);
 			if (cred?.type === "oauth" && oauthProvider.modifyModels) {
-				combined = oauthProvider.modifyModels(combined, cred);
+				combined = (oauthProvider.modifyModels(combined, cred) ?? combined) as Model<Api>[];
 			}
 		}
 
@@ -533,7 +533,7 @@ export class ModelRegistry {
 		modelOverrides: Map<string, Map<string, ModelOverride>>,
 	): Model<Api>[] {
 		return getProviders().flatMap((provider) => {
-			const models = getModels(provider as KnownProvider) as Model<Api>[];
+			const models = getModels(provider as Parameters<typeof getModels>[0]) as Model<Api>[];
 			const providerOverride = overrides.get(provider);
 			const perModelOverrides = modelOverrides.get(provider);
 
@@ -685,9 +685,18 @@ export class ModelRegistry {
 		const getBuiltInDefaults = (providerName: string): { api: string; baseUrl: string } | undefined => {
 			if (!builtInProviders.has(providerName)) return undefined;
 			if (builtInDefaultsCache.has(providerName)) return builtInDefaultsCache.get(providerName);
-			const builtIn = getModels(providerName as KnownProvider) as Model<Api>[];
+			const builtIn = getModels(providerName as Parameters<typeof getModels>[0]) as Model<Api>[];
 			if (builtIn.length === 0) return undefined;
-			const defaults = { api: builtIn[0].api, baseUrl: builtIn[0].baseUrl };
+			// Multi-api providers (e.g. OpenRouter serves mostly openai-completions with a
+			// handful of native-anthropic entries): inherit the DOMINANT surface rather than
+			// whatever happens to sort first in the catalog.
+			const apiCounts = new Map<string, number>();
+			for (const model of builtIn) {
+				apiCounts.set(model.api, (apiCounts.get(model.api) ?? 0) + 1);
+			}
+			const dominantApi = [...apiCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? builtIn[0].api;
+			const baseline = builtIn.find((model) => model.api === dominantApi) ?? builtIn[0];
+			const defaults = { api: dominantApi, baseUrl: baseline.baseUrl };
 			builtInDefaultsCache.set(providerName, defaults);
 			return defaults;
 		};
@@ -744,7 +753,28 @@ export class ModelRegistry {
 	 * because their auth resolver always returns a no-key credential.
 	 */
 	getAvailable(): Model<Api>[] {
-		return this.models.filter((m) => this.hasConfiguredAuth(m) || KEYLESS_LOCAL_PROVIDERS.has(m.provider));
+		const configured = this.models.filter(
+			(m) => this.hasConfiguredAuth(m) || KEYLESS_LOCAL_PROVIDERS.has(m.provider),
+		);
+		// Provider-level model filters (e.g. GitHub Copilot limits models to the
+		// account picker's availableModelIds) see all of their models at once.
+		const byProvider = new Map<string, Model<Api>[]>();
+		for (const model of configured) {
+			let group = byProvider.get(model.provider);
+			if (!group) {
+				group = [];
+				byProvider.set(model.provider, group);
+			}
+			group.push(model);
+		}
+		const providersById = new Map(builtinProviders().map((provider) => [provider.id, provider]));
+		const result: Model<Api>[] = [];
+		for (const [providerId, models] of byProvider) {
+			const credential = this.authStorage.get(providerId);
+			const provider = providersById.get(providerId);
+			result.push(...(provider?.filterModels?.(models, credential) ?? models));
+		}
+		return result;
 	}
 
 	/** Providers that currently have models in the registry. */
@@ -1456,7 +1486,7 @@ export class ModelRegistry {
 			if (config.oauth?.modifyModels) {
 				const cred = this.authStorage.get(providerName);
 				if (cred?.type === "oauth") {
-					this.models = config.oauth.modifyModels(this.models, cred);
+					this.models = (config.oauth.modifyModels(this.models, cred) ?? this.models) as Model<Api>[];
 				}
 			}
 		} else if (config.baseUrl || config.headers) {

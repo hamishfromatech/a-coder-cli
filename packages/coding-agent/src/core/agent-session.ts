@@ -385,7 +385,7 @@ const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "hi
  * Ordered thinking levels used by keyword escalation (pi's supported set plus
  * xhigh for models that expose it). Index doubles as the escalation rank.
  */
-const THINKING_ESCALATION_ORDER = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+const THINKING_ESCALATION_ORDER = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
 /**
  * Detect easy-agent-style thinking-escalation keywords in a user prompt.

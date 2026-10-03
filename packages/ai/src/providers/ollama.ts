@@ -156,6 +156,6 @@ export function ollamaProvider(): Provider<"openai-completions"> {
 		auth,
 		models: [PLACEHOLDER_MODEL],
 		api: openAICompletionsApi(),
-		refreshModels: async () => fetchOllamaModels(),
+		fetchModels: async (context) => await fetchOllamaModels(undefined, context.signal),
 	});
 }

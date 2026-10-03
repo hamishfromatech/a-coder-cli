@@ -132,6 +132,6 @@ export function llamaCppProvider(): Provider<"openai-completions"> {
 		auth,
 		models: [PLACEHOLDER_MODEL],
 		api: openAICompletionsApi(),
-		refreshModels: async () => fetchLlamaCppModels(),
+		fetchModels: async (context) => await fetchLlamaCppModels(undefined, context.signal),
 	});
 }

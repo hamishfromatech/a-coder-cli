@@ -62,11 +62,15 @@ export function createOpenAdapterModel(
 	};
 }
 
-export async function fetchOpenAdapterModels(apiKey: string): Promise<Model<"openai-completions">[]> {
+export async function fetchOpenAdapterModels(
+	apiKey: string,
+	signal?: AbortSignal,
+): Promise<Model<"openai-completions">[]> {
 	const res = await fetch("https://api.openadapter.in/v1/models", {
 		headers: {
 			Authorization: `Bearer ${apiKey}`,
 		},
+		signal,
 	});
 	if (!res.ok) {
 		throw new Error(`OpenAdapter model refresh failed: ${res.status} ${res.statusText}`);
@@ -81,7 +85,6 @@ export async function fetchOpenAdapterModels(apiKey: string): Promise<Model<"ope
 
 export function openadapterProvider(): Provider<"openai-completions"> {
 	const auth = { apiKey: envApiKeyAuth("OpenAdapter API key", ["OPENADAPTER_API_KEY"]) };
-	const baseModel = Object.values(OPENADAPTER_MODELS)[0] ?? createOpenAdapterModel("openadapter/auto");
 
 	return createProvider({
 		id: "openadapter",
@@ -90,16 +93,16 @@ export function openadapterProvider(): Provider<"openai-completions"> {
 		auth,
 		models: Object.values(OPENADAPTER_MODELS),
 		api: openAICompletionsApi(),
-		refreshModels: async () => {
+		fetchModels: async (context) => {
 			const resolved = await auth.apiKey.resolve({
 				ctx: defaultProviderAuthContext(),
-				model: baseModel,
+				signal: context.signal,
 			});
 			const apiKey = resolved?.auth.apiKey;
 			if (!apiKey) {
 				throw new Error("OpenAdapter API key not configured");
 			}
-			return fetchOpenAdapterModels(apiKey);
+			return await fetchOpenAdapterModels(apiKey, context.signal);
 		},
 	});
 }

@@ -63,7 +63,7 @@ export interface Args {
 	diagnostics: Array<{ type: "warning" | "error"; message: string }>;
 }
 
-const VALID_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+const VALID_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 const VALID_PERMISSION_MODES = ["ask", "allow", "read-only", "auto"] as const;
 
 export function isValidThinkingLevel(level: string): level is ThinkingLevel {

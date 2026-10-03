@@ -174,6 +174,6 @@ export function lmStudioProvider(): Provider<"openai-completions"> {
 		auth,
 		models: [PLACEHOLDER_MODEL],
 		api: openAICompletionsApi(),
-		refreshModels: async () => fetchLMStudioModels(),
+		fetchModels: async (context) => await fetchLMStudioModels(undefined, context.signal),
 	});
 }

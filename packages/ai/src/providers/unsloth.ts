@@ -133,6 +133,6 @@ export function unslothProvider(): Provider<"openai-completions"> {
 		auth,
 		models: [PLACEHOLDER_MODEL],
 		api: openAICompletionsApi(),
-		refreshModels: async () => fetchUnslothModels(),
+		fetchModels: async (context) => await fetchUnslothModels(undefined, context.signal),
 	});
 }

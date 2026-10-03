@@ -219,7 +219,7 @@ describe("openai-responses provider defaults", () => {
 			...getModel("openai", "gpt-5.4"),
 			provider: "opencode",
 			baseUrl: "https://proxy.example.com/v1",
-			compat: { sendSessionIdHeader: false },
+			compat: { sessionAffinityFormat: "openai-nosession" },
 		};
 		const captured = await captureOpenAIResponseHeaders({ sessionId: "session-123" }, proxyModel);
 
@@ -284,8 +284,13 @@ describe("openai-responses provider defaults", () => {
 
 		const result = await stream.result();
 
-		expect(result.usage.cost.input).toBe(model.cost.input * multiplier);
-		expect(result.usage.cost.output).toBe(model.cost.output * multiplier);
-		expect(result.usage.cost.total).toBe((model.cost.input + model.cost.output) * multiplier);
+		// With input-based pricing tiers the 1M-token request prices at the tier rate,
+		// and the service-tier multiplier applies on top of the effective rate.
+		const tier = model.cost.tiers?.find((t) => 1_000_000 > t.inputTokensAbove);
+		const inputRate = tier?.input ?? model.cost.input;
+		const outputRate = tier?.output ?? model.cost.output;
+		expect(result.usage.cost.input).toBeCloseTo(inputRate * multiplier, 6);
+		expect(result.usage.cost.output).toBeCloseTo(outputRate * multiplier, 6);
+		expect(result.usage.cost.total).toBeCloseTo((inputRate + outputRate) * multiplier, 6);
 	});
 });

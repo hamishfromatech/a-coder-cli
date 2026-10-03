@@ -536,7 +536,9 @@ export class AuthStorage {
 			// Tokens close to expiry refresh even though they are still technically
 			// valid, mirroring the upstream request-auth resolution window.
 			if (Date.now() + minimumValidityMs < cred.expires) {
-				return { result: { apiKey: provider.getApiKey(cred), newCredentials: cred } };
+				return {
+					result: { apiKey: await provider.getApiKey(cred), newCredentials: cred as OAuthCredentials },
+				};
 			}
 
 			const oauthCreds: Record<string, OAuthCredentials> = {};

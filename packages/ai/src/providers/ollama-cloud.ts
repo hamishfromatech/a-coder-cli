@@ -119,7 +119,6 @@ export async function fetchOllamaCloudModels(
 
 export function ollamaCloudProvider(): Provider<"openai-completions"> {
 	const auth = { apiKey: envApiKeyAuth("Ollama Cloud API key", ["OLLAMA_API_KEY"]) };
-	const baseModel = Object.values(OLLAMA_CLOUD_MODELS)[0] ?? createOllamaCloudModel("llama3.3");
 
 	return createProvider({
 		id: "ollama-cloud",
@@ -128,16 +127,16 @@ export function ollamaCloudProvider(): Provider<"openai-completions"> {
 		auth,
 		models: Object.values(OLLAMA_CLOUD_MODELS),
 		api: openAICompletionsApi(),
-		refreshModels: async () => {
+		fetchModels: async (context) => {
 			const resolved = await auth.apiKey.resolve({
 				ctx: defaultProviderAuthContext(),
-				model: baseModel,
+				signal: context.signal,
 			});
 			const apiKey = resolved?.auth.apiKey;
 			if (!apiKey) {
 				throw new Error("Ollama Cloud API key not configured");
 			}
-			return fetchOllamaCloudModels(apiKey);
+			return await fetchOllamaCloudModels(apiKey, context.signal);
 		},
 	});
 }

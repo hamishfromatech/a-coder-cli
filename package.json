@@ -61,5 +61,9 @@
 		"gaxios": {
 			"rimraf": "6.1.2"
 		}
+	},
+	"dependencies": {
+		"@anthropic-ai/sdk": "0.124.0",
+		"openai": "6.40.0"
 	}
 }

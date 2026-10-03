@@ -26,7 +26,7 @@ import {
 	serializeConversation,
 } from "./utils.ts";
 
-function getAnthropicSummarizationFallback(model: Model<any>): readonly { model: string }[] | undefined {
+function getAnthropicSummarizationFallback(model: Model<any>): { model: string }[] | undefined {
 	if (model.provider !== "anthropic" || model.api !== "anthropic-messages") {
 		return undefined;
 	}
@@ -34,7 +34,9 @@ function getAnthropicSummarizationFallback(model: Model<any>): readonly { model:
 	const allowedFallbackModels = (model as Model<"anthropic-messages">).compat?.allowedFallbackModels;
 	// Use the primary permitted fallback for now. If future Anthropic models expose
 	// broader fallback behavior, this can become a user/config pick or a full chain.
-	return allowedFallbackModels && allowedFallbackModels.length > 0 ? [{ model: allowedFallbackModels[0] }] : undefined;
+	return allowedFallbackModels && allowedFallbackModels.length > 0
+		? [{ model: allowedFallbackModels[0].model }]
+		: undefined;
 }
 
 // ============================================================================

@@ -55,6 +55,10 @@ const mockSummaryResponse: AssistantMessage = {
 
 const messages: AgentMessage[] = [{ role: "user", content: "Summarize this.", timestamp: Date.now() }];
 
+const allowedFallbackModelsFixture = [
+	{ provider: "anthropic", model: "claude-opus-4-8", cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
+];
+
 describe("generateSummary reasoning options", () => {
 	beforeEach(() => {
 		completeSimpleMock.mockReset();
@@ -124,7 +128,7 @@ describe("generateSummary reasoning options", () => {
 	it("sets Anthropic refusal fallback from model metadata", async () => {
 		await generateSummary(
 			messages,
-			createModel(true, 8192, { allowedFallbackModels: ["claude-opus-4-8", "claude-opus-5"] }),
+			createModel(true, 8192, { allowedFallbackModels: allowedFallbackModelsFixture }),
 			2000,
 			undefined,
 		);
