@@ -885,7 +885,13 @@ export class AgentSession {
 			throw new Error(result.error);
 		}
 		if (result.apiKey) {
-			return { apiKey: result.apiKey, headers: result.headers, env: result.env };
+			// Let extensions inject/adjust per-request headers (e.g. tracing, session
+			// correlation) after static assembly, before the provider HTTP call.
+			let headers = result.headers;
+			if (this._extensionRunner?.hasHandlers("before_provider_headers")) {
+				headers = (await this._extensionRunner.emitBeforeProviderHeaders(headers ?? {})) as Record<string, string>;
+			}
+			return { apiKey: result.apiKey, headers, env: result.env };
 		}
 
 		const isOAuth = this._modelRegistry.isUsingOAuth(model);
