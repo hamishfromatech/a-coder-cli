@@ -2960,10 +2960,9 @@ export class AgentSession {
 		// Case 1: Recoverable failure. Explicit/silent context overflow still uses context metadata.
 		// A length stop is recoverable when output ended below the model's original desired limit,
 		// independent of the configured context size or any context-clamped provider request limit.
-		// A successful response over the configured window should compact but must not retry: the
-		// assistant answer already completed and agent.continue() cannot continue from an assistant.
+		const contextOverflow = sameModel && isContextOverflow(assistantMessage, contextWindow);
 		const recoverableLength = sameModel && isRecoverableLength(assistantMessage, this.model?.maxTokens ?? 0);
-		if (sameModel && (isContextOverflow(assistantMessage, contextWindow) || recoverableLength)) {
+		if (contextOverflow || recoverableLength) {
 			const willRetry = assistantMessage.stopReason !== "stop";
 
 			if (!willRetry) {
@@ -2971,14 +2970,16 @@ export class AgentSession {
 			}
 
 			if (this._overflowRecoveryAttempted) {
+				const errorMessage = contextOverflow
+					? "Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model."
+					: "Truncated response recovery failed after one compact-and-retry attempt.";
 				this._emit({
 					type: "compaction_end",
 					reason: "overflow",
 					result: undefined,
 					aborted: false,
 					willRetry: false,
-					errorMessage:
-						"Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model.",
+					errorMessage,
 				});
 				return false;
 			}
