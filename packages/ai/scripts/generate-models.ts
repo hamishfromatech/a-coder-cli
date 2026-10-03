@@ -84,6 +84,15 @@ function readGeneratorOptions(args: string[]): {
 
 const generatorOptions = readGeneratorOptions(process.argv.slice(2));
 
+// Release builds test/publish the committed catalogs as-is instead of
+// re-fetching upstream (CI cannot rely on models.dev availability).
+// `PI_SKIP_GENERATE=1` makes this script exit early so the committed data
+// under src/providers/data is used verbatim.
+if (process.env.PI_SKIP_GENERATE === "1") {
+	console.log("PI_SKIP_GENERATE=1 — keeping committed model data.");
+	process.exit(0);
+}
+
 interface ModelsDevModel {
 	id: string;
 	name: string;

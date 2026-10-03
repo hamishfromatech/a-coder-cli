@@ -444,6 +444,10 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Build
+        # Test the committed model catalogs as-is; regenerating live depends on
+        # models.dev availability and would race the tested data snapshot.
+        env:
+          PI_SKIP_GENERATE: "1"
         run: npm run build
 
       - name: Check

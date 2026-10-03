@@ -277,8 +277,13 @@ function validateShrinkwrap(shrinkwrap, internalNames) {
 		}
 	}
 
+	// Native platform helpers no longer ship as optional npm packages: pi-tui's
+	// clipboard/modifier/virtual-terminal prebuilds live inside the pi-tui
+	// package itself. Only require platform-specific entries when the locked
+	// graph actually declares optional dependencies.
+	const hasOptionalDeps = Object.values(shrinkwrap.packages).some((entry) => entry.optionalDependencies && Object.keys(entry.optionalDependencies).length > 0);
 	const platformPackageCount = Object.values(shrinkwrap.packages).filter((entry) => entry.os || entry.cpu || entry.libc).length;
-	if (platformPackageCount === 0) {
+	if (hasOptionalDeps && platformPackageCount === 0) {
 		errors.push("no platform-specific optional dependency entries found");
 	}
 
