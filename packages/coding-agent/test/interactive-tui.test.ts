@@ -23,6 +23,7 @@ type ClearStatusContext = {
 	defaultEditor: StatusEditor;
 	editor: Partial<StatusEditor>;
 	ui: { getClearOnShrink: () => boolean };
+	options: { tuiMode: "regular" | "fullscreen" };
 	idleStatus: Component;
 	setEditorWorkingStatusIndicator(indicator: StatusIndicator | undefined): boolean;
 };
@@ -58,6 +59,7 @@ describe("clear-on-shrink status spacing", () => {
 			statusContainer: new Container(),
 			defaultEditor: { embedWorkingStatus: true, setWorkingStatusIndicator: vi.fn() },
 			editor,
+			options: { tuiMode: "regular" },
 			ui: { getClearOnShrink: () => true },
 			idleStatus: idleStatus(),
 			setEditorWorkingStatusIndicator: interactiveModePrototype.setEditorWorkingStatusIndicator,
@@ -128,6 +130,7 @@ function makeClearContext(
 		statusContainer: new Container(),
 		defaultEditor,
 		editor,
+		options: { tuiMode: "regular" },
 		ui: { getClearOnShrink: () => true },
 		idleStatus: idleStatus(),
 		setEditorWorkingStatusIndicator: interactiveModePrototype.setEditorWorkingStatusIndicator,

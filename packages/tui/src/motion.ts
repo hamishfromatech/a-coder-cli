@@ -1,12 +1,8 @@
 /**
- * Reduced-motion preference (easy-agent motionPrefs parity).
- *
- * Animated UI (spinner frames, shimmer sweeps, blink clocks) reads this
- * module-level flag rather than re-reading settings, because component render
- * is sync and frequent. The host snapshots the setting at startup. When on,
- * animated components render a calm static frame instead.
+ * Reduced-motion switch. When enabled, animated components (spinners, blink
+ * clocks, streaming shimmer) render a calm static frame instead of ticking.
+ * The agent runtime turns this on for accessibility or perf debugging.
  */
-
 let reducedMotion = false;
 
 export function setReducedMotion(enabled: boolean): void {

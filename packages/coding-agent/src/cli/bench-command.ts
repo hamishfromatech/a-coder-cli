@@ -21,7 +21,8 @@ import {
 	SelectList,
 	Spacer,
 	Text,
-	TUI,
+	type TUI,
+	TuiMainScreen,
 } from "@earendil-works/pi-tui";
 import chalk from "chalk";
 import {
@@ -769,7 +770,7 @@ async function runBenchWizard(benchDir: string, tasks: BenchTask[], flags: Bench
 	const child = resolveBenchChildCommand();
 
 	return new Promise<void>((resolve) => {
-		const ui = new TUI(new ProcessTerminal(), settingsManager.getShowHardwareCursor());
+		const ui = new TuiMainScreen(new ProcessTerminal(), settingsManager.getShowHardwareCursor());
 		let done = false;
 		const wizard = new BenchWizardComponent(ui, {
 			benchDir,

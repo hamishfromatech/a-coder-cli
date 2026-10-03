@@ -9,6 +9,7 @@ import {
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { getAgentDir } from "../config.ts";
+import { stripBom } from "../utils/text.ts";
 
 export interface AppKeybindings {
 	"app.interrupt": true;
@@ -24,6 +25,7 @@ export interface AppKeybindings {
 	"app.thinking.save": true;
 	"app.session.toggleNamedFilter": true;
 	"app.editor.external": true;
+	"app.message.copy": true;
 	"app.message.followUp": true;
 	"app.message.dequeue": true;
 	"app.clipboard.pasteImage": true;
@@ -65,12 +67,37 @@ export interface AppKeybindings {
 
 export type AppKeybinding = keyof AppKeybindings;
 
+export function useWindowsKeybindings(
+	platform: NodeJS.Platform = process.platform,
+	env: NodeJS.ProcessEnv = process.env,
+): boolean {
+	return platform === "win32" || (platform === "linux" && Boolean(env.WSL_DISTRO_NAME || env.WSL_INTEROP));
+}
+
+const windowsKeybindings = useWindowsKeybindings();
+
 declare module "@earendil-works/pi-tui" {
 	interface Keybindings extends AppKeybindings {}
 }
 
 export const KEYBINDINGS = {
 	...TUI_KEYBINDINGS,
+	"tui.editor.undo": {
+		...TUI_KEYBINDINGS["tui.editor.undo"],
+		defaultKeys: process.platform === "win32" ? "ctrl+z" : windowsKeybindings ? "alt+z" : "ctrl+-",
+	},
+	"tui.altScreen.previousPrompt": {
+		...TUI_KEYBINDINGS["tui.altScreen.previousPrompt"],
+		defaultKeys: windowsKeybindings ? "ctrl+up" : ["ctrl+shift+up", "ctrl+up"],
+	},
+	"tui.altScreen.nextPrompt": {
+		...TUI_KEYBINDINGS["tui.altScreen.nextPrompt"],
+		defaultKeys: windowsKeybindings ? "ctrl+down" : ["ctrl+shift+down", "ctrl+down"],
+	},
+	"tui.altScreen.search": {
+		...TUI_KEYBINDINGS["tui.altScreen.search"],
+		defaultKeys: windowsKeybindings ? "ctrl+f" : "ctrl+shift+f",
+	},
 	"app.interrupt": { defaultKeys: "escape", description: "Cancel or abort" },
 	"app.clear": { defaultKeys: "ctrl+c", description: "Clear editor" },
 	"app.exit": { defaultKeys: "ctrl+d", description: "Exit when editor is empty" },
@@ -115,6 +142,10 @@ export const KEYBINDINGS = {
 	"app.message.dequeue": {
 		defaultKeys: "alt+up",
 		description: "Restore queued messages",
+	},
+	"app.message.copy": {
+		defaultKeys: "ctrl+x",
+		description: "Copy selection or last assistant message",
 	},
 	"app.clipboard.pasteImage": {
 		defaultKeys: process.platform === "win32" ? "alt+v" : "ctrl+v",
@@ -375,7 +406,7 @@ function orderKeybindingsConfig(config: Record<string, unknown>): Record<string,
 function loadRawConfig(path: string): Record<string, unknown> | undefined {
 	if (!existsSync(path)) return undefined;
 	try {
-		const parsed = JSON.parse(readFileSync(path, "utf-8")) as unknown;
+		const parsed = JSON.parse(stripBom(readFileSync(path, "utf-8"))) as unknown;
 		return isRecord(parsed) ? parsed : undefined;
 	} catch {
 		return undefined;

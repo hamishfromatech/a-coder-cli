@@ -62,6 +62,11 @@ export class Loader extends Text {
 		this.updateDisplay();
 	}
 
+	override invalidate(): void {
+		super.invalidate();
+		this.updateDisplay();
+	}
+
 	setIndicator(indicator?: LoaderIndicatorOptions): void {
 		this.renderIndicatorVerbatim = indicator !== undefined;
 		this.frames = indicator?.frames !== undefined ? [...indicator.frames] : [...DEFAULT_FRAMES];
@@ -82,7 +87,6 @@ export class Loader extends Text {
 		}, this.intervalMs);
 	}
 
-	/** The rendered spinner indicator (frame only, no message) for embedders. */
 	protected getRenderedIndicator(): string {
 		const frame = this.frames[this.currentFrame] ?? "";
 		return this.renderIndicatorVerbatim ? frame : this.spinnerColorFn(frame);

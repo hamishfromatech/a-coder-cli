@@ -879,10 +879,12 @@ export async function handleConfigCommand(
 	const resolvedPaths = await packageManager.resolve();
 
 	await selectConfig({
-		resolvedPaths,
+		resolvedPaths: { global: resolvedPaths, project: resolvedPaths },
 		settingsManager,
 		cwd,
 		agentDir,
+		writeScope: "global",
+		projectModeAvailable: settingsManager.isProjectTrusted(),
 	});
 
 	process.exit(0);

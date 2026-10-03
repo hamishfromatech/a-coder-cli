@@ -1,5 +1,5 @@
 import { getKeybindings } from "../keybindings.ts";
-import type { Component } from "../tui.ts";
+import type { Component, TuiMouseEvent, TuiMouseEventResult } from "../tui.ts";
 import { truncateToWidth, visibleWidth } from "../utils.ts";
 
 const DEFAULT_PRIMARY_COLUMN_WIDTH = 32;
@@ -41,6 +41,7 @@ export class SelectList implements Component {
 	private items: SelectItem[] = [];
 	private filteredItems: SelectItem[] = [];
 	private selectedIndex: number = 0;
+	private mousePressedIndex: number | undefined;
 	private maxVisible: number = 5;
 	private theme: SelectListTheme;
 	private layout: SelectListLayoutOptions;
@@ -48,6 +49,13 @@ export class SelectList implements Component {
 	public onSelect?: (item: SelectItem) => void;
 	public onCancel?: () => void;
 	public onSelectionChange?: (item: SelectItem) => void;
+
+	/** Replace the item list and reset the selection (used by searchable wrappers). */
+	setItems(items: SelectItem[]): void {
+		this.items = items;
+		this.filteredItems = items;
+		this.selectedIndex = 0;
+	}
 
 	constructor(items: SelectItem[], maxVisible: number, theme: SelectListTheme, layout: SelectListLayoutOptions = {}) {
 		this.items = items;
@@ -60,13 +68,6 @@ export class SelectList implements Component {
 	setFilter(filter: string): void {
 		this.filteredItems = this.items.filter((item) => item.value.toLowerCase().startsWith(filter.toLowerCase()));
 		// Reset selection when filter changes
-		this.selectedIndex = 0;
-	}
-
-	/** Replace the item list and reset the selection (used by searchable wrappers). */
-	setItems(items: SelectItem[]): void {
-		this.items = items;
-		this.filteredItems = items;
 		this.selectedIndex = 0;
 	}
 
@@ -90,11 +91,7 @@ export class SelectList implements Component {
 		const primaryColumnWidth = this.getPrimaryColumnWidth();
 
 		// Calculate visible range with scrolling
-		const startIndex = Math.max(
-			0,
-			Math.min(this.selectedIndex - Math.floor(this.maxVisible / 2), this.filteredItems.length - this.maxVisible),
-		);
-		const endIndex = Math.min(startIndex + this.maxVisible, this.filteredItems.length);
+		const { startIndex, endIndex } = this.getVisibleRange();
 
 		// Render visible items
 		for (let i = startIndex; i < endIndex; i++) {
@@ -114,6 +111,42 @@ export class SelectList implements Component {
 		}
 
 		return lines;
+	}
+
+	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		if (this.filteredItems.length === 0) return undefined;
+		if (event.type === "wheel" && event.wheelDelta) {
+			const delta = event.wheelDelta < 0 ? -1 : 1;
+			const previousIndex = this.selectedIndex;
+			this.selectedIndex = Math.max(0, Math.min(this.filteredItems.length - 1, this.selectedIndex + delta));
+			if (this.selectedIndex !== previousIndex) this.notifySelectionChange();
+			return { handled: true, render: this.selectedIndex !== previousIndex };
+		}
+		// Hover must not change selection: the visible range is centered on it.
+		if (event.button !== "left" || (event.type !== "press" && event.type !== "click")) return undefined;
+		const { startIndex, endIndex } = this.getVisibleRange();
+		const itemIndex = startIndex + event.y;
+		if (itemIndex < startIndex || itemIndex >= endIndex) return undefined;
+
+		if (event.type === "press") {
+			this.mousePressedIndex = itemIndex;
+			if (this.selectedIndex !== itemIndex) {
+				this.selectedIndex = itemIndex;
+				this.notifySelectionChange();
+			}
+			return { handled: true, focus: true };
+		}
+		if (event.type === "click") {
+			const clickedIndex = this.mousePressedIndex ?? itemIndex;
+			this.mousePressedIndex = undefined;
+			const changed = this.selectedIndex !== clickedIndex;
+			this.selectedIndex = clickedIndex;
+			if (changed) this.notifySelectionChange();
+			const selectedItem = this.filteredItems[this.selectedIndex];
+			if (selectedItem) this.onSelect?.(selectedItem);
+			return { handled: true };
+		}
+		return undefined;
 	}
 
 	handleInput(keyData: string): void {
@@ -141,6 +174,17 @@ export class SelectList implements Component {
 				this.onCancel();
 			}
 		}
+	}
+
+	private getVisibleRange(): { startIndex: number; endIndex: number } {
+		const startIndex = Math.max(
+			0,
+			Math.min(this.selectedIndex - Math.floor(this.maxVisible / 2), this.filteredItems.length - this.maxVisible),
+		);
+		return {
+			startIndex,
+			endIndex: Math.min(startIndex + this.maxVisible, this.filteredItems.length),
+		};
 	}
 
 	private renderItem(

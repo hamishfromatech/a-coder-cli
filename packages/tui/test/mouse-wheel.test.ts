@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { Container, TUI } from "../src/index.ts";
+import { Container, TuiMainScreen } from "../src/index.ts";
 import { TestTerminal } from "./terminal-colors.test.ts";
 
 /** Focusable recorder: remembers every handleInput payload. */
@@ -18,10 +18,10 @@ async function feed(terminal: TestTerminal, data: string): Promise<void> {
 	await new Promise((resolve) => setTimeout(resolve, 5));
 }
 
-describe("TUI mouse wheel handling", () => {
+describe("TuiMainScreen mouse wheel handling", () => {
 	it("translates SGR wheel reports into arrow inputs for the focused component", async () => {
 		const terminal = new TestTerminal();
-		const tui = new TUI(terminal);
+		const tui = new TuiMainScreen(terminal);
 		const component = new InputRecorder();
 		tui.addChild(component);
 		tui.setFocus(component);
@@ -41,7 +41,7 @@ describe("TUI mouse wheel handling", () => {
 
 	it("honors coalesced reports in one chunk (each wheel tick counts)", async () => {
 		const terminal = new TestTerminal();
-		const tui = new TUI(terminal);
+		const tui = new TuiMainScreen(terminal);
 		const component = new InputRecorder();
 		tui.addChild(component);
 		tui.setFocus(component);
@@ -60,7 +60,7 @@ describe("TUI mouse wheel handling", () => {
 
 	it("swallows click and motion reports without producing input", async () => {
 		const terminal = new TestTerminal();
-		const tui = new TUI(terminal);
+		const tui = new TuiMainScreen(terminal);
 		const component = new InputRecorder();
 		tui.addChild(component);
 		tui.setFocus(component);
@@ -77,7 +77,7 @@ describe("TUI mouse wheel handling", () => {
 
 	it("passes input through untouched when mouse tracking is off", async () => {
 		const terminal = new TestTerminal();
-		const tui = new TUI(terminal);
+		const tui = new TuiMainScreen(terminal);
 		const component = new InputRecorder();
 		tui.addChild(component);
 		tui.setFocus(component);
@@ -93,10 +93,10 @@ describe("TUI mouse wheel handling", () => {
 
 	it("stop() clears mouse tracking", () => {
 		const terminal = new TestTerminal();
-		const tui = new TUI(terminal);
+		const tui = new TuiMainScreen(terminal);
 		tui.setMouseEnabled(true);
 		tui.stop();
-		const internal = tui as unknown as { mouseEnabled: boolean };
-		assert.equal(internal.mouseEnabled, false);
+		const internal = tui as unknown as { simpleMouseEnabled: boolean };
+		assert.equal(internal.simpleMouseEnabled, false);
 	});
 });

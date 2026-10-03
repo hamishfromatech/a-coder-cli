@@ -40,10 +40,6 @@ export class VirtualTerminal implements Terminal {
 		// No-op for virtual terminal - no stdin to drain
 	}
 
-	ensureRawMode(): void {
-		// No-op for virtual terminal - no real TTY to re-assert
-	}
-
 	stop(): void {
 		// Disable bracketed paste mode
 		this.xterm.write("\x1b[?2004l");
@@ -97,14 +93,6 @@ export class VirtualTerminal implements Terminal {
 
 	clearScreen(): void {
 		this.xterm.write("\x1b[2J\x1b[H"); // Clear screen and move to home (1,1)
-	}
-
-	enableMouseTracking(): void {
-		// No-op for the virtual terminal (tests never enable mouse tracking).
-	}
-
-	disableMouseTracking(): void {
-		// No-op for the virtual terminal.
 	}
 
 	setTitle(title: string): void {

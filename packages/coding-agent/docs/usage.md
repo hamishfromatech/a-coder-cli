@@ -84,6 +84,12 @@ On Windows Terminal, Alt+Enter is fullscreen by default. Remap it as described i
 
 Configure delivery in [Settings](settings.md) with `steeringMode` and `followUpMode`.
 
+## Adjust the terminal
+
+Fullscreen mode, the default, keeps the editor and status area fixed while the transcript scrolls within the terminal window. Regular mode uses the terminal's normal scrollback. Choose a mode through `/settings` or `--tui-mode`.
+
+Terminals vary in mouse input, keyboard shortcuts, and inline image support. See [Keybindings](keybindings.md) for every configurable shortcut and run `/hotkeys` to inspect the shortcuts active in your current session.
+
 ## Scheduled Tasks (Cron)
 
 Cron jobs run a prompt on a schedule in a project, without you typing it. Create one from the desktop's **Scheduled** sidebar panel, or from the terminal:

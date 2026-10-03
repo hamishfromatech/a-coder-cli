@@ -32,7 +32,9 @@ import type {
 	OverlayHandle,
 	OverlayOptions,
 	SlashCommand,
+	Terminal,
 } from "@earendil-works/pi-tui";
+import * as TuiLayouts from "@earendil-works/pi-tui";
 import {
 	CombinedAutocompleteProvider,
 	type Component,
@@ -42,14 +44,16 @@ import {
 	hyperlink,
 	Markdown,
 	matchesKey,
-	ProcessTerminal,
 	Spacer,
 	setCapabilityOverrides,
 	setKeybindings,
 	setReducedMotion,
 	Text,
 	TruncatedText,
-	TUI,
+	type TUI,
+	TuiAltScreen,
+	TuiMainScreen,
+	type TuiMainScreenRenderState,
 	visibleWidth,
 } from "@earendil-works/pi-tui";
 import chalk from "chalk";
@@ -115,7 +119,11 @@ import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "../../core/provider-display-nam
 import type { ResourceDiagnostic } from "../../core/resource-loader.ts";
 import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.ts";
 import { type SessionEntry, SessionManager, sessionEntryToContextMessages } from "../../core/session-manager.ts";
-import type { PermissionMode } from "../../core/settings-manager.ts";
+import type { FullscreenExitOutput, PermissionMode, TuiMode } from "../../core/settings-manager.ts";
+import { createInteractiveTui, createInteractiveTuiReference } from "./tui-renderer.ts";
+
+export { createInteractiveTui, createInteractiveTuiReference } from "./tui-renderer.ts";
+
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
 import {
@@ -141,7 +149,7 @@ import {
 	type UpdateHandoff,
 	writeUpdateHandoff,
 } from "../../utils/cli-self-update.ts";
-import { copyToClipboard } from "../../utils/clipboard.ts";
+import { copyToClipboard, readClipboardFilePaths, readClipboardText } from "../../utils/clipboard.ts";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.ts";
 import { parseGitUrl } from "../../utils/git.ts";
 import { getCwdRelativePath } from "../../utils/paths.ts";
@@ -381,13 +389,25 @@ export interface InteractiveModeOptions {
 	initialMessages?: string[];
 	/** Force verbose startup (overrides quietStartup setting) */
 	verbose?: boolean;
+	/** TUI layout mode. Overrides the tuiMode setting for this invocation. */
+	tuiMode?: TuiMode;
+	/** Terminal implementation. Defaults to the current process terminal. */
+	terminal?: Terminal;
 }
 
 export class InteractiveMode {
 	private runtimeHost: AgentSessionRuntime;
+	private renderer: TuiMainScreen | TuiAltScreen;
 	private ui: TUI;
+	private mainScreenRenderState: TuiMainScreenRenderState | undefined;
 	private loadedResourcesContainer: Container;
 	private chatContainer: Container;
+	private documentContainer: Container;
+	private fullscreenLayoutRoot: Component | undefined;
+	private transcriptScrollView: TuiLayouts.ScrollView | undefined;
+	private readonly onRightClickPaste = (): void => {
+		void this.handleRightClickPaste();
+	};
 	private pendingMessagesContainer: Container;
 	private statusContainer: Container;
 	private defaultEditor: CustomEditor;
@@ -538,7 +558,10 @@ export class InteractiveMode {
 	private extensionSelector: (Container & { dispose?(): void }) | undefined = undefined;
 	private extensionInput: ExtensionInputComponent | undefined = undefined;
 	private extensionEditor: ExtensionEditorComponent | undefined = undefined;
-	private extensionTerminalInputUnsubscribers = new Set<() => void>();
+	private extensionTerminalInputSubscriptions = new Set<{
+		handler: (data: string) => { consume?: boolean; data?: string } | undefined;
+		unsubscribe: () => void;
+	}>();
 	private transcriptOverlay: TranscriptOverlayComponent | undefined = undefined;
 	private transcriptOverlayHandle: OverlayHandle | undefined = undefined;
 
@@ -592,7 +615,18 @@ export class InteractiveMode {
 			await this.rebindCurrentSession({ renderBeforeBind: true });
 		});
 		this.version = VERSION;
-		this.ui = new TUI(new ProcessTerminal(), this.settingsManager.getShowHardwareCursor());
+		const tuiMode = options.tuiMode ?? this.settingsManager.getTuiMode();
+		this.options = { ...options, tuiMode };
+		this.renderer = createInteractiveTui({
+			tuiMode,
+			showHardwareCursor: this.settingsManager.getShowHardwareCursor(),
+			logDirectory: getAgentDir(),
+			terminal: options.terminal,
+			fullscreenCopyOnSelect: this.settingsManager.getFullscreenCopyOnSelect(),
+			fullscreenWheelScrollLines: this.settingsManager.getFullscreenWheelScrollLines(),
+		});
+		// Stable reference for components while InteractiveMode replaces the active renderer.
+		this.ui = createInteractiveTuiReference(() => this.renderer as TUI);
 		// Notices auto-expire after a few seconds; re-render when they do.
 		this.notices.onExpire = () => this.ui.requestRender();
 		this.officeTui = new OfficeTui(runtimeHost, (text) => this.printOfficeText(text));
@@ -602,6 +636,10 @@ export class InteractiveMode {
 		this.headerContainer = new Container();
 		this.loadedResourcesContainer = new Container();
 		this.chatContainer = new Container();
+		this.documentContainer = new Container();
+		this.documentContainer.addChild(this.headerContainer);
+		this.documentContainer.addChild(this.loadedResourcesContainer);
+		this.documentContainer.addChild(this.chatContainer);
 		this.pendingMessagesContainer = new Container();
 		this.statusContainer = new Container();
 		this.widgetContainerAbove = new Container();
@@ -629,12 +667,11 @@ export class InteractiveMode {
 
 		// Register themes from resource loader and initialize
 		setRegisteredThemes(this.session.resourceLoader.getThemes().themes);
-		this.themeController = new InteractiveThemeController(
-			this.ui,
-			this.settingsManager,
-			(message) => this.showError(message),
-			() => this.updateEditorBorderColor(),
-		);
+		this.themeController = new InteractiveThemeController(this.ui, {
+			getSettingsManager: () => this.settingsManager,
+			showError: (message) => this.showError(message),
+			onChanged: () => this.updateEditorBorderColor(),
+		});
 	}
 
 	private getAutocompleteSourceTag(sourceInfo?: SourceInfo): string | undefined {
@@ -915,6 +952,93 @@ export class InteractiveMode {
 		this.chatContainer.addChild(new DynamicBorder());
 	}
 
+	/** Push the current fullscreen scrollbar setting into the active renderer. */
+	private applyFullscreenScrollbarSetting(): void {
+		const mode = this.settingsManager.getFullscreenScrollbar();
+		this.transcriptScrollView?.setScrollbar(mode);
+	}
+
+	/** Mount the shared component tree onto a (possibly newly created) renderer. */
+	private mountInteractiveTui(tui: TuiMainScreen | TuiAltScreen, components: readonly Component[]): void {
+		for (const component of components) tui.addChild(component);
+		if (TuiLayouts.isViewportTUI(tui)) {
+			if (!this.fullscreenLayoutRoot) throw new Error("Fullscreen layout is not initialized");
+			tui.setLayoutRoot(this.fullscreenLayoutRoot);
+		}
+	}
+
+	/**
+	 * Stop the active renderer for shutdown. In fullscreen mode the alt-screen is
+	 * torn down by the renderer itself; `fullscreenExitOutput` chooses whether the
+	 * last transcript view is reprinted into the scrollback before exiting.
+	 */
+	private stopInteractiveTui(fullscreenExitOutput: FullscreenExitOutput): void {
+		if (this.renderer.mode === "fullscreen" && fullscreenExitOutput === "transcript") {
+			// Fold state back so the reprinted transcript shows the compact view.
+			while (this.renderer.hasOverlayEntries) this.renderer.hideOverlay();
+			this.renderer.renderNow();
+		}
+		this.ui.stop({ preserveScreen: this.renderer.mode === "fullscreen" });
+	}
+
+	/**
+	 * Switch between the regular and fullscreen renderers, preserving focus and the
+	 * rendered component tree. Returns false when a modality (overlay) blocks the
+	 * switch.
+	 */
+	private switchTuiMode(mode: TuiMode, restoreProgress = true, startRenderer = true): boolean {
+		const previousUi = this.renderer;
+		if (mode === previousUi.mode) return true;
+		if (previousUi.hasOverlayEntries) return false;
+
+		const components = [...previousUi.children];
+		const focus = previousUi.getFocusedComponent();
+		const terminal = previousUi.terminal;
+		const showHardwareCursor = previousUi.getShowHardwareCursor();
+		const clearOnShrink = previousUi.getClearOnShrink();
+		const onDebug = previousUi.onDebug;
+		if (previousUi instanceof TuiMainScreen) {
+			this.mainScreenRenderState = previousUi.captureRenderState();
+		}
+
+		previousUi.stop({ preserveScreen: true });
+		previousUi.setFocus(null);
+		previousUi.clear();
+		if (TuiLayouts.isViewportTUI(previousUi)) previousUi.setLayoutRoot(undefined);
+
+		const nextUi = createInteractiveTui({
+			tuiMode: mode,
+			showHardwareCursor,
+			logDirectory: getAgentDir(),
+			terminal,
+			onRightClickPaste: this.onRightClickPaste,
+			fullscreenCopyOnSelect: this.settingsManager.getFullscreenCopyOnSelect(),
+			fullscreenWheelScrollLines: this.settingsManager.getFullscreenWheelScrollLines(),
+		});
+		nextUi.setClearOnShrink(clearOnShrink);
+		nextUi.onDebug = onDebug;
+		if (nextUi instanceof TuiMainScreen && this.mainScreenRenderState) {
+			nextUi.restoreRenderState(this.mainScreenRenderState);
+		}
+		this.renderer = nextUi;
+		this.options.tuiMode = mode;
+		this.mountInteractiveTui(nextUi, components);
+		nextUi.invalidate();
+		nextUi.setFocus(focus);
+		if (!startRenderer) return true;
+		nextUi.start();
+		this.themeController.rebindTui();
+		this.rebindExtensionTerminalInputListeners();
+		if (
+			restoreProgress &&
+			this.settingsManager.getShowTerminalProgress() &&
+			(this.session.isStreaming || this.session.isCompacting)
+		) {
+			terminal.setProgress(true);
+		}
+		return true;
+	}
+
 	async init(): Promise<void> {
 		if (this.isInitialized) return;
 
@@ -943,26 +1067,61 @@ export class InteractiveMode {
 			console.log(theme.fg("dim", `Model scope: ${modelList}${cycleHint}`));
 		}
 
-		// Add header container as first child. Populate it after applying theme settings.
-		// Keep loaded resources before chat so restored session messages never precede them.
-		this.ui.addChild(this.headerContainer);
-		this.ui.addChild(this.loadedResourcesContainer);
+		// Notices scroll with the transcript (they sit between chat and the pending dock).
+		this.documentContainer.addChild(this.notices);
 
-		this.ui.addChild(this.chatContainer);
-		this.ui.addChild(this.notices);
-		this.ui.addChild(this.pendingMessagesContainer);
-		this.ui.addChild(this.statusContainer);
-		this.renderWidgets(); // Initialize with default spacer
-		this.ui.addChild(this.widgetContainerAbove);
-		this.ui.addChild(this.taskPanel);
-		this.ui.addChild(this.editorContainer);
-		this.ui.addChild(this.statusRail);
-		this.ui.addChild(this.widgetContainerBelow);
-		if (this.statusLineComponent) {
-			// Extra row above the hint (easy-agent statusLine placement).
-			this.ui.addChild(this.statusLineComponent);
+		// Build the transcript/dock layout used by the fullscreen renderer; the regular
+		// renderer lays the same components out linearly.
+		const transcriptScrollView = new TuiLayouts.ScrollView(this.documentContainer, {
+			follow: "end",
+			primary: true,
+			overscroll: "chain",
+			scrollbar: this.settingsManager.getFullscreenScrollbar(),
+			scrollbarTrackStyle: (text) => theme.fg("scrollbarTrack", text),
+			scrollbarThumbStyle: (text) => theme.fg("scrollbarThumb", text),
+		});
+		this.transcriptScrollView = transcriptScrollView;
+
+		// Bundle ours' extra dock rows into single containers for the fullscreen layout.
+		const dockOf = (components: readonly Component[]): Component => {
+			const container = new Container();
+			for (const c of components) container.addChild(c);
+			return container;
+		};
+
+		// Build the fullscreen layout root (transcript scroll view + input dock) once.
+		if (!this.fullscreenLayoutRoot) {
+			const dock = new TuiLayouts.VStack([
+				{ component: this.pendingMessagesContainer, shrink: 1, minSize: 0 },
+				{ component: this.statusContainer, shrink: 1, minSize: 0 },
+				{ component: dockOf([this.widgetContainerAbove, this.taskPanel]), shrink: 1, minSize: 0 },
+				{ component: this.editorContainer, shrink: 1, minSize: 3 },
+				{ component: dockOf([this.statusRail, this.widgetContainerBelow]), shrink: 1, minSize: 0 },
+				{
+					component: dockOf([this.statusLineComponent ?? new Container(), this.footer]),
+					shrink: 1,
+					minSize: 0,
+				},
+			]);
+			this.fullscreenLayoutRoot = new TuiLayouts.VStack([
+				{ component: transcriptScrollView, basis: 0, grow: 1, shrink: 1, minSize: 1 },
+				{ component: dock, basis: "auto", grow: 0, shrink: 1, minSize: 1 },
+			]);
 		}
-		this.ui.addChild(this.footer);
+
+		// Mount the shared component tree onto the active renderer.
+		this.mountInteractiveTui(this.renderer, [
+			this.documentContainer,
+			this.pendingMessagesContainer,
+			this.statusContainer,
+			this.widgetContainerAbove,
+			this.taskPanel,
+			this.editorContainer,
+			this.statusRail,
+			this.widgetContainerBelow,
+			...(this.statusLineComponent ? [this.statusLineComponent] : []),
+			this.footer,
+		]);
 		this.ui.setFocus(this.editor);
 
 		this.setupKeyHandlers();
@@ -2177,7 +2336,12 @@ export class InteractiveMode {
 		this.activeWorkingIndicatorEmbedded = false;
 		this.statusContainer.clear();
 		this.setEditorWorkingStatusIndicator(undefined);
-		if (clearedIndicator && !clearedIndicatorWasEmbedded && this.ui.getClearOnShrink()) {
+		if (
+			clearedIndicator &&
+			!clearedIndicatorWasEmbedded &&
+			this.options.tuiMode === "regular" &&
+			this.ui.getClearOnShrink()
+		) {
 			this.statusContainer.addChild(this.idleStatus);
 		}
 	}
@@ -2494,19 +2658,25 @@ export class InteractiveMode {
 	private addExtensionTerminalInputListener(
 		handler: (data: string) => { consume?: boolean; data?: string } | undefined,
 	): () => void {
-		const unsubscribe = this.ui.addInputListener(handler);
-		this.extensionTerminalInputUnsubscribers.add(unsubscribe);
+		const subscription = { handler, unsubscribe: this.ui.addInputListener(handler) };
+		this.extensionTerminalInputSubscriptions.add(subscription);
 		return () => {
-			unsubscribe();
-			this.extensionTerminalInputUnsubscribers.delete(unsubscribe);
+			subscription.unsubscribe();
+			this.extensionTerminalInputSubscriptions.delete(subscription);
 		};
 	}
 
-	private clearExtensionTerminalInputListeners(): void {
-		for (const unsubscribe of this.extensionTerminalInputUnsubscribers) {
-			unsubscribe();
+	/** Re-subscribe extension terminal input handlers onto the active renderer after a mode switch. */
+	private rebindExtensionTerminalInputListeners(): void {
+		for (const subscription of this.extensionTerminalInputSubscriptions) {
+			subscription.unsubscribe();
+			subscription.unsubscribe = this.ui.addInputListener(subscription.handler);
 		}
-		this.extensionTerminalInputUnsubscribers.clear();
+	}
+
+	private clearExtensionTerminalInputListeners(): void {
+		for (const subscription of this.extensionTerminalInputSubscriptions) subscription.unsubscribe();
+		this.extensionTerminalInputSubscriptions.clear();
 	}
 
 	/**
@@ -3086,6 +3256,10 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.transcript.toggle", () => this.toggleTranscriptOverlay());
 		this.defaultEditor.onAction("app.thinking.toggle", () => this.toggleThinkingBlockVisibility());
 		this.defaultEditor.onAction("app.editor.external", () => this.openExternalEditor());
+		this.defaultEditor.onAction(
+			"app.message.copy",
+			() => void this.handleCopyCommand({ flashConfirmation: true, preferSelection: true }),
+		);
 		this.defaultEditor.onAction("app.message.followUp", () => this.handleFollowUp());
 		this.defaultEditor.onAction("app.message.dequeue", () => this.handleDequeue());
 		this.defaultEditor.onAction("app.session.new", () => this.handleClearCommand());
@@ -3113,29 +3287,63 @@ export class InteractiveMode {
 
 		// Handle clipboard image paste (triggered on Ctrl+V)
 		this.defaultEditor.onPasteImage = () => {
-			this.handleClipboardImagePaste();
+			void this.handleClipboardPaste();
 		};
 	}
 
-	private async handleClipboardImagePaste(): Promise<void> {
+	private async handleRightClickPaste(): Promise<void> {
+		const target = this.renderer.getFocusedComponent();
+		const handleInput = target?.handleInput;
+		if (!target || !handleInput) return;
 		try {
-			const image = await readClipboardImage();
-			if (!image) {
-				return;
-			}
-
-			// Write to temp file
-			const tmpDir = os.tmpdir();
-			const ext = extensionForImageMimeType(image.mimeType) ?? "png";
-			const fileName = `pi-clipboard-${crypto.randomUUID()}.${ext}`;
-			const filePath = path.join(tmpDir, fileName);
-			fs.writeFileSync(filePath, Buffer.from(image.bytes));
-
-			// Insert file path directly
-			this.editor.insertTextAtCursor?.(filePath);
+			const text = await readClipboardText();
+			if (!text || this.renderer.getFocusedComponent() !== target) return;
+			handleInput.call(target, `\x1b[200~${text}\x1b[201~`);
 			this.ui.requestRender();
 		} catch {
 			// Silently ignore clipboard errors (may not have permission, etc.)
+		}
+	}
+
+	private async handleClipboardPaste(): Promise<void> {
+		try {
+			const filePaths = await readClipboardFilePaths();
+			if (filePaths) {
+				if (filePaths.some((filePath) => /\p{Cc}/u.test(filePath))) {
+					throw new Error("Clipboard file path contains control characters");
+				}
+				const paths = this.isBashMode ? filePaths.map(quoteIfNeeded).join(" ") : filePaths.join("\n");
+				const cursor = (this.editor as { getCursor?(): { line: number; col: number } }).getCursor?.();
+				const currentLine = cursor ? (this.editor.getText().split("\n")[cursor.line] ?? "") : "";
+				const characterBeforeCursor = cursor && cursor.col > 0 ? currentLine[cursor.col - 1] : "";
+				const characterAfterCursor = cursor ? currentLine[cursor.col] : "";
+				const leadingSpace = characterBeforeCursor && !/\s/.test(characterBeforeCursor) ? " " : "";
+				const trailingSpace = characterAfterCursor && !/\s/.test(characterAfterCursor) ? " " : "";
+				this.editor.insertTextAtCursor?.(`${leadingSpace}${paths}${trailingSpace}`);
+				this.ui.requestRender();
+				return;
+			}
+
+			const image = await readClipboardImage();
+			if (image) {
+				const tmpDir = os.tmpdir();
+				const ext = extensionForImageMimeType(image.mimeType) ?? "png";
+				const fileName = `pi-clipboard-${crypto.randomUUID()}.${ext}`;
+				const filePath = path.join(tmpDir, fileName);
+				fs.writeFileSync(filePath, Buffer.from(image.bytes));
+
+				this.editor.insertTextAtCursor?.(filePath);
+				this.ui.requestRender();
+				return;
+			}
+
+			const text = await readClipboardText();
+			if (text) {
+				this.editor.insertTextAtCursor?.(text);
+				this.ui.requestRender();
+			}
+		} catch (error) {
+			this.showError(`Failed to paste from clipboard: ${error instanceof Error ? error.message : String(error)}`);
 		}
 	}
 
@@ -3582,7 +3790,7 @@ export class InteractiveMode {
 				// Resets that happen later are handled by the raw-mode watchdog that
 				// runs while the TUI owns the terminal.
 				setImmediate(() => {
-					this.ui.terminal.ensureRawMode();
+					this.ui.terminal.ensureRawMode?.();
 				});
 				break;
 
@@ -5099,10 +5307,17 @@ export class InteractiveMode {
 
 	private showSettingsSelector(): void {
 		this.showSelector((done) => {
-			const selector = new SettingsSelectorComponent(
+			let selector: SettingsSelectorComponent | undefined;
+			const defaultProvider = this.settingsManager.getDefaultProvider();
+			const defaultModelId = this.settingsManager.getDefaultModel();
+			const defaultModel = defaultProvider && defaultModelId ? `${defaultProvider}/${defaultModelId}` : "not set";
+			selector = new SettingsSelectorComponent(
 				{
 					autoCompact: this.session.autoCompactionEnabled,
 					compactionAutoContinue: this.session.compactionAutoContinue,
+					defaultModel,
+					currentModel: this.session.model,
+					availableDefaultModels: this.session.modelRegistry.getAvailable(),
 					showImages: this.settingsManager.getShowImages(),
 					imageWidthCells: this.settingsManager.getImageWidthCells(),
 					autoResizeImages: this.settingsManager.getImageAutoResize(),
@@ -5113,17 +5328,22 @@ export class InteractiveMode {
 					followUpMode: this.session.followUpMode,
 					transport: this.settingsManager.getTransport(),
 					httpIdleTimeoutMs: this.settingsManager.getHttpIdleTimeoutMs(),
-					thinkingLevel: this.session.thinkingLevel,
+					cacheWarmingMode: this.settingsManager.getCacheWarmingMode(),
+					thinkingLevel: this.settingsManager.getDefaultThinkingLevel() ?? DEFAULT_THINKING_LEVEL,
 					availableThinkingLevels: this.session.getAvailableThinkingLevels(),
-					currentTheme: this.settingsManager.getThemeSetting() || "dark",
+					modelThinkingLevels: this.settingsManager.getAllModelThinkingLevels(),
+					currentTheme:
+						this.themeController.getThemeSelection() ?? this.settingsManager.getThemeSetting() ?? "dark",
 					terminalTheme: this.themeController.getTerminalTheme(),
 					availableThemes: getAvailableThemes(),
 					hideThinkingBlock: this.hideThinkingBlock,
+					mermaidRenderingMode: this.settingsManager.getMermaidRenderingMode(),
 					collapseChangelog: this.settingsManager.getCollapseChangelog(),
 					enableInstallTelemetry: this.settingsManager.getEnableInstallTelemetry(),
 					doubleEscapeAction: this.settingsManager.getDoubleEscapeAction(),
 					treeFilterMode: this.settingsManager.getTreeFilterMode(),
 					showHardwareCursor: this.settingsManager.getShowHardwareCursor(),
+					showCacheMissNotices: this.settingsManager.getShowCacheMissNotices(),
 					defaultProjectTrust: this.settingsManager.getDefaultProjectTrust(),
 					editorPaddingX: this.settingsManager.getEditorPaddingX(),
 					outputPad: this.settingsManager.getOutputPad(),
@@ -5132,6 +5352,11 @@ export class InteractiveMode {
 					clearOnShrink: this.settingsManager.getClearOnShrink(),
 					showTerminalProgress: this.settingsManager.getShowTerminalProgress(),
 					reducedMotion: this.settingsManager.getReducedMotion(),
+					tuiMode: this.ui.mode,
+					fullscreenExitOutput: this.settingsManager.getFullscreenExitOutput(),
+					fullscreenScrollbar: this.settingsManager.getFullscreenScrollbar(),
+					fullscreenCopyOnSelect: this.settingsManager.getFullscreenCopyOnSelect(),
+					fullscreenWheelScrollLines: this.settingsManager.getFullscreenWheelScrollLines(),
 					warnings: this.settingsManager.getWarnings(),
 				},
 				{
@@ -5188,25 +5413,50 @@ export class InteractiveMode {
 						configureHttpDispatcher(timeoutMs);
 						this.showStatus(`HTTP idle timeout: ${formatHttpIdleTimeoutMs(timeoutMs)}`);
 					},
-					onThinkingLevelChange: (level) => {
-						this.session.setThinkingLevel(level);
-						this.footer.invalidate();
-						this.updateEditorBorderColor();
+					onCacheWarmingModeChange: (mode) => {
+						this.settingsManager.setCacheWarmingMode(mode);
+						this.showStatus(`Cache warming: ${mode}`);
+					},
+					onModelThinkingLevelChange: (provider, modelId, level) => {
+						this.settingsManager.setModelThinkingLevel(provider, modelId, level);
+						// If the override is for the current model, apply it to the session too
+						const current = this.session.model;
+						if (current && current.provider === provider && current.id === modelId) {
+							this.session.setThinkingLevel(level);
+							this.footer.invalidate();
+							this.updateEditorBorderColor();
+						}
+					},
+					onModelThinkingLevelRemove: (provider, modelId) => {
+						this.settingsManager.removeModelThinkingLevel(provider, modelId);
+						// If the override was for the current model, revert to global default
+						const current = this.session.model;
+						if (current && current.provider === provider && current.id === modelId) {
+							const globalDefault = this.settingsManager.getDefaultThinkingLevel() ?? DEFAULT_THINKING_LEVEL;
+							this.session.setThinkingLevel(globalDefault);
+							this.footer.invalidate();
+							this.updateEditorBorderColor();
+						}
 					},
 					onThemeChange: (themeSetting) => {
 						this.settingsManager.setTheme(themeSetting);
-						void this.themeController.applyFromSettings();
+						this.themeController.setThemeSetting(themeSetting);
 					},
 					onThemePreview: (themeName) => this.themeController.preview(themeName),
 					onHideThinkingBlockChange: (hidden) => {
 						this.hideThinkingBlock = hidden;
 						this.settingsManager.setHideThinkingBlock(hidden);
-						for (const child of this.chatContainer.children) {
-							if (child instanceof AssistantMessageComponent) {
-								child.setHideThinkingBlock(hidden);
-							}
-						}
+
 						this.chatContainer.clear();
+						this.rebuildChatFromMessages();
+					},
+					onMermaidRenderingModeChange: (mode) => {
+						this.settingsManager.setMermaidRenderingMode(mode);
+						this.chatContainer.invalidate();
+						this.ui.requestRender();
+					},
+					onShowCacheMissNoticesChange: (shown) => {
+						this.settingsManager.setShowCacheMissNotices(shown);
 						this.rebuildChatFromMessages();
 					},
 					onCollapseChangelogChange: (collapsed) => {
@@ -5215,8 +5465,8 @@ export class InteractiveMode {
 					onEnableInstallTelemetryChange: (enabled) => {
 						this.settingsManager.setEnableInstallTelemetry(enabled);
 					},
-					onQuietStartupChange: (enabled) => {
-						this.settingsManager.setQuietStartup(enabled);
+					onQuietStartupChange: (quiet) => {
+						this.settingsManager.setQuietStartup(quiet);
 					},
 					onDefaultProjectTrustChange: (defaultProjectTrust) => {
 						this.settingsManager.setDefaultProjectTrust(defaultProjectTrust);
@@ -5243,8 +5493,13 @@ export class InteractiveMode {
 						this.outputPad = padding;
 						if (this.streamingComponent || this.session.isStreaming) {
 							for (const child of this.chatContainer.children) {
-								if (child instanceof AssistantMessageComponent || child instanceof UserMessageComponent) {
-									child.setOutputPad(padding);
+								if (
+									(child instanceof AssistantMessageComponent ||
+										child instanceof CustomMessageComponent ||
+										child instanceof UserMessageComponent) &&
+									typeof (child as AssistantMessageComponent).setOutputPad === "function"
+								) {
+									(child as AssistantMessageComponent).setOutputPad(padding);
 								}
 							}
 							if (this.streamingComponent) {
@@ -5269,12 +5524,37 @@ export class InteractiveMode {
 							this.statusContainer.clear();
 						}
 					},
-					onShowTerminalProgressChange: (enabled) => {
-						this.settingsManager.setShowTerminalProgress(enabled);
-					},
 					onReducedMotionChange: (enabled) => {
 						this.settingsManager.setReducedMotion(enabled);
 						setReducedMotion(enabled);
+					},
+					onShowTerminalProgressChange: (enabled) => {
+						this.settingsManager.setShowTerminalProgress(enabled);
+					},
+					onTuiModeChange: (mode) => {
+						if (!this.switchTuiMode(mode)) {
+							selector?.getSettingsList().updateValue("tui-mode", this.ui.mode);
+							this.showStatus("Close active overlays before changing TUI mode");
+							return;
+						}
+						this.settingsManager.setTuiMode(mode);
+						if (!this.activeStatusIndicator) this.statusContainer.clear();
+						this.showStatus(`TUI mode: ${mode}`);
+					},
+					onFullscreenExitOutputChange: (output) => {
+						this.settingsManager.setFullscreenExitOutput(output);
+					},
+					onFullscreenScrollbarChange: (mode) => {
+						this.settingsManager.setFullscreenScrollbar(mode);
+						this.applyFullscreenScrollbarSetting();
+					},
+					onFullscreenCopyOnSelectChange: (enabled) => {
+						this.settingsManager.setFullscreenCopyOnSelect(enabled);
+						if (this.renderer instanceof TuiAltScreen) this.renderer.setCopyOnSelect(enabled);
+					},
+					onFullscreenWheelScrollLinesChange: (lines) => {
+						this.settingsManager.setFullscreenWheelScrollLines(lines);
+						if (this.renderer instanceof TuiAltScreen) this.renderer.setWheelScrollLines(lines);
 					},
 					onWarningsChange: (warnings) => {
 						this.settingsManager.setWarnings(warnings);
@@ -6930,7 +7210,19 @@ export class InteractiveMode {
 		}
 	}
 
-	private async handleCopyCommand(): Promise<void> {
+	private async handleCopyCommand(
+		options: { flashConfirmation?: boolean; preferSelection?: boolean } = {},
+	): Promise<void> {
+		if (
+			options.preferSelection &&
+			this.ui instanceof TuiAltScreen &&
+			!this.ui.getCopyOnSelect() &&
+			this.ui.hasActiveSelection()
+		) {
+			await this.ui.copyActiveSelectionToClipboard();
+			return;
+		}
+
 		const text = this.session.getLastAssistantText();
 		if (!text) {
 			this.showError("No agent messages to copy yet.");
@@ -6939,7 +7231,11 @@ export class InteractiveMode {
 
 		try {
 			await copyToClipboard(text);
-			this.showStatus("Copied last agent message to clipboard");
+			if (options.flashConfirmation && this.ui instanceof TuiAltScreen) {
+				this.ui.flash("Copied!");
+			} else {
+				this.showStatus("Copied last agent message to clipboard");
+			}
 		} catch (error) {
 			this.showError(error instanceof Error ? error.message : String(error));
 		}
@@ -7517,7 +7813,7 @@ export class InteractiveMode {
 			this.taskStoreUnsubscribe = undefined;
 		}
 		if (this.isInitialized) {
-			this.ui.stop();
+			this.stopInteractiveTui(this.settingsManager.getFullscreenExitOutput());
 			this.isInitialized = false;
 		}
 		this.unregisterSignalHandlers();

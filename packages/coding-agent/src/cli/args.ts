@@ -6,6 +6,7 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import chalk from "chalk";
 import { APP_NAME, ENV_AGENT_DIR, ENV_SESSION_DIR, USER_CONFIG_DIR_NAME } from "../config.ts";
 import type { ExtensionFlag } from "../core/extensions/types.ts";
+import type { TuiMode } from "../core/settings-manager.ts";
 
 export type Mode = "text" | "json" | "stream-json" | "rpc";
 export type PermissionModeArg = "ask" | "allow" | "read-only" | "auto";
@@ -49,6 +50,8 @@ export interface Args {
 	listModels?: string | true;
 	offline?: boolean;
 	verbose?: boolean;
+	/** TUI layout mode. Overrides the tuiMode setting for this invocation. */
+	tuiMode?: TuiMode;
 	/** Start the ACP (Agent Communication Protocol) server so the A-Coder IDE
 	 *  can discover and call this CLI as a tool. Optionally a port number. */
 	acpServer?: number | true;
@@ -209,6 +212,21 @@ export function parseArgs(args: string[]): Args {
 			result.projectTrustOverride = false;
 		} else if (arg === "--offline") {
 			result.offline = true;
+		} else if (arg === "--tui-mode") {
+			if (i + 1 < args.length) {
+				const mode = args[i + 1];
+				i += 1;
+				if (mode === "regular" || mode === "fullscreen") {
+					result.tuiMode = mode;
+				} else {
+					result.diagnostics.push({ type: "error", message: "--tui-mode requires regular or fullscreen" });
+				}
+			} else {
+				result.diagnostics.push({
+					type: "error",
+					message: "Missing value for --tui-mode. Usage: --tui-mode <regular|fullscreen>",
+				});
+			}
 		} else if (arg === "--acp-server") {
 			// Optional port: --acp-server [PORT]
 			if (i + 1 < args.length && /^\d+$/.test(args[i + 1])) {
@@ -320,6 +338,7 @@ ${chalk.bold("Options:")}
   --approve, -a                  Trust project-local files for this run
   --no-approve, -na              Ignore project-local files for this run
   --offline                      Disable startup network operations (same as A_CODER_CLI_OFFLINE=1)
+  --tui-mode <mode>             TUI mode: fullscreen (default) or regular
   --acp-server [PORT]           Start the ACP server so the A-Coder IDE can call this CLI as a tool
   --login-acoder [google|github]  Sign in to an A-Coder account (reuses IDE auth + backend models)
   --help, -h                     Show this help

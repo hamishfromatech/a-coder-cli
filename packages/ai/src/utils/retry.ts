@@ -181,6 +181,16 @@ export interface RetryPolicy {
 	maxRetries: number;
 	/** Base delay in ms. Per-attempt delay is `baseDelayMs * 2^(attempt-1)` before jitter. */
 	baseDelayMs: number;
+	/** Optional cap for agent-level retry delays in ms. Defaults to 60 seconds. */
+	maxAgentDelayMs?: number;
+}
+
+export const DEFAULT_MAX_AGENT_RETRY_DELAY_MS = 60_000;
+
+export function retryDelayMs(policy: Pick<RetryPolicy, "baseDelayMs" | "maxAgentDelayMs">, attempt: number): number {
+	const delay = policy.baseDelayMs * 2 ** Math.max(0, attempt - 1);
+	const safeDelay = Number.isSafeInteger(delay) ? delay : Number.MAX_SAFE_INTEGER;
+	return Math.min(safeDelay, policy.maxAgentDelayMs ?? DEFAULT_MAX_AGENT_RETRY_DELAY_MS);
 }
 
 /** Optional callbacks emitted by {@link retryAssistantCall} around each retry. */

@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- Ported upstream's alternate-screen (fullscreen) TUI family. The terminal TUI now ships two renderers built on a shared core: `TuiMainScreen` (the previous linear, scrollback-based view) and `TuiAltScreen` (a full-screen viewport where the editor and status dock stay fixed and the transcript scrolls). `--tui-mode <regular|fullscreen>` overrides it per invocation; fullscreen is the default and the mode is switchable live from `/settings`.
+	- Fullscreen transcript: wheel scrolling with a configurable line count and auto-acceleration (`fullscreenWheelScrollLines`, 1-100 or "auto"), page/half-page/line scrolling actions, prompt-to-prompt navigation, `/`-style transcript search with match styling and hit counter, a click-to-jump "jump to latest message" indicator, and configurable scrollbars (`fullscreenScrollbar`: auto / always / hidden) with transient draggable bars.
+	- Selection and clipboard: mouse text selection with `fullscreenCopyOnSelect` (settable, can be disabled so ctrl+x copies the active selection or the last assistant message — flashed or status-line confirmation), selection copy routed through a native host-clipboard module (prebuilt per-platform darwin/linux/win32 helpers under `native/`, gracefully optional), Windows right-click paste and generic SGR mouse release/motion handling.
+	- Rendering: viewport layout primitives (`ScrollView`, `VStack`) with stacked alt-screen flashes, ANSI-order-safe slice boundaries, WezTerm/Kitty image preservation while scrolling, linear-scaling search, no idle repaints on focus loss, focused overlays accepting wheel/viewport keys, and empty-footer collapsing.
+	- Terminal integration: Apple Terminal ctrl+shift+<letter> chords disambiguated via the native Shift probe; the raw-mode watchdog ported to upstream's terminal (stdin re-asserted every 100 ms while the TUI owns the terminal, bracketed paste restored); Windows-friendly keybinding defaults (ctrl+z undo, alt+q editor exit, ctrl+f find) applied via `useWindowsKeybindings()`.
+- Markdown rendering caches a stable prefix while streaming: text up to the last paragraph break or open code fence renders once and the live tail repaints per token (upstream parity for our streaming-caching work, now shared via `splitStablePrefix`).
+- `readClipboardText` / `readClipboardFilePaths` clipboard helpers, host-clipboard paste of copied files (macOS Finder paths) in the editor, and a `getNativeClipboard` bridge exported from pi-tui.
+
 ### Fixed
 
 - Fixed ctrl+shift+<letter> keybindings (e.g. `app.tools.expand` on ctrl+shift+o, `app.transcript.toggle` on ctrl+shift+t) never firing on Apple Terminal: it supports neither the kitty keyboard protocol nor xterm modifyOtherKeys, so ctrl+shift+<letter> arrived as the same legacy byte as ctrl+<letter> and the shift was unrecoverable from the input stream. The existing native-modifier bridge (previously only used to synthesize Shift+Enter) now probes the physical Shift key for every input sequence and rewrites ctrl+letter bytes to their kitty CSI-u ctrl+shift encoding when Shift is held, so the whole ctrl+shift+<letter> class is distinguishable again. Tab, LF and CR are excluded from the rewrite (Enter keeps its dedicated Shift+Enter path).

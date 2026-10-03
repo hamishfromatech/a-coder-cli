@@ -1,8 +1,15 @@
 import { homedir } from "node:os";
 import * as path from "node:path";
-import { type AutocompleteProvider, CombinedAutocompleteProvider } from "@earendil-works/pi-tui";
+import {
+	type AutocompleteProvider,
+	CombinedAutocompleteProvider,
+	type Component,
+	Container,
+	type Focusable,
+	type TUI,
+	TuiMainScreen,
+} from "@earendil-works/pi-tui";
 import { beforeAll, describe, expect, test, vi } from "vitest";
-import { type Component, Container, type Focusable, TUI } from "../../tui/src/tui.ts";
 import { VirtualTerminal } from "../../tui/test/virtual-terminal.ts";
 import type { AutocompleteProviderFactory } from "../src/core/extensions/types.ts";
 import type { SourceInfo } from "../src/core/source-info.ts";
@@ -208,7 +215,7 @@ describe("InteractiveMode.showExtensionCustom", () => {
 
 	test("overlay custom UI reclaims input after non-overlay custom UI closes", async () => {
 		const terminal = new VirtualTerminal(80, 24);
-		const ui = new TUI(terminal);
+		const ui = new TuiMainScreen(terminal);
 		const editorContainer = new Container();
 		const editor = new TestFocusableComponent("EDITOR");
 		const palette = new TestFocusableComponent("PALETTE");
