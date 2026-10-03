@@ -74,24 +74,24 @@ describe("AgentSession dynamic tool registration", () => {
 
 		const bashTool = session.agent.state.tools.find((tool) => tool.name === "bash")!;
 		expect(session.systemPrompt).toContain(
-			"Inspect PI_* environment variables for current model and session details.",
+			"Inspect A_CODER_* environment variables (A_CODER_SESSION_ID, A_CODER_SESSION_FILE, A_CODER_PROVIDER, A_CODER_MODEL, A_CODER_REASONING_LEVEL) for current session details.",
 		);
 		await bashTool.execute("bash-env", { command: "printf ok" });
 		expect(sessionEnv).toMatchObject({
-			PI_SESSION_ID: session.sessionId,
-			PI_SESSION_FILE: session.sessionFile,
-			PI_PROVIDER: model.provider,
-			PI_MODEL: model.id,
-			PI_REASONING_LEVEL: session.thinkingLevel,
+			A_CODER_SESSION_ID: session.sessionId,
+			A_CODER_SESSION_FILE: session.sessionFile,
+			A_CODER_PROVIDER: model.provider,
+			A_CODER_MODEL: model.id,
+			A_CODER_REASONING_LEVEL: session.thinkingLevel,
 		});
 
 		const optedOutBashTool = session.agent.state.tools.find((tool) => tool.name === "bash_without_session_env")!;
 		await optedOutBashTool.execute("bash-no-env", { command: "printf ok" });
-		expect(optedOutEnv).not.toHaveProperty("PI_SESSION_ID");
-		expect(optedOutEnv).not.toHaveProperty("PI_SESSION_FILE");
-		expect(optedOutEnv).not.toHaveProperty("PI_PROVIDER");
-		expect(optedOutEnv).not.toHaveProperty("PI_MODEL");
-		expect(optedOutEnv).not.toHaveProperty("PI_REASONING_LEVEL");
+		expect(optedOutEnv).not.toHaveProperty("A_CODER_SESSION_ID");
+		expect(optedOutEnv).not.toHaveProperty("A_CODER_SESSION_FILE");
+		expect(optedOutEnv).not.toHaveProperty("A_CODER_PROVIDER");
+		expect(optedOutEnv).not.toHaveProperty("A_CODER_MODEL");
+		expect(optedOutEnv).not.toHaveProperty("A_CODER_REASONING_LEVEL");
 
 		session.dispose();
 	});

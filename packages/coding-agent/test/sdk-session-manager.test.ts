@@ -105,13 +105,13 @@ describe("createAgentSession session manager defaults", () => {
 		});
 		expect(session.sessionFile).toBeTruthy();
 		expect(session.systemPrompt).toContain(
-			"Inspect PI_* environment variables for current model and session details.",
+			"Inspect A_CODER_* environment variables (A_CODER_SESSION_ID, A_CODER_SESSION_FILE, A_CODER_PROVIDER, A_CODER_MODEL, A_CODER_REASONING_LEVEL) for current session details.",
 		);
 
 		const bashTool = session.agent.state.tools.find((tool) => tool.name === "bash");
 		expect(bashTool).toBeTruthy();
 		const result = await bashTool!.execute("test", {
-			command: `printf '%s\\n' "$PI_SESSION_ID" "$PI_SESSION_FILE" "$PI_PROVIDER" "$PI_MODEL" "$PI_REASONING_LEVEL"`,
+			command: `printf '%s\\n' "$A_CODER_SESSION_ID" "$A_CODER_SESSION_FILE" "$A_CODER_PROVIDER" "$A_CODER_MODEL" "$A_CODER_REASONING_LEVEL"`,
 		});
 		const output = result.content
 			.filter((item): item is { type: "text"; text: string } => item.type === "text")
