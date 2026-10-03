@@ -29,15 +29,15 @@ The values are resolved when each command starts. Switching models or changing t
 When asked which model or provider is running, inspect these variables instead of inferring the answer from the system prompt:
 
 ```bash
-printf '%s/%s\n' "$PI_PROVIDER" "$PI_MODEL"
-printf 'reasoning=%s session=%s\n' "$PI_REASONING_LEVEL" "$PI_SESSION_ID"
+printf '%s/%s\n' "$A_CODER_PROVIDER" "$A_CODER_MODEL"
+printf 'reasoning=%s session=%s\n' "$A_CODER_REASONING_LEVEL" "$A_CODER_SESSION_ID"
 ```
 
 The session file can be inspected directly when the session is persistent:
 
 ```bash
-if [ -n "$PI_SESSION_FILE" ]; then
-  tail -n 1 "$PI_SESSION_FILE"
+if [ -n "$A_CODER_SESSION_FILE" ]; then
+  tail -n 1 "$A_CODER_SESSION_FILE"
 fi
 ```
 
