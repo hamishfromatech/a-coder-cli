@@ -517,4 +517,42 @@ describe("ToolExecutionComponent parity", () => {
 			expect(collapsed.indexOf(":120-329")).toBeLessThan(collapsed.indexOf("to expand"));
 		});
 	}
+
+	test("bash result rendering survives a pending progress component becoming lastComponent", () => {
+		const operations: BashOperations = { exec: async () => ({ exitCode: 0 }) };
+		const tool = createBashToolDefinition(process.cwd(), { operations, exposeSessionEnvironment: false });
+		const component = new ToolExecutionComponent(
+			"bash",
+			"tool-bash-progress-reuse",
+			{ command: "long running" },
+			{},
+			tool,
+			createFakeTui(),
+			process.cwd(),
+		);
+
+		// Streaming updates while the command runs: the tool renderer answers with
+		// its live BashProgressComponent, which ToolExecutionComponent stores as
+		// the next renderResult's lastComponent.
+		component.setArgsComplete();
+		component.updateResult({ content: [{ type: "text", text: "streaming..." }], details: {}, isError: false }, true);
+		component.updateResult({ content: [{ type: "text", text: "streaming..." }], details: {}, isError: false }, true);
+
+		// The command finishes; the render shell rebuilds with the progress
+		// component as lastComponent. The result renderer must not reuse it as a
+		// BashResultRenderComponent (it carries no render state, and the preview
+		// cache closure would crash the first synchronous repaint — e.g. the
+		// fullscreen renderer's mouse-dispatch hit-testing).
+		component.updateResult(
+			{
+				content: [{ type: "text", text: "done: all OK" }],
+				details: { exitCode: 0 },
+				isError: false,
+			},
+			false,
+		);
+
+		expect(() => stripAnsi(component.render(120).join("\n"))).not.toThrow();
+		expect(stripAnsi(component.render(120).join("\n"))).toContain("all OK");
+	});
 });

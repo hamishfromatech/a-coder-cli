@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed a crash of the running TUI when a long-running bash command finished: the partial-update path returns the live progress component, which the finished-render path then reused — type-confused — as the bash result component, so the output-preview cache closure rendered against a missing `.state` and the first synchronous repaint (the fullscreen renderer's mouse-dispatch hit-testing) threw an uncaught TypeError and exited pi. The result renderer now reuses a `lastComponent` only when it actually is a `BashResultRenderComponent`.
+
 ### Added
 
 - vLLM and SGLang local servers: served models discovered from `/v1/models` with real context windows (`max_model_len` when reported), listed and selectable like other keyless local providers (`/login vllm` / `/login sglang` set a base URL; defaults `http://localhost:8000/v1` and `http://localhost:30000/v1`), refreshable on a 2-min cadence, and configurable via the desktop Settings "Local models" section (`VLLM_BASE_URL` / `SGLANG_BASE_URL` env or `localProviders.vllmBaseUrl` / `sglangBaseUrl` settings).

@@ -741,8 +741,16 @@ export function createBashToolDefinition(
 				}
 				return state.progressComponent;
 			}
+			// The partial-render path returns the live BashProgressComponent as
+			// lastComponent while the command streams; it is not a result
+			// component and carries no render state. Reuse a lastComponent only
+			// when it actually is one, or the preview cache below dereferences a
+			// missing `.state` and crashes the first repaint that renders it
+			// (mouse-dispatch hit-testing renders synchronously).
 			const component =
-				(context.lastComponent as BashResultRenderComponent | undefined) ?? new BashResultRenderComponent();
+				context.lastComponent instanceof BashResultRenderComponent
+					? context.lastComponent
+					: new BashResultRenderComponent();
 			rebuildBashResultRenderComponent(
 				component,
 				result as any,
