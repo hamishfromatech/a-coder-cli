@@ -242,6 +242,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					const index = labels.indexOf(chosen);
 					return index >= 0 ? p.options[index]?.id : undefined;
 				},
+				getDeviceId: () => runtimeHost.services.settingsManager.getOrCreateDeviceId(),
 			});
 			void session.modelRegistry.refresh();
 			emitOAuth({ providerId, phase: "success" });

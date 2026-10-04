@@ -6755,6 +6755,7 @@ export class InteractiveMode {
 
 				onManualCodeInput: () => manualCodePromise,
 
+				getDeviceId: () => this.settingsManager.getOrCreateDeviceId(),
 				signal: dialog.signal,
 			});
 
