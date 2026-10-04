@@ -39,6 +39,7 @@ import type {
 	InputEventResult,
 	InputSource,
 	LoadExtensionsResult,
+	MarkdownTransformer,
 	MessageEndEvent,
 	MessageEndEventResult,
 	MessageRenderer,
@@ -655,6 +656,10 @@ export class ExtensionRunner {
 			}
 		}
 		return undefined;
+	}
+
+	getMarkdownTransformers(): MarkdownTransformer[] {
+		return this.extensions.flatMap((ext) => (ext.markdownTransformer ? [ext.markdownTransformer] : []));
 	}
 
 	private resolveRegisteredCommands(): ResolvedCommand[] {

@@ -10,6 +10,7 @@
 	- Rendering: viewport layout primitives (`ScrollView`, `VStack`) with stacked alt-screen flashes, ANSI-order-safe slice boundaries, WezTerm/Kitty image preservation while scrolling, linear-scaling search, no idle repaints on focus loss, focused overlays accepting wheel/viewport keys, and empty-footer collapsing.
 	- Terminal integration: Apple Terminal ctrl+shift+<letter> chords disambiguated via the native Shift probe; the raw-mode watchdog ported to upstream's terminal (stdin re-asserted every 100 ms while the TUI owns the terminal, bracketed paste restored); Windows-friendly keybinding defaults (ctrl+z undo, alt+q editor exit, ctrl+f find) applied via `useWindowsKeybindings()`.
 - Markdown rendering caches a stable prefix while streaming: text up to the last paragraph break or open code fence renders once and the live tail repaints per token (upstream parity for our streaming-caching work, now shared via `splitStablePrefix`).
+- LaTeX math rendering: `$...$` inline and `$$...$$` block math tokenize in Markdown and render as terminal-friendly Unicode — stacked fractions in display math, matrix/case layouts with drawn delimiters, Greek letters and common symbol macros; unsupported or malformed expressions fall back to the raw source. Shipped unannounced with the alternate-screen port; covers `renderLatex` plus its Markdown tokenizers.
 - `readClipboardText` / `readClipboardFilePaths` clipboard helpers, host-clipboard paste of copied files (macOS Finder paths) in the editor, and a `getNativeClipboard` bridge exported from pi-tui.
 
 ### Fixed

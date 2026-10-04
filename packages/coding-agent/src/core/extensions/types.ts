@@ -1283,6 +1283,14 @@ export interface MessageRenderOptions {
 	expanded: boolean;
 }
 
+export interface MarkdownTransformContext {
+	messageType: "user" | "assistant" | "assistant-thinking";
+	isStreaming: boolean;
+	availableWidth: number;
+}
+
+export type MarkdownTransformer = (markdown: string, context: MarkdownTransformContext) => string;
+
 export interface EntryRenderOptions {
 	expanded: boolean;
 }
@@ -1422,6 +1430,9 @@ export interface ExtensionAPI {
 
 	/** Register a custom renderer for CustomEntry. Custom entries do not participate in LLM context. */
 	registerEntryRenderer<T = unknown>(customType: string, renderer: EntryRenderer<T>): void;
+
+	/** Register a transformer that rewrites markdown (user/assistant text) before terminal rendering. */
+	registerMarkdownTransformer(transformer: MarkdownTransformer): void;
 
 	// =========================================================================
 	// Actions
@@ -1804,6 +1815,7 @@ export interface Extension {
 	tools: Map<string, RegisteredTool>;
 	messageRenderers: Map<string, MessageRenderer>;
 	entryRenderers?: Map<string, EntryRenderer>;
+	markdownTransformer?: MarkdownTransformer;
 	commands: Map<string, RegisteredCommand>;
 	flags: Map<string, ExtensionFlag>;
 	shortcuts: Map<KeyId, ExtensionShortcut>;
