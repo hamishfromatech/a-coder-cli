@@ -101,7 +101,8 @@ function toLegacyProvider(id: string, name: string, flow: OAuthAuth): OAuthProvi
 		isSubscription: flow.isSubscription,
 		usesCallbackServer: true,
 		async login(callbacks: OAuthLoginCallbacks) {
-			const credential = await flow.login(interactionFromCallbacks(callbacks));
+			const options = callbacks.getDeviceId ? { getDeviceId: callbacks.getDeviceId } : undefined;
+			const credential = await flow.login(interactionFromCallbacks(callbacks), options);
 			return credential as OAuthCredentials;
 		},
 		async refreshToken(credentials: OAuthCredentials) {

@@ -40,6 +40,8 @@ export interface OAuthLoginCallbacks {
 	onManualCodeInput?(): Promise<string>;
 	onSelect(prompt: OAuthSelectPrompt): Promise<string | undefined>;
 	signal?: AbortSignal;
+	/** Stable installation ID for flows that require one (Sign in with ChatGPT). */
+	getDeviceId?(): string;
 }
 
 /** Legacy registry-facing provider id (string). */

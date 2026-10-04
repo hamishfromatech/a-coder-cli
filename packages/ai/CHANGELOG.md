@@ -4,13 +4,24 @@
 
 ### Added
 
+- Sign in with ChatGPT on the `openai` provider: a browser PKCE flow against the fixed OpenAI redirect port (1455) that exchanges the token for a model-API key, with a manual paste fallback — when the browser cannot reach this machine's loopback (e.g. over SSH), pasting the redirect URL or code completes the sign-in. The login requires a stable installation ID (`LoginOptions.getDeviceId`, threaded through `Models.login` and, in the legacy registry, `OAuthLoginCallbacks.getDeviceId`); when the fixed port is held by another pending login or the Codex CLI the sign-in now fails with a port-in-use error instead of silently racing another listener.
+- Consolidated all browser OAuth flows onto a shared `auth/oauth/callback-server.ts` (`startOAuthCallbackServer` + `waitForCallbackOrManualInput`): Anthropic, OpenAI Codex, OpenRouter, and Radius drop their per-provider inline `node:http` servers; the shared helper adds state validation, single-callback claiming with 409 responses, proper abort/timeout handling, and the manual-paste race. The success/error pages moved to `src/utils/oauth-page.ts` with the updated color Pi logo.
 - vLLM and SGLang keyless local providers: OpenAI-compatible servers discovered dynamically from `/v1/models` with served context windows (`max_model_len`, 128K fallback), served-length output budgets, configurable via `VLLM_BASE_URL` / `SGLANG_BASE_URL` env or `settings.json` `localProviders.vllmBaseUrl` / `sglangBaseUrl` (defaults `http://localhost:8000/v1` / `http://localhost:30000/v1`).
-
-### Added
-
 - New provider: Inception Labs (`inception`, `INCEPTION_API_KEY`) — OpenAI-compatible Chat Completions at `https://api.inceptionlabs.ai/v1`, serving the Mercury diffusion model family (Mercury 2, Mercury 2.5; 260K context on Mercury 2.5). Also available through OpenRouter as `inception/mercury-2.5`.
 - New keyless local provider: Unsloth (`unsloth`) — OpenAI-compatible Chat Completions at `http://localhost:8888/v1` (override with `UNSLOTH_BASE_URL`), model list refreshed dynamically from `/v1/models` with the server-reported per-model context length; 128k output budget like llama.cpp/LM Studio.
 - Re-added the OpenAdapter provider (models, `/v1/models` dynamic refresh, `openadapter` provider id, and the `OPENADAPTER_API_KEY` desktop entry) after its removal in v0.80.101.
+- Added OpenRouter OAuth login (upstream pi #6927/#7114 parity): `/login openrouter` runs a PKCE authorization flow against a one-shot loopback callback, raced against a manual-code prompt so remote/headless sessions can paste the final redirect URL (or bare authorization code) when the browser cannot reach the loopback host. The exchange mints a permanent, user-controlled OpenRouter API key. Both OpenRouter providers expose it alongside `OPENROUTER_API_KEY`; `OAuthAuth` gained an optional `loginLabel` for login menus.
+- Added GPT-6 Astra for OpenAI API keys and OpenAI Codex subscriptions.
+- Added the `supportsExplicitPromptCacheMode` OpenAI Responses compatibility setting for explicit prompt caching via `prompt_cache_options` (`ttl: "30m"` for long-cache GPT-5.6+/GPT-6 Astra requests, `mode: "explicit"` for cache-disabled requests).
+- `AssistantMessage.retryAfterMs`: provider-requested retry delay (milliseconds), extracted from `Retry-After` / `Retry-After-Ms` response headers (or SDK `retryAfter`/`retryAfterMs` fields) and attached to error assistant messages by every API adapter. The OpenAI Codex adapter's inner retry loop now preserves the hint on its final throw so outer retry policies can honor it too. Callers implementing their own retry/backoff should prefer this over their default schedule.
+
+
+### Changed
+
+- Local Ollama models now discover their real context window at model-list refresh time (via the native /api/tags model_info.context_length, falling back to /api/show), matching Ollama Cloud, instead of hardcoding 128000 until the model is first activated.
+- Ollama Cloud vision support is now detected from `/api/show` per model (`capabilities` includes `"vision"`), not `/api/tags`. Ollama Cloud's `/api/tags` omits `capabilities`, so vision models were previously treated as text-only and images were silently dropped. The refresh now probes `/api/show` for every model (in parallel) and sets `input: ["text","image"]` when the server reports `"vision"`.
+
+
 ### Fixed
 
 - Fixed LM Studio vision-capable models missing from the model list: the `/api/v0/models` refresh only accepted `type: "llm"` entries, but LM Studio reports vision-capable models as `type: "vlm"`, so a loaded vision model never appeared in `/model`. Loaded `vlm` entries are now listed alongside `llm` ones; embeddings remain excluded.
@@ -18,15 +29,6 @@
 - Raised the max output tokens for LM Studio and llama.cpp models from 4096 to 128000; the servers clamp to the served context window, so long generations no longer stop mid-response at 4096 tokens.
 - Fixed OpenAI Codex requests hanging forever with no error in environments where the WebSocket transport actually engages (the desktop ships the Bun engine, where the WebSocket connects with auth headers; Node-based CLI runs always failed the handshake and fell back to SSE). Silent sockets can no longer wedge a turn: an idle Codex WebSocket now gives up after 120s (configurable via the provider `timeoutMs` retry setting) and falls back to SSE; pooled sockets are keyed by ChatGPT account within a session so an account rotation (re-login/plan switch) can no longer reuse a socket authenticated for the previous account (upstream #7284 parity); cached sockets are recycled after 55 minutes; and `session-id` / `x-client-request-id` headers are clamped to the 64 characters Codex accepts (upstream #6653 parity).
 - Fixed OpenAI Codex reliability when streaming over the WebSocket transport (upstream parity): a response that rejects the cached `previous_response_id` continuation (`previous_response_not_found`) now resets the connection's cached context and retries once with the full input instead of surfacing a hard error mid-session, and the `start` stream event is emitted at most once per request (previously a WS-to-SSE fallback or continuation retry could emit a duplicate). Codex requests that omit an explicit reasoning effort now send `reasoning.effort` mapped from the model's off level (`none` for built-in Codex models) instead of letting the backend default to medium effort (upstream #9191 parity).
-
-### Added
-
-- Added OpenRouter OAuth login (upstream pi #6927/#7114 parity): `/login openrouter` runs a PKCE authorization flow against a one-shot loopback callback, raced against a manual-code prompt so remote/headless sessions can paste the final redirect URL (or bare authorization code) when the browser cannot reach the loopback host. The exchange mints a permanent, user-controlled OpenRouter API key. Both OpenRouter providers expose it alongside `OPENROUTER_API_KEY`; `OAuthAuth` gained an optional `loginLabel` for login menus.
-- Added GPT-6 Astra for OpenAI API keys and OpenAI Codex subscriptions.
-- Added the `supportsExplicitPromptCacheMode` OpenAI Responses compatibility setting for explicit prompt caching via `prompt_cache_options` (`ttl: "30m"` for long-cache GPT-5.6+/GPT-6 Astra requests, `mode: "explicit"` for cache-disabled requests).
-
-### Fixed
-
 - Fixed HTTP 413 "Request Entity Too Large" errors from OpenAI-compatible gateways killing the agent instead of triggering auto-compaction: `isContextOverflow` now matches `request entity too large` / `payload too large` bodies and a bare `413` status prefix, so an oversized request body compacts the session and retries just like a token-count overflow.
 - Fixed Ollama Cloud vision requests failing with 400 "failed to read request body" after 2-3 image reads: every turn re-sends the full conversation, so accumulated base64 images grew the body past the gateway's ~16MB limit. `OpenAICompletionsCompat` gained `maxImageBytesPerRequest`; when the serialized request exceeds it, the oldest image blocks are replaced with a text placeholder and the newest images are kept. Ollama Cloud models set a 12MB image budget.
 - Fixed Mistral Medium reasoning requests to use `reasoning_effort` for all reasoning-capable `mistral-medium-*` model IDs instead of the unsupported `prompt_mode` ([#8700](https://github.com/earendil-works/pi/issues/8700)).
@@ -36,20 +38,7 @@
 - Fixed `NO_PROXY` matching for both root domains and subdomains, IPv6 bracket entries, and per-entry ports ([#8737](https://github.com/earendil-works/pi/issues/8737)).
 - Fixed Bedrock error bodies surfacing serialized response streams as `{}`.
 - Fixed quadratic CPU usage when draining buffered `EventStream` events ([#9055](https://github.com/earendil-works/pi/issues/9055)).
-
-### Added
-
-- `AssistantMessage.retryAfterMs`: provider-requested retry delay (milliseconds), extracted from `Retry-After` / `Retry-After-Ms` response headers (or SDK `retryAfter`/`retryAfterMs` fields) and attached to error assistant messages by every API adapter. The OpenAI Codex adapter's inner retry loop now preserves the hint on its final throw so outer retry policies can honor it too. Callers implementing their own retry/backoff should prefer this over their default schedule.
-
-### Changed
-- Local Ollama models now discover their real context window at model-list refresh time (via the native /api/tags model_info.context_length, falling back to /api/show), matching Ollama Cloud, instead of hardcoding 128000 until the model is first activated.
-- Ollama Cloud vision support is now detected from `/api/show` per model (`capabilities` includes `"vision"`), not `/api/tags`. Ollama Cloud's `/api/tags` omits `capabilities`, so vision models were previously treated as text-only and images were silently dropped. The refresh now probes `/api/show` for every model (in parallel) and sets `input: ["text","image"]` when the server reports `"vision"`.
-
-### Fixed
 - Fixed release builds failing with `TS2353: '"openai-completions"' does not exist in type ...` after models.dev dropped Workers AI passthroughs from the Cloudflare AI Gateway catalog (the `workers-ai/` models disappeared, so the hand-written `api` object's `openai-completions` key became an excess property and `npm run build` failed). Ported the upstream `generate-models.ts` change that mirrors the `cloudflare-workers-ai` catalog under the documented `workers-ai/` prefix into `cloudflare-ai-gateway` (sourcing from the Workers AI list, which still has the models) so the gateway keeps its OpenAI-compatible `/compat` models stable. Also pass an explicit `TApi` to `createProvider` for `cloudflare-ai-gateway` and `opencode-go` so the `api` object keys stay valid regardless of which model APIs a regenerated catalog happens to include.
-
-## [0.80.26] - 2026-08-22
-
 ## [0.80.25] - 2026-08-22
 
 ### Added
