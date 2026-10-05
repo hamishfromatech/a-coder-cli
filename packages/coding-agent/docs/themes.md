@@ -291,5 +291,11 @@ echo $COLORTERM  # Should output "truecolor" or "24bit"
 ## Examples
 
 See the built-in themes:
-- [dark.json](../src/modes/interactive/theme/dark.json)
-- [light.json](../src/modes/interactive/theme/light.json)
+- [dark](../src/modes/interactive/theme/dark.json) / [light](../src/modes/interactive/theme/light.json) — the defaults
+- [nord](../src/modes/interactive/theme/nord.json)
+- [gruvbox-dark](../src/modes/interactive/theme/gruvbox-dark.json) / [gruvbox-light](../src/modes/interactive/theme/gruvbox-light.json)
+- [catppuccin-mocha](../src/modes/interactive/theme/catppuccin-mocha.json) / [catppuccin-latte](../src/modes/interactive/theme/catppuccin-latte.json)
+- [tokyo-night](../src/modes/interactive/theme/tokyo-night.json)
+- [solarized-dark](../src/modes/interactive/theme/solarized-dark.json) / [solarized-light](../src/modes/interactive/theme/solarized-light.json)
+
+Switch with `/theme` or `settings.theme`; `dark` and `light` stay the automatic-pairing defaults.

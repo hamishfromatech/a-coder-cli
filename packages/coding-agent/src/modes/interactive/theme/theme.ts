@@ -440,17 +440,30 @@ export class Theme {
 // Theme Loading
 // ============================================================================
 
+/** Built-in theme files, loaded from the package themes dir on first use. */
+const BUILTIN_THEME_FILES: readonly string[] = [
+	"dark",
+	"light",
+	"nord",
+	"gruvbox-dark",
+	"gruvbox-light",
+	"catppuccin-mocha",
+	"catppuccin-latte",
+	"tokyo-night",
+	"solarized-dark",
+	"solarized-light",
+];
+
 let BUILTIN_THEMES: Record<string, ThemeJson> | undefined;
 
 function getBuiltinThemes(): Record<string, ThemeJson> {
 	if (!BUILTIN_THEMES) {
 		const themesDir = getThemesDir();
-		const darkPath = path.join(themesDir, "dark.json");
-		const lightPath = path.join(themesDir, "light.json");
-		BUILTIN_THEMES = {
-			dark: JSON.parse(stripBom(fs.readFileSync(darkPath, "utf-8"))) as ThemeJson,
-			light: JSON.parse(stripBom(fs.readFileSync(lightPath, "utf-8"))) as ThemeJson,
-		};
+		const entries: [string, ThemeJson][] = BUILTIN_THEME_FILES.map((name) => {
+			const themePath = path.join(themesDir, `${name}.json`);
+			return [name, JSON.parse(stripBom(fs.readFileSync(themePath, "utf-8"))) as ThemeJson];
+		});
+		BUILTIN_THEMES = Object.fromEntries(entries);
 	}
 	return BUILTIN_THEMES;
 }

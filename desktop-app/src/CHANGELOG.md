@@ -4,6 +4,7 @@
 
 ### Added
 
+- Five new built-in skins: Nord, Dracula, Gruvbox, Catppuccin, and Tokyo Night — each with hand-tuned light and dark palettes (both variants shipped rather than synthesized), selectable from the theme picker with live swatch previews.
 - Settings → Models → Local models: an "Unsloth address" field for the CLI's new `unsloth` local provider (defaults to `http://localhost:8888/v1`), alongside LM Studio / llama.cpp / Ollama. Writes the same `localProviders.unslothBaseUrl` setting the CLI engine applies at startup.
 
 ### Added
