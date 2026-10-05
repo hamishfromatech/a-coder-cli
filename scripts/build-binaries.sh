@@ -61,32 +61,78 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-## Validate the bun version before compiling engine binaries.
-## bun >= 1.3.9 crashes at startup on CPUs/VMs without SSE4.2/POPCNT/AVX2
-## (upstream WebKit -march=nehalem regression, oven-sh/bun#30613) — the
-## engine binary dies with 0xC0000005/SIGILL on `--version`. bun 1.3.8 is
-## the last release without that regression.
-if ! command -v bun >/dev/null 2>&1; then
-    echo "Error: bun is required to build engine binaries."
-    echo "Install bun 1.3.8: npm install -g bun@1.3.8"
-    exit 1
-fi
+## Bun version policy for engine binaries (oven-sh/bun#30613):
+## - bun >= 1.3.9 crashes at startup on x64 CPUs/VMs without SSE4.2/POPCNT
+##   (upstream WebKit pass of -march=nehalem) — compiled engines die with
+##   0xC0000005/SIGILL on --version. x64 targets MUST be built with bun <= 1.3.8.
+## - bun < 1.3.10 has no bun-windows-aarch64 cross-compile download, so the
+##   windows-arm64 target needs bun >= 1.3.10 (ARM64 is unaffected by the
+##   x64 regression).
+## This means one bun cannot build all six targets. Provide the baseline
+## executable via BUN_BASELINE_BIN (path to a bun <= 1.3.8 binary); the PATH
+## bun (>= 1.3.10) is used for arm64 targets.
+bun_ok_for_x64() {
+	awk -v a="$1" -v b="1.3.8" 'BEGIN {
+		n = split(a, P, "."); m = split(b, Q, ".");
+		for (i = 1; i <= n || i <= m; i++) {
+			x = (i <= n ? P[i] + 0 : 0); y = (i <= m ? Q[i] + 0 : 0);
+			if (x < y) exit 0; if (x > y) exit 1;
+		}
+		exit 0;
+	}'
+}
 BUN_VERSION="$(bun --version 2>/dev/null || echo 0)"
-if ! awk -v a="$BUN_VERSION" -v b="1.3.8" 'BEGIN {
-	n = split(a, P, "."); m = split(b, Q, ".");
-	for (i = 1; i <= n || i <= m; i++) {
-		x = (i <= n ? P[i] + 0 : 0); y = (i <= m ? Q[i] + 0 : 0);
-		if (x < y) exit 0; if (x > y) exit 1;
-	}
-	exit 0;
-}'; then
-    echo "Error: bun $BUN_VERSION is too new for engine binary builds."
-    echo "bun >= 1.3.9 passes -march=nehalem (Webkit regression in oven-sh/bun#30613)"
-    echo "and the compiled engine crashes on non-AVX2 CPUs (0xC0000005 at startup)."
-    echo "Install bun 1.3.8: npm install -g bun@1.3.8"
-    exit 1
+BUN_BASELINE_BIN="${BUN_BASELINE_BIN:-}"
+BUN_BASELINE_VERSION=""
+if [[ -n "$BUN_BASELINE_BIN" ]]; then
+	if [[ ! -x "$BUN_BASELINE_BIN" ]]; then
+		echo "Error: BUN_BASELINE_BIN is set but not executable: $BUN_BASELINE_BIN"
+		exit 1
+	fi
+	BUN_BASELINE_VERSION="$($BUN_BASELINE_BIN --version 2>/dev/null || echo 0)"
+	if ! bun_ok_for_x64 "$BUN_BASELINE_VERSION"; then
+		echo "Error: BUN_BASELINE_BIN must be bun <= 1.3.8 (got $BUN_BASELINE_VERSION)."
+		exit 1
+	fi
 fi
-echo "==> bun $BUN_VERSION (pinned <= 1.3.8: bun#30613 AVX2/SSE4.2 regression)"
+if ! command -v bun >/dev/null 2>&1; then
+	echo "Error: bun is required to build engine binaries."
+	exit 1
+fi
+
+echo "==> PATH bun: $BUN_VERSION; baseline bun: ${BUN_BASELINE_VERSION:-unset} (policy: x64 <= 1.3.8, windows-arm64 >= 1.3.10)"
+
+## Pick the bun executable for a platform; errors with instructions.
+bun_for_platform() {
+	local platform="$1"
+	case "$platform" in
+		*-x64)
+			if bun_ok_for_x64 "$BUN_VERSION"; then
+				echo "bun"
+				return 0
+			fi
+			if [[ -n "$BUN_BASELINE_VERSION" ]]; then
+				echo "$BUN_BASELINE_BIN"
+				return 0
+			fi
+			echo "Error: $platform needs bun <= 1.3.8 but the PATH bun is $BUN_VERSION (bun >= 1.3.9 crashes on non-AVX2/SSE4.2 CPUs, oven-sh/bun#30613)." >&2
+			echo "Provide a baseline bun: npm install -g bun@1.3.8 (then re-path), or download it and set BUN_BASELINE_BIN=/path/to/bun." >&2
+			return 1
+			;;
+		windows-arm64)
+			if ! awk -v a="$BUN_VERSION" -v b="1.3.10" 'BEGIN { n=split(a,P,"."); m=split(b,Q,"."); for(i=1;i<=n||i<=m;i++){x=(i<=n?P[i]+0:0);y=(i<=m?Q[i]+0:0); if(x>y)exit 0; if(x<y)exit 1;} exit 0; }'; then
+				echo "Error: windows-arm64 needs bun >= 1.3.10 (the bun-windows-aarch64 cross-compile does not exist earlier; PATH bun is $BUN_VERSION)." >&2
+				return 1
+			fi
+			echo "bun"
+			return 0
+			;;
+		*)
+			echo "bun"
+			return 0
+			;;
+	esac
+}
 
 # Validate platform if specified
 if [[ -n "$PLATFORM" ]]; then
@@ -149,13 +195,15 @@ fi
 
 for platform in "${PLATFORMS[@]}"; do
     echo "Building for $platform..."
+    BUN="$(bun_for_platform "$platform")"
+    echo "  bun for $platform: $BUN ($(BUN="$BUN" $BUN --version))"
     # Bun compiled executables only embed worker scripts when they are passed as
     # explicit build entrypoints. The runtime can still use new URL(...), but the
     # worker must be present in the compiled executable.
     if [[ "$platform" == windows-* ]]; then
-        bun build --compile --target=bun-$platform ./dist/bun/cli.js ./src/utils/image-resize-worker.ts --outfile "$OUTPUT_DIR/$platform/pi.exe"
+        "$BUN" build --compile --target=bun-$platform ./dist/bun/cli.js ./src/utils/image-resize-worker.ts --outfile "$OUTPUT_DIR/$platform/pi.exe"
     else
-        bun build --compile --target=bun-$platform ./dist/bun/cli.js ./src/utils/image-resize-worker.ts --outfile "$OUTPUT_DIR/$platform/pi"
+        "$BUN" build --compile --target=bun-$platform ./dist/bun/cli.js ./src/utils/image-resize-worker.ts --outfile "$OUTPUT_DIR/$platform/pi"
     fi
 done
 

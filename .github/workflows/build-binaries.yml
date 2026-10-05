@@ -57,10 +57,25 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          # Pinned: bun >= 1.3.9 crashes on CPUs/VMs without SSE4.2/POPCNT/AVX2
-        # (upstream WebKit -march=nehalem regression, oven-sh/bun#30613) and the
-        # compiled engine binaries die with 0xC0000005 on --version.
-          bun-version: 1.3.8
+          # 1.3.13 builds the arm64 targets and is required for the
+          # windows-arm64 cross-compile (only exists since bun 1.3.10).
+          # x64 targets must not use bun >= 1.3.9 (oven-sh/bun#30613: the
+          # WebKit -march=nehalem pass crashes compiled engines at startup on
+          # CPUs/VMs without SSE4.2/POPCNT) — the build script compiles those
+          # with the baseline bun downloaded in the next step.
+          bun-version: 1.3.13
+
+      - name: Download baseline bun 1.3.8 (x64 engine builds)
+        # bun 1.3.8 is the last version without the oven-sh/bun#30613
+        # non-AVX2 startup crash; keep it alongside the newer PATH bun
+        # used for arm64 targets.
+        shell: bash
+        run: |
+          mkdir -p "${RUNNER_TEMP}/bun-baseline"
+          curl -fsSL https://github.com/oven-sh/bun/releases/download/bun-v1.3.8/bun-linux-x64.zip -o "${RUNNER_TEMP}/bun-baseline.zip"
+          unzip -q "${RUNNER_TEMP}/bun-baseline.zip" -d "${RUNNER_TEMP}/bun-baseline"
+          chmod +x "${RUNNER_TEMP}/bun-baseline/bun-linux-x64/bun"
+          echo "BUN_BASELINE_BIN=${RUNNER_TEMP}/bun-baseline/bun-linux-x64/bun" >> "$GITHUB_ENV"
 
       - name: Setup Node.js
         uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
