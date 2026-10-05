@@ -16,7 +16,7 @@ Themes are JSON files that define colors for the TUI.
 
 ## Locations
 
-Pi loads themes from:
+a-coder-cli loads themes from:
 
 - Built-in: `dark`, `light`
 - Global: `~/.a-coder/cli/agent/themes/*.json`

@@ -526,7 +526,9 @@ md.setText("Updated markdown");
 - HTML tags rendered as plain text
 - Optional syntax highlighting via `highlightCode`
 - Padding support
-- Render caching for performance
+- Render caching for performance; while streaming, a stable-prefix cache renders the unchanged portion once and re-parses only the live tail
+- LaTeX math: `$...$` inline and `$$...$$` block expressions render as terminal-friendly Unicode (fractions stack in display mode; unsupported syntax falls back to the raw source)
+- `MarkdownOptions` hooks: `preserveOrderedListMarkers`, `preserveBackslashEscapes`, and `transform` — `(markdown: string, availableWidth: number) => string`, applied before rendering (the pi-coding-agent chat uses it for its Mermaid diagrams renderer and extension-registered transformers)
 
 ### Loader
 
@@ -929,7 +931,7 @@ node test/chat-simple.ts
 
 ```bash
 # Install dependencies (from monorepo root)
-npm install
+npm install --ignore-scripts
 
 # Run type checking
 npm run check

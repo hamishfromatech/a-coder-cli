@@ -295,6 +295,7 @@ user sends prompt ────────────────────�
   │   ├─► turn_start                               │       │
   │   ├─► context (can modify messages)            │       │
   │   ├─► before_provider_request (can inspect or replace payload)
+  │   ├─► before_provider_headers (mutate request headers in place)
   │   ├─► after_provider_response (status + headers, before stream consume)
   │   │                                            │       │
   │   │   LLM responds, may call tools:            │       │
@@ -541,7 +542,7 @@ pi.on("before_agent_start", async (event, ctx) => {
 });
 ```
 
-The `systemPromptOptions` field gives extensions access to the same structured data Pi uses to build the system prompt. This lets you inspect what Pi has loaded — custom prompts, guidelines, tool snippets, context files, skills — without re-discovering resources or re-parsing flags. Use it when your extension needs to make deep, informed changes to the system prompt while respecting user-provided configuration.
+The `systemPromptOptions` field gives extensions access to the same structured data the agent uses to build the system prompt. This lets you inspect what has been loaded — custom prompts, guidelines, tool snippets, context files, skills — without re-discovering resources or re-parsing flags. Use it when your extension needs to make deep, informed changes to the system prompt while respecting user-provided configuration.
 
 Inside `before_agent_start`, `event.systemPrompt` and `ctx.getSystemPrompt()` both reflect the chained system prompt as of the current handler. Later `before_agent_start` handlers can still modify it again.
 
@@ -647,7 +648,7 @@ pi.on("context", async (event, ctx) => {
 
 Fired after the provider-specific payload is built, right before the request is sent. Handlers run in extension load order. Returning `undefined` keeps the payload unchanged. Returning any other value replaces the payload for later handlers and for the actual request.
 
-This hook can rewrite provider-level system instructions or remove them entirely. Those payload-level changes are not reflected by `ctx.getSystemPrompt()`, which reports Pi's system prompt string rather than the final serialized provider payload.
+This hook can rewrite provider-level system instructions or remove them entirely. Those payload-level changes are not reflected by `ctx.getSystemPrompt()`, which reports the agent's base system prompt string rather than the final serialized provider payload.
 
 ```typescript
 pi.on("before_provider_request", (event, ctx) => {
@@ -659,6 +660,16 @@ pi.on("before_provider_request", (event, ctx) => {
 ```
 
 This is mainly useful for debugging provider serialization and cache behavior.
+
+#### before_provider_headers
+
+Fired after request headers are assembled, before the provider HTTP call. Handlers run in extension load order and mutate `event.headers` in place (for example to inject tracing or session headers); return values are ignored, and setting a header value to `null` deletes it. A throwing handler is isolated and skipped. This fires after `before_provider_request` payload rewrites, so header mutations apply regardless of payload replacement.
+
+```typescript
+pi.on("before_provider_headers", (event, ctx) => {
+  event.headers["x-correlation-id"] = ctx.sessionManager.getSessionId();
+});
+```
 
 #### after_provider_response
 
@@ -848,6 +859,22 @@ pi.on("user_bash", (event, ctx) => {
 
 ### Input Events
 
+#### ui_prompt_start / ui_prompt_end
+
+Fired when the CLI starts and stops waiting on a blocking user-facing extension UI prompt (`kind`: `"select"`, `"confirm"`, `"input"`, `"editor"`, or `"custom"`). Useful for driving external UIs (RPC clients, status rails) that need to render their own prompt affordances while the engine's editor is replaced.
+
+```typescript
+pi.on("ui_prompt_start", async (event, ctx) => {
+  // event.kind - which kind of prompt is open
+  // event.title - prompt title, if set
+  ctx.ui.setStatus("ui-prompt", "waiting for user");
+});
+
+pi.on("ui_prompt_end", async (event, ctx) => {
+  ctx.ui.setStatus("ui-prompt", undefined);
+});
+```
+
 #### input
 
 Fired when user input is received, after extension commands are checked but before skill and template expansion. The event sees the raw input text, so `/skill:foo` and `/template` are not yet expanded.
@@ -1036,7 +1063,7 @@ ctx.compact({
 
 ### ctx.getSystemPrompt()
 
-Returns Pi's current system prompt string.
+Returns the agent's current system prompt string.
 
 - During `before_agent_start`, this reflects chained system-prompt changes made so far for the current turn.
 - It does not include later `context` message mutations.
@@ -1056,7 +1083,7 @@ Command handlers receive `ExtensionCommandContext`, which extends `ExtensionCont
 
 ### ctx.getSystemPromptOptions()
 
-Returns the base inputs Pi currently uses to build the system prompt.
+Returns the base inputs the agent currently uses to build the system prompt.
 
 ```typescript
 const options = ctx.getSystemPromptOptions();
@@ -1554,6 +1581,24 @@ pi.registerEntryRenderer("status-card", (entry, { expanded }, theme) => {
 pi.appendEntry("status-card", { title: "Indexed files", count: 17 });
 ```
 
+### pi.registerMarkdownTransformer(transformer)
+
+Register a transformer that rewrites user and assistant markdown before it renders in the terminal. One transformer per extension; throwing transformers are isolated (the untransformed markdown stays) by the apply pipeline.
+
+```typescript
+import type { MarkdownTransformContext, MarkdownTransformer } from "@earendil-works/pi-coding-agent";
+
+const transformer: MarkdownTransformer = (markdown, context: MarkdownTransformContext) => {
+  // context.messageType is "user" | "assistant" | "assistant-thinking";
+  // context.isStreaming and context.availableWidth are set for live renders.
+  return markdown.replace(/TODO-PLACEHOLDER/g, "_todo_");
+};
+
+pi.registerMarkdownTransformer(transformer);
+```
+
+The built-in use is the Mermaid diagrams renderer (see the `markdown.mermaid` setting in [settings.md](settings.md)), which replaces ```` ```mermaid ```` code fences with themed Unicode diagrams while streaming and on completion.
+
 ### pi.registerShortcut(shortcut, options)
 
 Register a keyboard shortcut. See [keybindings.md](keybindings.md) for the shortcut format and built-in keybindings.
@@ -2014,7 +2059,7 @@ const bashTool = createBashTool(cwd, {
 });
 ```
 
-`createBashTool()` exposes the current session to commands through `PI_SESSION_ID`, `PI_SESSION_FILE`, `PI_PROVIDER`, `PI_MODEL`, and `PI_REASONING_LEVEL`. Injection happens before `spawnHook`, so hooks receive these values in `env` and preserve them when they spread the existing environment as above. Set `exposeSessionEnvironment: false` to disable them:
+`createBashTool()` exposes the current session to commands through `A_CODER_SESSION_ID`, `A_CODER_SESSION_FILE`, `A_CODER_PROVIDER`, `A_CODER_MODEL`, and `A_CODER_REASONING_LEVEL`. Injection happens before `spawnHook`, so hooks receive these values in `env` and preserve them when they spread the existing environment as above. Set `exposeSessionEnvironment: false` to disable them:
 
 ```typescript
 const bashTool = createBashTool(cwd, {

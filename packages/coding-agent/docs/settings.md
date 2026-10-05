@@ -1,17 +1,17 @@
 # Settings
 
-Pi uses JSON settings files with project settings overriding global settings.
+a-coder-cli uses JSON settings files with project settings overriding global settings.
 
 | Location | Scope |
 |----------|-------|
 | `~/.a-coder/cli/agent/settings.json` | Global (all projects) |
-| `.pi/settings.json` | Project (current directory) |
+| `.a-coder-cli/settings.json` | Project (current directory) |
 
 Edit directly or use `/settings` for common options.
 
 ## Project Trust
 
-On interactive startup, a-coder-cli asks before trusting a project folder that contains project-local settings, resources, or project `.agents/skills` and has no saved decision for the folder or a parent folder in `~/.a-coder/cli/agent/trust.json`. Trusting a project allows a-coder-cli to load `.pi/settings.json` and `.pi` resources, install missing project packages, and execute project extensions.
+On interactive startup, a-coder-cli asks before trusting a project folder that contains project-local settings, resources, or project `.agents/skills` and has no saved decision for the folder or a parent folder in `~/.a-coder/cli/agent/trust.json`. Trusting a project allows a-coder-cli to load `.a-coder-cli/settings.json` and project resources, install missing project packages, and execute project extensions.
 
 Non-interactive modes (`-p`, `--mode json`, and `--mode rpc`) do not show a trust prompt. Without an applicable saved trust decision, they use `defaultProjectTrust` from global settings: `ask` (default) and `never` ignore those project resources, while `always` trusts them. Pass `--approve`/`-a` or `--no-approve`/`-na` to override project trust for one run.
 
@@ -30,8 +30,10 @@ Use `/trust` in interactive mode to save a project trust decision for future ses
 | `defaultProvider` | string | - | Default provider (e.g., `"anthropic"`, `"openai"`) |
 | `defaultModel` | string | - | Default model ID |
 | `defaultThinkingLevel` | string | - | `"off"`, `"minimal"`, `"low"`, `"medium"`, `"high"`, `"xhigh"` |
+| `modelThinkingLevels` | object | - | Per-model default thinking levels keyed by `"provider/modelId"` (glob wildcards not supported; exact keys) |
 | `hideThinkingBlock` | boolean | `false` | Hide thinking blocks in output |
 | `thinkingBudgets` | object | - | Custom token budgets per thinking level |
+| `cacheWarming` | string | `"streaming"` | Cache-warming preference (`"streaming"`, `"off"`); warming refreshes a provider's prompt cache near expiry (global only) |
 
 #### thinkingBudgets
 
@@ -45,6 +47,78 @@ Use `/trust` in interactive mode to save a project trust decision for future ses
   }
 }
 ```
+
+### TUI Mode & Fullscreen
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `tuiMode` | string | `"fullscreen"` | Terminal UI mode: `"fullscreen"` (alternate screen) or `"regular"` (scrollback) |
+| `fullscreenExitOutput` | string | `"transcript"` | What to print when leaving fullscreen mode: `"transcript"` reprints the transcript, `"resume-hint"` prints only the resume hint |
+| `fullscreenScrollbar` | string | `"auto"` | Transcript scrollbar visibility in fullscreen mode: `"auto"`, `"always"`, `"hidden"` |
+| `fullscreenCopyOnSelect` | boolean | - | Copy text selection immediately (via the host clipboard) when the selection is released |
+| `fullscreenWheelScrollLines` | number or `"auto"` | `"auto"` | Mouse-wheel scroll speed in fullscreen mode: 1-100 lines, or `"auto"` |
+
+### Permission Mode
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `permissionMode` | string | `"ask"` | Tool-call permission mode: `"ask"`, `"allow"`, `"read-only"`, or `"auto"` |
+| `permissionPolicies` | object | - | Extra rules used by `"auto"` mode's classifier (see [extensions.md](extensions.md) and `A_CODER` policy docs) |
+| `autoMode` | object | - | Opt-in LLM classifier configuration for `"auto"` mode |
+
+### Computer Use
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `computerUse` | boolean | `false` | Enable the `computer` desktop-control tool (macOS/Windows/Linux via the external cua-driver). The `/settings` screen gates enabling behind a disclaimer. Env override: `A_CODER_CLI_COMPUTER_USE=1`. The TUI exposes `action: "doctor"` diagnostics once enabled |
+
+### MCP Servers
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `mcpServers` | array | chrome-devtools on fresh installs | MCP servers (stdio/http/sse) exposed as `mcp__<server>__<tool>` tools; each entry supports `timeoutMs`, `env`, `headers`, `disabled`, and `suppressStderrPatterns` (the chrome-devtools stderr noise is auto-suppressed when unset). See [Built-in MCP server](#built-in-mcp-server) |
+
+### Memory
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `memory.enabled` | boolean | `true` | Inject the agent's `MEMORY.md` records into the system prompt |
+| `memory.maxCharsPerScope` | number | `2000` | Max characters injected per memory scope |
+
+### Status Line & Output Style
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `statusLine` | string | - | Shell command rendered as an extra footer row; receives JSON session context on stdin, uses the first stdout line |
+| `outputStyle` | string | `"default"` | Active output style: built-in `default`, `Explanatory`, `Learning`, or a custom style; editable via `/output-style` |
+
+### Workflows
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `workflowMaxConcurrentAgents` | number | `16` | Max concurrent subagents in a workflow run (1-256) |
+| `workflowKeywordTrigger` | boolean | `true` | Let the **ultracode** keyword prompt the model to author + run a workflow |
+| `workflowPrefixStaggerMs` | number | `5000` | Hold matching fan-out agents before their first response begins (0 disables) |
+| `workflows` | string[] | `[]` | Extra workflow script paths/directories |
+
+### Local Model Servers
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `localProviders.ollamaBaseUrl` | string | `http://localhost:11434/v1` | Base URL for the built-in Ollama provider |
+| `localProviders.lmStudioBaseUrl` | string | `http://localhost:1234/v1` | Base URL for the built-in LM Studio provider |
+| `localProviders.llamaCppBaseUrl` | string | `http://localhost:8080/v1` | Base URL for the built-in llama.cpp provider |
+| `localProviders.unslothBaseUrl` | string | `http://localhost:8888/v1` | Base URL for the built-in Unsloth provider; overridden by `UNSLOTH_BASE_URL` |
+| `localProviders.vllmBaseUrl` | string | `http://localhost:8000/v1` | Base URL for the built-in vLLM provider; overridden by `VLLM_BASE_URL` |
+| `localProviders.sglangBaseUrl` | string | `http://localhost:30000/v1` | Base URL for the built-in SGLang provider; overridden by `SGLANG_BASE_URL` |
+
+Each keyless local provider ignores API keys: if a base URL is set in settings, it is exported for the session as the provider's `*_BASE_URL` environment variable before custom-provider resolution. See [providers.md](providers.md#keyless-local-model-servers).
+
+### Updates
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `autoUpdateOnStartup` | string | `"auto"` | Check for a newer CLI release on startup and auto-run the one-shot self-installer: `"auto"` or `"off" |
 
 ### UI & Display
 
@@ -75,9 +149,9 @@ For VS Code, include `--wait` so a-coder-cli resumes after the editor exits:
 
 ### Telemetry and update checks
 
-`enableInstallTelemetry` only controls the anonymous install/update ping to `https://pi.dev/api/report-install`. Opting out of telemetry does not disable update checks; Pi can still fetch `https://pi.dev/api/latest-version` to look for the latest version.
+`enableInstallTelemetry` only controls the anonymous install/update ping to `https://a-coder-cli.dev/api/report-install`. Opting out of telemetry does not disable update checks; the CLI still queries the a-coder-cli GitHub releases API for the latest version unless that too is disabled.
 
-Set `A_CODER_CLI_SKIP_VERSION_CHECK=1` to disable the Pi version update check. Use `--offline` or `A_CODER_CLI_OFFLINE=1` to disable all startup network operations described here, including update checks, package update checks, and install/update telemetry.
+Set `A_CODER_CLI_SKIP_VERSION_CHECK=1` to disable the version update check. Use `--offline` or `A_CODER_CLI_OFFLINE=1` to disable all startup network operations described here, including update checks, package update checks, and install/update telemetry.
 
 ### Network
 
@@ -145,7 +219,7 @@ Set `A_CODER_CLI_SKIP_VERSION_CHECK=1` to disable the Pi version update check. U
 
 When a provider requests a retry delay longer than `retry.provider.maxRetryDelayMs` (e.g., Google's "quota will reset after 5h"), the request fails immediately with an informative error instead of waiting silently. Set to `0` to disable the cap.
 
-Keep `retry.provider.maxRetries` at `0` unless provider-level retries are explicitly needed. Setting it above `0` can make SDK/provider retries handle out-of-usage-limit errors before Pi sees them, which may block the agent until the provider quota resets in some circumstances.
+Keep `retry.provider.maxRetries` at `0` unless provider-level retries are explicitly needed. Setting it above `0` can make SDK/provider retries handle out-of-usage-limit errors before the agent sees them, which may block the agent until the provider quota resets in some circumstances.
 
 ```json
 {
@@ -179,14 +253,11 @@ Keep `retry.provider.maxRetries` at `0` unless provider-level retries are explic
 | `terminal.showImages` | boolean | `true` | Show images in terminal (if supported) |
 | `terminal.imageWidthCells` | number | `60` | Preferred inline image width in terminal cells |
 | `terminal.clearOnShrink` | boolean | `false` | Clear empty rows when content shrinks (can cause flicker) |
-<<<<<<< HEAD
-| `terminal.hyperlinks` | boolean or `"auto"` | `"auto"` | Override OSC 8 hyperlink support (advanced, JSON-only) |
+| `terminal.hyperlinks` | boolean | `"auto"` | Override OSC 8 hyperlink support (advanced, JSON-only) |
 | `terminal.images` | string or boolean | `"auto"` | Override image protocol support with `"kitty"`, `"iterm2"`, `false`, or `"auto"` (advanced, JSON-only) |
-| `terminal.trueColor` | boolean or `"auto"` | `"auto"` | Override truecolor support (advanced, JSON-only) |
-| `images.autoResize` | boolean | `true` | Resize images to 2000x2000 max |
-=======
+| `terminal.trueColor` | boolean | `"auto"` | Override truecolor support (advanced, JSON-only) |
+| `terminal.reducedMotion` | boolean | `false` | Disable motion-heavy TUI animations (hover/scroll shimmer, easing flourishes); `A_CODER_CLI_REDUCED_MOTION=1` env override |
 | `images.autoResize` | boolean | `true` | Resize images to 2000x2000 max. Applies to `@file` attachments, `read`, and images returned by tools |
->>>>>>> b0e05b442 (fix(coding-agent): resize images returned by tools (#7330))
 | `images.blockImages` | boolean | `false` | Block all images from being sent to LLM |
 
 ### Shell
@@ -203,7 +274,7 @@ Keep `retry.provider.maxRetries` at `0` unless provider-level retries are explic
 }
 ```
 
-`npmCommand` is used for all npm package-manager operations, including installs, uninstalls, and dependency installs inside git packages. User-scoped npm packages install under `~/.a-coder/cli/agent/npm/`; project-scoped npm packages install under `.pi/npm/`. Use argv-style entries exactly as the process should be launched. When `npmCommand` is configured, git package dependency installs use plain `install` to avoid npm-specific flags in wrappers or alternate package managers.
+`npmCommand` is used for all npm package-manager operations, including installs, uninstalls, and dependency installs inside git packages. User-scoped npm packages install under `~/.a-coder/cli/agent/npm/`; project-scoped npm packages install under `.a-coder-cli/npm/`. Use argv-style entries exactly as the process should be launched. When `npmCommand` is configured, git package dependency installs use plain `install` to avoid npm-specific flags in wrappers or alternate package managers.
 
 ### Sessions
 
@@ -240,7 +311,7 @@ When multiple sources specify a session directory, precedence is `--session-dir`
 
 These settings define where to load extensions, skills, prompts, and themes from.
 
-Paths in `~/.a-coder/cli/agent/settings.json` resolve relative to `~/.a-coder/cli/agent`. Paths in `.pi/settings.json` resolve relative to `.pi`. Absolute paths and `~` are supported.
+Paths in `~/.a-coder/cli/agent/settings.json` resolve relative to `~/.a-coder/cli/agent`. Paths in `.a-coder-cli/settings.json` resolve relative to `.a-coder-cli`. Absolute paths and `~` are supported.
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
@@ -306,7 +377,7 @@ See [packages.md](packages.md) for package management details.
 
 ## Project Overrides
 
-Project settings (`.pi/settings.json`) override global settings. Nested objects are merged:
+Project settings (`.a-coder-cli/settings.json`) override global settings. Nested objects are merged:
 
 ```json
 // ~/.a-coder/cli/agent/settings.json (global)
@@ -315,7 +386,7 @@ Project settings (`.pi/settings.json`) override global settings. Nested objects 
   "compaction": { "enabled": true, "reserveTokens": 16384 }
 }
 
-// .pi/settings.json (project)
+// .a-coder-cli/settings.json (project)
 {
   "compaction": { "reserveTokens": 8192 }
 }

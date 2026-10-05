@@ -1,4 +1,4 @@
-# Using Pi
+# Usage
 
 This page collects day-to-day usage details that do not fit on the quickstart page.
 
@@ -35,10 +35,10 @@ Type `/` in the editor to open command completion. Extensions can register custo
 
 | Command | Description |
 |---------|-------------|
-| `/login`, `/logout` | Manage OAuth or API-key credentials |
+| `/login`, `/logout` | Manage OAuth or API-key credentials, including provider base URLs for local servers |
 | `/model` | Switch models |
 | `/scoped-models` | Enable/disable models for Ctrl+P cycling |
-| `/settings` | Thinking level, theme, message delivery, transport |
+| `/settings` | Full settings list: thinking level, theme, TUI mode, message delivery, transport, computer use, and more |
 | `/resume` | Pick from previous sessions |
 | `/new` | Start a new session |
 | `/name <name>` | Set session display name |
@@ -48,16 +48,30 @@ Type `/` in the editor to open command completion. Extensions can register custo
 | `/fork` | Create a new session from a previous user message |
 | `/clone` | Duplicate the current active branch into a new session |
 | `/compact [prompt]` | Manually compact context, optionally with custom instructions |
-| `/copy` | Copy last assistant message to clipboard |
+| `/copy` | Copy selection or the last assistant message to clipboard (ctrl+x) |
 | `/export [file]` | Export session to HTML or JSONL |
 | `/import <file>` | Import and resume a session from a JSONL file |
 | `/share` | Upload as private GitHub gist with shareable HTML link |
 | `/workflows` | List saved workflows and runs; drill into agents, stop/pause runs, save a run's script as a command |
 | `/cron` | Scheduled tasks: `/cron add <name> every:30m\|daily:HH:MM\|once:<ISO> <prompt>`, plus run/pause/resume/remove |
+| `/mcp` | Show connected MCP servers and their tools |
+| `/memory` | Open the persistent `MEMORY.md` notes file |
+| `/office` | The virtual office: AI coworkers, errands, huddles (2D/3D) |
+| `/output-style` | Set the assistant's output style |
+| `/permission`, `/permissions` | Set the permission mode; manage allow/deny rules |
+| `/plan` | Toggle plan mode |
+| `/subagents` | List running and completed background subagents |
+| `/tasks` | Open the persistent task graph |
+| `/think`, `/thinking` | Set the thinking level |
+| `/todos` | Toggle the todo list display |
+| `/context` | Show context-window usage |
+| `/apps` | Show the apps dashboard |
+| `/clear` | Clear the terminal |
+| `/diff` | Show working-tree changes the session made |
 | `/reload` | Reload keybindings, extensions, skills, prompts, and context files |
 | `/hotkeys` | Show all keyboard shortcuts |
 | `/changelog` | Display version history |
-| `/quit` | Quit pi |
+| `/quit` | Quit a-coder-cli |
 
 ## Dynamic Workflows
 
@@ -113,12 +127,12 @@ Every fire is recorded as a run (trigger, delivery, status, error, session file)
 Sessions are saved automatically to `~/.a-coder/cli/agent/sessions/`, organized by working directory.
 
 ```bash
-pi -c                  # Continue most recent session
-pi -r                  # Browse and select a session
-a-coder-cli --no-session        # Ephemeral mode; do not save
-a-coder-cli --name "my task"    # Set session display name at startup
-a-coder-cli --session <path|id> # Use a specific session file or session ID
-a-coder-cli --fork <path|id>    # Fork a session into a new session file
+a-coder-cli -c                    # Continue most recent session
+a-coder-cli -r                    # Browse and select a session
+a-coder-cli --no-session          # Ephemeral mode; do not save
+a-coder-cli --name "my task"      # Set session display name at startup
+a-coder-cli --session <path|id>   # Use a specific session file or session ID
+a-coder-cli --fork <path|id>      # Fork a session into a new session file
 ```
 
 Useful session commands:
@@ -133,7 +147,7 @@ See [Sessions](sessions.md) and [Compaction](compaction.md) for details.
 
 ## Context Files
 
-Pi loads `AGENTS.md` or `CLAUDE.md` at startup from:
+a-coder-cli loads `AGENTS.md` or `CLAUDE.md` at startup from:
 
 - `~/.a-coder/cli/agent/AGENTS.md` for global instructions
 - parent directories, walking up from the current working directory
@@ -145,14 +159,14 @@ Use context files for project conventions, commands, safety rules, and preferenc
 
 Replace the default system prompt with:
 
-- `.pi/SYSTEM.md` for a project
+- `.a-coder-cli/SYSTEM.md` for a project
 - `~/.a-coder/cli/agent/SYSTEM.md` globally
 
 Append to the default prompt without replacing it with `APPEND_SYSTEM.md` in either location.
 
 ### Project Trust
 
-On interactive startup, a-coder-cli asks before trusting a project folder that contains project-local settings, resources, or project `.agents/skills` and has no saved decision for the folder or a parent folder in `~/.a-coder/cli/agent/trust.json`. Trusting a project allows a-coder-cli to load `.pi/settings.json` and `.pi` resources, install missing project packages, and execute project extensions.
+On interactive startup, a-coder-cli asks before trusting a project folder that contains project-local settings, resources, or project `.agents/skills` and has no saved decision for the folder or a parent folder in `~/.a-coder/cli/agent/trust.json`. Trusting a project allows a-coder-cli to load `.a-coder-cli/settings.json` and project resources, install missing project packages, and execute project extensions.
 
 Before the trust decision, a-coder-cli loads only context files, user/global extensions, and CLI `-e` extensions so they can handle the `project_trust` event. Project-local extensions, project package-managed extensions, and project settings are loaded only after the project is trusted. This split also applies when switching to a session from a different cwd whose trust has not been resolved in the current process.
 
@@ -176,7 +190,7 @@ If you use a-coder-cli for open source work and want to publish sessions for mod
 ## CLI Reference
 
 ```bash
-pi [options] [@files...] [messages...]
+a-coder-cli [options] [@files...] [messages...]
 ```
 
 ### Package Commands
@@ -185,7 +199,7 @@ pi [options] [@files...] [messages...]
 a-coder-cli install <source> [-l]     # Install package, -l for project-local
 a-coder-cli remove <source> [-l]      # Remove package
 a-coder-cli uninstall <source> [-l]   # Alias for remove
-a-coder-cli update [source|self|pi]   # Update a-coder-cli only, or one package source
+a-coder-cli update [source|self]        # Update a-coder-cli only, or one package source
 a-coder-cli update --all              # Update a-coder-cli and packages; reconcile pinned git refs
 a-coder-cli update --extensions       # Update packages only; reconcile pinned git refs
 a-coder-cli update --self             # Update a-coder-cli only
@@ -194,9 +208,9 @@ a-coder-cli list                      # List installed packages
 a-coder-cli config                    # Enable/disable package resources
 ```
 
-These commands manage pi packages and `a-coder-cli update` can update the a-coder-cli CLI installation. To uninstall a-coder-cli itself, see [Quickstart](quickstart.md#uninstall). `a-coder-cli config` and project package commands accept `--approve`/`--no-approve` to trust or ignore project-local settings for one command. `a-coder-cli update` never prompts for project trust.
+These commands manage packages; `a-coder-cli update` can update the a-coder-cli CLI installation. To uninstall a-coder-cli itself, see [Quickstart](quickstart.md#uninstall). `a-coder-cli config` and project package commands accept `--approve`/`--no-approve` to trust or ignore project-local settings for one command. `a-coder-cli update` never prompts for project trust.
 
-See [Pi Packages](packages.md) for package sources and security notes.
+See [Packages](packages.md) for package sources and security notes.
 
 ### Modes
 
@@ -206,12 +220,12 @@ See [Pi Packages](packages.md) for package sources and security notes.
 | `-p`, `--print` | Print response and exit |
 | `--mode json` | Output all events as JSON lines; see [JSON mode](json.md) |
 | `--mode rpc` | RPC mode over stdin/stdout; see [RPC mode](rpc.md) |
-| `--export <in> [out]` | Export a session to HTML |
+| `--export <file>` | Export the current session to HTML and exit |
 
 In print mode, a-coder-cli also reads piped stdin and merges it into the initial prompt:
 
 ```bash
-cat README.md | pi -p "Summarize this text"
+cat README.md | a-coder-cli -p "Summarize this text"
 ```
 
 ### Model Options
@@ -246,7 +260,9 @@ cat README.md | pi -p "Summarize this text"
 | `--no-builtin-tools`, `-nbt` | Disable built-in tools but keep extension/custom tools enabled |
 | `--no-tools`, `-nt` | Disable all tools |
 
-Built-in tools: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`.
+Built-in tools: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`, `todo`, `plan_mode`, `memory`, `ask_user_question`, `task_create`, `task_get`, `task_list`, `task_update`, `team_create`, `team_delete`, `send_message`, `skill`, and the opt-in `computer`.
+
+Default-enabled in a new session: `read`, `bash`, `edit`, `write`, `plan_mode`, `memory`, `ask_user_question`, the `task_*` set, and the `team_*`/`send_message` pair. Enable the rest via `--tools` or the `defaultTools` setting (and `computer` via `computerUse` or `A_CODER_CLI_COMPUTER_USE=1`).
 
 ### Resource Options
 
@@ -274,6 +290,11 @@ a-coder-cli --no-extensions -e ./my-extension.ts
 |--------|-------------|
 | `--system-prompt <text>` | Replace default prompt; context files and skills are still appended |
 | `--append-system-prompt <text>` | Append to system prompt |
+| `--tui-mode <mode>` | TUI rendering: `fullscreen` (default) or `regular` |
+| `-d`, `--desktop` | Launch A-Coder Desktop in the current folder |
+| `--acp-server [PORT]` | Start the ACP server so the A-Coder IDE can call this CLI as a tool |
+| `--login-acoder [google\|github]` | Sign in to an A-Coder account (reuses IDE auth + backend models) |
+| `--offline` | Disable startup network operations for this run |
 | `--verbose` | Force verbose startup |
 | `-a`, `--approve` | Trust project-local files for this run |
 | `-na`, `--no-approve` | Ignore project-local files for this run |
@@ -285,22 +306,22 @@ a-coder-cli --no-extensions -e ./my-extension.ts
 Prefix files with `@` to include them in the message:
 
 ```bash
-pi @prompt.md "Answer this"
-pi -p @screenshot.png "What's in this image?"
-pi @code.ts @test.ts "Review these files"
+a-coder-cli @prompt.md "Answer this"
+a-coder-cli -p @screenshot.png "What's in this image?"
+a-coder-cli @code.ts @test.ts "Review these files"
 ```
 
 ### Examples
 
 ```bash
 # Interactive with initial prompt
-pi "List all .ts files in src/"
+a-coder-cli "List all .ts files in src/"
 
 # Non-interactive
-pi -p "Summarize this codebase"
+a-coder-cli -p "Summarize this codebase"
 
 # Non-interactive with piped stdin
-cat README.md | pi -p "Summarize this text"
+cat README.md | a-coder-cli -p "Summarize this text"
 
 # Named one-shot session
 a-coder-cli --name "release audit" -p "Audit this repository"
@@ -321,7 +342,7 @@ a-coder-cli --models "claude-*,gpt-4o"
 a-coder-cli --tools read,grep,find,ls -p "Review the code"
 
 # Disable one extension or built-in tool while keeping the rest available
-a-coder-cli --exclude-tools ask_question
+a-coder-cli --exclude-tools ask_user_question
 ```
 
 ### Environment Variables
@@ -332,18 +353,15 @@ a-coder-cli --exclude-tools ask_question
 | `A_CODER_CLI_CODING_AGENT_SESSION_DIR` | Override session storage directory; overridden by `--session-dir` |
 | `A_CODER_CLI_PACKAGE_DIR` | Override package directory, useful for Nix/Guix store paths |
 | `A_CODER_CLI_OFFLINE` | Disable startup network operations, including update checks, package update checks, and install/update telemetry |
-| `A_CODER_CLI_SKIP_VERSION_CHECK` | Skip the Pi version update check at startup. This prevents the `pi.dev` latest-version request |
+| `A_CODER_CLI_SKIP_VERSION_CHECK` | Skip the a-coder-cli version update check at startup. This prevents the GitHub releases latest-version request |
 | `A_CODER_CLI_TELEMETRY` | Override install/update telemetry and provider attribution headers: `1`/`true`/`yes` or `0`/`false`/`no`. This does not disable update checks |
-| `PI_CACHE_RETENTION` | Set to `long` for extended prompt cache where supported |
-| `A_CODER_CLI_HYPERLINKS` / `PI_HYPERLINKS` | Override OSC 8 hyperlink detection: `1`, `0`, or unset for auto |
-| `A_CODER_CLI_IMAGE_PROTOCOL` / `PI_IMAGE_PROTOCOL` | Override inline image detection: `kitty`, `iterm2`, `none`, or unset for auto |
-| `A_CODER_CLI_TRUE_COLOR` / `PI_TRUE_COLOR` | Override truecolor detection: `1`, `0`, or unset for auto |
+| `PI_HYPERLINKS` | Terminal-capability override (pi-tui library): OSC 8 hyperlink detection, `1`, `0`, or unset for auto |
+| `PI_IMAGE_PROTOCOL` | Terminal-capability override (pi-tui library): `kitty`, `iterm2`, `none`, or unset for auto |
+| `PI_TRUE_COLOR` | Terminal-capability override (pi-tui library): truecolor detection, `1`, `0`, or unset for auto |
 | `VISUAL`, `EDITOR` | Fallback external editor for Ctrl+G when `externalEditor` is unset; defaults to Notepad on Windows and `nano` elsewhere |
 
 ## Design Principles
 
-Pi keeps the core small and pushes workflow-specific behavior into extensions, skills, prompt templates, and packages.
+A-Coder CLI keeps the core small and pushes workflow-specific behavior into extensions, skills, prompt templates, packages, and workflows.
 
-It intentionally does not include built-in MCP, sub-agents, permission popups, plan mode, to-dos, or background bash. You can build or install those workflows as extensions or packages, or use external tools such as containers and tmux.
-
-For the full rationale, read the [blog post](https://mariozechner.at/posts/2025-11-30-pi-coding-agent/).
+By default it ships a strong-but-boring core: a durable default toolset (including a persistent task graph, cross-session memory, agent teams, plan mode, and MCP servers), permission modes with policy rules, and session management. Anything opinionated stays replaceable: run in `--permission-mode allow` or containerize for isolation, build your own confirmation flows and compaction with extensions, and drive multi-agent runs with workflows you author in JavaScript.

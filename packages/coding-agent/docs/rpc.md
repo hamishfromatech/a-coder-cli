@@ -19,6 +19,7 @@ Common options:
 
 ## Protocol Overview
 
+- **Handshake**: the first line on stdout is an `engine_info` event: `{ "type": "engine_info", "version": "<engine version>", "contract": <protocol contract number> }`. Bump detection: clients compare `contract` against the version they speak (see `RPC_CONTRACT`) and fail fast on skew instead of failing cryptically later.
 - **Commands**: JSON objects sent to stdin, one per line
 - **Responses**: JSON objects with `type: "response"` indicating command success/failure
 - **Events**: Agent events streamed to stdout as JSON lines
@@ -156,6 +157,41 @@ If an extension cancelled:
 ```json
 {"type": "response", "command": "new_session", "success": true, "data": {"cancelled": true}}
 ```
+
+### Queue Management
+
+#### clear_queue
+
+Remove every queued steering and follow-up message from the session.
+
+```json
+{"type": "clear_queue"}
+```
+
+Background (detached) sessions accept an optional `sessionPath` targeting key:
+```json
+{"type": "clear_queue", "sessionPath": "/path/to/session.jsonl"}
+```
+
+Response:
+```json
+{"type": "response", "command": "clear_queue", "success": true, "data": {"removed": {"steering": 2, "followUp": 1}}}
+```
+
+#### queue_remove
+
+Remove one queued message by kind and index:
+
+```json
+{"type": "queue_remove", "kind": "steering", "index": 0}
+```
+
+Response:
+```json
+{"type": "response", "command": "queue_remove", "success": true, "data": {"removed": true}}
+```
+
+`removed: false` means the index was out of range.
 
 ### State
 
@@ -311,6 +347,69 @@ Response:
   "success": true,
   "data": {"level": "high"}
 }
+```
+
+### Permission & Plan Mode
+
+#### set_permission_mode
+
+```json
+{"type": "set_permission_mode", "mode": "allow"}
+```
+
+Modes: `ask`, `allow`, `read-only`, `auto`.
+
+#### get_permission_mode
+
+```json
+{"type": "get_permission_mode"}
+```
+
+Response `data`: `{"mode": "ask"}`.
+
+#### add_session_allow_rules
+
+Add session-scoped permission allow rules (the desktop approval card's "Always allow"):
+
+```json
+{"type": "add_session_allow_rules", "rules": ["Bash(git push:*)"]}
+```
+
+#### set_plan_mode / get_plan_mode
+
+```json
+{"type": "set_plan_mode", "enabled": true}
+{"type": "get_plan_mode"}
+```
+
+`get_plan_mode` responds with `data.enabled`.
+
+### Auth & Models
+
+#### reload_auth
+
+Re-read `auth.json` after external credential changes:
+
+```json
+{"type": "reload_auth"}
+```
+
+#### oauth_login
+
+Start an OAuth login for a provider id (asynchronous):
+
+```json
+{"type": "oauth_login", "providerId": "openai"}
+```
+
+The response confirms the start (`data.started`); progress arrives as `oauth_login_status` events until the flow resolves.
+
+#### refresh_models
+
+Force-refresh dynamic provider model lists (local servers, gateways):
+
+```json
+{"type": "refresh_models"}
 ```
 
 ### Queue Modes
@@ -788,6 +887,78 @@ Response:
 
 The current session name is available via `get_state` in the `sessionName` field. To set the initial name when starting RPC mode, pass `--name <name>` or `-n <name>` to the `a-coder-cli --mode rpc` process.
 
+### Session Management
+
+#### list_sessions
+
+List all known sessions (all projects):
+
+```json
+{"type": "list_sessions"}
+```
+
+Response `data.sessions` entries carry `path`, `id`, `cwd`, `name`, `parentSessionPath`, `created`, `modified`, `messageCount`, `firstMessage` (ISO date strings).
+
+#### get_sessions_status
+
+Status of the runtime's background (detached) sessions:
+
+```json
+{"type": "get_sessions_status"}
+```
+
+#### abort_session
+
+Abort an agent turn in a background session:
+
+```json
+{"type": "abort_session", "sessionPath": "/path/to/session.jsonl"}
+```
+
+#### import_jsonl
+
+Import a session from a JSONL file and switch to it (a `session_before_switch` extension handler can cancel):
+
+```json
+{"type": "import_jsonl", "inputPath": "/tmp/imported.jsonl"}
+```
+
+#### export_jsonl
+
+Export the current session as JSONL:
+
+```json
+{"type": "export_jsonl", "outputPath": "/tmp/session.jsonl"}
+```
+
+#### rewind
+
+Rewind file edits via the file-history snapshot log (`steps` defaults to 1):
+
+```json
+{"type": "rewind", "steps": 1}
+```
+
+Errors when file history is disabled or no snapshots exist.
+
+#### clear_conversation
+
+Reset the current session's conversation context (the RPC equivalent of `/clear`):
+
+```json
+{"type": "clear_conversation"}
+```
+
+#### set_entry_label
+
+Set or clear a `/tree` label on an entry:
+
+```json
+{"type": "set_entry_label", "entryId": "abc123", "label": "good approach"}
+```
+
+Omitting `label` (or `null`) clears it.
+
 ### Commands
 
 #### get_commands
@@ -868,6 +1039,18 @@ Response `data`: the full office snapshot — `coworkers` (roster records with f
 
 `office_send` logs the user message, applies hold directives, and starts a huddle drive in the background — the response returns immediately; watch `office_huddle` events for replies. `office_stop` bumps the drive epoch and aborts in-flight turns.
 
+#### office_errand_save / office_errand_run / office_errand_delete
+
+Manage errands (unattended tasks given to coworkers):
+
+```json
+{"type": "office_errand_save", "errand": { "coworkerId": "atlas", "name": "CI triage", "prompt": "Triage CI failures", "schedule": { "kind": "every", "minutes": 30 }, "continuity": false, "delivery": "huddle", "huddleId": "dm:atlas" }}
+{"type": "office_errand_run", "errandId": "e1"}
+{"type": "office_errand_delete", "errandId": "e1"}
+```
+
+Schedules: `{ "kind": "every", "minutes": N }`, `{ "kind": "daily", "time": "HH:MM" }`, or `{ "kind": "once", "at": <epoch-ms> }`. `delivery` is `"dm"` (coworker's DM huddle) or `"huddle"` (with `huddleId`); `continuity: true` runs in the coworker's canonical session so it keeps history between runs. `save` creates (or updates when `id` is set) and returns the stored errand; `run` dispatches it; activity arrives via `office_activity` events.
+
 #### office_respond
 
 ```json
@@ -875,6 +1058,20 @@ Response `data`: the full office snapshot — `coworkers` (roster records with f
 ```
 
 Answers a supervised prompt surfaced in the snapshot (approval or question). `null` denies/cancels.
+
+### Composio Apps
+
+#### composio_list_apps / composio_connect_app / composio_disconnect_app
+
+Requires Composio configured (settings `composio.apiKey` or `COMPOSIO_API_KEY`):
+
+```json
+{"type": "composio_list_apps"}
+{"type": "composio_connect_app", "slug": "github"}
+{"type": "composio_disconnect_app", "connectedAccountId": "..."}
+```
+
+`composio_list_apps` responds with `data.apps` (the apps gallery); `composio_connect_app` returns connection/OAuth info; `composio_disconnect_app` removes a connection by its account id.
 
 ### Cron
 
@@ -936,6 +1133,10 @@ Events are streamed to stdout as JSON lines during agent operation. Events do NO
 | `office_huddle` | A huddle's log changed (new messages, drive running state) |
 | `cron_update` | Cron jobs changed (created, edited, fired) — full job list snapshot |
 | `cron_run` | A cron run started or finished (`event: "started"|"finished"`, `run: CronRun`) — feeds activity inboxes |
+| `workflows_update` | Workflow-run snapshots changed (full runs list; the desktop workflows view follows it) |
+| `office_activity` | Office activity feed entry (errand/huddle activity for the Activity inbox) |
+| `background_processes_update` | Background process list changed (bash background jobs and their states) |
+| `oauth_login_status` | OAuth login progress for `oauth_login`: `phase` is `started`, `browser`, `device_code`, `progress`, `success`, or `error` |
 
 ### agent_start
 

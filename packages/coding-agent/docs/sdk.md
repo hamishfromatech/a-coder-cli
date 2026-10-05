@@ -2,7 +2,7 @@
 
 # SDK
 
-The SDK provides programmatic access to pi's agent capabilities. Use it to embed a-coder-cli in other applications, build custom interfaces, or integrate with automated workflows.
+The SDK provides programmatic access to the agent capabilities of a-coder-cli. Use it to embed a-coder-cli in other applications, build custom interfaces, or integrate with automated workflows.
 
 **Example use cases:**
 - Build a custom UI (web, desktop, mobile)
@@ -500,7 +500,7 @@ Specify which built-in tools to enable:
 - `noTools: "builtin"` disables default built-ins while keeping extension and custom tools enabled
 - `excludeTools` disables specific built-in, extension, or custom tool names after any `tools` allowlist is applied
 
-The `edit` tool returns `details.diff` for Pi's TUI display and `details.patch` as a standard unified patch for SDK consumers.
+The `edit` tool returns `details.diff` for the TUI display and `details.patch` as a standard unified patch for SDK consumers.
 
 ```typescript
 import { createAgentSession } from "@earendil-works/pi-coding-agent";
@@ -517,7 +517,7 @@ const { session } = await createAgentSession({
 
 // Disable one tool while keeping the rest available
 const { session } = await createAgentSession({
-  excludeTools: ["ask_question"],
+  excludeTools: ["ask_user_question"],
 });
 ```
 
@@ -846,7 +846,7 @@ const { session } = await createAgentSession({
 
 Settings load from two locations and merge:
 1. Global: `~/.a-coder/cli/agent/settings.json`
-2. Project: `<cwd>/.pi/settings.json`
+2. Project: `<cwd>/.a-coder-cli/settings.json`
 
 Project overrides global. Nested objects merge keys. Setters modify global settings by default.
 

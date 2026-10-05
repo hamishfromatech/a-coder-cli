@@ -1,14 +1,14 @@
 # Sessions
 
-Pi saves conversations as sessions so you can continue work, branch from earlier turns, and revisit previous paths.
+a-coder-cli saves conversations as sessions so you can continue work, branch from earlier turns, and revisit previous paths.
 
 ## Session Storage
 
 Sessions auto-save to `~/.a-coder/cli/agent/sessions/`, organized by working directory. Each session is a JSONL file with a tree structure.
 
 ```bash
-pi -c                  # Continue most recent session
-pi -r                  # Browse and select from past sessions
+a-coder-cli -c           # Continue most recent session
+a-coder-cli -r           # Browse and select from past sessions
 a-coder-cli --no-session        # Ephemeral mode; do not save
 a-coder-cli --name "my task"    # Set session display name at startup
 a-coder-cli --session <path|id> # Use a specific session file or partial session ID
@@ -36,7 +36,7 @@ For the JSONL file format and SessionManager API, see [Session Format](session-f
 
 ## Resuming and Deleting Sessions
 
-`/resume` opens an interactive session picker for the current project. `pi -r` opens the same picker at startup.
+`/resume` opens an interactive session picker for the current project. `a-coder-cli -r` opens the same picker at startup.
 
 In the picker you can:
 
@@ -64,7 +64,7 @@ a-coder-cli --name "Refactor auth module"
 a-coder-cli --name "CI audit" -p "Review this build failure"
 ```
 
-Named sessions are easier to find in `/resume` and `pi -r`.
+Named sessions are easier to find in `/resume` and `a-coder-cli -r`.
 
 ## Branching with `/tree`
 

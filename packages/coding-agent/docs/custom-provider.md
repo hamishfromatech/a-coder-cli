@@ -352,7 +352,12 @@ interface OAuthLoginCallbacks {
     message: string;
     options: { id: string; label: string }[];
   }): Promise<string | undefined>;
+
+  // Stable installation ID for flows that require one (optional)
+  getDeviceId?(): string;
 }
+
+Flows that need a stable installation identifier (the way "Sign in with ChatGPT" sends an agent host ID) read it from `getDeviceId()`; the CLI and desktop supply the `deviceId` from settings. The pi-ai `OAuthAuth.login(interaction, options)` signature carries the same optional `LoginOptions` when you implement providers at the pi-ai layer instead of the registry layer.
 ```
 
 ### OAuthCredentials

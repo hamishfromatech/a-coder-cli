@@ -1,6 +1,8 @@
 # Custom Models
 
-Add custom providers and models (Ollama, vLLM, LM Studio, proxies) via `~/.a-coder/cli/agent/models.json`.
+Add custom providers and models (proxies, custom endpoints, extra models) via `~/.a-coder/cli/agent/models.json`.
+
+> **Note:** the common local servers — Ollama, LM Studio, llama.cpp server, Unsloth, vLLM, and SGLang — are built-in keyless providers with dynamic `/v1/models` discovery. You only need `models.json` for other servers, extra model entries on the same server, or custom context/pricing overrides. See [providers.md](providers.md#keyless-local-model-servers).
 
 ## Table of Contents
 

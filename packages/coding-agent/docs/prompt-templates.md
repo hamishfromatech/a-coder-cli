@@ -6,7 +6,7 @@ Prompt templates are Markdown snippets that expand into full prompts. Type `/nam
 
 ## Locations
 
-Pi loads prompt templates from:
+a-coder-cli loads prompt templates from:
 
 - Global: `~/.a-coder/cli/agent/prompts/*.md`
 - Project: `.a-coder-cli/prompts/*.md` (only after the project is trusted)

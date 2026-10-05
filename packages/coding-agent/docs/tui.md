@@ -250,10 +250,14 @@ const md = new Markdown(
   "# Title\n\nSome **bold** text",
   1,        // paddingX
   1,        // paddingY
-  theme     // MarkdownTheme (see below)
+  theme,    // MarkdownTheme (see below)
+  { color: (t) => t },  // optional text style
+  { transform: (markdown, availableWidth) => markdown }  // optional MarkdownOptions
 );
 md.setText("Updated markdown");
 ```
+
+Renders LaTeX math (`$...$`, `$$...$$`) as Unicode and, through the optional `transform` option, supports markdown rewriting before render — this is what powers the chat's Mermaid diagrams and extension-registered transformers.
 
 ### Image
 
@@ -267,6 +271,11 @@ const image = new Image(
   { maxWidthCells: 80, maxHeightCells: 24 }
 );
 ```
+
+### MouseRegion, VStack / HStack, and ScrollView
+
+- `MouseRegion` wraps a component and adds pointer behavior (`click`, `press`, `drag`, `move`, `wheel`) without changing its rendering — used by collapsible thinking blocks and clickable links in the chat.
+- `VStack` / `HStack` allocate constrained layout regions (`basis`, `grow`, `shrink`, `minSize`, `maxSize`, `visible`) inside `TuiAltScreen` layout roots; `ScrollView` owns scrolling for one region with end-following, scrollbar, and OSC 133 prompt-jump support. See [@earendil-works/pi-tui README](../../tui/README.md) for the full layout API.
 
 ## Keyboard Input
 

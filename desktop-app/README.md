@@ -1,8 +1,8 @@
 # A-Coder Desktop
 
 <p align="center">
-  <a href="https://pi.dev">
-    <img alt="a-coder-cli logo" src="https://pi.dev/logo-auto.svg" width="128">
+  <a href="https://github.com/hamishfromatech/a-coder-cli">
+    <img alt="a-coder-cli logo" src="../website/assets/logo-trans.png" width="128">
   </a>
 </p>
 
@@ -11,11 +11,19 @@ A cross-platform desktop wrapper around the `a-coder-cli` engine, built with Tau
 ## Features
 
 - **Desktop GUI** — Native desktop app for macOS, Windows, and Linux
-- **Project Selection** — Browse and open projects from your workspace
-- **Chat Interface** — Conversational AI interface with markdown support
-- **Settings Management** — Configure providers, models, and preferences
+- **Project Selection** — Browse and open projects from your workspace; tabbed sessions with a resume quick-switcher
+- **Chat Interface** — Conversational AI interface with markdown rendering, images, and tool-approval bars
+- **Model Picker** — All providers and models with thinking-level presets (up to xhigh); `/login` OAuth flows (ChatGPT, Anthropic, Grok, Kimi, and more) handled in-app and also settable via the account section
+- **Settings Management** — Full settings editor: provider/model defaults, thinking presets, theme, keybinding overrides, keybinding editor, permission-policy rules, package resources (skills/prompts/themes/workflows), custom providers, Composio, and voice
+- **MCP Servers Editor** — Add, edit, enable/disable, and remove MCP servers (stdio/http/sse); fresh installs come with the built-in chrome-devtools server pre-configured (isolated profile, telemetry off)
+- **Local Model Servers** — Configure addresses for Ollama, LM Studio, llama.cpp, Unsloth, vLLM, and SGLang; models are discovered live with real context windows
+- **Computer Use** — Toggle the opt-in `computer` desktop-control tool with diagnostics (driver detection, permission status) in the Computer Use panel
+- **Mobile Access** — Serve the workspace over the network for phone access, with a QR code to connect; sessions sync live
+- **Scheduled Tasks (Cron)** — Create and manage scheduled and event-triggered prompts with run history
+- **Activity Inbox** — Pending approvals, run outcomes, and failures in one place with an unread badge
 - **Session Persistence** — Chat history saved across app restarts
-- **Auto-Update** — Automatic updates on launch (opt-in)
+- **Auto-Update** — Checks for a newer CLI release on startup and can self-install (autoUpdateOnStartup setting; the desktop UI itself updates from GitHub Releases)
+- **Voice Mode** — Speech-to-text and text-to-speech through your own OpenAI-compatible endpoints
 
 ## User Guide
 
@@ -38,18 +46,29 @@ A cross-platform desktop wrapper around the `a-coder-cli` engine, built with Tau
 
 | Shortcut | Action |
 |----------|--------|
-| `Cmd+L` / `Ctrl+L` | Open model selector |
-| `Cmd+N` / `Ctrl+N` | New session |
-| `Cmd+Shift+S` | Open settings |
+| `Cmd+P` / `Ctrl+P` | Open model picker |
+| `Cmd+K` / `Ctrl+K` | Command palette |
+| `Cmd+,` / `Ctrl+,` | Open settings |
+| `Cmd+F` / `Ctrl+F` | Find in page |
+| `Cmd+Shift+O` / `Ctrl+Shift+O` | Resume a session (quick-switcher) |
+| `Cmd+Shift+T` / `Ctrl+Shift+T` | Reopen last closed tab |
+| `Cmd+Shift+H` / `Ctrl+Shift+H` | Open home dashboard |
 
 ### Settings
 
-Access settings via the gear icon or `Cmd+,` / `Ctrl+,`:
+Access settings via the gear icon or `Cmd+,` / `Ctrl+,`. Panels include:
 
-- **Provider** — Choose your AI provider (Anthropic, OpenAI, etc.)
-- **Model** — Select the model to use
-- **Thinking Level** — Set reasoning depth (off, minimal, low, medium, high)
-- **Theme** — Light or dark mode
+- **Provider / Model** — Default provider and model, thinking presets (off through xhigh), thinking-level per-model mapping
+- **Appearance & Behavior** — Theme (light/dark), keybinding overrides, sound on completion
+- **MCP Servers** — Editor for the `mcpServers` list; fresh installs include the chrome-devtools server pre-seeded
+- **Local Models** — Base URLs for keyless local servers (Ollama, LM Studio, llama.cpp, Unsloth, vLLM, SGLang)
+- **Computer Use** — Enable the `computer` tool (with a disclaimer flow) and view diagnostics
+- **Mobile Access** — Serve and pair for phone access
+- **Voice** — Speech-to-text / text-to-speech endpoints
+- **Updates** — CLI auto-update mode
+- **Packages** — Skills, prompt templates, themes, and workflow sources
+- **Permission Policies** — Extra rules for `auto` mode
+- **Custom Providers** — `models.json` provider entries and their sync with the CLI
 
 Custom providers configured in `~/.a-coder/cli/agent/models.json` sync automatically with the desktop app.
 
@@ -79,9 +98,9 @@ Download the latest release from [GitHub Releases](https://github.com/hamishfrom
 From the monorepo root:
 
 ```bash
-npm install
-npm run build:workspace
-npm --prefix desktop-app run tauri dev
+npm install --ignore-scripts
+npm run build
+npm --prefix desktop-app run tauri:dev
 ```
 
 ## Troubleshooting
@@ -91,7 +110,7 @@ npm --prefix desktop-app run tauri dev
 **Problem:** The app fails to launch because it cannot find `a-coder-cli`.
 
 **Solution:**
-1. Install `a-coder-cli` globally: `npm install -g --ignore-scripts @earendil-works/pi-coding-agent`
+1. Install `a-coder-cli` globally — either the one-line install script from the repo README or `npm install -g --ignore-scripts @earendil-works/pi-coding-agent`
 2. Ensure it's on your `PATH`: run `a-coder-cli --version` in a terminal
 3. Restart the desktop app
 
@@ -121,9 +140,9 @@ If using a version manager (nvm, fnm, mise), ensure the Node.js installation wit
 
 **Solution:**
 1. Check logs:
-   - **macOS:** `~/Library/Logs/com.a-coder.desktop/`
-   - **Windows:** `%APPDATA%\a-coder-desktop\logs\`
-   - **Linux:** `~/.local/state/a-coder-desktop/logs/`
+   - **macOS:** `~/Library/Logs/works.earendil.a-coder-desktop/`
+   - **Windows:** `%APPDATA%\works.earendil.a-coder-desktop\logs\`
+   - **Linux:** `~/.local/state/works.earendil.a-coder-desktop/logs/`
 2. Ensure Rust and Node.js versions meet requirements
 3. Try a clean reinstall, removing config directories
 
@@ -195,9 +214,9 @@ If using a version manager (nvm, fnm, mise), ensure the Node.js installation wit
 From the monorepo root:
 
 ```bash
-npm install
-npm run build:workspace
-npm --prefix desktop-app run tauri dev
+npm install --ignore-scripts
+npm run build
+npm --prefix desktop-app run tauri:dev
 ```
 
 ### Building

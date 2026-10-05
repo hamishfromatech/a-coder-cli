@@ -8,7 +8,6 @@ Run `/hotkeys` to see the active shortcuts for the main editor and application.
 
 ## Assign keybindings
 
-s
 After editing `keybindings.json`, run `/reload` in a-coder-cli to apply the changes without restarting the session.
 
 Map each action identifier to one key or a list of keys:
@@ -123,6 +122,13 @@ In fullscreen mode, these actions control the transcript and take precedence ove
 
 | Keybinding id | Default | Description |
 |--------|---------|-------------|
+| `app.planMode.toggle` | `ctrl+alt+p` | Toggle plan mode |
+| `app.subagents.view` | `shift+down` | Open the background sub-agent viewer |
+| `app.backgrounds.view` | `ctrl+shift+b` | Open the background process viewer |
+| `app.tasks.view` | `down` | Open the running tasks viewer (background processes and sub-agents) |
+| `app.tasks.toggle` | `ctrl+o` | Expand or collapse the inline task list |
+| `app.bash.background` | `ctrl+b` | Background the currently running bash command |
+| `app.transcript.toggle` | `ctrl+shift+t` | Toggle transcript overlay |
 | `app.interrupt` | `escape` | Cancel / abort |
 | `app.clear` | `ctrl+c` | Clear editor (first) / exit (second) |
 | `app.exit` | `ctrl+d` | Exit (when editor empty) |
@@ -130,7 +136,7 @@ In fullscreen mode, these actions control the transcript and take precedence ove
 | `app.editor.external` | `ctrl+g` | Open in external editor (`externalEditor`, `$VISUAL`, `$EDITOR`, Notepad on Windows, or `nano` elsewhere) |
 | `app.clipboard.pasteImage` | `ctrl+v` (`alt+v` on Windows and WSL) | Paste files on macOS, images, or text from clipboard |
 
-On native Windows, `app.suspend` has no default because Windows terminals do not support Unix job control. If you assign it manually, Pi shows a status message instead of suspending. WSL uses the normal `ctrl+z` and `fg` behavior.
+On native Windows, `app.suspend` has no default because Windows terminals do not support Unix job control. If you assign it manually, a-coder-cli shows a status message instead of suspending. WSL uses the normal `ctrl+z` and `fg` behavior. Windows and WSL also use alternate defaults for a few actions (undo `ctrl+z`, find `ctrl+f`, follow-up `ctrl+q`) — run `/hotkeys` to see the values active in your session.
 
 ### Sessions
 
@@ -163,7 +169,7 @@ On native Windows, `app.suspend` has no default because Windows terminals do not
 
 | Keybinding id | Default | Description |
 |--------|---------|-------------|
-| `app.tools.expand` | `ctrl+o` | Collapse or expand tool output |
+| `app.tools.expand` | `ctrl+shift+o` | Collapse or expand tool output |
 | `app.message.copy` | `ctrl+x` | Copy the selected message in `/tree`; in fullscreen mode, copy the active selection when `fullscreenCopyOnSelect` is `false`; otherwise copy the last assistant message. On OAuth sign-in screens, copy the sign-in URL |
 | `app.message.followUp` | `alt+enter` (`ctrl+q` on Windows and WSL) | Queue follow-up message |
 | `app.message.dequeue` | `alt+up` (`alt+q` on Windows and WSL) | Restore queued messages to editor |

@@ -12,9 +12,9 @@
 
 ---
 
-A-Coder CLI is a self-extensible terminal coding harness. Adapt it to your workflows, not the other way around, without having to fork and modify a-coder-cli internals. Extend it with TypeScript [Extensions](#extensions), [Skills](#skills), [Prompt Templates](#prompt-templates), and [Themes](#themes). Put your extensions, skills, prompt templates, and themes in [Pi Packages](#pi-packages) and share them with others via npm or git.
+A-Coder CLI is a self-extensible terminal coding harness. Adapt it to your workflows, not the other way around, without having to fork and modify a-coder-cli internals. Extend it with TypeScript [Extensions](#extensions), [Skills](#skills), [Prompt Templates](#prompt-templates), and [Themes](#themes). Put your extensions, skills, prompt templates, and themes in [Packages](#packages) and share them with others via npm or git.
 
-A-Coder CLI ships with powerful defaults and adds sub-agents, plan mode, multi-agent workflows, a virtual office, and scheduled tasks on top. You can also ask a-coder-cli to build what you want or install a third-party pi package that matches your workflow.
+A-Coder CLI ships with powerful defaults and adds sub-agents, plan mode, multi-agent workflows, a virtual office, and scheduled tasks on top. You can also ask a-coder-cli to build what you want or install a third-party package that matches your workflow.
 
 A-Coder CLI runs in four modes: interactive, print or JSON, RPC for process integration, and an SDK for embedding in your own apps.
 
@@ -53,7 +53,7 @@ I regularly publish my own `pi-mono` work sessions here:
   - [Skills](#skills)
   - [Extensions](#extensions)
   - [Themes](#themes)
-  - [Pi Packages](#pi-packages)
+  - [Packages](#packages)
 - [Programmatic Usage](#programmatic-usage)
 - [Philosophy](#philosophy)
 - [CLI Reference](#cli-reference)
@@ -80,17 +80,17 @@ Authenticate with an API key:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-pi
+a-coder-cli
 ```
 
 Or use your existing subscription:
 
 ```bash
-pi
+a-coder-cli
 /login  # Then select provider
 ```
 
-Then just talk to the agent. By default, a-coder-cli gives the model four tools: `read`, `write`, `edit`, and `bash`. The model uses these to fulfill your requests. Add capabilities via [skills](#skills), [prompt templates](#prompt-templates), [extensions](#extensions), or [pi packages](#pi-packages).
+Then just talk to the agent. By default, a-coder-cli enables `read`, `bash`, `edit`, `write`, `plan_mode`, `task_*` (a persistent task graph), `memory`, `team_*`/`send_message` (agent teams), and `ask_user_question`; `grep`, `find`, `ls`, `todo`, `computer`, and `skill` are registered but off until needed — enable them via the `defaultTools` setting or `--tools`. The model uses these tools to fulfill your requests. Add capabilities via [skills](#skills), [prompt templates](#prompt-templates), [extensions](#extensions), or [packages](#packages).
 
 **Platform notes:** [Windows](docs/windows.md) | [Termux (Android)](docs/termux.md) | [tmux](docs/tmux.md) | [Terminal setup](docs/terminal-setup.md) | [Shell aliases](docs/shell-aliases.md)
 
@@ -102,14 +102,17 @@ For each built-in provider, a-coder-cli maintains a list of tool-capable models,
 
 **Subscriptions:**
 - Anthropic Claude Pro/Max
-- OpenAI ChatGPT Plus/Pro (Codex)
+- ChatGPT (OpenAI: Sign in with ChatGPT, or Codex with ChatGPT Plus/Pro)
 - GitHub Copilot
+- xAI (SuperGrok / X Premium)
+- Kimi For Coding
 
 **API keys:**
 - Anthropic
 - Ant Ling
 - OpenAI
 - Azure OpenAI
+- Baseten
 - DeepSeek
 - NVIDIA NIM
 - Google Gemini
@@ -128,14 +131,21 @@ For each built-in provider, a-coder-cli maintains a list of tool-capable models,
 - OpenCode Zen
 - OpenCode Go
 - Hugging Face
+- Inception Labs (Mercury diffusion models)
 - Fireworks
 - Together AI
 - Kimi For Coding
-- MiniMax
+- Moonshot AI (Global and China)
+- MiniMax (Global and China)
+- Qwen Token Plan (Global, China, Individual)
+- OpenAdapter
 - Xiaomi MiMo
 - Xiaomi MiMo Token Plan (China)
 - Xiaomi MiMo Token Plan (Amsterdam)
 - Xiaomi MiMo Token Plan (Singapore)
+- Radius gateway
+
+**Keyless local model servers** (no key; models discovered from the running server): Ollama, Ollama Cloud, LM Studio, llama.cpp server, Unsloth, vLLM (`http://localhost:8000/v1`), and SGLang (`http://localhost:30000/v1`). Set addresses with `/login <provider>` or the `localProviders.*` settings / `VLLM_BASE_URL` / `SGLANG_BASE_URL` / `UNSLOTH_BASE_URL` env vars.
 
 See [docs/providers.md](docs/providers.md) for detailed setup instructions.
 
@@ -211,7 +221,7 @@ See `/hotkeys` for the full list. Customize via `~/.a-coder/cli/agent/keybinding
 | Escape twice | Open `/tree` |
 | Ctrl+L | Open model selector |
 | Ctrl+P / Shift+Ctrl+P | Cycle scoped models forward/backward |
-| Shift+Tab | Cycle thinking level |
+| Shift+Tab | Cycle permission mode |
 | Ctrl+O | Collapse/expand tool output |
 | Ctrl+T | Collapse/expand thinking blocks |
 
@@ -239,12 +249,12 @@ Sessions are stored as JSONL files with a tree structure. Each entry has an `id`
 Sessions auto-save to `~/.a-coder/cli/agent/sessions/` organized by working directory.
 
 ```bash
-pi -c                  # Continue most recent session
-pi -r                  # Browse and select from past sessions
-a-coder-cli --no-session        # Ephemeral mode (don't save)
-a-coder-cli --name "my task"    # Set session display name at startup
+a-coder-cli -c             # Continue most recent session
+a-coder-cli -r             # Browse and select from past sessions
+a-coder-cli --no-session   # Ephemeral mode (don't save)
 a-coder-cli --session <path|id> # Use specific session file or ID
 a-coder-cli --fork <path|id>    # Fork specific session file or ID into a new session
+a-coder-cli --name "my task"    # Set session display name at startup
 ```
 
 Use `/session` in interactive mode to see the current session ID before reusing it with `--session <id>` or `--fork <id>`.
@@ -284,7 +294,7 @@ Use `/settings` to modify common options, or edit JSON files directly:
 | Location | Scope |
 |----------|-------|
 | `~/.a-coder/cli/agent/settings.json` | Global (all projects) |
-| `.pi/settings.json` | Project (overrides global) |
+| `.a-coder-cli/settings.json` | Project (overrides global) |
 
 See [docs/settings.md](docs/settings.md) for all options.
 
@@ -327,7 +337,7 @@ Disable context file loading with `--no-context-files` (or `-nc`).
 
 ### System Prompt
 
-Replace the default system prompt with `.a-coder-cli/SYSTEM.md` (project) or `~/.a-coder/cli/agent/SYSTEM.md` (global). Append without replacing via `APPEND_SYSTEM.md`.
+Replace the default system prompt with `.a-coder-cli/SYSTEM.md` (project) or `~/.a-coder/cli/agent/SYSTEM.md` (global). Append without replacing via `APPEND_SYSTEM.md` in either directory.
 
 ---
 
@@ -343,7 +353,7 @@ Review this code for bugs, security issues, and performance problems.
 Focus on: {{focus}}
 ```
 
-Place in `~/.a-coder/cli/agent/prompts/`, `.a-coder-cli/prompts/`, or a [pi package](#pi-packages) to share with others. See [docs/prompt-templates.md](docs/prompt-templates.md).
+Place in `~/.a-coder/cli/agent/prompts/`, `.a-coder-cli/prompts/` (project), or a [package](#packages) to share with others. See [docs/prompt-templates.md](docs/prompt-templates.md).
 
 ### Skills
 
@@ -359,7 +369,7 @@ Use this skill when the user asks about X.
 2. Then that
 ```
 
-Place in `~/.a-coder/cli/agent/skills/`, `~/.agents/skills/`, `.a-coder/skills/`, or `.agents/skills/` (from `cwd` up through parent directories) or a [pi package](#pi-packages) to share with others. See [docs/skills.md](docs/skills.md).
+Place in `~/.a-coder/cli/agent/skills/`, `.a-coder-cli/skills/` (project), or `.agents/skills/` (project, from `cwd` up through parent directories). Cross-product roots are also read: `~/.agents/skills/`, `~/.a-coder/skills/`, and `~/.claude/skills/` (a same-named CLI skill wins). Or use a [package](#packages) to share with others. See [docs/skills.md](docs/skills.md).
 
 ### Extensions
 
@@ -391,15 +401,15 @@ The default export can also be `async`. a-coder-cli waits for async extension fa
 - Games while waiting (yes, Doom runs)
 - ...anything you can dream up
 
-Place in `~/.a-coder/cli/agent/extensions/`, `.a-coder/extensions/`, or a [pi package](#pi-packages) to share with others. See [docs/extensions.md](docs/extensions.md) and [examples/extensions/](examples/extensions/).
+Place in `~/.a-coder/cli/agent/extensions/`, `.a-coder-cli/extensions/` (project), or a [package](#packages) to share with others. See [docs/extensions.md](docs/extensions.md) and [examples/extensions/](examples/extensions/).
 
 ### Themes
 
 Built-in: `dark`, `light`. Themes hot-reload: modify the active theme file and a-coder-cli immediately applies changes.
 
-Place in `~/.a-coder/cli/agent/themes/`, `.a-coder/themes/`, or a [pi package](#pi-packages) to share with others. See [docs/themes.md](docs/themes.md).
+Place in `~/.a-coder/cli/agent/themes/`, `.a-coder-cli/themes/` (project), or a [package](#packages) to share with others. See [docs/themes.md](docs/themes.md).
 
-### Pi Packages
+### Packages
 
 Bundle and share extensions, skills, prompts, and themes via npm or git. Find packages on [npmjs.com](https://www.npmjs.com/search?q=keywords%3Api-package) or [Discord](https://discord.com/channels/1456806362351669492/1457744485428629628).
 
@@ -434,7 +444,7 @@ Create a package by adding a `a-coder-cli` key to `package.json`:
 
 ```json
 {
-  "name": "my-pi-package",
+  "name": "my-a-coder-package",
   "keywords": ["pi-package"],
   "pi": {
     "extensions": ["./extensions"],
@@ -489,28 +499,16 @@ See [docs/rpc.md](docs/rpc.md) for the protocol.
 
 ## Philosophy
 
-Pi is aggressively extensible so it doesn't have to dictate your workflow. Features that other tools bake in can be built with [extensions](#extensions), [skills](#skills), or installed from third-party [pi packages](#pi-packages). This keeps the core minimal while letting you shape a-coder-cli to fit how you work.
+A-Coder CLI is aggressively extensible so it doesn't have to dictate your workflow. Anything the built-in tools or commands don't cover can be built with [extensions](#extensions), [skills](#skills), or installed from third-party [packages](#packages).
 
-**No MCP.** Build CLI tools with READMEs (see [Skills](#skills)), or build an extension that adds MCP support. [Why?](https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/)
-
-**No sub-agents.** There's many ways to do this. Spawn a-coder-cli instances via tmux, or build your own with [extensions](#extensions), or install a package that does it your way.
-
-**No permission popups.** Run in a container, or build your own confirmation flow with [extensions](#extensions) inline with your environment and security requirements.
-
-**No plan mode.** Write plans to files, or build it with [extensions](#extensions), or install a package.
-
-**No built-in to-dos.** They confuse models. Use a TODO.md file, or build your own with [extensions](#extensions).
-
-**No background bash.** Use tmux. Full observability, direct interaction.
-
-Read the [blog post](https://mariozechner.at/posts/2025-11-30-pi-coding-agent/) for the full rationale.
+The core ships with what nearly every coding session needs — a strong default toolset, a persistent task graph, memory that survives sessions, agent teams, MCP servers, plan mode, and a permission layer — while remaining small enough to reshape completely. Features other agents bake in as one-size-fits-all behavior, you can replace, disable, or extend here without forking the CLI.
 
 ---
 
 ## CLI Reference
 
 ```bash
-pi [options] [@files...] [messages...]
+a-coder-cli [options] [@files...] [messages...]
 ```
 
 ### Package Commands
@@ -539,12 +537,12 @@ a-coder-cli config                    # Enable/disable package resources
 | `-p`, `--print` | Print response and exit |
 | `--mode json` | Output all events as JSON lines (see [docs/json.md](docs/json.md)) |
 | `--mode rpc` | RPC mode for process integration (see [docs/rpc.md](docs/rpc.md)) |
-| `--export <in> [out]` | Export session to HTML |
+| `--export <file>` | Export current session to HTML and exit |
 
 In print mode, a-coder-cli also reads piped stdin and merges it into the initial prompt:
 
 ```bash
-cat README.md | pi -p "Summarize this text"
+cat README.md | a-coder-cli -p "Summarize this text"
 ```
 
 ### Model Options
@@ -579,7 +577,7 @@ cat README.md | pi -p "Summarize this text"
 | `--no-builtin-tools`, `-nbt` | Disable built-in tools by default but keep extension/custom tools enabled |
 | `--no-tools`, `-nt` | Disable all tools by default |
 
-Available built-in tools: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`
+Built-in tools: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`, `todo`, `plan_mode`, `memory`, `ask_user_question`, `task_create`, `task_get`, `task_list`, `task_update`, `team_create`, `team_delete`, `send_message`, `skill`, and the opt-in `computer`. Default-enabled: `read`, `bash`, `edit`, `write`, `plan_mode`, `memory`, `ask_user_question`, the `task_*` set, and the `team_*`/`send_message` pair.
 
 ### Resource Options
 
@@ -614,22 +612,22 @@ Combine `--no-*` with explicit flags to load exactly what you need, ignoring set
 Prefix files with `@` to include in the message:
 
 ```bash
-pi @prompt.md "Answer this"
-pi -p @screenshot.png "What's in this image?"
-pi @code.ts @test.ts "Review these files"
+a-coder-cli @prompt.md "Answer this"
+a-coder-cli -p @screenshot.png "What's in this image?"
+a-coder-cli @code.ts @test.ts "Review these files"
 ```
 
 ### Examples
 
 ```bash
 # Interactive with initial prompt
-pi "List all .ts files in src/"
+a-coder-cli "List all .ts files in src/"
 
 # Non-interactive
-pi -p "Summarize this codebase"
+a-coder-cli -p "Summarize this codebase"
 
 # Non-interactive with piped stdin
-cat README.md | pi -p "Summarize this text"
+cat README.md | a-coder-cli -p "Summarize this text"
 
 # Named one-shot session
 a-coder-cli --name "release audit" -p "Audit this repository"
@@ -650,7 +648,7 @@ a-coder-cli --models "claude-*,gpt-4o"
 a-coder-cli --tools read,grep,find,ls -p "Review the code"
 
 # Disable one extension or built-in tool while keeping the rest available
-a-coder-cli --exclude-tools ask_question
+a-coder-cli --exclude-tools ask_user_question
 
 # High thinking level
 a-coder-cli --thinking high "Solve this complex problem"
@@ -669,18 +667,19 @@ a-coder-cli --thinking high "Solve this complex problem"
 | `A_CODER_CLI_ANALYTICS` | Override the opt-in `enableAnalytics` PostHog events. `1`/`true`/`yes` force-enable (still requires a `trackingId`), `0`/`false`/`no` force-disable. Offline mode always disables analytics |
 | `AI_AGENT` | Set to `a-coder-cli` by the CLI and RPC entry points so generic tooling can attribute child processes to A-Coder |
 
-| `PI_CACHE_RETENTION` | Set to `long` for extended prompt cache (Anthropic: 1h, OpenAI: 24h) |
 | `VISUAL`, `EDITOR` | Fallback external editor for Ctrl+G when `externalEditor` is unset; defaults to Notepad on Windows and `nano` elsewhere |
+| `A_CODER_DESKTOP_BINARY` | Custom A-Coder Desktop binary to launch with `--desktop` |
+| `A_CODER_DESKTOP_DEV` | Set to `1` to launch the desktop app via `npm run tauri:dev` from a monorepo checkout |
 
 Commands run by the LLM-callable bash tool also receive current session metadata:
 
 | Variable | Description |
 |----------|-------------|
-| `PI_SESSION_ID` | Current session ID |
-| `PI_SESSION_FILE` | Absolute session JSONL path; unset for ephemeral sessions |
-| `PI_PROVIDER` | Currently selected model provider |
-| `PI_MODEL` | Currently selected model ID |
-| `PI_REASONING_LEVEL` | Current effective reasoning level |
+| `A_CODER_SESSION_ID` | Current session ID |
+| `A_CODER_SESSION_FILE` | Absolute session JSONL path; unset for ephemeral sessions |
+| `A_CODER_PROVIDER` | Currently selected model provider |
+| `A_CODER_MODEL` | Currently selected model ID |
+| `A_CODER_REASONING_LEVEL` | Current effective reasoning level |
 
 These values are resolved when each command starts. See [Environment Variables](docs/environment-variables.md#bash-tool-session-environment) for semantics, examples, and custom-tool opt-out.
 

@@ -7,6 +7,7 @@ Pi supports subscription-based providers via OAuth and API key providers via env
 - [Subscriptions](#subscriptions)
 - [API Keys](#api-keys)
 - [Auth File](#auth-file)
+- [Keyless Local Model Servers](#keyless-local-model-servers)
 - [Cloud Providers](#cloud-providers)
 - [Custom Providers](#custom-providers)
 - [Resolution Order](#resolution-order)
@@ -15,9 +16,11 @@ Pi supports subscription-based providers via OAuth and API key providers via env
 
 Use `/login` in interactive mode, then select a provider:
 
-- ChatGPT Plus/Pro (Codex)
+- ChatGPT (OpenAI): "Sign in with ChatGPT" on the `openai` provider, or ChatGPT Plus/Pro through Codex
 - Claude Pro/Max
 - GitHub Copilot
+- xAI (SuperGrok / X Premium)
+- Kimi For Coding
 - OpenRouter (OAuth-minted API key billed from OpenRouter credits)
 
 Use `/logout` to clear credentials. Tokens are stored in `~/.a-coder/cli/agent/auth.json` and auto-refresh when expired. OpenRouter instead mints a user-controlled API key that does not expire automatically.
@@ -28,9 +31,15 @@ Use `/logout` to clear credentials. Tokens are stored in `~/.a-coder/cli/agent/a
 - The authorization creates a user-controlled OpenRouter API key billed from your OpenRouter credits
 - `OPENROUTER_API_KEY` remains available through **Use an API key**
 
+### Sign in with ChatGPT
+
+- `/login openai` uses the OpenAI provider's OAuth flow: a browser PKCE sign-in on a fixed redirect port (1455) that exchanges the token for a model API key
+- When the browser cannot reach this machine's loopback (for example over SSH), paste the redirect URL or code to finish; if another pending login or the Codex CLI holds the port, the sign-in fails with a clear port-in-use error instead of racing another listener
+- Requires a stable installation ID (`deviceId` in settings.json); the TUI and RPC clients create it automatically
+
 ### OpenAI Codex
 
-- Requires ChatGPT Plus or Pro subscription
+- Requires ChatGPT Plus or Pro subscription; browser login by default, with a device-code mode for headless machines
 - Officially endorsed by OpenAI: [Codex for OSS](https://developers.openai.com/community/codex-for-oss)
 
 ### Claude Pro/Max
@@ -84,6 +93,15 @@ pi
 | Xiaomi MiMo Token Plan (China) | `XIAOMI_TOKEN_PLAN_CN_API_KEY` | `xiaomi-token-plan-cn` |
 | Xiaomi MiMo Token Plan (Amsterdam) | `XIAOMI_TOKEN_PLAN_AMS_API_KEY` | `xiaomi-token-plan-ams` |
 | Xiaomi MiMo Token Plan (Singapore) | `XIAOMI_TOKEN_PLAN_SGP_API_KEY` | `xiaomi-token-plan-sgp` |
+| Moonshot AI (Global) | `MOONSHOT_API_KEY` | `moonshotai` |
+| Moonshot AI (China) | `MOONSHOT_API_KEY` | `moonshotai-cn` |
+| Qwen Token Plan (Global) | `QWEN_TOKEN_PLAN_API_KEY` | `qwen-token-plan` |
+| Qwen Token Plan (China) | `QWEN_TOKEN_PLAN_CN_API_KEY` | `qwen-token-plan-cn` |
+| Qwen Token Plan (Individual) | `QWEN_TOKEN_PLAN_API_KEY` | `qwen-token-plan-individual` |
+| Inception Labs | `INCEPTION_API_KEY` | `inception` |
+| Baseten | `BASETEN_API_KEY` | `baseten` |
+| OpenAdapter | `OPENADAPTER_API_KEY` | `openadapter` |
+| Radius gateway | configured via the Radius login flow | `radius` |
 
 Reference for environment variables and `auth.json` keys: [`const envMap`](https://github.com/earendil-works/pi-mono/blob/main/packages/ai/src/env-api-keys.ts) in [`packages/ai/src/env-api-keys.ts`](https://github.com/earendil-works/pi-mono/blob/main/packages/ai/src/env-api-keys.ts).
 
@@ -156,6 +174,22 @@ The `key` field supports command execution, environment interpolation, and liter
   ```
 
 OAuth credentials are also stored here after `/login` and managed automatically.
+
+## Keyless Local Model Servers
+
+Seven built-in entries talk to OpenAI-compatible servers on your own machine with no API key. Models are discovered dynamically from the server's `/v1/models` (with served context windows where the server reports them) and refreshed on a two-minute cadence while the server is up; a down server is silent rather than an error.
+
+| Provider | Default base URL | Base URL env | Settings key |
+|----------|------------------|--------------|--------------|
+| Ollama | `http://localhost:11434/v1` | `OLLAMA_BASE_URL` | `localProviders.ollamaBaseUrl` |
+| Ollama Cloud | `https://ollama.com/v1` (hosted) | `OLLAMA_API_KEY` | — |
+| LM Studio | `http://localhost:1234/v1` | `LM_STUDIO_BASE_URL` | `localProviders.lmStudioBaseUrl` |
+| llama.cpp server | `http://localhost:8080/v1` | `LLAMACPP_BASE_URL` | `localProviders.llamaCppBaseUrl` |
+| Unsloth | `http://localhost:8888/v1` | `UNSLOTH_BASE_URL` | `localProviders.unslothBaseUrl` |
+| vLLM | `http://localhost:8000/v1` | `VLLM_BASE_URL` | `localProviders.vllmBaseUrl` |
+| SGLang | `http://localhost:30000/v1` | `SGLANG_BASE_URL` | `localProviders.sglangBaseUrl` |
+
+Start a server (`vllm serve <model>`, `sglang.launch_server`, `lmstudio`, ...) and the models appear in `/model` within two minutes, or run `/login <provider>` to set a custom base URL (no key needed) and refresh immediately. The desktop Settings "Local models" section edits the same `localProviders.*` settings. Model IDs match the server's served names, for example `--model "vllm/meta-llama/Llama-3.1-8B-Instruct"`.
 
 ## Cloud Providers
 
@@ -252,7 +286,7 @@ export CLOUDFLARE_ACCOUNT_ID=...
 a-coder-cli --provider cloudflare-workers-ai --model "@cf/moonshotai/kimi-k2.6"
 ```
 
-Pi automatically sets `x-session-affinity` for [prefix caching](https://developers.cloudflare.com/workers-ai/features/prompt-caching/) discounts.
+a-coder-cli automatically sets `x-session-affinity` for [prefix caching](https://developers.cloudflare.com/workers-ai/features/prompt-caching/) discounts.
 
 ### Google Vertex AI
 

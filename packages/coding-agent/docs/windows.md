@@ -1,6 +1,6 @@
 # Windows Setup
 
-Pi requires a bash shell on Windows. Checked locations (in order):
+a-coder-cli requires a bash shell on Windows. Checked locations (in order):
 
 1. Custom path from `~/.a-coder/cli/agent/settings.json`
 2. Git Bash (`C:\Program Files\Git\bin\bash.exe`)
@@ -12,6 +12,8 @@ For most users, [Git for Windows](https://git-scm.com/download/win) is sufficien
 
 ```json
 {
-  "shellPath": "C:\\cygwin64\\bin\\bash.exe"
+  "shellPath": "C:/cygwin64/bin/bash.exe"
 }
 ```
+
+`shellPath` supports a leading `~` for the home directory.

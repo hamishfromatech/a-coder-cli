@@ -23,9 +23,12 @@ Both share the same engine — the agent runtime, tools, and unified multi-provi
 
 ### Highlights
 
-- **Multi-provider** — OpenAI, Anthropic, Google, OpenRouter, Ollama, and custom OpenAI-compatible providers; switch models per session or hotkey cycle.
-- **Sessions** — automatic persistence, resume, tree navigation, forking, sharing, and compaction.
-- **Extensions, skills, and prompt templates** — TypeScript extensions that register tools and commands; skills as loadable playbooks; reusable prompt templates.
+- **Multi-provider** — OpenAI (API key and Sign in with ChatGPT), Anthropic, Google, OpenRouter, Kimi, xAI, and custom OpenAI-compatible providers; switch models per session or hotkey cycle.
+- **Local model servers** — keyless OpenAI-compatible servers: Ollama, LM Studio, llama.cpp, Unsloth, vLLM, and SGLang. Models are discovered live from the server with real context windows; `/login <provider>` or Settings sets the address.
+- **Desktop control** — an opt-in `computer` tool (macOS, Windows, Linux) that the agent can capture screens, click, type, and scroll with, permission-aware and with destructive actions hard-blocked.
+- **Browser automation** — a pre-configured chrome-devtools MCP server on fresh installs: navigate, inspect, screenshot, and drive Chrome with an isolated per-session profile and telemetry disabled, zero setup.
+- **Sessions** — automatic persistence, resume, tree navigation, forking, sharing, and compaction; a persistent `MEMORY.md` carries notes across sessions.
+- **Extensions, skills, and prompt templates** — TypeScript extensions that register tools, commands, markdown transformers, and request-header hooks; skills as loadable playbooks; reusable prompt templates.
 - **Workflows** — saved multi-agent JavaScript scripts that orchestrate background subagents; trigger by including the keyword **ultracode** in a prompt, authoring with the `run_workflow` tool, or running a saved workflow as its own slash command. Interrupted runs resume from persisted state.
 - **Your Office** — a virtual office where you hire AI coworkers that take errands, join huddles, and are visible working in 2D or 3D.
 - **Scheduled tasks (cron)** — run prompts on a schedule (`every:30m`, `daily:09:00`, one-shot) or on events (`on:turn-end`, `on:commit`); every run is recorded, inspectable, and one click to continue. Unattended runs land in continuity sessions with automatic tool permissions.

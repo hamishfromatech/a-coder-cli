@@ -14,7 +14,7 @@ Where `<path>` is the working directory with `/` replaced by `-`.
 
 Sessions can be removed by deleting their `.jsonl` files under `~/.a-coder/cli/agent/sessions/`.
 
-Pi also supports deleting sessions interactively from `/resume` (select a session and press `Ctrl+D`, then confirm). When available, a-coder-cli uses the `trash` CLI to avoid permanent deletion.
+a-coder-cli also supports deleting sessions interactively from `/resume` (select a session and press `Ctrl+D`, then confirm). When available, a-coder-cli uses the `trash` CLI to avoid permanent deletion.
 
 ## Session Version
 

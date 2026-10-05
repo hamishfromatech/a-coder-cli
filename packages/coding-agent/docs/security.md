@@ -1,26 +1,26 @@
 # Security
 
-Pi is a local coding agent. It runs with the permissions of the user account that starts it, and it treats files writable by that user as inside the same local trust boundary.
+a-coder-cli is a local coding agent. It runs with the permissions of the user account that starts it, and it treats files writable by that user as inside the same local trust boundary.
 
 ## Project Trust
 
 Project trust controls whether a-coder-cli loads project-local settings, resources, packages, and extensions. It is not a sandbox and it does not restrict what the model can ask tools to do after you start working in a directory.
 
-Pi considers a project to have resources that require trust when it finds any of these from the current working directory:
+a-coder-cli considers a project to have resources that require trust when it finds any of these from the current working directory:
 
-- `.pi/settings.json`
+- `.a-coder-cli/settings.json`
 - `.a-coder-cli/extensions`, `.a-coder-cli/skills`, `.a-coder-cli/prompts`, or `.a-coder-cli/themes`
-- `.pi/SYSTEM.md` or `.pi/APPEND_SYSTEM.md`
+- `.a-coder-cli/SYSTEM.md` or `.a-coder-cli/APPEND_SYSTEM.md`
 - project `.agents/skills` in the current directory or an ancestor directory
 
-A bare `.pi` directory does not count as a project resource that requires trust.
+A bare `.a-coder-cli` directory does not count as a project resource that requires trust.
 
 When an interactive session starts in a project with resources that require trust and no saved decision for the current directory or a parent directory, a-coder-cli follows `defaultProjectTrust` from global settings. The default value is `"ask"`, which asks whether to trust the project when UI is available. Saved decisions are stored by canonical directory in `~/.a-coder/cli/agent/trust.json`, and the closest saved decision on the current or parent path applies before the global default.
 
 Trusting a project allows a-coder-cli to load project resources that require trust, including:
 
-- `.pi/settings.json`
-- `.pi` resources such as extensions, skills, prompt templates, themes, and system prompt files
+- `.a-coder-cli/settings.json`
+- `.a-coder-cli` resources such as extensions, skills, prompt templates, themes, and system prompt files
 - missing project packages configured through project settings
 - project-local extensions and project package-managed extensions
 
@@ -32,9 +32,9 @@ Non-interactive modes (`-p`, `--mode json`, and `--mode rpc`) do not show a trus
 
 Pi does not include a built-in sandbox. Built-in tools can read files, write files, edit files, and run shell commands with the permissions of the a-coder-cli process. Extensions are TypeScript modules that run with the same permissions. Package installs, shell commands, language servers, test commands, and other developer tools behave as ordinary local processes.
 
-This is intentional. Pi is designed to operate on local source trees, invoke project toolchains, and integrate with the user's existing development environment. A partial in-process sandbox would be easy to misunderstand as a security boundary while still depending on the host shell, filesystem, package managers, credentials, and extension code. Real isolation needs to come from the operating system or a virtualization/container boundary.
+This is intentional. The CLI is designed to operate on local source trees, invoke project toolchains, and integrate with the user's existing development environment. A partial in-process sandbox would be easy to misunderstand as a security boundary while still depending on the host shell, filesystem, package managers, credentials, and extension code. Real isolation needs to come from the operating system or a virtualization/container boundary.
 
-Project trust is only an input-loading guard. It prevents a repository from silently changing pi's settings or extensions before you approve it. It does not make untrusted code, untrusted prompts, or untrusted model output safe. Prompt injection from repository files, comments, documentation, context files, or build output is expected local-agent risk and cannot be reliably prevented by pi.
+Project trust is only an input-loading guard. It prevents a repository from silently changing a-coder-cli's settings or extensions before you approve it. It does not make untrusted code, untrusted prompts, or untrusted model output safe. Prompt injection from repository files, comments, documentation, context files, or build output is expected local-agent risk and cannot be reliably prevented by a-coder-cli.
 
 ## Running Untrusted or Unmonitored Work
 
@@ -54,6 +54,6 @@ If you bind-mount a host workspace read/write, writes from inside the container 
 
 ## Reporting Security Issues
 
-To report a security issue, follow the repository [Security Policy](https://github.com/earendil-works/pi-mono/blob/main/SECURITY.md). Do not open a public issue for security-sensitive reports.
+To report a security issue, follow the repository [Security Policy](../../SECURITY.md). Do not open a public issue for security-sensitive reports.
 
 Expected local-agent behavior, lack of a built-in sandbox, prompt injection from untrusted content, and behavior of user-installed extensions or skills are generally outside the security boundary unless the report demonstrates a real privilege-boundary bypass or shows how a-coder-cli grants access that the local user did not already have.

@@ -1,18 +1,19 @@
 # Terminal Setup
 
-Pi uses the [Kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/) for reliable modifier key detection. Most modern terminals support this protocol, but some require configuration.
+a-coder-cli uses the [Kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/) for reliable modifier key detection. Most modern terminals support this protocol, but some require configuration.
 
 ## Capability Overrides
 
-Pi auto-detects OSC 8 hyperlinks, inline image protocols, and truecolor. If detection fails behind a terminal proxy or multiplexer, use these advanced overrides:
+a-coder-cli auto-detects OSC 8 hyperlinks, inline image protocols, and truecolor. If detection fails behind a terminal proxy or multiplexer, use these advanced overrides:
 
-| Capability | Environment variable | JSON setting |
-|------------|----------------------|--------------|
-| OSC 8 hyperlinks | `A_CODER_CLI_HYPERLINKS=1\|0\|auto` | `terminal.hyperlinks: true\|false\|"auto"` |
-| Inline images | `A_CODER_CLI_IMAGE_PROTOCOL=kitty\|iterm2\|none\|auto` | `terminal.images: "kitty"\|"iterm2"\|false\|"auto"` |
-| Truecolor | `A_CODER_CLI_TRUE_COLOR=1\|0\|auto` | `terminal.trueColor: true\|false\|"auto"` |
+| Capability | Environment variable (pi-tui) | JSON setting |
+|------------|-------------------------------|--------------|
+| OSC 8 hyperlinks | `PI_HYPERLINKS=1\|0` | `terminal.hyperlinks: true\|false` |
+| Inline images | `PI_IMAGE_PROTOCOL=kitty\|iterm2\|none` | `terminal.images: "kitty"\|"iterm2"\|false` |
+| Truecolor | `PI_TRUE_COLOR=1\|0` | `terminal.trueColor: true\|false` |
+| Reduced motion | `A_CODER_CLI_REDUCED_MOTION=1` | `terminal.reducedMotion: true` |
 
-Settings take precedence over environment variables; unset or `auto` preserves detection. Only force capabilities supported by the complete terminal path, since unsupported escape sequences can corrupt rendering.
+JSON settings take precedence over these environment variables; unset preserves detection (the env vars are the pi-tui library's own probes, no `auto` value). Only force capabilities supported by the complete terminal path, since unsupported escape sequences can corrupt rendering.
 
 ## Kitty, iTerm2
 
@@ -38,7 +39,7 @@ Older Claude Code versions may have added this Ghostty mapping:
 keybind = shift+enter=text:\n
 ```
 
-That mapping sends a raw linefeed byte. Inside pi, that is indistinguishable from `Ctrl+J`, so tmux and a-coder-cli no longer see a real `shift+enter` key event.
+That mapping sends a raw linefeed byte. Inside a-coder-cli, that is indistinguishable from `Ctrl+J`, so tmux and a-coder-cli no longer see a real `shift+enter` key event.
 
 If Claude Code 2.x or newer is the only reason you added that mapping, you can remove it, unless you want to use Claude Code in tmux, where it still requires that Ghostty mapping.
 

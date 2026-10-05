@@ -73,16 +73,24 @@ These variables are read by A-Coder itself:
 
 | Variable | Description |
 |----------|-------------|
-| `A_CODER_CODING_AGENT_DIR` | Override the config directory; default is `~/.pi/agent` |
-| `A_CODER_CODING_AGENT_SESSION_DIR` | Override session storage; overridden by `--session-dir` |
-| `A_CODER_PACKAGE_DIR` | Override the package directory, useful for Nix/Guix store paths |
-| `A_CODER_OFFLINE` | Disable startup network operations, including update checks, package updates, and install/update telemetry |
-| `A_CODER_SKIP_VERSION_CHECK` | Disable the `pi.dev` latest-version request |
-| `A_CODER_TELEMETRY` | Override install/update telemetry and provider attribution headers: `1`/`true`/`yes` or `0`/`false`/`no` |
-| `A_CODER_CACHE_RETENTION` | Set to `long` for extended provider prompt caching where supported |
-| `A_CODER_SHARE_VIEWER_URL` | Override the base URL used by `/share` |
-| `A_CODER_HARDWARE_CURSOR` | Set to `1` to show the hardware cursor; see [Terminal setup](terminal-setup.md) |
+| `A_CODER_CLI_CODING_AGENT_DIR` | Override the config directory; default is `~/.a-coder/cli/agent` |
+| `A_CODER_CLI_CODING_AGENT_SESSION_DIR` | Override session storage; overridden by `--session-dir` |
+| `A_CODER_CLI_PACKAGE_DIR` | Override the package directory, useful for Nix/Guix store paths |
+| `A_CODER_CLI_OFFLINE` | Disable startup network operations, including update checks, package updates, and install/update telemetry and analytics |
+| `A_CODER_CLI_SKIP_VERSION_CHECK` | Disable the GitHub releases latest-version request |
+| `A_CODER_LATEST_VERSION_URL` | Override the URL queried for the latest a-coder-cli release |
+| `A_CODER_CLI_TELEMETRY` | Override install/update telemetry and provider attribution headers: `1`/`true`/`yes` or `0`/`false`/`no` |
+| `A_CODER_CLI_ANALYTICS` | Force the opt-in PostHog usage analytics on (`1`) or off (`0`); requires a `trackingId` to enable |
+| `A_CODER_CLI_SHARE_VIEWER_URL` | Override the base URL used by `/share` |
+| `A_CODER_CLI_HARDWARE_CURSOR` | Set to `1` to show the hardware cursor; see [Terminal setup](terminal-setup.md) |
+| `A_CODER_CLI_FILE_HISTORY_RETENTION_DAYS` | Days of file-history (undo snapshots) to keep; default 30 |
+| `A_CODER_CLI_COMPUTER_USE` | Set to `1` to enable the `computer` desktop-control tool (mirrors the `computerUse` setting) |
+| `A_CODER_CUA_DRIVER_CMD` | Override how the `computer` tool launches the external cua-driver binary |
+| `A_CODER_DESKTOP_BINARY` | Custom A-Coder Desktop binary launched by `--desktop` |
+| `A_CODER_DESKTOP_DEV` | Set to `1` to launch the desktop app via a monorepo `tauri:dev` checkout |
+| `PI_HYPERLINKS` / `PI_IMAGE_PROTOCOL` / `PI_TRUE_COLOR` | Terminal-capability overrides from the pi-tui library: OSC 8 hyperlinks (`1`/`0`), inline images (`kitty`/`iterm2`/`none`), truecolor (`1`/`0`) |
+| `AI_AGENT` | Set to `a-coder-cli` by the CLI and RPC entry points so child tooling can attribute itself; set it yourself when embedding via the SDK |
 | `VISUAL`, `EDITOR` | External editor fallback when `externalEditor` is unset |
-| `HTTP_PROXY`, `HTTPS_PROXY` | Proxy outbound HTTP requests |
+| `HTTP_PROXY`, `HTTPS_PROXY` | Proxy outbound HTTP requests (see the `httpProxy` setting for pi-managed clients) |
 
 Provider credentials such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and cloud-provider configuration are listed in [Providers](providers.md#environment-variables-or-auth-file).
