@@ -23,6 +23,9 @@ describe("DefaultResourceLoader", () => {
 		cwd = join(tempDir, "project");
 		mkdirSync(agentDir, { recursive: true });
 		mkdirSync(cwd, { recursive: true });
+		// Existing-install config: disables the fresh-install default MCP seeding
+		// so factory/tool-count assertions stay deterministic about inlines.
+		writeFileSync(join(agentDir, "settings.json"), "{}");
 		// The loader's auto-discovery also reads cross-product skill roots in the
 		// real home (~/.agents/skills, ~/.a-coder/skills, ~/.claude/skills). Point
 		// HOME at the temp dir so the suite is hermetic — otherwise duplicate

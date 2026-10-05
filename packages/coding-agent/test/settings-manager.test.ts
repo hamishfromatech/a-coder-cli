@@ -652,4 +652,63 @@ describe("SettingsManager", () => {
 			expect(manager.getShellPath()).toBe(homedir());
 		});
 	});
+
+	describe("fresh-install chrome-devtools MCP seed", () => {
+		it("seeds the built-in browser-control server into a fresh agent dir and persists it", async () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+			const servers = manager.getMcpServers();
+			expect(servers).toHaveLength(1);
+			expect(servers[0]?.name).toBe("chrome-devtools");
+			expect(servers[0]?.transport).toBe("stdio");
+			const args = servers[0]?.args ?? [];
+			expect(args).toContain("chrome-devtools-mcp@latest");
+			expect(args).toContain("--isolated");
+			expect(args).toContain("--no-usage-statistics");
+			expect(args).toContain("--no-performance-crux");
+
+			// The seed persists immediately: later partial saves must not drop it.
+			await manager.flush();
+			const persisted = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8"));
+			expect(persisted.mcpServers).toHaveLength(1);
+			expect(persisted.mcpServers[0].name).toBe("chrome-devtools");
+		});
+
+		it("survives a subsequent unrelated settings save", async () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+			manager.setHttpIdleTimeoutMs(90_000);
+			await manager.flush();
+
+			const persisted = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8"));
+			expect(persisted.httpIdleTimeoutMs).toBe(90_000);
+			expect(JSON.stringify(persisted.mcpServers)).toContain("chrome-devtools");
+		});
+
+		it("stays removed once the user deletes the entry", async () => {
+			SettingsManager.create(projectDir, agentDir);
+			await SettingsManager.create(projectDir, agentDir).flush();
+			await SettingsManager.create(projectDir, agentDir).flush();
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.getMcpServers()).toHaveLength(1);
+			manager.setMcpServers([]);
+			await manager.flush();
+
+			const reloaded = SettingsManager.create(projectDir, agentDir);
+			expect(reloaded.getMcpServers()).toEqual([]);
+			await reloaded.setHttpIdleTimeoutMs(60_000); // unrelated save must not resurrect it
+			await reloaded.flush();
+			expect(SettingsManager.create(projectDir, agentDir).getMcpServers()).toEqual([]);
+		});
+
+		it("does not seed when a settings file already exists", () => {
+			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ theme: "dark" }));
+			const manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.getMcpServers()).toEqual([]);
+		});
+
+		it("does not seed project-scope settings", () => {
+			SettingsManager.create(projectDir, agentDir);
+			expect(existsSync(join(projectDir, ".a-coder-cli", "settings.json"))).toBe(false);
+		});
+	});
 });

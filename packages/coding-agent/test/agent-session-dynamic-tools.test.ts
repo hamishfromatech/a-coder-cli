@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getModel } from "@earendil-works/pi-ai/compat";
@@ -18,6 +18,9 @@ describe("AgentSession dynamic tool registration", () => {
 		tempDir = join(tmpdir(), `pi-dynamic-tool-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		agentDir = join(tempDir, "agent");
 		mkdirSync(agentDir, { recursive: true });
+		// Existing-install config: disables the fresh-install default MCP seeding
+		// so inline-factory indices stay deterministic.
+		writeFileSync(join(agentDir, "settings.json"), "{}");
 	});
 
 	afterEach(() => {

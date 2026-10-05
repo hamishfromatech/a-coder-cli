@@ -113,6 +113,32 @@ export interface WarningSettings {
 }
 
 export type McpServerSettings = McpServerConfig;
+
+/**
+ * Default MCP server seeded into every fresh installation (global settings
+ * created before the user configures any MCP servers): Chrome browser control
+ * via chrome-devtools-mcp over npx, with a throwaway per-session profile
+ * (`--isolated`) and the server's usage statistics and Performance CrUX
+ * lookups disabled. Windows spawns npx through `cmd /c` (npx is a .cmd shim
+ * the MCP SDK's `shell: false` spawn cannot execute directly).
+ */
+export function defaultChromeDevtoolsMcpServer(): McpServerConfig {
+	const launcher = process.platform === "win32" ? ["cmd", "/c", "npx"] : ["npx"];
+	const [commandOrUrl, ...commandPrefix] = launcher;
+	return {
+		name: "chrome-devtools",
+		transport: "stdio",
+		commandOrUrl: commandOrUrl ?? "npx",
+		args: [
+			...commandPrefix,
+			"-y",
+			"chrome-devtools-mcp@latest",
+			"--isolated",
+			"--no-usage-statistics",
+			"--no-performance-crux",
+		],
+	};
+}
 /**
  * How the codemode tool presents tools while it is active.
  * - `on`: declared tools that scripts can call get a note on calling them from scripts appended to
@@ -583,6 +609,20 @@ export class SettingsManager {
 		});
 
 		if (!content) {
+			// Fresh installation: no global settings file yet. Seed the built-in
+			// browser-control MCP server so Chrome/DevTools tooling works out of
+			// the box, and persist the seed immediately — settings saves merge
+			// only MODIFIED fields onto the stored file, so an in-memory-only
+			// seed would be lost on the first partial save and the default
+			// would vanish mid-session. The persisted entry is user-owned from
+			// then on: deleting it in settings sticks. An existing file (even
+			// empty) is left untouched so pre-existing and customized installs
+			// are not affected.
+			if (scope === "global") {
+				const seeded: Settings = { mcpServers: [defaultChromeDevtoolsMcpServer()] };
+				storage.withLock(scope, (current) => (current ? undefined : JSON.stringify(seeded, null, 2)));
+				return seeded;
+			}
 			return {};
 		}
 		const settings = JSON.parse(stripBom(content));

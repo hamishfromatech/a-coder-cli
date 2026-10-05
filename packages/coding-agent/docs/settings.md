@@ -326,3 +326,26 @@ Project settings (`.pi/settings.json`) override global settings. Nested objects 
   "compaction": { "enabled": true, "reserveTokens": 8192 }
 }
 ```
+
+## Built-in MCP server
+
+Fresh installations (a global settings file that does not exist yet) are seeded with one MCP server so
+browser control works out of the box:
+
+```json
+{
+  "name": "chrome-devtools",
+  "transport": "stdio",
+  "commandOrUrl": "npx",
+  "args": ["-y", "chrome-devtools-mcp@latest", "--isolated", "--no-usage-statistics", "--no-performance-crux"]
+}
+```
+
+- `--isolated` — every session gets a throwaway Chrome profile (no shared cache or lock files between runs).
+- `--no-usage-statistics` — disables the server's Google Analytics usage reporting.
+- `--no-performance-crux` — disables CrUX (real-user-metrics) API lookups.
+
+The seed is written to `~/.a-coder/cli/agent/settings.json` on first run; from then on it is an ordinary
+entry — edit or remove it in the desktop app's MCP servers editor or in the file itself. (Windows installs
+spawn it as `cmd /c npx …`.) Existing settings files are never modified: a file that exists (even `{}`)
+disables seeding for that installation.
