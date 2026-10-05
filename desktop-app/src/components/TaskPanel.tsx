@@ -14,10 +14,14 @@ export interface TaskItem {
 	blocks: string[];
 	blockedBy: string[];
 	metadata?: Record<string, unknown>;
+	/** ISO timestamp of the completion transition (newer snapshots carry it). */
+	completedAt?: string;
 }
 
 interface TaskDetails {
 	tasks?: TaskItem[];
+	/** Older completed tasks auto-archived beyond the live window (count only). */
+	archivedCount?: number;
 }
 
 const SNAPSHOT_TOOLS = new Set(["task_create", "task_list", "task_update"]);
@@ -39,11 +43,27 @@ export function TaskPanel() {
 		return [];
 	}, [messages]);
 
+	const archivedCount = useMemo<number>(() => {
+		for (let i = messages.length - 1; i >= 0; i--) {
+			const msg = messages[i];
+			if (msg.role !== "toolResult") continue;
+			const result = msg as ToolResultMessage;
+			if (!SNAPSHOT_TOOLS.has(result.toolName)) continue;
+			const details = result.details as TaskDetails | undefined;
+			return details?.archivedCount ?? 0;
+		}
+		return 0;
+	}, [messages]);
+
 	const [collapsed, setCollapsed] = useState(false);
 
-	if (tasks.length === 0) return null;
+	if (tasks.length === 0 && archivedCount === 0) return null;
 
-	const sorted = tasks.slice().sort((a, b) => Number(a.id) - Number(b.id));
+	// Frontier-first: in_progress, pending, then the completed tail.
+	const rank = (t: TaskItem): number => (t.status === "in_progress" ? 0 : t.status === "pending" ? 1 : 2);
+	const sorted = tasks
+		.slice()
+		.sort((a, b) => rank(a) - rank(b) || Number(a.id) - Number(b.id));
 	const done = sorted.filter((t) => t.status === "completed").length;
 	const inProgress = sorted.find((t) => t.status === "in_progress");
 	const percent = Math.round((done / sorted.length) * 100);
@@ -63,8 +83,11 @@ export function TaskPanel() {
 						<span className="min-w-0 flex-1 truncate text-2xs font-semibold uppercase tracking-wide text-pi-text-secondary">
 							Task Graph
 						</span>
+						{archivedCount > 0 && (
+							<span className="font-mono pi-tabular text-3xs text-pi-text-faint">+{archivedCount} archived</span>
+						)}
 						<span className="font-mono pi-tabular text-3xs text-pi-text-faint">
-							{done}/{sorted.length}
+							{done}/{tasks.length}
 						</span>
 						{running && collapsed && (
 							<span className="pi-dot h-1 w-1 rounded-full bg-pi-accent" />

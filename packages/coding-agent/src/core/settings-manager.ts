@@ -307,6 +307,7 @@ export interface Settings {
 	websocketConnectTimeoutMs?: number; // WebSocket connect/open handshake timeout in milliseconds; 0 disables it
 	localProviders?: LocalProviderSettings;
 	computerUse?: boolean; // Enable the experimental `computer` tool (desktop control via cua-driver). Default: false; env A_CODER_CLI_COMPUTER_USE=1 also enables.
+	taskRetentionDays?: number; // Task-graph dirs untouched this many days are removed at startup (0 keeps them forever). Default: 30.
 	tuiMode?: TuiMode; // default: "fullscreen"
 	fullscreenExitOutput?: FullscreenExitOutput; // default: "transcript"; no effect in regular TUI mode
 	fullscreenScrollbar?: ScrollViewScrollbar; // default: "auto"; no effect in regular TUI mode
@@ -1624,6 +1625,17 @@ export class SettingsManager {
 		this.globalSettings.computerUse = enabled;
 		this.markModified("computerUse");
 		this.save();
+	}
+
+	/**
+	 * Task-graph directory retention: dirs untouched for this many days are
+	 * removed once per process at session startup. 0 (or unset → default) —
+	 * see DEFAULT_TASK_RETENTION_DAYS. 0 disables GC entirely.
+	 */
+	getTaskRetentionDays(): number {
+		const value = this.settings.taskRetentionDays;
+		if (value === undefined) return 30;
+		return typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.floor(value) : 30;
 	}
 
 	getThinkingBudgets(): ThinkingBudgetsSettings | undefined {

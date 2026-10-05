@@ -637,6 +637,14 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 				widget: "computerUse",
 			},
 			{
+				path: "taskRetentionDays",
+				label: "Task graph history",
+				hint: "Delete task-graph directories untouched for this many days at startup (0 keeps everything).",
+				kind: "number",
+				min: 0,
+				max: 365,
+			},
+			{
 				path: "doubleEscapeAction",
 				label: "Pressing Escape twice with an empty prompt",
 				hint: "What should happen when you press Escape twice in a row?",

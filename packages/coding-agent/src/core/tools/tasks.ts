@@ -24,9 +24,10 @@ import {
 	deleteTask,
 	getTask,
 	getTaskListId,
-	listTasks,
+	listTasksWithArchive,
 	type Task,
 	updateTask,
+	VISIBLE_COMPLETED_LIMIT,
 } from "../tasks/task-store.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 
@@ -69,7 +70,17 @@ const TASK_GET_SCHEMA = Type.Object(
 	{ additionalProperties: false },
 );
 
-const TASK_LIST_SCHEMA = Type.Object({}, { additionalProperties: false });
+const TASK_LIST_SCHEMA = Type.Object(
+	{
+		include_archived: Type.Optional(
+			Type.Boolean({
+				description:
+					"Also list the archived completed history (read-only rows auto-archived past the recent-completed window). Default false.",
+			}),
+		),
+	},
+	{ additionalProperties: false },
+);
 
 const TASK_UPDATE_SCHEMA = Type.Object(
 	{
@@ -111,10 +122,30 @@ export type TaskListInput = Static<typeof TASK_LIST_SCHEMA>;
 export type TaskUpdateInput = Static<typeof TASK_UPDATE_SCHEMA>;
 
 export interface TaskToolDetails {
-	/** Full task-list snapshot after the mutation, for live UI panels. */
+	/** Live task-list snapshot after the mutation: open tasks plus the most recent completed ones. */
 	tasks: Task[];
+	/** How many completed tasks sit in the archived history (not listed in tasks). */
+	archivedCount?: number;
 	/** The task this call created/updated/deleted (when applicable). */
 	taskId?: string;
+}
+
+// ─── Helpers (original set continues below) ──────────────────────────────
+
+const LIFECYCLE_NOTE = `The graph is a work frontier: completed tasks become history. Only the ${VISIBLE_COMPLETED_LIMIT} most recent completed tasks stay in the live graph; older ones auto-archive to read-only history. task_get still resolves archived ids (marked archived); task_list include_archived=true lists them; task_update refuses to mutate them.`;
+
+/**
+ * Bounded snapshot for tool results: the live dir already holds open tasks
+ * plus the most recent completed ones; archived history rides as a count so
+ * results and UI stay small.
+ */
+async function snapshotTaskList(taskListId: string, taskId?: string): Promise<TaskToolDetails> {
+	const { live, archived } = await listTasksWithArchive(taskListId);
+	return {
+		tasks: live,
+		archivedCount: archived.length || undefined,
+		...(taskId ? { taskId } : {}),
+	};
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────
@@ -131,9 +162,11 @@ function textResult(text: string, details: TaskToolDetails) {
 /**
  * Compact per-task line with blocker ids filtered down to *unresolved*
  * blockers only (a completed upstream task doesn't still block anyone).
+ * `resolvedIds` preset is for archive listings whose blockers resolve against
+ * live + archive combined.
  */
-function formatTaskLines(tasks: Task[]): string[] {
-	const resolvedIds = new Set(tasks.filter((t) => t.status === "completed").map((t) => t.id));
+function formatTaskLines(tasks: Task[], resolvedIdsPreset?: Set<string>): string[] {
+	const resolvedIds = resolvedIdsPreset ?? new Set(tasks.filter((t) => t.status === "completed").map((t) => t.id));
 	return tasks
 		.slice()
 		.sort((a, b) => Number(a.id) - Number(b.id))
@@ -216,7 +249,8 @@ export function createTaskCreateToolDefinition(): ToolDefinition<typeof TASK_CRE
 		name: "task_create",
 		label: "Task Create",
 		description:
-			"Create one or more tasks in the session's persistent task graph. Pass a tasks array to create a full task list in one call. Tasks survive restarts and conversation clears, and support dependencies via blocks/blockedBy (wire them afterwards with task_update). Use proactively for 3+ step work, multi-step plans, and any task list the user would want to see across sessions.",
+			"Create one or more tasks in the session's persistent task graph. Pass a tasks array to create a full task list in one call. Tasks survive restarts and conversation clears, and support dependencies via blocks/blockedBy (wire them afterwards with task_update). Use proactively for 3+ step work, multi-step plans, and any task list the user would want to see across sessions. " +
+			"Lifecycle: completed tasks are history — the most recent ones stay visible, older completed tasks auto-archive to read-only history.",
 		promptSnippet: "Maintain a persistent task graph for multi-session work",
 		parameters: TASK_CREATE_SCHEMA,
 		async execute(_toolCallId, input: TaskCreateInput, _signal?, _onUpdate?, rawContext?) {
@@ -234,14 +268,14 @@ export function createTaskCreateToolDefinition(): ToolDefinition<typeof TASK_CRE
 				});
 				createdIds.push(id);
 			}
-			const tasks = await listTasks(taskListId);
+			const snapshot = await snapshotTaskList(taskListId);
 			const text =
 				createdIds.length === 1
 					? `Task #${createdIds[0]} created: ${input.tasks[0].subject}`
 					: `${createdIds.length} tasks created: ${createdIds
 							.map((id, i) => `#${id}: ${input.tasks[i].subject}`)
 							.join(", ")}`;
-			return textResult(text, { tasks, taskId: createdIds.length === 1 ? createdIds[0] : undefined });
+			return textResult(text, { ...snapshot, taskId: createdIds.length === 1 ? createdIds[0] : undefined });
 		},
 		renderCall(args, theme, context) {
 			const specs = Array.isArray(args.tasks) ? args.tasks : [];
@@ -261,7 +295,7 @@ export function createTaskGetToolDefinition(): ToolDefinition<typeof TASK_GET_SC
 		name: "task_get",
 		label: "Task Get",
 		description:
-			"Retrieve the full details of a single task by id. Always call this before task_update to read current state.",
+			"Retrieve the full details of a single task by id. Always call this before task_update to read current state. Resolves archived completed history too (read-only).",
 		promptSnippet: "Read a task's full details",
 		parameters: TASK_GET_SCHEMA,
 		async execute(_toolCallId, input: TaskGetInput, _signal?, _onUpdate?, rawContext?) {
@@ -270,10 +304,11 @@ export function createTaskGetToolDefinition(): ToolDefinition<typeof TASK_GET_SC
 			if (!task) return { content: [{ type: "text" as const, text: "Task not found" }], details: undefined };
 
 			const lines = [
-				`Task #${task.id}: ${task.subject}`,
+				`Task #${task.id}: ${task.subject}${task.archived ? " [archived — completed history, read-only]" : ""}`,
 				`Status: ${task.status}`,
 				`Description: ${task.description}`,
 			];
+			if (task.completedAt) lines.push(`Completed: ${task.completedAt}`);
 			if (task.activeForm) lines.push(`ActiveForm: ${task.activeForm}`);
 			if (task.owner) lines.push(`Owner: ${task.owner}`);
 			if (task.blockedBy.length > 0) lines.push(`Blocked by: ${task.blockedBy.map((id) => `#${id}`).join(", ")}`);
@@ -300,16 +335,39 @@ export function createTaskListToolDefinition(): ToolDefinition<typeof TASK_LIST_
 		name: "task_list",
 		label: "Task List",
 		description:
-			"List every task in the session's persistent task graph. Use this before starting work to find the next unblocked task, and after finishing one to see what was unblocked. Prefer tasks in ascending id order when multiple are ready.",
+			"List every task in the session's persistent task graph. Use this before starting work to find the next unblocked task, and after finishing one to see what was unblocked. Prefer tasks in ascending id order when multiple are ready. Completed history: the most recent completed tasks are listed; pass include_archived=true to also list the read-only archived tail.",
 		promptSnippet: "List the persistent task graph",
 		parameters: TASK_LIST_SCHEMA,
-		async execute(_toolCallId, _input: TaskListInput, _signal?, _onUpdate?, rawContext?) {
+		async execute(_toolCallId, input: TaskListInput, _signal?, _onUpdate?, rawContext?) {
 			const taskListId = taskListIdFromContext(rawContext as ExtensionContext | undefined);
-			const tasks = await listTasks(taskListId);
-			if (tasks.length === 0) {
-				return textResult("No tasks found", { tasks });
+			const { live, archived } = await listTasksWithArchive(taskListId);
+			if (live.length === 0 && archived.length === 0) {
+				return textResult("No tasks found", { tasks: [] });
 			}
-			return textResult(formatTaskLines(tasks).join("\n"), { tasks });
+			const lines = formatTaskLines(live);
+			if (input.include_archived && archived.length > 0) {
+				const resolvedIds = new Set(
+					[...live, ...archived].filter((t) => t.status === "completed").map((t) => t.id),
+				);
+				lines.push(
+					"",
+					formatTaskLines(archived, resolvedIds)
+						.map((line) => `${line} [archived]`)
+						.join("\n"),
+				);
+			}
+			const open = live.filter((t) => t.status !== "completed").length;
+			const done = live.length - open;
+			let summary = "";
+			if (live.length > 0) summary = `${open} open · ${done} done`;
+			else summary = "No live tasks";
+			if (archived.length > 0) {
+				summary += ` · ${archived.length} archived${input.include_archived ? "" : " (include_archived=true lists them)"}`;
+			}
+			return textResult(`${summary}\n\n${lines.join("\n")}`, {
+				tasks: live,
+				archivedCount: archived.length || undefined,
+			});
 		},
 		renderCall(_args, theme, context) {
 			return renderToolCallRow("task_list", "", theme, context);
@@ -327,7 +385,7 @@ export function createTaskUpdateToolDefinition(): ToolDefinition<typeof TASK_UPD
 		name: "task_update",
 		label: "Task Update",
 		description:
-			"Update a task in the persistent task graph. Use this to mark progress (pending → in_progress → completed), edit fields, assign an owner (Agent Teams), add dependencies, or delete tasks by setting status to 'deleted'. Always read the task's latest state with task_get before editing.",
+			"Update a task in the persistent task graph. Use this to mark progress (pending → in_progress → completed), edit fields, assign an owner (Agent Teams), add dependencies, or delete tasks by setting status to 'deleted'. Always read the task's latest state with task_get before editing. Archived completed history is read-only — task_update refuses it.",
 		promptSnippet: "Update the persistent task graph",
 		parameters: TASK_UPDATE_SCHEMA,
 		async execute(_toolCallId, input: TaskUpdateInput, _signal?, _onUpdate?, rawContext?) {
@@ -337,7 +395,7 @@ export function createTaskUpdateToolDefinition(): ToolDefinition<typeof TASK_UPD
 			if (!existing) {
 				return {
 					content: [{ type: "text" as const, text: `Task #${taskId} not found` }],
-					details: { tasks: await listTasks(taskListId) },
+					details: await snapshotTaskList(taskListId),
 				};
 			}
 
@@ -346,12 +404,12 @@ export function createTaskUpdateToolDefinition(): ToolDefinition<typeof TASK_UPD
 			const statusValue = input.status;
 			if (statusValue === "deleted") {
 				const ok = await deleteTask(taskListId, taskId);
-				const tasks = await listTasks(taskListId);
+				const snapshot = await snapshotTaskList(taskListId);
 				return ok
-					? textResult(`Task #${taskId} deleted.`, { tasks })
+					? textResult(`Task #${taskId} deleted.`, snapshot)
 					: {
 							content: [{ type: "text" as const, text: `Failed to delete task #${taskId}.` }],
-							details: { tasks },
+							details: snapshot,
 						};
 			}
 
@@ -384,7 +442,18 @@ export function createTaskUpdateToolDefinition(): ToolDefinition<typeof TASK_UPD
 			}
 
 			if (Object.keys(updates).length > 0) {
-				await updateTask(taskListId, taskId, updates);
+				try {
+					await updateTask(taskListId, taskId, updates);
+				} catch (error) {
+					const message = error instanceof Error ? error.message : String(error);
+					if (/archived/.test(message)) {
+						return textResult(`Task #${taskId} is archived completed history — read-only. ${LIFECYCLE_NOTE}`, {
+							...(await snapshotTaskList(taskListId)),
+							taskId,
+						});
+					}
+					throw error;
+				}
 			}
 
 			// Dependency wires run AFTER the main update so both sides of each
@@ -411,11 +480,11 @@ export function createTaskUpdateToolDefinition(): ToolDefinition<typeof TASK_UPD
 				if (changed) updatedFields.push("blockedBy");
 			}
 
-			const tasks = await listTasks(taskListId);
+			const snapshot = await snapshotTaskList(taskListId, taskId);
 			if (updatedFields.length === 0) {
-				return textResult(`Task #${taskId} unchanged.`, { tasks, taskId });
+				return textResult(`Task #${taskId} unchanged.`, snapshot);
 			}
-			return textResult(`Updated task #${taskId}: ${updatedFields.join(", ")}`, { tasks, taskId });
+			return textResult(`Updated task #${taskId}: ${updatedFields.join(", ")}`, snapshot);
 		},
 		renderCall(args, theme, context) {
 			return renderToolCallRow("task_update", `#${String(args.taskId ?? "")}`, theme, context);

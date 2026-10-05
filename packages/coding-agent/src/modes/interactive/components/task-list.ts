@@ -17,12 +17,14 @@ const STATUS_GLYPH: Record<Task["status"], string> = {
 
 export class TaskListComponent implements Component {
 	private tasks: Task[];
+	private archivedCount: number;
 	private onClose: () => void;
 	private cachedWidth?: number;
 	private cachedLines?: string[];
 
-	constructor(tasks: Task[], onClose: () => void) {
+	constructor(tasks: Task[], archivedCount: number, onClose: () => void) {
 		this.tasks = tasks;
+		this.archivedCount = archivedCount;
 		this.onClose = onClose;
 	}
 
@@ -46,7 +48,7 @@ export class TaskListComponent implements Component {
 		lines.push(truncateToWidth(headerLine, width));
 		lines.push("");
 
-		if (this.tasks.length === 0) {
+		if (this.tasks.length === 0 && this.archivedCount === 0) {
 			lines.push(
 				truncateToWidth(
 					`  ${th.fg("dim", "No tasks yet. Ask the agent to plan with the task_create tool.")}`,
@@ -54,11 +56,15 @@ export class TaskListComponent implements Component {
 				),
 			);
 		} else {
-			const sorted = this.tasks.slice().sort((a, b) => Number(a.id) - Number(b.id));
+			// Frontier-first: in_progress, then pending, then the completed
+			// history tail (archived rows ride as a count).
+			const rank = (t: Task): number => (t.status === "in_progress" ? 0 : t.status === "pending" ? 1 : 2);
+			const sorted = this.tasks.slice().sort((a, b) => rank(a) - rank(b) || Number(a.id) - Number(b.id));
 			const done = sorted.filter((t) => t.status === "completed").length;
 			const inProgress = sorted.filter((t) => t.status === "in_progress").length;
 			const parts = [`${done}/${sorted.length} done`];
 			if (inProgress > 0) parts.push(`${inProgress} in progress`);
+			if (this.archivedCount > 0) parts.push(`${this.archivedCount} archived`);
 			lines.push(truncateToWidth(`  ${th.fg("muted", parts.join(" · "))}`, width));
 			lines.push("");
 

@@ -106,6 +106,7 @@ import type { BashExecutionMessage, CustomMessage } from "./messages.ts";
 import type { ModelRegistry } from "./model-registry.ts";
 import { applyPersistedOutputStyle, getOutputStylePrompt, loadOutputStyles } from "./output-styles.ts";
 import { classifyToolCall } from "./permission-classifier.ts";
+import { gcStaleTaskLists, getTaskListId } from "./tasks/task-store.ts";
 import { COMPUTER_INPUT_ACTIONS } from "./tools/computer-use/computer.ts";
 
 /** Read the `action` arg off a computer-tool call (empty when absent). */
@@ -605,6 +606,11 @@ export class AgentSession {
 		this._fileHistory.setPersistHook((snapshot) => this.sessionManager.appendFileHistorySnapshot(snapshot));
 		this._fileHistory.restoreFromSnapshots(this.sessionManager.getFileHistorySnapshots());
 		void this._fileHistory.cleanupOldBackups();
+
+		// Task-graph retention: one directory per session accumulates under
+		// ~/.a-coder/cli/tasks forever without it. Once per process, best-effort,
+		// settings-gated (taskRetentionDays, default 30, 0 disables).
+		this._gcTaskLists();
 
 		this._buildRuntime({
 			activeToolNames: this._initialActiveToolNames,
@@ -4437,6 +4443,23 @@ export class AgentSession {
 	private _subAgentListeners = new Set<(records: InProcessSubAgentRecord[]) => void>();
 	/** Turn-bound file-history checkpoints backing `/rewind`. */
 	private _fileHistory = new FileHistory();
+	/** Runs stale task-list GC at most once per process (see _gcTaskLists). */
+	private static _taskGcDone = false;
+
+	/**
+	 * Delete task-list dirs untouched for older than the retention window
+	 * (settings.taskRetentionDays, default 30; 0 disables). Once per process;
+	 * this session's list is excluded, never GC'd even if stale.
+	 */
+	private _gcTaskLists(): void {
+		if (AgentSession._taskGcDone) return;
+		AgentSession._taskGcDone = true;
+		const retention = this.settingsManager.getTaskRetentionDays();
+		if (!retention || retention <= 0) return;
+		// Fire-and-forget householding: failures are silently ignored (GC retry
+		// happens on the next process start).
+		void gcStaleTaskLists(retention, { exclude: [getTaskListId(this.sessionId)] });
+	}
 	private _pendingNotifications: string[] = [];
 	/** Last-known status per background process id — drives completion notifications. */
 	private _backgroundProcessStatuses = new Map<string, BackgroundProcessStatus>();

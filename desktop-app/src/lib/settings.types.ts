@@ -185,6 +185,8 @@ export interface CliSettings {
 	localProviders?: LocalProviderSettings;
 	/** Experimental desktop control via cua-driver. Default: false. */
 	computerUse?: boolean;
+	/** Task-graph dirs untouched this many days are GC'd at engine startup (0 = keep forever). Default 30. */
+	taskRetentionDays?: number;
 	/** Allow unknown keys so users can hand-edit raw JSON without losing data. */
 	[key: string]: unknown;
 }

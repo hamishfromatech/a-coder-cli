@@ -4,6 +4,8 @@
 
 ### Added
 
+- Task panel shows the work frontier: in-progress first, then pending, then the completed tail, with a "+N archived" badge for older completed tasks the engine auto-archives past the recent window; percent bar and counts unchanged. Settings gains `taskRetentionDays` (task-graph disk retention, default 30 days, 0 keeps everything).
+
 - Clearer diagnosis for instant engine crashes at startup: `get_cli_version` recognizes the Bun 1.3.9+ `-march=nehalem` regression (oven-sh/bun#30613) — an on-launch access violation (0xC0000005) on CPUs/VMs without SSE4.2/POPCNT/AVX2 — and the error dialog now explains the cause and the fix path (update the app, click Retry; engines shipped since this release are built with bun 1.3.8). Troubleshooting entry added to the README.
 - Five new built-in skins: Nord, Dracula, Gruvbox, Catppuccin, and Tokyo Night — each with hand-tuned light and dark palettes (both variants shipped rather than synthesized), selectable from the theme picker with live swatch previews.
 - Settings → Models → Local models: an "Unsloth address" field for the CLI's new `unsloth` local provider (defaults to `http://localhost:8888/v1`), alongside LM Studio / llama.cpp / Ollama. Writes the same `localProviders.unslothBaseUrl` setting the CLI engine applies at startup.

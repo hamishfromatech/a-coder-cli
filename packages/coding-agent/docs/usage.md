@@ -61,7 +61,7 @@ Type `/` in the editor to open command completion. Extensions can register custo
 | `/permission`, `/permissions` | Set the permission mode; manage allow/deny rules |
 | `/plan` | Toggle plan mode |
 | `/subagents` | List running and completed background subagents |
-| `/tasks` | Open the persistent task graph |
+| `/tasks` | Open the persistent task graph: open work first, then the completed history tail (older completed tasks are auto-archived; `/tasks` shows them as a count) |
 | `/think`, `/thinking` | Set the thinking level |
 | `/todos` | Toggle the todo list display |
 | `/context` | Show context-window usage |

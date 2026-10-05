@@ -132,7 +132,7 @@ import {
 	requestBackground,
 	subscribeBackgroundProcesses,
 } from "../../core/stores/index.ts";
-import { getTaskListId, listTasks, subscribeTasks } from "../../core/tasks/task-store.ts";
+import { getTaskListId, listTasks, listTasksWithArchive, subscribeTasks } from "../../core/tasks/task-store.ts";
 import { isInstallTelemetryEnabled } from "../../core/telemetry.ts";
 import { generateDiffString } from "../../core/tools/edit-diff.ts";
 import type { PlanExitDecision } from "../../core/tools/plan-mode.ts";
@@ -5315,9 +5315,10 @@ export class InteractiveMode {
 	}
 
 	private async showTasksPanel(): Promise<void> {
-		const tasks = await listTasks(getTaskListId(this.sessionManager.getSessionId()));
+		const taskListId = getTaskListId(this.sessionManager.getSessionId());
+		const { live, archived } = await listTasksWithArchive(taskListId);
 		this.showSelector((done) => {
-			const component = new TaskListComponent(tasks, done);
+			const component = new TaskListComponent(live, archived.length, done);
 			return { component, focus: component };
 		});
 	}
