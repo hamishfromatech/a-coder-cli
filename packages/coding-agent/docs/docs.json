@@ -12,8 +12,12 @@
           "path": "quickstart.md"
         },
         {
-          "title": "Using Pi",
+          "title": "Usage",
           "path": "usage.md"
+        },
+        {
+          "title": "Sub-Agents",
+          "path": "subagents.md"
         },
         {
           "title": "Your Office",
@@ -73,7 +77,7 @@
           "path": "themes.md"
         },
         {
-          "title": "Pi Packages",
+          "title": "Packages",
           "path": "packages.md"
         },
         {

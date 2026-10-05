@@ -55,6 +55,7 @@ For the full first-run flow, see [Quickstart](quickstart.md).
 ## Customization
 
 - [Extensions](extensions.md) - TypeScript modules for tools, commands, events, and custom UI.
+- [Sub-Agents](subagents.md) - define named sub-agent profiles as Markdown files; the agent scaffolds new ones on request.
 - [Skills](skills.md) - Agent Skills for reusable on-demand capabilities.
 - [SOPs & Workflows](sops.md) - parameterized SOP skill files and script-orchestrated multi-agent workflow runs.
 - [Prompt templates](prompt-templates.md) - reusable prompts that expand from slash commands.

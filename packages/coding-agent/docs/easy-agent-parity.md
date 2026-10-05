@@ -11,9 +11,11 @@ Comparison of the 35 easy-agent build stages (`/Users/hamishfromatech/Downloads/
 | 3 | PowerShell tool (step31) | Windows PowerShell tool (platform-gated), pi is bash-only. | S/M |
 | 4 | Prompt templates (step23) | `model` and `allowed-tools` frontmatter on prompt templates; raw-args appended when the template has no placeholder. | S |
 | 5 | Workspace containment (step3) | Opt-in per-call path containment guard (reject paths outside cwd) in path-utils. | S |
-| 6 | Bundled agent examples (step19) | No example `.md` agent definitions shipped under the project agents dir. | S |
+
 
 ## Done (a-coder-cli already ahead or on par)
+
+- Example `.md` agent definitions ship under `examples/agents/` (pr-reviewer, test-loop, an Explore override), with the sub-agent format documented in `docs/subagents.md`.
 
 - LLM comms (native adapters, ~70 providers, OAuth, prompt caching, JSON repair + partial-json streaming arg parsing) — ahead.
 - TUI core (custom zero-dep framework, differential rendering, Kitty keyboard + images, editor undo/kill-ring/fuzzy autocomplete, word-level diff, rich footer) — ahead.

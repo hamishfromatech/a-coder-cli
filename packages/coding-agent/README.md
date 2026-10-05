@@ -51,7 +51,8 @@ I regularly publish my own `pi-mono` work sessions here:
 - [Customization](#customization)
   - [Prompt Templates](#prompt-templates)
   - [Skills](#skills)
-  - [Extensions](#extensions)
+  - [Sub-Agents](#sub-agents)
+- [Extensions](#extensions)
   - [Themes](#themes)
   - [Packages](#packages)
 - [Programmatic Usage](#programmatic-usage)
@@ -370,6 +371,10 @@ Use this skill when the user asks about X.
 ```
 
 Place in `~/.a-coder/cli/agent/skills/`, `.a-coder-cli/skills/` (project), or `.agents/skills/` (project, from `cwd` up through parent directories). Cross-product roots are also read: `~/.agents/skills/`, `~/.a-coder/skills/`, and `~/.claude/skills/` (a same-named CLI skill wins). Or use a [package](#packages) to share with others. See [docs/skills.md](docs/skills.md).
+
+### Sub-Agents
+
+Named agent profiles the main agent can delegate to: two built-ins (`general-purpose`, read-only `Explore`) and custom definitions as Markdown files, with per-agent tool allow/deny lists, model overrides, turn caps, and permission modes. Place them in `.a-coder-cli/agents/` (project) or `~/.a-coder/cli/agent/agents/` (user). The agent scaffolds a new definition on request. See [docs/subagents.md](docs/subagents.md) and [examples/agents/](examples/agents/).
 
 ### Extensions
 
