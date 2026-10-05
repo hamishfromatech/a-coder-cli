@@ -227,7 +227,7 @@ function PreviewBody({
 	dataUrl: string | null;
 }) {
 	if (kind === "html" && content !== null) {
-		return <HtmlPreview html={content} />;
+		return <HtmlPreview html={content} fullPath={fullPath} />;
 	}
 
 	if (kind === "markdown" && content !== null) {
@@ -283,26 +283,51 @@ function PreviewBody({
 	);
 }
 
-// Renders an HTML artifact in an isolated iframe via a blob: URL. A blob
-// document does not inherit the app's strict CSP, so external CDNs (Tailwind,
-// fonts, etc.) load and run; the sandbox keeps the iframe at an opaque origin
-// (no `allow-same-origin`) so it cannot touch the app's storage.
-function HtmlPreview({ html }: { html: string }) {
-	const [url, setUrl] = useState<string | null>(null);
+// Renders an HTML artifact in a sandboxed iframe. Real files stream via the
+// asset protocol: the response carries no Content-Security-Policy (only
+// `tauri://`-embedded app assets get CSP injection — tauri's manager/mod.rs
+// get_response attaches CSP for .html assets it serves itself), so CDN-based
+// pages (Tailwind CDN, web fonts, remote images) render, and relative
+// resources next to the file resolve. The sandbox keeps the frame at an
+// opaque origin (no `allow-same-origin`), so it cannot touch app storage or
+// IPC. Fallback for content without a backing file (pasted artifacts) is a
+// blob: URL — blob documents inherit the window CSP, so external CDN
+// scripts/fonts stay blocked there; the banner explains the limitation.
+function HtmlPreview({ html, fullPath }: { html: string; fullPath: string | null }) {
+	const [blobUrl, setBlobUrl] = useState<string | null>(null);
+	const fromFile = fullPath !== null;
 	useEffect(() => {
+		if (fromFile) return;
 		const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-		const blobUrl = URL.createObjectURL(blob);
-		setUrl(blobUrl);
-		return () => URL.revokeObjectURL(blobUrl);
-	}, [html]);
-	if (!url) return null;
+		const url = URL.createObjectURL(blob);
+		setBlobUrl(url);
+		return () => {
+			URL.revokeObjectURL(url);
+			setBlobUrl(null);
+		};
+	}, [html, fromFile]);
+	if (fromFile) {
+		return (
+			<iframe
+				title="HTML preview"
+				src={localFileUrl(fullPath)}
+				sandbox="allow-scripts allow-forms allow-popups allow-modals allow-downloads"
+				className="h-full w-full border-0 bg-pi-bg"
+			/>
+		);
+	}
 	return (
-		<iframe
-			title="HTML preview"
-			src={url}
-			sandbox="allow-scripts allow-forms allow-popups allow-modals allow-downloads"
-			className="h-full w-full border-0 bg-pi-bg"
-		/>
+		<div className="flex h-full flex-col">
+			<p className="shrink-0 bg-pi-surface-raised px-3 py-1 text-2xs text-pi-text-faint">
+				Inline preview: CDN-hosted scripts and fonts are blocked by the app sandbox. Open the file from disk for full rendering.
+			</p>
+			<iframe
+				title="HTML preview"
+				src={blobUrl ?? "about:blank"}
+				sandbox="allow-scripts allow-forms allow-popups allow-modals allow-downloads"
+				className="h-full w-full border-0 bg-pi-bg"
+			/>
+		</div>
 	);
 }
 
