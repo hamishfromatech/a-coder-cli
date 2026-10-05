@@ -1,10 +1,10 @@
 {
 	"name": "@earendil-works/pi-coding-agent-install",
-	"version": "0.80.127",
+	"version": "0.80.128",
 	"private": true,
 	"description": "Lockfile root used by the Pi installer and updater.",
 	"dependencies": {
-		"@earendil-works/pi-coding-agent": "0.80.127"
+		"@earendil-works/pi-coding-agent": "0.80.128"
 	},
 	"overrides": {
 		"rimraf": "6.1.2",
