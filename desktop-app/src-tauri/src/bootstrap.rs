@@ -98,6 +98,26 @@ async fn get_cli_version(path: &Path) -> Result<String, String> {
 		.output()
 		.map_err(|e| format!("Failed to run {} --version: {}", path.display(), e))?;
 	if !out.status.success() {
+		// The bundled engine is a Bun-compiled executable; bun >= 1.3.9 crashes
+		// at startup on CPUs/VMs without SSE4.2/POPCNT/AVX2 (upstream WebKit
+		// -march=nehalem regression, oven-sh/bun#30613). Recognize that failure
+		// mode so the user gets a fix path instead of a bare exit status.
+		// 0xC0000005 (access violation) as i32 is -1073741819.
+		#[cfg(unix)]
+		let crashed_on_cpu_check = {
+			use std::os::unix::process::ExitStatusExt;
+			out.status.signal() == Some(4) // SIGILL: illegal instruction
+		};
+		#[cfg(not(unix))]
+		let crashed_on_cpu_check = out.status.code() == Some(0xC000_0005u32 as i32);
+		if crashed_on_cpu_check {
+			return Err(format!(
+				"{} --version crashed at startup (status {}). The bundled engine is compiled with the Bun runtime, which since bun v1.3.9 crashes on CPUs/VMs without the SSE4.2/POPCNT/AVX2 instructions it requires (upstream bug oven-sh/bun#30613). Updating the desktop app installs a compatible engine build (pinned to bun 1.3.8) — click Retry after updating. If this persists, file a report with this machine's CPU model. (exit: 0x{:08X})",
+				path.display(),
+				out.status,
+				out.status.code().map(|c| c as u32).unwrap_or(0),
+			));
+		}
 		return Err(format!(
 			"{} --version exited with status {:?}: {}",
 			path.display(),

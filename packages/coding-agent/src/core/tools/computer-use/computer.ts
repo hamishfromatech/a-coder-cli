@@ -24,7 +24,12 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { type Static, Type } from "typebox";
 import type { ToolDefinition } from "../../extensions/types.ts";
 import { wrapToolDefinition } from "../tool-definition-wrapper.ts";
-import { CuaDriverClient, resolveDriverCommand } from "./driver.ts";
+import {
+	CuaDriverClient,
+	type DriverInstallGuidance,
+	getDriverInstallGuidance,
+	resolveDriverCommand,
+} from "./driver.ts";
 
 // ---------------------------------------------------------------------------
 // Schema (model-facing; keep stable — it rides every turn)
@@ -902,13 +907,21 @@ export function createComputerToolDefinition(): ToolDefinition<typeof computerSc
 				return await dispatch(action, params);
 			} catch (error) {
 				// Backend failures (missing binary, failed MCP handshake) surface
-				// as tool results with an install hint, not thrown errors.
+				// as tool results with an install hint, not thrown errors. A
+				// missing driver gets platform-matched install commands so the
+				// user can fix it from the failure alone.
+				const install: DriverInstallGuidance | undefined = resolveDriverCommand().installed
+					? undefined
+					: (getDriverInstallGuidance() ?? undefined);
 				return textResult({
 					ok: false,
 					action,
 					code: "backend_unavailable",
 					error: error instanceof Error ? error.message : String(error),
-					hint: "If the driver is installed, check the computerUse setting and the A_CODER_CUA_DRIVER_CMD path; once the driver connects, action='doctor' reports its health and TCC grants.",
+					...(install ? { install } : {}),
+					hint: install
+						? "Not installed yet. Run the commands in 'install.commands' on this machine (they place the binary in 'install.binDir', which a-coder-cli checks automatically), or point A_CODER_CUA_DRIVER_CMD at the binary. Once connected, action='doctor' reports health and TCC grants."
+						: "If the driver is installed, check the computerUse setting and the A_CODER_CUA_DRIVER_CMD path; once the driver connects, action='doctor' reports its health and TCC grants.",
 				});
 			}
 		},

@@ -70,7 +70,7 @@ Use `/trust` in interactive mode to save a project trust decision for future ses
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `computerUse` | boolean | `false` | Enable the `computer` desktop-control tool (macOS/Windows/Linux via the external cua-driver). The `/settings` screen gates enabling behind a disclaimer. Env override: `A_CODER_CLI_COMPUTER_USE=1`. The TUI exposes `action: "doctor"` diagnostics once enabled |
+| `computerUse` | boolean | `false` | Enable the `computer` desktop-control tool (macOS/Windows/Linux via the external cua-driver). The `/settings` screen gates enabling behind a disclaimer. Env override: `A_CODER_CLI_COMPUTER_USE=1`. The TUI exposes `action: "doctor"` diagnostics once enabled. Requires the external [cua-driver](computer-use.md) binary |
 
 ### MCP Servers
 

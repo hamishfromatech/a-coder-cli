@@ -61,6 +61,33 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+## Validate the bun version before compiling engine binaries.
+## bun >= 1.3.9 crashes at startup on CPUs/VMs without SSE4.2/POPCNT/AVX2
+## (upstream WebKit -march=nehalem regression, oven-sh/bun#30613) — the
+## engine binary dies with 0xC0000005/SIGILL on `--version`. bun 1.3.8 is
+## the last release without that regression.
+if ! command -v bun >/dev/null 2>&1; then
+    echo "Error: bun is required to build engine binaries."
+    echo "Install bun 1.3.8: npm install -g bun@1.3.8"
+    exit 1
+fi
+BUN_VERSION="$(bun --version 2>/dev/null || echo 0)"
+if ! awk -v a="$BUN_VERSION" -v b="1.3.8" 'BEGIN {
+	n = split(a, P, "."); m = split(b, Q, ".");
+	for (i = 1; i <= n || i <= m; i++) {
+		x = (i <= n ? P[i] + 0 : 0); y = (i <= m ? Q[i] + 0 : 0);
+		if (x < y) exit 0; if (x > y) exit 1;
+	}
+	exit 0;
+}'; then
+    echo "Error: bun $BUN_VERSION is too new for engine binary builds."
+    echo "bun >= 1.3.9 passes -march=nehalem (Webkit regression in oven-sh/bun#30613)"
+    echo "and the compiled engine crashes on non-AVX2 CPUs (0xC0000005 at startup)."
+    echo "Install bun 1.3.8: npm install -g bun@1.3.8"
+    exit 1
+fi
+echo "==> bun $BUN_VERSION (pinned <= 1.3.8: bun#30613 AVX2/SSE4.2 regression)"
+
 # Validate platform if specified
 if [[ -n "$PLATFORM" ]]; then
     case "$PLATFORM" in

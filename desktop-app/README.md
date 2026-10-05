@@ -105,6 +105,14 @@ npm --prefix desktop-app run tauri:dev
 
 ## Troubleshooting
 
+### "Engine failed to start" with exit status 0xC0000005 (Windows) / SIGILL (macOS, Linux)
+
+**Problem:** The engine probe (`pi --version`) crashes immediately — `ExitStatus(3221225477)` on Windows.
+
+**Cause:** The engine binaries are built with the Bun runtime. Bun v1.3.9 through v1.3.14+ crash at startup on CPUs/VMs that don't expose SSE4.2/POPCNT (a `-march=nehalem` WebKit regression, [oven-sh/bun#30613](https://github.com/oven-sh/bun/issues/30613)). This is common on older Xeon servers, QEMU vCPUs, and virtual machines with advanced CPU features disabled. The app detects the crash signature and explains it in the error dialog.
+
+**Solution:** Update the desktop app to a version whose engine is built with bun 1.3.8 (the last version without the regression), then click **Retry** — the CLI bootstrap re-downloads the engine matching the desktop version. Windows Server VMs may also need the hypervisor's CPU expose flags (e.g. Hyper-V `Set-VMProcessor -ExposeVirtualizationExtensions $true`).
+
 ### "a-coder-cli not found" on startup
 
 **Problem:** The app fails to launch because it cannot find `a-coder-cli`.

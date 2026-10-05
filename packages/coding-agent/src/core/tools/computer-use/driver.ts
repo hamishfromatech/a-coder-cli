@@ -25,13 +25,29 @@
  */
 
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import * as path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { getAgentDir } from "../../../config.ts";
 
 /** Env override for the driver binary (mirrors Hermes' HERMES_CUA_DRIVER_CMD). */
 const DRIVER_CMD_ENV = "A_CODER_CUA_DRIVER_CMD";
 const TELEMETRY_ENV = "CUA_DRIVER_RS_TELEMETRY_ENABLED";
+
+/**
+ * cua-driver release artifacts: tags of the form `cua-driver-rs-v<semver>` on
+ * github.com/trycua/cua carry per-platform tarballs. Pin the latest known tag
+ * so install commands are stable; bump this when re-verifying releases.
+ */
+export const DRIVER_RELEASE_TAG = "cua-driver-rs-v0.33.3";
+export const DRIVER_RELEASES_PAGE = "https://github.com/trycua/cua/releases?q=cua-driver-rs";
+
+/** Well-known install dir for the driver binary: <agent-dir>/bin. */
+export function getCuaBinDir(): string {
+	return path.join(getAgentDir(), "bin");
+}
 
 /** Provider secrets must never reach a third-party binary via inherited env. */
 const STRIPPED_ENV_KEYS = [
@@ -59,22 +75,110 @@ export interface DriverAvailability {
 	command?: string;
 }
 
-/** Locate the cua-driver binary: explicit env override, then PATH. */
+/** Locate the cua-driver binary: env override, PATH, then <agent-dir>/bin. */
 export function resolveDriverCommand(): DriverAvailability {
 	const override = process.env[DRIVER_CMD_ENV]?.trim();
 	if (override) {
 		return { installed: true, command: override };
 	}
 	try {
-		const probe = spawnSync("which", ["cua-driver"], { encoding: "utf8", timeout: 5_000 });
-		const path = probe.status === 0 ? String(probe.stdout).trim() : "";
-		if (path) {
-			return { installed: true, command: path };
+		const finder = process.platform === "win32" ? "where" : "which";
+		const probe = spawnSync(finder, ["cua-driver"], { encoding: "utf8", timeout: 5_000 });
+		const found = (probe.status === 0 ? String(probe.stdout) : "").split(/\r?\n/)[0]?.trim() ?? "";
+		if (found) {
+			return { installed: true, command: found };
 		}
 	} catch {
 		// fall through
 	}
+	const binDirCandidate = path.join(getCuaBinDir(), process.platform === "win32" ? "cua-driver.exe" : "cua-driver");
+	if (existsSync(binDirCandidate)) {
+		return { installed: true, command: binDirCandidate };
+	}
 	return { installed: false };
+}
+
+/**
+ * Platform-matched install guidance for a machine where the driver is not
+ * installed. Asset naming follows the live `cua-driver-rs-v*` release layout.
+ */
+export interface DriverInstallGuidance {
+	platform: string;
+	arch: string;
+	/** Release tag carrying the asset. */
+	tag: string;
+	/** Release asset file that matches this platform/arch. */
+	asset: string;
+	/** Direct download URL for the asset. */
+	url: string;
+	/** Where the auto-resolution looks first; also the recommended install dir. */
+	binDir: string;
+	/** Executable name expected in binDir. */
+	binaryName: string;
+	/** Copy-paste install commands for the detected platform. */
+	commands: string[];
+	/** Always-live listing page (in case the pinned tag has moved). */
+	page: string;
+}
+
+const DRIVER_RELEASE_VERSION = DRIVER_RELEASE_TAG.replace(/^cua-driver-rs-v/, "");
+const DRIVER_BASE_URL = "https://github.com/trycua/cua/releases/download";
+
+function platformAssetTag(platform: NodeJS.Platform, arch: string): string | null {
+	if (platform === "darwin") {
+		return arch === "arm64" ? "darwin-arm64" : arch === "x64" ? "darwin-x86_64" : null;
+	}
+	if (platform === "linux") {
+		return arch === "arm64" ? "linux-arm64" : arch === "x64" ? "linux-x86_64" : null;
+	}
+	if (platform === "win32") {
+		return arch === "arm64" ? "windows-arm64" : arch === "x64" ? "windows-x86_64" : null;
+	}
+	return null;
+}
+
+/** Build install guidance when the driver is missing; null when installed. */
+export function getDriverInstallGuidance(): DriverInstallGuidance | null {
+	if (resolveDriverCommand().installed) {
+		return null;
+	}
+	const platform = process.platform;
+	const arch = process.arch;
+	const assetTag = platformAssetTag(platform, arch);
+	if (!assetTag) {
+		return null;
+	}
+	const suffix = platform === "win32" ? "zip" : "tar.gz";
+	const asset = `cua-driver-rs-${DRIVER_RELEASE_VERSION}-${assetTag}.${suffix}`;
+	const url = `${DRIVER_BASE_URL}/${DRIVER_RELEASE_TAG}/${asset}`;
+	const binDir = getCuaBinDir();
+	const binaryName = platform === "win32" ? "cua-driver.exe" : "cua-driver";
+	const commands =
+		platform === "win32"
+			? [
+					`New-Item -ItemType Directory -Force "${binDir}" | Out-Null`,
+					`curl.exe -fsSL "${url}" -o "$env:TEMP\\cua-driver.zip"`,
+					`Expand-Archive -Path "$env:TEMP\\cua-driver.zip" -DestinationPath "$env:TEMP\\cua-driver-driver" -Force`,
+					`Move-Item (Get-ChildItem "$env:TEMP\\cua-driver-driver" -Recurse -Filter ${binaryName} | Select-Object -First 1).FullName "${path.join(binDir, binaryName)}"`,
+				]
+			: [
+					`mkdir -p "${binDir}"`,
+					`tmp=$(mktemp -d) && cd "$tmp"`,
+					`curl -fsSL "${url}" -o driver.tar.gz`,
+					`tar -xzf driver.tar.gz`,
+					`find "$tmp" -name '${binaryName}*' -type f -perm -u+x -exec mv {} "${path.join(binDir, binaryName)}" \\;`,
+				];
+	return {
+		platform,
+		arch,
+		tag: DRIVER_RELEASE_TAG,
+		asset,
+		url,
+		binDir,
+		binaryName,
+		commands,
+		page: DRIVER_RELEASES_PAGE,
+	};
 }
 
 /** Env for the driver child: telemetry off by default, secrets stripped. */
@@ -176,7 +280,9 @@ export class CuaDriverClient {
 		const availability = resolveDriverCommand();
 		if (!availability.installed || !availability.command) {
 			throw new Error(
-				"cua-driver is not installed. Install it from the cua repository releases (cua-driver-rs tag) for your platform, or point A_CODER_CUA_DRIVER_CMD at the binary.",
+				"cua-driver is not installed. Install the release asset matching your platform from the cua repository " +
+					`(tag ${DRIVER_RELEASE_TAG}; exact commands are attached to this failure's \`install\` object), ` +
+					"or point A_CODER_CUA_DRIVER_CMD at the binary.",
 			);
 		}
 		const transport = new StdioClientTransport({
