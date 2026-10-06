@@ -1,6 +1,11 @@
 #Requires -Version 5.1
 # ============================================================================
-# Install-A-Coder.ps1 — One-shot installer for A-Coder CLI on Windows
+# Install-A-Coder.ps1  -  One-shot installer for A-Coder CLI on Windows
+#
+# CAREFUL: this file must stay pure ASCII. Windows PowerShell 5.1 reads BOM-less
+# scripts as ANSI, and a multi-byte UTF-8 character (e.g. an em-dash) decodes
+# into curly quotes that close strings early and break the whole parse.
+# ============================================================================
 # Copyright (c) The A-Tech Corporation PTY LTD
 # Usage:
 #   powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/<org>/<repo>/main/Install-A-Coder.ps1 | iex"
@@ -227,7 +232,7 @@ function Install-Desktop {
     try {
         $Rel = Invoke-WebRequest -Uri $Api -UseBasicParsing -MaximumRedirection 10 | ConvertFrom-Json
     } catch {
-        Write-Host "  (could not fetch release assets — skipping desktop install)" -ForegroundColor DarkGray
+        Write-Host "  (could not fetch release assets  -  skipping desktop install)" -ForegroundColor DarkGray
         return
     }
     $Asset = $Rel.assets | Where-Object { $_.name -match "A-Coder\.Desktop_.*_${Arch}-setup\.exe$" } | Select-Object -First 1
@@ -235,7 +240,7 @@ function Install-Desktop {
         $Asset = $Rel.assets | Where-Object { $_.name -match "A-Coder\.Desktop_.*_${Arch}_en-US\.msi$" } | Select-Object -First 1
     }
     if (-not $Asset) {
-        Write-Host "  (no Windows desktop installer in release $Tag — skipping)" -ForegroundColor DarkGray
+        Write-Host "  (no Windows desktop installer in release $Tag  -  skipping)" -ForegroundColor DarkGray
         return
     }
     $Url = "https://github.com/$Repo/releases/download/$Tag/$($Asset.name)"
@@ -302,7 +307,7 @@ if (-not $CliAlreadyUpToDate) {
     Add-ToPath -Dir $BinDir
 
     # Keep the legacy ~\.a-coder\bin shim working and drop the stale lib tree
-    # (best-effort — a running process may still hold files open; the shim
+    # (best-effort  -  a running process may still hold files open; the shim
     # already points at the new binary, and a re-run finishes the cleanup).
     if ((Test-Path $LegacyBinDir) -and ($LegacyBinDir -ne $BinDir)) {
         Remove-Item -Path (Join-Path $LegacyBinDir "a-coder-cli.cmd") -Force -ErrorAction SilentlyContinue
