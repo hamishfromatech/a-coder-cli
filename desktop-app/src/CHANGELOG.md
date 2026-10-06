@@ -4,6 +4,9 @@
 
 ### Added
 
+- Real PDF previews in the file explorer: pdf.js canvas rendering replaces the iframe embed (WKWebView can't render PDFs in iframes, and WebView2's viewer is blocked by the strict preview sandbox) with page navigation, zoom 50-300%, device-pixel-ratio-sharp output, and the system-viewer escape hatch for oversized files (>8MB read cap).
+- The right sidebar rail now expands to 960px wide (clamped to keep the chat readable), so HTML previews get a comfortable view; double-click the resize handle to reset to 320px.
+
 - Task panel shows the work frontier: in-progress first, then pending, then the completed tail, with a "+N archived" badge for older completed tasks the engine auto-archives past the recent window; percent bar and counts unchanged. Settings gains `taskRetentionDays` (task-graph disk retention, default 30 days, 0 keeps everything).
 
 - Clearer diagnosis for instant engine crashes at startup: `get_cli_version` recognizes the Bun 1.3.9+ `-march=nehalem` regression (oven-sh/bun#30613) — an on-launch access violation (0xC0000005) on CPUs/VMs without SSE4.2/POPCNT/AVX2 — and the error dialog now explains the cause and the fix path (update the app, click Retry; engines shipped since this release are built with bun 1.3.8). Troubleshooting entry added to the README.

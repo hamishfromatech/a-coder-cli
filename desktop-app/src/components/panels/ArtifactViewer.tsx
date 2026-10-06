@@ -25,6 +25,7 @@ import {
 	isTextFile,
 } from "../../lib/files";
 import { openInEditor, readTextFile } from "../../lib/rpc";
+import { PdfJsPreview } from "./PdfJsPreview";
 
 /** URL that streams a local file through Tauri's asset protocol — works for
  *  any size (no base64-over-IPC), supports Range requests for video seeking,
@@ -254,8 +255,8 @@ function PreviewBody({
 		return <MediaPlayer kind={kind} src={dataUrl} title={path} fullPath={fullPath} />;
 	}
 
-	if (kind === "pdf" && dataUrl !== null) {
-		return <PdfPreview src={dataUrl} fullPath={fullPath} />;
+	if (kind === "pdf" && fullPath !== null) {
+		return <PdfJsPreview fullPath={fullPath} onOpenExternal={() => void openInEditor(fullPath)} />;
 	}
 
 	if (kind === "csv" && content !== null) {
@@ -327,41 +328,6 @@ function HtmlPreview({ html, fullPath }: { html: string; fullPath: string | null
 				sandbox="allow-scripts allow-forms allow-popups allow-modals allow-downloads"
 				className="h-full w-full border-0 bg-pi-bg"
 			/>
-		</div>
-	);
-}
-
-/** PDF preview: the webview's native PDF renderer in a sandboxed iframe (no
- *  scripts). Asset URLs stream any file size. If the viewer can't render it,
- *  fall back to opening the file externally. */
-function PdfPreview({ src, fullPath }: { src: string; fullPath: string | null }) {
-	const [failed, setFailed] = useState(false);
-	return (
-		<div className="relative h-full w-full bg-pi-bg">
-			{failed ? (
-				<div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-2xs text-pi-text-faint">
-					<p>This PDF can't be displayed in-app.</p>
-					{fullPath && (
-						<button
-							onClick={() => void openInEditor(fullPath)}
-							className="text-2xs text-pi-accent underline underline-offset-2 hover:text-pi-accent-hover"
-						>
-							Open with system viewer
-						</button>
-					)}
-				</div>
-			) : (
-				<iframe
-					title="PDF preview"
-					src={src}
-					sandbox=""
-					className="h-full w-full border-0 bg-pi-bg"
-					// PDFs render without scripts; an onerror-free but blank frame is
-					// indistinguishable from success, so offer the escape hatch after
-					// a load timeout instead of guessing.
-					onError={() => setFailed(true)}
-				/>
-			)}
 		</div>
 	);
 }

@@ -1889,9 +1889,14 @@ function ResizableRightSidebar({
 	const { setRightSidebarWidth } = useUiStore();
 	const [isResizing, setIsResizing] = useState(false);
 	const MIN_WIDTH = 240;
-	const MAX_WIDTH = 600;
+	/** Wide enough to comfortably view rendered HTML artifacts. */
+	const MAX_WIDTH = 960;
 
-	const clampWidth = (w: number) => Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, w));
+	// Never let the rail squeeze the chat/composer below readable width.
+	const clampWidth = (w: number) => {
+		const viewportMax = Math.max(MIN_WIDTH, window.innerWidth - 480);
+		return Math.min(MAX_WIDTH, viewportMax, Math.max(MIN_WIDTH, w));
+	};
 
 	const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
 		e.preventDefault();
@@ -1957,13 +1962,17 @@ function ResizableRightSidebar({
 				<>
 					<RightSidebar projectPath={projectPath} />
 					{/* Resize handle */}
-					<div
-						className={`absolute left-0 top-0 z-10 h-full w-1 cursor-col-resize transition-colors hover:bg-pi-accent ${
-							isResizing ? "bg-pi-accent" : "bg-transparent"
-						}`}
-						onPointerDown={handlePointerDown}
-						title="Drag to resize"
-					/>
+				<div
+					className={`absolute left-0 top-0 z-10 h-full w-1 cursor-col-resize transition-colors hover:bg-pi-accent ${
+						isResizing ? "bg-pi-accent" : "bg-transparent"
+					}`}
+					onPointerDown={handlePointerDown}
+					onDoubleClick={() => {
+						triggerHaptic("selection");
+						setRightSidebarWidth(320);
+					}}
+					title="Drag to resize · double-click to reset"
+				/>
 				</>
 			)}
 		</aside>
