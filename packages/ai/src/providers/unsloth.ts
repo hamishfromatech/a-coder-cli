@@ -45,6 +45,8 @@ function unslothAuth(): ApiKeyAuth {
 export interface UnslothModelListItem {
 	id: string;
 	object?: string;
+	/** Human-friendly name from the server when available. */
+	display_name?: string;
 	/** Unsloth's server reports the model's context length directly. */
 	context_length?: number;
 	max_context_length?: number;
@@ -68,10 +70,31 @@ export function resolveUnslothBaseUrl(override?: string): string {
 	return DEFAULT_BASE_URL;
 }
 
-export function createUnslothModel(id: string, baseUrl?: string, contextWindow?: number): Model<"openai-completions"> {
+/**
+ * Chat-worthiness filter for /v1/models entries. Unsloth Studio's server
+ * surfaces everything in its model store — directory junk (".ollama",
+ * ".unsloth/.cache"), embedding models (nomic-embed-text, mxbai-embed-large),
+ * and ASR/audio models (whisper, qwen3-asr) that cannot serve completions.
+ */
+export function isChatWorthyUnslothModel(entry: { id: string; display_name?: string }): boolean {
+	const haystack = `${entry.id} ${entry.display_name ?? ""}`.toLowerCase();
+	if (haystack.includes("embed") || haystack.includes("whisper") || haystack.includes("asr")) {
+		return false;
+	}
+	// Directory junk: a path segment starting with a dot (".ollama",
+	// ".unsloth/.cache", ".clara/llama-models").
+	return !entry.id.split("/").some((segment) => segment.startsWith("."));
+}
+
+export function createUnslothModel(
+	id: string,
+	baseUrl?: string,
+	contextWindow?: number,
+	displayName?: string,
+): Model<"openai-completions"> {
 	return {
 		id,
-		name: `Unsloth: ${id}`,
+		name: `Unsloth: ${displayName || id}`,
 		api: "openai-completions",
 		provider: "unsloth",
 		baseUrl: resolveUnslothBaseUrl(baseUrl),
@@ -120,7 +143,8 @@ export async function fetchUnslothModels(
 	const list = json.data ?? [];
 	return list
 		.filter((entry) => entry.id)
-		.map((entry) => createUnslothModel(entry.id, baseUrl, unslothContextWindow(entry)));
+		.filter(isChatWorthyUnslothModel)
+		.map((entry) => createUnslothModel(entry.id, baseUrl, unslothContextWindow(entry), entry.display_name));
 }
 
 export function unslothProvider(): Provider<"openai-completions"> {

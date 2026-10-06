@@ -18,6 +18,7 @@ import {
 import {
 	createUnslothModel,
 	fetchUnslothModels,
+	isChatWorthyUnslothModel,
 	resolveUnslothBaseUrl,
 	unslothContextWindow,
 	unslothProvider,
@@ -110,6 +111,45 @@ describe("LM Studio provider", () => {
 		);
 
 		vi.unstubAllGlobals();
+	});
+
+	it("filters non-chat entries: embeddings, ASR, and directory junk", () => {
+		expect(isChatWorthyUnslothModel({ id: "unsloth/Qwen3.8-27B-GGUF" })).toBe(true);
+		expect(
+			isChatWorthyUnslothModel({ id: "ollama/llama3.2:latest", display_name: "llama3.2:latest (3.2B Q4_K_M)" }),
+		).toBe(true);
+		// Embeddings (substring hits "embed" in id or display name).
+		expect(isChatWorthyUnslothModel({ id: "ollama/nomic-embed-text:latest" })).toBe(false);
+		expect(isChatWorthyUnslothModel({ id: "org/model", display_name: "Embedding model" })).toBe(false);
+		// ASR / audio-transcription models.
+		expect(isChatWorthyUnslothModel({ id: "distil-whisper/distil-medium.en" })).toBe(false);
+		expect(isChatWorthyUnslothModel({ id: "qwen3-asr-0.6b" })).toBe(false);
+		// Directory junk the server exposes (dot segments).
+		expect(isChatWorthyUnslothModel({ id: ".ollama" })).toBe(false);
+		expect(isChatWorthyUnslothModel({ id: ".unsloth/.cache" })).toBe(false);
+		expect(isChatWorthyUnslothModel({ id: ".clara/llama-models" })).toBe(false);
+	});
+
+	it("uses the server's display_name for the model name", async () => {
+		const fetchMock = vi.fn().mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				object: "list",
+				data: [
+					{ id: "ollama/llama3.2:latest", display_name: "llama3.2:latest (3.2B Q4_K_M)" },
+					{ id: "unsloth/Qwen3.6-35B-A3B-MTP-GGUF", context_length: 1048576, loaded: true },
+					{ id: ".ollama" },
+					{ id: "qwen3-asr-0.6b" },
+				],
+			}),
+		});
+		vi.stubGlobal("fetch", fetchMock);
+		const models = await fetchUnslothModels();
+		vi.unstubAllGlobals();
+		expect(models).toHaveLength(2);
+		expect(models[0]?.name).toBe("Unsloth: llama3.2:latest (3.2B Q4_K_M)");
+		expect(models[1]?.name).toBe("Unsloth: unsloth/Qwen3.6-35B-A3B-MTP-GGUF");
+		expect(models[1]?.contextWindow).toBe(1048576);
 	});
 
 	it("provider exposes the placeholder model and dynamic refresh", () => {
