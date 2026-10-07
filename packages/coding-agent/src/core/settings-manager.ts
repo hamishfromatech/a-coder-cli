@@ -1587,13 +1587,32 @@ export class SettingsManager {
 		});
 	}
 
+	/**
+	 * MCP servers taking effect: the union of the global agent settings and
+	 * the project `.a-coder-cli/settings.json` lists, keyed by name. A project
+	 * entry with the same name fully replaces the global one (projects may
+	 * need a server pointing at workspace-specific state), and every entry is
+	 * annotated with its `source` so UIs can label them. Global servers are
+	 * never dropped because the project defines others.
+	 */
 	getMcpServers(): McpServerConfig[] {
-		// Auto-suppress known-noisy server stderr (chrome-devtools issue codes)
-		// unless the config carries explicit patterns — an empty array opts out.
-		return (this.settings.mcpServers ?? []).map((server) => ({
+		const labelSource = <T extends McpServerConfig>(server: T, source: "global" | "project"): T => ({
 			...server,
 			suppressStderrPatterns: server.suppressStderrPatterns ?? defaultStderrSuppressPatterns(server),
-		}));
+			source,
+		});
+		const global = (this.globalSettings.mcpServers ?? []).map((server) => labelSource(server, "global"));
+		const project = (this.projectSettings.mcpServers ?? []).map((server) => labelSource(server, "project"));
+		const byName = new Map(global.map((server) => [server.name, server]));
+		for (const server of project) {
+			byName.set(server.name, server);
+		}
+		return Array.from(byName.values());
+	}
+
+	/** The raw project-scope MCP server list (before union with global). */
+	getProjectMcpServers(): McpServerConfig[] {
+		return structuredClone(this.projectSettings.mcpServers ?? []);
 	}
 
 	setMcpServers(servers: McpServerConfig[]): void {

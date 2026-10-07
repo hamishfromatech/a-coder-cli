@@ -7302,7 +7302,7 @@ export class InteractiveMode {
 				switch (state.status) {
 					case "ok":
 						marker = theme.fg("success", "✓");
-						line = `${state.name}`;
+						line = state.source === "project" ? `${state.name} ${theme.fg("dim", "(project)")}` : `${state.name}`;
 						break;
 					case "connecting":
 						marker = theme.fg("dim", "…");
@@ -7310,12 +7310,13 @@ export class InteractiveMode {
 						break;
 					case "disabled":
 						marker = theme.fg("dim", "⊘");
-						line = `${state.name} ${theme.fg("dim", "(disabled)")}`;
+						line = `${state.name} ${theme.fg("dim", `(disabled${state.source === "project" ? ", project" : ""})`)}`;
 						break;
 					default: {
 						marker = theme.fg("warning", "⚠");
 						const err = state.error ? `: ${state.error}` : "";
-						line = `${state.name}${theme.fg("warning", err)}`;
+						const scope = state.source === "project" ? theme.fg("dim", " (project)") : "";
+						line = `${state.name}${scope}${theme.fg("warning", err)}`;
 						break;
 					}
 				}

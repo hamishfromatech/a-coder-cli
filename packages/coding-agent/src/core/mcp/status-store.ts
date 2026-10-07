@@ -15,6 +15,8 @@ export interface McpServerState {
 	status: McpServerStatus;
 	/** Error message when status === "error" (may be long, e.g. a Cloudflare 502 body). */
 	error?: string;
+	/** Where the server's config came from (project settings override globals by name). */
+	source?: "global" | "project";
 }
 
 const servers = new Map<string, McpServerState>();

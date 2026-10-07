@@ -119,7 +119,7 @@ export function createMcpExtensionFactory(options: McpExtensionFactoryOptions): 
 				setMcpServerState(server.name, { status: "disabled" });
 				continue;
 			}
-			setMcpServerState(server.name, { status: "connecting" });
+			setMcpServerState(server.name, { status: "connecting", source: server.source });
 			clients.push(
 				options.createClient
 					? options.createClient(server)

@@ -35,6 +35,8 @@ interface McpServerUi {
 interface Props {
 	value: McpServerConfig[] | undefined;
 	onChange: (next: McpServerConfig[] | undefined) => void;
+	/** Which settings file this editor edits — project files merge with globals on the engine. */
+	scope?: "global" | "project";
 }
 
 const TRANSPORT_OPTIONS: { value: McpTransport; label: string }[] = [
@@ -122,7 +124,7 @@ function inferTransport(server: McpServerConfig | McpServerUi): McpTransport {
 	return "stdio";
 }
 
-export function McpServersEditor({ value, onChange }: Props) {
+export function McpServersEditor({ value, onChange, scope = "global" }: Props) {
 	const servers = value?.map(cliToUi) ?? [];
 	const [expanded, setExpanded] = useState<number | null>(servers.length > 0 ? 0 : null);
 
@@ -163,6 +165,20 @@ export function McpServersEditor({ value, onChange }: Props) {
 
 	return (
 		<div className="w-full space-y-3">
+			{scope === "project" && (
+				<p className="text-2xs text-pi-text-muted">
+					Project-defined servers. These load alongside your global list;
+					a same-name server here replaces the global one and shows a
+					"(project)" label in the CLI's /mcp view.
+				</p>
+			)}
+			{scope === "global" && (
+				<p className="text-2xs text-pi-text-muted">
+					Global MCP servers. Project workspaces can add more via
+					.a-coder-cli/settings.json — they load together with these
+					(project wins on same-name conflicts).
+				</p>
+			)}
 			{servers.length === 0 && (
 				<p className="text-2xs text-pi-text-muted">
 					No MCP servers configured. Add one to let the AI talk to external

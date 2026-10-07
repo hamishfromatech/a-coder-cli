@@ -304,6 +304,7 @@ function FieldRow({
 	disabled,
 	settings,
 	onUpdateField,
+	scope,
 }: {
 	spec: CliSettingsFieldSpec;
 	value: unknown;
@@ -311,6 +312,7 @@ function FieldRow({
 	disabled?: boolean;
 	settings: CliSettings;
 	onUpdateField: (path: string, value: unknown) => void;
+	scope: Scope;
 }) {
 	const widget = (() => {
 		switch (spec.kind) {
@@ -377,7 +379,7 @@ function FieldRow({
 			case "object":
 				return <JsonInput value={value} onChange={onChange} disabled={disabled} />;
 			case "custom":
-				return renderCustom(spec, value, onChange, settings, onUpdateField);
+				return renderCustom(spec, value, onChange, settings, onUpdateField, scope);
 			default:
 				return null;
 		}
@@ -425,6 +427,7 @@ function renderCustom(
 	onChange: (v: unknown) => void,
 	settings: CliSettings,
 	onUpdateField: (path: string, value: unknown) => void,
+	scope: Scope = "global",
 ): React.ReactNode {
 	switch (spec.widget) {
 		case "theme":
@@ -456,6 +459,7 @@ function renderCustom(
 				<McpServersEditor
 					value={value as Record<string, unknown>[] | undefined}
 					onChange={(v) => onChange(v)}
+					scope={scope}
 				/>
 			);
 		case "permissionPolicies":
@@ -497,12 +501,14 @@ function CardView({
 	disabled,
 	onUpdate,
 	search,
+	scope,
 }: {
 	card: SettingsCard;
 	settings: CliSettings;
 	disabled?: boolean;
 	onUpdate: (path: string, value: unknown) => void;
 	search: string;
+	scope: Scope;
 }) {
 	// Filter fields against search (label + hint).
 	const matches = useMemo(() => {
@@ -551,6 +557,7 @@ function CardView({
 						disabled={disabled}
 						settings={settings}
 						onUpdateField={onUpdate}
+						scope={scope}
 					/>
 				))}
 			</div>
@@ -567,6 +574,7 @@ function CardView({
 									disabled={disabled}
 									settings={settings}
 									onUpdateField={onUpdate}
+									scope={scope}
 								/>
 							))}
 						</div>
@@ -602,12 +610,14 @@ function SectionView({
 	disabled,
 	onUpdate,
 	search,
+	scope,
 }: {
 	section: SettingsSection;
 	settings: CliSettings;
 	disabled?: boolean;
 	onUpdate: (path: string, value: unknown) => void;
 	search: string;
+	scope: Scope;
 }) {
 	const allFields = section.fields ?? [];
 
@@ -644,6 +654,7 @@ function SectionView({
 						disabled={disabled}
 						settings={settings}
 						onUpdateField={onUpdate}
+						scope={scope}
 					/>
 				))}
 			</div>
@@ -660,6 +671,7 @@ function SectionView({
 									disabled={disabled}
 									settings={settings}
 									onUpdateField={onUpdate}
+									scope={scope}
 								/>
 							))}
 						</div>
@@ -1137,13 +1149,14 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 											</section>
 										) : s.cards ? (
 											<div className="space-y-3">
-												{s.cards.map((card) => (
+											{s.cards.map((card) => (
 													<CardView
 														key={card.title}
 														card={card}
 														settings={activeSettings}
 														onUpdate={updateField}
 														search={search}
+														scope={scope}
 													/>
 												))}
 											</div>
@@ -1153,6 +1166,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 												settings={activeSettings}
 												onUpdate={updateField}
 												search={search}
+												scope={scope}
 											/>
 										)}
 									</div>

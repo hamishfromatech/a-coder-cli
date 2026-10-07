@@ -20,6 +20,13 @@ export interface McpServerConfig {
 	 */
 	timeoutMs?: number;
 	disabled?: boolean;
+	/**
+	 * Where this server's effective config came from: the project
+	 * `.a-coder-cli/settings.json` (same-name project overrides global) or the
+	 * global agent settings. Annotated by settings-manager.getMcpServers —
+	 * never persisted in settings files.
+	 */
+	source?: "global" | "project";
 }
 
 /**

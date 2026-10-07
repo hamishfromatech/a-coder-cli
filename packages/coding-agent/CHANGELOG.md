@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Project-scope `mcpServers` no longer replace the global server list: settings merge is scope-aware and the effective set is the union of global + project entries keyed by name — same-name project entries fully replace the global one, and everything is annotated with a `source` (`global` / `project`). The MCP status store carries the source and `/mcp` labels project-defined servers `(project)` (also in disabled/error lines); the desktop MCP editor captions each scope with the merge behavior.
+
 - Fixed a crash of the running TUI when a long-running bash command finished: the partial-update path returns the live progress component, which the finished-render path then reused — type-confused — as the bash result component, so the output-preview cache closure rendered against a missing `.state` and the first synchronous repaint (the fullscreen renderer's mouse-dispatch hit-testing) threw an uncaught TypeError and exited pi. The result renderer now reuses a `lastComponent` only when it actually is a `BashResultRenderComponent`.
 
 ### Added

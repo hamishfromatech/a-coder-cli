@@ -63,6 +63,119 @@ describe("SettingsManager", () => {
 		}
 	});
 
+	describe("mcpServers scope union", () => {
+		it("unions global and project servers and labels their source", async () => {
+			writeFileSync(
+				join(agentDir, "settings.json"),
+				JSON.stringify({
+					mcpServers: [
+						{
+							name: "chrome-devtools",
+							transport: "stdio",
+							commandOrUrl: "npx",
+							args: ["-y", "chrome-devtools-mcp@latest"],
+						},
+						{ name: "context7", transport: "http", commandOrUrl: "https://mcp.context7.com/mcp" },
+					],
+				}),
+			);
+			// TRUST the project: setProjectTrusted happens for trusted reads only —
+			// write the project file BEFORE manager creation (create() trusts the
+			// dir by default in tests: the .a-coder-cli dir itself is the opt-in).
+			writeFileSync(
+				join(projectDir, ".a-coder-cli", "settings.json"),
+				JSON.stringify({
+					mcpServers: [{ name: "workspace-tools", transport: "stdio", commandOrUrl: "node", args: ["tools.js"] }],
+				}),
+			);
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+			const servers = manager.getMcpServers();
+			expect(servers.map((s) => s.name)).toEqual(["chrome-devtools", "context7", "workspace-tools"]);
+			expect(servers.find((s) => s.name === "context7")?.source).toBe("global");
+			expect(servers.find((s) => s.name === "workspace-tools")?.source).toBe("project");
+		});
+
+		it("a project entry with the same name replaces the global one entirely", async () => {
+			writeFileSync(
+				join(agentDir, "settings.json"),
+				JSON.stringify({
+					mcpServers: [
+						{ name: "workspace-tools", transport: "stdio", commandOrUrl: "npx", args: ["-y", "global-tools"] },
+					],
+				}),
+			);
+			writeFileSync(
+				join(projectDir, ".a-coder-cli", "settings.json"),
+				JSON.stringify({
+					mcpServers: [
+						{
+							name: "workspace-tools",
+							transport: "http",
+							commandOrUrl: "http://127.0.0.1:4010/mcp",
+							headers: { Authorization: "Bearer project" },
+						},
+					],
+				}),
+			);
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+			const servers = manager.getMcpServers();
+			expect(servers).toHaveLength(1);
+			const server = servers[0]!;
+			expect(server.source).toBe("project");
+			expect(server.transport).toBe("http");
+			expect(server.commandOrUrl).toBe("http://127.0.0.1:4010/mcp");
+			expect(server.headers).toEqual({ Authorization: "Bearer project" });
+			// The global command/args do not leak into the project config.
+			expect(server.args).toBeUndefined();
+		});
+
+		it("ignores project servers when the project is untrusted", async () => {
+			writeFileSync(
+				join(projectDir, ".a-coder-cli", "settings.json"),
+				JSON.stringify({
+					mcpServers: [{ name: "workspace-tools", transport: "stdio", commandOrUrl: "node" }],
+				}),
+			);
+
+			const manager = SettingsManager.create(projectDir, agentDir, { projectTrusted: false });
+			const servers = manager.getMcpServers();
+			const sources = servers.map((s) => s.source);
+			expect(sources).not.toContain("project");
+		});
+
+		it("project labels do not leak back into saved settings files", async () => {
+			writeFileSync(
+				join(agentDir, "settings.json"),
+				JSON.stringify({ mcpServers: [{ name: "g", transport: "stdio", commandOrUrl: "npx" }] }),
+			);
+			writeFileSync(
+				join(projectDir, ".a-coder-cli", "settings.json"),
+				JSON.stringify({ mcpServers: [{ name: "p", transport: "stdio", commandOrUrl: "node" }] }),
+			);
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.getMcpServers()).toHaveLength(2);
+			// A global-side save (desktop editor / setMcpServers) must not pick up
+			// the annotated source fields, and the files stay clean.
+			await manager.flush();
+			const globalFile = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8"));
+			const projectFile = JSON.parse(readFileSync(join(projectDir, ".a-coder-cli", "settings.json"), "utf-8"));
+			expect(JSON.stringify(globalFile)).not.toContain('"source"');
+			expect(JSON.stringify(projectFile)).not.toContain('"source"');
+		});
+
+		it("getProjectMcpServers returns the raw project list", async () => {
+			writeFileSync(
+				join(projectDir, ".a-coder-cli", "settings.json"),
+				JSON.stringify({ mcpServers: [{ name: "workspace-tools", transport: "stdio", commandOrUrl: "node" }] }),
+			);
+			const manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.getProjectMcpServers().map((s) => s.name)).toEqual(["workspace-tools"]);
+		});
+	});
+
 	describe("mcpServers stderr suppression", () => {
 		it("auto-suppresses chrome-devtools noise and leaves other servers alone", async () => {
 			const settingsPath = join(agentDir, "settings.json");
