@@ -125,12 +125,13 @@ describe("StdinBuffer", () => {
 			assert.deepStrictEqual(emittedSequences, ["\x1b[<35;20;5m"]);
 		});
 
-		it("should flush incomplete sequence after timeout", async () => {
+		it("should flush incomplete sequence after the hold cap", async () => {
+			// A plausible CSI prefix is held (default 1000ms) so split stdin chunks
+			// under load can complete; it flushes as-is past the hold cap.
 			processInput("\x1b[<35");
 			assert.deepStrictEqual(emittedSequences, []);
 
-			// Wait for timeout
-			await wait(15);
+			await wait(1100);
 
 			assert.deepStrictEqual(emittedSequences, ["\x1b[<35"]);
 		});
@@ -415,12 +416,12 @@ describe("StdinBuffer", () => {
 			assert.deepStrictEqual(flushed, []);
 		});
 
-		it("should emit flushed data via timeout", async () => {
+		it("should emit flushed data via the hold cap", async () => {
 			processInput("\x1b[<35");
 			assert.deepStrictEqual(emittedSequences, []);
 
-			// Wait for timeout to flush
-			await wait(15);
+			// Wait for the hold cap to flush
+			await wait(1100);
 
 			assert.deepStrictEqual(emittedSequences, ["\x1b[<35"]);
 		});

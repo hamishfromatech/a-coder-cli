@@ -15,6 +15,7 @@
 
 ### Fixed
 
+- Wheel scrolling during streaming no longer types mouse-report fragments into the prompt (`<65;65;20M` appearing in the editor). When stdin chunks split an SGR mouse report mid-sequence (which happens under render load), `StdinBuffer`'s 50ms flush fired and the tail arrived as individual printable chars — the fragment plus tail reached the editor as text. Plausible mouse-report prefixes (SGR `ESC[<…` and old-style `ESC[M…`) are now held up to 1s (configurable via `fragmentHoldMs`) until the tail completes them; other input keeps the short timeouts. Mouse reports arriving without tracking enabled (stale terminal state from a crashed session) are also swallowed at the TUI level instead of leaking into the editor.
 - Fixed ctrl+shift+<letter> keybindings (e.g. `app.tools.expand` on ctrl+shift+o, `app.transcript.toggle` on ctrl+shift+t) never firing on Apple Terminal: it supports neither the kitty keyboard protocol nor xterm modifyOtherKeys, so ctrl+shift+<letter> arrived as the same legacy byte as ctrl+<letter> and the shift was unrecoverable from the input stream. The existing native-modifier bridge (previously only used to synthesize Shift+Enter) now probes the physical Shift key for every input sequence and rewrites ctrl+letter bytes to their kitty CSI-u ctrl+shift encoding when Shift is held, so the whole ctrl+shift+<letter> class is distinguishable again. Tab, LF and CR are excluded from the rewrite (Enter keeps its dedicated Shift+Enter path).
 
 ### Added

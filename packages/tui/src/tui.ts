@@ -1074,12 +1074,20 @@ export abstract class TuiBase extends Container implements TUI {
 	 * Translate SGR mouse reports while simple tracking is enabled. Wheel up/down become three
 	 * arrow-key inputs for the focused component (line scroll); every other mouse report is
 	 * swallowed. Returns true when the data was a mouse report (fully consumed).
+	 *
+	 * Reports also arrive unsolicited when the terminal's mouse-tracking mode is stale
+	 * (left enabled by a crashed/aborted previous session): when no alt-screen input
+	 * listener exists to own mouse traffic, swallow them here as well.
 	 */
 	private consumeMouseReport(data: string): boolean {
-		if (!this.simpleMouseEnabled || !data.startsWith("\x1b[")) {
+		if (!data.startsWith("\x1b[")) {
 			return false;
 		}
 		if (!data.includes("\x1b[<") && !data.includes("\x1b[M")) {
+			return false;
+		}
+		if (!this.simpleMouseEnabled && this.inputListeners.size > 0) {
+			// Alt-screen is active: its input listener owns mouse handling.
 			return false;
 		}
 		// SGR encoding: ESC [ < button ; column ; row (M = press, m = release).
@@ -1100,6 +1108,11 @@ export abstract class TuiBase extends Container implements TUI {
 		if (wheelUp === 0 && wheelDown === 0) {
 			// Mouse report (click/motion/unknown) — swallow so the bytes never
 			// leak into the editor as garbage input.
+			return true;
+		}
+		if (!this.simpleMouseEnabled) {
+			// Stale/solicited tracking without the overlay: swallow wheel reports
+			// too — translating them into arrows would scroll the prompt editor.
 			return true;
 		}
 		const focused = this.focusedComponent;

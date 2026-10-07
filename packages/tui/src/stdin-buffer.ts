@@ -26,6 +26,28 @@ const BRACKETED_PASTE_START = "\x1b[200~";
 const BRACKETED_PASTE_END = "\x1b[201~";
 
 /**
+ * Whether the buffered fragment is the start of a MOUSE report that may yet
+ * complete — the case observed leaking: stdin chunks split mid-report under
+ * load, the tail arrives ms later, and flushing the fragment reaches the
+ * editor as typed text ("<65;65;20M"). Mouse reports are long (9+ chars) and
+ * arrive exactly while renders are busy, so they get the held-flush window;
+ * short CSI sequences keep the short timeout (their 50ms window was never
+ * reported as a leak and early flush keeps input latency low).
+ *
+ * SGR form: ESC [ < digits ; digits ; digits, terminated by M/m (handled as
+ * complete before this runs). Old-style form: ESC [ M + 3 raw bytes.
+ */
+function isPlausibleMousePrefix(buffer: string): boolean {
+	if (buffer.startsWith(`${ESC}[<`)) {
+		return /^\x1b\[<[0-9;]*$/.test(buffer) && buffer.length <= 24;
+	}
+	if (buffer.startsWith(`${ESC}[M`)) {
+		return buffer.length < 6 && !buffer.includes(ESC, 1);
+	}
+	return false;
+}
+
+/**
  * Check if a string is a complete escape sequence or needs more data
  */
 function isCompleteSequence(data: string): "complete" | "incomplete" | "not-escape" {
@@ -256,6 +278,10 @@ function extractCompleteSequences(buffer: string): { sequences: string[]; remain
 	return { sequences, remainder: "" };
 }
 
+// A plausible mouse-report prefix is held this long before the timeout flush
+// emits it as-is (see StdinBufferOptions.fragmentHoldMs).
+const DEFAULT_FRAGMENT_HOLD_MS = 1000;
+
 export type StdinBufferOptions = {
 	/**
 	 * Maximum time to wait for an incomplete sequence such as CSI or mouse
@@ -267,6 +293,13 @@ export type StdinBufferOptions = {
 	 * (default: 10ms). Increase for high-latency Alt+key input (SSH).
 	 */
 	escapeTimeout?: number;
+	/**
+	 * How long a plausible mouse-report prefix may be held before the timeout
+	 * flush emits it as-is (default: 1000ms). stdin chunks split mid-report
+	 * under load; flushing them early leaks report fragments ("65;65;20M")
+	 * into the editor as typed text.
+	 */
+	fragmentHoldMs?: number;
 };
 
 export type StdinBufferEventMap = {
@@ -283,6 +316,7 @@ export class StdinBuffer extends EventEmitter<StdinBufferEventMap> {
 	private timeout: ReturnType<typeof setTimeout> | null = null;
 	private readonly timeoutMs: number;
 	private readonly escapeTimeoutMs: number;
+	private readonly fragmentHoldMs: number;
 	private pasteMode: boolean = false;
 	private pasteBuffer: string = "";
 	private pendingKittyPrintableCodepoint: number | undefined;
@@ -291,6 +325,7 @@ export class StdinBuffer extends EventEmitter<StdinBufferEventMap> {
 		super();
 		this.timeoutMs = options.timeout ?? DEFAULT_SEQUENCE_TIMEOUT_MS;
 		this.escapeTimeoutMs = options.escapeTimeout ?? DEFAULT_ESCAPE_TIMEOUT_MS;
+		this.fragmentHoldMs = options.fragmentHoldMs ?? DEFAULT_FRAGMENT_HOLD_MS;
 	}
 
 	public process(data: string | Buffer): void {
@@ -385,15 +420,24 @@ export class StdinBuffer extends EventEmitter<StdinBufferEventMap> {
 		}
 
 		if (this.buffer.length > 0) {
-			const timeoutMs = this.buffer === ESC ? this.escapeTimeoutMs : this.timeoutMs;
-			this.timeout = setTimeout(() => {
-				const flushed = this.flush();
-
-				for (const sequence of flushed) {
-					this.emitDataSequence(sequence);
-				}
-			}, timeoutMs);
+			const timeoutMs = this.resolveFragmentTimeoutMs();
+			this.scheduleFlush(timeoutMs);
 		}
+	}
+
+	private resolveFragmentTimeoutMs(): number {
+		if (this.buffer === ESC) return this.escapeTimeoutMs;
+		return isPlausibleMousePrefix(this.buffer) ? this.fragmentHoldMs : this.timeoutMs;
+	}
+
+	private scheduleFlush(timeoutMs: number): void {
+		this.timeout = setTimeout(() => {
+			const flushed = this.flush();
+
+			for (const sequence of flushed) {
+				this.emitDataSequence(sequence);
+			}
+		}, timeoutMs);
 	}
 
 	private emitDataSequence(sequence: string): void {
