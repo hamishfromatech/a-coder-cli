@@ -418,6 +418,16 @@ export function getExportTemplateDir(): string {
 	return join(packageDir, srcOrDist, "core", "export-html");
 }
 
+/**
+ * Get the bundled skills directory shipped with the package (e.g. the
+ * vendored Lemo-Opuscar film skill). Present at the package root across all
+ * layouts: repo checkouts, npm installs (listed in "files") and Bun binary
+ * archives (staged by build-binaries.sh next to the executable).
+ */
+export function getBundledSkillsDir(): string {
+	return join(getPackageDir(), "skills");
+}
+
 /** Get path to package.json */
 export function getPackageJsonPath(): string {
 	return join(getPackageDir(), "package.json");

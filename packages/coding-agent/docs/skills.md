@@ -32,6 +32,7 @@ a-coder-cli loads skills from:
 - Packages: `skills/` directories or `pi.skills` entries in `package.json`
 - Settings: `skills` array with files or directories
 - CLI: `--skill <path>` (repeatable, additive even with `--no-skills`)
+- Bundled (ships with the package, lowest precedence): the vendored skills at the package root — currently `lemo-opuscar`, the code-driven film directing skill (styles and tools by Lemomo, MIT; the style library self-downloads to `~/lemo-opuscar` on first use). A user or project skill of the same name overrides it
 
 Discovery rules:
 - In `~/.a-coder/cli/agent/skills/` and `.a-coder-cli/skills/`, direct root `.md` files are discovered as individual skills

@@ -350,11 +350,12 @@ describe("skills", () => {
 		const emptyCwd = resolve(__dirname, "fixtures/empty-cwd");
 
 		it("should load from explicit skillPaths", () => {
+			// includeDefaults: false so the package-bundled skills don't join the count.
 			const { skills, diagnostics } = loadSkills({
 				agentDir: emptyAgentDir,
 				cwd: emptyCwd,
 				skillPaths: [join(fixturesDir, "valid-skill")],
-				includeDefaults: true,
+				includeDefaults: false,
 			});
 			expect(skills).toHaveLength(1);
 			expect(skills[0].sourceInfo.scope).toBe("temporary");
@@ -366,7 +367,7 @@ describe("skills", () => {
 				agentDir: emptyAgentDir,
 				cwd: emptyCwd,
 				skillPaths: ["/non/existent/path"],
-				includeDefaults: true,
+				includeDefaults: false,
 			});
 			expect(skills).toHaveLength(0);
 			expect(diagnostics.some((d: ResourceDiagnostic) => d.message.includes("does not exist"))).toBe(true);
@@ -428,5 +429,35 @@ describe("skills", () => {
 			expect(collisionWarnings).toHaveLength(1);
 			expect(collisionWarnings[0].message).toContain("name collision");
 		});
+	});
+});
+
+describe("bundled skills (shipped with the package)", () => {
+	it("loads the vendored Lemo-Opuscar skill with includeDefaults", () => {
+		const { skills, diagnostics } = loadSkills({
+			agentDir: resolve(__dirname, "fixtures/empty-agent"),
+			cwd: resolve(__dirname, "fixtures/empty-cwd"),
+			skillPaths: [],
+			includeDefaults: true,
+		});
+		const bundled = skills.find((s) => s.name === "lemo-opuscar");
+		expect(bundled, "bundled skill should load without user/project skills dirs").toBeTruthy();
+		expect(bundled?.sourceInfo.source ?? bundled?.sourceInfo.scope).toBe("bundled");
+		expect(String(bundled?.description)).toContain("film");
+		expect(diagnostics).toHaveLength(0);
+	});
+
+	it("user skills with the same name override the bundled one", () => {
+		const agentDir = resolve(__dirname, "fixtures/skills-user-override");
+		const { skills } = loadSkills({
+			agentDir,
+			cwd: resolve(__dirname, "fixtures/empty-cwd"),
+			skillPaths: [],
+			includeDefaults: true,
+		});
+		const hits = skills.filter((s) => s.name === "lemo-opuscar");
+		// The user copy wins; the bundled one is dropped (first wins).
+		expect(hits).toHaveLength(1);
+		expect(hits[0]?.sourceInfo.source ?? hits[0]?.sourceInfo.scope).not.toBe("bundled");
 	});
 });

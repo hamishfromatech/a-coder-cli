@@ -222,6 +222,7 @@ for platform in "${PLATFORMS[@]}"; do
     cp -r dist/core/export-html "$OUTPUT_DIR/$platform/"
     cp -r docs "$OUTPUT_DIR/$platform/"
     cp -r examples "$OUTPUT_DIR/$platform/"
+    cp -r skills "$OUTPUT_DIR/$platform/"
 
     # Copy pi-tui's native platform helper (clipboard, native modifier probes, Windows
     # virtual-terminal input) next to the compiled binary — the runtime probes these

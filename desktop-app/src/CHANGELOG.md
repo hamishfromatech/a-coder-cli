@@ -4,6 +4,8 @@
 
 ### Added
 
+- Film-making out of the box: desktop sessions now include the bundled `lemo-opuscar` skill (Lemomo's 43-style code-film directing library, engine-side bundling shared with the CLI).
+
 - Real PDF previews in the file explorer: pdf.js canvas rendering replaces the iframe embed (WKWebView can't render PDFs in iframes, and WebView2's viewer is blocked by the strict preview sandbox) with page navigation, zoom 50-300%, device-pixel-ratio-sharp output, and the system-viewer escape hatch for oversized files (>8MB read cap).
 - The right sidebar rail now expands to 960px wide (clamped to keep the chat readable), so HTML previews get a comfortable view; double-click the resize handle to reset to 320px.
 
