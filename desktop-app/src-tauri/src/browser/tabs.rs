@@ -294,7 +294,9 @@ pub async fn browser_view_show<R: Runtime>(
 	if let Some(view) = &target {
 		view.show().map_err(|error| error.to_string())?;
 	}
-	for (label, view) in app.webviews() {
+	// Hide only the OTHER PAGE views: app.webviews() also holds the main
+	// app webview, and hiding it blacks out the whole UI around the page.
+	for (label, view) in app.webviews().into_iter().filter(|(label, _)| label.starts_with(LABEL_PREFIX)) {
 		if Some(label.as_str()) != target.as_ref().map(|view| view.label()) {
 			let _ = view.hide();
 		}
