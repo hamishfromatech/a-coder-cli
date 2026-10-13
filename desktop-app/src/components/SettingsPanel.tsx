@@ -53,6 +53,7 @@ import { KeybindingsSection } from "./panels/widgets/KeybindingsSection";
 import { McpServersEditor } from "./panels/widgets/McpServersEditor";
 import { PackagesEditor } from "./panels/widgets/PackagesEditor";
 import { ComputerUseWidget } from "./panels/widgets/ComputerUseWidget";
+import { BrowserSettingsWidget } from "./panels/widgets/BrowserSettingsWidget";
 import { PathListInput } from "./panels/widgets/PathListInput";
 import { PermissionPoliciesEditor } from "./panels/widgets/PermissionPoliciesEditor";
 import { ResourcesSection } from "./panels/widgets/ResourcesSection";
@@ -486,6 +487,8 @@ function renderCustom(
 			return <Button variant="secondary" size="md" onClick={() => replayOnboarding()}>Watch the tour</Button>;
 		case "computerUse":
 			return <ComputerUseWidget value={value} onChange={onChange} />;
+		case "browserSettings":
+			return <BrowserSettingsWidget value={value} onChange={onChange} />;
 		default:
 			return null;
 	}

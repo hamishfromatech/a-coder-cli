@@ -63,7 +63,7 @@ export interface CliSettingsFieldSpec {
 	/** Number-only: step */
 	step?: number;
 	/** Custom-widget name when kind === "custom" */
-	widget?: "theme" | "thinking" | "models" | "defaultModel" | "mcpServers" | "permissionPolicies" | "packages" | "resources" | "completionSound" | "benchRunner" | "onboardingTour" | "computerUse";
+	widget?: "theme" | "thinking" | "models" | "defaultModel" | "mcpServers" | "permissionPolicies" | "packages" | "resources" | "completionSound" | "benchRunner" | "onboardingTour" | "computerUse" | "browserSettings";
 	/** If true, change is also pushed to the engine at runtime (not just persisted) */
 	runtimeSync?:
 		| "thinkingLevel"
@@ -83,6 +83,7 @@ export type SettingsSectionId =
 	| "local-providers"
 	| "look-and-feel"
 	| "chat-behaviour"
+	| "browser"
 	| "privacy"
 	| "tools-and-permissions"
 	| "external-tools"
@@ -552,6 +553,24 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 						advanced: true,
 					},
 				],
+			},
+		],
+	},
+
+	// ---- Browser ---------------------------------------------------------
+	// The panel's own preferences: they live in the same settings file under
+	// the "browser" object, but are desktop-only (the engine ignores them).
+	{
+		id: "browser",
+		navId: "browser",
+		label: "Browser",
+		description: "The agent browser panel: downloads and AI access to pages.",
+		fields: [
+			{
+				path: "browser",
+				label: "Browser panel",
+				kind: "custom",
+				widget: "browserSettings",
 			},
 		],
 	},

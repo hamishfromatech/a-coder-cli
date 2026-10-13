@@ -799,6 +799,14 @@ export const oauthLogin = (providerId: string) =>
 	sendCommand({ type: "oauth_login", providerId });
 
 // ---- queue modes ----
+/** Desktop-browser prefs (settings page): live toggles + persisted file. */
+export const setDownloadFolder = (folder: string) =>
+	invoke<void>("browser_download_folder_pick", { folder });
+export const setAgentServerEnabled = (enabled: boolean) =>
+	invoke<void>("browser_set_agent_server_enabled", { enabled });
+export const getAgentServerUrl = () =>
+	invoke<string | null>("browser_agent_server_url");
+
 export const setSteeringMode = (mode: MessageDeliveryMode) =>
 	sendCommand({ type: "set_steering_mode", mode });
 export const setFollowUpMode = (mode: MessageDeliveryMode) =>

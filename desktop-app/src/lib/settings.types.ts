@@ -138,6 +138,10 @@ export interface CliSettings {
 	transport?: TransportSetting;
 	steeringMode?: "all" | "one-at-a-time";
 	followUpMode?: "all" | "one-at-a-time";
+	browser?: {
+		downloadFolder?: string;
+		agentTools?: boolean;
+	};
 	theme?: string;
 	compaction?: CompactionSettings;
 	branchSummary?: BranchSummarySettings;
