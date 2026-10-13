@@ -106,6 +106,7 @@ export {
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { ToolDefinition } from "../extensions/types.ts";
 import { type BashToolOptions, createBashTool, createBashToolDefinition } from "./bash.ts";
+import { createDecideTool, createDecideToolDefinition, type DecideToolDefinitionContext } from "./decide.ts";
 import { createEditTool, createEditToolDefinition, type EditToolOptions } from "./edit.ts";
 import { createFindTool, createFindToolDefinition, type FindToolOptions } from "./find.ts";
 import { createGrepTool, createGrepToolDefinition, type GrepToolOptions } from "./grep.ts";
@@ -134,6 +135,7 @@ export type ToolName =
 	| "task_list"
 	| "task_update"
 	| "memory"
+	| "decide"
 	| "plan_mode"
 	| "computer"
 	| "team_create"
@@ -156,6 +158,7 @@ export const allToolNames: Set<ToolName> = new Set([
 	"task_list",
 	"task_update",
 	"memory",
+	"decide",
 	"plan_mode",
 	"team_create",
 	"team_delete",
@@ -173,6 +176,7 @@ export interface ToolsOptions {
 	planMode?: { callbacks: PlanModeToolCallbacks };
 	memory?: { sessionDir: string; sessionId: string };
 	skill?: SkillToolOptions;
+	decide?: DecideToolDefinitionContext;
 }
 
 export function createToolDefinition(toolName: ToolName, cwd: string, options?: ToolsOptions): ToolDef {
@@ -195,6 +199,8 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			return createLsToolDefinition(cwd, options?.ls);
 		case "memory":
 			return createMemoryToolDefinition(options?.memory);
+		case "decide":
+			return createDecideToolDefinition(options?.decide);
 		case "plan_mode":
 			return createPlanModeToolDefinition(
 				options?.planMode?.callbacks ?? {
@@ -246,6 +252,8 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 			return createLsTool(cwd, options?.ls);
 		case "memory":
 			return createMemoryTool(options?.memory);
+		case "decide":
+			return createDecideTool(options?.decide);
 		case "plan_mode":
 			return createPlanModeTool(
 				options?.planMode?.callbacks ?? {
@@ -286,6 +294,7 @@ export function createReadOnlyToolDefinitions(cwd: string, options?: ToolsOption
 		createFindToolDefinition(cwd, options?.find),
 		createLsToolDefinition(cwd, options?.ls),
 		createMemoryToolDefinition(options?.memory),
+		createDecideToolDefinition(options?.decide),
 	];
 }
 
@@ -310,6 +319,7 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 		task_list: createTaskListToolDefinition(),
 		task_update: createTaskUpdateToolDefinition(),
 		memory: createMemoryToolDefinition(options?.memory),
+		decide: createDecideToolDefinition(options?.decide),
 		team_create: createTeamCreateToolDefinition(),
 		team_delete: createTeamDeleteToolDefinition(),
 		send_message: createSendMessageToolDefinition(),
@@ -332,6 +342,7 @@ export function createCodingTools(cwd: string, options?: ToolsOptions): Tool[] {
 		createTaskListTool(),
 		createTaskUpdateTool(),
 		createMemoryTool(options?.memory),
+		createDecideTool(options?.decide),
 		createTeamCreateTool(),
 		createTeamDeleteTool(),
 		createSendMessageTool(),
@@ -345,6 +356,7 @@ export function createReadOnlyTools(cwd: string, options?: ToolsOptions): Tool[]
 		createFindTool(cwd, options?.find),
 		createLsTool(cwd, options?.ls),
 		createMemoryTool(options?.memory),
+		createDecideTool(options?.decide),
 	];
 }
 
@@ -368,6 +380,7 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		task_list: createTaskListTool(),
 		task_update: createTaskUpdateTool(),
 		memory: createMemoryTool(options?.memory),
+		decide: createDecideTool(options?.decide),
 		skill: createSkillTool(options?.skill ?? { getSkills: () => [] }),
 		team_create: createTeamCreateTool(),
 		team_delete: createTeamDeleteTool(),

@@ -207,6 +207,16 @@ export interface AutoModeSettings {
 	maxConsecutiveBlocks?: number;
 }
 
+/** System One decision-model settings: the target the `decide` tool and the
+ * auto-mode classifier prefer when a decision provider is configured (local
+ * keyless servers are picked automatically when nothing is set). */
+export interface DecisionsSettings {
+	/** Preferred decision provider id: "ollama" | "lm-studio" | "llama-cpp" | "unsloth" | "openrouter" | "typesafe". */
+	provider?: string;
+	/** Preferred decision model id: e.g. "clef-flash", "~typesafe/jev-latest". */
+	model?: string;
+}
+
 /**
  * Persistent-memory auto-injection. When enabled, global and workspace
  * MEMORY.md contents are folded into the system prompt at rebuild time so
@@ -297,6 +307,7 @@ export interface Settings {
 	permissionMode?: PermissionMode; // default: "ask"
 	permissionPolicies?: PermissionPolicyConfig; // policy rules for "auto" mode
 	autoMode?: AutoModeSettings; // LLM classifier for "auto" mode (opt-in)
+	decisions?: DecisionsSettings; // System One decision model target for the `decide` tool + auto-mode classifier
 	memory?: MemoryInjectionSettings; // inject MEMORY.md contents into the system prompt
 	httpProxy?: string; // Proxy URL applied as HTTP_PROXY and HTTPS_PROXY for Pi-managed HTTP clients
 	httpIdleTimeoutMs?: number; // HTTP header/body idle timeout in milliseconds; 0 disables it
@@ -1390,6 +1401,13 @@ export class SettingsManager {
 			enabled: this.settings.autoMode?.enabled === true,
 			maxConsecutiveFailures: positiveIntOr(this.settings.autoMode?.maxConsecutiveFailures, 3),
 			maxConsecutiveBlocks: positiveIntOr(this.settings.autoMode?.maxConsecutiveBlocks, 3),
+		};
+	}
+
+	getDecisionsSettings(): DecisionsSettings {
+		return {
+			provider: this.settings.decisions?.provider,
+			model: this.settings.decisions?.model,
 		};
 	}
 

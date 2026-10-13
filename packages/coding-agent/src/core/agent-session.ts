@@ -30,8 +30,11 @@ import type {
 import { Agent } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@earendil-works/pi-ai/compat";
 import {
+	builtinDecisionsModels,
 	clampThinkingLevel,
 	cleanupSessionResources,
+	type DecisionsModel,
+	type DecisionsModels,
 	getSupportedThinkingLevels,
 	isContextOverflow,
 	isRecoverableLength,
@@ -105,9 +108,10 @@ import { buildHookInput, type HookRunOutcome, runConfiguredHooks } from "./hooks
 import type { BashExecutionMessage, CustomMessage } from "./messages.ts";
 import type { ModelRegistry } from "./model-registry.ts";
 import { applyPersistedOutputStyle, getOutputStylePrompt, loadOutputStyles } from "./output-styles.ts";
-import { classifyToolCall } from "./permission-classifier.ts";
+import { classifyToolCall, classifyToolCallWithDecisionModel } from "./permission-classifier.ts";
 import { gcStaleTaskLists, getTaskListId } from "./tasks/task-store.ts";
 import { COMPUTER_INPUT_ACTIONS } from "./tools/computer-use/computer.ts";
+import { resolveDecideModel } from "./tools/decide.ts";
 
 /** Read the `action` arg off a computer-tool call (empty when absent). */
 function getComputerActionArg(args: Record<string, unknown> | undefined): string {
@@ -480,6 +484,37 @@ export class AgentSession {
 	private _classifierDisabled = false;
 	private _autoModeConsecutiveFailures = 0;
 	private _autoModeConsecutiveBlocks = 0;
+	private _decisionsModels?: DecisionsModels;
+	private _decisionsModel?: DecisionsModel<any> | "unavailable";
+
+	/** The System One decision model backing the auto-mode gate, resolved once
+	 * per session (explicit settings pick first, then live local-server probes,
+	 * then OpenRouter). "unavailable" after the first failed resolution so
+	 * tool calls never pay repeated probe latencies. */
+	private async _decisionGateModel(): Promise<DecisionsModel<any> | undefined> {
+		if (this._decisionsModel === "unavailable") return undefined;
+		if (this._decisionsModel) return this._decisionsModel;
+		try {
+			this._decisionsModels ??= builtinDecisionsModels();
+			// Cheap placeholder input: resolution must not require real state.
+			this._decisionsModel = await resolveDecideModel(
+				this._decisionsModels,
+				{ state: "probe", questions: { probe: { type: "noul", instructions: "probe" } } },
+				{ settings: this.settingsManager.getDecisionsSettings() },
+			);
+			return this._decisionsModel;
+		} catch {
+			this._decisionsModel = "unavailable";
+			return undefined;
+		}
+	}
+
+	private _decisionModels(): DecisionsModels | undefined {
+		if (!this._decisionsModels) {
+			this._decisionsModels = builtinDecisionsModels();
+		}
+		return this._decisionsModels;
+	}
 	private _recentAutoModeToolCalls: string[] = [];
 
 	// Compaction state
@@ -742,6 +777,42 @@ export class AgentSession {
 		if (AUTO_MODE_SAFE_TOOL_NAMES.has(toolName)) {
 			return undefined;
 		}
+
+		// Prefer a System One decision model (cheap, fast, private on local
+		// servers); fall back to the LLM classifier when none is reachable.
+		const decisionModel = await this._decisionGateModel();
+		if (decisionModel) {
+			const outcome = await classifyToolCallWithDecisionModel(this._decisionModels()!, decisionModel, {
+				toolName,
+				args,
+				recentToolCalls: this._recentAutoModeToolCalls,
+			});
+			this._recentAutoModeToolCalls.push(toolName);
+			if (this._recentAutoModeToolCalls.length > 20) this._recentAutoModeToolCalls.shift();
+			if (!outcome.ok) {
+				this._autoModeConsecutiveFailures++;
+				if (this._autoModeConsecutiveFailures >= settings.maxConsecutiveFailures) {
+					this._classifierDisabled = true;
+				}
+				// Degrade to the LLM classifier for this call instead of
+				// dropping the gate entirely.
+			} else {
+				this._autoModeConsecutiveFailures = 0;
+				if (!outcome.verdict.shouldBlock) {
+					this._autoModeConsecutiveBlocks = 0;
+					return undefined;
+				}
+				this._autoModeConsecutiveBlocks++;
+				if (this._autoModeConsecutiveBlocks >= settings.maxConsecutiveBlocks) {
+					this._classifierDisabled = true;
+				}
+				return {
+					decision: this._permissionPromptHandler ? "prompt" : "deny",
+					reason: `Auto-mode classifier (${outcome.verdict.model ?? "decision model"} p=${outcome.verdict.topProbability ?? "?"}): ${outcome.verdict.reason}`,
+				};
+			}
+		}
+
 		const model = this.model;
 		if (!model) {
 			return undefined;
@@ -3706,6 +3777,9 @@ export class AgentSession {
 						getSkills: () => this.resourceLoader.getSkills().skills,
 						getSessionId: () => this.sessionManager.getSessionId(),
 						addSessionAllowRules: (rules) => this.addSessionAllowRules(rules),
+					},
+					decide: {
+						settings: this.settingsManager.getDecisionsSettings(),
 					},
 				});
 

@@ -20,12 +20,16 @@ export * from "./api/openai-codex-responses.lazy.ts";
 export * from "./api/openai-completions.lazy.ts";
 export * from "./api/openai-responses.lazy.ts";
 export * from "./api/pi-messages.lazy.ts";
+export * from "./decisions.ts";
+export * from "./decisions-api-registry.ts";
 export * from "./env-api-keys.ts";
 export * from "./image-models.ts";
 export * from "./images.ts";
 export * from "./images-api-registry.ts";
 export * from "./index.ts";
 export * from "./legacy-api-aliases.ts";
+export { builtinDecisionsModels, builtinDecisionsProviders } from "./providers/all.ts";
+export * from "./providers/decisions/register-builtins.ts";
 export * from "./providers/images/register-builtins.ts";
 export * from "./utils/overflow.ts";
 

@@ -37,6 +37,7 @@ export const AUTO_MODE_SAFE_TOOL_NAMES = new Set<string>([
 	"task_get",
 	"task_list",
 	"mcp_list_resources",
+	"decide",
 ]);
 
 /** Sentinel rule that expands to the default mutating tool names. */

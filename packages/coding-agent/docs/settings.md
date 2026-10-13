@@ -64,7 +64,9 @@ Use `/trust` in interactive mode to save a project trust decision for future ses
 |---------|------|---------|-------------|
 | `permissionMode` | string | `"ask"` | Tool-call permission mode: `"ask"`, `"allow"`, `"read-only"`, or `"auto"` |
 | `permissionPolicies` | object | - | Extra rules used by `"auto"` mode's classifier (see [extensions.md](extensions.md) and `A_CODER` policy docs) |
-| `autoMode` | object | - | Opt-in LLM classifier configuration for `"auto"` mode |
+| `autoMode` | object | - | Opt-in classifier configuration for `"auto"` mode (`enabled`, `maxConsecutiveFailures`, `maxConsecutiveBlocks`) |
+| `decisions` | object | - | System One decision-model target for the `decide` tool and the auto-mode classifier gate: `{provider, model}` (e.g. `{"ollama","clef-flash"}`). Unset: first reachable keyless local server, then OpenRouter when keyed. See [decision-models.md](decision-models.md) |
+
 
 ### Computer Use
 

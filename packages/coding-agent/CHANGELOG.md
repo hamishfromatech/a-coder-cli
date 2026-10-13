@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Decision-model support (System One wire): a new read-only, approval-free `decide` tool lets the agent route typed judgments ({state, 1-16 named questions: choice/noul/score}) through a decision model instead of a full LLM call — resolution order: explicit `decide` arguments or `settings.decisions {provider, model}`, then the first reachable keyless local server (Ollama, LM Studio, llama.cpp, Unsloth — zero-config after e.g. `ollama pull clef-flash`), then OpenRouter's JeV beta when `OPENROUTER_API_KEY` is set, with an actionable error naming every option. Results render as a probability card (chosen option, bar, confidence) and ship raw answers JSON; the desktop/rpc surface the same card through the generic tool-result flow. The auto-mode permission classifier now prefers a decision model over the LLM classifier when one is reachable: the gate is a `{verdict: choice[allow|block], risk: score}` question pair scored on the tool-call proposal, mapped onto the same verdict/circuit-breaker semantics (failures degrade to the LLM classifier, blocks degrade to a prompt), and the block reason carries the engine and probability (`Auto-mode classifier (clef-flash p=0.94): ...`). Docs: docs/decision-models.md; decision models deliberately stay out of the chat `/model` list.
+
 ### Fixed
 
 - OAuth sign-in (`/login`) in compiled Bun binaries (the shipped `pi`/a-coder engine executables) fails with `ResolveMessage: Cannot find module './openai-codex.ts' from '/$bunfs/root/pi'`: the binary entrypoint stopped calling `registerBunOAuthFlows()` (the line was lost in the rebranding), so every OAuth flow fell back to its runtime dynamic import, which cannot resolve inside a standalone executable. The bundled flows (Codex, ChatGPT, Anthropic, Copilot, OpenRouter, Kimi, xAI, Radius) are registered again.

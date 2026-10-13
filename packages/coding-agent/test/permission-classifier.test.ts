@@ -85,7 +85,7 @@ describe("auto-mode classifier integration", () => {
 	it("prompts (instead of silently denying) when the classifier blocks, with the classifier call", async () => {
 		mockClassify.mockResolvedValue({
 			ok: true,
-			verdict: { thinking: "rm -rf", shouldBlock: true, reason: "destructive" },
+			verdict: { thinking: "rm -rf", shouldBlock: true, reason: "destructive", engine: "llm" },
 		});
 		const { session } = await createSessionWith({ enabled: true });
 		const handler = vi.fn(async (_toolName: string, _reason?: string) => false);
@@ -128,7 +128,7 @@ describe("auto-mode classifier integration", () => {
 	it("circuit-breaks after repeated blocks", async () => {
 		mockClassify.mockResolvedValue({
 			ok: true,
-			verdict: { thinking: "", shouldBlock: true, reason: "nope" },
+			verdict: { thinking: "", shouldBlock: true, reason: "nope", engine: "llm" },
 		});
 		const { session } = await createSessionWith({ enabled: true, maxConsecutiveBlocks: 2 });
 		const handler = vi.fn(async (_toolName: string, _reason?: string) => true);

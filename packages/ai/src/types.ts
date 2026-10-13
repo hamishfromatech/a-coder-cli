@@ -307,6 +307,124 @@ export interface ImagesOptions extends ProviderRequestOptions<ImagesModel<Images
 
 export type ProviderImagesOptions = ImagesOptions & Record<string, unknown>;
 
+// ---- Decision models (System One wire) ----
+
+export type KnownDecisionsApi = "systemone";
+export type DecisionsApi = KnownDecisionsApi | (string & {});
+
+export type KnownDecisionsProvider = "typesafe" | "openrouter" | "ollama" | "lm-studio" | "llama-cpp" | "unsloth";
+export type DecisionsProviderId = KnownDecisionsProvider | (string & {});
+
+/**
+ * A System One question. `noul` is a bare true/false judgment (the model's
+ * primitive), `choice` picks among described options, `score` picks a position
+ * on a described ordinal legend (0..criteria.length-1).
+ */
+export interface DecisionQuestionBase {
+	/** Plain-language instruction for the question. */
+	instructions: string;
+}
+export interface DecisionQuestionChoice extends DecisionQuestionBase {
+	type: "choice";
+	/** Each option mapped to its plain-language description. */
+	criteria: Record<string, string>;
+}
+export interface DecisionQuestionNoul extends DecisionQuestionBase {
+	type: "noul";
+	/** Optional descriptions for the false / true interpretations. */
+	criteria?: Record<string, string>;
+}
+export interface DecisionQuestionScore extends DecisionQuestionBase {
+	type: "score";
+	/** Ordinal legend ("not started" → "done"); the answer is an index into it. */
+	criteria: string[];
+}
+export type DecisionQuestion = DecisionQuestionChoice | DecisionQuestionNoul | DecisionQuestionScore;
+
+export interface DecisionAnswerChoice {
+	type: "choice";
+	choice: string;
+	probabilities?: Record<string, number>;
+	confidence?: number;
+}
+export interface DecisionAnswerNoul {
+	type: "noul";
+	noul: number;
+	probabilities?: Record<string, number>;
+	confidence?: number;
+}
+export interface DecisionAnswerScore {
+	type: "score";
+	score: number;
+	legend?: Record<string, string>;
+	probabilities?: Record<string, number>;
+	confidence?: number;
+}
+export type DecisionAnswer = DecisionAnswerChoice | DecisionAnswerNoul | DecisionAnswerScore;
+
+export interface DecisionUsage {
+	inputTokens?: number;
+	outputTokens?: number;
+	cost?: number;
+}
+
+/** A single System One decision request result. Never rejects: failures come back
+ * with `stopReason: "error"` like `AssistantImages`. */
+export interface DecisionResult {
+	api: string;
+	provider: string;
+	/** The model id from the request. */
+	model: string;
+	/** The model id the server reports it served (substitution guard input). */
+	servedModel?: string;
+	/** Server request id, when returned. */
+	requestId?: string;
+	answers: Record<string, DecisionAnswer>;
+	usage?: DecisionUsage;
+	stopReason: "stop" | "aborted" | "error";
+	errorMessage?: string;
+	/** Latency of the decision round-trip in milliseconds. */
+	durationMs?: number;
+	timestamp: number;
+}
+
+/** A decision model: the decision-side counterpart of `Model`/`ImagesModel`.
+ * Decision models are never chat models; they own no contextWindow beyond the
+ * server-declared state capacity, and never carry a compat block. */
+export interface DecisionsModel<TApi extends DecisionsApi>
+	extends Omit<Model<Api>, "api" | "provider" | "reasoning" | "maxTokens" | "compat"> {
+	api: TApi;
+	provider: DecisionsProviderId;
+	/** Input modalities the model judges. */
+	input: ("text" | "image")[];
+	/** Maximum named questions per request this server accepts for the model. */
+	maxQuestions?: number;
+	/** Request path override for hosts serving the wire at a non-default route
+	 * (OpenRouter: `/alpha/decisions`; defaults to `/systemone`). */
+	systemonePath?: string;
+}
+
+export interface DecisionsContext {
+	/** The text (or serialized object/array) to judge. Never chat messages. */
+	state: string | JsonValue;
+	/** Named questions about the state. Answers are not passed into later questions. */
+	questions: Record<string, DecisionQuestion>;
+	/** Base64-encoded PNG/JPEG/WebP images shared by all questions, in request order.
+	 * Requires a vision-capable decision model (e.g. clef, clef-flash). */
+	images?: string[];
+}
+
+export interface DecisionsOptions extends ProviderRequestOptions<DecisionsModel<DecisionsApi>> {
+	/** Ollama-style keep-alive for local servers: duration ("5m") or seconds.
+	 * Not understood by remote hosts, which ignore unknown fields. */
+	keepAlive?: string | number;
+}
+
+export type DecisionsFunction<
+	TApi extends DecisionsApi = DecisionsApi,
+	TOptions extends DecisionsOptions = DecisionsOptions,
+> = (model: DecisionsModel<TApi>, context: DecisionsContext, options?: TOptions) => Promise<DecisionResult>;
+
 export interface AnthropicAllowedFallbackModel {
 	provider: ProviderId;
 	model: string;

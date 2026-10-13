@@ -8,6 +8,7 @@ Pi supports subscription-based providers via OAuth and API key providers via env
 - [API Keys](#api-keys)
 - [Auth File](#auth-file)
 - [Keyless Local Model Servers](#keyless-local-model-servers)
+- [Decision Models](#decision-models)
 - [Cloud Providers](#cloud-providers)
 - [Custom Providers](#custom-providers)
 - [Resolution Order](#resolution-order)
@@ -190,6 +191,10 @@ Seven built-in entries talk to OpenAI-compatible servers on your own machine wit
 | SGLang | `http://localhost:30000/v1` | `SGLANG_BASE_URL` | `localProviders.sglangBaseUrl` |
 
 Start a server (`vllm serve <model>`, `sglang.launch_server`, `lmstudio`, ...) and the models appear in `/model` within two minutes, or run `/login <provider>` to set a custom base URL (no key needed) and refresh immediately. The desktop Settings "Local models" section edits the same `localProviders.*` settings. Model IDs match the server's served names, for example `--model "vllm/meta-llama/Llama-3.1-8B-Instruct"`.
+
+## Decision Models
+
+Decision models (System One wire: Jev via TypeSafe/OpenRouter; Clef/Nimble on Ollama, LM Studio, llama.cpp, Unsloth) answer typed questions with probabilities — they are not chat models and never appear in `/model`. The agent uses them via the read-only `decide` tool, and the auto-mode permission classifier runs its gate on one when reachable (zero-config: `ollama pull clef-flash`). Full details: [decision-models.md](decision-models.md).
 
 ## Cloud Providers
 

@@ -30,6 +30,7 @@ export type {
 	OAuthSelectOption,
 	OAuthSelectPrompt,
 } from "./compat/extension-oauth-types.ts";
+export * from "./decisions-models.ts";
 export * from "./images-models.ts";
 export * from "./models.ts";
 export * from "./models-store.ts";

@@ -1,3 +1,4 @@
+import { createDecisionsModels, type DecisionsProvider, type MutableDecisionsModels } from "../decisions-models.ts";
 import { createImagesModels, type ImagesProvider, type MutableImagesModels } from "../images-models.ts";
 import { MODELS } from "../models.generated.ts";
 import { type CreateModelsOptions, createModels, type MutableModels, type Provider } from "../models.ts";
@@ -11,6 +12,7 @@ import { cerebrasProvider } from "./cerebras.ts";
 import { cloudflareAIGatewayProvider } from "./cloudflare-ai-gateway.ts";
 import { cloudflareWorkersAIProvider } from "./cloudflare-workers-ai.ts";
 import modelDataManifest from "./data/.manifest.json" with { type: "json" };
+import { localDecisionsProviders, openrouterDecisionsProvider, typesafeDecisionsProvider } from "./decisions/static.ts";
 import { deepseekProvider } from "./deepseek.ts";
 import { fireworksProvider } from "./fireworks.ts";
 import { githubCopilotProvider } from "./github-copilot.ts";
@@ -167,6 +169,21 @@ export function builtinImagesProviders(): ImagesProvider[] {
 export function builtinImagesModels(options?: CreateModelsOptions): MutableImagesModels {
 	const models = createImagesModels(options);
 	for (const provider of builtinImagesProviders()) {
+		models.setProvider(provider);
+	}
+	return models;
+}
+
+/** All built-in decision-model providers, freshly constructed: the two System One
+ * cloud routes plus one provider per keyless local server that speaks the wire. */
+export function builtinDecisionsProviders(): DecisionsProvider[] {
+	return [typesafeDecisionsProvider(), openrouterDecisionsProvider(), ...localDecisionsProviders()];
+}
+
+/** A `DecisionsModels` collection with every built-in decision-model provider registered. */
+export function builtinDecisionsModels(options?: CreateModelsOptions): MutableDecisionsModels {
+	const models = createDecisionsModels(options);
+	for (const provider of builtinDecisionsProviders()) {
 		models.setProvider(provider);
 	}
 	return models;

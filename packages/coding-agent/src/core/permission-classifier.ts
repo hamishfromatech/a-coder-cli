@@ -5,7 +5,7 @@
  * degrade to the normal approval flow via the session's circuit breaker.
  */
 
-import type { Context, Model, Tool } from "@earendil-works/pi-ai";
+import type { Context, DecisionQuestion, DecisionsModel, DecisionsModels, Model, Tool } from "@earendil-works/pi-ai";
 import { completeSimple } from "@earendil-works/pi-ai/compat";
 import { Type } from "typebox";
 
@@ -33,6 +33,96 @@ Block a call ONLY when it is:
 
 Everything else — even risky-but-task-relevant commands, package installs, writes inside the project — is allowed.
 Be conservative: when unsure, do NOT block.`;
+
+// ─── decision-model classifier (System One wire) ────────────────────
+
+/** Choice criteria for the block verdict — mirrors the LLM classifier policy word-for-word. */
+const DECISION_VERDICT_CRITERIA = {
+	allow: "Normal for the task: risky-but-task-relevant commands, package installs, writes inside the project, everything else.",
+	block: "Destructive outside the obvious task (rm -rf, git reset --hard, DROP TABLE), exfiltrating secrets or user data, security-changing/persistent (disabling sandbox, shell profiles, background daemons), or clearly unrelated to the user's work.",
+} as const;
+
+const DECISION_RISK_LEGEND = ["harmless", "minor", "elevated", "severe"] as const;
+
+/** The System One question set for the auto-mode gate: a block choice plus an
+ * ordinal risk score, judged against the tool-call proposal. */
+export function buildDecisionClassifierQuestions(): Record<string, DecisionQuestion> {
+	return {
+		verdict: {
+			type: "choice",
+			instructions:
+				"Decide whether to block this proposed tool call from an autonomous coding agent. Be conservative: when unsure, allow.",
+			criteria: DECISION_VERDICT_CRITERIA,
+		},
+		risk: {
+			type: "score",
+			instructions: "How risky is this tool call for the user?",
+			criteria: [...DECISION_RISK_LEGEND],
+		},
+	};
+}
+
+function decisionState(
+	toolName: string,
+	args: Record<string, unknown> | undefined,
+	recentToolCalls?: string[],
+): string {
+	return JSON.stringify({
+		proposal: { tool: toolName, arguments: serializeArgs(args) },
+		recent: recentToolCalls ?? [],
+	});
+}
+
+/** Decision models judge plain text; stringify args so nested JSON reads naturally. */
+function serializeArgs(args: Record<string, unknown> | undefined): string {
+	return args === undefined ? "{}" : JSON.stringify(args);
+}
+
+/** Run the auto-mode gate through a System One decision model (cheap, fast,
+ * private on local servers). Maps `verdict: choice[block]` onto the shared
+ * `ClassifierVerdict`; probability/confidence ride along for UI display. */
+export async function classifyToolCallWithDecisionModel(
+	decisions: DecisionsModels,
+	model: DecisionsModel<any>,
+	options: {
+		toolName: string;
+		args: Record<string, unknown> | undefined;
+		recentToolCalls?: string[];
+		signal?: AbortSignal;
+	},
+): Promise<ClassifierOutcome> {
+	const result = await decisions.postDecisions(
+		model,
+		{
+			state: decisionState(options.toolName, options.args, options.recentToolCalls),
+			questions: buildDecisionClassifierQuestions(),
+		},
+		{ ...(options.signal ? { signal: options.signal } : {}) },
+	);
+	if (result.stopReason !== "stop") {
+		return { ok: false, error: result.errorMessage ?? "decision model request failed" };
+	}
+	const verdict = result.answers.verdict;
+	if (!verdict || verdict.type !== "choice") {
+		return { ok: false, error: "decision model returned no verdict" };
+	}
+	const shouldBlock = verdict.choice === "block";
+	const reason = shouldBlock ? DECISION_VERDICT_CRITERIA.block : "call looks safe";
+	return {
+		ok: true,
+		verdict: {
+			thinking: "",
+			shouldBlock,
+			reason,
+			engine: "decision",
+			...(typeof verdict.confidence === "number" ? { confidence: verdict.confidence } : {}),
+			...(typeof verdict.probabilities?.[verdict.choice] === "number"
+				? { topProbability: verdict.probabilities?.[verdict.choice] }
+				: {}),
+			model: result.servedModel ?? result.model,
+		},
+	};
+}
 
 /** Build the classifier's Context (one user message with the proposal + recent history). */
 export function buildClassifierContext(options: {
@@ -73,6 +163,14 @@ export interface ClassifierVerdict {
 	thinking: string;
 	shouldBlock: boolean;
 	reason: string;
+	/** Which engine produced the verdict. */
+	engine: "llm" | "decision";
+	/** Confidence the server reported for the answer (0..1), when present. */
+	confidence?: number;
+	/** Probability of the chosen option / score bucket (0..1), when present. */
+	topProbability?: number;
+	/** Served decision model id, when the verdict came from a decision model. */
+	model?: string;
 }
 
 export type ClassifierOutcome = { ok: true; verdict: ClassifierVerdict } | { ok: false; error: string };
@@ -111,6 +209,7 @@ export async function classifyToolCall(
 				thinking: typeof parsed.thinking === "string" ? parsed.thinking : "",
 				shouldBlock: parsed.shouldBlock,
 				reason: typeof parsed.reason === "string" ? parsed.reason : "",
+				engine: "llm",
 			},
 		};
 	} catch (error) {
