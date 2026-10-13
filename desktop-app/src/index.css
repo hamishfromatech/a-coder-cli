@@ -174,6 +174,20 @@ body {
 	color: var(--pi-text);
 }
 
+/* While a native browser page is composited under the app's webview (layered
+   macOS pages), the body must be transparent in the page's region or it
+   paints over the page, and the fixed grain layer's mix-blend-mode forces
+   the webview to composite opaque (everything black). --pi-bg equals the
+   window background in dark mode, so the chrome around the page looks
+   identical; light mode keeps an opaque body and the page region shows the
+   app's loading state instead (follow-up). */
+html.has-page:not(.light) body {
+	background-color: transparent;
+}
+html.has-page:not(.light) body::after {
+	display: none;
+}
+
 /* ============================================================
    Scrollbar — neutral-tinted, hairline-thin.
    ============================================================ */

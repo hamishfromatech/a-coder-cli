@@ -378,6 +378,15 @@ function toBlob(png: ArrayBuffer | number[]): Blob | null {
 void browser;
 
 rendererLog("browser: store module loaded");
+// A native page under the app webview needs the body transparent over the
+// page's region (index.css `.has-page`): keep the class in sync with whether
+// any OS page view is live.
+useBrowserStore.subscribe((state) => {
+	document.documentElement.classList.toggle(
+		"has-page",
+		Boolean(state.supported && state.layered && state.tabs.length > 0),
+	);
+});
 // Bind the event channel once at module load; the store exists before React.
 let bound = false;
 if (!bound) {

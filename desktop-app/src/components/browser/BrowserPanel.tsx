@@ -169,9 +169,9 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 	);
 
 	return (
-		<div ref={panelRef} className="relative flex h-full min-h-0 w-full flex-col bg-pi-bg">
+		<div ref={panelRef} className="relative flex h-full min-h-0 w-full flex-col bg-transparent">
 			{/* Chrome over the page (layered) or above it (plain) */}
-			<div ref={chromeRef} className="flex shrink-0 flex-col border-b border-pi-border">
+			<div ref={chromeRef} className="flex shrink-0 flex-col border-b border-pi-border bg-pi-bg">
 				{/* Tab bar */}
 				<div data-browser-input className="flex items-center gap-1 overflow-x-auto px-2 pt-1.5">
 					{tabs.map((tab) => (

@@ -43,14 +43,18 @@ export function RightSidebar({ projectPath }: Props) {
 	}, [rightSidebarTab, rightSidebarWidth, setRightSidebarWidth]);
 
 	return (
-		<div className="flex h-full w-full flex-row bg-pi-surface shadow-card">
+		<div
+			className={`flex h-full w-full flex-row shadow-card ${
+				rightSidebarTab === "browser" ? "bg-transparent" : "bg-pi-surface"
+			}`}
+		>
 			{/* Vertical icon rail: the sidebar's inner edge. Tooltips carry the
 			    names; the active panel repeats its name in a slim header. */}
 			<div
 				role="tablist"
 				aria-label="Right sidebar panels"
 				aria-orientation="vertical"
-				className="flex w-11 shrink-0 flex-col gap-1 border-r border-pi-border px-1 py-2"
+				className="flex w-11 shrink-0 flex-col gap-1 border-r border-pi-border bg-pi-surface px-1 py-2"
 			>
 				{TABS.map(({ id, label, icon: Icon }) => {
 					const active = rightSidebarTab === id;
