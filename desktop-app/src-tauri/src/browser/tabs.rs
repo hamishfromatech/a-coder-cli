@@ -712,41 +712,43 @@ fn on_page_load<R: Runtime>(
 	}
 	let url = payload.url().to_string();
 	let loading = matches!(payload.event(), PageLoadEvent::Started);
-	{
-		let state = app.state::<TabsState>();
-		let mut inner = state.inner.lock().unwrap();
-		inner.urls.insert(tab_id.to_string(), url.clone());
-		// Started is a commit (WebKit) or content loading (WebView2): never a
-		// download. Feed the visited stack here, where redirects funnel.
-		if loading {
-			inner.committed.insert(tab_id.to_string());
-			note_commit(app, tab_id, &url);
+	// The state bookkeeping and events happen off the WebKit callback: this
+	// handler runs inside the web commit's IPC dispatch on the main thread,
+	// and anything blocking (locks) there froze the whole app.
+	let app = app.clone();
+	let tab_id = tab_id.to_string();
+	let page = page.clone();
+	let _ = tauri::async_runtime::spawn(async move {
+		let muted = {
+			let state = app.state::<TabsState>();
+			let mut inner = state.inner.lock().unwrap();
+			inner.urls.insert(tab_id.clone(), url.clone());
+			// Started is a commit (WebKit) or content loading (WebView2): never
+			// a download. Feed the visited stack here, where redirects funnel.
+			if loading {
+				inner.committed.insert(tab_id.clone());
+				commit_offers(&app, &mut inner, &tab_id, &url);
+			}
+			inner.muted.contains(&tab_id)
+		};
+		emit(
+			&app,
+			BrowserEvent::Load {
+				tab_id: tab_id.clone(),
+				url: url.clone(),
+				loading,
+			},
+		);
+		if !loading {
+			super::capture::schedule_window_composite_once(&app);
 		}
-	}
-	emit(
-		app,
-		BrowserEvent::Load {
-			tab_id: tab_id.to_string(),
-			url: url.clone(),
-			loading,
-		},
-	);
-	if !loading {
-		super::capture::schedule_window_composite_once(app);
-	}
-	// A muted tab stays muted through its loads; each page is muted again on
-	// commit, since a fresh document has fresh media.
-	#[cfg(target_os = "macos")]
-	if app
-		.state::<TabsState>()
-		.inner
-		.lock()
-		.unwrap()
-		.muted
-		.contains(tab_id)
-	{
-		let _ = super::mute::apply(page, true);
-	}
+		// A muted tab stays muted through its loads; each page is muted again
+		// on commit, since a fresh document has fresh media.
+		#[cfg(target_os = "macos")]
+		if muted {
+			let _ = super::mute::apply(&page, true);
+		}
+	});
 }
 
 /// The page's own profile: its data store (never the app's), and the proxy.
@@ -817,36 +819,43 @@ fn offers_of(hist: &Hist) -> (bool, bool) {
 }
 
 /// Records a committed url in the tab's visited stack and tells the panel
-/// when its offers change. A commit matching the neighbouring entry is a
-/// back/forward move; anything else is a fresh navigation that cuts the
-/// forward tail (so back works while forward dies, like real browsers).
+/// when its offers change.
 fn note_commit<R: Runtime>(app: &AppHandle<R>, tab_id: &str, url: &str) {
 	let state = app.state::<TabsState>();
-	let was = {
-		let inner = state.inner.lock().unwrap();
-		inner.history.get(tab_id).map(offers_of).unwrap_or((false, false))
-	};
-	let (offers, changed) = {
-		let mut inner = state.inner.lock().unwrap();
-		let hist = inner.history.entry(tab_id.to_string()).or_default();
-		let changed = hist
-			.entries
-			.get(hist.index)
-			.is_some_and(|current| current != url);
-		if changed {
-			if hist.entries.get(hist.index + 1) == Some(&url.to_string()) {
-				hist.index += 1;
-			} else {
-				hist.entries.truncate(hist.index + 1);
-				hist.entries.push(url.to_string());
-				if hist.entries.len() > MAX_HISTORY {
-					hist.entries.remove(0);
-				}
-				hist.index = hist.entries.len() - 1;
+	let mut inner = state.inner.lock().unwrap();
+	commit_offers(app, &mut inner, tab_id, url);
+}
+
+/// Stack update on an ALREADY-LOCKED inner (commit paths that hold it): a
+/// commit matching the neighbouring entry is a back/forward move; anything
+/// else is a fresh navigation that cuts the forward tail (back works,
+/// forward dies, like real browsers).
+fn commit_offers<R: Runtime>(
+	app: &AppHandle<R>,
+	inner: &mut Inner,
+	tab_id: &str,
+	url: &str,
+) {
+	let was = inner
+		.history
+		.get(tab_id)
+		.map(offers_of)
+		.unwrap_or((false, false));
+	let hist = inner.history.entry(tab_id.to_string()).or_default();
+	let current = hist.entries.get(hist.index).map(String::as_str);
+	if current != Some(url) {
+		if hist.entries.get(hist.index + 1) == Some(&url.to_string()) {
+			hist.index += 1;
+		} else {
+			hist.entries.truncate(hist.index + 1);
+			hist.entries.push(url.to_string());
+			if hist.entries.len() > MAX_HISTORY {
+				hist.entries.remove(0);
 			}
+			hist.index = hist.entries.len() - 1;
 		}
-		(offers_of(hist), changed)
-	};
+	}
+	let offers = offers_of(hist);
 	history_changed(app, tab_id, was, offers);
 }
 
