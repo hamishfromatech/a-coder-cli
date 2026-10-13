@@ -42,17 +42,25 @@ pub async fn ensure_cli_version_matches() -> Result<CliResolution, String> {
 
 	// Already matches? Use it.
 	if installed_version == normalized_desktop {
-		return Ok(CliResolution { path: installed, newer_engine: None });
+		return Ok(CliResolution {
+			path: installed,
+			newer_engine: None,
+		});
 	}
 
 	// A newer engine is fine — use it and let the caller surface the skew.
-	if compare_dotted_versions(&installed_version, &normalized_desktop) == Some(std::cmp::Ordering::Greater) {
+	if compare_dotted_versions(&installed_version, &normalized_desktop)
+		== Some(std::cmp::Ordering::Greater)
+	{
 		tracing::info!(
 			"CLI {} is newer than desktop {}; using it as-is",
 			installed_version,
 			normalized_desktop
 		);
-		return Ok(CliResolution { path: installed, newer_engine: Some(installed_version) });
+		return Ok(CliResolution {
+			path: installed,
+			newer_engine: Some(installed_version),
+		});
 	}
 
 	// Older (or incomparable): download the CLI release matching the desktop
@@ -71,14 +79,18 @@ pub async fn ensure_cli_version_matches() -> Result<CliResolution, String> {
 		));
 	}
 
-	Ok(CliResolution { path: updated_path, newer_engine: None })
+	Ok(CliResolution {
+		path: updated_path,
+		newer_engine: None,
+	})
 }
 
 /// Compare two dotted numeric versions ("0.80.113"). Returns None when either
 /// side can't be parsed as dot-separated integers (pre-release suffixes etc.),
 /// in which case the caller falls back to the conservative re-install path.
 fn compare_dotted_versions(a: &str, b: &str) -> Option<std::cmp::Ordering> {
-	let parse = |v: &str| -> Option<Vec<u64>> { v.split('.').map(|p| p.parse::<u64>().ok()).collect() };
+	let parse =
+		|v: &str| -> Option<Vec<u64>> { v.split('.').map(|p| p.parse::<u64>().ok()).collect() };
 	let (a, b) = (parse(a)?, parse(b)?);
 	let len = a.len().max(b.len());
 	for i in 0..len {
@@ -138,7 +150,11 @@ fn strip_v_prefix(v: &str) -> String {
 /// legacy `~/.a-coder/bin` directory exists (pre product-nesting installs put
 /// the command there and users' PATH already references it), it also gets a
 /// shim pointing at `../cli/lib/a-coder-cli/pi`.
-fn write_command_shims(bin_dir: &Path, legacy_bin_dir: Option<&Path>, platform: &str) -> Result<(), String> {
+fn write_command_shims(
+	bin_dir: &Path,
+	legacy_bin_dir: Option<&Path>,
+	platform: &str,
+) -> Result<(), String> {
 	std::fs::create_dir_all(bin_dir).map_err(|e| e.to_string())?;
 	let name = if platform == "windows" {
 		"a-coder-cli.cmd"
@@ -186,9 +202,16 @@ async fn install_cli_release(tag: &str) -> Result<PathBuf, String> {
 	let bin_dir = install_dir.join("bin");
 
 	let (platform, arch) = platform_arch();
-	let archive_ext = if platform == "windows" { "zip" } else { "tar.gz" };
+	let archive_ext = if platform == "windows" {
+		"zip"
+	} else {
+		"tar.gz"
+	};
 	let asset = format!("pi-{}-{}.{}", platform, arch, archive_ext);
-	let url = format!("https://github.com/{}/releases/download/{}/{}", REPO, tag, asset);
+	let url = format!(
+		"https://github.com/{}/releases/download/{}/{}",
+		REPO, tag, asset
+	);
 
 	let tmp = std::env::temp_dir().join(format!("ac-cli-update-{}-{}", tag, asset));
 	tracing::info!("Updating a-coder-cli from {} to {}", tag, url);
@@ -197,7 +220,11 @@ async fn install_cli_release(tag: &str) -> Result<PathBuf, String> {
 	stage_and_swap_archive(&tmp, &lib_dir, archive_ext == "zip")?;
 	let _ = std::fs::remove_file(&tmp);
 
-	let bin_name = if platform == "windows" { "pi.exe" } else { "pi" };
+	let bin_name = if platform == "windows" {
+		"pi.exe"
+	} else {
+		"pi"
+	};
 	let binary = lib_dir.join(bin_name);
 	if !binary.is_file() {
 		return Err(format!(
@@ -242,9 +269,16 @@ pub async fn bootstrap_cli() -> Result<String, String> {
 	let tag = resolve_latest_tag().await?;
 
 	let (platform, arch) = platform_arch();
-	let archive_ext = if platform == "windows" { "zip" } else { "tar.gz" };
+	let archive_ext = if platform == "windows" {
+		"zip"
+	} else {
+		"tar.gz"
+	};
 	let asset = format!("pi-{}-{}.{}", platform, arch, archive_ext);
-	let url = format!("https://github.com/{}/releases/download/{}/{}", REPO, tag, asset);
+	let url = format!(
+		"https://github.com/{}/releases/download/{}/{}",
+		REPO, tag, asset
+	);
 
 	// Download to a temp file.
 	let tmp = std::env::temp_dir().join(format!("ac-bootstrap-{}-{}", tag, asset));
@@ -254,7 +288,11 @@ pub async fn bootstrap_cli() -> Result<String, String> {
 	let _ = std::fs::remove_file(&tmp);
 
 	// Locate the compiled binary.
-	let bin_name = if platform == "windows" { "pi.exe" } else { "pi" };
+	let bin_name = if platform == "windows" {
+		"pi.exe"
+	} else {
+		"pi"
+	};
 	let binary = lib_dir.join(bin_name);
 	if !binary.is_file() {
 		return Err(format!(
@@ -391,7 +429,11 @@ fn stage_and_swap_archive(archive: &Path, lib_dir: &Path, is_zip: bool) -> Resul
 			let _ = std::fs::rename(backup_path, lib_dir);
 		}
 		let _ = std::fs::remove_dir_all(&staging);
-		return Err(format!("Failed to move the new install into place ({}): {}", lib_dir.display(), e));
+		return Err(format!(
+			"Failed to move the new install into place ({}): {}",
+			lib_dir.display(),
+			e
+		));
 	}
 
 	// Best-effort: the old dir may still be held open by a running engine.
@@ -511,7 +553,8 @@ mod tests {
 
 	#[test]
 	fn stage_and_swap_replaces_install_and_leaves_no_residue() {
-		let root = std::env::temp_dir().join(format!("ac-bootstrap-swap-test-{}", std::process::id()));
+		let root =
+			std::env::temp_dir().join(format!("ac-bootstrap-swap-test-{}", std::process::id()));
 		let _ = std::fs::remove_dir_all(&root);
 		let lib_dir = root.join("lib").join("a-coder-cli");
 		std::fs::create_dir_all(&lib_dir).unwrap();
@@ -533,7 +576,10 @@ mod tests {
 		assert!(status.success());
 
 		stage_and_swap_archive(&archive, &lib_dir, false).unwrap();
-		assert_eq!(std::fs::read_to_string(lib_dir.join("pi")).unwrap(), "new engine");
+		assert_eq!(
+			std::fs::read_to_string(lib_dir.join("pi")).unwrap(),
+			"new engine"
+		);
 		assert!(!lib_dir.join("stale.txt").exists());
 
 		// No staging dirs or leftover backups beside the install.
@@ -547,19 +593,20 @@ mod tests {
 
 		// A second update swaps again without error (stale-cleanup path).
 		std::fs::write(payload.join("pi"), b"newer engine").unwrap();
-		assert!(
-			std::process::Command::new("tar")
-				.arg("-czf")
-				.arg(&archive)
-				.arg("-C")
-				.arg(root.join("payload"))
-				.arg("pi")
-				.status()
-				.unwrap()
-				.success()
-		);
+		assert!(std::process::Command::new("tar")
+			.arg("-czf")
+			.arg(&archive)
+			.arg("-C")
+			.arg(root.join("payload"))
+			.arg("pi")
+			.status()
+			.unwrap()
+			.success());
 		stage_and_swap_archive(&archive, &lib_dir, false).unwrap();
-		assert_eq!(std::fs::read_to_string(lib_dir.join("pi")).unwrap(), "newer engine");
+		assert_eq!(
+			std::fs::read_to_string(lib_dir.join("pi")).unwrap(),
+			"newer engine"
+		);
 
 		let _ = std::fs::remove_dir_all(&root);
 	}
@@ -567,11 +614,26 @@ mod tests {
 	#[test]
 	fn compare_dotted_versions_orders_semantically() {
 		use std::cmp::Ordering;
-		assert_eq!(compare_dotted_versions("0.80.113", "0.80.113"), Some(Ordering::Equal));
-		assert_eq!(compare_dotted_versions("0.80.114", "0.80.113"), Some(Ordering::Greater));
-		assert_eq!(compare_dotted_versions("0.80.9", "0.80.113"), Some(Ordering::Less));
-		assert_eq!(compare_dotted_versions("0.81", "0.80.113"), Some(Ordering::Greater));
-		assert_eq!(compare_dotted_versions("1.0", "0.99.99"), Some(Ordering::Greater));
+		assert_eq!(
+			compare_dotted_versions("0.80.113", "0.80.113"),
+			Some(Ordering::Equal)
+		);
+		assert_eq!(
+			compare_dotted_versions("0.80.114", "0.80.113"),
+			Some(Ordering::Greater)
+		);
+		assert_eq!(
+			compare_dotted_versions("0.80.9", "0.80.113"),
+			Some(Ordering::Less)
+		);
+		assert_eq!(
+			compare_dotted_versions("0.81", "0.80.113"),
+			Some(Ordering::Greater)
+		);
+		assert_eq!(
+			compare_dotted_versions("1.0", "0.99.99"),
+			Some(Ordering::Greater)
+		);
 	}
 
 	#[test]

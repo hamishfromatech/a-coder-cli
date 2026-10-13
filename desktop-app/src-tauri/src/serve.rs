@@ -26,7 +26,12 @@ pub struct ServeState {
 /// emitted as `desktop://serve-line` (JSON strings); exit as
 /// `desktop://serve-exit` with the process exit code (i64).
 #[tauri::command]
-pub async fn serve_start(app: AppHandle, state: State<'_, ServeState>, cwd: String, port: Option<u16>) -> Result<String, String> {
+pub async fn serve_start(
+	app: AppHandle,
+	state: State<'_, ServeState>,
+	cwd: String,
+	port: Option<u16>,
+) -> Result<String, String> {
 	{
 		let guard = state.child.lock().await;
 		if guard.is_some() {

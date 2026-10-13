@@ -25,7 +25,10 @@ fn normalize_base_url(raw: &str) -> Result<String, String> {
 	if url.is_empty() {
 		return Err("Base URL is not configured".to_string());
 	}
-	if let Some(stripped) = url.strip_suffix("/audio/speech").or_else(|| url.strip_suffix("/audio/transcriptions")) {
+	if let Some(stripped) = url
+		.strip_suffix("/audio/speech")
+		.or_else(|| url.strip_suffix("/audio/transcriptions"))
+	{
 		url = stripped.to_string();
 	}
 	if !url.to_lowercase().ends_with("/v1") {
@@ -65,14 +68,25 @@ pub async fn voice_transcribe(
 	} else {
 		"bin"
 	};
-	let mime = if mime_type.is_empty() { "application/octet-stream" } else { &mime_type };
+	let mime = if mime_type.is_empty() {
+		"application/octet-stream"
+	} else {
+		&mime_type
+	};
 
 	let part = reqwest::multipart::Part::bytes(bytes)
 		.file_name(format!("recording.{}", ext))
 		.mime_str(mime)
 		.map_err(|e| e.to_string())?;
 	let form = reqwest::multipart::Form::new()
-		.text("model", if settings.voice_stt_model.trim().is_empty() { "whisper-1".to_string() } else { settings.voice_stt_model })
+		.text(
+			"model",
+			if settings.voice_stt_model.trim().is_empty() {
+				"whisper-1".to_string()
+			} else {
+				settings.voice_stt_model
+			},
+		)
 		.text("response_format", "json")
 		.part("file", part);
 
@@ -84,16 +98,28 @@ pub async fn voice_transcribe(
 		req = req.header("Authorization", auth);
 	}
 
-	let res = req.send().await.map_err(|e| format!("Transcription failed: {}", e))?;
+	let res = req
+		.send()
+		.await
+		.map_err(|e| format!("Transcription failed: {}", e))?;
 	if !res.status().is_success() {
 		let status = res.status();
 		let body = res.text().await.unwrap_or_default();
-		return Err(format!("Transcription failed: {} {} {}", status.as_u16(), status.canonical_reason().unwrap_or(""), body));
+		return Err(format!(
+			"Transcription failed: {} {} {}",
+			status.as_u16(),
+			status.canonical_reason().unwrap_or(""),
+			body
+		));
 	}
 	let text = res.text().await.map_err(|e| e.to_string())?;
 	// response_format=json returns { "text": "..." }; be lenient about plain text.
 	match serde_json::from_str::<serde_json::Value>(&text) {
-		Ok(v) => Ok(v.get("text").and_then(|t| t.as_str()).unwrap_or(&text).to_string()),
+		Ok(v) => Ok(v
+			.get("text")
+			.and_then(|t| t.as_str())
+			.unwrap_or(&text)
+			.to_string()),
 		Err(_) => Ok(text),
 	}
 }
@@ -122,11 +148,19 @@ pub async fn voice_synthesize(text: String, settings: VoiceSettings) -> Result<S
 		req = req.header("Authorization", auth);
 	}
 
-	let res = req.send().await.map_err(|e| format!("Speech synthesis failed: {}", e))?;
+	let res = req
+		.send()
+		.await
+		.map_err(|e| format!("Speech synthesis failed: {}", e))?;
 	if !res.status().is_success() {
 		let status = res.status();
 		let body = res.text().await.unwrap_or_default();
-		return Err(format!("Speech synthesis failed: {} {} {}", status.as_u16(), status.canonical_reason().unwrap_or(""), body));
+		return Err(format!(
+			"Speech synthesis failed: {} {} {}",
+			status.as_u16(),
+			status.canonical_reason().unwrap_or(""),
+			body
+		));
 	}
 	let bytes = res.bytes().await.map_err(|e| e.to_string())?;
 	Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))

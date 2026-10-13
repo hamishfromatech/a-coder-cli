@@ -29,7 +29,10 @@ pub async fn connect(
 	// desktop build: older engines get re-downloaded to the matching release,
 	// while a newer engine is kept and the skew is surfaced to the user.
 	let resolution = if let Some(override_path) = args.cli_path {
-		crate::bootstrap::CliResolution { path: PathBuf::from(override_path), newer_engine: None }
+		crate::bootstrap::CliResolution {
+			path: PathBuf::from(override_path),
+			newer_engine: None,
+		}
 	} else {
 		crate::bootstrap::ensure_cli_version_matches().await?
 	};
@@ -61,10 +64,7 @@ pub async fn disconnect(state: State<'_, AppState>) -> Result<String, String> {
 }
 
 #[command]
-pub async fn send_command(
-	state: State<'_, AppState>,
-	command: Value,
-) -> Result<Value, String> {
+pub async fn send_command(state: State<'_, AppState>, command: Value) -> Result<Value, String> {
 	// Lock only long enough to clone the send handles, then drop the guard so a
 	// slow/lost response can't block other invoke calls (Tauri/Tokio: don't hold a
 	// MutexGuard across a long await). send_with bounds the wait with a timeout.

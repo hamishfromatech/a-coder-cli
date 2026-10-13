@@ -8,10 +8,10 @@ use crate::cli::{build_cli_command, reconstructed_path};
 
 use serde::Deserialize;
 use serde_json::Value;
+use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Child;
-use std::time::Duration;
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
@@ -76,10 +76,17 @@ impl RpcClient {
 			.spawn()
 			.map_err(|e| format!("Failed to spawn CLI: {}", e))?;
 
-		let pending: Arc<Mutex<HashMap<String, PendingRequest>>> = Arc::new(Mutex::new(HashMap::new()));
+		let pending: Arc<Mutex<HashMap<String, PendingRequest>>> =
+			Arc::new(Mutex::new(HashMap::new()));
 		let (stdin_tx, stdin_rx) = mpsc::channel::<String>(64);
 		let alive = Arc::new(AtomicBool::new(true));
-		let io_handle = Self::start_io(&mut child, stdin_rx, pending.clone(), alive.clone(), app_handle.clone())?;
+		let io_handle = Self::start_io(
+			&mut child,
+			stdin_rx,
+			pending.clone(),
+			alive.clone(),
+			app_handle.clone(),
+		)?;
 
 		Ok(Self {
 			stdin_tx,
@@ -97,7 +104,10 @@ impl RpcClient {
 	/// invoke that needs the client).
 	pub(crate) fn handles(
 		&self,
-	) -> (mpsc::Sender<String>, Arc<Mutex<HashMap<String, PendingRequest>>>) {
+	) -> (
+		mpsc::Sender<String>,
+		Arc<Mutex<HashMap<String, PendingRequest>>>,
+	) {
 		(self.stdin_tx.clone(), self.pending.clone())
 	}
 
@@ -136,12 +146,8 @@ impl RpcClient {
 		// history fetches (get_messages) can take a while for big sessions, so
 		// allow up to 60 seconds.
 		match timeout(Duration::from_secs(60), rx).await {
-			Ok(Ok(result)) => {
-				result
-			}
-			Ok(Err(_)) => {
-				Err("RPC channel closed".to_string())
-			}
+			Ok(Ok(result)) => result,
+			Ok(Err(_)) => Err("RPC channel closed".to_string()),
 			Err(_) => {
 				pending.lock().await.remove(&id);
 				Err("RPC response timed out".to_string())

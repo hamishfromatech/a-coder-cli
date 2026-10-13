@@ -49,7 +49,9 @@ pub fn bench_list_tasks(bench_dir: String) -> Result<Vec<BenchTaskInfo>, String>
 		return Err(format!("No tasks directory at {}", tasks_dir.display()));
 	}
 	let mut entries: Vec<BenchTaskInfo> = Vec::new();
-	for entry in std::fs::read_dir(&tasks_dir).map_err(|e| format!("Failed to read {}: {}", tasks_dir.display(), e))? {
+	for entry in std::fs::read_dir(&tasks_dir)
+		.map_err(|e| format!("Failed to read {}: {}", tasks_dir.display(), e))?
+	{
 		let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
 		let path = entry.path();
 		if !path.is_dir() {
@@ -59,7 +61,8 @@ pub fn bench_list_tasks(bench_dir: String) -> Result<Vec<BenchTaskInfo>, String>
 		if !task_path.is_file() {
 			continue;
 		}
-		let raw = std::fs::read_to_string(&task_path).map_err(|e| format!("Failed to read {}: {}", task_path.display(), e))?;
+		let raw = std::fs::read_to_string(&task_path)
+			.map_err(|e| format!("Failed to read {}: {}", task_path.display(), e))?;
 		match parse_task_json(&raw) {
 			Some(info) => entries.push(info),
 			None => return Err(format!("Invalid task.json in {}", path.display())),
@@ -72,13 +75,24 @@ pub fn bench_list_tasks(bench_dir: String) -> Result<Vec<BenchTaskInfo>, String>
 fn parse_task_json(raw: &str) -> Option<BenchTaskInfo> {
 	let value: serde_json::Value = serde_json::from_str(raw).ok()?;
 	let id = value.get("id")?.as_str()?.to_string();
-	let title = value.get("title").and_then(|v| v.as_str()).unwrap_or_else(|| id.as_str()).to_string();
+	let title = value
+		.get("title")
+		.and_then(|v| v.as_str())
+		.unwrap_or_else(|| id.as_str())
+		.to_string();
 	let tags = value
 		.get("tags")
 		.and_then(|v| v.as_array())
-		.map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+		.map(|arr| {
+			arr.iter()
+				.filter_map(|v| v.as_str().map(String::from))
+				.collect()
+		})
 		.unwrap_or_default();
-	let timeout_seconds = value.get("timeoutSeconds").and_then(|v| v.as_u64()).unwrap_or(300);
+	let timeout_seconds = value
+		.get("timeoutSeconds")
+		.and_then(|v| v.as_u64())
+		.unwrap_or(300);
 	Some(BenchTaskInfo {
 		id,
 		title,
@@ -91,7 +105,11 @@ fn parse_task_json(raw: &str) -> Option<BenchTaskInfo> {
 /// `desktop://bench-line` events; completion as `desktop://bench-exit` with
 /// the process exit code (i64).
 #[tauri::command]
-pub async fn bench_start(app: AppHandle, state: State<'_, BenchState>, config: BenchRunConfig) -> Result<String, String> {
+pub async fn bench_start(
+	app: AppHandle,
+	state: State<'_, BenchState>,
+	config: BenchRunConfig,
+) -> Result<String, String> {
 	{
 		let guard = state.child.lock().await;
 		if guard.is_some() {
@@ -111,17 +129,32 @@ pub async fn bench_start(app: AppHandle, state: State<'_, BenchState>, config: B
 		"--bench-dir".into(),
 		config.bench_dir.clone(),
 	];
-	if let Some(endpoint) = config.endpoint.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+	if let Some(endpoint) = config
+		.endpoint
+		.as_ref()
+		.map(|s| s.trim())
+		.filter(|s| !s.is_empty())
+	{
 		args.push("--endpoint".into());
 		args.push(endpoint.to_string());
 		args.push("--api-key".into());
 		args.push(config.api_key.clone().unwrap_or_else(|| "bench".into()));
 	}
-	if let Some(api) = config.api.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+	if let Some(api) = config
+		.api
+		.as_ref()
+		.map(|s| s.trim())
+		.filter(|s| !s.is_empty())
+	{
 		args.push("--api".into());
 		args.push(api.to_string());
 	}
-	if let Some(tasks) = config.tasks.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+	if let Some(tasks) = config
+		.tasks
+		.as_ref()
+		.map(|s| s.trim())
+		.filter(|s| !s.is_empty())
+	{
 		args.push("--tasks".into());
 		args.push(tasks.to_string());
 	}
@@ -174,7 +207,9 @@ pub async fn bench_start(app: AppHandle, state: State<'_, BenchState>, config: B
 					Ok(_) => {
 						let trimmed = line.trim_end().to_string();
 						if !trimmed.is_empty() {
-							let wrapped = serde_json::json!({ "type": "bench_stderr", "message": trimmed }).to_string();
+							let wrapped =
+								serde_json::json!({ "type": "bench_stderr", "message": trimmed })
+									.to_string();
 							let _ = emitter.emit("desktop://bench-line", wrapped);
 						}
 					}
