@@ -83,10 +83,12 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 		};
 	}, [supported, activeId, layered, currentBounds]);
 
-	// Panel closed: hide every page until it reopens.
+	// Panel open: pages may show; closed: park every page until it reopens.
 	useEffect(() => {
+		useBrowserStore.setState({ open: true });
 		return () => {
 			void browser.viewShow({}).catch(() => {});
+			useBrowserStore.setState({ open: false });
 		};
 	}, []);
 

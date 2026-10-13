@@ -4,6 +4,7 @@
 
 import { create } from "zustand";
 import browser, { onBrowserEvent, type BrowserEvent, type TabInfo } from "../lib/browser";
+import { toast } from "./toast-store";
 import { openExternalLink } from "../lib/external-link";
 import { useUiStore } from "./ui-store";
 
@@ -296,6 +297,12 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 			}
 			case "newTab":
 				void state.openTab(event.url);
+				break;
+			case "proxyFailed":
+				toast.error(
+					"Page refused to load",
+					"The browser proxy could not route this tab; the page was left blank on purpose (unproxied loads never happen).",
+				);
 				break;
 			case "openPanel": {
 				// An agent tool wants a page: bring the right rail up on the

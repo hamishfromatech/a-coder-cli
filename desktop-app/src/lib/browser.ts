@@ -28,6 +28,7 @@ export type BrowserEvent =
 	| { type: "external"; tabId: string; url: string }
 	| { type: "newTab"; tabId: string; url: string }
 	| { type: "openPanel"; url: string }
+	| { type: "proxyFailed"; tabId: string; url: string }
 	| { type: "closed"; tabId: string }
 	| {
 			type: "downloadPrompt";
