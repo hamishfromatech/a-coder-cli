@@ -66,7 +66,8 @@ interface BrowserState {
 	applyEvent: (event: BrowserEvent) => void;
 }
 
-const normalizeUrl = (input: string): string | null => {
+/** Normalizes an address-bar entry into an http(s) URL; null when unusable. */
+export const normalizeUrl = (input: string): string | null => {
 	const trimmed = input.trim();
 	if (!trimmed) return null;
 	const withScheme = /^[a-z][a-z0-9+.-]*:/i.test(trimmed) ? trimmed : `https://${trimmed}`;
@@ -117,6 +118,27 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 
 	openTab: async (url) => {
 		if (!get().supported) {
+			// Gateways render reading frames; without one the system browser is
+			// the only way to see a page.
+			if (get().gateway) {
+				const tabId = `frame-${crypto.randomUUID().slice(0, 8)}`;
+				set((state) => ({
+					tabs: [
+						...state.tabs,
+						{
+							id: tabId,
+							url,
+							title: url,
+							loading: false,
+							back: false,
+							muted: false,
+							zoom: 1,
+						},
+					],
+					activeId: tabId,
+				}));
+				return;
+			}
 			await openExternalLink(url);
 			return;
 		}
@@ -145,9 +167,15 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 	navigate: async (tabId, input) => {
 		const url = normalizeUrl(input);
 		if (!url) return;
+		const frameTab = tabId.startsWith("frame-");
 		set((state) => ({
-			tabs: state.tabs.map((tab) => (tab.id === tabId ? { ...tab, url, loading: true } : tab)),
+			tabs: state.tabs.map((tab) =>
+				tab.id === tabId ? { ...tab, url, title: frameTab ? url : tab.title, loading: !frameTab } : tab,
+			),
 		}));
+		// Frame tabs (unsupported platforms) are pure frontend: the iframe's
+		// src follows the URL; the sentinel reports loads back.
+		if (frameTab) return;
 		await browser.navigate(tabId, url).catch(() => {});
 	},
 

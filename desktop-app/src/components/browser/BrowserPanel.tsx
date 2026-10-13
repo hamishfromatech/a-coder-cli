@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import browser, { boundsOf, type ViewBounds } from "../../lib/browser";
 import { openExternalLink } from "../../lib/external-link";
-import { useBrowserStore } from "../../stores/browser-store";
+import { normalizeUrl, useBrowserStore } from "../../stores/browser-store";
 
 export function BrowserPanel({ onClose }: { onClose: () => void }) {
 	const supported = useBrowserStore((state) => state.supported);
@@ -127,8 +127,14 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 
 	const handleNavigateInput = (event: React.FormEvent) => {
 		event.preventDefault();
-		if (!active) return;
-		void useBrowserStore.getState().navigate(active.id, address);
+		const url = normalizeUrl(address);
+		if (!url) return;
+		// No tab yet (fresh panel): the first address becomes the first tab.
+		if (!active) {
+			void openTab(url);
+			return;
+		}
+		void useBrowserStore.getState().navigate(active.id, url);
 	};
 
 	const handleNewTab = () => {
