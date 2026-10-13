@@ -20,6 +20,8 @@ use tauri::{
 
 use super::security::{is_external_handoff, navigation_allowed, page_url, reportable};
 use super::{emit, require_main, BrowserEvent, ViewBounds};
+#[cfg(target_os = "macos")]
+use objc2_foundation::{NSPoint, NSRect, NSSize};
 
 /// The app's webview, the only caller browser commands answer.
 pub(crate) const MAIN_LABEL: &str = "main";
@@ -256,15 +258,18 @@ pub async fn browser_view_show<R: Runtime>(
 	let target = match (&tab_id, &bounds) {
 		(Some(tab_id), Some(bounds)) => Some(match app.get_webview(&label_for(tab_id)) {
 			Some(view) => {
-				let (mut position, size) = logical_rect(&webview, bounds)?;
+				let (mut position, size, scale) = logical_rect(&webview, bounds)?;
 				if parked {
 					position.x = -size.width - PARK_GAP;
 				}
-				view.set_bounds(Rect {
-					position: position.into(),
-					size: size.into(),
-				})
-				.map_err(|error| error.to_string())?;
+				view
+					.set_bounds(Rect {
+						position: position.into(),
+						size: size.into(),
+					})
+					.map_err(|error| error.to_string())?;
+				#[cfg(target_os = "macos")]
+				sync_frame(&view.clone(), position, size, scale);
 				view
 			}
 			None if parked => return Err("no page to park".into()),
@@ -450,36 +455,76 @@ fn parse_page_url(input: &str) -> Result<Url, String> {
 	Ok(url)
 }
 
-/// The caller window's frame origin in logical points, and its physical width,
-/// so the panel's CSS-pixel bounds can be scaled by the app's zoom.
-fn caller_metrics<R: Runtime>(webview: &Webview<R>) -> Result<(LogicalPosition<f64>, f64), String> {
+/// The window's device pixel ratio, so the panel's CSS-pixel bounds can be
+/// scaled into window pixels (tauri/wry divide it back out on the way in).
+/// NOTE: the window's screen position must NOT enter this math — the child's
+/// frame is relative to the window's content view, and adding it (an earlier
+/// attempt) pushed every page off by the window's screen origin.
+fn caller_scale<R: Runtime>(webview: &Webview<R>) -> Result<f64, String> {
 	let window = webview.window();
 	let scale = window.scale_factor().map_err(|error| error.to_string())?;
-	let outer = window.outer_position().map_err(|error| error.to_string())?;
 	let inner = window.inner_size().map_err(|error| error.to_string())?;
-	Ok((
-		LogicalPosition::new(outer.x as f64 / scale, outer.y as f64 / scale),
-		inner.width as f64,
-	))
+	let _ = inner;
+	Ok(scale)
 }
 
 fn logical_rect<R: Runtime>(
 	webview: &Webview<R>,
 	bounds: &ViewBounds,
-) -> Result<(LogicalPosition<f64>, LogicalSize<f64>), String> {
-	let (origin, physical_width) = caller_metrics(webview)?;
-	let scale = if bounds.viewport_width > 0.0 {
-		(physical_width / bounds.viewport_width).max(0.0001)
-	} else {
-		1.0
-	};
+) -> Result<(LogicalPosition<f64>, LogicalSize<f64>, f64), String> {
+	let scale = caller_scale(webview)?;
 	Ok((
-		LogicalPosition::new(origin.x + bounds.x * scale, origin.y + bounds.y * scale),
-		LogicalSize::new(
-			(bounds.width * scale).max(1.0),
-			(bounds.height * scale).max(1.0),
-		),
+		LogicalPosition::new(bounds.x * scale, bounds.y * scale),
+		LogicalSize::new((bounds.width * scale).max(1.0), (bounds.height * scale).max(1.0)),
+		scale,
 	))
+}
+
+/// macOS: write the page's frame directly instead of trusting the tauri/wry
+/// bounds conversion, which has landed children offset by the window's screen
+/// position (observed frame `(origin.x + x, origin.y - y - …)`): the panel's
+/// CSS rect maps to AppKit points with the contentView's unflipped math, y
+/// growing upward from the bottom.
+#[cfg(target_os = "macos")]
+fn sync_frame<R: Runtime>(
+	view: &Webview<R>,
+	position: LogicalPosition<f64>,
+	size: LogicalSize<f64>,
+	scale: f64,
+) {
+	let result = view.with_webview(move |platform| {
+		// Safety: the page view is live; with_webview runs on the main thread.
+		unsafe {
+			let node = &*(platform.inner() as *const objc2_app_kit::NSView);
+			let Some(parent) = node.superview() else {
+				log::warn!("sync_frame: no superview");
+				return;
+			};
+			let height = parent.frame().size.height;
+			let x = position.x / scale;
+			let y = position.y / scale;
+			let width = size.width / scale;
+			let frame_height = size.height / scale;
+			let frame = NSRect::new(
+				NSPoint::new(x, height - y - frame_height),
+				NSSize::new(width, frame_height),
+			);
+			node.setFrame(frame);
+			log::info!(
+				"sync_frame: pos=({:.1},{:.1}) size=({:.1},{:.1}) parent_h={:.1} -> frame=({:.1},{:.1})",
+				position.x,
+				position.y,
+				size.width,
+				size.height,
+				height,
+				frame.origin.x,
+				frame.origin.y
+			);
+		}
+	});
+	if let Err(error) = &result {
+		log::warn!("sync_frame dispatch failed: {error}");
+	}
 }
 
 /// Open (create) a tab's page view.
@@ -596,13 +641,16 @@ fn open_view<R: Runtime>(
 		.focused(false);
 	let builder = with_page_profile(builder, &app)?;
 
-	let (position, size) = logical_rect(caller, &bounds)?;
+	let (position, size, scale) = logical_rect(caller, &bounds)?;
 	let page_view = caller
 		.window()
 		.add_child(builder, position, size)
 		.map_err(|error| error.to_string())?;
 	#[cfg(target_os = "macos")]
-	super::layer::place(&page_view);
+	{
+		super::layer::place(&page_view);
+		sync_frame(&page_view, position, size, scale);
+	}
 	state
 		.inner
 		.lock()
@@ -646,6 +694,7 @@ fn on_page_load<R: Runtime>(
 	);
 	if !loading {
 		refresh_history(app, tab_id, true);
+		super::capture::schedule_window_composite_once(app);
 	}
 	// A muted tab stays muted through its loads; each page is muted again on
 	// commit, since a fresh document has fresh media.

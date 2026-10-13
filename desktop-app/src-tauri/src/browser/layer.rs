@@ -20,7 +20,7 @@ use std::sync::{Mutex, OnceLock};
 use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject, Imp, Sel};
 use objc2::{class, msg_send, sel};
-use objc2_app_kit::{NSEvent, NSView, NSWindowOrderingMode};
+use objc2_app_kit::{NSColor, NSEvent, NSView, NSWindowOrderingMode};
 use objc2_foundation::{ns_string, NSNumber, NSObjectNSKeyValueCoding, NSPoint, NSRect, NSSize};
 use tauri::Runtime;
 
@@ -211,6 +211,16 @@ unsafe fn install_on(view: *mut AnyObject) {
 		main.setValue_forKey(
 			Some(&NSNumber::numberWithBool(false)),
 			ns_string!("drawsBackground"),
+		);
+		// The window's `backgroundColor` reaches wry as an under-page color:
+		// an opaque dark fill behind the web content that composites OVER a
+		// live page sitting below this webview. Clear it, or the page never
+		// shows through however transparent the HTML is.
+		let main_webview = &*(view as *const objc2_web_kit::WKWebView);
+		main_webview.setUnderPageBackgroundColor(Some(&NSColor::clearColor()));
+		let reads_back = main_webview.valueForKey(ns_string!("drawsBackground"));
+		log::info!(
+			"layer: installed; drawsBackground reads back {reads_back:?}"
 		);
 	}
 	MAIN.store(view, Ordering::Release);
