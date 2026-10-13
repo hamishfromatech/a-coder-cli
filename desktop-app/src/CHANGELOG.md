@@ -4,6 +4,8 @@
 
 ### Added
 
+- The agent browser now lives in the right rail as a panel beside the chat: a Browser tab (globe icon) joins the rail, the Toolbar button and command palette toggle it there, and the sidebar widens itself to 480px when the tab opens if it is below that. Chat stays visible while pages run; the tab bar, find, zoom, mute, capture and send-now queue all work in the rail. The ✕ in the browser's tab strip returns to the previous panel.
+
 - Queued messages get a real "send now": hovering a queued message shows a paper-plane button that pulls the item out of the queue and delivers it immediately (steer while the session runs; a plain prompt when idle), instead of only restoring it into the composer for edit-then-send. Row click keeps the edit flow, ✕ keeps removal.
 
 - The right sidebar trades its crowded five-tab label strip for a slim vertical icon rail on the panel edge (VSCode-style): icons with tooltips, the active panel named in a slim header inside the content area, and the Activity attention badge living on the Inbox icon. Minimum sidebar width moves 240→280px so the panels stay comfortable beside the rail.

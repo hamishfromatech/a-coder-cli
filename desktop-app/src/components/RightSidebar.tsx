@@ -1,4 +1,5 @@
-import { AlarmClock, CalendarClock, FileText, GitBranch, Inbox } from "lucide-react";
+import { useEffect } from "react";
+import { AlarmClock, CalendarClock, FileText, GitBranch, Globe, Inbox } from "lucide-react";
 import { useUiStore, type RightSidebarTab } from "../stores/ui-store";
 import { useActivityAttentionCount } from "../stores/activity-store";
 import { triggerHaptic } from "../lib/haptics";
@@ -8,6 +9,7 @@ import { GitPanel } from "./panels/GitPanel";
 import { OfficePanel } from "./office/OfficePanel";
 import { CronPanel } from "./cron/CronPanel";
 import { ActivityPanel } from "./activity/ActivityPanel";
+import { BrowserPanel } from "./browser/BrowserPanel";
 
 interface Props {
 	projectPath: string | null;
@@ -20,15 +22,25 @@ const TABS: {
 }[] = [
 	{ id: "files", label: "Files", icon: FileText },
 	{ id: "git", label: "Git changes", icon: GitBranch },
+	{ id: "browser", label: "Browser", icon: Globe },
 	{ id: "office", label: "Office", icon: CalendarClock },
 	{ id: "cron", label: "Scheduled", icon: AlarmClock },
 	{ id: "activity", label: "Activity", icon: Inbox },
 ];
 
 export function RightSidebar({ projectPath }: Props) {
-	const { rightSidebarTab, setRightSidebarTab, selectedArtifactPath } = useUiStore();
+	const { rightSidebarTab, setRightSidebarTab, selectedArtifactPath, rightSidebarWidth, setRightSidebarWidth } =
+		useUiStore();
 	const attention = useActivityAttentionCount();
 	const activeLabel = TABS.find(({ id }) => id === rightSidebarTab)?.label ?? "";
+
+	// The browser needs more than the default 320px to be usable beside the
+	// chat; widen once when the tab opens (the user can always resize back).
+	useEffect(() => {
+		if (rightSidebarTab === "browser" && rightSidebarWidth < 420) {
+			setRightSidebarWidth(480);
+		}
+	}, [rightSidebarTab, rightSidebarWidth, setRightSidebarWidth]);
 
 	return (
 		<div className="flex h-full w-full flex-row bg-pi-surface shadow-card">
@@ -75,13 +87,16 @@ export function RightSidebar({ projectPath }: Props) {
 				})}
 			</div>
 
-			{/* Content: a slim active-panel header, then the panel itself. */}
+			{/* Content: a slim active-panel header (the browser brings its own
+			    chrome), then the panel itself. */}
 			<div className="flex min-w-0 flex-1 flex-col">
-				<div className="flex h-8 shrink-0 items-center border-b border-pi-border px-3">
-					<span className="text-3xs font-medium uppercase tracking-wide text-pi-text-muted">
-						{activeLabel}
-					</span>
-				</div>
+				{rightSidebarTab !== "browser" && (
+					<div className="flex h-8 shrink-0 items-center border-b border-pi-border px-3">
+						<span className="text-3xs font-medium uppercase tracking-wide text-pi-text-muted">
+							{activeLabel}
+						</span>
+					</div>
+				)}
 				<div className="min-h-0 w-full min-w-0 flex-1">
 					{rightSidebarTab === "files" &&
 						(selectedArtifactPath ? (
@@ -93,6 +108,9 @@ export function RightSidebar({ projectPath }: Props) {
 					{rightSidebarTab === "office" && <OfficePanel />}
 					{rightSidebarTab === "cron" && <CronPanel />}
 					{rightSidebarTab === "activity" && <ActivityPanel />}
+				{rightSidebarTab === "browser" && (
+					<BrowserPanel onClose={() => setRightSidebarTab("files")} />
+				)}
 				</div>
 			</div>
 		</div>

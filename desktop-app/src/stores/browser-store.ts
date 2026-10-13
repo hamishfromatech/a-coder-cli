@@ -5,6 +5,7 @@
 import { create } from "zustand";
 import browser, { onBrowserEvent, type BrowserEvent, type TabInfo } from "../lib/browser";
 import { openExternalLink } from "../lib/external-link";
+import { useUiStore } from "./ui-store";
 
 export interface BrowserTab {
 	id: string;
@@ -268,11 +269,16 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 			case "newTab":
 				void state.openTab(event.url);
 				break;
-			case "openPanel":
-				// An agent tool wants a page: bring the panel up; the panel
-				// opens tabs only once its bounds are known.
+			case "openPanel": {
+				// An agent tool wants a page: bring the right rail up on the
+				// browser tab; the panel opens tabs only once its bounds are
+				// known.
+				const ui = useUiStore.getState();
+				ui.setRightSidebarOpen(true);
+				ui.setRightSidebarTab("browser");
 				set({ open: true, pendingUrl: event.url });
 				break;
+			}
 			case "closed":
 				set({
 					tabs: state.tabs.filter((tab) => tab.id !== event.tabId),
