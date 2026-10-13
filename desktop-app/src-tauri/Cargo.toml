@@ -10,11 +10,12 @@ rust-version = "1.77"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+tauri = { version = "2", features = ["tray-icon", "unstable", "protocol-asset"] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["unbounded_depth"] }
 serde_stacker = "0.1"
@@ -25,13 +26,36 @@ walkdir = "2"
 which = "7"
 base64 = "0.22"
 reqwest = { version = "0.13", features = ["json", "multipart"] }
+url = "2"
+dirs = "6"
+libc = "0.2"
+log = "0.4"
 
-[target.'cfg(target_os = "macos")'.dependencies]
+# Browser panel: pages route their network through our loopback proxy and
+# capture through their own engine, which reaches into wry's platform
+# webviews. Versions align with wry (see its Cargo.toml) so the crates
+# unify; anything linking macOS 14+ Network calls stays behind dlopen.
+[target.'cfg(target_vendor = "apple")'.dependencies]
 objc = "0.2"
+objc2 = "0.6"
+block2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+	"std", "objc2-core-foundation", "NSApplication", "NSButton", "NSControl", "NSEvent", "NSGraphics",
+	"NSResponder", "NSView", "NSWindow", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSScreen",
+] }
+objc2-foundation = { version = "0.3", default-features = false, features = [
+	"std", "objc2-core-foundation", "NSArray", "NSData", "NSDictionary", "NSError", "NSGeometry",
+	"NSKeyValueCoding", "NSObject", "NSString", "NSValue",
+] }
+objc2-web-kit = { version = "0.3", default-features = false, features = [
+	"std", "objc2-core-foundation", "objc2-app-kit", "block2", "WKWebView", "WKWebViewConfiguration",
+	"WKWebsiteDataStore", "WKSnapshotConfiguration",
+] }
 
-# Linux: direct handle to the WebKitGTK webview for WebProcess-crash recovery
-# (must match wry's pinned version + features so the crate unifies; glib is
-# needed for the raw web-process-terminated signal connect).
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.38"
+windows-core = "0.61"
+
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = { version = "=2.0.2", features = ["v2_38"] }
 glib = "0.18"
@@ -43,3 +67,4 @@ tempfile = "3"
 strip = true
 lto = true
 opt-level = 3
+

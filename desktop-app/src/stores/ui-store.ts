@@ -9,6 +9,7 @@ export interface UiState {
 	rightSidebarOpen: boolean;
 	rightSidebarWidth: number;
 	rightSidebarTab: RightSidebarTab;
+	browserOpen: boolean;
 
 	selectedGitFile: string | null;
 	selectedGitStaged: boolean;
@@ -17,6 +18,7 @@ export interface UiState {
 	selectedArtifactViewMode: ArtifactViewMode;
 
 	setLeftSidebarOpen: (open: boolean) => void;
+	setBrowserOpen: (open: boolean) => void;
 	setRightSidebarOpen: (open: boolean) => void;
 	setRightSidebarWidth: (width: number) => void;
 	setRightSidebarTab: (tab: RightSidebarTab) => void;
@@ -34,6 +36,7 @@ export const useUiStore = create<UiState>()(
 			rightSidebarOpen: false,
 			rightSidebarWidth: 320,
 			rightSidebarTab: "files",
+			browserOpen: false,
 
 			selectedGitFile: null,
 			selectedGitStaged: false,
@@ -41,6 +44,7 @@ export const useUiStore = create<UiState>()(
 			selectedArtifactViewMode: "preview",
 
 			setLeftSidebarOpen: (open) => set({ leftSidebarOpen: open }),
+			setBrowserOpen: (open) => set({ browserOpen: open }),
 			setRightSidebarOpen: (open) => set({ rightSidebarOpen: open }),
 			setRightSidebarWidth: (width) => set({ rightSidebarWidth: width }),
 			setRightSidebarTab: (tab) => set({ rightSidebarTab: tab, rightSidebarOpen: true }),

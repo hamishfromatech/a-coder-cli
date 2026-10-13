@@ -53,6 +53,7 @@ import { TodoPanel } from "./components/TodoPanel";
 import { RuntimePanel } from "./components/RuntimePanel";
 import { TaskPanel } from "./components/TaskPanel";
 import { SessionActions, Toolbar } from "./components/Toolbar";
+import { BrowserPanel } from "./components/browser/BrowserPanel";
 import { SessionList } from "./components/SessionList";
 import { SessionPicker } from "./components/SessionPicker";
 import { SessionTabs } from "./components/SessionTabs";
@@ -282,6 +283,8 @@ export default function App() {
 		[setStats, setContextUsage],
 	);
 	const { leftSidebarOpen, setLeftSidebarOpen, rightSidebarOpen, setRightSidebarOpen, rightSidebarWidth } = useUiStore();
+	const browserOpen = useUiStore((state) => state.browserOpen);
+	const setBrowserOpen = useUiStore((state) => state.setBrowserOpen);
 	const effectiveCwd = projectPath || FALLBACK_CWD;
 
 	// Apply theme class to the document root. Applies live (skin/mode changes
@@ -1351,8 +1354,9 @@ export default function App() {
 			{ id: "command-center", label: "Open command center", group: "navigate", action: () => setShowCommandCenter(true) },
 			{ id: "toggle-left-sidebar", label: leftSidebarOpen ? "Hide left sidebar" : "Show left sidebar", group: "view", action: () => setLeftSidebarOpen(!leftSidebarOpen) },
 			{ id: "toggle-right-sidebar", label: rightSidebarOpen ? "Hide right sidebar" : "Show right sidebar", group: "view", action: () => setRightSidebarOpen(!rightSidebarOpen) },
+			{ id: "toggle-browser-panel", label: browserOpen ? "Close browser panel" : "Open browser panel", group: "view", action: () => setBrowserOpen(!browserOpen) },
 		],
-		[leftSidebarOpen, rightSidebarOpen, setLeftSidebarOpen, setRightSidebarOpen],
+		[leftSidebarOpen, rightSidebarOpen, setLeftSidebarOpen, setRightSidebarOpen, browserOpen, setBrowserOpen],
 	);
 
 	// Session list for the Command Center.
@@ -1458,10 +1462,17 @@ export default function App() {
 						<Toolbar
 							onShowModelPicker={() => setShowModelPicker(true)}
 							onShowMemory={() => setShowMemory(true)}
+							onToggleBrowser={() => setBrowserOpen(!browserOpen)}
+							browserOpen={browserOpen}
 						/>
 					</header>
 
-					<ChatContainer>
+					{browserOpen ? (
+						<div className="relative min-h-0 flex-1">
+							<BrowserPanel onClose={() => setBrowserOpen(false)} />
+						</div>
+					) : (
+						<ChatContainer>
 						<ChatBackdrop />
 						<MessageList />
 						<TodoPanel />
@@ -1472,6 +1483,7 @@ export default function App() {
 						)}
 						<Composer />
 					</ChatContainer>
+					)}
 					<StatusBar projectPath={projectPath} onReconnect={handleReconnect} />
 				</main>
 

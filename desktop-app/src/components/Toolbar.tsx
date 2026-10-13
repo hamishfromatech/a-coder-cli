@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, CircleStop, Copy, Cpu, FileDown, GitBranch, Plus, Sparkles, Brain } from "lucide-react";
+import { ChevronLeft, ChevronRight, CircleStop, Copy, Cpu, FileDown, GitBranch, Globe, Plus, Sparkles, Brain } from "lucide-react";
 import * as rpc from "../lib/rpc";
 import { triggerHaptic } from "../lib/haptics";
 import { useSessionStore } from "../stores/session-store";
@@ -18,9 +18,11 @@ const THINKING_OPTIONS: { value: ThinkingLevel; label: string }[] = THINKING_LEV
 export interface ToolbarProps {
 	onShowModelPicker: () => void;
 	onShowMemory: () => void;
+	onToggleBrowser?: () => void;
+	browserOpen?: boolean;
 }
 
-export function Toolbar({ onShowModelPicker, onShowMemory }: ToolbarProps) {
+export function Toolbar({ onShowModelPicker, onShowMemory, onToggleBrowser, browserOpen }: ToolbarProps) {
 	const {
 		model,
 		thinkingLevel,
@@ -116,6 +118,22 @@ export function Toolbar({ onShowModelPicker, onShowMemory }: ToolbarProps) {
 			>
 				New
 			</Button>
+
+			{/* Browser panel */}
+			{onToggleBrowser && (
+				<Button
+					variant="secondary"
+					size="sm"
+					icon={Globe}
+					onClick={() => {
+						triggerHaptic("selection");
+						onToggleBrowser();
+					}}
+					aria-label={browserOpen ? "Close browser panel" : "Open browser panel"}
+				>
+					Browser
+				</Button>
+			)}
 
 			{/* Memory — cross-workspace notes */}
 			<Button

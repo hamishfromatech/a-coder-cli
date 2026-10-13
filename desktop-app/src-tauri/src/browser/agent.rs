@@ -1,0 +1,142 @@
+//! The page agent: a small runtime injected into a tab's page on first use,
+//! then driven one command at a time by the panel (`browser_agent`), with the
+//! answer arriving through the eval callback. Ops are capped in size, and the
+//! page shares the agent's JS world, so the panel treats results as untrusted
+//! (a page can rewrite the runtime or lie about what it did) — snapshots and
+//! click targets are cross-checked against captures before anything acts on
+//! them.
+
+use std::sync::Mutex;
+use std::time::Duration;
+
+use serde::{Deserialize, Serialize};
+use tauri::{Manager, Runtime};
+
+use super::require_main;
+use super::tabs;
+
+const MAX_AGENT_OP: usize = 64 * 1024;
+/// The runtime, sent once per page with the first `install` op.
+pub(crate) const AGENT_RUNTIME: &str = include_str!("agent-runtime.js");
+
+/// The bridge: installs the runtime under a well-known symbol (so a page
+/// reload drops it, and the panel re-sends), runs one op, and answers a JSON
+/// string the engine encodes once more for the callback.
+const AGENT_BRIDGE: &str = r#"(() => {
+  const command = __COMMAND__;
+  const key = Symbol.for("a-coder.agent");
+  if (!window[key] && command.install) {
+    try {
+      Object.defineProperty(window, key, { value: __RUNTIME__, configurable: true });
+    } catch (error) {}
+  }
+  const agent = window[key];
+  if (!agent) return JSON.stringify({ installed: false, result: null });
+  return JSON.stringify({ installed: true, result: agent.run(command.op) });
+})()"#;
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentCommand {
+	/// The op itself; shaped by the panel and capped here.
+	pub op: serde_json::Map<String, serde_json::Value>,
+	/// The runtime source, when the panel has never installed it here.
+	#[serde(default)]
+	pub install: bool,
+}
+
+/// Runs one agent command in a tab's page and returns `{ installed, result }`.
+#[tauri::command]
+pub async fn browser_agent<R: Runtime>(
+	webview: tauri::Webview<R>,
+	tab_id: String,
+	command: AgentCommand,
+) -> Result<serde_json::Value, String> {
+	require_main(&webview)?;
+	let script = agent_script(&command)?;
+	let page = webview
+		.app_handle()
+		.get_webview(&format!("{}{tab_id}", tabs::LABEL_PREFIX))
+		.ok_or_else(|| "That tab is closed".to_string())?;
+	let (sender, receiver) = tokio::sync::oneshot::channel();
+	let sender = Mutex::new(Some(sender));
+	page.eval_with_callback(script, move |raw| {
+		if let Some(sender) = sender.lock().unwrap().take() {
+			let _ = sender.send(raw);
+		}
+	})
+	.map_err(|error| error.to_string())?;
+	let raw = tokio::time::timeout(Duration::from_secs(5), receiver)
+		.await
+		.map_err(|_| "the page did not answer")?
+		.map_err(|error| error.to_string())?;
+	// The runtime returns a JSON string, which the engine JSON-encodes again.
+	let inner = serde_json::from_str::<String>(raw.trim()).unwrap_or(raw);
+	Ok(serde_json::from_str::<serde_json::Value>(&inner).unwrap_or(serde_json::Value::Null))
+}
+
+fn agent_script(command: &AgentCommand) -> Result<String, String> {
+	let code = if command.install { AGENT_RUNTIME } else { "" };
+	if code.len() > MAX_AGENT_OP {
+		return Err("agent runtime too large".into());
+	}
+	let args = serde_json::json!({
+		"install": command.install,
+		"runtime": code,
+		"op": serde_json::Value::Object(command.op.clone()),
+	});
+	if args.to_string().len() > MAX_AGENT_OP {
+		return Err("agent command too large".into());
+	}
+	// Spliced in, not compiled in the page, so a CSP without 'unsafe-eval'
+	// cannot block it. Single pass, so neither part can forge the other's
+	// placeholder.
+	let runtime = format!("({code})");
+	let (head, rest) = AGENT_BRIDGE
+		.split_once("__COMMAND__")
+		.ok_or("bad agent bridge")?;
+	let (middle, tail) = rest.split_once("__RUNTIME__").ok_or("bad agent bridge")?;
+	Ok(format!("{head}{args}{middle}{runtime}{tail}"))
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	fn command(op: serde_json::Value, install: bool) -> AgentCommand {
+		AgentCommand {
+			op: op.as_object().cloned().unwrap_or_default(),
+			install,
+		}
+	}
+
+	#[test]
+	fn oversized_ops_are_refused_before_the_page() {
+		let big = "x".repeat(MAX_AGENT_OP + 1);
+		assert!(agent_script(&command(serde_json::json!({ "a": big }), false)).is_err());
+	}
+
+	#[test]
+	fn the_runtime_splices_cleanly_into_the_bridge() {
+		let script = agent_script(&command(serde_json::json!({ "op": "snapshot" }), true)).unwrap();
+		assert!(!script.contains("__COMMAND__"), "the op must be spliced in");
+		assert!(
+			!script.contains("__RUNTIME__"),
+			"the runtime body must be spliced, not left"
+		);
+		// Splicing must not cross-contaminate: the runtime's own placeholders
+		// (there are none) could forge the command's position.
+		assert!(script.contains("a-coder.agent"), "{script}");
+		assert!(script.contains("snapshot"), "{script}");
+	}
+
+	#[test]
+	fn without_install_only_dispatch_runs() {
+		let script =
+			agent_script(&command(serde_json::json!({ "op": "snapshot" }), false)).unwrap();
+		assert!(
+			!script.contains("function"),
+			"no runtime body leaves with dispatch: {script}"
+		);
+	}
+}
