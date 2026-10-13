@@ -326,8 +326,10 @@ export interface DecisionQuestionBase {
 }
 export interface DecisionQuestionChoice extends DecisionQuestionBase {
 	type: "choice";
-	/** Each option mapped to its plain-language description. */
-	criteria: Record<string, string>;
+	/** Each option mapped to its plain-language description; `null` lets the option
+	 * name describe itself (2-26 options). On ties the winner follows option order,
+	 * so preferred options go first. */
+	criteria: Record<string, string | null>;
 }
 export interface DecisionQuestionNoul extends DecisionQuestionBase {
 	type: "noul";

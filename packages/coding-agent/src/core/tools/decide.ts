@@ -24,12 +24,21 @@ import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
  * host's payload budget and results renderable. */
 export const DECIDE_MAX_QUESTIONS = 16;
 
+/** Ollama System One limits: 2-26 options per choice question, 2-26 levels per score. */
+const CHOICE_MIN_OPTIONS = 2;
+const CHOICE_MAX_OPTIONS = 26;
+const SCORE_MIN_LEVELS = 2;
+const SCORE_MAX_LEVELS = 26;
+
 const questionUnion = Type.Union([
 	Type.Object(
 		{
 			type: Type.Literal("choice"),
 			instructions: Type.String(),
-			criteria: Type.Record(Type.String(), Type.String()),
+			criteria: Type.Record(Type.String(), Type.Union([Type.String(), Type.Null()]), {
+				description:
+					"Each option mapped to its description (null lets the option name describe itself). 2-26 options. On ties the first option wins, so put the preferred option first.",
+			}),
 		},
 		{ description: "Pick one option; every option gets a probability." },
 	),
@@ -45,7 +54,10 @@ const questionUnion = Type.Union([
 		{
 			type: Type.Literal("score"),
 			instructions: Type.String(),
-			criteria: Type.Array(Type.String(), { minItems: 1 }),
+			criteria: Type.Array(Type.String(), {
+				minItems: 1,
+				description: "Ordered level descriptions, lowest first (numbered from 0). 2-26 levels.",
+			}),
 		},
 		{ description: "Score against the ordered legend (0..n-1). " },
 	),
@@ -53,9 +65,9 @@ const questionUnion = Type.Union([
 
 const decideSchema = Type.Object(
 	{
-		state: Type.Union([Type.String(), Type.Record(Type.String(), Type.Unknown())], {
+		state: Type.Union([Type.String(), Type.Record(Type.String(), Type.Unknown()), Type.Array(Type.Unknown())], {
 			description:
-				"The text (or a JSON object serialized as text) to judge. Not chat messages: put the whole context to be scored here.",
+				"The text (or a JSON object or array serialized as text) to judge. Not chat messages: put the whole context to be scored here.",
 		}),
 		questions: Type.Record(Type.String(), questionUnion, {
 			description:
@@ -218,12 +230,32 @@ export function createDecideToolDefinition(
 			"Use for crisp judgments with enumerable answers — not for open-ended reasoning or text generation.",
 			"Put everything to be judged into `state` (text or a compact JSON object); reference prior tool results by summarizing, the model cannot fetch them.",
 			"Keep questions concrete and mutually exclusive; prefer one `choice` question per decision.",
+			"Choice criteria take 2-26 options (score legends 2-26 levels); a null description lets the option name stand for itself. Order options so the safest/best one is first — ties resolve to the first-listed option.",
+			"Confidence measures how concentrated the answer distribution is, not how likely the answer is correct — do not treat it as accuracy; present probabilities instead.",
 		],
 		parameters: decideSchema,
 		async execute(_toolCallId, params: DecideToolInput, signal, _onUpdate, _rawContext?: ExtensionContext) {
 			const questionCount = Object.keys(params.questions ?? {}).length;
 			if (questionCount < 1 || questionCount > DECIDE_MAX_QUESTIONS) {
 				throw new Error(`decide requires 1-${DECIDE_MAX_QUESTIONS} questions, got ${questionCount}`);
+			}
+			for (const [name, question] of Object.entries(params.questions)) {
+				if (question.type === "choice") {
+					const options = Object.keys(question.criteria ?? {});
+					if (options.length < CHOICE_MIN_OPTIONS || options.length > CHOICE_MAX_OPTIONS) {
+						throw new Error(
+							`Question "${name}" choice takes ${CHOICE_MIN_OPTIONS}-${CHOICE_MAX_OPTIONS} options, got ${options.length}`,
+						);
+					}
+				}
+				if (question.type === "score") {
+					const levels = question.criteria?.length ?? 0;
+					if (levels < SCORE_MIN_LEVELS || levels > SCORE_MAX_LEVELS) {
+						throw new Error(
+							`Question "${name}" score takes ${SCORE_MIN_LEVELS}-${SCORE_MAX_LEVELS} levels, got ${levels}`,
+						);
+					}
+				}
 			}
 			const models = context?.models ?? (await import("@earendil-works/pi-ai/compat")).builtinDecisionsModels();
 			const model = await resolveDecideModel(models, params, context, signal);

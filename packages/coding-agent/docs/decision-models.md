@@ -42,11 +42,16 @@ Explicit pick (optional, settings.json):
 
 Read-only and approval-free. Parameters:
 
-- `state` — everything to be judged, as a string or a compact JSON object (not chat messages; the model cannot fetch tool results, so summarize what it needs).
-- `questions` — 1–16 named questions. Each has `instructions` and, per type: `criteria` (choice: `{option: description}`; noul: optional `{false, true}` descriptions; score: ordered legend array).
+- `state` — everything to be judged, as a string or a compact JSON object or array (serialized as text; not chat messages; the model cannot fetch tool results, so summarize what it needs).
+- `questions` — 1–16 named questions. Each has `instructions` and, per type:
+  - `choice`: `criteria` — `{option: description}` with **2–26 options**; a `null` description lets the option name stand for itself. On ties the winner follows option order, so put the safest/preferred option first.
+  - `noul`: optional `criteria` — `{"true": ..., "false": ...}` descriptions. The answer `noul` is the probability the answer is true.
+  - `score`: `criteria` — ordered level descriptions, lowest first, numbered from 0 (**2–26 levels**). The answer `score` is the probability-weighted level (fractional), and `legend`/`probabilities` break it down per level.
 - Optional `provider`/`model` overrides.
 
 The result card shows each question's answer with the probability bar and confidence; the raw answers JSON is included for downstream use.
+
+`confidence` is how concentrated the answer distribution is — **not** the chance the answer is right. It is displayed but never used to threshold decisions; the classifier gates on the chosen option's probability and the conservative policy instead.
 
 Example questions the model may be asked: "Which route applies to this request?" (choice over your destinations), "Does this error look transient?" (noul), "How far along is the task?" (score with `["not started", "started", "almost", "done"]`).
 

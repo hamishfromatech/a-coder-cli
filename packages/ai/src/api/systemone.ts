@@ -33,7 +33,7 @@ const WIRE_TYPES = new Set(["choice", "noul", "score"]);
 type WireQuestion = {
 	type: string;
 	instructions: string;
-	criteria?: Record<string, string> | string[];
+	criteria?: Record<string, string | null> | string[];
 };
 
 interface SystemOneResponse {
