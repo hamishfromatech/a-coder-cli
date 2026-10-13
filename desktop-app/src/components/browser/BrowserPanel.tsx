@@ -41,19 +41,21 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 	const panelRef = useRef<HTMLDivElement | null>(null);
 	const chromeRef = useRef<HTMLDivElement | null>(null);
 	const pageAreaRef = useRef<HTMLDivElement | null>(null);
+	const addressRef = useRef<HTMLInputElement | null>(null);
 	const [address, setAddress] = useState("");
 	const [findOpen, setFindOpen] = useState(false);
+	const [findQuery, setFindQuery] = useState("");
 	const [zoomValue, setZoomValue] = useState(1);
 	const [capturing, setCapturing] = useState(false);
 
 	const active = tabs.find((tab) => tab.id === activeId) ?? null;
 	const captureUrl = active?.captureUrl;
 
-	// Restore the address box when switching tabs.
+	// Restore the address box and zoom display when switching tabs.
 	useEffect(() => {
 		setAddress(active?.url ?? "");
-		setZoomValue(1);
-	}, [activeId, active?.url]);
+		setZoomValue(active?.zoom ?? 1);
+	}, [activeId, active?.url, active?.zoom]);
 
 	// Keep the right page where it belongs: the whole panel on macOS 14+
 	// (chrome draws over the page), the page area only elsewhere.
@@ -97,6 +99,10 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 	// Panel open: pages may show; closed: park every page until it reopens.
 	useEffect(() => {
 		useBrowserStore.setState({ open: true });
+		// Fresh panel (no tabs): cursor in the address box right away.
+		requestAnimationFrame(() => {
+			if (!useBrowserStore.getState().activeId) addressRef.current?.focus();
+		});
 		return () => {
 			closeHole();
 			void browser.viewShow({}).catch(() => {});
@@ -153,7 +159,36 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 
 	const handleNewTab = () => {
 		void openTab("https://www.google.com");
+		// Fresh tab: put the cursor in the address box for the next address.
+		requestAnimationFrame(() => addressRef.current?.focus());
 	};
+
+	// Panel shortcuts while the chrome has focus (the page keeps its keys
+	// while the page has focus, like any browser).
+	useEffect(() => {
+		const onKey = (event: KeyboardEvent) => {
+			if (!(event.metaKey || event.ctrlKey)) return;
+			const key = event.key.toLowerCase();
+			if (key === "l") {
+				event.preventDefault();
+				addressRef.current?.focus();
+			} else if (key === "t") {
+				event.preventDefault();
+				handleNewTab();
+			} else if (key === "w") {
+				event.preventDefault();
+				if (activeId) void useBrowserStore.getState().close(activeId);
+			} else if (key === "f") {
+				event.preventDefault();
+				setFindOpen(true);
+			} else if (key === "r") {
+				event.preventDefault();
+				if (activeId) void useBrowserStore.getState().action(activeId, "reload");
+			}
+		};
+		document.addEventListener("keydown", onKey);
+		return () => document.removeEventListener("keydown", onKey);
+	}, [activeId, openTab]);
 
 	// An agent tool asked for a tab while the panel was closed: open it now
 	// that the bounds are measured, then clear the request.
@@ -256,7 +291,7 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 					<button
 						data-browser-input
 						className={iconButton}
-						disabled={!active}
+						disabled={!active || !active.forward}
 						onClick={() => active && void useBrowserStore.getState().action(active.id, "forward")}
 						aria-label="Forward"
 					>
@@ -281,8 +316,13 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 					<form onSubmit={handleNavigateInput} className="ml-1 flex min-w-0 flex-1">
 						<input
 							data-browser-input
+							ref={addressRef}
 							value={address}
 							onChange={(event) => setAddress(event.target.value)}
+							onFocus={(event) => event.currentTarget.select()}
+							onKeyDown={(event) => {
+								if (event.key === "Escape") event.currentTarget.blur();
+							}}
 							placeholder="Search or enter address"
 							className="h-7 w-full min-w-0 rounded border border-pi-border bg-pi-surface-raised px-2.5 text-xs text-pi-text placeholder:text-pi-text-muted focus:outline-none focus:ring-1 focus:ring-pi-accent"
 							spellCheck={false}
@@ -294,6 +334,8 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 							<input
 								data-browser-input
 								autoFocus
+								value={findQuery}
+								onChange={(event) => setFindQuery(event.target.value)}
 								placeholder="Find in page"
 								onKeyDown={(event) => {
 									if (event.key === "Enter") {
@@ -315,7 +357,13 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 							>
 								<ChevronUp className="h-3.5 w-3.5" />
 							</button>
-							<button data-browser-input className={iconButton} aria-label="Find next">
+							<button
+								data-browser-input
+								className={iconButton}
+								aria-label="Find next"
+								disabled={!findQuery}
+								onClick={() => findQuery && void useBrowserStore.getState().find(findQuery, false)}
+							>
 								<ChevronDown className="h-3.5 w-3.5" />
 							</button>
 						</div>
@@ -331,28 +379,41 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 					<div data-browser-input className="flex items-center rounded border border-pi-border">
 						<button
 							data-browser-input
-							className="flex h-7 w-6 cursor-pointer items-center justify-center text-pi-text-secondary hover:text-pi-text"
-							onClick={() => active && void useBrowserStore.getState().setZoom(active.id, Math.max(0.25, zoomValue - 0.25))}
+							className="flex h-7 w-6 cursor-pointer items-center justify-center text-pi-text-secondary hover:text-pi-text disabled:cursor-default disabled:opacity-40"
+							disabled={!active}
+							onClick={() =>
+								active &&
+								void useBrowserStore
+									.getState()
+									.setZoom(active.id, Math.max(0.25, zoomValue - 0.25))
+									.then(() => setZoomValue(Math.max(0.25, zoomValue - 0.25)))
+							}
 							aria-label="Zoom out"
 						>
 							<span className="text-xs">−</span>
 						</button>
 						<button
 							data-browser-input
-							className="flex h-7 w-8 cursor-pointer items-center justify-center border-x border-pi-border text-[10px] text-pi-text-muted"
-							onClick={() => active && void useBrowserStore.getState().setZoom(active.id, 1).then(() => setZoomValue(1))}
+							className="flex h-7 w-8 cursor-pointer items-center justify-center border-x border-pi-border text-[10px] text-pi-text-muted disabled:cursor-default disabled:opacity-40"
+							disabled={!active || zoomValue === 1}
+							onClick={() =>
+								active && void useBrowserStore.getState().setZoom(active.id, 1).then(() => setZoomValue(1))
+							}
 							aria-label="Reset zoom"
 						>
 							{Math.round(zoomValue * 100)}%
 						</button>
 						<button
 							data-browser-input
-							className="flex h-7 w-6 cursor-pointer items-center justify-center text-pi-text-secondary hover:text-pi-text"
-							onClick={() => {
-								const next = Math.min(5, zoomValue + 0.25);
-								setZoomValue(next);
-								if (active) void useBrowserStore.getState().setZoom(active.id, next);
-							}}
+							className="flex h-7 w-6 cursor-pointer items-center justify-center text-pi-text-secondary hover:text-pi-text disabled:cursor-default disabled:opacity-40"
+							disabled={!active}
+							onClick={() =>
+								active &&
+								void useBrowserStore
+									.getState()
+									.setZoom(active.id, Math.min(5, zoomValue + 0.25))
+									.then(() => setZoomValue(Math.min(5, zoomValue + 0.25)))
+							}
 							aria-label="Zoom in"
 						>
 							<span className="text-xs">+</span>

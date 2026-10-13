@@ -170,8 +170,9 @@ pub(crate) struct Inner {
 	pub(crate) created: HashSet<String>,
 	pub(crate) titles: HashMap<String, String>,
 	pub(crate) urls: HashMap<String, String>,
-	/// tab_id -> (offers back, offers forward).
-	pub(crate) history: HashMap<String, (bool, bool)>,
+	/// Per tab: the visited stack and the position in it, for the panel's
+	/// back/forward offers.
+	pub(crate) history: HashMap<String, Hist>,
 	pub(crate) shown: Option<String>,
 	pub(crate) muted: HashSet<String>,
 	/// Whether the page's first navigation (a commit) happened, for downloads' site.
@@ -182,6 +183,16 @@ pub(crate) struct Inner {
 	/// bounds-driven view_show arrives.
 	pub(crate) pending_url: HashMap<String, String>,
 }
+
+/// The visited stack per tab: urls plus the current position. Capped, so an
+/// old tab's memory stays bounded; the back button just runs out early.
+#[derive(Clone, Default)]
+pub(crate) struct Hist {
+	pub(crate) entries: Vec<String>,
+	pub(crate) index: usize,
+}
+
+const MAX_HISTORY: usize = 60;
 
 fn label_for(tab_id: &str) -> String {
 	format!("{LABEL_PREFIX}{tab_id}")
@@ -349,8 +360,35 @@ pub fn browser_tab_action<R: Runtime>(
 	require_main(&webview)?;
 	let page = view(webview.app_handle(), &tab_id)?;
 	let result = match action.as_str() {
-		"back" => page.eval("history.back()"),
-		"forward" => page.eval("history.forward()"),
+		"back" | "forward" => {
+			// Move the stack position optimistically: the panel's offers flip
+			// right away, and the commit dedups against the new position.
+			let (was, offers) = {
+				let state = webview.app_handle().state::<TabsState>();
+				let mut inner = state.inner.lock().unwrap();
+				let was = inner
+					.history
+					.get(&tab_id)
+					.map(offers_of)
+					.unwrap_or((false, false));
+				if let Some(hist) = inner.history.get_mut(&tab_id) {
+					if action == "back" && hist.index > 0 {
+						hist.index -= 1;
+					} else if action == "forward" && hist.index + 1 < hist.entries.len() {
+						hist.index += 1;
+					}
+				}
+				let offers = inner
+					.history
+					.get(&tab_id)
+					.map(offers_of)
+					.unwrap_or((false, false));
+				(was, offers)
+			};
+			history_changed(webview.app_handle(), &tab_id, was, offers);
+			let direction = if action == "back" { "back()" } else { "forward()" };
+			page.eval(&format!("history.{direction}"))
+		}
 		"reload" => page.reload(),
 		"stop" => page.eval("window.stop()"),
 		"focus" => page.set_focus(),
@@ -679,9 +717,10 @@ fn on_page_load<R: Runtime>(
 		let mut inner = state.inner.lock().unwrap();
 		inner.urls.insert(tab_id.to_string(), url.clone());
 		// Started is a commit (WebKit) or content loading (WebView2): never a
-		// download.
+		// download. Feed the visited stack here, where redirects funnel.
 		if loading {
 			inner.committed.insert(tab_id.to_string());
+			note_commit(app, tab_id, &url);
 		}
 	}
 	emit(
@@ -693,7 +732,6 @@ fn on_page_load<R: Runtime>(
 		},
 	);
 	if !loading {
-		refresh_history(app, tab_id, true);
 		super::capture::schedule_window_composite_once(app);
 	}
 	// A muted tab stays muted through its loads; each page is muted again on
@@ -752,47 +790,64 @@ fn bounded_title(title: &str) -> String {
 	title.chars().take(200).collect()
 }
 
-/// Re-read whether history offers back/forward from the page, and tell the panel.
-fn refresh_history<R: Runtime>(app: &AppHandle<R>, tab_id: &str, back_length_only: bool) {
-	let _ = back_length_only;
-	let Some(page) = app.get_webview(&label_for(tab_id)) else {
+/// Tells the panel the tab's back/forward offers changed; shared by the
+/// optimistic action moves and the commit path.
+fn history_changed<R: Runtime>(
+	app: &AppHandle<R>,
+	tab_id: &str,
+	was: (bool, bool),
+	offers: (bool, bool),
+) {
+	if was == offers {
 		return;
-	};
-	let tab = tab_id.to_string();
-	let app = app.clone();
-	let _ = page.eval_with_callback(
-		"(() => { try { return JSON.stringify({ back: history.length > 1 }); } catch { return '{}'; } })()",
-		move |raw| {
-			let tab = tab.clone();
-			// eval answers a JSON-encoded string for string results.
-			let inner = serde_json::from_str::<serde_json::Value>(raw.trim())
-				.ok()
-				.and_then(|outer| outer.as_str().map(str::to_string))
-				.and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok());
-			let back = inner
-				.as_ref()
-				.and_then(|v| v.get("back"))
-				.and_then(serde_json::Value::as_bool)
-				.unwrap_or(false);
-			{
-				let state = app.state::<TabsState>();
-				state
-					.inner
-					.lock()
-					.unwrap()
-					.history
-					.insert(tab.clone(), (back, false));
-			}
-			emit(
-				&app,
-				BrowserEvent::History {
-					tab_id: tab,
-					back,
-					forward: false,
-				},
-			);
+	}
+	emit(
+		app,
+		BrowserEvent::History {
+			tab_id: tab_id.to_string(),
+			back: offers.0,
+			forward: offers.1,
 		},
 	);
+}
+
+/// Offers of a stack position.
+fn offers_of(hist: &Hist) -> (bool, bool) {
+	(hist.index > 0, hist.index + 1 < hist.entries.len())
+}
+
+/// Records a committed url in the tab's visited stack and tells the panel
+/// when its offers change. A commit matching the neighbouring entry is a
+/// back/forward move; anything else is a fresh navigation that cuts the
+/// forward tail (so back works while forward dies, like real browsers).
+fn note_commit<R: Runtime>(app: &AppHandle<R>, tab_id: &str, url: &str) {
+	let state = app.state::<TabsState>();
+	let was = {
+		let inner = state.inner.lock().unwrap();
+		inner.history.get(tab_id).map(offers_of).unwrap_or((false, false))
+	};
+	let (offers, changed) = {
+		let mut inner = state.inner.lock().unwrap();
+		let hist = inner.history.entry(tab_id.to_string()).or_default();
+		let changed = hist
+			.entries
+			.get(hist.index)
+			.is_some_and(|current| current != url);
+		if changed {
+			if hist.entries.get(hist.index + 1) == Some(&url.to_string()) {
+				hist.index += 1;
+			} else {
+				hist.entries.truncate(hist.index + 1);
+				hist.entries.push(url.to_string());
+				if hist.entries.len() > MAX_HISTORY {
+					hist.entries.remove(0);
+				}
+				hist.index = hist.entries.len() - 1;
+			}
+		}
+		(offers_of(hist), changed)
+	};
+	history_changed(app, tab_id, was, offers);
 }
 
 // ---- URL polling ----
@@ -836,25 +891,11 @@ fn poll_url<R: Runtime>(app: AppHandle<R>) {
 				}
 				i.urls.insert(tab_id.clone(), url.clone()) != Some(url.clone())
 			};
+			// Polls see SPA moves too (pushState/replaceState): feed the stack
+			// unconditionally, so the offers track the real document.
+			note_commit(&app, &tab_id, &url);
 			if changed {
-				emit(&app, BrowserEvent::Url { tab_id: tab_id.clone(), url });
-			}
-			if let Some(back) = inner.get("back").and_then(serde_json::Value::as_bool) {
-				let state = app.state::<TabsState>();
-				let mut i = state.inner.lock().unwrap();
-				let last = i.history.get(&tab_id).copied().unwrap_or((false, false));
-				i.history.insert(tab_id.clone(), (back, last.1));
-				drop(i);
-				if last.0 != back {
-					emit(
-						&app,
-						BrowserEvent::History {
-							tab_id,
-							back,
-							forward: false,
-						},
-					);
-				}
+				emit(&app, BrowserEvent::Url { tab_id, url });
 			}
 		},
 	);

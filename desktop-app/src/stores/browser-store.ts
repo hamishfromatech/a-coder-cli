@@ -15,6 +15,7 @@ export interface BrowserTab {
 	title: string;
 	loading: boolean;
 	back: boolean;
+	forward: boolean;
 	muted: boolean;
 	/** The last capture, as an object URL, shown until dismissed. */
 	captureUrl?: string;
@@ -110,6 +111,7 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 					title: info.title,
 					loading: false,
 					back: false,
+					forward: false,
 					muted: false,
 					zoom: 1,
 				}))
@@ -134,6 +136,7 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 							title: url,
 							loading: false,
 							back: false,
+							forward: false,
 							muted: false,
 							zoom: 1,
 						},
@@ -158,6 +161,7 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 					title: url,
 					loading: true,
 					back: false,
+					forward: false,
 					muted: false,
 					zoom: 1,
 				},
@@ -187,9 +191,15 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 
 	action: async (tabId, action) => {
 		await browser.action(tabId, action).catch(() => {});
-		if (action === "reload") {
+		const optimistic =
+			action === "reload"
+				? { loading: true }
+				: action === "stop"
+					? { loading: false }
+					: null;
+		if (optimistic) {
 			set((state) => ({
-				tabs: state.tabs.map((tab) => (tab.id === tabId ? { ...tab, loading: true } : tab)),
+				tabs: state.tabs.map((tab) => (tab.id === tabId ? { ...tab, ...optimistic } : tab)),
 			}));
 		}
 	},
@@ -293,7 +303,11 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 				break;
 			case "history":
 				set({
-					tabs: state.tabs.map((tab) => (tab.id === event.tabId ? { ...tab, back: event.back } : tab)),
+					tabs: state.tabs.map((tab) =>
+						tab.id === event.tabId
+							? { ...tab, back: event.back, forward: event.forward }
+							: tab,
+					),
 				});
 				break;
 			case "external": {
@@ -382,9 +396,10 @@ rendererLog("browser: store module loaded");
 // page's region (index.css `.has-page`): keep the class in sync with whether
 // any OS page view is live.
 useBrowserStore.subscribe((state) => {
-	document.documentElement.classList.toggle(
-		"has-page",
-		Boolean(state.supported && state.layered && state.tabs.length > 0),
+	const on = Boolean(state.supported && state.layered && state.tabs.length > 0);
+	document.documentElement.classList.toggle("has-page", on);
+	rendererLog(
+		`browser: has-page=${on} layered=${state.layered} tabs=${state.tabs.length} bodyBg=${getComputedStyle(document.body).backgroundColor} htmlClass=${document.documentElement.className}`,
 	);
 });
 // Bind the event channel once at module load; the store exists before React.
