@@ -175,17 +175,58 @@ body {
 }
 
 /* While a native browser page is composited under the app's webview (layered
-   macOS pages), the body must be transparent in the page's region or it
-   paints over the page, and the fixed grain layer's mix-blend-mode forces
-   the webview to composite opaque (everything black). --pi-bg equals the
-   window background in dark mode, so the chrome around the page looks
-   identical; light mode keeps an opaque body and the page region shows the
-   app's loading state instead (follow-up). */
-html.has-page:not(.light) body {
-	background-color: transparent;
-}
-html.has-page:not(.light) body::after {
+   macOS pages), a hole the page's rect is cut through every opaque ancestor
+   (lib/browser-hole.ts marks them data-native-hole): their own color stays
+   around the hole as four fixed bands below, transparent inside; the fixed
+   grain layer above must also drop (its mix-blend-mode forces the webview to
+   composite opaque — everything black). Light mode uses the same marks and
+   colors, so no theme branch is needed for backgrounds. */
+html.has-page body::after {
 	display: none;
+}
+
+@property --hole-x {
+	syntax: "<length>";
+	inherits: false;
+	initial-value: 0px;
+}
+@property --hole-y {
+	syntax: "<length>";
+	inherits: false;
+	initial-value: 0px;
+}
+@property --hole-w {
+	syntax: "<length>";
+	inherits: false;
+	initial-value: 0px;
+}
+@property --hole-h {
+	syntax: "<length>";
+	inherits: false;
+	initial-value: 0px;
+}
+@property --hole-bg {
+	syntax: "*";
+	inherits: false;
+}
+
+[data-native-hole] {
+	--hole-fill: linear-gradient(var(--hole-bg), var(--hole-bg));
+	background-color: transparent !important;
+	background-image:
+		var(--hole-fill), var(--hole-fill), var(--hole-fill), var(--hole-fill) !important;
+	background-attachment: fixed !important;
+	background-repeat: no-repeat !important;
+	background-position:
+		0 0,
+		0 calc(var(--hole-y) + var(--hole-h)),
+		0 var(--hole-y),
+		calc(var(--hole-x) + var(--hole-w)) var(--hole-y) !important;
+	background-size:
+		100% var(--hole-y),
+		100% max(0px, calc(100% - var(--hole-y) - var(--hole-h))),
+		var(--hole-x) var(--hole-h),
+		max(0px, calc(100% - var(--hole-x) - var(--hole-w))) var(--hole-h) !important;
 }
 
 /* ============================================================

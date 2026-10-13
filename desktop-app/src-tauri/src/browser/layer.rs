@@ -147,7 +147,8 @@ pub fn install<R: Runtime>(main: &tauri::Webview<R>) {
 	});
 }
 
-/// Puts a page view below the app's webview, so the panel UI is over the page.
+/// Puts a page view below the app's webview, so the panel UI stays over
+/// the page.
 pub fn place<R: Runtime>(page: &tauri::Webview<R>) {
 	let _ = page.with_webview(|platform| {
 		let Some(main) = main_view() else {

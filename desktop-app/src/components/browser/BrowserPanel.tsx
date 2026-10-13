@@ -20,6 +20,7 @@ import {
 	Globe,
 } from "lucide-react";
 import browser, { boundsOf, type ViewBounds } from "../../lib/browser";
+import { closeHole, updateHole } from "../../lib/browser-hole";
 import { openExternalLink } from "../../lib/external-link";
 import { normalizeUrl, useBrowserStore } from "../../stores/browser-store";
 
@@ -70,23 +71,34 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 		if (!supported || !activeId || !useBrowserStore.getState().open) return;
 		const bounds = currentBounds();
 		if (!bounds) return;
+		// Layered pages composite under the app webview: cut the hole at the
+		// page's rect at the same time the native view is moved.
+		updateHole(layered ? (panelRef.current ?? null) : null);
 		void browser
 			.viewShow({ tabId: activeId, bounds })
 			.catch(() => {});
 		const observer = new ResizeObserver(() => {
 			const next = currentBounds();
 			if (next) void browser.viewShow({ tabId: activeId, bounds: next }).catch(() => {});
+			updateHole(layered ? (panelRef.current ?? null) : null);
 		});
 		observer.observe(document.body);
 		return () => {
 			observer.disconnect();
+			closeHole();
 		};
 	}, [supported, activeId, layered, currentBounds]);
+
+	// No layer, no page under the app: drop any hole the previous layout left.
+	useEffect(() => {
+		if (!layered && supported) closeHole();
+	}, [supported, layered]);
 
 	// Panel open: pages may show; closed: park every page until it reopens.
 	useEffect(() => {
 		useBrowserStore.setState({ open: true });
 		return () => {
+			closeHole();
 			void browser.viewShow({}).catch(() => {});
 			useBrowserStore.setState({ open: false });
 		};
