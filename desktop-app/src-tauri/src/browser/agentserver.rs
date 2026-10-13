@@ -21,6 +21,9 @@ use uuid::Uuid;
 static START: OnceLock<()> = OnceLock::new();
 static PORT: OnceLock<u16> = OnceLock::new();
 static SESSION: Mutex<Option<String>> = Mutex::new(None);
+/// The settings page can turn the tools off; a disabled server answers no URLs
+/// and refuses calls. Defaults on; the setting persists in the settings file.
+static ENABLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 const READ_CAP: usize = 256 * 1024;
 /// The endpoint's fixed port, so the CLI's `mcpServers` entry survives app
 /// restarts. Taken? The server binds an ephemeral port and reports that
@@ -32,33 +35,47 @@ const PREFERRED_PORT: u16 = 47615;
 /// need them).
 #[tauri::command]
 pub fn browser_agent_server_url<R: Runtime>(app: AppHandle<R>) -> Option<String> {
+	start(&app).map(|port| format!("http://127.0.0.1:{port}/mcp"))
+}
+
+/// Starts the server once (called at app setup; settings later only gate
+/// dispatch and the reported URL). None when the platform has no native page
+/// views or the settings file says the tools are off.
+pub(crate) fn ensure_started<R: Runtime>(app: &AppHandle<R>) -> Option<u16> {
+	start(app)
+}
+
+fn start<R: Runtime>(app: &AppHandle<R>) -> Option<u16> {
 	if !super::tabs::native_pages_supported() {
 		return None;
 	}
-	let port = match PORT.get() {
-		Some(port) => *port,
-		None => {
-			if START.set(()).is_err() {
-				return None;
-			}
-			let app = app.clone();
-			let port = tauri::async_runtime::block_on(async {
-				match TcpListener::bind(("127.0.0.1", PREFERRED_PORT)).await {
-					Ok(listener) => listener.local_addr().expect("local addr").port(),
-					// Another listener owns the preferred port: fall back.
-					Err(_) => TcpListener::bind(("127.0.0.1", 0))
-						.await
-						.expect("bind agent server")
-						.local_addr()
-						.expect("local addr")
-						.port(),
-				}
-			});
-			let _ = PORT.set(port);
-			port
+	if !enabled_at_startup() {
+		log::info!("agent browser MCP server disabled in settings");
+		return None;
+	}
+	if START.get().is_some() {
+		return PORT.get().copied();
+	}
+	if START.set(()).is_err() {
+		return PORT.get().copied();
+	}
+	let port = tauri::async_runtime::block_on(async {
+		match TcpListener::bind(("127.0.0.1", PREFERRED_PORT)).await {
+			Ok(listener) => listener.local_addr().expect("local addr").port(),
+			// Another listener owns the preferred port: fall back.
+			Err(_) => TcpListener::bind(("127.0.0.1", 0))
+				.await
+				.expect("bind agent server")
+				.local_addr()
+				.expect("local addr")
+				.port(),
 		}
-	};
-	Some(format!("http://127.0.0.1:{port}/mcp"))
+	});
+	let _ = PORT.set(port);
+	let app2 = app.clone();
+	tauri::async_runtime::spawn(serve_loop(port, app2));
+	log::info!("agent browser MCP server listening on port {port}");
+	Some(port)
 }
 
 async fn serve_loop<R: Runtime>(port: u16, app: AppHandle<R>) {
@@ -146,7 +163,7 @@ async fn serve_connection<R: Runtime>(
 						.pointer("/params/arguments")
 						.cloned()
 						.unwrap_or(json!({}));
-					match call_tool(&app, name, &args).await {
+					match call_tool_checked(&app, name, &args).await {
 						Ok(content) => Ok(json!({ "content": [content], "isError": false })),
 						Err(error) => Ok(json!({
 							"content": [{ "type": "text", "text": error }],
@@ -197,6 +214,31 @@ async fn serve_connection<R: Runtime>(
 	Ok(())
 }
 
+/// The persisted preference at startup (the live toggling is a command).
+fn enabled_at_startup() -> bool {
+	super::browser_pref("agentTools")
+		.and_then(|value| value.as_bool())
+		.unwrap_or(true)
+}
+
+/// The settings toggle, applied live.
+#[tauri::command]
+pub fn browser_set_agent_server_enabled(enabled: bool) -> Result<(), String> {
+	ENABLED.store(enabled, std::sync::atomic::Ordering::Relaxed);
+	Ok(())
+}
+
+async fn call_tool_checked<R: Runtime>(
+	app: &AppHandle<R>,
+	name: &str,
+	args: &Value,
+) -> Result<Value, String> {
+	if !ENABLED.load(std::sync::atomic::Ordering::Relaxed) {
+		return Err("Browser tools are disabled in Desktop settings.".into());
+	}
+	call_tool(app, name, args).await
+}
+
 fn tools_list() -> Value {
 	let def = |name: &str, description: &str, properties: Value, required: Value| {
 		json!({
@@ -243,13 +285,21 @@ async fn call_tool<R: Runtime>(
 	name: &str,
 	args: &Value,
 ) -> Result<Value, String> {
-	let tab_id = {
+	let shown = {
 		let state = app.state::<super::tabs::TabsState>();
-		let inner = state.inner.lock().unwrap();
-		inner.shown.clone().ok_or_else(|| {
+		let shown = state.inner.lock().unwrap().shown.clone();
+		shown
+	};
+	if shown.is_none() && name != "browser_navigate" {
+		return Err(
 			"No browser tab is open. Call browser_navigate to open one first (the panel opens for the user)."
-				.to_string()
-		})?
+				.to_string(),
+		);
+	}
+	let tab_id = shown;
+	let no_tab = || {
+		"No browser tab is open. Call browser_navigate to open one first (the panel opens for the user)."
+			.to_string()
 	};
 	let text = |value: String| json!({ "type": "text", "text": value });
 	match name {
@@ -298,6 +348,7 @@ async fn call_tool<R: Runtime>(
 					"Opening {url} in a new panel tab for the user; the page loads there."
 				)));
 			}
+			let tab_id = tab_id.ok_or_else(no_tab)?;
 			super::tabs::navigate_tab(app, &tab_id, url).await?;
 			Ok(text(format!(
 				"Navigating the active tab to {url}; call browser_snapshot once it settles (~1s)."
@@ -331,6 +382,7 @@ async fn call_tool<R: Runtime>(
 				}
 				_ => return Err("unknown op".into()),
 			};
+			let tab_id = tab_id.ok_or_else(no_tab)?;
 			let answer = super::agent::run_op(app, &tab_id, &op, true).await?;
 			// A navigation handed back from a click must go through the panel,
 			// exactly like a user's click: the address stays true.
@@ -364,6 +416,7 @@ async fn call_tool<R: Runtime>(
 			}
 		}
 		"browser_screenshot" => {
+			let tab_id = tab_id.ok_or_else(no_tab)?;
 			let png = super::capture::capture_png(app, &tab_id).await?;
 			Ok(
 				json!({ "type": "image", "data": BASE64_STANDARD.encode(png), "mimeType": "image/png" }),

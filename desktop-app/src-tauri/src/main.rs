@@ -83,6 +83,7 @@ fn main() {
 			browser::downloads::browser_download_reveal,
 			browser::gateway::browser_gateway_url,
 			browser::agentserver::browser_agent_server_url,
+			browser::agentserver::browser_set_agent_server_enabled,
 			cli::get_initial_workspace,
 			bootstrap::bootstrap_cli,
 			bench::bench_list_tasks,
@@ -133,6 +134,40 @@ fn main() {
 		])
 		.setup(|app| {
 			let app_handle = app.handle().clone();
+
+			// File diagnostics (level Info): `open`-launched builds have no
+			// stderr, and the browser panel's proxy/routing decisions are the
+			// first thing a blank tab wants to show. One file per run.
+			if let Ok(dir) = app.path().app_local_data_dir() {
+				// The dir may not exist on first ever launch: missing browser
+				// diagnostics must never take the app down with it.
+				if std::fs::create_dir_all(&dir).is_ok() {
+					if let Ok(file) = std::fs::OpenOptions::new()
+						.create(true)
+						.write(true)
+						.truncate(true)
+						.open(dir.join("browser-debug.log"))
+					{
+						if let Err(error) =
+							log::set_boxed_logger(Box::new(FileLogger(std::sync::Mutex::new(file))))
+						{
+							// Terminal-visible too: Finder-launched builds have no stderr,
+							// terminal-launched ones do, and this failure is diagnostic gold.
+							eprintln!("logger init failed: {error}");
+						}
+						// log's runtime max level defaults to Off; nothing is written
+						// until it is raised. Must also happen after set_boxed_logger
+						// in case anything in between resets it.
+						log::set_max_level(log::LevelFilter::Info);
+						log::error!("logger canary: browser diagnostics live");
+						log::info!("desktop started, browser diagnostics to browser-debug.log");
+					}
+				}
+			}
+
+			// The agent browser MCP server starts with the app; the settings
+			// toggle only gates dispatch later on.
+			browser::agentserver::ensure_started(&app_handle);
 
 			// Build and set the app menu.
 			// Register the menu event handler on every platform (cheap, no UI).
@@ -248,4 +283,40 @@ fn main() {
 			}
 		}
 	});
+}
+
+/// Minimal file logger: every line written and flushed immediately, so
+/// diagnostics survive even the crash that made them interesting.
+struct FileLogger(std::sync::Mutex<std::fs::File>);
+
+impl log::Log for FileLogger {
+	fn enabled(&self, metadata: &log::Metadata) -> bool {
+		metadata.level() <= log::Level::Info
+	}
+
+	fn log(&self, record: &log::Record) {
+		if self.enabled(record.metadata()) {
+			use std::io::Write as _;
+			if let Ok(mut file) = self.0.lock() {
+				let _ = writeln!(
+					file,
+					"{} [{}] {}",
+					std::time::SystemTime::now()
+						.duration_since(std::time::UNIX_EPOCH)
+						.map(|d| d.as_secs())
+						.unwrap_or(0),
+					record.level(),
+					record.args()
+				);
+				let _ = file.flush();
+			}
+		}
+	}
+
+	fn flush(&self) {
+		use std::io::Write as _;
+		if let Ok(mut file) = self.0.lock() {
+			let _ = file.flush();
+		}
+	}
 }

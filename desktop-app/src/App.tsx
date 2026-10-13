@@ -18,6 +18,10 @@ import { useSessionStore, type QuestionUiRequest } from "./stores/session-store"
 import { useSettingsStore } from "./stores/settings-store";
 import { useWorkspaceStore } from "./stores/workspace-store";
 import { useSessionTreeStore } from "./stores/session-tree-store";
+// Bind the desktop browser's event channel at startup: the agent's openPanel
+// event must arrive even while the panel is closed, and browser-store is
+// otherwise imported only by BrowserPanel (first render, too late).
+import "./stores/browser-store";
 import { useTabsStore } from "./stores/tabs-store";
 import { useOfficeStore } from "./stores/office-store";
 import { useCronStore } from "./stores/cron-store";

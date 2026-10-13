@@ -168,11 +168,31 @@ async fn serve(mut client: TcpStream) {
 		return;
 	};
 	let Some(request) = parse(&head) else {
+		log::info!("proxy: unparseable request head");
 		let _ = reply(&mut client, "400 Bad Request").await;
 		return;
 	};
+	log::info!(
+		"proxy: {} {}:{} ({})",
+		if request.forward.is_some() {
+			"GET"
+		} else {
+			"CONNECT"
+		},
+		request.host,
+		request.port,
+		request.host
+	);
 	let mut upstream = match connect(&request.host, request.port).await {
-		Ok(stream) => stream,
+		Ok(stream) => {
+			log::info!(
+				"proxy: connected {}:{} ({} bytes pending)",
+				request.host,
+				request.port,
+				rest.len()
+			);
+			stream
+		}
 		Err(Refusal::Private) => {
 			log::info!("browser proxy refused private host {}", request.host);
 			let _ = reply(&mut client, "403 Forbidden").await;

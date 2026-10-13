@@ -81,6 +81,12 @@ pub(crate) enum BrowserEvent {
 		tab_id: String,
 		url: String,
 	},
+	/// The proxy could not route the page: it stays blank by policy. The panel
+	/// toasts so a blank tab is never silent.
+	ProxyFailed {
+		tab_id: String,
+		url: String,
+	},
 	/// An agent tool needs a tab while none is open: the panel comes up with
 	/// the page. Frontend-only (it drives browser_open_tab).
 	OpenPanel {
@@ -105,12 +111,30 @@ pub(crate) enum BrowserEvent {
 
 pub(crate) fn emit<R: Runtime>(app: &tauri::AppHandle<R>, event: BrowserEvent) {
 	use tauri::Emitter;
-	let _ = app.emit(tabs::EVENT_NAME, event);
+	let name = event.name();
+	if let Some(extra) = event.describe() {
+		log::info!("agent event -> {name} {extra}");
+	} else {
+		log::info!("agent event -> {name}");
+	}
+	if let Err(error) = app.emit(tabs::EVENT_NAME, event) {
+		log::warn!("agent event emit failed: {error}");
+	}
 }
 
 /// Only the panel (the `main` webview) may call browser commands; a page
 /// cannot reach here anyway (no capabilities + remote origin), but the check
 /// keeps a label mistake from widening anything.
+/// A value from the desktop browser's prefs block ("browser" object) in the
+/// CLI's global settings file — the settings page owns the values; the Rust
+/// side reads them where a default is needed (download folder, tool gating).
+pub(crate) fn browser_pref(key: &str) -> Option<serde_json::Value> {
+	let path = crate::settings::global_settings_path().ok()?;
+	let text = std::fs::read_to_string(path).ok()?;
+	let parsed: serde_json::Value = serde_json::from_str(&text).ok()?;
+	parsed.get("browser")?.get(key).cloned()
+}
+
 pub(crate) fn require_main<R: Runtime>(webview: &Webview<R>) -> Result<(), String> {
 	if webview.label() != tabs::MAIN_LABEL {
 		return Err("browser commands answer only to the panel".into());
@@ -135,6 +159,49 @@ pub(crate) fn reveal_path<R: Runtime>(
 	app.opener()
 		.reveal_item_in_dir(path)
 		.map_err(|error| error.to_string())
+}
+
+impl BrowserEvent {
+	/// The camelCase tag the frontend sees, for log lines.
+	pub(crate) fn name(&self) -> &'static str {
+		match self {
+			Self::Load { .. } => "load",
+			Self::Title { .. } => "title",
+			Self::Url { .. } => "url",
+			Self::History { .. } => "history",
+			Self::External { .. } => "external",
+			Self::NewTab { .. } => "newTab",
+			Self::ProxyFailed { .. } => "proxyFailed",
+			Self::OpenPanel { .. } => "openPanel",
+			Self::Closed { .. } => "closed",
+			Self::DownloadPrompt { .. } => "downloadPrompt",
+			Self::DownloadSettled { .. } => "downloadSettled",
+		}
+	}
+
+	/// One-line payload sketch for the same log lines.
+	pub(crate) fn describe(&self) -> Option<String> {
+		match self {
+			Self::Load {
+				tab_id,
+				url,
+				loading,
+			} => Some(format!("tab={tab_id} started={loading} {url}")),
+			Self::Title { tab_id, title } => Some(format!("tab={tab_id} {title}")),
+			Self::Url { tab_id, url } => Some(format!("tab={tab_id} {url}")),
+			Self::History {
+				tab_id,
+				back,
+				forward,
+			} => Some(format!("tab={tab_id} back={back} fwd={forward}")),
+			Self::External { tab_id, url } => Some(format!("tab={tab_id} {url}")),
+			Self::NewTab { tab_id, url } => Some(format!("tab={tab_id} {url}")),
+			Self::ProxyFailed { tab_id, url } => Some(format!("tab={tab_id} {url}")),
+			Self::OpenPanel { url } => Some(url.clone()),
+			Self::Closed { tab_id } => Some(format!("tab={tab_id}")),
+			_ => None,
+		}
+	}
 }
 
 #[cfg(test)]

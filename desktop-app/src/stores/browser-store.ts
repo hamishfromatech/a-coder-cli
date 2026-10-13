@@ -4,6 +4,7 @@
 
 import { create } from "zustand";
 import browser, { onBrowserEvent, type BrowserEvent, type TabInfo } from "../lib/browser";
+import { rendererLog } from "../lib/renderer-log";
 import { toast } from "./toast-store";
 import { openExternalLink } from "../lib/external-link";
 import { useUiStore } from "./ui-store";
@@ -118,6 +119,7 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 	},
 
 	openTab: async (url) => {
+		rendererLog(`browser: openTab ${url} supported=${get().supported}`);
 		if (!get().supported) {
 			// Gateways render reading frames; without one the system browser is
 			// the only way to see a page.
@@ -143,7 +145,10 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 			await openExternalLink(url);
 			return;
 		}
-		const tabId = await browser.openTab({ url });
+		const tabId = await browser.openTab({ url }).catch((error) => {
+			rendererLog(`browser: openTab failed: ${String(error)}`);
+			throw error;
+		});
 		set((state) => ({
 			tabs: [
 				...state.tabs,
@@ -305,6 +310,7 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 				);
 				break;
 			case "openPanel": {
+				rendererLog(`browser: openPanel event url=${event.url}`);
 				// An agent tool wants a page: bring the right rail up on the
 				// browser tab; the panel opens tabs only once its bounds are
 				// known.
@@ -371,6 +377,7 @@ function toBlob(png: ArrayBuffer | number[]): Blob | null {
 
 void browser;
 
+rendererLog("browser: store module loaded");
 // Bind the event channel once at module load; the store exists before React.
 let bound = false;
 if (!bound) {
@@ -378,7 +385,12 @@ if (!bound) {
 	void useBrowserStore
 		.getState()
 		.init()
-		.then(() =>
-			onBrowserEvent((event) => useBrowserStore.getState().applyEvent(event)),
-		);
+		.then(() => {
+			rendererLog("browser: store bound (init ok)");
+			return onBrowserEvent((event) => useBrowserStore.getState().applyEvent(event));
+		})
+		.catch((error) => {
+			rendererLog(`browser: store binding failed: ${String(error)}`);
+			return onBrowserEvent((event) => useBrowserStore.getState().applyEvent(event));
+		});
 }

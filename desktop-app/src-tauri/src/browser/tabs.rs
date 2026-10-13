@@ -175,10 +175,18 @@ pub(crate) struct Inner {
 	/// Whether the page's first navigation (a commit) happened, for downloads' site.
 	pub(crate) committed: HashSet<String>,
 	pub(crate) polling: bool,
+	/// Opening tab with no bounds yet: the panel calls openTab before its
+	/// bounds are measured, so the reserved address is shown once the first
+	/// bounds-driven view_show arrives.
+	pub(crate) pending_url: HashMap<String, String>,
 }
 
 fn label_for(tab_id: &str) -> String {
 	format!("{LABEL_PREFIX}{tab_id}")
+}
+
+fn tab_of_label(label: &str) -> Option<String> {
+	label.strip_prefix(LABEL_PREFIX).map(str::to_string)
 }
 
 fn view<R: Runtime>(app: &AppHandle<R>, tab_id: &str) -> Result<Webview<R>, String> {
@@ -202,7 +210,18 @@ pub async fn browser_open_tab<R: Runtime>(
 	bounds: Option<ViewBounds>,
 ) -> Result<String, String> {
 	require_main(&webview)?;
+	log::info!("open_tab called: url={url:?} bounds={bounds:?}");
 	let tab_id = next_tab_id();
+	if bounds.is_none() {
+		if let Some(address) = url.as_deref() {
+			state
+				.inner
+				.lock()
+				.unwrap()
+				.pending_url
+				.insert(tab_id.clone(), address.to_string());
+		}
+	}
 	browser_view_show(
 		webview,
 		state,
@@ -228,6 +247,10 @@ pub async fn browser_view_show<R: Runtime>(
 	parked: Option<bool>,
 ) -> Result<(), String> {
 	require_main(&webview)?;
+	log::info!(
+		"view_show called: tab={tab_id:?} url={url:?} bounds={:?}",
+		bounds.as_ref().map(|b| b.parts())
+	);
 	let app = webview.app_handle().clone();
 	let parked = parked.unwrap_or(false);
 	let target = match (&tab_id, &bounds) {
@@ -246,7 +269,15 @@ pub async fn browser_view_show<R: Runtime>(
 			}
 			None if parked => return Err("no page to park".into()),
 			None => {
-				let url = parse_page_url(url.as_deref().ok_or("no address to open")?)?;
+				// The opening tab's address may be reserved for the first bounds-
+				// driven show (openTab ran before the panel measured its bounds,
+				// so it arrived with url + no bounds).
+				let reserved = state.inner.lock().unwrap().pending_url.remove(tab_id);
+				let url = match (url.as_deref(), reserved) {
+					(Some(address), _) => parse_page_url(address)?,
+					(None, Some(reserved)) => parse_page_url(&reserved)?,
+					(None, None) => return Err("no address to open".into()),
+				};
 				#[cfg(target_os = "macos")]
 				super::layer::install(&webview);
 				open_view(&webview, &state, tab_id, url, *bounds)?
@@ -353,6 +384,7 @@ pub fn browser_close_tab<R: Runtime>(
 		inner.urls.remove(&tab_id);
 		inner.history.remove(&tab_id);
 		inner.muted.remove(&tab_id);
+		inner.pending_url.remove(&tab_id);
 		if inner.shown.as_deref() == Some(tab_id.as_str()) {
 			inner.shown = None;
 		}
@@ -488,9 +520,11 @@ fn open_view<R: Runtime>(
 
 	let builder = WebviewBuilder::new(&label, WebviewUrl::External(initial))
 		.on_navigation(move |url| {
+			log::info!("page navigation requested: {}", url.as_str());
 			if navigation_allowed(url) && reportable(url.as_str()) {
 				return true;
 			}
+			log::info!("page navigation refused: {}", url.as_str());
 			if is_external_handoff(url) && reportable(url.as_str()) {
 				emit(
 					&nav_app,
@@ -574,7 +608,7 @@ fn open_view<R: Runtime>(
 		.created
 		.insert(tab_id.to_string());
 	if let Some(url) = deferred {
-		load_through_proxy(&page_view, url);
+		load_through_proxy(&app, &page_view, url);
 	}
 	Ok(page_view)
 }
@@ -808,26 +842,43 @@ fn start_url_poll<R: Runtime>(app: &AppHandle<R>) {
 /// macOS: point the page's data store at the proxy (macOS 14+), then load.
 /// Windows pages are proxied via args at creation.
 #[cfg(target_os = "macos")]
-fn load_through_proxy<R: Runtime>(page: &Webview<R>, url: Url) {
+fn load_through_proxy<R: Runtime>(app: &AppHandle<R>, page: &Webview<R>, url: Url) {
+	let route_url = url.to_string();
 	let page = page.clone();
 	let load = {
 		let page = page.clone();
+		let load_url = url.clone();
 		move || {
 			let page = page.clone();
+			log::info!("issuing deferred navigate: {}", load_url);
 			tauri::async_runtime::spawn(async move {
-				let _ = page.navigate(url);
+				if let Err(error) = page.navigate(load_url) {
+					log::info!("deferred navigate failed: {error}");
+				}
 			});
 		}
 	};
+	let app = app.clone();
+	let page_tab = page.label().to_string();
 	let _ = page.with_webview(move |platform| {
 		let raw = platform.inner() as *mut objc2_web_kit::WKWebView;
 		// Safety: wry's view, alive with its webview; retained for the callback.
 		let Some(view) = (unsafe { objc2::rc::Retained::retain(raw) }) else {
 			return;
 		};
+		let routed = mac_proxy::route(&view);
+		log::info!("page proxy routed: {} -> {}", route_url, routed);
 		// Never unproxied: a page whose proxy cannot route does not load.
-		if !mac_proxy::route(&view) {
+		if !routed {
 			log::error!("browser page not loaded: its proxy could not be set");
+			emit(
+				&app,
+				BrowserEvent::ProxyFailed {
+					// The caller's tab id lives in the label; the event wants it back.
+					tab_id: tab_of_label(&page_tab).unwrap_or_default(),
+					url: route_url,
+				},
+			);
 			return;
 		}
 		let _ = load();

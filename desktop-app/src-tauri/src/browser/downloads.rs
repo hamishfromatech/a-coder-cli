@@ -431,6 +431,14 @@ fn dec_unanswered(inner: &mut Inner, tab_id: &str) {
 }
 
 fn default_folder() -> PathBuf {
+	if let Some(value) = super::browser_pref("downloadFolder") {
+		if let Some(str) = value.as_str() {
+			let trimmed = str.trim();
+			if !trimmed.is_empty() {
+				return PathBuf::from(trimmed);
+			}
+		}
+	}
 	dirs::download_dir()
 		.unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")))
 		.join("a-coder-downloads")

@@ -95,7 +95,11 @@ pub(crate) async fn run_op<R: Runtime>(
 			.map_err(|_| "the page did not answer")?
 			.map_err(|error| error.to_string())?;
 		// The runtime returns a JSON string, which the engine JSON-encodes again.
-		let inner = serde_json::from_str::<String>(raw.trim()).unwrap_or(raw);
+		let inner = serde_json::from_str::<String>(raw.trim()).unwrap_or(raw.clone());
+		log::info!(
+			"agent eval answered install={install}: {}",
+			&inner[..inner.len().min(160)]
+		);
 		let answer: serde_json::Value =
 			serde_json::from_str(&inner).unwrap_or(serde_json::Value::Null);
 		let installed = answer
