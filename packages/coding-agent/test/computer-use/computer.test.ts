@@ -2,7 +2,8 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import { join } from "node:path";
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ENV_AGENT_DIR } from "../../src/config.ts";
 import {
 	COMPUTER_INPUT_ACTIONS,
 	type ComputerToolInput,
@@ -270,11 +271,26 @@ describe("computer tool conformance against a fake cua-driver MCP server", () =>
 
 	it("fails with an install hint when no driver binary is available", async () => {
 		delete process.env.A_CODER_CUA_DRIVER_CMD;
-		// Ensure PATH lookup also fails: run in an env without a cua-driver binary.
+		// Ensure neither the PATH lookup nor the agent-dir fallback can see an
+		// ambient cua-driver: stub both to empty temp dirs.
+		const nopath = fs.mkdtempSync(join(os.tmpdir(), "acoder-cua-nopath-"));
+		const savedAgentDir = process.env[ENV_AGENT_DIR];
+		process.env[ENV_AGENT_DIR] = nopath;
+		vi.stubEnv("PATH", nopath);
 		resetComputerToolState();
-		const result = await execute({ action: "list_apps" } as ComputerToolInput);
-		const text = result.content[0]?.type === "text" ? result.content[0].text : "";
-		expect(text).toContain("cua-driver is not installed");
+		try {
+			const result = await execute({ action: "list_apps" } as ComputerToolInput);
+			const text = result.content[0]?.type === "text" ? result.content[0].text : "";
+			expect(text).toContain("cua-driver is not installed");
+		} finally {
+			vi.unstubAllEnvs();
+			if (savedAgentDir !== undefined) {
+				process.env[ENV_AGENT_DIR] = savedAgentDir;
+			} else {
+				delete process.env[ENV_AGENT_DIR];
+			}
+			fs.rmSync(nopath, { recursive: true, force: true });
+		}
 	});
 });
 

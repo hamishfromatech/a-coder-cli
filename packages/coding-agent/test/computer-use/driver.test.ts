@@ -33,6 +33,9 @@ describe("driver resolution", () => {
 	beforeEach(() => {
 		tempRoot = fs.mkdtempSync(join(os.tmpdir(), "acoder-cua-driver-"));
 		vi.stubEnv(ENV_AGENT_DIR, tempRoot);
+		// Hermetic PATH: resolveDriverCommand probes `which cua-driver` before
+		// the agent-dir fallback, so tests must not see an ambient install.
+		vi.stubEnv("PATH", tempRoot);
 		delete process.env.A_CODER_CUA_DRIVER_CMD;
 	});
 
@@ -74,6 +77,14 @@ describe("driver resolution", () => {
 describe("install guidance", () => {
 	const savedPlatform = process.platform;
 	const savedArch = process.arch;
+
+	beforeEach(() => {
+		// getDriverInstallGuidance returns null when a driver is reachable via
+		// PATH or the agent dir; hide the ambient install so assertions run as
+		// on a clean machine.
+		vi.stubEnv("PATH", fs.mkdtempSync(join(os.tmpdir(), "acoder-cua-nopath-")));
+		vi.stubEnv(ENV_AGENT_DIR, join(os.tmpdir(), "acoder-cua-nopath-agent-"));
+	});
 
 	afterEach(() => {
 		restorePlatform(savedPlatform, savedArch);
@@ -117,6 +128,8 @@ describe("missing-driver tool failures carry install guidance", () => {
 		const tempRoot = fs.mkdtempSync(join(os.tmpdir(), "acoder-cua-missing-"));
 		const savedAgentDir = process.env[ENV_AGENT_DIR];
 		process.env[ENV_AGENT_DIR] = tempRoot;
+		// Hermetic PATH: hide any ambient cua-driver from the `which` probe.
+		vi.stubEnv("PATH", tempRoot);
 		delete process.env.A_CODER_CUA_DRIVER_CMD;
 		resetComputerToolState();
 		try {
