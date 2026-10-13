@@ -4,6 +4,8 @@
 
 ### Added
 
+- Browser diagnostics: every run writes a line-flushed `browser-debug.log` into the app data dir (proxy connections, routing decisions, refusals, the agent MCP server's startup), and the agent MCP server now starts with the app instead of waiting for the settings page to be opened.
+
 - Fixed: websites never loaded in the browser panel — the page-view placement gate only opened via the agent path, so user-typed addresses created a tab but never a view. The panel now opens the gate itself, and a proxy-routing failure toasts instead of leaving a silently blank tab.
 
 - Settings gains a **Browser** page: download folder (with folder picker, text entry, and reset-to-default; the panel's approval flow and startup both honor it), a **"Let the AI drive the browser"** toggle that enables/disables the agent MCP tools live (the endpoint URL with a copy-ready `mcpServers` snippet shows underneath), so the AI-page bridge can be switched off without restarting.
