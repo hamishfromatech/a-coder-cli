@@ -1,0 +1,37 @@
+# Compile-verify the desktop app's Windows-only native code (the browser
+# panel's WebView2 capture/mute paths and proxy args) on a real Windows
+# runner. There is no cross-compile check for these locally: macOS lacks the
+# MSVC toolchain the TLS/native build scripts need, so cfg(windows) code can
+# otherwise drift unnoticed until a Windows release build.
+name: desktop-windows-check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "desktop-app/src-tauri/**"
+  pull_request:
+    paths:
+      - "desktop-app/src-tauri/**"
+
+concurrency:
+  group: desktop-windows-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop-app/src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop-app/src-tauri
+      - run: cargo fmt --check
+      - run: cargo check
+      - run: cargo test

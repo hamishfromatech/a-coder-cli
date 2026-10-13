@@ -30,12 +30,16 @@ export interface DownloadPrompt {
 interface BrowserState {
 	open: boolean;
 	supported: boolean;
+	/** The proxied-frame gateway origin, on platforms without native views. */
+	gateway: string | null;
 	layered: boolean;
 	captureSupported: boolean;
 	tabs: BrowserTab[];
 	activeId: string | null;
 	downloads: DownloadPrompt[];
 	initialized: boolean;
+	/** An agent tool asked for a tab while the panel was closed. */
+	pendingUrl: string | null;
 
 	setOpen: (open: boolean) => void;
 	init: () => Promise<void>;
@@ -77,12 +81,14 @@ const normalizeUrl = (input: string): string | null => {
 export const useBrowserStore = create<BrowserState>((set, get) => ({
 	open: false,
 	supported: false,
+	gateway: null,
 	layered: false,
 	captureSupported: false,
 	tabs: [],
 	activeId: null,
 	downloads: [],
 	initialized: false,
+	pendingUrl: null,
 
 	setOpen: (open) => set({ open }),
 
@@ -92,6 +98,7 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 		const supported = await browser.supported().catch(() => false);
 		const layered = supported ? await browser.layered().catch(() => false) : false;
 		const captureSupported = await browser.captureSupported().catch(() => false);
+		const gateway = (await browser.gatewayUrl().catch(() => null)) ?? null;
 		const tabs: BrowserTab[] = supported
 			? (await browser.tabList().catch(() => []) as TabInfo[]).map((info) => ({
 					id: info.tabId,
@@ -103,7 +110,8 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 					zoom: 1,
 				}))
 			: [];
-		set({ supported, layered, captureSupported, tabs, activeId: tabs[0]?.id ?? null });
+		set({ supported, gateway, layered, captureSupported, tabs, activeId: tabs[0]?.id ?? null });
+		void bindFrameMessages(gateway);
 	},
 
 	openTab: async (url) => {
@@ -260,6 +268,11 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 			case "newTab":
 				void state.openTab(event.url);
 				break;
+			case "openPanel":
+				// An agent tool wants a page: bring the panel up; the panel
+				// opens tabs only once its bounds are known.
+				set({ open: true, pendingUrl: event.url });
+				break;
 			case "closed":
 				set({
 					tabs: state.tabs.filter((tab) => tab.id !== event.tabId),
@@ -276,6 +289,38 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 		}
 	},
 }));
+
+/**
+ * Reading-frame pages (Linux / macOS < 14) report their address and title by
+ * postMessage from the gateway's sentinel script. The frame is a sandboxed
+ * opaque origin, so nothing else can be trusted from it — and nothing reads it.
+ */
+function bindFrameMessages(gateway: string | null) {
+	if (!gateway) return;
+	window.addEventListener("message", (event) => {
+		if (typeof event.data !== "string" || !event.data.startsWith("{")) return;
+		let parsed: { type?: string; href?: unknown; title?: unknown };
+		try {
+			parsed = JSON.parse(event.data);
+		} catch {
+			return;
+		}
+		if (parsed?.type !== "a-coder-frame") return;
+		const href = typeof parsed.href === "string" ? parsed.href : null;
+		const title = typeof parsed.title === "string" ? parsed.title : "";
+		if (!href) return;
+		const state = useBrowserStore.getState();
+		const tabId = state.activeId;
+		if (!tabId) return;
+		useBrowserStore.setState({
+			tabs: state.tabs.map((tab) =>
+				tab.id === tabId
+					? { ...tab, url: href, title: title || tab.title, loading: false }
+					: tab,
+			),
+		});
+	});
+}
 
 function toBlob(png: ArrayBuffer | number[]): Blob | null {
 	if (png instanceof ArrayBuffer) return new Blob([png], { type: "image/png" });

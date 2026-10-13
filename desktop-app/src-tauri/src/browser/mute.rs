@@ -44,11 +44,11 @@ pub(crate) fn apply<R: Runtime>(page: &Webview<R>, muted: bool) -> Result<(), St
 		// Fire-and-forget: WebView2's mute lands on the controller; failures
 		// surface as audible audio, not a broken panel.
 		let _ = page.with_webview(move |platform| {
-			if let Ok(core) = unsafe { platform.controller().CoreWebView2() } {
+			if let Ok(core) = unsafe { platform.controller.CoreWebView2() } {
 				if let Ok(muted_view) = unsafe {
 					core.cast::<webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_8>()
 				} {
-					let _ = unsafe { muted_view.PutIsMuted(muted) };
+					let _ = unsafe { muted_view.SetIsMuted(windows_core::BOOL::from(muted)) };
 				}
 			}
 		});

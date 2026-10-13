@@ -25,10 +25,12 @@ import { useBrowserStore } from "../../stores/browser-store";
 
 export function BrowserPanel({ onClose }: { onClose: () => void }) {
 	const supported = useBrowserStore((state) => state.supported);
+	const gateway = useBrowserStore((state) => state.gateway);
 	const layered = useBrowserStore((state) => state.layered);
 	const tabs = useBrowserStore((state) => state.tabs);
 	const activeId = useBrowserStore((state) => state.activeId);
 	const downloads = useBrowserStore((state) => state.downloads);
+	const pendingUrl = useBrowserStore((state) => state.pendingUrl);
 	const openTab = useBrowserStore((state) => state.openTab);
 	const activate = useBrowserStore((state) => state.activate);
 	const closeTab = useBrowserStore((state) => state.close);
@@ -132,6 +134,15 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 	const handleNewTab = () => {
 		void openTab("https://www.google.com");
 	};
+
+	// An agent tool asked for a tab while the panel was closed: open it now
+	// that the bounds are measured, then clear the request.
+	useEffect(() => {
+		if (!pendingUrl || !supported) return;
+		const url = pendingUrl;
+		useBrowserStore.setState({ pendingUrl: null });
+		void openTab(url);
+	}, [pendingUrl, supported, openTab]);
 
 	const handleCapture = async () => {
 		if (!active) return;
@@ -409,23 +420,40 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 				</div>
 			)}
 
-			{/* Unsupported platform: fall back to the system browser. */}
-			{!supported && (
-				<div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
-					<Globe className="h-8 w-8 text-pi-text-muted" />
-					<p className="text-sm text-pi-text">Native browsing needs macOS 14+ or Windows.</p>
-					<p className="max-w-sm text-xs text-pi-text-muted">
-						Open tabs in your default browser for now; the panel's secure proxy and page views
-						land on this platform in a follow-up.
-					</p>
-					<button
-						onClick={() => active?.url && void openExternalLink(active.url)}
-						className="cursor-pointer rounded border border-pi-border px-3 py-1.5 text-xs text-pi-text-secondary hover:bg-pi-surface-raised"
-					>
-						Open {active ? "this page" : "your browser"} externally
-					</button>
-				</div>
-			)}
+			{/* Unsupported platform: proxied reading frames when the gateway is
+			    available (Linux / macOS < 14), else the system browser. */}
+			{!supported &&
+				(gateway ? (
+					<div className="relative min-h-0 flex-1 bg-white">
+						{active?.url && (
+							<iframe
+								title={active.title || active.url}
+								sandbox="allow-scripts"
+								className="h-full w-full border-0"
+								src={`${gateway}/page?u=${encodeURIComponent(active.url)}`}
+								referrerPolicy="no-referrer"
+							/>
+						)}
+						<div className="pointer-events-none absolute left-2 top-2 rounded bg-pi-bg/80 px-2 py-0.5 text-[10px] text-pi-text-muted">
+							Reading frame — scripts, cookies and storage are disabled; forms are preview-only
+						</div>
+					</div>
+				) : (
+					<div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
+						<Globe className="h-8 w-8 text-pi-text-muted" />
+						<p className="text-sm text-pi-text">Native browsing needs macOS 14+ or Windows.</p>
+						<p className="max-w-sm text-xs text-pi-text-muted">
+							Open tabs in your default browser here; the panel's secure proxy and page views
+							arrive with this platform in a follow-up.
+						</p>
+						<button
+							onClick={() => active?.url && openExternalLink(active.url)}
+							className="cursor-pointer rounded border border-pi-border px-3 py-1.5 text-xs text-pi-text-secondary hover:bg-pi-surface-raised"
+						>
+							Open {active ? "this page" : "your browser"} externally
+						</button>
+					</div>
+				))}
 		</div>
 	);
 }

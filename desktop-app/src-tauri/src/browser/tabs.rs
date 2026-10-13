@@ -280,15 +280,25 @@ pub fn browser_navigate_tab<R: Runtime>(
 	url: String,
 ) -> Result<(), String> {
 	require_main(&webview)?;
-	let nav = parse_page_url(&url)?;
-	let page = view(webview.app_handle(), &tab_id)?;
-	webview
-		.state::<TabsState>()
+	tauri::async_runtime::block_on(navigate_tab(webview.app_handle(), &tab_id, &url))
+}
+
+/// The navigate core, shared with the agent's MCP server.
+pub(crate) async fn navigate_tab<R: Runtime>(
+	app: &AppHandle<R>,
+	tab_id: &str,
+	url: &str,
+) -> Result<(), String> {
+	let nav = parse_page_url(url)?;
+	let page = app
+		.get_webview(&label_for(tab_id))
+		.ok_or_else(|| "That tab is closed".to_string())?;
+	app.state::<TabsState>()
 		.inner
 		.lock()
 		.unwrap()
 		.urls
-		.remove(&tab_id);
+		.remove(tab_id);
 	page.navigate(nav).map_err(|error| error.to_string())
 }
 

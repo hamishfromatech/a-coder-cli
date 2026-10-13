@@ -53,26 +53,60 @@ pub async fn browser_agent<R: Runtime>(
 	command: AgentCommand,
 ) -> Result<serde_json::Value, String> {
 	require_main(&webview)?;
+	let AgentCommand { op, install } = command;
+	run_op(
+		webview.app_handle(),
+		&tab_id,
+		&serde_json::Value::Object(op),
+		install,
+	)
+	.await
+}
+
+/// The op runner, shared with the agent's MCP server (which has no panel
+/// caller to check). One retry with the runtime when the first answer says it
+/// was never installed (a navigation dropped it).
+pub(crate) async fn run_op<R: Runtime>(
+	app: &tauri::AppHandle<R>,
+	tab_id: &str,
+	op: &serde_json::Value,
+	install: bool,
+) -> Result<serde_json::Value, String> {
+	let command = AgentCommand {
+		op: op.as_object().cloned().unwrap_or_default(),
+		install,
+	};
 	let script = agent_script(&command)?;
-	let page = webview
-		.app_handle()
+	let page = app
 		.get_webview(&format!("{}{tab_id}", tabs::LABEL_PREFIX))
 		.ok_or_else(|| "That tab is closed".to_string())?;
-	let (sender, receiver) = tokio::sync::oneshot::channel();
-	let sender = Mutex::new(Some(sender));
-	page.eval_with_callback(script, move |raw| {
-		if let Some(sender) = sender.lock().unwrap().take() {
-			let _ = sender.send(raw);
-		}
-	})
-	.map_err(|error| error.to_string())?;
-	let raw = tokio::time::timeout(Duration::from_secs(5), receiver)
-		.await
-		.map_err(|_| "the page did not answer")?
+	for _ in 0..2 {
+		let (sender, receiver) = tokio::sync::oneshot::channel();
+		let sender = Mutex::new(Some(sender));
+		let script = script.clone();
+		page.eval_with_callback(script, move |raw| {
+			if let Some(sender) = sender.lock().unwrap().take() {
+				let _ = sender.send(raw);
+			}
+		})
 		.map_err(|error| error.to_string())?;
-	// The runtime returns a JSON string, which the engine JSON-encodes again.
-	let inner = serde_json::from_str::<String>(raw.trim()).unwrap_or(raw);
-	Ok(serde_json::from_str::<serde_json::Value>(&inner).unwrap_or(serde_json::Value::Null))
+		let raw = tokio::time::timeout(Duration::from_secs(5), receiver)
+			.await
+			.map_err(|_| "the page did not answer")?
+			.map_err(|error| error.to_string())?;
+		// The runtime returns a JSON string, which the engine JSON-encodes again.
+		let inner = serde_json::from_str::<String>(raw.trim()).unwrap_or(raw);
+		let answer: serde_json::Value =
+			serde_json::from_str(&inner).unwrap_or(serde_json::Value::Null);
+		let installed = answer
+			.get("installed")
+			.and_then(serde_json::Value::as_bool)
+			.unwrap_or(false);
+		if installed || !install {
+			return Ok(answer);
+		}
+	}
+	Err("the page could not take the agent runtime".into())
 }
 
 fn agent_script(command: &AgentCommand) -> Result<String, String> {

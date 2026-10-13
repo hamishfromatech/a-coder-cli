@@ -48,6 +48,14 @@ pub async fn browser_capture<R: Runtime>(
 	bounds: Option<ViewBounds>,
 ) -> Result<Response, String> {
 	require_main(&webview)?;
+	capture_command(webview, tab_id, bounds).await
+}
+
+async fn capture_command<R: Runtime>(
+	webview: Webview<R>,
+	tab_id: Option<String>,
+	bounds: Option<ViewBounds>,
+) -> Result<Response, String> {
 	#[cfg(not(any(target_os = "macos", windows)))]
 	{
 		let _ = (&tab_id, &bounds);
@@ -92,6 +100,33 @@ pub async fn browser_capture<R: Runtime>(
 		}
 		Ok(Response::new(png))
 	}
+}
+
+/// A tab's capture as raw PNG bytes, for the agent's MCP server.
+pub(crate) async fn capture_png<R: Runtime>(
+	app: &tauri::AppHandle<R>,
+	tab_id: &str,
+) -> Result<Vec<u8>, String> {
+	let page = app
+		.get_webview(&format!("{}{tab_id}", tabs::LABEL_PREFIX))
+		.ok_or_else(|| "That tab is closed".to_string())?;
+	let (sender, receiver) = tokio::sync::oneshot::channel();
+	let sender = Arc::new(Mutex::new(Some(sender)));
+	let done: Done = Box::new(move |result| {
+		if let Some(sender) = sender.lock().unwrap().take() {
+			let _ = sender.send(result);
+		}
+	});
+	page.with_webview(move |platform| platform_capture(platform, None, done))
+		.map_err(|error| error.to_string())?;
+	let png = match tokio::time::timeout(CAPTURE_TIMEOUT, receiver).await {
+		Ok(Ok(result)) => result?,
+		_ => return Err("The screenshot didn't finish".into()),
+	};
+	if png.is_empty() || png.len() > MAX_PNG_BYTES {
+		return Err("The screenshot came back empty".into());
+	}
+	Ok(png)
 }
 
 /// # Safety
@@ -157,7 +192,7 @@ fn platform_capture(platform: tauri::webview::PlatformWebview, clip: Option<Clip
 fn platform_capture(platform: tauri::webview::PlatformWebview, clip: Option<Clip>, done: Done) {
 	use base64::Engine;
 	use webview2_com::CallDevToolsProtocolMethodCompletedHandler;
-	use windows_core::HSTRING;
+	use windows_core::{BOOL, HSTRING};
 
 	let mut params = serde_json::json!({ "format": "png", "fromSurface": true });
 	if let Some(clip) = clip {
@@ -179,7 +214,7 @@ fn platform_capture(platform: tauri::webview::PlatformWebview, clip: Option<Clip
 			}
 		}
 	};
-	let controller = match unsafe { platform.controller().CoreWebView2() } {
+	let core = match unsafe { platform.controller.CoreWebView2() } {
 		Ok(core_webview) => core_webview,
 		Err(_) => {
 			done_first(&done, Err("The webview controller was gone".into()));
@@ -187,7 +222,7 @@ fn platform_capture(platform: tauri::webview::PlatformWebview, clip: Option<Clip
 		}
 	};
 	let devtools = match unsafe {
-		controller.cast::<webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_16>()
+		core.cast::<webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_16>()
 	} {
 		Ok(devtools) => devtools,
 		Err(_) => {
@@ -200,10 +235,10 @@ fn platform_capture(platform: tauri::webview::PlatformWebview, clip: Option<Clip
 	};
 	let answer = finish.clone();
 	let handler = CallDevToolsProtocolMethodCompletedHandler::create(Box::new(
-		move |error_code, result_json: String| {
+		move |error_code, result_json: String| -> windows_core::Result<()> {
 			if error_code.is_err() {
 				answer(Err("The page refused to be captured".into()));
-				return;
+				return Ok(());
 			}
 			let parsed = serde_json::from_str::<serde_json::Value>(&result_json).ok();
 			let png = parsed

@@ -9,8 +9,11 @@
 //!   the OS. Each page gets its own persistent data store, never the app's.
 
 pub mod agent;
+pub mod agentserver;
 pub mod capture;
 pub mod downloads;
+#[cfg(target_os = "macos")]
+pub mod gateway;
 #[cfg(target_os = "macos")]
 pub mod layer;
 pub mod mute;
@@ -76,6 +79,11 @@ pub(crate) enum BrowserEvent {
 	/// A target=_blank link: the panel opens it as a tab (the popup is denied).
 	NewTab {
 		tab_id: String,
+		url: String,
+	},
+	/// An agent tool needs a tab while none is open: the panel comes up with
+	/// the page. Frontend-only (it drives browser_open_tab).
+	OpenPanel {
 		url: String,
 	},
 	Closed {

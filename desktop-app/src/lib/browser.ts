@@ -27,6 +27,7 @@ export type BrowserEvent =
 	| { type: "history"; tabId: string; back: boolean; forward: boolean }
 	| { type: "external"; tabId: string; url: string }
 	| { type: "newTab"; tabId: string; url: string }
+	| { type: "openPanel"; url: string }
 	| { type: "closed"; tabId: string }
 	| {
 			type: "downloadPrompt";
@@ -76,6 +77,7 @@ const browser = {
 			command: install ? { op, install: true } : { op, install: false },
 		}),
 	captureSupported: () => invoke<boolean>("browser_capture_supported"),
+	gatewayUrl: () => invoke<string | null>("browser_gateway_url"),
 	capture: (tabId: string) =>
 		invoke<ArrayBuffer | number[]>("browser_capture", { tabId, bounds: null }),
 	captureRegion: (bounds: ViewBounds) =>

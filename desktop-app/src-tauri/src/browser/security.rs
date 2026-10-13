@@ -69,7 +69,14 @@ pub fn host_is_private(host: &Host<&str>) -> bool {
 		Host::Ipv6(ip) => ip_is_private(&IpAddr::V6(ip)),
 		Host::Domain(name) => {
 			let name = name.to_ascii_lowercase();
-			name == "localhost" || name.ends_with(".localhost")
+			// The well-known private name spaces: mDNS (.local) can resolve to
+			// anything on the link, and .internal/.home.arpa are reserved for
+			// behind-the-firewall use.
+			name == "localhost"
+				|| name.ends_with(".localhost")
+				|| name.ends_with(".local")
+				|| name.ends_with(".internal")
+				|| name.ends_with(".home.arpa")
 		}
 	}
 }

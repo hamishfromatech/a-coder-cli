@@ -81,6 +81,8 @@ fn main() {
 			browser::downloads::browser_download_folder_pick,
 			browser::downloads::browser_download_open,
 			browser::downloads::browser_download_reveal,
+			browser::gateway::browser_gateway_url,
+			browser::agentserver::browser_agent_server_url,
 			cli::get_initial_workspace,
 			bootstrap::bootstrap_cli,
 			bench::bench_list_tasks,
