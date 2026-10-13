@@ -4,6 +4,8 @@
 
 ### Added
 
+- Queued messages get a real "send now": hovering a queued message shows a paper-plane button that pulls the item out of the queue and delivers it immediately (steer while the session runs; a plain prompt when idle), instead of only restoring it into the composer for edit-then-send. Row click keeps the edit flow, ✕ keeps removal.
+
 - The right sidebar trades its crowded five-tab label strip for a slim vertical icon rail on the panel edge (VSCode-style): icons with tooltips, the active panel named in a slim header inside the content area, and the Activity attention badge living on the Inbox icon. Minimum sidebar width moves 240→280px so the panels stay comfortable beside the rail.
 
 - **Agent browser panel** (Toolbar "Browser" button, or "Open browser panel" in the command palette): a tabbed browser built on one native child webview per tab — the OS web engine (WKWebView / WebView2), no bundled Chromium — with pages living *under* the app's chrome on macOS 14+ (transparent panel over a live page, clicks fall through except on interactive chrome; private AppKit hit-test routing with pointer-move flicker fixes), and as a plain page area on Windows. Security model: pages get zero app capabilities (no IPC from a remote origin), their own persistent data store, http(s)-to-public-hosts-only navigation (other schemes hand off to the OS), per-tab rate-limited **download approvals** (staged then saved/cancelled; configurable folder; open/reveal once settled), and **all network traffic forced through an in-app loopback proxy** that resolves DNS itself and refuses private/loopback answers after resolution (DNS-rebinding/SSRF guard; macOS routes via Network.framework KVC, Windows via WebView2 proxy args).

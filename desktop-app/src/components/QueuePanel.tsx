@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { ChevronDown, Clock3, CornerDownLeft, Inbox, X, Zap } from "lucide-react";
+import { ChevronDown, Clock3, CornerDownLeft, Inbox, Send, X, Zap } from "lucide-react";
 import { useSessionStore } from "../stores/session-store";
-import { removeQueued } from "../lib/rpc";
+import { removeQueued, followUp as followUpRpc, prompt as promptRpc, steer as steerRpc } from "../lib/rpc";
 import { toast } from "../stores/toast-store";
 import { cn } from "../lib/cn";
 
@@ -39,6 +39,29 @@ export function QueuePanel({ onSend }: QueuePanelProps) {
 			}
 		} catch (e) {
 			toast.error("Failed to remove queued message", e instanceof Error ? e.message : String(e));
+		}
+	};
+
+	/** Send-now: pull the item out of the queue and deliver it immediately —
+	 * steer while the session is running, a plain prompt otherwise (steering
+	 * messages never drain while the agent is idle). Follow-ups do the same;
+	 * they differ only in intent, not mechanics. */
+	const sendNow = async (item: QueueItem) => {
+		const { isStreaming } = useSessionStore.getState();
+		try {
+			const res = await removeQueued(item.kind, item.index);
+			if (!res.removed) {
+				toast.warning("Message may still be queued", "The engine reported nothing was removed");
+			}
+			if (isStreaming) {
+				if (item.kind === "steering") await steerRpc(item.text);
+				else await followUpRpc(item.text);
+			} else {
+				await promptRpc(item.text);
+			}
+			toast.success("Message sent");
+		} catch (e) {
+			toast.error("Failed to send queued message", e instanceof Error ? e.message : String(e));
 		}
 	};
 
@@ -85,6 +108,7 @@ export function QueuePanel({ onSend }: QueuePanelProps) {
 								key={`${item.kind}-${item.index}`}
 								item={item}
 								onRestore={() => void restoreItem(item)}
+								onSendNow={() => void sendNow(item)}
 								onRemove={() => void removeItem(item)}
 							/>
 						))}
@@ -98,10 +122,12 @@ export function QueuePanel({ onSend }: QueuePanelProps) {
 function QueueRow({
 	item,
 	onRestore,
+	onSendNow,
 	onRemove,
 }: {
 	item: QueueItem;
 	onRestore: () => void;
+	onSendNow: () => void;
 	onRemove: () => void;
 }) {
 	const steering = item.kind === "steering";
@@ -136,6 +162,20 @@ function QueueRow({
 			>
 				{steering ? "steer" : "follow-up"}
 			</span>
+			<button
+				type="button"
+				tabIndex={-1}
+				onClick={(e) => {
+					e.stopPropagation();
+					onSendNow();
+				}}
+				onKeyDown={(e) => e.stopPropagation()}
+				className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-pi-text-faint opacity-0 transition-hover hover:text-pi-accent group-hover:opacity-100"
+				aria-label="Send now"
+				title="Send now (steers the running reply)"
+			>
+				<Send className="h-3 w-3" />
+			</button>
 			<CornerDownLeft
 				className="h-3 w-3 shrink-0 text-pi-text-faint opacity-0 transition-smooth group-hover:opacity-100"
 				aria-label="Restore to composer"
