@@ -391,6 +391,11 @@ async fn serve(mut client: TcpStream) -> Result<(), String> {
 				Route::Asset => "*/*",
 			},
 		)
+		// Ask for identity: the rewrites run on decoded text, so a compressed
+		// body would have to be decoded before them. Some servers send gzip
+		// unrequested anyway (RFC 9110 12.5.3 allows accepting anything);
+		// decode those below as they arrive.
+		.header(reqwest::header::ACCEPT_ENCODING, "identity")
 		.send()
 		.await
 		.map_err(|error| error.to_string())?;
@@ -401,11 +406,32 @@ async fn serve(mut client: TcpStream) -> Result<(), String> {
 		.and_then(|value| value.to_str().ok())
 		.map(str::to_string)
 		.unwrap_or_else(|| "application/octet-stream".into());
-	let bytes = response
+	// A server may compress unrequested (RFC 9110 12.5.3 allows accepting
+	// anything); headers first — bytes() consumes the response.
+	let encoding = response
+		.headers()
+		.get(reqwest::header::CONTENT_ENCODING)
+		.and_then(|value| value.to_str().ok())
+		.map(|value| value.trim().to_ascii_lowercase());
+	let mut bytes = response
 		.bytes()
 		.await
 		.map_err(|error| error.to_string())?
 		.to_vec();
+	match encoding.as_deref() {
+		Some("gzip") | Some("x-gzip") => {
+			bytes = decode_with(flate2::read::GzDecoder::new(&bytes[..]))?;
+		}
+		Some("deflate") => {
+			// RFC 9110 12.5.3: "deflate" is zlib-wrapped; raw-deflate servers
+			// exist, so fall back to a plain inflate.
+			bytes = match decode_with(flate2::read::ZlibDecoder::new(&bytes[..])) {
+				Ok(decoded) => decoded,
+				Err(_) => decode_with(flate2::read::DeflateDecoder::new(&bytes[..]))?,
+			};
+		}
+		_ => {}
+	}
 	if bytes.len() > MAX_RESPONSE {
 		reply(&mut client, 413, "text/plain", b"resource too large", None).await;
 		return Err("resource too large".into());
@@ -603,4 +629,36 @@ mod tests {
 		);
 		assert!(out.contains("about:invalid"), "{out}");
 	}
+}
+
+/// A server may ignore `identity` and send gzip unrequested; the gateway
+/// then rewrites the DECODED bytes, so the frame reads real HTML.
+#[cfg(test)]
+mod encoding_tests {
+	use super::*;
+	use std::io::Write as _;
+
+	#[test]
+	fn unrequested_gzip_html_decodes_for_the_rewrites() {
+		let mut encoder = flate2::write::GzEncoder::new(
+			Vec::new(),
+			flate2::Compression::default(),
+		);
+		encoder.write_all(b"<html><body>real</body></html>").unwrap();
+		let gzipped = encoder.finish().unwrap();
+		let decoded = decode_with(flate2::read::GzDecoder::new(&gzipped[..])).unwrap();
+		assert_eq!(
+			String::from_utf8_lossy(&decoded),
+			"<html><body>real</body></html>"
+		);
+	}
+}
+
+/// Decodes an entire stream with a reader over the given compressed bytes.
+fn decode_with<R: std::io::Read>(mut reader: R) -> Result<Vec<u8>, String> {
+	let mut decoded = Vec::new();
+	reader
+		.read_to_end(&mut decoded)
+		.map_err(|_| "cannot undo the page's compression".to_string())?;
+	Ok(decoded)
 }

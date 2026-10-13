@@ -26,12 +26,14 @@ walkdir = "2"
 which = "7"
 base64 = "0.22"
 reqwest = { version = "0.13", features = ["json", "multipart"] }
+flate2 = "1"
 url = "2"
 dirs = "6"
 # The gateway's streaming HTML rewriter (reading-frame fallback mode).
 lol_html = "1"
 libc = "0.2"
-log = "0.4"
+log = { version = "0.4", features = ["std"] }
+# File diagnostics: browser panels launched via `open` have no stderr to read.
 
 # Browser panel: pages route their network through our loopback proxy and
 # capture through their own engine, which reaches into wry's platform
