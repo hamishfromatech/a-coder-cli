@@ -28,65 +28,72 @@ const TABS: {
 export function RightSidebar({ projectPath }: Props) {
 	const { rightSidebarTab, setRightSidebarTab, selectedArtifactPath } = useUiStore();
 	const attention = useActivityAttentionCount();
-
+	const activeLabel = TABS.find(({ id }) => id === rightSidebarTab)?.label ?? "";
 
 	return (
-		<div className="flex h-full w-full flex-col border-l border-pi-border bg-pi-surface shadow-card transition-smooth">
-			{/* Tab strip */}
+		<div className="flex h-full w-full flex-row bg-pi-surface shadow-card">
+			{/* Vertical icon rail: the sidebar's inner edge. Tooltips carry the
+			    names; the active panel repeats its name in a slim header. */}
 			<div
 				role="tablist"
 				aria-label="Right sidebar panels"
-				className="flex h-9 shrink-0 items-center gap-0.5 border-b border-pi-border px-1.5"
+				aria-orientation="vertical"
+				className="flex w-11 shrink-0 flex-col gap-1 border-r border-pi-border px-1 py-2"
 			>
-				{TABS.map(({ id, icon: Icon }) => {
+				{TABS.map(({ id, label, icon: Icon }) => {
 					const active = rightSidebarTab === id;
 					return (
 						<button
 							key={id}
 							role="tab"
 							aria-selected={active}
+							title={label}
 							onClick={() => {
-					triggerHaptic("selection");
-					setRightSidebarTab(id);
-				}}
-
-							className={`relative flex h-7 flex-1 items-center justify-center gap-1.5 rounded-md px-2 text-2xs font-medium transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
+								triggerHaptic("selection");
+								setRightSidebarTab(id);
+							}}
+							className={`relative flex h-9 w-full cursor-pointer items-center justify-center rounded-md transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
 								active
 									? "bg-pi-surface-raised text-pi-text shadow-ring hover:shadow-card-hover"
 									: "text-pi-text-muted hover:bg-pi-surface-raised hover:text-pi-text hover:shadow-card-hover"
 							}`}
 						>
-							<Icon className="h-3.5 w-3.5 transition-smooth" />
-							<span className="truncate">{id === "files" ? "Files" : id === "git" ? "Git" : id === "cron" ? "Cron" : id === "activity" ? "Activity" : "Office"}</span>
+							<Icon className="h-4 w-4 transition-smooth" />
 							{id === "activity" && attention > 0 && (
 								<span
-									className="absolute right-1 top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-pi-accent px-1 text-[9px] font-semibold leading-none text-white"
+									className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-pi-accent px-1 text-[9px] font-semibold leading-none text-white"
 									aria-label={`${attention} items need attention`}
 								>
 									{attention > 9 ? "9+" : attention}
 								</span>
 							)}
 							{active && (
-								<span className="absolute inset-x-2 -bottom-px h-px bg-pi-accent shadow-focus-inner" />
+								<span className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-pi-accent" />
 							)}
 						</button>
 					);
 				})}
 			</div>
 
-			{/* Active panel */}
-			<div className="flex-1 min-h-0 w-full min-w-0">
-				{rightSidebarTab === "files" && (
-					selectedArtifactPath ? (
-						<ArtifactViewer projectPath={projectPath} path={selectedArtifactPath} />
-					) : (
-						<FileExplorer projectPath={projectPath} />
-					)
-				)}
-				{rightSidebarTab === "git" && <GitPanel projectPath={projectPath} />}
-				{rightSidebarTab === "office" && <OfficePanel />}
-				{rightSidebarTab === "cron" && <CronPanel />}
-				{rightSidebarTab === "activity" && <ActivityPanel />}
+			{/* Content: a slim active-panel header, then the panel itself. */}
+			<div className="flex min-w-0 flex-1 flex-col">
+				<div className="flex h-8 shrink-0 items-center border-b border-pi-border px-3">
+					<span className="text-3xs font-medium uppercase tracking-wide text-pi-text-muted">
+						{activeLabel}
+					</span>
+				</div>
+				<div className="min-h-0 w-full min-w-0 flex-1">
+					{rightSidebarTab === "files" &&
+						(selectedArtifactPath ? (
+							<ArtifactViewer projectPath={projectPath} path={selectedArtifactPath} />
+						) : (
+							<FileExplorer projectPath={projectPath} />
+						))}
+					{rightSidebarTab === "git" && <GitPanel projectPath={projectPath} />}
+					{rightSidebarTab === "office" && <OfficePanel />}
+					{rightSidebarTab === "cron" && <CronPanel />}
+					{rightSidebarTab === "activity" && <ActivityPanel />}
+				</div>
 			</div>
 		</div>
 	);

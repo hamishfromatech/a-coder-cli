@@ -1900,7 +1900,9 @@ function ResizableRightSidebar({
 }) {
 	const { setRightSidebarWidth } = useUiStore();
 	const [isResizing, setIsResizing] = useState(false);
-	const MIN_WIDTH = 240;
+	// Wide enough that the rail (44px) still leaves the panels usable, e.g.
+	// Git diff lines at their smallest.
+	const MIN_WIDTH = 280;
 	/** Wide enough to comfortably view rendered HTML artifacts. */
 	const MAX_WIDTH = 960;
 
