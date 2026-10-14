@@ -548,7 +548,9 @@ function ModelEditor({
 }) {
 	const [expanded, setExpanded] = useState(false);
 	const thinkingSwitchId = useId();
+	const visionSwitchId = useId();
 	const thinking = model.reasoning ?? false;
+	const vision = (model.input ?? []).includes("image");
 
 	return (
 		<Card className="rounded-md bg-pi-bg/70">
@@ -615,6 +617,24 @@ function ModelEditor({
 						/>
 						<span className="text-2xs text-pi-text-muted">
 							This model can show its thinking
+						</span>
+					</label>
+					<label htmlFor={visionSwitchId} className="col-span-2 flex cursor-pointer select-none items-center gap-2.5 px-1">
+						<Switch
+							id={visionSwitchId}
+							size="sm"
+							checked={vision}
+							onChange={() =>
+								onUpdate({
+									input: vision
+										?(model.input ?? ["text"]).filter((k) => k !== "image")
+										: Array.from(new Set([...(model.input ?? ["text"]), "image"])),
+								})
+							}
+							ariaLabel="This model can read images"
+						/>
+						<span className="text-2xs text-pi-text-muted">
+							This model can read images
 						</span>
 					</label>
 				</div>
