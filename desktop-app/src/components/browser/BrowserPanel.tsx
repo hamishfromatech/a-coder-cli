@@ -63,17 +63,16 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 		requestAnimationFrame(() => addressRef.current?.focus());
 	}, [supported, tabs.length]);
 
-	// Keep the right page where it belongs: the whole panel on macOS 14+
-	// (chrome draws over the page), the page area only elsewhere.
+	// Keep the right page in the page area (below the chrome) on every
+	// platform: a page that filled the whole panel would start its own
+	// content behind the opaque chrome band, cropping the site's menus.
 	const currentBounds = useCallback((): ViewBounds | null => {
-		const panel = panelRef.current;
 		const area = pageAreaRef.current;
-		const element = layered ? panel : area;
-		if (!element || !document.body) return null;
+		if (!area || !document.body) return null;
 		const viewportWidth = window.innerWidth;
 		if (!viewportWidth || viewportWidth <= 0) return null;
-		return boundsOf(element.getBoundingClientRect(), viewportWidth);
-	}, [layered]);
+		return boundsOf(area.getBoundingClientRect(), viewportWidth);
+	}, []);
 
 	useEffect(() => {
 		if (!supported || !activeId) return;
@@ -82,15 +81,15 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 		const bounds = currentBounds();
 		if (!bounds) return;
 		// Layered pages composite under the app webview: cut the hole at the
-		// page's rect at the same time the native view is moved.
-		updateHole(layered ? (panelRef.current ?? null) : null);
+		// page area's rect at the same time the native view is moved.
+		updateHole(layered ? (pageAreaRef.current ?? null) : null);
 		void browser
 			.viewShow({ tabId: activeId, bounds })
 			.catch(() => {});
 		const observer = new ResizeObserver(() => {
 			const next = currentBounds();
 			if (next) void browser.viewShow({ tabId: activeId, bounds: next }).catch(() => {});
-			updateHole(layered ? (panelRef.current ?? null) : null);
+			updateHole(layered ? (pageAreaRef.current ?? null) : null);
 		});
 		// Rail drags and find-bar toggles reshape the panel/area inside an
 		// unchanged window, so the boxes themselves are what needs watching
