@@ -25,9 +25,19 @@ pub(crate) const AGENT_RUNTIME: &str = include_str!("agent-runtime.js");
 const AGENT_BRIDGE: &str = r#"(() => {
   const command = __COMMAND__;
   const key = Symbol.for("a-coder.agent");
-  if (!window[key] && command.install) {
+  if (!window[key]) {
+    if (!command.install) {
+      return JSON.stringify({ installed: false, result: null });
+    }
     try {
-      Object.defineProperty(window, key, { value: __RUNTIME__, configurable: true });
+      // The factory expression splices into the value position below and is
+      // invoked there; the install arm is skipped, though still parsed, when
+      // not installing. Never write the marker text in comments: it splices
+      // at the FIRST occurrence.
+      Object.defineProperty(window, key, {
+        value: __RUNTIME__,
+        configurable: true,
+      });
     } catch (error) {}
   }
   const agent = window[key];
@@ -128,8 +138,14 @@ fn agent_script(command: &AgentCommand) -> Result<String, String> {
 	}
 	// Spliced in, not compiled in the page, so a CSP without 'unsafe-eval'
 	// cannot block it. Single pass, so neither part can forge the other's
-	// placeholder.
-	let runtime = format!("({code})");
+	// placeholder. The runtime is a factory expression; the call installs its
+	// result. An empty splice (dispatch only) still has to parse inside the
+	// install arm, so an inert factory takes the value position there.
+	let runtime = if code.is_empty() {
+		"function () { return null; }()".to_string()
+	} else {
+		format!("({code})()")
+	};
 	let (head, rest) = AGENT_BRIDGE
 		.split_once("__COMMAND__")
 		.ok_or("bad agent bridge")?;
@@ -169,12 +185,23 @@ mod tests {
 	}
 
 	#[test]
-	fn without_install_only_dispatch_runs() {
+	fn without_install_the_install_arm_is_unreachable_but_the_text_parses() {
 		let script =
 			agent_script(&command(serde_json::json!({ "op": "snapshot" }), false)).unwrap();
+		// The factory is spliced for parsing only; the no-install arm returns
+		// before it can run, so the page's dispatch cannot execute new code.
 		assert!(
-			!script.contains("function"),
-			"no runtime body leaves with dispatch: {script}"
+			script.contains("if (!command.install) {"),
+			"{script}"
+		);
+		assert!(
+			script.find("if (!command.install)").unwrap()
+				< script.find("defineProperty").unwrap(),
+			"the install arm must follow the no-install return"
+		);
+		assert!(
+			!script.contains("agent.run") || script.contains("command.install"),
+			"{script}"
 		);
 	}
 }
