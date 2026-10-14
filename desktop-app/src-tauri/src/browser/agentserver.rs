@@ -30,6 +30,14 @@ const READ_CAP: usize = 256 * 1024;
 /// instead (the panel surfaces the changed URL).
 const PREFERRED_PORT: u16 = 47615;
 
+/// Request-aware quiet: after a navigation, no request may be in flight and
+/// at least this much time must have passed since the last request change.
+const SETTLE_WINDOW_MS: u64 = 120;
+/// How long a settle may wait before giving up and answering anyway.
+const SETTLE_CAP: Duration = Duration::from_millis(10_000);
+/// The readiness poll interval while a settle is waiting.
+const SETTLE_POLL: Duration = Duration::from_millis(250);
+
 /// Exposed to settings/docs: where the CLI's `mcpServers` http entry points.
 /// Answers nothing on platforms without native page views (the tools would
 /// need them).
@@ -251,7 +259,7 @@ fn tools_list() -> Value {
 		"tools": [
 			def("browser_tabs", "List the desktop browser panel's open tabs. browser tools run in the active tab; browser_navigate switches pages there.",
 				json!({}), json!([])),
-			def("browser_navigate", "Navigate the active tab to an http(s) URL (public hosts only). Opens the panel if it is closed.",
+			def("browser_navigate", "Navigate the active tab to an http(s) URL (public hosts only). The answer waits for the page to settle. Opens the panel if it is closed.",
 				json!({ "url": { "type": "string", "description": "The address to open, including https://" } }), json!(["url"])),
 			def("browser_snapshot", "Read the page as text with stable [rN] element refs (buttons, links, fields with names, values and states). Use a ref from the answer for browser_click/type. Hidden text never appears.",
 				json!({
@@ -278,6 +286,62 @@ fn tools_list() -> Value {
 				json!({}), json!([])),
 		]
 	})
+}
+
+/// The quiet rule for request-aware settling, kept pure so the loop and the
+/// tests cannot drift apart: the main document finished loading, no request
+/// is in flight, and the last request change is at least SETTLE_WINDOW_MS
+/// old. Without usable watcher data (the page removed or neutered it in its
+/// own world) the fall-back signal is DOM-mutation quiet, same window.
+fn page_quiet(readiness: &Value) -> bool {
+	if readiness.get("readyState").and_then(Value::as_str) != Some("complete") {
+		return false;
+	}
+	match (
+		readiness.get("requests").and_then(Value::as_u64),
+		readiness.get("requestChangeMs").and_then(Value::as_u64),
+	) {
+		(Some(0), Some(ms)) => ms >= SETTLE_WINDOW_MS,
+		// No usable watcher data (gone or neutered in the page's own world):
+		// fall back to DOM-mutation quiet, same window. Watcher data present
+		// but busy or unreadable must hold, never fall back.
+		(None, None) => readiness
+			.get("quietMs")
+			.and_then(Value::as_u64)
+			.unwrap_or(0)
+			>= SETTLE_WINDOW_MS,
+		_ => false,
+	}
+}
+
+/// Waits for the page behind a just-started navigation to go quiet: waits for
+/// that navigation's commit (stamped in tabs.rs, so an already-loaded page
+/// cannot read as quiet first), then for `page_quiet`, capped at SETTLE_CAP.
+/// Polls the runtime's readiness op; answers whether it ever settled.
+async fn wait_page_quiet<R: Runtime>(app: &AppHandle<R>, tab_id: &str, after_ms: u64) -> bool {
+	let deadline = tokio::time::Instant::now() + SETTLE_CAP;
+	loop {
+		let committed = super::tabs::last_commit_ms(app, tab_id)
+			.map(|at| at >= after_ms)
+			.unwrap_or(false);
+		if committed {
+			let attempt =
+				super::agent::run_op(app, tab_id, &json!({ "op": "readiness" }), true).await;
+			let result = match attempt {
+				Ok(answer) => answer.get("result").cloned().unwrap_or(Value::Null),
+				// The tab closed during the wait: nothing to settle.
+				Err(message) if message.contains("closed") => return false,
+				Err(_) => Value::Null,
+			};
+			if page_quiet(&result) {
+				return true;
+			}
+		}
+		if tokio::time::Instant::now() >= deadline {
+			return false;
+		}
+		tokio::time::sleep(SETTLE_POLL).await;
+	}
 }
 
 async fn call_tool<R: Runtime>(
@@ -349,10 +413,19 @@ async fn call_tool<R: Runtime>(
 				)));
 			}
 			let tab_id = tab_id.ok_or_else(no_tab)?;
+			// The settle starts before the navigation could commit: an earlier
+			// page left complete and idle must not read as quiet.
+			let start_ms = super::tabs::now_ms();
 			super::tabs::navigate_tab(app, &tab_id, url).await?;
-			Ok(text(format!(
-				"Navigating the active tab to {url}; call browser_snapshot once it settles (~1s)."
-			)))
+			if wait_page_quiet(app, &tab_id, start_ms).await {
+				Ok(text(format!(
+					"Navigated the active tab to {url}; the page has settled. Take browser_snapshot now."
+				)))
+			} else {
+				Ok(text(format!(
+					"Navigating the active tab to {url}; it has not settled within 10s (still loading, busy, or the navigation did not commit). Snapshot it anyway to see what is showing."
+				)))
+			}
 		}
 		"browser_snapshot" | "browser_find" | "browser_click" | "browser_type"
 		| "browser_select" | "browser_scroll" | "browser_press" => {
@@ -393,16 +466,26 @@ async fn call_tool<R: Runtime>(
 				.map(str::to_string)
 			{
 				let navigated = navigate_url.len() <= super::security::MAX_REPORTABLE_URL;
-				if navigated {
-					super::tabs::navigate_tab(app, &tab_id, &navigate_url).await?;
-				}
 				if let Some(obj) = inner.as_object_mut() {
 					obj.remove("navigate");
 				}
 				let answer_note = if navigated {
-					format!("The click followed a link; the tab is navigating to {navigate_url}. Take a new browser_snapshot when it settles.")
+					// Same settle as browser_navigate, so the next snapshot reads
+					// the link's page once it is quiet, not mid-load markup.
+					let start_ms = super::tabs::now_ms();
+					super::tabs::navigate_tab(app, &tab_id, &navigate_url).await?;
+					if wait_page_quiet(app, &tab_id, start_ms).await {
+						format!(
+							"The click followed a link to {navigate_url}; the page has settled. Take a new browser_snapshot."
+						)
+					} else {
+						format!(
+							"The click followed a link to {navigate_url}; it has not settled within 10s (still loading, busy, or the navigation did not commit). Take a new browser_snapshot anyway."
+						)
+					}
 				} else {
-					"The link's address is too long to follow. Snapshot the page and use its navigation another way.".to_string()
+					"The link's address is too long to follow. Snapshot the page and use its navigation another way."
+						.to_string()
 				};
 				Ok(text(format!(
 					"{}\n\n{answer_note}",
@@ -516,3 +599,45 @@ async fn respond_sessioned(
 
 use base64::Engine as _;
 static BASE64_STANDARD: base64::engine::GeneralPurpose = base64::engine::general_purpose::STANDARD;
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	fn readiness(requests: Option<u64>, change_ms: Option<u64>, mutation_ms: u64) -> Value {
+		json!({
+			"readyState": "complete",
+			"requests": requests,
+			"requestChangeMs": change_ms,
+			"quietMs": mutation_ms,
+		})
+	}
+
+	#[test]
+	fn page_settles_once_the_document_drains() {
+		assert!(page_quiet(&readiness(Some(0), Some(150), 150)));
+		// The window edge itself settles: the last change is not younger than
+		// the quiet window.
+		assert!(page_quiet(&readiness(Some(0), Some(SETTLE_WINDOW_MS), 0)));
+	}
+
+	#[test]
+	fn fresh_mutations_or_requests_hold_the_settle() {
+		assert!(!page_quiet(&readiness(Some(2), Some(150), 150)));
+		assert!(!page_quiet(&readiness(Some(0), Some(SETTLE_WINDOW_MS - 1), 0)));
+		// Watcher absent and the DOM still moving: not quiet either way.
+		assert!(!page_quiet(&readiness(None, None, SETTLE_WINDOW_MS - 1)));
+	}
+
+	#[test]
+	fn a_missing_watcher_falls_back_to_mutation_quiet() {
+		assert!(page_quiet(&readiness(None, None, 500)));
+	}
+
+	#[test]
+	fn unready_or_unreadable_answers_never_settle() {
+		assert!(!page_quiet(&json!({ "readyState": "interactive" })));
+		assert!(!page_quiet(&json!({})));
+		assert!(!page_quiet(&Value::Null));
+	}
+}

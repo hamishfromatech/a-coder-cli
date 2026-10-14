@@ -204,4 +204,11 @@ mod tests {
 			"{script}"
 		);
 	}
+
+	#[test]
+	fn the_readiness_op_ships_inside_the_installed_runtime() {
+		let script = agent_script(&command(serde_json::json!({ "op": "readiness" }), true)).unwrap();
+		assert!(script.contains("case \"readiness\""), "{script}");
+		assert!(script.contains("window.__ACODER_READY"), "{script}");
+	}
 }

@@ -16,6 +16,8 @@
 //   scroll {direction, ref?}        -> the page or a scrollable `ref`
 //   press {key}                     -> on the focused element
 //   status                          -> quiet time, position (for settling)
+//   readiness                       -> document load state + the request
+//                                      watcher (what the settle waits on)
 //
 // Secret fields are redacted in text ("filled"/"empty") and can be masked for
 // screenshots by the panel (op "mask"). The page can fake any of this, so the
@@ -693,6 +695,24 @@
 				return mask(Boolean(op.on));
 			case "status":
 				return { ok: true, quietMs: quietMs(), position: position(), url: location.href, title: document.title };
+			case "readiness": {
+				// What request-aware settling waits on: the document's load state
+				// and the fetch/XHR watcher that tabs.rs installs document-start.
+				var watcher = window.__ACODER_READY;
+				var now = Date.now();
+				return {
+					ok: true,
+					readyState: document.readyState,
+					requests: watcher && typeof watcher.requests === "number" ? watcher.requests : null,
+					requestChangeMs: watcher && typeof watcher.lastChange === "number"
+						? Math.max(0, now - watcher.lastChange)
+						: null,
+					quietMs: quietMs(),
+					position: position(),
+					url: location.href,
+					title: document.title,
+				};
+			}
 			default:
 				return { ok: false, error: "unknown op: " + String(op.op) };
 		}

@@ -36,6 +36,48 @@ const PARK_GAP: f64 = 64.0;
 #[cfg(target_os = "macos")]
 const PAGE_DATA_STORE: [u8; 16] = *b"a-coder-browser1";
 
+/// Document-start watcher for the agent's request-aware settle: every page's
+/// main frame counts its fetch/XHR requests while they are in flight and
+/// stamps when the count last moved, plus the document's own start time so a
+/// settle can tell one document from the next. Terse and idempotent (one
+/// install per document); the page shares this script's world, so it counts
+/// as a signal, never as the truth.
+const READINESS_WATCH: &str = r#"(() => {
+	if ("__ACODER_READY" in window) return;
+	const ready = { requests: 0, lastChange: Date.now(), documentStart: Date.now() };
+	window.__ACODER_READY = ready;
+	const mark = (delta) => {
+		ready.requests = Math.max(0, ready.requests + delta);
+		ready.lastChange = Date.now();
+	};
+	try {
+		const open = XMLHttpRequest.prototype.open;
+		XMLHttpRequest.prototype.open = function (...args) {
+			// One loadend listener per XHR, even when open runs twice on it:
+			// loadend also covers errors and aborts.
+			if (!this.__ACODER_END) {
+				this.__ACODER_END = true;
+				this.addEventListener("loadend", () => mark(-1));
+			}
+			return open.apply(this, args);
+		};
+		const send = XMLHttpRequest.prototype.send;
+		XMLHttpRequest.prototype.send = function (...args) {
+			mark(1);
+			return send.apply(this, args);
+		};
+		const nativeFetch = window.fetch;
+		window.fetch = async (...args) => {
+			mark(1);
+			try {
+				return await nativeFetch.apply(window, args);
+			} finally {
+				mark(-1);
+			}
+		};
+	} catch (error) {}
+})()"#;
+
 /// Whether pages open in native child webviews here: macOS 14+ (per-webview
 /// proxy routing and the fixed data store) and Windows (proxy via browser
 /// args). Linux's Tauri packs child webviews into the window's GtkBox, which
@@ -177,6 +219,9 @@ pub(crate) struct Inner {
 	pub(crate) muted: HashSet<String>,
 	/// Whether the page's first navigation (a commit) happened, for downloads' site.
 	pub(crate) committed: HashSet<String>,
+	/// Per tab: the unix-ms instant of its last commit (document start), so
+	/// the agent's settle can wait out the document its navigation began.
+	pub(crate) commits: HashMap<String, u64>,
 	pub(crate) polling: bool,
 	/// Opening tab with no bounds yet: the panel calls openTab before its
 	/// bounds are measured, so the reserved address is shown once the first
@@ -358,6 +403,28 @@ pub(crate) async fn navigate_tab<R: Runtime>(
 		.urls
 		.remove(tab_id);
 	page.navigate(nav).map_err(|error| error.to_string())
+}
+
+/// The unix-ms instant of the tab's last commit (document start), so the
+/// agent's settle can tell the document its navigation began from any page
+/// that was already loaded.
+pub(crate) fn last_commit_ms<R: Runtime>(app: &AppHandle<R>, tab_id: &str) -> Option<u64> {
+	app.state::<TabsState>()
+		.inner
+		.lock()
+		.unwrap()
+		.commits
+		.get(tab_id)
+		.copied()
+}
+
+/// The wall clock in unix ms; callers stamp commits and settle starts with
+/// the same clock, so the comparison needs no page-trusted timestamps.
+pub(crate) fn now_ms() -> u64 {
+	std::time::SystemTime::now()
+		.duration_since(std::time::UNIX_EPOCH)
+		.map(|since| since.as_millis() as u64)
+		.unwrap_or(0)
 }
 
 #[tauri::command]
@@ -690,6 +757,7 @@ fn open_view<R: Runtime>(
 			_ => false,
 		})
 		.zoom_hotkeys_enabled(false)
+		.initialization_script(READINESS_WATCH)
 		.devtools(cfg!(debug_assertions))
 		.focused(false);
 	let builder = with_page_profile(builder, &app)?;
@@ -740,9 +808,11 @@ fn on_page_load<R: Runtime>(
 			let mut inner = state.inner.lock().unwrap();
 			inner.urls.insert(tab_id.clone(), url.clone());
 			// Started is a commit (WebKit) or content loading (WebView2): never
-			// a download. Feed the visited stack here, where redirects funnel.
+			// a download. Feed the visited stack here, where redirects funnel,
+			// and stamp the commit time for the agent's request-aware settle.
 			if loading {
 				inner.committed.insert(tab_id.clone());
+				inner.commits.insert(tab_id.clone(), now_ms());
 			}
 			events.push(BrowserEvent::Load {
 				tab_id: tab_id.clone(),
