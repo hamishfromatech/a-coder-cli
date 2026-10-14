@@ -238,4 +238,35 @@ mod tests {
 		assert!(script.contains("case \"click_at\""), "{script}");
 		assert!(!script.contains("__COMMAND__"), "the point op must be spliced in");
 	}
+
+	#[test]
+	fn the_script_ops_ship_inside_the_installed_runtime() {
+		// The token mint and both script ops must be part of what install
+		// splices: doc_token answers the document's own mint, and run_script
+		// builds the Function with the doc token + document as parameters.
+		let script = agent_script(&command(serde_json::json!({ "op": "doc_token" }), true)).unwrap();
+		assert!(script.contains("case \"doc_token\""), "{script}");
+		assert!(script.contains("case \"run_script\""), "{script}");
+		assert!(script.contains("DOC_TOKEN"), "{script}");
+		assert!(script.contains("new Function"), "{script}");
+		assert!(script.contains("docToken"), "{script}");
+	}
+
+	#[test]
+	fn a_tokenless_run_script_splices_as_data_while_the_page_refuses() {
+		// The refusal lives in the page's runtime (only it holds the minted
+		// token), so from here we can only test the parse arm: the op splices
+		// as data, and the dispatched body carries the gate (a string compare
+		// against the current mint) plus its refusal answer.
+		let script = agent_script(&command(
+			serde_json::json!({ "op": "run_script", "code": "return 6 * 7;" }),
+			true,
+		))
+		.unwrap();
+		assert!(script.contains("case \"run_script\""), "{script}");
+		assert!(script.contains("return 6 * 7;"), "{script}");
+		assert!(script.contains("claim !== DOC_TOKEN"), "{script}");
+		assert!(script.contains("stale doc token"), "{script}");
+		assert!(!script.contains("__COMMAND__"), "the code must ride as data");
+	}
 }

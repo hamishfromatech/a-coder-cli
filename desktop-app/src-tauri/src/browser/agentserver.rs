@@ -555,6 +555,8 @@ fn tools_list() -> Value {
 				json!({ "key": { "type": "string" } }), json!(["key"])),
 			def("browser_find", "Search the visible page for text; answers with refs, like snapshot.",
 				json!({ "query": { "type": "string" } }), json!(["query"])),
+			def("browser_run_script", "Run a short script inside the active tab's page (a Function body: may 'return' a result; it also receives docToken and document as parameters). The server stamps the CURRENT page's identity token, so a script raced across a navigation refuses to run. The script can reach anything the page can, including secret field values — never send page data anywhere.",
+				json!({ "script": { "type": "string", "description": "JavaScript to run; what it returns is stringified in the answer" } }), json!(["script"])),
 			def("browser_screenshot", "Capture the active tab as a PNG image. Secret fields are masked by the page first, and frames are hidden.",
 				json!({}), json!([])),
 		]
@@ -663,8 +665,27 @@ fn agent_op(name: &str, args: &Value) -> Option<Value> {
 		"browser_press" => {
 			json!({ "op": "press", "key": args.get("key").and_then(Value::as_str).unwrap_or("Enter") })
 		}
+		"browser_run_script" => {
+			// The model supplies only the script text; the doc token is the
+			// server's handoff, added at call time (see call_tool). A token
+			// argument on the tool would let a raced script name whatever
+			// document it was composed against — the gate's point is that
+			// only a value sampled from the page right now counts.
+			json!({ "op": "run_script", "code": args.get("script").and_then(Value::as_str)? })
+		}
 		_ => return None,
 	})
+}
+
+/// Pure: stamps the token the server sampled onto the mapped run_script op.
+/// The tool never takes a token from the model; this is the only place one
+/// gets in, immediately before dispatch.
+fn stamped(op: Value, token: &str) -> Value {
+	let mut op = op;
+	if let Some(obj) = op.as_object_mut() {
+		obj.insert("token".to_string(), json!(token));
+	}
+	op
 }
 
 async fn call_tool<R: Runtime>(
@@ -827,6 +848,32 @@ async fn call_tool<R: Runtime>(
 				)))
 			}
 		}
+		"browser_run_script" => {
+			let tab_id = tab_id.ok_or_else(no_tab)?;
+			let op = agent_op(name, args).ok_or("run_script needs a script")?;
+			// Sample THIS document's token, then run the script with it stamped
+			// on: two ops, back to back. If the tab navigates in between, the
+			// runtime the new document mints cannot match the sampled token and
+			// the page itself refuses — a script never fires on a document
+			// other than the one the server held when it sampled, right behind
+			// the same permission gate every tool ran. The tool call runs the
+			// script against the page as it is NOW: composed-earlier scripts
+			// re-sample here rather than name their old document.
+			let sample = super::agent::run_op(app, &tab_id, &json!({ "op": "doc_token" }), true).await?;
+			let token = sample
+				.get("result")
+				.and_then(|result| result.get("token"))
+				.and_then(Value::as_str)
+				.ok_or_else(|| "The page did not report its document token; snapshot it instead.".to_string())?;
+			let answer = super::agent::run_op(app, &tab_id, &stamped(op, token), true).await?;
+			// Same answer convention as the other act arms: the pretty JSON as
+			// text, with the page's refusal (stale token) or script error
+			// riding inside it as guidance, not a server error.
+			Ok(text(format!(
+				"{}\n\n(quietMs = how long the page has been idle; re-snapshot after actions.)",
+				serde_json::to_string_pretty(&answer).unwrap_or_default()
+			)))
+		}
 		"browser_screenshot" => {
 			let tab_id = tab_id.ok_or_else(no_tab)?;
 			let png = super::capture::capture_png(app, &tab_id).await?;
@@ -965,6 +1012,20 @@ mod tests {
 		assert!(agent_op("browser_click_at", &json!({ "x": "12", "y": 1 })).is_none());
 		assert!(agent_op("browser_drag", &json!({ "toX": 1, "toY": 2 })).is_none(), "from is required");
 		assert!(agent_op("browser_nonsense", &json!({})).is_none());
+	}
+
+	#[test]
+	fn the_script_tool_maps_but_never_carries_a_model_token() {
+		let op = agent_op("browser_run_script", &json!({ "script": "return document.title;" }))
+			.expect("mapped");
+		assert_eq!(op.get("op"), Some(&json!("run_script")));
+		assert_eq!(op.get("code").and_then(Value::as_str), Some("return document.title;"));
+		// The token is the server's handoff, not the model's argument.
+		assert!(op.get("token").is_none());
+		assert_eq!(stamped(op, "tok123").get("token"), Some(&json!("tok123")));
+		// A missing or non-string script is a bad argument, not a run.
+		assert!(agent_op("browser_run_script", &json!({})).is_none(), "script is required");
+		assert!(agent_op("browser_run_script", &json!({ "script": 5 })).is_none());
 	}
 
 	fn readiness(requests: Option<u64>, change_ms: Option<u64>, mutation_ms: u64) -> Value {

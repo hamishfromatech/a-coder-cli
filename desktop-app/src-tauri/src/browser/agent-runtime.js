@@ -18,6 +18,13 @@
 //   status                          -> quiet time, position (for settling)
 //   readiness                       -> document load state + the request
 //                                      watcher (what the settle waits on)
+//   doc_token                       -> this document's identity token; the
+//                                      SERVER samples it (the model never
+//                                      sees a token argument)
+//   run_script {code, token}        -> a Function body run in the page, but
+//                                      only when `token` equals the token
+//                                      minted for THIS document: a script
+//                                      raced across a navigation refuses
 //
 // Point ops speak CSS viewport pixels — the space getBoundingClientRect,
 // elementFromPoint and describeEl's rects already use, so an agent reads no
@@ -39,6 +46,8 @@
 	var PAGE_CHARS = 24000;
 	var MAX_LINKS = 400;
 	var MAX_ELEMENTS = 1200;
+	// A run_script answer is capped like a viewport read, not a page render.
+	var MAX_RESULT = 8000;
 
 	var SKIP_TAGS = { script: 1, style: 1, noscript: 1, template: 1, head: 1, meta: 1, link: 1, title: 1 };
 	var ROLES = {
@@ -566,6 +575,31 @@
 		return SCROLLER;
 	}
 
+	// ---- the document's identity token ----
+
+	// Minted ONCE PER DOCUMENT, at the moment the runtime installs: a
+	// navigation drops the install symbol's binding (the bridge re-sends the
+	// runtime on the next command) and the new document mints its own token.
+	// It rides on the runtime's object under that symbol — not on the page's
+	// enumerable surface — and the page's own script state dies with the
+	// document, so nothing the page stashed can carry a token across a
+	// navigation. It is not a page-facing secret: the page shares this world
+	// and the panel treats every answer as untrusted regardless.
+	function docTokenOf() {
+		if (window.crypto && typeof window.crypto.getRandomValues === "function") {
+			var bytes = new Uint8Array(16);
+			window.crypto.getRandomValues(bytes);
+			var hex = "";
+			for (var digit = 0; digit < bytes.length; digit++) {
+				hex += (bytes[digit] + 0x100).toString(16).slice(1);
+			}
+			return hex;
+		}
+		return String(Date.now()) + "-" + String(Math.random()).slice(2);
+	}
+
+	var DOC_TOKEN = docTokenOf();
+
 	// ---- masking for screenshots ----
 
 	var masked = [];
@@ -858,6 +892,57 @@
 					title: document.title,
 				};
 			}
+			case "doc_token": {
+				// The agent's own mint for the document that answered; the
+				// server samples it here and hands it straight to run_script.
+				return { ok: true, token: DOC_TOKEN };
+			}
+			case "run_script": {
+				// Approved script eval, gated by the document token: a plain
+				// string compare between the token the caller sampled and the
+				// mint made for the document that answered right now. A script
+				// raced across a navigation — sampled on the old document,
+				// arriving on the new one — does not match and is refused here,
+				// on the page.
+				var claim = String(op.token == null ? "" : op.token);
+				if (claim !== DOC_TOKEN) {
+					return {
+						ok: false,
+						error: "stale doc token: this script was not composed for the document now showing. Run it again (the tool re-samples the token) and re-check the page first.",
+					};
+				}
+				var body = typeof op.code === "string" ? op.code : "";
+				if (!body.trim()) {
+					return { ok: false, error: "run_script needs code: the script text to run" };
+				}
+				// eval-style Function so `return` works; the script receives
+				// the doc token and the document it is running against as
+				// parameters. The page's own CSP ('unsafe-eval') binds code
+				// built here, unlike the bridge's native eval: on a page that
+				// forbids it the Function construction throws and this op
+				// answers that error honestly.
+				var outcome;
+				try {
+					outcome = new Function("docToken", "document", body).call(document, DOC_TOKEN, document);
+				} catch (error) {
+					return { ok: false, error: String((error && error.message) || error) };
+				}
+				// Stringified like the text ops: a string answer straight
+				// through, anything else JSON-printed, capped like a viewport
+				// read so one runaway return cannot swamp the panel.
+				var text;
+				if (typeof outcome === "string") text = outcome;
+				else if (outcome === undefined || outcome === null) text = String(outcome);
+				else {
+					try {
+						text = JSON.stringify(outcome, null, 2);
+					} catch (loop) {
+						text = String(outcome);
+					}
+				}
+				if (text.length > MAX_RESULT) text = text.slice(0, MAX_RESULT - 1) + "…";
+				return { ok: true, text: text, quietMs: quietMs(), url: location.href };
+			}
 			default:
 				return { ok: false, error: "unknown op: " + String(op.op) };
 		}
@@ -873,5 +958,8 @@
 		};
 	}
 
-	return { run: run };
+	// The run entry point plus this document's token, stamped once at install
+	// time: run_script's gate compares against exactly this value, and a
+	// replacement document drops the binding along with the token.
+	return { run: run, doc: DOC_TOKEN };
 })
