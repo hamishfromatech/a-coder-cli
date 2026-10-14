@@ -53,7 +53,8 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
 ] }
 objc2-web-kit = { version = "0.3", default-features = false, features = [
 	"std", "objc2-core-foundation", "objc2-app-kit", "block2", "WKWebView", "WKWebViewConfiguration",
-	"WKWebsiteDataStore", "WKSnapshotConfiguration",
+	"WKWebsiteDataStore", "WKSnapshotConfiguration", "WKContentRuleList", "WKContentRuleListStore",
+	"WKUserContentController",
 ] }
 
 [target.'cfg(windows)'.dependencies]

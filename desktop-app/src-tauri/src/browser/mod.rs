@@ -18,6 +18,7 @@ pub mod gateway;
 pub mod layer;
 pub mod mute;
 pub mod proxy;
+pub mod rules;
 pub mod security;
 pub mod tabs;
 

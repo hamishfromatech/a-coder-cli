@@ -18,6 +18,7 @@ use tauri::{
 	WebviewBuilder, WebviewUrl,
 };
 
+use super::rules;
 use super::security::{is_external_handoff, navigation_allowed, page_url, reportable};
 use super::{emit, require_main, BrowserEvent, ViewBounds};
 #[cfg(target_os = "macos")]
@@ -1052,6 +1053,13 @@ fn load_through_proxy<R: Runtime>(app: &AppHandle<R>, page: &Webview<R>, url: Ur
 		let Some(view) = (unsafe { objc2::rc::Retained::retain(raw) }) else {
 			return;
 		};
+		let Some(mtm) = objc2::MainThreadMarker::new() else {
+			return;
+		};
+		// Defense in depth installs before any load is issued below.
+		let config = unsafe { view.configuration() };
+		let controller = unsafe { config.userContentController() };
+		rules::install(controller, mtm);
 		let routed = mac_proxy::route(&view);
 		log::info!("page proxy routed: {} -> {}", route_url, routed);
 		// Never unproxied: a page whose proxy cannot route does not load.
