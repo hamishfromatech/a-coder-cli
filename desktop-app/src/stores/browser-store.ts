@@ -3,10 +3,12 @@
 // drives it through commands.
 
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import browser, { onBrowserEvent, type BrowserEvent, type TabInfo } from "../lib/browser";
 import { rendererLog } from "../lib/renderer-log";
 import { toast } from "./toast-store";
 import { openExternalLink } from "../lib/external-link";
+import { triggerHaptic } from "../lib/haptics";
 import { useUiStore } from "./ui-store";
 
 export interface BrowserTab {
@@ -31,6 +33,12 @@ export interface DownloadPrompt {
 	name: string;
 }
 
+/** A non-web-scheme URL waiting for the user's yes/no before handoff. */
+interface ExternalPrompt {
+	id: string;
+	url: string;
+}
+
 interface BrowserState {
 	open: boolean;
 	supported: boolean;
@@ -44,6 +52,8 @@ interface BrowserState {
 	initialized: boolean;
 	/** An agent tool asked for a tab while the panel was closed. */
 	pendingUrl: string | null;
+	/** A page asked to hand a non-web URL to the system; shown for confirmation. */
+	externalPrompt: ExternalPrompt | null;
 
 	setOpen: (open: boolean) => void;
 	init: () => Promise<void>;
@@ -54,6 +64,18 @@ interface BrowserState {
 	setZoom: (tabId: string, delta: number) => Promise<void>;
 	setMuted: (tabId: string, muted: boolean) => Promise<void>;
 	close: (tabId: string) => Promise<void>;
+	/** Closes every tab except the given one; the kept tab becomes active. */
+	closeOthers: (tabId: string) => Promise<void>;
+	/** Explicit session end: closes all tabs and consumes the session snapshot. */
+	closeAll: () => Promise<void>;
+	/** Copies a tab's URL to the clipboard and confirms with a toast. */
+	copyUrl: (tabId: string) => Promise<void>;
+	/** Restores a persisted session on a fresh panel mount; no-ops once consumed. */
+	restoreSession: () => Promise<void>;
+	/** Queues a non-web-scheme external handoff for user confirmation. */
+	requestExternalConfirm: (url: string) => void;
+	/** Resolves the pending handoff; accept hands the URL to the system. */
+	decideExternalPrompt: (accept: boolean) => void;
 	find: (query: string, backwards: boolean) => Promise<void>;
 	capture: (tabId: string) => Promise<void>;
 	captureRegion: (bounds: {
@@ -83,6 +105,87 @@ export const normalizeUrl = (input: string): string | null => {
 	}
 };
 
+/** http(s) is what the embedded views can show; anything else (mailto:, tel:, files, app schemes) must leave for the system handler. */
+const isWebUrl = (url: string): boolean => {
+	try {
+		const parsed = new URL(url);
+		return parsed.protocol === "https:" || parsed.protocol === "http:";
+	} catch {
+		return false;
+	}
+};
+
+// Session restore: the open tabs' URLs (strip order) plus the active tab, so
+// a fresh app run can bring the session back when the panel mounts. The
+// persisted `restored` flag marks the snapshot consumed — a replayed restore
+// or an explicitly closed session never comes back mid-run.
+const MAX_SESSION_TABS = 20;
+
+interface BrowserSessionSnapshot {
+	/** Open-tab URLs in strip order, capped. */
+	urls: string[];
+	/** URL of the snapshot-time active tab, when one was active. */
+	activeUrl: string | null;
+}
+
+interface BrowserSessionState {
+	snapshot: BrowserSessionSnapshot | null;
+	/** Consumed marker: restored once this run, or the session ended. */
+	restored: boolean;
+	setSnapshot: (snapshot: BrowserSessionSnapshot | null) => void;
+	markRestored: () => void;
+}
+
+export const useBrowserSessionStore = create<BrowserSessionState>()(
+	persist(
+		(set) => ({
+			snapshot: null,
+			restored: false,
+			setSnapshot: (snapshot) => set({ snapshot }),
+			markRestored: () => set({ restored: true }),
+		}),
+		{
+			name: "a-coder-desktop-browser-session",
+			// A new run starts un-restored: never let the previous run's marker
+			// (restored once, or a close-all) survive into it. Actions are not
+			// persisted; only the data fields rehydrate.
+			merge: (persisted, current) => {
+				const saved = (persisted ?? {}) as Partial<BrowserSessionState>;
+				return {
+					...current,
+					snapshot: saved.snapshot ?? current.snapshot,
+					restored: false,
+				};
+			},
+		},
+	),
+);
+
+/** True once this run has held tabs; separates a real close-all from the
+    startup pass the panel takes before init has listed anything. */
+let sessionLive = false;
+
+/** Mirrors the store's tabs into the persisted session snapshot. */
+function syncSessionSnapshot(state: BrowserState): void {
+	if (!(state.supported || state.gateway)) return;
+	const session = useBrowserSessionStore.getState();
+	if (state.tabs.length > 0) {
+		sessionLive = true;
+		session.setSnapshot({
+			urls: state.tabs.slice(0, MAX_SESSION_TABS).map((tab) => tab.url).filter(Boolean),
+			activeUrl: state.tabs.find((tab) => tab.id === state.activeId)?.url ?? null,
+		});
+		return;
+	}
+	// Tab list drained: only a run that had tabs is ending a session — the
+	// tabless state before init must not wipe what the last run left behind.
+	if (sessionLive) {
+		sessionLive = false;
+		session.setSnapshot(null);
+		session.markRestored();
+	}
+}
+
 export const useBrowserStore = create<BrowserState>((set, get) => ({
 	open: false,
 	supported: false,
@@ -94,6 +197,7 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 	downloads: [],
 	initialized: false,
 	pendingUrl: null,
+	externalPrompt: null,
 
 	setOpen: (open) => set({ open }),
 
@@ -225,6 +329,77 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 		await browser.close(tabId).catch(() => {});
 	},
 
+	// Rust tabs close by command; frame tabs (unsupported platforms) are pure
+	// frontend state and just drop out of the list.
+	closeOthers: async (tabId) => {
+		const kept = get().tabs.find((tab) => tab.id === tabId);
+		if (!kept) return;
+		const others = get().tabs.filter((tab) => tab.id !== tabId);
+		set({ tabs: [kept], activeId: kept.id });
+		for (const tab of others) {
+			if (tab.id.startsWith("frame-")) continue;
+			await browser.close(tab.id).catch(() => {});
+		}
+	},
+
+	closeAll: async () => {
+		const all = get().tabs;
+		set({ tabs: [], activeId: null });
+		for (const tab of all) {
+			if (tab.id.startsWith("frame-")) continue;
+			await browser.close(tab.id).catch(() => {});
+		}
+	},
+
+	copyUrl: async (tabId) => {
+		const tab = get().tabs.find((entry) => entry.id === tabId);
+		if (!tab?.url) return;
+		await navigator.clipboard.writeText(tab.url).catch(() => {});
+		toast.success("URL copied", tab.url);
+	},
+
+	restoreSession: async () => {
+		const session = useBrowserSessionStore.getState();
+		if (session.restored) return;
+		const state = get();
+		// Already a live session, or a platform where tabs are not ours to
+		// recreate (no native views and no gateway): consume the marker.
+		if (state.tabs.length > 0 || (!state.supported && !state.gateway)) {
+			session.markRestored();
+			return;
+		}
+		// Consume before the first await: React strict-mode double mounts and
+		// unmounts mid-restore can never replay the snapshot twice.
+		session.markRestored();
+		if (!session.snapshot) return;
+		const { activeUrl, urls } = session.snapshot;
+		for (const url of urls) {
+			if (!normalizeUrl(url)) continue;
+			await get().openTab(url).catch(() => {});
+		}
+		if (!activeUrl) return;
+		const active = get().tabs.find((tab) => tab.url === activeUrl);
+		if (active) void get().activate(active.id);
+	},
+
+	requestExternalConfirm: (url) => {
+		// One live confirmation at a time; a burst of handoffs lands newest.
+		if (get().externalPrompt?.url === url) return;
+		set({ externalPrompt: { id: `ext-${Date.now().toString(36)}`, url } });
+	},
+
+	decideExternalPrompt: (accept) => {
+		const prompt = get().externalPrompt;
+		if (!prompt) return;
+		set({ externalPrompt: null });
+		if (!accept) {
+			triggerHaptic("cancel");
+			return;
+		}
+		openExternalLink(prompt.url);
+		triggerHaptic("open");
+	},
+
 	find: async (query, backwards) => {
 		const tabId = get().activeId;
 		if (!tabId || !query) return;
@@ -314,7 +489,15 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 				});
 				break;
 			case "external": {
-				openExternalLink(event.url);
+				// http(s) handoffs (downloads, target=_blank the view won't
+				// host) stay automatic: the system browser is the only reader.
+				if (isWebUrl(event.url)) {
+					openExternalLink(event.url);
+					break;
+				}
+				// Non-web schemes can trigger mail clients, file handlers and
+				// app-specific tools: the user confirms before any of that.
+				get().requestExternalConfirm(event.url);
 				break;
 			}
 			case "newTab":
@@ -414,6 +597,7 @@ function isFresh(event: BrowserEvent, tabId: string): boolean {
 useBrowserStore.subscribe((state) => {
 	const on = Boolean(state.supported && state.layered && state.tabs.length > 0);
 	document.documentElement.classList.toggle("has-page", on);
+	syncSessionSnapshot(state);
 });
 // Bind the event channel once at module load; the store exists before React.
 let bound = false;

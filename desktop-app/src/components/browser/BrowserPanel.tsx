@@ -23,6 +23,9 @@ import browser, { boundsOf, type ViewBounds } from "../../lib/browser";
 import { closeHole, updateHole } from "../../lib/browser-hole";
 import { openExternalLink } from "../../lib/external-link";
 import { normalizeUrl, useBrowserStore } from "../../stores/browser-store";
+import { TabFavicon } from "./TabFavicon";
+import { TabContextMenu } from "./TabContextMenu";
+import { ExternalHandoffDialog } from "./ExternalHandoffDialog";
 
 export function BrowserPanel({ onClose }: { onClose: () => void }) {
 	const supported = useBrowserStore((state) => state.supported);
@@ -217,6 +220,13 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 		}
 	};
 
+	// One-shot restore of the previous run's open tabs (consumes its marker).
+	useEffect(() => {
+		void useBrowserStore.getState().restoreSession();
+	}, []);
+
+	const [contextTab, setContextTab] = useState<{ id: string; left: number; top: number } | null>(null);
+
 	const iconButton = useMemo(
 		() =>
 			"flex h-7 w-7 cursor-pointer items-center justify-center rounded border border-pi-border bg-pi-surface-raised text-pi-text-secondary transition-hover hover:bg-pi-surface-overlay hover:text-pi-text disabled:cursor-default disabled:opacity-40",
@@ -234,6 +244,10 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 							key={tab.id}
 							data-browser-input
 							onClick={() => void activate(tab.id)}
+							onContextMenu={(event) => {
+								event.preventDefault();
+								setContextTab({ id: tab.id, left: event.clientX, top: event.clientY });
+							}}
 							className={`flex h-7 max-w-48 shrink-0 cursor-pointer items-center gap-1.5 rounded-t px-2.5 text-xs transition-hover ${
 								tab.id === activeId
 									? "bg-pi-surface-overlay text-pi-text"
@@ -244,7 +258,7 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 							{tab.loading ? (
 								<Loader2 className="h-3 w-3 shrink-0 animate-spin text-pi-text-muted" />
 							) : (
-								<Globe className="h-3 w-3 shrink-0 text-pi-text-muted" />
+								<TabFavicon url={tab.url ?? ""} />
 							)}
 							<span className="min-w-0 flex-1 truncate text-left">{tab.title || tab.url}</span>
 							<span
@@ -543,6 +557,13 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 						</button>
 					</div>
 				))}
+			<TabContextMenu
+				tabId={contextTab?.id ?? ""}
+				left={contextTab?.left ?? 0}
+				top={contextTab?.top ?? 0}
+				onClose={() => setContextTab(null)}
+			/>
+			<ExternalHandoffDialog />
 		</div>
 	);
 }
