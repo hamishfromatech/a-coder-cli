@@ -77,6 +77,7 @@ fn main() {
 			browser::capture::browser_capture_supported,
 			browser::capture::browser_capture,
 			browser::mute::browser_tab_mute,
+			browser::permissions::browser_reset_mic_permission,
 			browser::downloads::browser_download_decide,
 			browser::downloads::browser_download_folder,
 			browser::downloads::browser_download_folder_pick,
