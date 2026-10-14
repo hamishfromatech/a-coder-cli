@@ -129,19 +129,18 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 			const viewportWidth = window.innerWidth;
 			if (!chrome || !viewportWidth) return;
 			const rects: ViewBounds[] = [];
-			const panelRect = panelRef.current?.getBoundingClientRect();
-			if (panelRect) {
-				for (const child of chrome.querySelectorAll<HTMLElement>("[data-browser-input]")) {
-					const rect = child.getBoundingClientRect();
-					if (rect.width > 0 && rect.height > 0) {
-						rects.push({
-							x: rect.left - panelRect.left,
-							y: rect.top - panelRect.top,
-							width: rect.width,
-							height: rect.height,
-							viewportWidth,
-						});
-					}
+			// Viewport-relative: the router subtracts these from main-view points
+			// (point = WebKit CSS px); panel-relative is one rail drag off.
+			for (const child of chrome.querySelectorAll<HTMLElement>("[data-browser-input]")) {
+				const rect = child.getBoundingClientRect();
+				if (rect.width > 0 && rect.height > 0) {
+					rects.push({
+						x: rect.left,
+						y: rect.top,
+						width: rect.width,
+						height: rect.height,
+						viewportWidth,
+					});
 				}
 			}
 			void browser.setPageInput(blocked, rects).catch(() => {});
