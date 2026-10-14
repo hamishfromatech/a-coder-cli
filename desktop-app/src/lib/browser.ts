@@ -21,10 +21,10 @@ export interface TabInfo {
 }
 
 export type BrowserEvent =
-	| { type: "load"; tabId: string; url: string; started: boolean }
-	| { type: "title"; tabId: string; title: string }
-	| { type: "url"; tabId: string; url: string }
-	| { type: "history"; tabId: string; back: boolean; forward: boolean }
+	| { type: "load"; tabId: string; url: string; started: boolean; seq: number }
+	| { type: "title"; tabId: string; title: string; seq: number }
+	| { type: "url"; tabId: string; url: string; seq: number }
+	| { type: "history"; tabId: string; back: boolean; forward: boolean; seq: number }
 	| { type: "external"; tabId: string; url: string }
 	| { type: "newTab"; tabId: string; url: string }
 	| { type: "openPanel"; url: string }

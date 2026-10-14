@@ -285,6 +285,7 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 		const state = get();
 		switch (event.type) {
 			case "load":
+				if (!isFresh(event, event.tabId)) return;
 				set({
 					tabs: state.tabs.map((tab) =>
 						tab.id === event.tabId ? { ...tab, url: event.url, loading: event.started } : tab,
@@ -292,16 +293,19 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 				});
 				break;
 			case "title":
+				if (!isFresh(event, event.tabId)) return;
 				set({
 					tabs: state.tabs.map((tab) => (tab.id === event.tabId ? { ...tab, title: event.title } : tab)),
-				});
+					});
 				break;
 			case "url":
+				if (!isFresh(event, event.tabId)) return;
 				set({
 					tabs: state.tabs.map((tab) => (tab.id === event.tabId ? { ...tab, url: event.url } : tab)),
 				});
 				break;
 			case "history":
+				if (!isFresh(event, event.tabId)) return;
 				set({
 					tabs: state.tabs.map((tab) =>
 						tab.id === event.tabId
@@ -335,6 +339,7 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 				break;
 			}
 			case "closed":
+				lastSeqByTab.delete(event.tabId);
 				set({
 					tabs: state.tabs.filter((tab) => tab.id !== event.tabId),
 					activeId: state.activeId === event.tabId ? null : state.activeId,
@@ -392,6 +397,21 @@ function toBlob(png: ArrayBuffer | number[]): Blob | null {
 void browser;
 
 rendererLog("browser: store module loaded");
+
+// Per-tab last applied event ordinal; Rust hands out the seq under the tab
+// lock, so a spawned commit task's events can never apply out of order (an
+// older commit finishing after a newer one pinned the spinner on).
+const lastSeqByTab = new Map<string, number>();
+
+/** Drops per-tab events from older commits; returns true when fresh. */
+function isFresh(event: BrowserEvent, tabId: string): boolean {
+	if (!("seq" in event)) return true;
+	if (event.seq === 0) return true;
+	const last = lastSeqByTab.get(tabId) ?? 0;
+	if (event.seq <= last) return false;
+	lastSeqByTab.set(tabId, event.seq);
+	return true;
+}
 // A native page under the app webview needs the body transparent over the
 // page's region (index.css `.has-page`): keep the class in sync with whether
 // any OS page view is live.

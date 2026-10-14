@@ -334,9 +334,13 @@ async fn capture_window_composite<R: Runtime>(
 					use objc2_foundation::{NSObjectNSKeyValueCoding as _};
 					let view = &*(platform.inner() as *const objc2_app_kit::NSView);
 				let wb = &*(platform.inner() as *const objc2_web_kit::WKWebView);
+				let draws = wb
+					.valueForKey(objc2_foundation::ns_string!("drawsBackground"))
+					.and_then(|v| v.downcast::<objc2_foundation::NSNumber>().ok())
+					.map(|v| v.as_bool());
 				log::info!(
 					"tree: main drawsBackground={:?} isOpaque={:?} frame={:?}",
-					wb.valueForKey(objc2_foundation::ns_string!("drawsBackground")).map(|v| format!("{v:?}")),
+					draws,
 					wb.isOpaque(),
 					wb.frame()
 				);

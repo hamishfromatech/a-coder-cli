@@ -182,6 +182,17 @@ pub(crate) struct Inner {
 	/// bounds are measured, so the reserved address is shown once the first
 	/// bounds-driven view_show arrives.
 	pub(crate) pending_url: HashMap<String, String>,
+	/// Per tab: the last event's ordinal, handed out under the inner lock so
+	/// interleaved commit tasks keep their per-tab numbering monotonic.
+	pub(crate) event_seq: HashMap<String, u64>,
+}
+
+/// Bumps and returns the tab's event sequence. Call sites finish their state
+/// work under one lock scope and emit after dropping it.
+fn next_seq(inner: &mut Inner, tab_id: &str) -> u64 {
+	let seq = inner.event_seq.entry(tab_id.to_string()).or_default();
+	*seq += 1;
+	*seq
 }
 
 /// The visited stack per tab: urls plus the current position. Capped, so an
@@ -273,12 +284,11 @@ pub async fn browser_view_show<R: Runtime>(
 				if parked {
 					position.x = -size.width - PARK_GAP;
 				}
-				view
-					.set_bounds(Rect {
-						position: position.into(),
-						size: size.into(),
-					})
-					.map_err(|error| error.to_string())?;
+				view.set_bounds(Rect {
+					position: position.into(),
+					size: size.into(),
+				})
+				.map_err(|error| error.to_string())?;
 				#[cfg(target_os = "macos")]
 				sync_frame(&view.clone(), position, size, scale);
 				view
@@ -312,7 +322,11 @@ pub async fn browser_view_show<R: Runtime>(
 	}
 	// Hide only the OTHER PAGE views: app.webviews() also holds the main
 	// app webview, and hiding it blacks out the whole UI around the page.
-	for (label, view) in app.webviews().into_iter().filter(|(label, _)| label.starts_with(LABEL_PREFIX)) {
+	for (label, view) in app
+		.webviews()
+		.into_iter()
+		.filter(|(label, _)| label.starts_with(LABEL_PREFIX))
+	{
 		if Some(label.as_str()) != target.as_ref().map(|view| view.label()) {
 			let _ = view.hide();
 		}
@@ -363,7 +377,7 @@ pub fn browser_tab_action<R: Runtime>(
 		"back" | "forward" => {
 			// Move the stack position optimistically: the panel's offers flip
 			// right away, and the commit dedups against the new position.
-			let (was, offers) = {
+			let (was, offers, seq) = {
 				let state = webview.app_handle().state::<TabsState>();
 				let mut inner = state.inner.lock().unwrap();
 				let was = inner
@@ -383,10 +397,25 @@ pub fn browser_tab_action<R: Runtime>(
 					.get(&tab_id)
 					.map(offers_of)
 					.unwrap_or((false, false));
-				(was, offers)
+				let seq = next_seq(&mut inner, &tab_id);
+				(was, offers, seq)
 			};
-			history_changed(webview.app_handle(), &tab_id, was, offers);
-			let direction = if action == "back" { "back()" } else { "forward()" };
+			if was != offers {
+				emit(
+					webview.app_handle(),
+					BrowserEvent::History {
+						tab_id: tab_id.clone(),
+						back: offers.0,
+						forward: offers.1,
+						seq,
+					},
+				);
+			}
+			let direction = if action == "back" {
+				"back()"
+			} else {
+				"forward()"
+			};
 			page.eval(&format!("history.{direction}"))
 		}
 		"reload" => page.reload(),
@@ -513,7 +542,10 @@ fn logical_rect<R: Runtime>(
 	let scale = caller_scale(webview)?;
 	Ok((
 		LogicalPosition::new(bounds.x * scale, bounds.y * scale),
-		LogicalSize::new((bounds.width * scale).max(1.0), (bounds.height * scale).max(1.0)),
+		LogicalSize::new(
+			(bounds.width * scale).max(1.0),
+			(bounds.height * scale).max(1.0),
+		),
 		scale,
 	))
 }
@@ -626,20 +658,18 @@ fn open_view<R: Runtime>(
 		})
 		.on_document_title_changed(move |page_view, title| {
 			let bounded = bounded_title(&title);
-			title_app
-				.state::<TabsState>()
-				.inner
-				.lock()
-				.unwrap()
-				.titles
-				.insert(title_tab.clone(), bounded.clone());
-			emit(
-				&title_app,
+			let event = {
+				let state = title_app.state::<TabsState>();
+				let mut inner = state.inner.lock().unwrap();
+				let seq = next_seq(&mut inner, &title_tab);
+				inner.titles.insert(title_tab.clone(), bounded.clone());
 				BrowserEvent::Title {
 					tab_id: title_tab.clone(),
 					title: bounded,
-				},
-			);
+					seq,
+				}
+			};
+			emit(&title_app, event);
 		})
 		.on_new_window(move |url, _features| {
 			if !reportable(url.as_str()) {
@@ -719,26 +749,31 @@ fn on_page_load<R: Runtime>(
 	let tab_id = tab_id.to_string();
 	let page = page.clone();
 	let _ = tauri::async_runtime::spawn(async move {
+		let state = app.state::<TabsState>();
+		let mut events = Vec::new();
 		let muted = {
-			let state = app.state::<TabsState>();
 			let mut inner = state.inner.lock().unwrap();
 			inner.urls.insert(tab_id.clone(), url.clone());
 			// Started is a commit (WebKit) or content loading (WebView2): never
 			// a download. Feed the visited stack here, where redirects funnel.
 			if loading {
 				inner.committed.insert(tab_id.clone());
-				commit_offers(&app, &mut inner, &tab_id, &url);
 			}
-			inner.muted.contains(&tab_id)
-		};
-		emit(
-			&app,
-			BrowserEvent::Load {
+			events.push(BrowserEvent::Load {
 				tab_id: tab_id.clone(),
 				url: url.clone(),
 				loading,
-			},
-		);
+				seq: next_seq(&mut inner, &tab_id),
+			});
+			if loading {
+				events.extend(commit_offers(&mut inner, &tab_id, &url));
+			}
+			inner.muted.contains(&tab_id)
+		};
+		// Emit after the lock drops: the WebKit commit dispatch must never block.
+		for event in events {
+			emit(&app, event);
+		}
 		if !loading {
 			super::capture::schedule_window_composite_once(&app);
 		}
@@ -792,27 +827,6 @@ fn bounded_title(title: &str) -> String {
 	title.chars().take(200).collect()
 }
 
-/// Tells the panel the tab's back/forward offers changed; shared by the
-/// optimistic action moves and the commit path.
-fn history_changed<R: Runtime>(
-	app: &AppHandle<R>,
-	tab_id: &str,
-	was: (bool, bool),
-	offers: (bool, bool),
-) {
-	if was == offers {
-		return;
-	}
-	emit(
-		app,
-		BrowserEvent::History {
-			tab_id: tab_id.to_string(),
-			back: offers.0,
-			forward: offers.1,
-		},
-	);
-}
-
 /// Offers of a stack position.
 fn offers_of(hist: &Hist) -> (bool, bool) {
 	(hist.index > 0, hist.index + 1 < hist.entries.len())
@@ -822,20 +836,21 @@ fn offers_of(hist: &Hist) -> (bool, bool) {
 /// when its offers change.
 fn note_commit<R: Runtime>(app: &AppHandle<R>, tab_id: &str, url: &str) {
 	let state = app.state::<TabsState>();
-	let mut inner = state.inner.lock().unwrap();
-	commit_offers(app, &mut inner, tab_id, url);
+	let event = {
+		let mut inner = state.inner.lock().unwrap();
+		commit_offers(&mut inner, tab_id, url)
+	};
+	if let Some(event) = event {
+		emit(app, event);
+	}
 }
 
 /// Stack update on an ALREADY-LOCKED inner (commit paths that hold it): a
 /// commit matching the neighbouring entry is a back/forward move; anything
 /// else is a fresh navigation that cuts the forward tail (back works,
-/// forward dies, like real browsers).
-fn commit_offers<R: Runtime>(
-	app: &AppHandle<R>,
-	inner: &mut Inner,
-	tab_id: &str,
-	url: &str,
-) {
+/// forward dies, like real browsers). Returns the History event to emit
+/// after the caller drops the lock.
+fn commit_offers(inner: &mut Inner, tab_id: &str, url: &str) -> Option<BrowserEvent> {
 	let was = inner
 		.history
 		.get(tab_id)
@@ -856,7 +871,15 @@ fn commit_offers<R: Runtime>(
 		}
 	}
 	let offers = offers_of(hist);
-	history_changed(app, tab_id, was, offers);
+	if was == offers {
+		return None;
+	}
+	Some(BrowserEvent::History {
+		tab_id: tab_id.to_string(),
+		back: offers.0,
+		forward: offers.1,
+		seq: next_seq(inner, tab_id),
+	})
 }
 
 // ---- URL polling ----
@@ -891,20 +914,30 @@ fn poll_url<R: Runtime>(app: AppHandle<R>) {
 			}) else {
 				return;
 			};
-			let changed = {
+			let (events, changed) = {
 				let state = app.state::<TabsState>();
 				let mut i = state.inner.lock().unwrap();
 				// The panel may have switched or closed it while the page read.
 				if i.shown.as_deref() != Some(tab_id.as_str()) {
 					return;
 				}
-				i.urls.insert(tab_id.clone(), url.clone()) != Some(url.clone())
+				// Polls see SPA moves too (pushState/replaceState): feed the
+				// stack under the same lock, so offers track the real document.
+				let changed = i.urls.insert(tab_id.clone(), url.clone()) != Some(url.clone());
+				let mut events = commit_offers(&mut i, &tab_id, &url).into_iter().collect::<Vec<_>>();
+				if changed {
+					events.push(BrowserEvent::Url {
+						tab_id: tab_id.clone(),
+						url,
+						seq: next_seq(&mut i, &tab_id),
+					});
+				}
+				(events, changed)
 			};
-			// Polls see SPA moves too (pushState/replaceState): feed the stack
-			// unconditionally, so the offers track the real document.
-			note_commit(&app, &tab_id, &url);
-			if changed {
-				emit(&app, BrowserEvent::Url { tab_id, url });
+			// Emit after the lock drops (the Url event is present only when
+			// the address really moved).
+			for event in events {
+				emit(&app, event);
 			}
 		},
 	);

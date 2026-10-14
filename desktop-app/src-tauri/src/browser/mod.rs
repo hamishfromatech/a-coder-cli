@@ -54,21 +54,27 @@ pub(crate) enum BrowserEvent {
 		url: String,
 		#[serde(rename = "started")]
 		loading: bool,
+		/// Per-tab event ordinal, assigned under the tab lock; the panel drops
+		/// events from older commits (tasks can interleave after a spawn).
+		seq: u64,
 	},
 	Title {
 		tab_id: String,
 		title: String,
+		seq: u64,
 	},
 	/// The page's address changed without a load (pushState, or the poll saw it).
 	Url {
 		tab_id: String,
 		url: String,
+		seq: u64,
 	},
 	/// Whether history offers back/forward for the panel's buttons.
 	History {
 		tab_id: String,
 		back: bool,
 		forward: bool,
+		seq: u64,
 	},
 	/// A navigation or popup the panel will not load; the panel passes it to
 	/// the OS's default handler.
@@ -186,13 +192,15 @@ impl BrowserEvent {
 				tab_id,
 				url,
 				loading,
+				..
 			} => Some(format!("tab={tab_id} started={loading} {url}")),
-			Self::Title { tab_id, title } => Some(format!("tab={tab_id} {title}")),
-			Self::Url { tab_id, url } => Some(format!("tab={tab_id} {url}")),
+			Self::Title { tab_id, title, .. } => Some(format!("tab={tab_id} {title}")),
+			Self::Url { tab_id, url, .. } => Some(format!("tab={tab_id} {url}")),
 			Self::History {
 				tab_id,
 				back,
 				forward,
+				..
 			} => Some(format!("tab={tab_id} back={back} fwd={forward}")),
 			Self::External { tab_id, url } => Some(format!("tab={tab_id} {url}")),
 			Self::NewTab { tab_id, url } => Some(format!("tab={tab_id} {url}")),
