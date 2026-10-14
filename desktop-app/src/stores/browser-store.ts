@@ -121,7 +121,6 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 	},
 
 	openTab: async (url) => {
-		rendererLog(`browser: openTab ${url} supported=${get().supported}`);
 		if (!get().supported) {
 			// Gateways render reading frames; without one the system browser is
 			// the only way to see a page.
@@ -328,7 +327,6 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 				);
 				break;
 			case "openPanel": {
-				rendererLog(`browser: openPanel event url=${event.url}`);
 				// An agent tool wants a page: bring the right rail up on the
 				// browser tab; the panel opens tabs only once its bounds are
 				// known.
@@ -396,8 +394,6 @@ function toBlob(png: ArrayBuffer | number[]): Blob | null {
 
 void browser;
 
-rendererLog("browser: store module loaded");
-
 // Per-tab last applied event ordinal; Rust hands out the seq under the tab
 // lock, so a spawned commit task's events can never apply out of order (an
 // older commit finishing after a newer one pinned the spinner on).
@@ -418,9 +414,6 @@ function isFresh(event: BrowserEvent, tabId: string): boolean {
 useBrowserStore.subscribe((state) => {
 	const on = Boolean(state.supported && state.layered && state.tabs.length > 0);
 	document.documentElement.classList.toggle("has-page", on);
-	rendererLog(
-		`browser: has-page=${on} layered=${state.layered} tabs=${state.tabs.length} bodyBg=${getComputedStyle(document.body).backgroundColor} htmlClass=${document.documentElement.className}`,
-	);
 });
 // Bind the event channel once at module load; the store exists before React.
 let bound = false;
@@ -429,10 +422,7 @@ if (!bound) {
 	void useBrowserStore
 		.getState()
 		.init()
-		.then(() => {
-			rendererLog("browser: store bound (init ok)");
-			return onBrowserEvent((event) => useBrowserStore.getState().applyEvent(event));
-		})
+		.then(() => onBrowserEvent((event) => useBrowserStore.getState().applyEvent(event)))
 		.catch((error) => {
 			rendererLog(`browser: store binding failed: ${String(error)}`);
 			return onBrowserEvent((event) => useBrowserStore.getState().applyEvent(event));

@@ -219,10 +219,6 @@ unsafe fn install_on(view: *mut AnyObject) {
 		// shows through however transparent the HTML is.
 		let main_webview = &*(view as *const objc2_web_kit::WKWebView);
 		main_webview.setUnderPageBackgroundColor(Some(&NSColor::clearColor()));
-		let reads_back = main_webview.valueForKey(ns_string!("drawsBackground"));
-		log::info!(
-			"layer: installed; drawsBackground reads back {reads_back:?}"
-		);
 	}
 	MAIN.store(view, Ordering::Release);
 	// Before dispatch, so the view losing moves is cut off on the move that

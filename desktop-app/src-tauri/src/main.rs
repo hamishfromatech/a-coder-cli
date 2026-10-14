@@ -75,7 +75,6 @@ fn main() {
 			browser::agent::browser_agent,
 			browser::capture::browser_capture_supported,
 			browser::capture::browser_capture,
-			browser::capture::browser_debug_window_shot,
 			browser::mute::browser_tab_mute,
 			browser::downloads::browser_download_decide,
 			browser::downloads::browser_download_folder,

@@ -3,7 +3,6 @@ import { AlertCircle, ChevronDown, Loader2, Workflow } from "lucide-react";
 import { useSessionStore, type UiRequest } from "../stores/session-store";
 import { addSessionAllowRules } from "../lib/rpc";
 import { triggerHaptic } from "../lib/haptics";
-import { rendererLog } from "../lib/renderer-log";
 
 // Tool-approval bar matching Hermes desktop's in-chat permission UI.
 //
@@ -75,11 +74,6 @@ export const ToolApprovalBar: FC<ToolApprovalBarProps> = ({ request, surface }) 
 		resolveUiRequest(request.id, { confirmed: true });
 	}, [busy, request.id, request.workflow, resolveUiRequest]);
 
-	useEffect(() => {
-		rendererLog(`APPROVAL ${surface} mount id=${request.id}`);
-		return () => rendererLog(`APPROVAL ${surface} unmount id=${request.id}`);
-	}, [surface, request.id]);
-
 	// Inline surface: signal mounted so the floating fallback stands down.
 	// Mirrors Hermes desktop's registerApprovalInlineAnchor: the fallback is
 	// gated on MOUNT STATE, not on-screen visibility. An IntersectionObserver
@@ -91,11 +85,7 @@ export const ToolApprovalBar: FC<ToolApprovalBarProps> = ({ request, surface }) 
 	useEffect(() => {
 		if (surface !== "inline") return;
 		setApprovalInlineMounted(true);
-		rendererLog(`APPROVAL inline mount id=${request.id}`);
-		return () => {
-			setApprovalInlineMounted(false);
-			rendererLog(`APPROVAL inline unmount id=${request.id}`);
-		};
+		return () => setApprovalInlineMounted(false);
 	}, [surface, setApprovalInlineMounted, request.id]);
 
 	// Keyboard shortcuts live at the bar so they follow whichever surface is

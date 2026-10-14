@@ -117,12 +117,6 @@ pub(crate) enum BrowserEvent {
 
 pub(crate) fn emit<R: Runtime>(app: &tauri::AppHandle<R>, event: BrowserEvent) {
 	use tauri::Emitter;
-	let name = event.name();
-	if let Some(extra) = event.describe() {
-		log::info!("agent event -> {name} {extra}");
-	} else {
-		log::info!("agent event -> {name}");
-	}
 	if let Err(error) = app.emit(tabs::EVENT_NAME, event) {
 		log::warn!("agent event emit failed: {error}");
 	}
@@ -182,32 +176,6 @@ impl BrowserEvent {
 			Self::Closed { .. } => "closed",
 			Self::DownloadPrompt { .. } => "downloadPrompt",
 			Self::DownloadSettled { .. } => "downloadSettled",
-		}
-	}
-
-	/// One-line payload sketch for the same log lines.
-	pub(crate) fn describe(&self) -> Option<String> {
-		match self {
-			Self::Load {
-				tab_id,
-				url,
-				loading,
-				..
-			} => Some(format!("tab={tab_id} started={loading} {url}")),
-			Self::Title { tab_id, title, .. } => Some(format!("tab={tab_id} {title}")),
-			Self::Url { tab_id, url, .. } => Some(format!("tab={tab_id} {url}")),
-			Self::History {
-				tab_id,
-				back,
-				forward,
-				..
-			} => Some(format!("tab={tab_id} back={back} fwd={forward}")),
-			Self::External { tab_id, url } => Some(format!("tab={tab_id} {url}")),
-			Self::NewTab { tab_id, url } => Some(format!("tab={tab_id} {url}")),
-			Self::ProxyFailed { tab_id, url } => Some(format!("tab={tab_id} {url}")),
-			Self::OpenPanel { url } => Some(url.clone()),
-			Self::Closed { tab_id } => Some(format!("tab={tab_id}")),
-			_ => None,
 		}
 	}
 }

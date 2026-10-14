@@ -71,7 +71,6 @@ import { Toaster } from "./components/Toaster";
 import { UpdateModal } from "./components/UpdateModal";
 import { ApprovalModal } from "./components/panels/ApprovalModal";
 import { ToolApprovalBar } from "./components/ToolApprovalBar";
-import { rendererLog } from "./lib/renderer-log";
 import { ConnectingOverlay } from "./components/ConnectingOverlay";
 
 const FALLBACK_CWD = "";
@@ -228,9 +227,6 @@ export default function App() {
 	const permissionRequest = uiRequests.find(
 		(r) => (r.kind === "permission" || r.method === "confirm") && requestIsForCurrentSession(r),
 	);
-	useEffect(() => {
-		rendererLog(`PERMISSION ${permissionRequest ? `pending id=${permissionRequest.id} tool=${permissionRequest.toolName ?? "?"}` : "cleared"}`);
-	}, [permissionRequest?.id]);
 	const modalRequest = uiRequests.find(
 		(r) => r.kind !== "permission" && r.method !== "confirm" && requestIsForCurrentSession(r),
 	);

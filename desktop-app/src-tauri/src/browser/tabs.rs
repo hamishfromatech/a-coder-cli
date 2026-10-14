@@ -234,7 +234,6 @@ pub async fn browser_open_tab<R: Runtime>(
 	bounds: Option<ViewBounds>,
 ) -> Result<String, String> {
 	require_main(&webview)?;
-	log::info!("open_tab called: url={url:?} bounds={bounds:?}");
 	let tab_id = next_tab_id();
 	if bounds.is_none() {
 		if let Some(address) = url.as_deref() {
@@ -271,10 +270,6 @@ pub async fn browser_view_show<R: Runtime>(
 	parked: Option<bool>,
 ) -> Result<(), String> {
 	require_main(&webview)?;
-	log::info!(
-		"view_show called: tab={tab_id:?} url={url:?} bounds={:?}",
-		bounds.as_ref().map(|b| b.parts())
-	);
 	let app = webview.app_handle().clone();
 	let parked = parked.unwrap_or(false);
 	let target = match (&tab_id, &bounds) {
@@ -580,16 +575,6 @@ fn sync_frame<R: Runtime>(
 				NSSize::new(width, frame_height),
 			);
 			node.setFrame(frame);
-			log::info!(
-				"sync_frame: pos=({:.1},{:.1}) size=({:.1},{:.1}) parent_h={:.1} -> frame=({:.1},{:.1})",
-				position.x,
-				position.y,
-				size.width,
-				size.height,
-				height,
-				frame.origin.x,
-				frame.origin.y
-			);
 		}
 	});
 	if let Err(error) = &result {
@@ -773,9 +758,6 @@ fn on_page_load<R: Runtime>(
 		// Emit after the lock drops: the WebKit commit dispatch must never block.
 		for event in events {
 			emit(&app, event);
-		}
-		if !loading {
-			super::capture::schedule_window_composite_once(&app);
 		}
 		// A muted tab stays muted through its loads; each page is muted again
 		// on commit, since a fresh document has fresh media.
