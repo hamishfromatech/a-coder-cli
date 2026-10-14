@@ -10,7 +10,7 @@ rust-version = "1.77"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon", "unstable", "protocol-asset"] }
+tauri = { version = "2", features = ["tray-icon", "unstable", "protocol-asset", "macos-private-api"] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"
@@ -68,7 +68,8 @@ glib = "0.18"
 tempfile = "3"
 
 [profile.release]
-strip = true
+strip = false
 lto = true
 opt-level = 3
+debug = "line-tables-only"
 
