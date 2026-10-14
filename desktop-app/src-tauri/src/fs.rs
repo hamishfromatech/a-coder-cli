@@ -4,6 +4,16 @@ use std::path::{Path, PathBuf};
 use base64::Engine;
 use walkdir::WalkDir;
 
+/// Resolve a path to its canonical form (real casing on case-insensitive
+/// filesystems, symlinks resolved) for comparing dialog-provided paths
+/// against stored ones. Returns None when the path does not exist.
+#[tauri::command]
+pub fn canonicalize_path(path: String) -> Option<String> {
+	fs::canonicalize(&path)
+		.ok()
+		.map(|resolved| resolved.to_string_lossy().into_owned())
+}
+
 /// Append a renderer diagnostic line to /tmp/a-coder-renderer.log (debug aid).
 #[tauri::command]
 pub fn debug_log(line: String) -> Result<(), String> {

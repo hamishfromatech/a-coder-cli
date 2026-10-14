@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import * as rpc from "../lib/rpc";
+import { runSwitch } from "../lib/session-switch";
 import { useSessionStore } from "../stores/session-store";
 import { useSessionTreeStore } from "../stores/session-tree-store";
 import type { TreeNode } from "../stores/session-tree-store";
@@ -93,7 +94,7 @@ export function SessionTree() {
 
 	const handleSwitch = async (entryId: string) => {
 		try {
-			await rpc.sendCommand({ type: "switch_session", sessionPath: entryId });
+			await runSwitch(entryId);
 		} catch (e) {
 			console.error("Failed to navigate", e);
 		}

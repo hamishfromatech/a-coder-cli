@@ -7,6 +7,7 @@ import { useSessionStore } from "../stores/session-store";
 import { useTabsStore } from "../stores/tabs-store";
 import { toast } from "../stores/toast-store";
 import { useWorkspaceStore } from "../stores/workspace-store";
+import { runSwitch } from "../lib/session-switch";
 import { triggerHaptic } from "../lib/haptics";
 import { adoptSwitchResult } from "../lib/adopt-session";
 
@@ -166,7 +167,7 @@ export function SessionList() {
 		setPendingPath(path);
 		try {
 			useTabsStore.getState().setActive(path);
-			const result = await rpc.switchSession(path);
+			const result = await runSwitch(path);
 			adoptSwitchResult(result);
 			if (result.reattached && result.snapshot?.running) {
 				const store = useSessionStore.getState();

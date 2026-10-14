@@ -1,5 +1,5 @@
-import * as rpc from "../lib/rpc";
 import { adoptSwitchResult } from "./adopt-session";
+import { runSwitch } from "./session-switch";
 import { useTabsStore } from "../stores/tabs-store";
 import { toast } from "../stores/toast-store";
 
@@ -11,7 +11,7 @@ import { toast } from "../stores/toast-store";
 export async function openSessionFile(path: string): Promise<boolean> {
 	useTabsStore.getState().openTab(path);
 	try {
-		const result = await rpc.switchSession(path);
+		const result = await runSwitch(path);
 		adoptSwitchResult(result);
 		return true;
 	} catch (e) {

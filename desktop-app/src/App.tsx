@@ -11,6 +11,7 @@ import { synthesize, playAudioBlob, type VoiceSettings } from "./lib/voice";
 import { pickLoadingVerb } from "./lib/loading-verbs";
 import { getCachedSessionMessages, setCachedSessionMessages } from "./lib/session-cache";
 import { adoptSwitchResult } from "./lib/adopt-session";
+import { runSwitch } from "./lib/session-switch";
 import { isAuthoritativeSession, setAuthoritativeSession } from "./lib/session-authority";
 import { useRuntimeStatusStore } from "./stores/runtime-status-store";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
@@ -162,6 +163,10 @@ export default function App() {
 		return () => window.removeEventListener(REPLAY_ONBOARDING_EVENT, handler);
 	}, []);
 	const [trustPrompt, setTrustPrompt] = useState<string | null>(null);
+	// The project a pending trust decision should resume switching into: the
+	// project switch stops at the trust modal and only continues on accept
+	// (running both at once failed the first switch every time).
+	const pendingProjectRef = useRef<string | null>(null);
 	// Gate first connect on the initial-workspace lookup so a `pi --desktop`
 	// launch preselects the terminal's folder before the engine boots.
 	const [bootReady, setBootReady] = useState(false);
@@ -1098,7 +1103,7 @@ export default function App() {
 		const onReopenClosedTab = () => {
 			const tab = useClosedTabsStore.getState().take();
 			if (tab) {
-				void rpc.switchSession(tab.sessionId).catch(() => {});
+				void runSwitch(tab.sessionId).catch(() => {});
 			}
 			setShowHome(false);
 			setShowResume(false);
@@ -1195,8 +1200,7 @@ export default function App() {
 		const target = needsInputPath ?? Object.keys(status.finishedWhileAway).find((p) => p !== sessionFile);
 		if (!target) return;
 		pushCurrentToClosedTabs();
-		void rpc
-			.switchSession(target)
+		void runSwitch(target)
 			.then((result) => adoptSwitchResult(result))
 			.catch((e) =>
 				toast.error("Failed to switch session", e instanceof Error ? e.message : String(e)),
@@ -1216,33 +1220,56 @@ export default function App() {
 	// The engine hosts runtimes for any cwd (its registry already carries
 	// per-runtime services), so a project switch is a session switch: resume
 	// that project's most recent session, or start a new session in it.
+	// Session headers and dialogs spell the same folder differently often
+	// enough (real paths, casing) that compares must be normalization-tolerant.
+	const normalizeCwdLike = (a: string | undefined, b: string) =>
+		(a ?? "").replace(/\/+$/, "").toLowerCase() === b.replace(/\/+$/, "").toLowerCase();
 	const switchProject = useCallback(
 		async (path: string) => {
-			if (path === projectPath) return;
-			setProjectPath(path);
-			try {
-				const trusted = await rpc.getProjectTrust(path);
-				if (!trusted) setTrustPrompt(path);
-			} catch {
-				// trust check is best-effort
+			// Canonicalize once and use the resolved path everywhere: the folder
+			// picker returns real paths, while session headers and recent lists
+			// carry whatever spelling was used when the project was first opened.
+			// Strict compares on those strings missed the resume filter and made
+			// every other project switch fall back to a blank new session.
+			const target = await rpc.canonicalizePath(path).catch(() => undefined);
+			if (!target) {
+				toast.error("Cannot open project", `${path} no longer exists.`);
+				return;
 			}
+			const current = projectPath.replace(/\/+$/, "");
+			if (current && current.toLowerCase() === target.toLowerCase()) return;
 			try {
+				const trusted = await rpc.getProjectTrust(target);
+				if (!trusted) {
+					// Stop at the trust modal; the switch continues on accept.
+					pendingProjectRef.current = target;
+					setTrustPrompt(target);
+					return;
+				}
 				const res = await rpc.listSessions();
 				const latest = (res.sessions ?? [])
-					.filter((s) => s.cwd === path)
+					.filter((s) => normalizeCwdLike(s.cwd, target))
 					.sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime())[0];
 				if (latest) {
 					pushCurrentToClosedTabs();
-					const result = await rpc.switchSession(latest.path);
+					const result = await runSwitch(latest.path);
 					adoptSwitchResult(result);
+					if (result.reattached && result.snapshot?.running) {
+						const store = useSessionStore.getState();
+						if (!store.isStreaming) {
+							store.setIsStreaming(true);
+							store.setStreamingVerb(pickLoadingVerb());
+						}
+					}
 				} else {
-					await rpc.newSession(undefined, path);
+					useWorkspaceStore.getState().setCurrent(target);
+					await rpc.newSession(undefined, target);
 				}
 			} catch (e) {
 				toast.error("Failed to switch project", e instanceof Error ? e.message : String(e));
 			}
 		},
-		[setProjectPath, projectPath, pushCurrentToClosedTabs],
+		[projectPath, pushCurrentToClosedTabs],
 	);
 	switchProjectRef.current = switchProject;
 
@@ -1308,6 +1335,8 @@ export default function App() {
 
 	const handleTrustAccept = async () => {
 		if (!trustPrompt) return;
+		const resuming = pendingProjectRef.current;
+		pendingProjectRef.current = null;
 		try {
 			await rpc.setProjectTrust(trustPrompt, true);
 			toast.success("Project trusted", trustPrompt);
@@ -1316,6 +1345,9 @@ export default function App() {
 		} finally {
 			setTrustPrompt(null);
 		}
+		// The switch stopped at the trust modal - continue it now that the
+		// project is trusted (this is what made a first switch "not work").
+		if (resuming) switchProjectRef.current?.(resuming);
 	};
 
 	const handleTrustDeny = async () => {
@@ -1531,7 +1563,7 @@ export default function App() {
 						setShowResume(false);
 						pushCurrentToClosedTabs();
 						try {
-							const result = await rpc.switchSession(sessionPath);
+							const result = await runSwitch(sessionPath);
 							if (result.reattached && result.snapshot?.running) {
 								const store = useSessionStore.getState();
 								if (!store.isStreaming) {
@@ -1644,7 +1676,7 @@ export default function App() {
 					setShowHome(false);
 					pushCurrentToClosedTabs();
 					try {
-						await rpc.switchSession(sessionId);
+						await runSwitch(sessionId);
 					} catch (e) {
 						toast.error("Failed to open session", e instanceof Error ? e.message : String(e));
 					}

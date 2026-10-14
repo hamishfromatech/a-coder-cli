@@ -4,6 +4,7 @@ import * as rpc from "../lib/rpc";
 import { useTabsStore } from "../stores/tabs-store";
 import { useSessionStore } from "../stores/session-store";
 import { adoptSwitchResult } from "../lib/adopt-session";
+import { runSwitch } from "../lib/session-switch";
 import { useRuntimeStatusStore } from "../stores/runtime-status-store";
 import { toast } from "../stores/toast-store";
 import { pickLoadingVerb } from "../lib/loading-verbs";
@@ -31,7 +32,7 @@ export function SessionTabs() {
 		try {
 			// Optimistically show the new tab as active so the UI feels instant.
 			setActive(path);
-			const result = await rpc.switchSession(path);
+			const result = await runSwitch(path);
 			adoptSwitchResult(result);
 			// Re-attached to a runtime with an in-flight turn: show the streaming
 			// state immediately instead of waiting for the next message event.

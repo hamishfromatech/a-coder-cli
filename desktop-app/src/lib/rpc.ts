@@ -832,8 +832,8 @@ export const abortBash = () => sendCommand({ type: "abort_bash" });
 export const getSessionStats = () => sendCommand({ type: "get_session_stats" }) as Promise<SessionStats>;
 export const exportHtml = (outputPath?: string) =>
 	sendCommand({ type: "export_html", outputPath }) as Promise<ExportHtmlResult>;
-export const switchSession = (sessionPath: string) =>
-	sendCommand({ type: "switch_session", sessionPath }) as Promise<SwitchSessionResult>;
+export const switchSession = (sessionPath: string, cwd?: string) =>
+	sendCommand({ type: "switch_session", sessionPath, cwd }) as Promise<SwitchSessionResult>;
 export const getSessionsStatus = () =>
 	sendCommand({ type: "get_sessions_status" }) as Promise<{ sessions: RuntimeSessionStatus[] }>;
 export const abortSession = (sessionPath: string) =>
@@ -1136,6 +1136,10 @@ export async function readTeams(): Promise<TeamFile[]> {
 export async function getProjectTrust(cwd: string): Promise<boolean> {
 	return await invoke<boolean>("get_project_trust", { args: { cwd } });
 }
+
+/** Canonical form of a path (real casing, symlinks resolved), or null when missing. */
+export const canonicalizePath = (path: string) =>
+	invoke<string | null>("canonicalize_path", { path }).then((v) => v ?? undefined);
 
 export async function setProjectTrust(cwd: string, trusted: boolean): Promise<void> {
 	await invoke("set_project_trust", { args: { cwd }, trusted });

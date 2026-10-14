@@ -99,7 +99,7 @@ export type RpcCommand =
 	| { id?: string; type: "export_html"; outputPath?: string }
 	| { id?: string; type: "export_jsonl"; outputPath?: string }
 	| { id?: string; type: "import_jsonl"; inputPath: string }
-	| { id?: string; type: "switch_session"; sessionPath: string }
+	| { id?: string; type: "switch_session"; sessionPath: string; cwd?: string }
 	| { id?: string; type: "fork"; entryId: string }
 	| { id?: string; type: "clone" }
 	| { id?: string; type: "get_fork_messages" }

@@ -1002,7 +1002,14 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "switch_session": {
-				const result = await runtimeHost.switchSession(command.sessionPath);
+				// `cwd` overrides the session's stored working directory, mirroring
+				// the TUI's missing-cwd prompt ("continue in current cwd"): the
+				// desktop passes the current workspace when the stored folder is
+				// gone instead of leaving the user stuck on an error toast.
+				const result = await runtimeHost.switchSession(
+					command.sessionPath,
+					command.cwd ? { cwdOverride: command.cwd } : undefined,
+				);
 				if (!result.cancelled) {
 					await rebindSession();
 				}
