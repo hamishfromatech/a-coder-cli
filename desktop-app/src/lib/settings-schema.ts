@@ -911,6 +911,7 @@ const NAV_ORDER: string[] = [
 	"chat-behaviour",
 	"tools-and-permissions",
 	"external-tools",
+	"browser",
 	"resources",
 	"voice",
 	"mobile",
