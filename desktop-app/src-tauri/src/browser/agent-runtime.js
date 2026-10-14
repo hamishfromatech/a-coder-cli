@@ -19,6 +19,15 @@
 //   readiness                       -> document load state + the request
 //                                      watcher (what the settle waits on)
 //
+// Point ops speak CSS viewport pixels — the space getBoundingClientRect,
+// elementFromPoint and describeEl's rects already use, so an agent reads no
+// dpr/scale; elementFromPoint itself decides what the point hit:
+//   click_at {x, y, navigateLinks?} -> clicks whatever the point hits and
+//                                      reports it (tag/id/class + ref)
+//   move {x, y}                     -> hovers along the hit's chain so hover
+//                                      menus and tooltips react first
+//   drag {from: {x,y}, to: {x,y}, steps?} -> press, small-step moves, release
+//
 // Secret fields are redacted in text ("filled"/"empty") and can be masked for
 // screenshots by the panel (op "mask"). The page can fake any of this, so the
 // panel cross-checks against captures before acting on it.
@@ -365,6 +374,12 @@
 
 	// ---- interaction ----
 
+	// The element the synthesized pointer last hovered onto, so a move's
+	// over/out pair up instead of replaying on every move (and click_at
+	// hovers first, without re-firing over once the user's hover already
+	// established it this session).
+	var hover = null;
+
 	function covering(el) {
 		var rect = el.getBoundingClientRect();
 		var top = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
@@ -378,21 +393,81 @@
 		return null;
 	}
 
-	function mouse(el, type) {
-		var rect = el.getBoundingClientRect();
+	function mouseAt(el, type, x, y) {
 		var init = {
 			bubbles: true,
 			cancelable: true,
 			composed: true,
-			clientX: rect.left + rect.width / 2,
-			clientY: rect.top + rect.height / 2,
+			clientX: x,
+			clientY: y,
 			button: 0,
 			view: window,
 		};
+		// Pointer events carry the same coords, so hit testers listening to
+		// them see the same point the mouse events do.
 		var event = type.indexOf("pointer") === 0
-			? new PointerEvent(type, { pointerId: 1, pointerType: "mouse", isPrimary: true })
+			? new PointerEvent(
+					type,
+					Object.assign({ pointerId: 1, pointerType: "mouse", isPrimary: true }, init),
+				)
 			: new MouseEvent(type, init);
 		el.dispatchEvent(event);
+	}
+
+	function mouse(el, type) {
+		var rect = el.getBoundingClientRect();
+		mouseAt(el, type, rect.left + rect.width / 2, rect.top + rect.height / 2);
+	}
+
+	// The element at a viewport point the way a real pointer would hit it:
+	// elementFromPoint, not hit tests through the refs.
+	function hitAt(x, y) {
+		var at = document.elementFromPoint(x, y);
+		return at instanceof Element ? at : null;
+	}
+
+	// Coordinates for point ops; anything NaN-shaped (missing, string) reads
+	// as a mistake, not as 0,0 at the top-left corner.
+	function coordsOf(raw) {
+		if (!raw || typeof raw !== "object" || raw.x == null || raw.y == null) return null;
+		var x = Number(raw.x);
+		var y = Number(raw.y);
+		return isFinite(x) && isFinite(y) ? { x: x, y: y } : null;
+	}
+
+	// Which element the point hit, for the answer: tag/#id/.classes + a ref
+	// follow-ups can address. Rounded, since the coordinates came as-is.
+	function pointDescribe(el, x, y) {
+		var tag = el.tagName.toLowerCase();
+		var id = el.id ? "#" + el.id : "";
+		var cls = (el.getAttribute("class") || "").trim().split(/\s+/).filter(Boolean).slice(0, 3).join(".");
+		return "[" + (refOf(el) || "-") + "] " + tag + id + (cls ? "." + cls : "") + " at " + Math.round(x) + "," + Math.round(y);
+	}
+
+	// Hover along the hit's chain: over/out when the pointer changes element,
+	// move once it stays, so hover-attached UI reacts before any press.
+	function hoverMove(el, x, y) {
+		if (hover && hover !== el) {
+			mouseAt(hover, "pointerout", x, y);
+			mouseAt(hover, "mouseout", x, y);
+		}
+		if (hover !== el) {
+			mouseAt(el, "pointerover", x, y);
+			mouseAt(el, "mouseover", x, y);
+			hover = el;
+		}
+		mouseAt(el, "pointermove", x, y);
+		mouseAt(el, "mousemove", x, y);
+	}
+
+	// The href a click must hand back instead of dispatching (the panel does
+	// the navigation, keeping the address bar true), or null to click here.
+	function linkHandback(anchor, navigateLinks) {
+		if (!anchor || !/^https?:/i.test(anchor.href)) return null;
+		var target = new URL(anchor.href);
+		var page = new URL(document.baseURI || location.href);
+		if (target.hash && target.href.split("#")[0] === page.href.split("#")[0]) return null;
+		return navigateLinks || anchor.target === "_blank" ? anchor.href : null;
 	}
 
 	function isSubmitter(node) {
@@ -640,15 +715,8 @@
 						error: op.ref + " is covered by an overlay; snapshot to find its close button, or scroll first.",
 					};
 				}
-				var anchor = el3.closest ? el3.closest("a[href]") : null;
-				var href = anchor ? anchor.href : "";
-				if (anchor && /^https?:/i.test(href)) {
-					var target = new URL(href);
-					var page = new URL(document.baseURI || location.href);
-					if (!(target.hash && target.href.split("#")[0] === page.href.split("#")[0])) {
-						if (op.navigateLinks || anchor.target === "_blank") return { ok: true, navigate: href };
-					}
-				}
+				var handback = linkHandback(el3.closest ? el3.closest("a[href]") : null, op.navigateLinks);
+				if (handback) return { ok: true, navigate: handback };
 				mouse(el3, "pointerover");
 				mouse(el3, "pointerdown");
 				mouse(el3, "mousedown");
@@ -658,6 +726,83 @@
 				if (typeof el3.click === "function") el3.click();
 				else mouse(el3, "click");
 				return { ok: true, info: describeEl(el3), quietMs: quietMs() };
+			}
+			case "click_at": {
+				// Clicks what is actually there, so no covering check and no
+				// scroll: the point, not the element, is what the agent aimed
+				// at, and elementFromPoint already named the top of it.
+				var point = coordsOf(op);
+				if (!point) return { ok: false, error: "click_at needs numeric x and y in CSS viewport pixels" };
+				var at = hitAt(point.x, point.y);
+				if (!at) return { ok: false, error: "no element at " + Math.round(point.x) + "," + Math.round(point.y) + "; scroll or resize the window, or snapshot for refs" };
+				var pointerHandback = linkHandback(at.closest ? at.closest("a[href]") : null, op.navigateLinks);
+				if (pointerHandback) return { ok: true, hit: pointDescribe(at, point.x, point.y), navigate: pointerHandback };
+				hoverMove(at, point.x, point.y);
+				mouseAt(at, "pointerdown", point.x, point.y);
+				mouseAt(at, "mousedown", point.x, point.y);
+				if (typeof at.focus === "function") at.focus({ preventScroll: true });
+				mouseAt(at, "pointerup", point.x, point.y);
+				mouseAt(at, "mouseup", point.x, point.y);
+				if (typeof at.click === "function") at.click();
+				else mouseAt(at, "click", point.x, point.y);
+				return {
+					ok: true,
+					hit: pointDescribe(at, point.x, point.y),
+					ref: refOf(at),
+					info: describeEl(at),
+					quietMs: quietMs(),
+				};
+			}
+			case "move": {
+				var toPoint = coordsOf(op);
+				if (!toPoint) return { ok: false, error: "move needs numeric x and y in CSS viewport pixels" };
+				var onto = hitAt(toPoint.x, toPoint.y);
+				if (!onto) return { ok: false, error: "no element at " + Math.round(toPoint.x) + "," + Math.round(toPoint.y) };
+				hoverMove(onto, toPoint.x, toPoint.y);
+				return { ok: true, hit: pointDescribe(onto, toPoint.x, toPoint.y), ref: refOf(onto), quietMs: quietMs() };
+			}
+			case "drag": {
+				// Press, a plain mousemove path, release: the DOM's own drop
+				// machinery (dragstart/…) needs DataTransfer events, which a
+				// synthetic path cannot carry — drags built on mousedown+move
+				// work; HTML5 drag-and-drop does not.
+				var from = coordsOf(op.from);
+				var to = coordsOf(op.to);
+				if (!from) return { ok: false, error: "drag needs from: {x, y} in CSS viewport pixels" };
+				if (!to) return { ok: false, error: "drag needs to: {x, y} in CSS viewport pixels" };
+				var steps = op.steps == null ? 8 : Math.round(Number(op.steps) || 2);
+				if (!isFinite(steps)) steps = 8;
+				if (steps < 2) steps = 2;
+				if (steps > 60) steps = 60;
+				var source = hitAt(from.x, from.y);
+				if (!source) return { ok: false, error: "no element at " + Math.round(from.x) + "," + Math.round(from.y) + "; scroll or snapshot for refs" };
+				hoverMove(source, from.x, from.y);
+				mouseAt(source, "pointerdown", from.x, from.y);
+				mouseAt(source, "mousedown", from.x, from.y);
+				// Moves land on whatever is under each step, so elements along
+				// the path see the pointer coming; past the page (a drop over
+				// nothing, e.g. past the viewport edge) the last holder keeps
+				// receiving the path so its listeners still see the end.
+				var holder = source;
+				for (var step = 1; step <= steps; step++) {
+					var portion = step / steps;
+					var pathX = from.x + (to.x - from.x) * portion;
+					var pathY = from.y + (to.y - from.y) * portion;
+					var under = hitAt(pathX, pathY);
+					if (under) holder = under;
+					mouseAt(holder, "pointermove", pathX, pathY);
+					mouseAt(holder, "mousemove", pathX, pathY);
+				}
+				mouseAt(holder, "pointerup", to.x, to.y);
+				mouseAt(holder, "mouseup", to.x, to.y);
+				hover = holder;
+				return {
+					ok: true,
+					from: pointDescribe(source, from.x, from.y),
+					to: pointDescribe(holder, to.x, to.y),
+					steps: steps,
+					quietMs: quietMs(),
+				};
 			}
 			case "type": {
 				var el4 = lookup(op.ref);

@@ -522,6 +522,25 @@ fn tools_list() -> Value {
 				}), json!([])),
 			def("browser_click", "Click a page element by ref. Real links navigate the tab (reported in the answer). An error names the covering overlay when a dialog hides the element.",
 				json!({ "ref": { "type": "string", "description": "A ref from browser_snapshot, e.g. r12" } }), json!(["ref"])),
+			def("browser_click_at", "Click at CSS pixel coordinates in the active tab's viewport — for what a snapshot gives no ref, like canvas, map or custom-widget areas. Real links navigate the tab (reported in the answer) and the answer names the element hit.",
+				json!({
+					"x": { "type": "number", "description": "CSS pixels from the viewport's left edge (a browser_screenshot pixel divided by dpr)" },
+					"y": { "type": "number", "description": "CSS pixels from the viewport's top edge" }
+				}), json!(["x", "y"])),
+			def("browser_move", "Hover the synthesized pointer at CSS pixel coordinates (no press): hover menus and tooltips attached to what is under the point react. The answer names the element it moved onto.",
+				json!({
+					"x": { "type": "number", "description": "CSS pixels from the viewport's left edge" },
+					"y": { "type": "number", "description": "CSS pixels from the viewport's top edge" }
+				}), json!(["x", "y"])),
+			def("browser_drag", "Press at one point, move in small steps, release at another (CSS pixel coordinates in the viewport). Drags built on mousedown+mousemove work; canvas-style HTML5 drag-and-drop is not synthesized.",
+				json!({
+					"fromX": { "type": "number", "description": "CSS pixels of the press point, from the viewport's left edge" },
+					"fromY": { "type": "number", "description": "CSS pixels of the press point, from the top edge" },
+					"toX": { "type": "number", "description": "CSS pixels of the release point, from the left edge" },
+					"toY": { "type": "number", "description": "CSS pixels of the release point, from the top edge" },
+					"steps": { "type": "integer", "description": "MouseMove hops between the points (default 8, capped)"
+					}
+				}), json!(["fromX", "fromY", "toX", "toY"])),
 			def("browser_type", "Type into a field: replaces its value the way frameworks see it. Secrets like password fields are redacted in every answer — you can fill, but you can never read one.",
 				json!({
 					"ref": { "type": "string" },
@@ -596,6 +615,56 @@ async fn wait_page_quiet<R: Runtime>(app: &AppHandle<R>, tab_id: &str, after_ms:
 		}
 		tokio::time::sleep(SETTLE_POLL).await;
 	}
+}
+
+/// The agent op one MCP tool maps to, named tool by tool. Pure so the
+/// mapping is testable without the AppHandle call_tool needs; None means the
+/// tool has no runtime op (a name that slipped past the match arm).
+fn agent_op(name: &str, args: &Value) -> Option<Value> {
+	Some(match name {
+		"browser_snapshot" => {
+			json!({ "op": "snapshot", "fullPage": args.get("fullPage").and_then(Value::as_bool).unwrap_or(false),
+			"ref": args.get("ref") })
+		}
+		"browser_find" => {
+			json!({ "op": "find", "query": args.get("query").and_then(Value::as_str).unwrap_or_default() })
+		}
+		"browser_click" => {
+			json!({ "op": "click", "ref": args.get("ref"), "navigateLinks": true })
+		}
+		// Point tools speak CSS viewport pixels straight through: the runtime
+		// resolves them with elementFromPoint, so no ref is needed up front.
+		// Missing or non-numeric coordinates map to None — a bad argument, not
+		// a click at 0,0.
+		"browser_click_at" => {
+			json!({ "op": "click_at", "x": args.get("x").and_then(Value::as_f64)?,
+			"y": args.get("y").and_then(Value::as_f64)?, "navigateLinks": true })
+		}
+		"browser_move" => {
+			json!({ "op": "move", "x": args.get("x").and_then(Value::as_f64)?,
+			"y": args.get("y").and_then(Value::as_f64)? })
+		}
+		"browser_drag" => {
+			json!({ "op": "drag",
+			"from": { "x": args.get("fromX").and_then(Value::as_f64)?, "y": args.get("fromY").and_then(Value::as_f64)? },
+			"to": { "x": args.get("toX").and_then(Value::as_f64)?, "y": args.get("toY").and_then(Value::as_f64)? },
+			"steps": args.get("steps").and_then(Value::as_u64).unwrap_or(8) })
+		}
+		"browser_type" => {
+			json!({ "op": "type", "ref": args.get("ref"), "text": args.get("text"),
+			"submit": args.get("submit").and_then(Value::as_bool).unwrap_or(false) })
+		}
+		"browser_select" => {
+			json!({ "op": "select", "ref": args.get("ref"), "value": args.get("value") })
+		}
+		"browser_scroll" => {
+			json!({ "op": "scroll", "direction": args.get("direction").and_then(Value::as_str).unwrap_or("down") })
+		}
+		"browser_press" => {
+			json!({ "op": "press", "key": args.get("key").and_then(Value::as_str).unwrap_or("Enter") })
+		}
+		_ => return None,
+	})
 }
 
 async fn call_tool<R: Runtime>(
@@ -687,34 +756,10 @@ async fn call_tool<R: Runtime>(
 				)))
 			}
 		}
-		"browser_snapshot" | "browser_find" | "browser_click" | "browser_type"
-		| "browser_select" | "browser_scroll" | "browser_press" => {
-			let op = match name {
-				"browser_snapshot" => {
-					json!({ "op": "snapshot", "fullPage": args.get("fullPage").and_then(Value::as_bool).unwrap_or(false),
-					"ref": args.get("ref") })
-				}
-				"browser_find" => {
-					json!({ "op": "find", "query": args.get("query").and_then(Value::as_str).unwrap_or_default() })
-				}
-				"browser_click" => {
-					json!({ "op": "click", "ref": args.get("ref"), "navigateLinks": true })
-				}
-				"browser_type" => {
-					json!({ "op": "type", "ref": args.get("ref"), "text": args.get("text"),
-					"submit": args.get("submit").and_then(Value::as_bool).unwrap_or(false) })
-				}
-				"browser_select" => {
-					json!({ "op": "select", "ref": args.get("ref"), "value": args.get("value") })
-				}
-				"browser_scroll" => {
-					json!({ "op": "scroll", "direction": args.get("direction").and_then(Value::as_str).unwrap_or("down") })
-				}
-				"browser_press" => {
-					json!({ "op": "press", "key": args.get("key").and_then(Value::as_str).unwrap_or("Enter") })
-				}
-				_ => return Err("unknown op".into()),
-			};
+		"browser_snapshot" | "browser_find" | "browser_click" | "browser_click_at"
+		| "browser_move" | "browser_drag" | "browser_type" | "browser_select"
+		| "browser_scroll" | "browser_press" => {
+			let op = agent_op(name, args).ok_or("unknown op")?;
 			let tab_id = tab_id.ok_or_else(no_tab)?;
 			let answer = super::agent::run_op(app, &tab_id, &op, true).await?;
 			// A navigation handed back from a click must go through the panel,
@@ -887,6 +932,40 @@ static BASE64_STANDARD: base64::engine::GeneralPurpose = base64::engine::general
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn pointer_tools_map_to_their_runtime_ops() {
+		// Coordinates flow through untouched; non-numeric ones are a bad
+		// argument, not a click at the viewport's top-left corner.
+		let click = agent_op("browser_click_at", &json!({ "x": 12.5, "y": 34 })).expect("mapped");
+		assert_eq!(click.get("op"), Some(&json!("click_at")));
+		assert_eq!(click.get("x").and_then(Value::as_f64), Some(12.5));
+		assert_eq!(click.get("y").and_then(Value::as_f64), Some(34.0));
+		assert_eq!(click.get("navigateLinks"), Some(&json!(true)));
+
+		let move_op = agent_op("browser_move", &json!({ "x": 5, "y": 6 })).expect("mapped");
+		assert_eq!(move_op.get("op"), Some(&json!("move")));
+		assert_eq!(move_op.get("y").and_then(Value::as_f64), Some(6.0));
+
+		let drag = agent_op(
+			"browser_drag",
+			&json!({ "fromX": 1, "fromY": 2, "toX": 30, "toY": 40 }),
+		)
+		.expect("mapped");
+		assert_eq!(drag.get("steps").and_then(Value::as_u64), Some(8), "the default step count");
+		assert_eq!(drag["from"]["y"].as_f64(), Some(2.0));
+		let drag = agent_op(
+			"browser_drag",
+			&json!({ "fromX": 1, "fromY": 2, "toX": 30, "toY": 40, "steps": 3 }),
+		)
+		.expect("mapped");
+		assert_eq!(drag.get("steps").and_then(Value::as_u64), Some(3));
+
+		assert!(agent_op("browser_click_at", &json!({ "x": 1 })).is_none(), "y is required");
+		assert!(agent_op("browser_click_at", &json!({ "x": "12", "y": 1 })).is_none());
+		assert!(agent_op("browser_drag", &json!({ "toX": 1, "toY": 2 })).is_none(), "from is required");
+		assert!(agent_op("browser_nonsense", &json!({})).is_none());
+	}
 
 	fn readiness(requests: Option<u64>, change_ms: Option<u64>, mutation_ms: u64) -> Value {
 		json!({

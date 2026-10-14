@@ -211,4 +211,31 @@ mod tests {
 		assert!(script.contains("case \"readiness\""), "{script}");
 		assert!(script.contains("window.__ACODER_READY"), "{script}");
 	}
+
+	#[test]
+	fn the_pointer_ops_ship_inside_the_installed_runtime() {
+		// The point ops resolve coordinates in the page itself, so their
+		// dispatch arms and the elementFromPoint hit test must be part of
+		// what gets installed, and their arguments must splice like any op.
+		for (op, marker) in [
+			(serde_json::json!({ "op": "click_at", "x": 10, "y": 20 }), "elementFromPoint"),
+			(serde_json::json!({ "op": "move", "x": 1.5, "y": 2.5 }), "mousemove"),
+			(
+				serde_json::json!({ "op": "drag", "from": { "x": 1, "y": 2 }, "to": { "x": 3, "y": 4 } }),
+				"mousedown",
+			),
+		] {
+			let script = agent_script(&command(op, true)).unwrap();
+			assert!(script.contains(marker), "{script}");
+		}
+		let script = agent_script(&command(
+			serde_json::json!({ "op": "drag", "from": { "x": 0, "y": 0 }, "to": { "x": 5, "y": 5 }, "steps": 3 }),
+			true,
+		))
+		.unwrap();
+		assert!(script.contains("case \"drag\""), "{script}");
+		assert!(script.contains("case \"move\""), "{script}");
+		assert!(script.contains("case \"click_at\""), "{script}");
+		assert!(!script.contains("__COMMAND__"), "the point op must be spliced in");
+	}
 }
