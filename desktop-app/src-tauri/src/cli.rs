@@ -431,7 +431,28 @@ fn cli_names() -> Vec<String> {
 mod tests {
 	use super::*;
 	use std::fs::File;
+	use std::sync::{Mutex, MutexGuard};
 	use tempfile::tempdir;
+
+	/// `HOME` is process-global: the resolve tests rewrite it and every other
+	/// test would inherit whatever they were running against. One process-wide
+	/// lock serializes the mutation (the restore happens even on panic via the
+	/// guard) so parallel test threads never race each other's environment.
+	static HOME_LOCK: Mutex<()> = Mutex::new(());
+
+	fn home_guard() -> (MutexGuard<'static, ()>, Option<String>) {
+		let guard = HOME_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+		let previous = std::env::var("HOME").ok();
+		(guard, previous)
+	}
+
+	fn restore_home(_guard: MutexGuard<'static, ()>, previous: Option<String>) {
+		if let Some(prev) = previous {
+			std::env::set_var("HOME", prev);
+		} else {
+			std::env::remove_var("HOME");
+		}
+	}
 
 	#[test]
 	fn test_resolve_cli_path_with_override() {
@@ -501,14 +522,10 @@ mod tests {
 		std::fs::write(&bootstrap_bin, b"").expect("Failed to write bootstrap binary");
 		std::fs::write(&shim, b"#!/bin/sh\n").expect("Failed to write shim");
 
-		let previous_home = env::var("HOME").ok();
-		env::set_var("HOME", home.to_string_lossy().to_string());
+		let (guard, previous) = home_guard();
+		std::env::set_var("HOME", home.to_string_lossy().to_string());
 		let result = resolve_cli_path(None);
-		if let Some(prev) = previous_home {
-			env::set_var("HOME", prev);
-		} else {
-			env::remove_var("HOME");
-		}
+		restore_home(guard, previous);
 
 		assert!(result.is_ok(), "{}", result.unwrap_err());
 		assert_eq!(result.unwrap(), bootstrap_bin);
@@ -531,14 +548,10 @@ mod tests {
 		std::fs::write(&nested_bin, b"").expect("Failed to write nested binary");
 		std::fs::write(&legacy_bin, b"").expect("Failed to write legacy binary");
 
-		let previous_home = env::var("HOME").ok();
-		env::set_var("HOME", home.to_string_lossy().to_string());
+		let (guard, previous) = home_guard();
+		std::env::set_var("HOME", home.to_string_lossy().to_string());
 		let result = resolve_cli_path(None);
-		if let Some(prev) = previous_home {
-			env::set_var("HOME", prev);
-		} else {
-			env::remove_var("HOME");
-		}
+		restore_home(guard, previous);
 
 		assert!(result.is_ok(), "{}", result.unwrap_err());
 		assert_eq!(result.unwrap(), nested_bin);
