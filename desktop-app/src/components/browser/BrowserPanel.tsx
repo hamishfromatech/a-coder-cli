@@ -57,6 +57,12 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 		setZoomValue(active?.zoom ?? 1);
 	}, [activeId, active?.url, active?.zoom]);
 
+	// Fresh panel (no tabs): cursor in the address box right away.
+	useEffect(() => {
+		if (!supported || tabs.length > 0) return;
+		requestAnimationFrame(() => addressRef.current?.focus());
+	}, [supported, tabs.length]);
+
 	// Keep the right page where it belongs: the whole panel on macOS 14+
 	// (chrome draws over the page), the page area only elsewhere.
 	const currentBounds = useCallback((): ViewBounds | null => {
@@ -70,7 +76,9 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 	}, [layered]);
 
 	useEffect(() => {
-		if (!supported || !activeId || !useBrowserStore.getState().open) return;
+		if (!supported || !activeId) return;
+		// Mounted with a live tab ⇒ the panel is open (other effects read it).
+		useBrowserStore.setState({ open: true });
 		const bounds = currentBounds();
 		if (!bounds) return;
 		// Layered pages composite under the app webview: cut the hole at the
@@ -96,13 +104,9 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 		if (!layered && supported) closeHole();
 	}, [supported, layered]);
 
-	// Panel open: pages may show; closed: park every page until it reopens.
+	// Panel mounted: pages may show; unmounted: park every page until it
+	// remounts (rail switches unmount this panel).
 	useEffect(() => {
-		useBrowserStore.setState({ open: true });
-		// Fresh panel (no tabs): cursor in the address box right away.
-		requestAnimationFrame(() => {
-			if (!useBrowserStore.getState().activeId) addressRef.current?.focus();
-		});
 		return () => {
 			closeHole();
 			void browser.viewShow({}).catch(() => {});
