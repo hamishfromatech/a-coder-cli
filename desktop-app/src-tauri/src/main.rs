@@ -59,6 +59,7 @@ fn main() {
 		.manage(serve::ServeState::default())
 		.manage(browser::tabs::TabsState::default())
 		.manage(browser::downloads::DownloadsState::default())
+		.manage(browser::agentserver::AgentGateState::default())
 		.plugin(tauri_plugin_opener::init())
 		.invoke_handler(tauri::generate_handler![
 			browser::tabs::browser_supported,
@@ -84,6 +85,7 @@ fn main() {
 			browser::gateway::browser_gateway_url,
 			browser::agentserver::browser_agent_server_url,
 			browser::agentserver::browser_set_agent_server_enabled,
+			browser::agentserver::browser_agent_decide,
 			cli::get_initial_workspace,
 			bootstrap::bootstrap_cli,
 			bench::bench_list_tasks,

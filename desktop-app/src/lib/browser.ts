@@ -38,7 +38,18 @@ export type BrowserEvent =
 			site: string;
 			name: string;
 	  }
-	| { type: "downloadSettled"; id: string; success: boolean; path?: string };
+	| { type: "downloadSettled"; id: string; success: boolean; path?: string }
+	| {
+			// The permission gate parked an agent tool call until the user
+			// decides: allow (optionally remembering the host) or deny.
+			type: "agentAsk";
+			id: string;
+			tabId: string;
+			host: string;
+			url: string;
+			op: string;
+			sensitive: boolean;
+	  };
 
 export interface AgentCommandResult {
 	installed: boolean;
@@ -85,6 +96,8 @@ const browser = {
 		invoke<ArrayBuffer | number[]>("browser_capture", { tabId: null, bounds }),
 	downloadDecide: (id: string, action: "save" | "open" | "reveal" | "cancel") =>
 		invoke<string | null>("browser_download_decide", { id, action }),
+	agentDecide: (args: { id: string; allow: boolean; remember: boolean }) =>
+		invoke<void>("browser_agent_decide", { id: args.id, allow: args.allow, remember: args.remember }),
 	downloadFolder: () => invoke<string | null>("browser_download_folder"),
 	setDownloadFolder: (folder: string) =>
 		invoke<void>("browser_download_folder_pick", { folder }),

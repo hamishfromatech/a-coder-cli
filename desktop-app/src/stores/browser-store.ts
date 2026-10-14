@@ -39,6 +39,16 @@ interface ExternalPrompt {
 	url: string;
 }
 
+/** The permission gate's parked agent call, shown for a decision. */
+export interface AgentAsk {
+	id: string;
+	tabId: string;
+	host: string;
+	url: string;
+	op: string;
+	sensitive: boolean;
+}
+
 interface BrowserState {
 	open: boolean;
 	supported: boolean;
@@ -54,6 +64,8 @@ interface BrowserState {
 	pendingUrl: string | null;
 	/** A page asked to hand a non-web URL to the system; shown for confirmation. */
 	externalPrompt: ExternalPrompt | null;
+	/** The gate's parked agent calls, newest first, awaiting a decision. */
+	agentAsks: AgentAsk[];
 
 	setOpen: (open: boolean) => void;
 	init: () => Promise<void>;
@@ -87,6 +99,8 @@ interface BrowserState {
 	}) => Promise<void>;
 	dismissCapture: (tabId: string) => void;
 	decideDownload: (id: string, action: "save" | "open" | "reveal" | "cancel") => Promise<void>;
+	/** Resolves one parked agent op: allow (optionally remember the host) or deny. */
+	decideAgentAsk: (id: string, allow: boolean, remember: boolean) => Promise<void>;
 	/** Applies one Rust event; bound once at startup. */
 	applyEvent: (event: BrowserEvent) => void;
 }
@@ -198,6 +212,7 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 	initialized: false,
 	pendingUrl: null,
 	externalPrompt: null,
+	agentAsks: [],
 
 	setOpen: (open) => set({ open }),
 
@@ -455,6 +470,11 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 		set((state) => ({ downloads: state.downloads.filter((prompt) => prompt.id !== id) }));
 	},
 
+	decideAgentAsk: async (id, allow, remember) => {
+		await browser.agentDecide({ id, allow, remember }).catch(() => {});
+		set((state) => ({ agentAsks: state.agentAsks.filter((ask) => ask.id !== id) }));
+	},
+
 	applyEvent: (event) => {
 		const state = get();
 		switch (event.type) {
@@ -532,6 +552,13 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 				break;
 			case "downloadSettled":
 				set({ downloads: state.downloads.filter((prompt) => prompt.id !== event.id) });
+				break;
+			case "agentAsk":
+				// Newest ask at the front; the oldest (rare burst) waits.
+				set({ agentAsks: [
+					{ id: event.id, tabId: event.tabId, host: event.host, url: event.url, op: event.op, sensitive: event.sensitive },
+					...state.agentAsks.filter((ask) => ask.id !== event.id),
+				].slice(0, 5) });
 				break;
 		}
 	},

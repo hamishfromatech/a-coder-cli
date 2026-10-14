@@ -26,6 +26,7 @@ import { normalizeUrl, useBrowserStore } from "../../stores/browser-store";
 import { TabFavicon } from "./TabFavicon";
 import { TabContextMenu } from "./TabContextMenu";
 import { ExternalHandoffDialog } from "./ExternalHandoffDialog";
+import { AgentAskDialog } from "./AgentAskDialog";
 
 export function BrowserPanel({ onClose }: { onClose: () => void }) {
 	const supported = useBrowserStore((state) => state.supported);
@@ -564,6 +565,7 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 				onClose={() => setContextTab(null)}
 			/>
 			<ExternalHandoffDialog />
+			<AgentAskDialog />
 		</div>
 	);
 }

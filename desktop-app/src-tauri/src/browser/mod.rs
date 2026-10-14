@@ -113,6 +113,22 @@ pub(crate) enum BrowserEvent {
 		success: bool,
 		path: Option<String>,
 	},
+	/// The agent tools touched a page whose host the permission gate holds
+	/// back for the user: the panel asks, the answer is remembered per host
+	/// (never for sensitive ones), and the parked tool call is resolved by
+	/// that answer.
+	AgentAsk {
+		id: String,
+		tab_id: String,
+		host: String,
+		url: String,
+		/// The tool the agent wanted to run there (e.g. `browser_type`).
+		op: String,
+		/// True when this host sits on the built-in sensitive list and needs
+		/// an approval every time, so the dialog leaves its remember checkbox
+		/// hidden (memory is only ever granted to ordinary hosts).
+		sensitive: bool,
+	},
 }
 
 pub(crate) fn emit<R: Runtime>(app: &tauri::AppHandle<R>, event: BrowserEvent) {
@@ -133,6 +149,48 @@ pub(crate) fn browser_pref(key: &str) -> Option<serde_json::Value> {
 	let text = std::fs::read_to_string(path).ok()?;
 	let parsed: serde_json::Value = serde_json::from_str(&text).ok()?;
 	parsed.get("browser")?.get(key).cloned()
+}
+
+/// Merges one host into the gate's remembered-approval list (order and
+/// spelling preserved, no duplicates). Pure so tests cover the merge without
+/// touching the real settings file.
+pub(crate) fn merge_string_lists(stored: &[String], add: &str) -> Vec<String> {
+	let mut merged = stored.to_vec();
+	if !merged.iter().any(|stored| stored == add) {
+		merged.push(add.to_string());
+	}
+	merged
+}
+
+/// Writes one browser pref back into the global settings file, keeping the
+/// rest of the file (settings page values, other blocks) exactly as it was.
+/// Most of the `browser` block belongs to the settings page; the agent
+/// permission gate only stores its per-host approval memory under
+/// `agentApprovedHosts`. Same shape, pretty form, as the settings writer.
+pub(crate) fn write_browser_pref(key: &str, value: serde_json::Value) -> Result<(), String> {
+	let path = crate::settings::global_settings_path()?;
+	let mut parsed: serde_json::Value = if path.exists() {
+		let text =
+			std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
+		serde_json::from_str(&text).map_err(|e| format!("parse {}: {e}", path.display()))?
+	} else {
+		serde_json::json!({})
+	};
+	let Some(root) = parsed.as_object_mut() else {
+		return Err("the global settings file is not a JSON object".into());
+	};
+	let browser = root.entry("browser").or_insert_with(|| serde_json::json!({}));
+	let Some(browser) = browser.as_object_mut() else {
+		return Err("the browser settings block is not a JSON object".into());
+	};
+	browser.insert(key.to_string(), value);
+	if let Some(parent) = path.parent() {
+		std::fs::create_dir_all(parent).map_err(|e| format!("mkdir {}: {e}", parent.display()))?;
+	}
+	let serialized =
+		serde_json::to_string_pretty(&parsed).map_err(|e| format!("serialize: {e}"))?;
+	std::fs::write(&path, serialized).map_err(|e| format!("write {}: {e}", path.display()))?;
+	Ok(())
 }
 
 pub(crate) fn require_main<R: Runtime>(webview: &Webview<R>) -> Result<(), String> {
@@ -176,6 +234,7 @@ impl BrowserEvent {
 			Self::Closed { .. } => "closed",
 			Self::DownloadPrompt { .. } => "downloadPrompt",
 			Self::DownloadSettled { .. } => "downloadSettled",
+			Self::AgentAsk { .. } => "agentAsk",
 		}
 	}
 }
@@ -198,5 +257,14 @@ mod tests {
 		assert!(json.contains("\"viewportWidth\":100.0"), "{json}");
 		let back: ViewBounds = serde_json::from_str(&json).unwrap();
 		assert_eq!(back.width, bounds.width);
+	}
+
+	#[test]
+	fn preference_merges_keep_one_copy_per_host() {
+		assert_eq!(merge_string_lists(&[], "a.com"), vec!["a.com"]);
+		assert_eq!(
+			merge_string_lists(&["a.com".into(), "b.com".into()], "a.com"),
+			vec!["a.com", "b.com"]
+		);
 	}
 }

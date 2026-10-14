@@ -9,11 +9,12 @@
 //! notifications, `mcp-session-id` issued at initialize. No server→client
 //! streams: tools answer complete results.
 
+use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use serde_json::{json, Value};
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Manager, Runtime, Url};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use uuid::Uuid;
@@ -37,6 +38,116 @@ const SETTLE_WINDOW_MS: u64 = 120;
 const SETTLE_CAP: Duration = Duration::from_millis(10_000);
 /// The readiness poll interval while a settle is waiting.
 const SETTLE_POLL: Duration = Duration::from_millis(250);
+
+/// How long a parked agent op waits for the panel's approval before it
+/// answers on its own (an MCP client's own timeouts would otherwise be the
+/// only guard, and the answer there is far less direct).
+const APPROVAL_CAP: Duration = Duration::from_secs(300);
+/// Unanswered asks allowed at once, so a runaway agent on a hold-every-op
+/// page cannot pile up dialogs without end (downloads cap the same way).
+const MAX_AGENT_ASKS: usize = 8;
+
+/// Hosts the agent tools never touch without a fresh, per-op approval. The
+/// list is deliberately small and exact: mailbox, account sign-in, payments
+/// and the big social profiles — sites where a stray click or a snapshot of
+/// a logged-in session costs real damage. It matches a host and its
+/// subdomains only (suffix on a dot boundary); no wildcard or keyword
+/// guessing, because a wrong guess either annoys the user forever or worse,
+/// quietly misses the one site it should have caught. Extend it by name when
+/// a site earns it; ordinary hosts rely on the per-site approval memory
+/// (first op asks, remembered hosts pass, the user can always say no).
+const SENSITIVE_HOSTS: &[&str] = &[
+	// Mailbox (webmail the user stays signed into).
+	"mail.google.com",
+	"gmail.com",
+	"outlook.com",
+	"outlook.live.com",
+	"outlook.office.com",
+	// Account sign-in surfaces, credentials and sessions.
+	"accounts.google.com",
+	"login.microsoftonline.com",
+	"login.live.com",
+	// Payments.
+	"paypal.com",
+	"chase.com",
+	"wellsfargo.com",
+	// Social profiles with a large blast radius (posting, DMs, contacts).
+	"facebook.com",
+	"instagram.com",
+	"x.com",
+];
+
+/// True when `host` is the sensitive host itself or one of its subdomains:
+/// the comparison is on a dot boundary, so `evil-mail.google.com` and
+/// `mail.google.com.evil.tld` never trip it.
+fn is_sensitive_host(host: &str) -> bool {
+	SENSITIVE_HOSTS.iter().any(|known| {
+		host == *known
+			|| host
+				.strip_suffix(known)
+				.is_some_and(|prefix| prefix.ends_with('.'))
+	})
+}
+
+/// The http(s) host behind a page URL, lowercased without its trailing dot;
+/// None when the page is not a named web page (about:blank or the panel's
+/// reserved pre-navigation address), which is nothing for a gate to hold.
+fn host_of(url: &str) -> Option<String> {
+	let parsed = Url::parse(url).ok()?;
+	if parsed.scheme() != "http" && parsed.scheme() != "https" {
+		return None;
+	}
+	parsed
+		.host_str()
+		.map(|host| host.trim_end_matches('.').to_lowercase())
+		.filter(|host| !host.is_empty())
+}
+
+/// What the gate says about one agent op on one host.
+enum GateCheck {
+	/// Pass: not sensitive, and this host's earlier approval is remembered.
+	Allowed,
+	/// Hold for the panel; sensitive hosts ask on every op by rule, every
+	/// other host asks until the user allows with the memory enabled.
+	Ask { sensitive: bool },
+}
+
+/// The pure gate: the sensitive list wins over the memory every time.
+fn gate_check(host: &str, approved: &[String]) -> GateCheck {
+	if is_sensitive_host(host) {
+		GateCheck::Ask { sensitive: true }
+	} else if approved.iter().any(|known| known == host) {
+		GateCheck::Allowed
+	} else {
+		GateCheck::Ask { sensitive: false }
+	}
+}
+
+/// The user-approved hosts the gate remembered, from the CLI's global
+/// settings file (`browser.agentApprovedHosts`); unreadable or absent means
+/// an empty list — every new host asks.
+fn approved_hosts() -> Vec<String> {
+	super::browser_pref("agentApprovedHosts")
+		.and_then(|value| value.as_array().cloned())
+		.unwrap_or_default()
+		.into_iter()
+		.filter_map(|value| value.as_str().map(str::to_string))
+		.collect()
+}
+
+/// The permission gate's parked calls: one entry per agent op on hold while
+/// the panel's dialog waits for the user. `browser_agent_decide` removes an
+/// entry by ask id and answers it through the oneshot sender.
+#[derive(Default)]
+pub struct AgentGateState {
+	inner: Mutex<HashMap<String, PendingAsk>>,
+}
+
+struct PendingAsk {
+	tab_id: String,
+	host: String,
+	answer: tokio::sync::oneshot::Sender<bool>,
+}
 
 /// Exposed to settings/docs: where the CLI's `mcpServers` http entry points.
 /// Answers nothing on platforms without native page views (the tools would
@@ -236,6 +347,149 @@ pub fn browser_set_agent_server_enabled(enabled: bool) -> Result<(), String> {
 	Ok(())
 }
 
+/// The target the gate holds for one tool call: the page the tool is about
+/// to read or drive. `browser_navigate` is judged by where it is heading;
+/// everything else by the active tab's current page. `browser_tabs` lists
+/// addresses and `browser_scroll` moves the view: neither reads page content
+/// nor drives input, so they pass. A page with no named host (about:blank,
+/// the panel's reserved pre-navigation address) has nothing to gate.
+fn gate_target_url<R: Runtime>(
+	app: &AppHandle<R>,
+	name: &str,
+	args: &Value,
+	tab_id: Option<&str>,
+) -> Option<String> {
+	if name == "browser_tabs" || name == "browser_scroll" {
+		return None;
+	}
+	if name == "browser_navigate" {
+		return args.get("url").and_then(Value::as_str).map(str::to_string);
+	}
+	let tab_id = tab_id?;
+	app.state::<super::tabs::TabsState>()
+		.inner
+		.lock()
+		.unwrap()
+		.urls
+		.get(tab_id)
+		.cloned()
+}
+
+/// Holds the call until the panel answers, the way a download prompt holds
+/// its staging step: the ask is registered, `AgentAsk` goes to the panel,
+/// and the oneshot receiver waits for `browser_agent_decide`. `None` means
+/// nothing allowed the op (denied, the unanswered cap ran out, or the call
+/// piled up past the pending-ask limit).
+async fn ask_user<R: Runtime>(
+	app: &AppHandle<R>,
+	tab_id: &str,
+	host: &str,
+	url: &str,
+	op: &str,
+	sensitive: bool,
+) -> Option<bool> {
+	let id = Uuid::new_v4().to_string();
+	let (answer, wait) = tokio::sync::oneshot::channel();
+	{
+		let state = app.state::<AgentGateState>();
+		let mut inner = state.inner.lock().unwrap();
+		if inner.len() >= MAX_AGENT_ASKS {
+			return None;
+		}
+		inner.insert(
+			id.clone(),
+			PendingAsk {
+				tab_id: tab_id.to_string(),
+				host: host.to_string(),
+				answer,
+			},
+		);
+	}
+	super::emit(
+		app,
+		super::BrowserEvent::AgentAsk {
+			id,
+			tab_id: tab_id.to_string(),
+			host: host.to_string(),
+			url: url.to_string(),
+			op: op.to_string(),
+			sensitive,
+		},
+	);
+	match tokio::time::timeout(APPROVAL_CAP, wait).await {
+		Ok(Ok(allow)) => Some(allow),
+		// Timed out, the channel dropped (the pending record vanished), or
+		// the sender went away: all read as "the op did not happen".
+		_ => None,
+	}
+}
+
+/// Runs the gate for one agent tool call. `Ok(None)` means the op is clear
+/// to run; `Ok(Some(text))` is the answer the tool gives instead of it
+/// (denied, expired, or the pending-ask limit), always written as plain
+/// guidance so a gate refusal cannot look like a server error.
+async fn permission_gate<R: Runtime>(
+	app: &AppHandle<R>,
+	name: &str,
+	args: &Value,
+	tab_id: Option<&str>,
+) -> Result<Option<Value>, String> {
+	let Some(url) = gate_target_url(app, name, args, tab_id) else {
+		return Ok(None);
+	};
+	let Some(host) = host_of(&url) else {
+		return Ok(None);
+	};
+	let sensitive = match gate_check(&host, &approved_hosts()) {
+		GateCheck::Allowed => return Ok(None),
+		GateCheck::Ask { sensitive } => sensitive,
+	};
+	// Before the page exists the panel parks the ask on "" (that tab id is
+	// what the download prompts use too); the dialog still shows the site.
+	let answer = ask_user(app, tab_id.unwrap_or(""), &host, &url, name, sensitive).await;
+	match answer {
+		Some(true) => Ok(None),
+		Some(false) => Ok(Some(denied_text(name, &host, "declined"))),
+		None => Ok(Some(denied_text(name, &host, "not answered within 5 minutes"))),
+	}
+}
+
+fn denied_text(name: &str, host: &str, why: &str) -> Value {
+	let text = format!(
+		"Permission gate: the user was asked about {name} on {host} and {why}. Do not drive this site further without their explicit go-ahead; they can open it themselves."
+	);
+	json!({ "type": "text", "text": text })
+}
+
+/// The panel's answer to a parked agent op: allow runs it, deny answers the
+/// gate refusal. An allow also remembers the host for later ops unless the
+/// host is sensitive (those ask every time by rule) or the user kept the
+/// memory off; the memory persists in the global settings file via settings
+/// set, exactly where the gate reads it back.
+#[tauri::command]
+pub async fn browser_agent_decide<R: Runtime>(
+	webview: tauri::Webview<R>,
+	id: String,
+	allow: bool,
+	remember: bool,
+) -> Result<(), String> {
+	super::require_main(&webview)?;
+	let app = webview.app_handle().clone();
+	let pending = app.state::<AgentGateState>().inner.lock().unwrap().remove(&id);
+	let Some(pending) = pending else {
+		return Err("That approval request is no longer pending".into());
+	};
+	if allow && remember && !is_sensitive_host(&pending.host) {
+		let approved = approved_hosts();
+		let merged = super::merge_string_lists(&approved, &pending.host);
+		if merged != approved {
+			super::write_browser_pref("agentApprovedHosts", json!(merged))?;
+		}
+	}
+	let _ = pending.answer.send(allow);
+	Ok(())
+}
+
 async fn call_tool_checked<R: Runtime>(
 	app: &AppHandle<R>,
 	name: &str,
@@ -365,6 +619,12 @@ async fn call_tool<R: Runtime>(
 		"No browser tab is open. Call browser_navigate to open one first (the panel opens for the user)."
 			.to_string()
 	};
+	// The permission gate runs before anything the tool does: for a
+	// sensitive or not-yet-approved host the answer waits for the panel's
+	// dialog and only proceeds (or refuses) with its decision.
+	if let Some(answer) = permission_gate(app, name, args, tab_id.as_deref()).await? {
+		return Ok(answer);
+	}
 	let text = |value: String| json!({ "type": "text", "text": value });
 	match name {
 		"browser_tabs" => {
@@ -458,7 +718,9 @@ async fn call_tool<R: Runtime>(
 			let tab_id = tab_id.ok_or_else(no_tab)?;
 			let answer = super::agent::run_op(app, &tab_id, &op, true).await?;
 			// A navigation handed back from a click must go through the panel,
-			// exactly like a user's click: the address stays true.
+			// exactly like a user's click: the address stays true. That link's
+			// own target runs through the gate before the panel loads it — a
+			// click on an approved page is not one to an unapproved site.
 			let mut inner = answer.get("result").cloned().unwrap_or(json!({}));
 			if let Some(navigate_url) = inner
 				.get("navigate")
@@ -469,7 +731,32 @@ async fn call_tool<R: Runtime>(
 				if let Some(obj) = inner.as_object_mut() {
 					obj.remove("navigate");
 				}
-				let answer_note = if navigated {
+				let mut followable = navigated;
+				if let Some(host) = navigated.then(|| host_of(&navigate_url)).flatten() {
+					// The gate holds here, before any navigation happens: the
+					// ask is about a page the panel has not yet loaded.
+					let allowed = match gate_check(&host, &approved_hosts()) {
+						GateCheck::Allowed => true,
+						GateCheck::Ask { sensitive } => {
+							ask_user(app, &tab_id, &host, &navigate_url, name, sensitive)
+								.await
+								== Some(true)
+						}
+					};
+					if !allowed {
+						followable = false;
+					}
+				}
+				let answer_note = if !followable {
+					if navigated {
+						format!(
+							"The click would have followed a link to {navigate_url}; the user did not allow the agent to open that site. The link stays unclicked; find the address another way or ask them."
+						)
+					} else {
+						"The link's address is too long to follow. Snapshot the page and use its navigation another way."
+							.to_string()
+						}
+				} else {
 					// Same settle as browser_navigate, so the next snapshot reads
 					// the link's page once it is quiet, not mid-load markup.
 					let start_ms = super::tabs::now_ms();
@@ -483,9 +770,6 @@ async fn call_tool<R: Runtime>(
 							"The click followed a link to {navigate_url}; it has not settled within 10s (still loading, busy, or the navigation did not commit). Take a new browser_snapshot anyway."
 						)
 					}
-				} else {
-					"The link's address is too long to follow. Snapshot the page and use its navigation another way."
-						.to_string()
 				};
 				Ok(text(format!(
 					"{}\n\n{answer_note}",
@@ -639,5 +923,62 @@ mod tests {
 		assert!(!page_quiet(&json!({ "readyState": "interactive" })));
 		assert!(!page_quiet(&json!({})));
 		assert!(!page_quiet(&Value::Null));
+	}
+
+	/// The gate's built-in list is honest by construction: exact domains only
+	/// (a scheme, space or wildcard would defeat the suffix check).
+	#[test]
+	fn the_sensitive_list_holds_only_host_names() {
+		for known in SENSITIVE_HOSTS {
+			assert!(!known.is_empty(), "an empty list entry matches nothing useful");
+			assert_eq!(known, &known.to_lowercase());
+			assert!(!known.contains('/'), "{known} is not a bare host");
+			assert!(!known.contains('*'), "{known} is not a bare host");
+			assert!(known.contains('.'), "{known} is not a bare host");
+		}
+	}
+
+	#[test]
+	fn sensitive_matching_stays_on_the_dot_boundary() {
+		assert!(is_sensitive_host("mail.google.com"));
+		assert!(is_sensitive_host("inbox.mail.google.com"));
+		assert!(is_sensitive_host("accounts.google.com"));
+		assert!(is_sensitive_host("paypal.com"));
+		// Same look, different site: neither direction can slip through.
+		assert!(!is_sensitive_host("evil-mail.google.com"));
+		assert!(!is_sensitive_host("mail.google.com.evil.tld"));
+		assert!(!is_sensitive_host("mailgoogle.com"));
+		assert!(!is_sensitive_host("docs.google.com"));
+		assert!(!is_sensitive_host("example.com"));
+	}
+
+	#[test]
+	fn gate_hosts_come_from_web_pages_only() {
+		assert_eq!(
+			host_of("https://mail.google.com/mail/u/0"),
+			Some("mail.google.com".into())
+		);
+		assert_eq!(host_of("HTTP://Example.COM./"), Some("example.com".into()));
+		assert_eq!(host_of("https://"), None);
+	}
+
+	#[test]
+	fn the_gate_asks_memory_passes_memory_never_outweighs_sensitive() {
+		let approved = vec!["docs.example.dev".to_string()];
+		if let GateCheck::Allowed = gate_check("docs.example.dev", &approved) {
+			// remembered, ordinary-host op: the gate passes it
+		} else {
+			panic!("a remembered host must pass");
+		}
+		if let GateCheck::Ask { sensitive } = gate_check("gmail.com", &approved) {
+			assert!(sensitive, "a sensitive host asks even in memory");
+		} else {
+			panic!("a sensitive host never passes on memory");
+		}
+		if let GateCheck::Ask { sensitive } = gate_check("other.example.net", &approved) {
+			assert!(!sensitive, "an unremembered ordinary host asks softly");
+		} else {
+			panic!("an unknown host must ask");
+		}
 	}
 }
