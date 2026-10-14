@@ -92,7 +92,13 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 			if (next) void browser.viewShow({ tabId: activeId, bounds: next }).catch(() => {});
 			updateHole(layered ? (panelRef.current ?? null) : null);
 		});
-		observer.observe(document.body);
+		// Rail drags and find-bar toggles reshape the panel/area inside an
+		// unchanged window, so the boxes themselves are what needs watching
+		// (body only resizes with the window).
+		const panel = panelRef.current;
+		const area = pageAreaRef.current;
+		if (panel) observer.observe(panel);
+		if (area) observer.observe(area);
 		return () => {
 			observer.disconnect();
 			closeHole();
