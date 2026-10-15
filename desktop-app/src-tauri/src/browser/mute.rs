@@ -49,7 +49,8 @@ pub(crate) fn apply<R: Runtime>(page: &Webview<R>, muted: bool) -> Result<(), St
 				if let Ok(muted_view) = unsafe {
 					core.cast::<webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_8>()
 				} {
-					let _ = unsafe { muted_view.SetIsMuted(windows_core::BOOL::from(muted)) };
+					// 0.39's generated bindings take a plain bool.
+					let _ = unsafe { muted_view.SetIsMuted(muted) };
 				}
 			}
 		});
