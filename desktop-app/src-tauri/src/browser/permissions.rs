@@ -53,11 +53,12 @@ pub async fn browser_reset_mic_permission<R: Runtime>(
 
 #[cfg(windows)]
 fn reset_mic<R: Runtime>(app: &tauri::AppHandle<R>, tab_id: &str) -> Result<(), String> {
+	// Completed handlers + pwstr helpers re-export at the webview2_com root.
 	use webview2_com::Microsoft::Web::WebView2::Win32::{
-		ICoreWebView2, ICoreWebView2_13, ICoreWebView2Profile4, SetPermissionStateCompletedHandler,
+		ICoreWebView2, ICoreWebView2_13, ICoreWebView2Profile4,
 		COREWEBVIEW2_PERMISSION_KIND_MICROPHONE, COREWEBVIEW2_PERMISSION_STATE_DEFAULT,
 	};
-	use webview2_com::pwstr::take_pwstr;
+	use webview2_com::{take_pwstr, SetPermissionStateCompletedHandler};
 	use windows_core::{HSTRING, PWSTR};
 
 	let page = app
@@ -67,8 +68,8 @@ fn reset_mic<R: Runtime>(app: &tauri::AppHandle<R>, tab_id: &str) -> Result<(), 
 	// cannot return the async COM result's outcome directly; the completion
 	// handler's error code is captured into this slot before we answer.
 	let (sender, receiver) = std::sync::mpsc::channel();
-	page.with_webview(move |platform| -> Result<(), String> {
-		let core = unsafe { platform.controller.CoreWebView2() }
+	page.with_webview(move |platform: tauri::webview::PlatformWebview| -> Result<(), String> {
+		let core = unsafe { platform.controller().CoreWebView2() }
 			.map_err(|_| "The webview controller was gone".to_string())?;
 		let core: ICoreWebView2 = core;
 		// The permission state lives on the profile (WebView2, ICoreWebView2_13

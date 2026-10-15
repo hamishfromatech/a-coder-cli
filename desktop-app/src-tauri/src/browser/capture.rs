@@ -214,7 +214,7 @@ fn platform_capture(platform: tauri::webview::PlatformWebview, clip: Option<Clip
 			}
 		}
 	};
-	let core = match unsafe { platform.controller.CoreWebView2() } {
+	let core = match unsafe { platform.controller().CoreWebView2() } {
 		Ok(core_webview) => core_webview,
 		Err(_) => {
 			done_first(&done, Err("The webview controller was gone".into()));
@@ -247,8 +247,14 @@ fn platform_capture(platform: tauri::webview::PlatformWebview, clip: Option<Clip
 				.and_then(serde_json::Value::as_str)
 				.and_then(|data| base64::engine::general_purpose::STANDARD.decode(data).ok());
 			match png {
-				Some(png) => answer(Ok(png)),
-				None => answer(Err("The screenshot was unreadable".into())),
+				Some(png) => {
+					answer(Ok(png));
+					Ok(())
+				}
+				None => {
+					answer(Err("The screenshot was unreadable".into()));
+					Ok(())
+				}
 			}
 		},
 	));

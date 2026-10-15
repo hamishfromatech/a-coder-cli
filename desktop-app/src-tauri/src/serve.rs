@@ -82,7 +82,7 @@ pub async fn serve_start(
 	let exit_emitter = app.clone();
 	let poll_slot = state.child.clone();
 	tokio::spawn(async move {
-		let mut exit_code: i32 = -1;
+		let exit_code;
 		loop {
 			let resolved: Option<i32> = {
 				let mut guard = poll_slot.lock().await;
@@ -117,7 +117,7 @@ pub async fn serve_stop(state: State<'_, ServeState>) -> Result<String, String> 
 	let mut guard = state.child.lock().await;
 	match guard.as_mut() {
 		Some(child) => {
-			child.start_kill();
+			let _ = child.start_kill();
 			*guard = None;
 			Ok("stopped".into())
 		}

@@ -144,7 +144,6 @@ pub struct AgentGateState {
 }
 
 struct PendingAsk {
-	tab_id: String,
 	host: String,
 	answer: tokio::sync::oneshot::Sender<bool>,
 }
@@ -218,7 +217,7 @@ async fn serve_connection<R: Runtime>(
 	mut client: tokio::net::TcpStream,
 	app: &AppHandle<R>,
 ) -> Result<(), String> {
-	let (method, path, headers, body) = read_request(&mut client).await.ok_or("no request")?;
+	let (method, path, _headers, body) = read_request(&mut client).await.ok_or("no request")?;
 	if path.split('?').next() != Some("/mcp") {
 		respond(&mut client, 404, false, &json!({ "error": "not found" })).await;
 		return Ok(());
@@ -399,7 +398,6 @@ async fn ask_user<R: Runtime>(
 		inner.insert(
 			id.clone(),
 			PendingAsk {
-				tab_id: tab_id.to_string(),
 				host: host.to_string(),
 				answer,
 			},
@@ -943,7 +941,7 @@ async fn respond(mut client: &mut tokio::net::TcpStream, status: u16, empty: boo
 }
 
 async fn respond_sessioned(
-	mut client: &mut tokio::net::TcpStream,
+	client: &mut tokio::net::TcpStream,
 	status: u16,
 	id: &Value,
 	body: &Value,

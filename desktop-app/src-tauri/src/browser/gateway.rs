@@ -182,7 +182,7 @@ fn routed(base: &str, href: &str, as_document: bool) -> Option<String> {
 	if !navigation_allowed(&absolute) {
 		return None;
 	}
-	let route = if as_document { "/page" } else { "/asset" };
+	let _route = if as_document { "/page" } else { "/asset" };
 	Some(format!(
 		"{}?u={}",
 		gateway_url(),

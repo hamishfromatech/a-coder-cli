@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use serde_json::{json, Value};
-use tauri::{command, AppHandle, Emitter, State};
+use tauri::{command, Emitter, State};
 
 use crate::rpc::RpcClient;
 use crate::state::AppState;

@@ -18,6 +18,7 @@ use tauri::{
 	WebviewBuilder, WebviewUrl,
 };
 
+#[cfg(target_os = "macos")]
 use super::rules;
 use super::security::{is_external_handoff, navigation_allowed, page_url, reportable};
 use super::{emit, require_main, BrowserEvent, ViewBounds};
@@ -709,7 +710,7 @@ fn open_view<R: Runtime>(
 		.on_page_load(move |page_view, payload| {
 			on_page_load(&page_view, payload, &load_tab, &page_app)
 		})
-		.on_document_title_changed(move |page_view, title| {
+		.on_document_title_changed(move |_page_view, title| {
 			let bounded = bounded_title(&title);
 			let event = {
 				let state = title_app.state::<TabsState>();
@@ -892,19 +893,6 @@ fn offers_of(hist: &Hist) -> (bool, bool) {
 	(hist.index > 0, hist.index + 1 < hist.entries.len())
 }
 
-/// Records a committed url in the tab's visited stack and tells the panel
-/// when its offers change.
-fn note_commit<R: Runtime>(app: &AppHandle<R>, tab_id: &str, url: &str) {
-	let state = app.state::<TabsState>();
-	let event = {
-		let mut inner = state.inner.lock().unwrap();
-		commit_offers(&mut inner, tab_id, url)
-	};
-	if let Some(event) = event {
-		emit(app, event);
-	}
-}
-
 /// Stack update on an ALREADY-LOCKED inner (commit paths that hold it): a
 /// commit matching the neighbouring entry is a back/forward move; anything
 /// else is a fresh navigation that cuts the forward tail (back works,
@@ -974,7 +962,7 @@ fn poll_url<R: Runtime>(app: AppHandle<R>) {
 			}) else {
 				return;
 			};
-			let (events, changed) = {
+			let (events, _changed) = {
 				let state = app.state::<TabsState>();
 				let mut i = state.inner.lock().unwrap();
 				// The panel may have switched or closed it while the page read.

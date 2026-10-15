@@ -222,26 +222,6 @@ pub(crate) fn reveal_path<R: Runtime>(
 		.map_err(|error| error.to_string())
 }
 
-impl BrowserEvent {
-	/// The camelCase tag the frontend sees, for log lines.
-	pub(crate) fn name(&self) -> &'static str {
-		match self {
-			Self::Load { .. } => "load",
-			Self::Title { .. } => "title",
-			Self::Url { .. } => "url",
-			Self::History { .. } => "history",
-			Self::External { .. } => "external",
-			Self::NewTab { .. } => "newTab",
-			Self::ProxyFailed { .. } => "proxyFailed",
-			Self::OpenPanel { .. } => "openPanel",
-			Self::Closed { .. } => "closed",
-			Self::DownloadPrompt { .. } => "downloadPrompt",
-			Self::DownloadSettled { .. } => "downloadSettled",
-			Self::AgentAsk { .. } => "agentAsk",
-		}
-	}
-}
-
 #[cfg(test)]
 mod tests {
 	use super::*;
