@@ -766,24 +766,36 @@ describe("SettingsManager", () => {
 		});
 	});
 
-	describe("fresh-install chrome-devtools MCP seed", () => {
-		it("seeds the built-in browser-control server into a fresh agent dir and persists it", async () => {
+	describe("fresh-install MCP server seed", () => {
+		it("seeds the built-in browser-control and Composio servers into a fresh agent dir and persists them", async () => {
 			const manager = SettingsManager.create(projectDir, agentDir);
 			const servers = manager.getMcpServers();
-			expect(servers).toHaveLength(1);
-			expect(servers[0]?.name).toBe("chrome-devtools");
-			expect(servers[0]?.transport).toBe("stdio");
-			const args = servers[0]?.args ?? [];
+			expect(servers).toHaveLength(2);
+			const byName = new Map(servers.map((s) => [s.name, s]));
+
+			const chrome = byName.get("chrome-devtools");
+			expect(chrome?.transport).toBe("stdio");
+			const args = chrome?.args ?? [];
 			expect(args).toContain("chrome-devtools-mcp@latest");
 			expect(args).toContain("--isolated");
 			expect(args).toContain("--no-usage-statistics");
 			expect(args).toContain("--no-performance-crux");
 
+			const composio = byName.get("composio");
+			expect(composio?.transport).toBe("http");
+			expect(composio?.commandOrUrl).toBe("https://connect.composio.dev/mcp");
+			// The raw placeholder (not an interpolated value) persists — header
+			// placeholders resolve from the environment at connect time.
+			const PH = "$" + "{COMPOSIO_API_KEY}";
+			expect(composio?.headers?.["x-consumer-api-key"]).toBe(PH);
+			expect(composio?.timeoutMs).toBe(300000);
+
 			// The seed persists immediately: later partial saves must not drop it.
 			await manager.flush();
 			const persisted = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8"));
-			expect(persisted.mcpServers).toHaveLength(1);
-			expect(persisted.mcpServers[0].name).toBe("chrome-devtools");
+			expect(persisted.mcpServers).toHaveLength(2);
+			expect(persisted.mcpServers.map((s: { name: string }) => s.name)).toContain("chrome-devtools");
+			expect(persisted.mcpServers.map((s: { name: string }) => s.name)).toContain("composio");
 		});
 
 		it("survives a subsequent unrelated settings save", async () => {
@@ -796,13 +808,13 @@ describe("SettingsManager", () => {
 			expect(JSON.stringify(persisted.mcpServers)).toContain("chrome-devtools");
 		});
 
-		it("stays removed once the user deletes the entry", async () => {
+		it("stays removed once the user deletes the entries", async () => {
 			SettingsManager.create(projectDir, agentDir);
 			await SettingsManager.create(projectDir, agentDir).flush();
 			await SettingsManager.create(projectDir, agentDir).flush();
 
 			const manager = SettingsManager.create(projectDir, agentDir);
-			expect(manager.getMcpServers()).toHaveLength(1);
+			expect(manager.getMcpServers()).toHaveLength(2);
 			manager.setMcpServers([]);
 			await manager.flush();
 
