@@ -780,7 +780,14 @@ fn open_view<R: Runtime>(
 		.created
 		.insert(tab_id.to_string());
 	if let Some(url) = deferred {
-		load_through_proxy(&app, &page_view, url);
+		// macOS-only: pages load deferred through the loopback proxy; other
+		// platforms create the view with its real URL.
+		#[cfg(target_os = "macos")]
+		{
+			load_through_proxy(&app, &page_view, url);
+		}
+		#[cfg(not(target_os = "macos"))]
+		let _ = url;
 	}
 	Ok(page_view)
 }

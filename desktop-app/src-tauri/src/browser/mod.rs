@@ -19,6 +19,7 @@ pub mod layer;
 pub mod mute;
 pub mod permissions;
 pub mod proxy;
+#[cfg(target_os = "macos")]
 pub mod rules;
 pub mod security;
 pub mod tabs;

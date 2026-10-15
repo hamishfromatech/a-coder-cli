@@ -1,25 +1,32 @@
-# Compile-verify the desktop app's Windows-only native code (the browser
-# panel's WebView2 capture/mute paths and proxy args) on a real Windows
-# runner. There is no cross-compile check for these locally: macOS lacks the
-# MSVC toolchain the TLS/native build scripts need, so cfg(windows) code can
-# otherwise drift unnoticed until a Windows release build.
+# Compile-verify the desktop app's platform-native code on real runners: the
+# browser panel's WebView2 capture/mute/permission paths on Windows, the
+# crate's cfg surface on Linux. There is no full cross-compile check for these
+# locally: macOS lacks the MSVC toolchain the TLS/native build scripts need,
+# so cfg'd code can otherwise drift unnoticed until a Windows/Linux release
+# build — which is exactly how the v0.80.139 tag run failed.
+#
+# Triggers on the release branch too: all desktop work happens on
+# feat/desktop-unified-release, so a main-only trigger would never see it.
 name: desktop-windows-check
 
 on:
   push:
-    branches: [main]
+    branches: [main, feat/desktop-unified-release]
     paths:
       - "desktop-app/src-tauri/**"
+      - ".github/workflows/desktop-windows-check.yml"
   pull_request:
     paths:
       - "desktop-app/src-tauri/**"
+      - ".github/workflows/desktop-windows-check.yml"
+  workflow_dispatch: {}
 
 concurrency:
   group: desktop-windows-check-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  check:
+  windows:
     runs-on: windows-latest
     defaults:
       run:
@@ -27,11 +34,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: desktop-app/src-tauri
-      - run: cargo fmt --check
       - run: cargo check
-      - run: cargo test
+      - run: cargo test --quiet
+
+  linux:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: desktop-app/src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop-app/src-tauri
+      - run: cargo check

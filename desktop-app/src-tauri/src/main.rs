@@ -83,6 +83,9 @@ fn main() {
 			browser::downloads::browser_download_folder_pick,
 			browser::downloads::browser_download_open,
 			browser::downloads::browser_download_reveal,
+			// gateway only exists on macOS; generate_handler! supports
+			// attributes on entries so the list stays cfg-matched.
+			#[cfg(target_os = "macos")]
 			browser::gateway::browser_gateway_url,
 			browser::agentserver::browser_agent_server_url,
 			browser::agentserver::browser_set_agent_server_enabled,
