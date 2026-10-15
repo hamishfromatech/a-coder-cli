@@ -65,53 +65,73 @@ fn reset_mic<R: Runtime>(app: &tauri::AppHandle<R>, tab_id: &str) -> Result<(), 
 		.get_webview(&format!("{}{tab_id}", tabs::LABEL_PREFIX))
 		.ok_or_else(|| "That tab is closed".to_string())?;
 	// with_webview blocks the caller on the webview's dispatch thread and
-	// cannot return the async COM result's outcome directly; the completion
-	// handler's error code is captured into this slot before we answer.
+	// cannot return the async COM result's outcome directly; every failure is
+	// captured into the channel before we answer.
 	let (sender, receiver) = std::sync::mpsc::channel();
-	page.with_webview(move |platform: tauri::webview::PlatformWebview| -> Result<(), String> {
-		let core = unsafe { platform.controller().CoreWebView2() }
-			.map_err(|_| "The webview controller was gone".to_string())?;
-		let core: ICoreWebView2 = core;
-		// The permission state lives on the profile (WebView2, ICoreWebView2_13
-		// and newer runtimes carry Profile; Profile4 carries the origin-scoped
-		// setter). Old runtimes answer with the runtime message.
-		let profile = core
-			.cast::<ICoreWebView2_13>()
-			.and_then(|profile_host| unsafe { profile_host.Profile() })
-			.map_err(|_| "The WebView2 runtime is too old for permission resets".to_string())?;
-		let profile = profile
-			.cast::<ICoreWebView2Profile4>()
-			.map_err(|_| "The WebView2 runtime is too old for permission resets".to_string())?;
+	page.with_webview(move |platform: tauri::webview::PlatformWebview| {
+		let core = match unsafe { platform.controller().CoreWebView2() } {
+			Ok(core) => core,
+			Err(_) => {
+				let _ = sender.send(Err("The webview controller was gone".to_string()));
+				return;
+			}
+		};
+		// The permission state lives on the profile (ICoreWebView2_13 carries
+		// Profile; Profile4 carries the origin-scoped setter). Old runtimes
+		// answer with the runtime message.
+		let too_old = || "The WebView2 runtime is too old for permission resets".to_string();
+		let profile = match core.cast::<ICoreWebView2_13>() {
+			Ok(profile_host) => match unsafe { profile_host.Profile() } {
+				Ok(profile) => profile,
+				Err(_) => {
+					let _ = sender.send(Err(too_old()));
+					return;
+				}
+			},
+			Err(_) => {
+				let _ = sender.send(Err(too_old()));
+				return;
+			}
+		};
+		let profile = match profile.cast::<ICoreWebView2Profile4>() {
+			Ok(profile) => profile,
+			Err(_) => {
+				let _ = sender.send(Err(too_old()));
+				return;
+			}
+		};
 		// Read the page's CURRENT document origin (scheme://host, no path) —
 		// the reset only touches that origin's mic grant in the profile.
 		let mut uri = PWSTR::null();
-		unsafe { core.Source(&mut uri) }.map_err(|error| error.to_string())?;
+		if unsafe { core.Source(&mut uri) }.is_err() {
+			let _ = sender.send(Err("The page's origin is unreadable".to_string()));
+			return;
+		}
 		let uri = take_pwstr(uri);
-		let origin = origin_of(&uri)
-			.ok_or_else(|| "The page has no web origin".to_string())?;
+		let Some(origin) = origin_of(&uri) else {
+			let _ = sender.send(Err("The page has no web origin".to_string()));
+			return;
+		};
 		let origin = HSTRING::from(origin);
 		// Safety: COM calls on the controller's dispatch thread inside
 		// with_webview; the handler runs on the same thread after completion.
 		let sender = sender.clone();
 		let handler = SetPermissionStateCompletedHandler::create(Box::new(move |error_code| {
 			if error_code.is_err() {
-				let _ = sender.send(Err(error_code.to_string()));
+				let _ = sender.send(Err(format!("{error_code:?}")));
 			} else {
 				let _ = sender.send(Ok(()));
 			}
 			Ok(())
 		}));
 		unsafe {
-			profile
-				.SetPermissionState(
-					COREWEBVIEW2_PERMISSION_KIND_MICROPHONE,
-					&origin,
-					COREWEBVIEW2_PERMISSION_STATE_DEFAULT,
-					&handler,
-				)
-				.map_err(|error| error.to_string())?;
+			let _ = profile.SetPermissionState(
+				COREWEBVIEW2_PERMISSION_KIND_MICROPHONE,
+				&origin,
+				COREWEBVIEW2_PERMISSION_STATE_DEFAULT,
+				&handler,
+			);
 		}
-		Ok(())
 	})
 	.map_err(|error| error.to_string())?;
 	receiver
