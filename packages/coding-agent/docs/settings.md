@@ -79,7 +79,7 @@ Use `/trust` in interactive mode to save a project trust decision for future ses
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `mcpServers` | array | chrome-devtools on fresh installs | MCP servers (stdio/http/sse) exposed as `mcp__<server>__<tool>` tools; each entry supports `timeoutMs`, `env`, `headers`, `disabled`, and `suppressStderrPatterns` (the chrome-devtools stderr noise is auto-suppressed when unset). See [Built-in MCP server](#built-in-mcp-server) |
+| `mcpServers` | array | chrome-devtools + composio on fresh installs | MCP servers (stdio/http/sse) exposed as `mcp__<server>__<tool>` tools; each entry supports `timeoutMs`, `env`, `headers` (with `${ENV_VAR}` placeholders), `disabled`, and `suppressStderrPatterns` (the chrome-devtools stderr noise is auto-suppressed when unset). See [Built-in MCP servers](#built-in-mcp-servers) |
 
 MCP server lists merge across scopes: the union of the global agent settings and the project `.a-coder-cli/settings.json` loads, keyed by name — a project entry with the same name fully replaces the global one (and vice versa: project servers never shadow globals they don't define). Every server is annotated with its `source` (`global` | `project`); `/mcp` shows project-defined servers with a `(project)` label. Untrusted projects contribute no servers.
 
@@ -403,10 +403,12 @@ Project settings (`.a-coder-cli/settings.json`) override global settings. Nested
 }
 ```
 
-## Built-in MCP server
+## Built-in MCP servers
 
-Fresh installations (a global settings file that does not exist yet) are seeded with one MCP server so
-browser control works out of the box:
+Fresh installations (a global settings file that does not exist yet) are seeded with two MCP servers so
+browser control and the Composio app gateway work out of the box.
+
+### Chrome DevTools
 
 ```json
 {
@@ -421,7 +423,28 @@ browser control works out of the box:
 - `--no-usage-statistics` — disables the server's Google Analytics usage reporting.
 - `--no-performance-crux` — disables CrUX (real-user-metrics) API lookups.
 
-The seed is written to `~/.a-coder/cli/agent/settings.json` on first run; from then on it is an ordinary
-entry — edit or remove it in the desktop app's MCP servers editor or in the file itself. (Windows installs
-spawn it as `cmd /c npx …`.) Existing settings files are never modified: a file that exists (even `{}`)
-disables seeding for that installation.
+(Windows installs spawn it as `cmd /c npx …`.)
+
+### Composio
+
+```json
+{
+  "name": "composio",
+  "transport": "http",
+  "commandOrUrl": "https://connect.composio.dev/mcp",
+  "headers": { "x-consumer-api-key": "${COMPOSIO_API_KEY}" },
+  "timeoutMs": 300000
+}
+```
+
+Composio Connect exposes search/schema/execute/manage-connections meta tools covering 1,000+ app
+integrations (GitHub, Gmail, Slack, Notion, …). Authentication needs a **consumer API key** created in
+the Composio dashboard's AI-Clients setup (a dashboard project key `ak_…` is not accepted by this
+endpoint): set `COMPOSIO_API_KEY` in the environment, or edit the entry's header value in the MCP
+servers editor. Header values support exactly one `${ENV_VAR}` placeholder; a placeholder with no
+matching environment variable is dropped (the connection then fails with the server's 401) and no
+half-substituted value is ever sent.
+
+The seed is written to `~/.a-coder/cli/agent/settings.json` on first run; from then on the entries are
+ordinary — edit or remove them in the desktop app's MCP servers editor or in the file itself. Existing
+settings files are never modified: a file that exists (even `{}`) disables seeding for that installation.

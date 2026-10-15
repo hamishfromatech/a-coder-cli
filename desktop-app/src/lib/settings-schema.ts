@@ -87,7 +87,6 @@ export type SettingsSectionId =
 	| "privacy"
 	| "tools-and-permissions"
 	| "external-tools"
-	| "composio"
 	| "resources"
 	| "keybindings"
 	| "voice"
@@ -834,50 +833,11 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 		],
 	},
 
-	// ---- Composio --------------------------------------------------------
-	// Shares navId "external-tools": it renders as a card on the merged
-	// Integrations page.
-	{
-		id: "composio",
-		navId: "external-tools",
-		label: "Composio",
-		description: "Connect the assistant to 1,000+ apps (GitHub, Gmail, Slack, …) via Composio.",
-		fields: [
-			{
-				path: "composio.enabled",
-				label: "Enable Composio",
-				hint: "Add composio_search_tools, composio_manage_connections, and composio_execute_tool to the assistant. Requires an API key.",
-				kind: "toggle",
-			},
-			{
-				path: "composio.apiKey",
-				label: "Composio API key",
-				hint: "Create one at composio.dev. You can also set the COMPOSIO_API_KEY environment variable.",
-				kind: "text",
-			},
-			{
-				path: "composio.toolkits",
-				label: "Toolkits",
-				hint: "Comma-separated list to restrict to specific toolkits (e.g. github, gmail). Leave blank to allow all.",
-				kind: "text",
-			},
-			{
-				path: "composio.sandbox",
-				label: "Remote sandbox",
-				hint: "Let the assistant run Python and bash in a Composio-hosted sandbox.",
-				kind: "toggle",
-			},
-			{
-				path: "composio.includeWorkbenchTools",
-				label: "Expose sandbox tools",
-				hint: "Add composio_remote_workbench (Python) and composio_remote_bash to the assistant. Requires the sandbox above.",
-				kind: "toggle",
-			},
-		],
-	},
-
 	// ---- Skills -----------------------------------------------------------
 	// No fields — fully custom UI for managing skills and advanced resources.
+	// (The Composio card was removed with the SDK integration: Composio is an
+	// mcpServers entry now — "composio", seeded on fresh installs; manage its
+	// consumer key there or via COMPOSIO_API_KEY.)
 	{
 		id: "resources",
 		navId: "resources",

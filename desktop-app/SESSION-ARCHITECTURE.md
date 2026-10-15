@@ -11,7 +11,7 @@ Where desktop session switching is today, where it is going, and the phased plan
 | Tab switching allowed mid-stream (engine aborts + persists the turn) | `src/components/SessionTabs.tsx` |
 | Per-session composer drafts | `src/stores/draft-store.ts`, `src/components/Composer.tsx` |
 | Current-session marker + streaming spinner in the session picker | `src/components/SessionPicker.tsx` |
-| Searchable `/apps` gallery | `packages/coding-agent/src/modes/interactive/components/composio-apps-selector.ts` |
+| Composio app connections (meta tools; agent surfaces app lists in chat) | built-in `composio` MCP server in the engine's seeded `mcpServers` |
 
 ## The engine constraint
 

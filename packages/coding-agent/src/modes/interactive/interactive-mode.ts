@@ -75,13 +75,6 @@ import {
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.ts";
 import { type AgentSessionRuntime, SessionImportFileNotFoundError } from "../../core/agent-session-runtime.ts";
 import { captureCliInstall, captureCliSessionEnd } from "../../core/analytics.ts";
-import { resolveComposioConfig } from "../../core/composio.ts";
-import {
-	type ComposioApp,
-	connectComposioApp,
-	disconnectComposioApp,
-	listComposioApps,
-} from "../../core/composio-apps.ts";
 import { DEFAULT_THINKING_LEVEL } from "../../core/defaults.ts";
 import type {
 	AutocompleteProviderFactory,
@@ -163,7 +156,6 @@ import { BashExecutionComponent } from "./components/bash-execution.ts";
 import { BorderedLoader } from "./components/bordered-loader.ts";
 import { BranchSummaryMessageComponent } from "./components/branch-summary-message.ts";
 import { CompactionSummaryMessageComponent } from "./components/compaction-summary-message.ts";
-import { ComposioAppsSelectorComponent } from "./components/composio-apps-selector.ts";
 import { CustomEditor } from "./components/custom-editor.ts";
 import { CustomEntryComponent } from "./components/custom-entry.ts";
 import { CustomMessageComponent } from "./components/custom-message.ts";
@@ -3546,11 +3538,6 @@ export class InteractiveMode {
 			if (text === "/mcp") {
 				this.handleMcpCommand();
 				this.editor.setText("");
-				return;
-			}
-			if (text === "/apps") {
-				this.editor.setText("");
-				void this.handleAppsCommand();
 				return;
 			}
 			if (text === "/todos") {
@@ -7328,67 +7315,6 @@ export class InteractiveMode {
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(body, 1, 0));
 		this.ui.requestRender();
-	}
-
-	private async handleAppsCommand(): Promise<void> {
-		const config = resolveComposioConfig(this.settingsManager.getComposioSettings());
-		if (!config) {
-			const body =
-				`${theme.bold("Composio Apps")}\n\n` +
-				`${theme.fg("warning", "Composio is not configured.")}\n` +
-				`${theme.fg("dim", "Add a Composio API key in settings (composio.apiKey) or set COMPOSIO_API_KEY, then run /apps again.")}`;
-			this.chatContainer.addChild(new Spacer(1));
-			this.chatContainer.addChild(new Text(body, 1, 0));
-			this.ui.requestRender();
-			return;
-		}
-
-		const agentDir = getAgentDir();
-		const render = async (): Promise<void> => {
-			let apps: ComposioApp[];
-			try {
-				apps = await listComposioApps(config, agentDir);
-			} catch (err) {
-				this.showStatus(`Composio error: ${err instanceof Error ? err.message : String(err)}`);
-				return;
-			}
-			this.showSelector((done) => {
-				const selector = new ComposioAppsSelectorComponent(apps, {
-					onConnect: async (slug) => {
-						done();
-						this.showStatus(`Connecting ${slug}…`);
-						try {
-							const result = await connectComposioApp(config, agentDir, slug);
-							const link = result.redirectUrl
-								? `\n${theme.fg("dim", "Sign-in link:")} ${result.redirectUrl}`
-								: "";
-							this.showStatus(`Open the link to sign in to ${slug}.${link}`);
-							await result.waitForConnection(120000);
-							this.showStatus(`Connected ✓ ${slug}`);
-						} catch (err) {
-							this.showStatus(`Connect failed: ${err instanceof Error ? err.message : String(err)}`);
-						}
-						void render();
-					},
-					onDisconnect: async (connectedAccountId) => {
-						done();
-						try {
-							await disconnectComposioApp(config, agentDir, connectedAccountId);
-							this.showStatus("Disconnected.");
-						} catch (err) {
-							this.showStatus(`Disconnect failed: ${err instanceof Error ? err.message : String(err)}`);
-						}
-						void render();
-					},
-					onCancel: () => {
-						done();
-						this.ui.requestRender();
-					},
-				});
-				return { component: selector, focus: selector };
-			});
-		};
-		void render();
 	}
 
 	/** Print an office block into the chat transcript. */

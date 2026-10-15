@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Composio integration moved into the engine's built-in **Composio MCP server** (`https://connect.composio.dev/mcp`, seeded on fresh installs next to chrome-devtools; auth = dashboard consumer API key via `COMPOSIO_API_KEY` or the MCP servers editor). The desktop **Apps panel** (browse/connect apps) and the empty `Composio` settings card are gone — app discovery and connection now happen in the chat through the server's manage-connections meta tools, and old `#composio` settings deep links still land on Integrations.
 ### Added
 
 - Browser diagnostics: every run writes a line-flushed `browser-debug.log` into the app data dir (proxy connections, routing decisions, refusals, the agent MCP server's startup), and the agent MCP server now starts with the app instead of waiting for the settings page to be opened.

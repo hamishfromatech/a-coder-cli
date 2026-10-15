@@ -10,6 +10,15 @@ import { SettingsManager } from "../src/core/settings-manager.ts";
 
 vi.mock("../src/core/permission-classifier.ts", () => ({
 	classifyToolCall: vi.fn(),
+	// Real export (decision-model gate): when a decision model happens to be
+	// resolvable on the host (e.g. OPENROUTER_API_KEY / a reachable local
+	// server) the session tries it before the LLM classifier these tests
+	// target. Mock it as unavailable so the suite always exercises the LLM
+	// path, deterministically.
+	classifyToolCallWithDecisionModel: vi.fn(() => ({
+		ok: false as const,
+		error: "decision gate mocked off in this suite",
+	})),
 }));
 
 import { classifyToolCall } from "../src/core/permission-classifier.ts";
@@ -70,6 +79,12 @@ describe("auto-mode classifier integration", () => {
 			permissionMode: "auto",
 			permissionPolicies: { softDeny: [], allow: [], hardDeny: [] },
 			autoMode: autoModeSettings ?? { enabled: true },
+			// Keep the decision-model gate (settings.decisions) OUT of these tests:
+			// they target the LLM classifier's prompts/fallbacks/breakers, and on a
+			// host with a reachable local server or OPENROUTER_API_KEY the gate
+			// would resolve a model and run first (its failures also drive the
+			// same circuit breakers), breaking the call counts below.
+			decisions: { provider: "nonexistent", model: "nonexistent" },
 		});
 		const sessionManager = SessionManager.inMemory();
 		const { session } = await createAgentSession({

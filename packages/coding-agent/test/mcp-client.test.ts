@@ -9,7 +9,7 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { CallToolRequestSchema, type JSONRPCMessage, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { McpClient, type McpDiscoveredTool } from "../src/core/mcp/client.ts";
+import { McpClient, type McpDiscoveredTool, resolveHeaderPlaceholders } from "../src/core/mcp/client.ts";
 import { firstClassToolName, formatMcpResult, MAX_FIRST_CLASS_TOOLS } from "../src/core/mcp/inline-extension.ts";
 import type { McpServerConfig } from "../src/core/mcp/types.ts";
 
@@ -225,6 +225,65 @@ describe("McpClient", () => {
 				await mc.close();
 			}
 		}, 10_000);
+	});
+});
+
+describe("resolveHeaderPlaceholders", () => {
+	const withEnv = async (vars: Record<string, string | undefined>, fn: () => void | Promise<void>): Promise<void> => {
+		const saved: Record<string, string | undefined> = {};
+		for (const [k, v] of Object.entries(vars)) {
+			saved[k] = process.env[k];
+			if (v === undefined) delete process.env[k];
+			else process.env[k] = v;
+		}
+		try {
+			await fn();
+		} finally {
+			for (const [k, v] of Object.entries(saved)) {
+				if (v === undefined) delete process.env[k];
+				else process.env[k] = v;
+			}
+		}
+	};
+
+	// Placeholder literals built at runtime: the linter flags `${...}` inside
+	// string literals, and the literal IS the shape under test here.
+	const PH = (name: string): string => ["$", "{", name, "}"].join("");
+
+	it("passes literal values through untouched", () => {
+		expect(resolveHeaderPlaceholders({ Authorization: "Bearer ck_live_key" })).toEqual({
+			Authorization: "Bearer ck_live_key",
+		});
+	});
+
+	it("expands a full placeholder from the environment", async () => {
+		await withEnv({ COMPOSIO_API_KEY: "ck_from_env" }, () => {
+			expect(resolveHeaderPlaceholders({ "x-consumer-api-key": PH("COMPOSIO_API_KEY") })).toEqual({
+				"x-consumer-api-key": "ck_from_env",
+			});
+		});
+	});
+
+	it("drops an unresolvable placeholder instead of sending it literal", async () => {
+		await withEnv({ MCP_MISSING_VAR_TEST: undefined }, () => {
+			expect(resolveHeaderPlaceholders({ "x-key": PH("MCP_MISSING_VAR_TEST") })).toBeUndefined();
+			expect(resolveHeaderPlaceholders({ "x-key": PH("MCP_MISSING_VAR_TEST"), "x-other": "v" })).toEqual({
+				"x-other": "v",
+			});
+		});
+	});
+
+	it("does not interpolate partial placeholders", async () => {
+		await withEnv({ MCP_PARTIAL_VAR_TEST: "x" }, () => {
+			expect(resolveHeaderPlaceholders({ "x-key": `prefix ${PH("MCP_PARTIAL_VAR_TEST")} suffix` })).toEqual({
+				"x-key": `prefix ${PH("MCP_PARTIAL_VAR_TEST")} suffix`,
+			});
+		});
+	});
+
+	it("returns undefined for absent headers", () => {
+		expect(resolveHeaderPlaceholders(undefined)).toBeUndefined();
+		expect(resolveHeaderPlaceholders({})).toBeUndefined();
 	});
 });
 

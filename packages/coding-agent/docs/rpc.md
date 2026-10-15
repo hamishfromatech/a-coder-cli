@@ -1059,20 +1059,6 @@ Schedules: `{ "kind": "every", "minutes": N }`, `{ "kind": "daily", "time": "HH:
 
 Answers a supervised prompt surfaced in the snapshot (approval or question). `null` denies/cancels.
 
-### Composio Apps
-
-#### composio_list_apps / composio_connect_app / composio_disconnect_app
-
-Requires Composio configured (settings `composio.apiKey` or `COMPOSIO_API_KEY`):
-
-```json
-{"type": "composio_list_apps"}
-{"type": "composio_connect_app", "slug": "github"}
-{"type": "composio_disconnect_app", "connectedAccountId": "..."}
-```
-
-`composio_list_apps` responds with `data.apps` (the apps gallery); `composio_connect_app` returns connection/OAuth info; `composio_disconnect_app` removes a connection by its account id.
-
 ### Cron
 
 Scheduled tasks for the main agent. Jobs are project-scoped (`cwd`) and persist in `~/.a-coder/cli/agent/cron/jobs.json`; run history lands in `cron/runs.json` (last 20 per job).

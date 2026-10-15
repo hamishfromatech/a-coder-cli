@@ -14,7 +14,7 @@ A cross-platform desktop wrapper around the `a-coder-cli` engine, built with Tau
 - **Project Selection** — Browse and open projects from your workspace; tabbed sessions with a resume quick-switcher
 - **Chat Interface** — Conversational AI interface with markdown rendering, images, and tool-approval bars
 - **Model Picker** — All providers and models with thinking-level presets (up to xhigh); `/login` OAuth flows (ChatGPT, Anthropic, Grok, Kimi, and more) handled in-app and also settable via the account section
-- **Settings Management** — Full settings editor: provider/model defaults, thinking presets, theme, keybinding overrides, keybinding editor, permission-policy rules, package resources (skills/prompts/themes/workflows), custom providers, Composio, and voice
+- **Settings Management** — Full settings editor: provider/model defaults, thinking presets, theme, keybinding overrides, keybinding editor, permission-policy rules, package resources (skills/prompts/themes/workflows), custom providers, and voice
 - **MCP Servers Editor** — Add, edit, enable/disable, and remove MCP servers (stdio/http/sse); fresh installs come with the built-in chrome-devtools server pre-configured (isolated profile, telemetry off)
 - **Local Model Servers** — Configure addresses for Ollama, LM Studio, llama.cpp, Unsloth, vLLM, and SGLang; models are discovered live with real context windows
 - **Computer Use** — Toggle the opt-in `computer` desktop-control tool with diagnostics (driver detection, permission status) in the Computer Use panel

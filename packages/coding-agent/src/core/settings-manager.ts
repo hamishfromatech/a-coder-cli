@@ -139,6 +139,26 @@ export function defaultChromeDevtoolsMcpServer(): McpServerConfig {
 		],
 	};
 }
+
+/**
+ * Default MCP server seeded into every fresh installation alongside
+ * chrome-devtools: Composio Connect (https://connect.composio.dev/mcp), the
+ * hosted gateway to 1,000+ app integrations (GitHub, Gmail, Slack, Notion, …)
+ * exposed as search/schema/execute/manage-connections meta tools. The consumer
+ * API key is interpolated from `COMPOSIO_API_KEY` at connect time rather than
+ * persisted — create one in the Composio dashboard's AI-Clients setup. Long
+ * request timeout: OAuth wait-for-connections calls run minutes under it.
+ */
+export function defaultComposioMcpServer(): McpServerConfig {
+	return {
+		name: "composio",
+		transport: "http",
+		commandOrUrl: "https://connect.composio.dev/mcp",
+		// biome-ignore lint/suspicious/noTemplateCurlyInString: deliberate placeholder the MCP client resolves from the environment at connect time
+		headers: { "x-consumer-api-key": "${COMPOSIO_API_KEY}" },
+		timeoutMs: 300000,
+	};
+}
 /**
  * How the codemode tool presents tools while it is active.
  * - `on`: declared tools that scripts can call get a note on calling them from scripts appended to
@@ -160,22 +180,6 @@ export type DefaultProjectTrust = "ask" | "always" | "never";
 export type QuietStartup = boolean | "header";
 
 export type PermissionMode = "ask" | "allow" | "read-only" | "auto";
-
-/** Optional Composio (https://composio.dev) integration. When enabled, the
- * agent gets `composio_search_tools`, `composio_manage_connections`,
- * `composio_execute_tool` (+ optional sandbox workbench/bash) tools and a
- * Composio system-prompt section, via the native `PiProvider` from
- * `@composio/experimental`. The API key may also be supplied via the
- * `COMPOSIO_API_KEY` environment variable (env takes precedence). */
-export interface ComposioSettings {
-	enabled?: boolean; // default: false — opt-in
-	apiKey?: string; // or COMPOSIO_API_KEY env
-	userId?: string; // Composio user id; defaults to a stable per-install id
-	toolkits?: string[] | string; // restrict to these toolkits; default: all discoverable
-	sandbox?: boolean; // default: false — enable the remote sandbox
-	includeWorkbenchTools?: boolean; // default: false — include remote python/bash helpers
-	callbackUrl?: string; // OAuth redirect URL for manage-connections
-}
 
 /** Rule matching a tool name. Supports exact names, "namespace:*" globs, and "$defaults". */
 export type PermissionRule = string;
@@ -301,7 +305,9 @@ export interface Settings {
 	markdown?: MarkdownSettings;
 	mcpServers?: McpServerSettings[];
 	warnings?: WarningSettings;
-	composio?: ComposioSettings;
+	// `composio` was removed as a Settings key — the Composio integration is an
+	// MCP server (mcpServers entry) now. Leftover keys in old files round-trip
+	// harmlessly.
 	codemode?: CodemodeSettings;
 	sessionDir?: string; // Custom session storage directory (same format as --session-dir CLI flag)
 	permissionMode?: PermissionMode; // default: "ask"
@@ -631,7 +637,9 @@ export class SettingsManager {
 			// empty) is left untouched so pre-existing and customized installs
 			// are not affected.
 			if (scope === "global") {
-				const seeded: Settings = { mcpServers: [defaultChromeDevtoolsMcpServer()] };
+				const seeded: Settings = {
+					mcpServers: [defaultChromeDevtoolsMcpServer(), defaultComposioMcpServer()],
+				};
 				storage.withLock(scope, (current) => (current ? undefined : JSON.stringify(seeded, null, 2)));
 				return seeded;
 			}
@@ -1859,16 +1867,6 @@ export class SettingsManager {
 
 	getEnabledModels(): string[] | undefined {
 		return this.settings.enabledModels;
-	}
-
-	getComposioSettings(): ComposioSettings | undefined {
-		return this.settings.composio;
-	}
-
-	setComposioSettings(settings: ComposioSettings | undefined): void {
-		this.globalSettings.composio = settings;
-		this.markModified("composio");
-		this.save();
 	}
 
 	/** The resolved `defaultTools` selection, or undefined when no settings layer sets it. */

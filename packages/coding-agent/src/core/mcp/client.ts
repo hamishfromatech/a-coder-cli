@@ -292,6 +292,7 @@ export class McpClient {
 }
 
 function createTransport(config: McpServerConfig): TransportBundle {
+	const headers = resolveHeaderPlaceholders(config.headers);
 	switch (config.transport) {
 		case "stdio": {
 			const suppress = config.suppressStderrPatterns?.filter((p) => p.length > 0);
@@ -315,7 +316,7 @@ function createTransport(config: McpServerConfig): TransportBundle {
 			const url = new URL(config.commandOrUrl);
 			return {
 				transport: new SSEClientTransport(url, {
-					requestInit: { headers: config.headers },
+					requestInit: { headers },
 					// The SSE event stream is a separate long-lived GET; without a
 					// fetch override only the POSTs carry custom headers (e.g. auth),
 					// so authenticated servers fail on the GET stream.
@@ -323,7 +324,7 @@ function createTransport(config: McpServerConfig): TransportBundle {
 						fetch: (url, init) =>
 							fetch(url, {
 								...init,
-								headers: { ...(init?.headers ?? {}), ...(config.headers ?? {}) },
+								headers: { ...(init?.headers ?? {}), ...(headers ?? {}) },
 							}),
 					},
 				}),
@@ -333,7 +334,7 @@ function createTransport(config: McpServerConfig): TransportBundle {
 			const url = new URL(config.commandOrUrl);
 			return {
 				transport: new StreamableHTTPClientTransport(url, {
-					requestInit: { headers: config.headers },
+					requestInit: { headers },
 				}),
 			};
 		}
@@ -350,6 +351,32 @@ function createTransport(config: McpServerConfig): TransportBundle {
  * connect() appends to failure messages so a crashed server's last words are
  * not lost. Returns the tail getter.
  */
+/**
+ * Expand `${ENV_VAR}` placeholders in header values against the parent
+ * environment. Letting a server config write the placeholder in the first
+ * place keeps the secret out of the settings file; the placeholder is the
+ * only expanded form (literal `$NAME` or unresolvable names are dropped so
+ * no half-substituted string is ever sent on the wire) — the seeded Composio
+ * server uses this for `x-consumer-api-key: ${COMPOSIO_API_KEY}`.
+ */
+export function resolveHeaderPlaceholders(
+	headers: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+	if (!headers) return undefined;
+	const resolved: Record<string, string> = {};
+	for (const [name, value] of Object.entries(headers)) {
+		const match = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(value);
+		if (match) {
+			const envValue = process.env[match[1]];
+			if (!envValue) continue; // Not configured in this environment.
+			resolved[name] = envValue;
+		} else {
+			resolved[name] = value;
+		}
+	}
+	return Object.keys(resolved).length > 0 ? resolved : undefined;
+}
+
 function pipeStderr(transport: StdioClientTransport, suppressPatterns: string[]): () => string {
 	const stderr = transport.stderr;
 	if (!stderr) return () => "";

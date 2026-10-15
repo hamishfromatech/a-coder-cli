@@ -120,11 +120,6 @@ export type RpcCommand =
 	| { id?: string; type: "get_sessions_status" }
 	| { id?: string; type: "abort_session"; sessionPath: string }
 
-	// Composio apps gallery
-	| { id?: string; type: "composio_list_apps" }
-	| { id?: string; type: "composio_connect_app"; slug: string }
-	| { id?: string; type: "composio_disconnect_app"; connectedAccountId: string }
-
 	// Your Office (coworkers, huddles, errands)
 	| { id?: string; type: "office_list" }
 	| { id?: string; type: "office_coworker_save"; coworker: OfficeRpcCoworkerInput }
