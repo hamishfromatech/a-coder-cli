@@ -192,6 +192,8 @@ fn platform_capture(platform: tauri::webview::PlatformWebview, clip: Option<Clip
 fn platform_capture(platform: tauri::webview::PlatformWebview, clip: Option<Clip>, done: Done) {
 	use base64::Engine;
 	use webview2_com::CallDevToolsProtocolMethodCompletedHandler;
+	// `cast` resolves through windows_core::Interface.
+	use windows_core::Interface as _;
 	use windows_core::{BOOL, HSTRING};
 
 	let mut params = serde_json::json!({ "format": "png", "fromSurface": true });

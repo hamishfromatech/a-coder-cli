@@ -59,7 +59,7 @@ fn reset_mic<R: Runtime>(app: &tauri::AppHandle<R>, tab_id: &str) -> Result<(), 
 		COREWEBVIEW2_PERMISSION_KIND_MICROPHONE, COREWEBVIEW2_PERMISSION_STATE_DEFAULT,
 	};
 	use webview2_com::{take_pwstr, SetPermissionStateCompletedHandler};
-	use windows_core::{HSTRING, PWSTR};
+	use windows_core::{HSTRING, Interface as _, PWSTR};
 
 	let page = app
 		.get_webview(&format!("{}{tab_id}", tabs::LABEL_PREFIX))
