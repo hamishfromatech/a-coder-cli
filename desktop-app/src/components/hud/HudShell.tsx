@@ -1,6 +1,9 @@
 import { useEffect, useRef } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { X } from "lucide-react";
+import { X, GripHorizontal } from "lucide-react";
+
+/** Tauri's manual resize-direction strings (Window.startResizeDragging). */
+type ResizeDirection = "East" | "North" | "NorthEast" | "NorthWest" | "South" | "SouthEast" | "SouthWest" | "West";
 import * as rpc from "../../lib/rpc";
 import { processAgentEvent } from "../../lib/agent-event-pipeline";
 import { MessageList } from "../MessageList";
@@ -91,13 +94,54 @@ export function HudShell() {
 		};
 	}, []);
 
+	const win = getCurrentWindow();
+
+	const beginDrag = (e: React.PointerEvent) => {
+		// Explicit API call — the injected data-tauri-drag-region listener is
+		// flaky in a transparent, undecorated WKWebView window.
+		e.preventDefault();
+		void win.startDragging().catch(() => undefined);
+	};
+
+	const beginResize = (e: React.PointerEvent, direction: ResizeDirection) => {
+		e.preventDefault();
+		e.stopPropagation();
+		void win.startResizeDragging(direction).catch(() => undefined);
+	};
+
 	return (
-		<div className="h-screen p-1.5">
+		<div className="relative h-screen p-1.5">
+			{/* Manual resize handles: a frameless macOS window exposes no native
+			    edge hot-zones, so small hit areas drive startResizeDragging. */}
+			{(
+				[
+					{ dir: "West", pos: "left-0 top-1.5 bottom-1.5 w-1.5 cursor-w-resize" },
+					{ dir: "East", pos: "right-0 top-1.5 bottom-1.5 w-1.5 cursor-e-resize" },
+					{ dir: "North", pos: "top-0 left-1.5 right-1.5 h-1.5 cursor-n-resize" },
+					{ dir: "South", pos: "bottom-0 left-1.5 right-1.5 h-1.5 cursor-s-resize" },
+					{ dir: "NorthWest", pos: "top-0 left-0 h-3 w-3 cursor-nw-resize" },
+					{ dir: "NorthEast", pos: "top-0 right-0 h-3 w-3 cursor-ne-resize" },
+					{ dir: "SouthWest", pos: "bottom-0 left-0 h-3 w-3 cursor-sw-resize" },
+					{ dir: "SouthEast", pos: "bottom-0 right-0 h-3 w-3 cursor-se-resize" },
+				] as const
+			).map(({ dir, pos }) => (
+				<div
+					key={dir}
+					onPointerDown={(e) => beginResize(e, dir)}
+					className={`absolute z-30 ${pos}`}
+				/>
+			))}
+
 			<div className="flex h-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#101016]/90 shadow-2xl backdrop-blur-xl">
 				{/* Grip strip: drag region for the whole bar except the buttons. */}
 				<header className="flex h-9 shrink-0 items-center gap-2 px-3">
-					<div data-tauri-drag-region className="flex h-full min-w-0 flex-1 items-center gap-2">
-						<span className="text-2xs font-semibold text-white/80" data-tauri-drag-region>
+					<div
+						data-tauri-drag-region
+						onPointerDown={beginDrag}
+						className="flex h-full min-w-0 flex-1 cursor-grab items-center gap-2"
+					>
+						<GripHorizontal className="h-3.5 w-3.5 shrink-0 text-white/35" data-tauri-drag-region />
+						<span className="truncate text-2xs font-semibold text-white/80" data-tauri-drag-region>
 							{sessionName || (connected ? "Session" : "Connecting…")}
 						</span>
 						<span className="text-2xs text-white/40" data-tauri-drag-region>
