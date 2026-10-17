@@ -5,6 +5,7 @@ import {
 	GitBranch,
 	PanelLeft,
 	PanelRight,
+	PictureInPicture2,
 } from "lucide-react";
 import { useUiStore } from "../stores/ui-store";
 import { useSessionStore } from "../stores/session-store";
@@ -13,6 +14,7 @@ import { isMacOS } from "../lib/platform";
 import { triggerHaptic } from "../lib/haptics";
 import { BrandMark } from "./ui/BrandMark";
 import { WindowControls } from "./WindowControls";
+import { openHud } from "../lib/hud";
 
 export function Titlebar() {
 	const [editingName, setEditingName] = useState(false);
@@ -161,6 +163,14 @@ export function Titlebar() {
 					label="Toggle right sidebar"
 				>
 					<PanelRight className="h-3.5 w-3.5 transition-smooth" />
+				</SidebarToggle>
+
+				<SidebarToggle
+					onClick={() => void openHud()}
+					active={false}
+					label="Open HUD floating chat"
+				>
+					<PictureInPicture2 className="h-3.5 w-3.5 transition-smooth" />
 				</SidebarToggle>
 			</div>
 
