@@ -13,7 +13,9 @@ import { useSessionStore, type QuestionUiRequest } from "../../stores/session-st
 /** Pull the authoritative engine state into the stores — a condensed copy of
  *  App's syncEngineState covering what the HUD renders (identity, model pill,
  *  streaming state, counts). Dedupe with App's version when the app window
- *  itself is refactored onto store-level sync. */
+ *  itself is refactored onto store-level sync. **Also flips the session
+ *  status to connected** — App does that in its own connect path, but the HUD
+ *  window never runs App, so without it the composer stays "not connected". */
 async function hudSyncEngineState(): Promise<void> {
 	try {
 		const s = (await rpc.sendCommand({ type: "get_state" })) as {
@@ -22,11 +24,11 @@ async function hudSyncEngineState(): Promise<void> {
 			permissionMode?: import("../../stores/session-store").PermissionMode;
 			sessionName?: string;
 			sessionFile?: string;
-			isStreaming?: boolean;
 			messageCount?: number;
 			pendingMessageCount?: number;
 		};
 		const store = useSessionStore.getState();
+		store.setStatus("connected");
 		if (s?.model) store.setModel(s.model as never);
 		if (s?.thinkingLevel) store.setThinkingLevel(s.thinkingLevel);
 		if (s?.permissionMode) store.setPermissionMode(s.permissionMode);
