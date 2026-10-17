@@ -848,6 +848,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				return success(id, "set_thinking_level");
 			}
 
+			case "set_system_prompt_addendum": {
+				session.setSystemPromptAddendum(command.addendum ?? null);
+				return success(id, "set_system_prompt_addendum");
+			}
+
 			case "cycle_thinking_level": {
 				const level = session.cycleThinkingLevel();
 				if (!level) {

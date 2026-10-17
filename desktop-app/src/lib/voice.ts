@@ -60,6 +60,60 @@ function base64ToBlob(base64: string, mime: string): Blob {
 }
 
 /**
+ * List the models a voice endpoint offers, via GET {base}/models through the
+ * Rust `voice_fetch_json` CORS bridge. Normalizes the OpenAI shape
+ * ({ data: [{ id }] }) and lenient alternatives (plain arrays, ids/name keys).
+ */
+export async function listVoiceModels(baseUrl: string, apiKey: string): Promise<string[]> {
+	const raw = await invoke<string>("voice_fetch_json", { baseUrl, apiKey, route: "models" });
+	return normalizeCatalog(raw, ["id", "name"]);
+}
+
+/**
+ * List the voices a TTS endpoint offers, via GET {base}/voices through the
+ * Rust `voice_fetch_json` CORS bridge. Accepts plain string arrays, { voices: [...] }
+ * and { data: [{ id | name | voice }] } shapes.
+ */
+export async function listVoiceVoices(baseUrl: string, apiKey: string): Promise<string[]> {
+	const raw = await invoke<string>("voice_fetch_json", { baseUrl, apiKey, route: "voices" });
+	return normalizeCatalog(raw, ["id", "name", "voice"]);
+}
+
+/** Parse a catalog response body into a sorted list of option names. */
+function normalizeCatalog(raw: string, keys: string[]): string[] {
+	let value: unknown;
+	try {
+		value = JSON.parse(raw);
+	} catch {
+		return [];
+	}
+	if (typeof value !== "object" || value === null) return [];
+	const list: unknown[] = Array.isArray(value)
+		? value
+		: Array.isArray((value as { data?: unknown[] }).data)
+			? (value as { data: unknown[] }).data
+			: Array.isArray((value as { voices?: unknown[] }).voices)
+				? (value as { voices: unknown[] }).voices
+				: [];
+	const out = new Set<string>();
+	for (const entry of list) {
+		if (typeof entry === "string") {
+			if (entry.trim()) out.add(entry.trim());
+			continue;
+		}
+		if (typeof entry !== "object") continue;
+		for (const key of keys) {
+			const v = (entry as Record<string, unknown>)[key];
+			if (typeof v === "string" && v.trim()) {
+				out.add(v.trim());
+				break;
+			}
+		}
+	}
+	return Array.from(out).sort((a, b) => a.localeCompare(b));
+}
+
+/**
  * Transcribe an audio blob. Routed through the Rust `voice_transcribe` command
  * so the request bypasses webview CORS (providers don't return CORS headers
  * for the tauri:// origin). Returns the transcribed text.

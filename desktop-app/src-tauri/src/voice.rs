@@ -124,6 +124,40 @@ pub async fn voice_transcribe(
 	}
 }
 
+/// GET a JSON document from a voice-provider endpoint: `{base}/{route}` where
+/// route is `models` or `voices` (base URL normalized like the audio routes).
+/// Powers the Settings → Voice model/voice dropdowns; returns the raw body so
+/// the frontend can normalize its shapes.
+#[tauri::command]
+pub async fn voice_fetch_json(base_url: String, api_key: String, route: String) -> Result<String, String> {
+	let route = route.trim().trim_start_matches('/').to_string();
+	if route.is_empty() || route.contains("//") {
+		return Err("Invalid endpoint route".to_string());
+	}
+	let base = normalize_base_url(&base_url)?;
+	let client = reqwest::Client::new();
+	let mut req = client.get(format!("{}/{}", base, route));
+	if let Some(auth) = bearer(&api_key) {
+		req = req.header("Authorization", auth);
+	}
+
+	let res = req
+		.send()
+		.await
+		.map_err(|e| format!("Request failed: {}", e))?;
+	if !res.status().is_success() {
+		let status = res.status();
+		let body = res.text().await.unwrap_or_default();
+		return Err(format!(
+			"Request failed: {} {} {}",
+			status.as_u16(),
+			status.canonical_reason().unwrap_or(""),
+			body
+		));
+	}
+	res.text().await.map_err(|e| format!("Response read failed: {}", e))
+}
+
 /// Synthesize speech via POST {base}/audio/speech. Returns base64-encoded audio.
 #[tauri::command]
 pub async fn voice_synthesize(text: String, settings: VoiceSettings) -> Result<String, String> {

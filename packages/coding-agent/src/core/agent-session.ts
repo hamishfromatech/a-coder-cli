@@ -594,6 +594,29 @@ export class AgentSession {
 	private _baseSystemPrompt = "";
 	private _baseSystemPromptOptions!: BuildSystemPromptOptions;
 	private _systemPromptOverride?: string;
+	/** Session-scoped system-prompt addendum (runtime only, not persisted):
+	 *  composed after the extension override / base prompt on every turn while
+	 *  set (voice-call conversation style). */
+	private _systemPromptAddendum?: string;
+
+	/**
+	 * Set (or clear) a system-prompt addendum applied on every subsequent turn
+	 * while set. Runtime-only: not persisted, cleared when the session ends.
+	 */
+	setSystemPromptAddendum(addendum: string | null | undefined): void {
+		this._systemPromptAddendum = addendum?.trim() ? addendum.trim() : undefined;
+		this._applySystemPromptWithAddendum();
+	}
+
+	/** Compose override/base with the addendum into the live agent state. */
+	private _applySystemPromptWithAddendum(): void {
+		this.agent.state.systemPrompt = this._composeSystemPromptWithAddendum();
+	}
+
+	private _composeSystemPromptWithAddendum(): string {
+		const base = this._systemPromptOverride ?? this._baseSystemPrompt;
+		return this._systemPromptAddendum ? `${base}\n\n${this._systemPromptAddendum}` : base;
+	}
 
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
@@ -2167,6 +2190,8 @@ export class AgentSession {
 				this._systemPromptOverride = undefined;
 				this.agent.state.systemPrompt = this._baseSystemPrompt;
 			}
+			// The voice-call addendum composes on top of override/base for the run.
+			this._applySystemPromptWithAddendum();
 		} catch (error) {
 			preflightResult?.(false);
 			throw error;

@@ -1,7 +1,15 @@
-import { Mic, Volume2, Eye, EyeOff, Loader2, Check, AlertCircle, Phone } from "lucide-react";
+import { Mic, Volume2, Eye, EyeOff, Loader2, Check, AlertCircle, Phone, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { useSettingsStore } from "../../../stores/settings-store";
-import { createMicRecorder, transcribe, synthesize, playAudioBlob, type VoiceSettings } from "../../../lib/voice";
+import {
+	createMicRecorder,
+	transcribe,
+	synthesize,
+	playAudioBlob,
+	listVoiceModels,
+	listVoiceVoices,
+	type VoiceSettings,
+} from "../../../lib/voice";
 import { Button } from "../../ui/Button";
 import { IconButton } from "../../ui/Button";
 import { Input } from "../../ui/Input";
@@ -15,6 +23,115 @@ import { Switch } from "../../ui/Switch";
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
 	return (
 		<Switch size="sm" checked={checked} onChange={() => onChange(!checked)} />
+	);
+}
+
+const CUSTOM_OPTION = "__custom__";
+
+/**
+ * A model/voice picker for a voice endpoint: fetches the catalog from
+ * {base}/models or {base}/voices on open (through the Rust CORS bridge),
+ * renders a dropdown, and falls back to a manual text input when the
+ * endpoint has no catalog (or the user picks "Custom…").
+ */
+function CatalogSelect({
+	label,
+	value,
+	onChange,
+	baseUrl,
+	apiKey,
+	route,
+	mono = true,
+placeholder,
+}: {
+	label: string;
+	value: string;
+	onChange: (v: string) => void;
+	baseUrl: string;
+	apiKey: string;
+	route: "models" | "voices";
+	mono?: boolean;
+	placeholder?: string;
+}) {
+	const [options, setOptions] = useState<string[] | null>(null); // null = not fetched
+	const [fetching, setFetching] = useState(false);
+	const [fetchError, setFetchError] = useState<string>("");
+	const custom = !options || options.includes(value) === false;
+	const selectValue = custom && value ? CUSTOM_OPTION : value || "";
+
+	async function fetchOptions() {
+		setFetching(true);
+		setFetchError("");
+		try {
+			const list = route === "models" ? await listVoiceModels(baseUrl, apiKey) : await listVoiceVoices(baseUrl, apiKey);
+			setOptions(list);
+			if (!list.length) setFetchError("Endpoint returned no " + route + "; using manual entry.");
+		} catch (e) {
+			setOptions([]);
+			setFetchError(e instanceof Error ? e.message : String(e));
+		} finally {
+			setFetching(false);
+		}
+	}
+
+	const hasCatalog = Boolean(options && options.length);
+	return (
+		<label className="block space-y-1">
+			<span className="text-3xs font-semibold uppercase tracking-wider text-pi-text-faint">{label}</span>
+			<div className="space-y-1">
+				<div className="flex items-center gap-1">
+					<select
+						value={selectValue}
+						onChange={(e) => {
+							const v = e.target.value;
+							if (v === CUSTOM_OPTION) {
+								// Switch to manual entry, keeping the box editable with a blank
+								onChange("");
+							} else {
+								onChange(v);
+							}
+						}}
+						onFocus={() => {
+							if (!options && !fetching && baseUrl.trim()) void fetchOptions();
+						}}
+						disabled={fetching || !baseUrl.trim()}
+						className="w-full cursor-pointer rounded-md border border-pi-border bg-pi-surface px-2 py-1.5 text-xs text-pi-text disabled:opacity-50"
+					>
+						{!baseUrl.trim() && <option value="">Configure base URL first</option>}
+						{baseUrl.trim() && fetching && <option value="">Loading…</option>}
+						{baseUrl.trim() && !fetching && options === null && <option value="">Click to load {route}…</option>}
+						{options && !options.length && <option value={value || ""}>{value || "No entries — type manually"}</option>}
+						{options?.map((o) => (
+							<option key={o} value={o}>
+								{o}
+							</option>
+						))}
+						{hasCatalog && <option value={CUSTOM_OPTION}>Custom…</option>}
+					</select>
+					<IconButton
+						variant="ghost"
+						size="sm"
+						icon={fetching ? Loader2 : RefreshCw}
+						loading={fetching}
+						aria-label={`Refresh ${label} options`}
+						onClick={() => void fetchOptions()}
+					/>
+				</div>
+				{(custom || !hasCatalog) && (
+					<Input
+						type="text"
+						value={value}
+						onChange={(e) => onChange(e.target.value)}
+						placeholder={placeholder}
+						spellCheck={false}
+						autoComplete="off"
+						scale="sm"
+						mono={mono}
+					/>
+				)}
+				{fetchError && <span className="block text-3xs text-pi-text-faint">{fetchError}</span>}
+			</div>
+		</label>
 	);
 }
 
@@ -158,10 +275,13 @@ export function VoiceSection() {
 					placeholder="sk-... (leave blank for keyless local servers)"
 					type="password"
 				/>
-				<LabeledInput
+				<CatalogSelect
 					label="Model"
 					value={s.voiceSttModel}
 					onChange={s.setVoiceSttModel}
+					baseUrl={s.voiceSttBaseUrl}
+					apiKey={s.voiceSttApiKey}
+					route="models"
 					placeholder="whisper-1"
 				/>
 			</SectionCard>
@@ -183,8 +303,25 @@ export function VoiceSection() {
 					type="password"
 				/>
 				<div className="grid grid-cols-2 gap-3">
-					<LabeledInput label="Model" value={s.voiceTtsModel} onChange={s.setVoiceTtsModel} placeholder="gpt-4o-mini-tts" />
-					<LabeledInput label="Voice" value={s.voiceTtsVoice} onChange={s.setVoiceTtsVoice} placeholder="alloy" />
+					<CatalogSelect
+						label="Model"
+						value={s.voiceTtsModel}
+						onChange={s.setVoiceTtsModel}
+						baseUrl={s.voiceTtsBaseUrl}
+						apiKey={s.voiceTtsApiKey}
+						route="models"
+						placeholder="gpt-4o-mini-tts"
+					/>
+					<CatalogSelect
+						label="Voice"
+						value={s.voiceTtsVoice}
+						onChange={s.setVoiceTtsVoice}
+						baseUrl={s.voiceTtsBaseUrl}
+						apiKey={s.voiceTtsApiKey}
+						route="voices"
+						mono={false}
+						placeholder="alloy"
+					/>
 				</div>
 			</SectionCard>
 

@@ -101,6 +101,7 @@ fn main() {
 			serve::serve_status,
 			voice::voice_transcribe,
 			voice::voice_synthesize,
+			voice::voice_fetch_json,
 			rpc_commands::connect,
 			rpc_commands::disconnect,
 			rpc_commands::send_command,

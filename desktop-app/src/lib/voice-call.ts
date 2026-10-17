@@ -38,6 +38,21 @@ import {
 import { create } from "zustand";
 
 // ---------------------------------------------------------------------------
+// The phone-call style system prompt: composed onto the engine's system prompt
+// while a call is live, cleared when it ends.
+// ---------------------------------------------------------------------------
+
+export const VOICE_CALL_ADDENDUM = [
+	"You are on a live voice call. The user is speaking; their turns arrive as transcribed speech.",
+	"Respond conversationally, like a natural phone call:",
+	"- Short, spoken-first answers — 1 to 3 sentences unless asked for more; lead with the answer.",
+	"- No markdown, lists, code fences, headings, or emoji; write anything you would say out loud.",
+	"- Numbers, paths and identifiers: say them in words a listener can follow, then follow up in text if asked.",
+	"- You may still perform coding work; describe what you did in words and keep long output in the text session, not in your spoken reply.",
+	"- If the request is ambiguous, ask one short clarifying question instead of guessing.",
+].join("\n");
+
+// ---------------------------------------------------------------------------
 // Cue variants into the completion-sound bank.
 // ---------------------------------------------------------------------------
 
@@ -315,6 +330,8 @@ class VoiceCallController {
 		try {
 			await this.openMic();
 			this.lastToolCallId = "";
+			// Phone-call conversation style while the call is live.
+			await rpc.setSystemPromptAddendum(VOICE_CALL_ADDENDUM).catch(() => undefined);
 			if (s.voiceCallCues) {
 				playCueVariant(CUE_CALL_CONNECTED);
 			}
@@ -339,6 +356,8 @@ class VoiceCallController {
 		if (!this.active) return;
 		this.abortSpeech();
 		this.teardownMic();
+		// The transient addendum only belongs to this call.
+		await rpc.setSystemPromptAddendum(null).catch(() => undefined);
 		if (useSettingsStore.getState().voiceCallCues) {
 			playCueVariant(CUE_CALL_HANGUP);
 		}

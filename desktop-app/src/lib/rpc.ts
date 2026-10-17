@@ -780,6 +780,11 @@ export const setThinkingLevel = (level: ThinkingLevel) =>
 	sendCommand({ type: "set_thinking_level", level });
 export const cycleThinkingLevel = () => sendCommand({ type: "cycle_thinking_level" });
 
+/** Runtime system-prompt addendum: composed on every turn while set, cleared
+ *  with null. Not persisted, only affects the active session until cleared. */
+export const setSystemPromptAddendum = (addendum: string | null) =>
+	sendCommand({ type: "set_system_prompt_addendum", addendum });
+
 // ---- permission mode ----
 export const getPermissionMode = () =>
 	sendCommand({ type: "get_permission_mode" }) as Promise<{ mode: PermissionMode }>;
