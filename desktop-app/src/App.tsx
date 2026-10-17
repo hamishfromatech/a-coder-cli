@@ -4,7 +4,9 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { initDesktopAnalytics } from "./lib/analytics";
 import * as rpc from "./lib/rpc";
 import { openExternalLink } from "./lib/external-link";
-import { playCompletionSound } from "./lib/completion-sound";
+import { playCompletionSound, } from "./lib/completion-sound";
+import { useVoiceCallStore, voiceCall } from "./lib/voice-call";
+import { VoiceCallOverlay } from "./components/voice/VoiceCallOverlay";
 import { triggerHaptic } from "./lib/haptics";
 import { rafCoalesce } from "./lib/raf-coalesce";
 import { synthesize, playAudioBlob, type VoiceSettings } from "./lib/voice";
@@ -490,6 +492,7 @@ export default function App() {
 							// during the previous turn.
 							useSessionStore.getState().setAbortRequested(false);
 							triggerHaptic("streamStart");
+							voiceCall.notifyAgentStart();
 							break;
 						case "agent_end":
 							// A retryable failure re-enters the loop; stay streaming and suppress the
@@ -498,11 +501,21 @@ export default function App() {
 								break;
 							}
 							setIsStreaming(false);
-							// Chime + haptic at the end of a natural turn. A user-initiated
-							// abort also reaches agent_end, so suppress the cues then.
-							if (!useSessionStore.getState().abortRequested) {
+							if (useSessionStore.getState().abortRequested) {
+								// A user-initiated abort also reaches agent_end; the chime is
+								// suppressed, but the call must unwind its thinking state.
+								voiceCall.notifyAgentAborted();
+								break;
+							}
+							// Chime + haptic at the end of a natural turn.
+							triggerHaptic("streamDone");
+							if (useVoiceCallStore.getState().active) {
+								// Voice call: the spoken reply is the turn-end signal — the
+								// chime is suppressed and speaking is owned by the controller.
+								const text = "messages" in event ? lastAssistantText((event as { messages: AgentMessage[] }).messages) : "";
+								voiceCall.notifyAgentEnd(text);
+							} else {
 								playCompletionSound();
-								triggerHaptic("streamDone");
 								// Voice mode: read the final assistant reply aloud.
 								const voice = useSettingsStore.getState();
 								if (voice.voiceEnabled && voice.voiceAutoSpeak && "messages" in event) {
@@ -749,6 +762,7 @@ export default function App() {
 						case "message_end":
 							if (loadingHistoryRef.current) break;
 							if (event.message.role === "assistant") {
+								voiceCall.notifyAssistantMessage(event.message);
 								const messages = useSessionStore.getState().messages;
 								const hasAssistantRow = messages.length > 0 && messages[messages.length - 1].role === "assistant";
 								if (hasAssistantRow) {
@@ -1179,6 +1193,35 @@ export default function App() {
 		}
 	}, []);
 
+	// Voice call keybindings: Escape ends the call, Space barges an in-progress
+	// reply. Capture-phase so they outrank dialogs sitting underneath the overlay.
+	const voiceCallActive = useVoiceCallStore((s) => s.active);
+	useEffect(() => {
+		if (!voiceCallActive) return;
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === "Escape") {
+				e.preventDefault();
+				e.stopPropagation();
+				void voiceCall.stop();
+				return;
+			}
+			if (e.code === "Space") {
+				const phase = useVoiceCallStore.getState().phase;
+				if (phase !== "speaking") return; // typing/listening untouched
+				// Don't eat spaces meant for text fields.
+				const target = e.target as HTMLElement | null;
+				if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
+					return;
+				}
+				e.preventDefault();
+				e.stopPropagation();
+				voiceCall.interrupt();
+			}
+		};
+		window.addEventListener("keydown", onKey, true);
+		return () => window.removeEventListener("keydown", onKey, true);
+	}, [voiceCallActive]);
+
 	// Background-session attention: needs-input sessions take priority over
 	// merely-finished ones. Both feed the sidebar rail's notification orb.
 	const needsBackgroundInput = useRuntimeStatusStore((s) =>
@@ -1532,6 +1575,9 @@ export default function App() {
 					projectPath={projectPath}
 				/>
 			</div>
+
+			{/* ================== Voice call overlay ================== */}
+			<VoiceCallOverlay />
 
 			{/* ================== Toast notifications ================== */}
 			<Toaster />

@@ -2,6 +2,7 @@ import {
 	CornerDownLeft,
 	Loader2,
 	Mic,
+	PhoneCall,
 	Square,
 	Image as ImageIcon,
 	X,
@@ -24,6 +25,7 @@ import {
 } from "react";
 import { useSessionStore } from "../stores/session-store";
 import { useDraftStore } from "../stores/draft-store";
+import { useVoiceCallStore, voiceCall } from "../lib/voice-call";
 import * as rpc from "../lib/rpc";
 import { triggerHaptic } from "../lib/haptics";
 import type { ImageContent } from "@earendil-works/pi-ai";
@@ -51,6 +53,7 @@ export function Composer() {
 	const micRef = useRef<MicRecorder | null>(null);
 	const [recording, setRecording] = useState(false);
 	const [transcribing, setTranscribing] = useState(false);
+	const callActive = useVoiceCallStore((s) => s.active);
 	const { voiceEnabled, voiceAutoSubmit } = useSettingsStore();
 	const {
 		status,
@@ -234,7 +237,7 @@ export function Composer() {
 	};
 
 	const handleMic = async () => {
-		if (transcribing) return;
+		if (transcribing || useVoiceCallStore.getState().active) return;
 		// Stop -> transcribe -> submit or fill.
 		if (recording && micRef.current) {
 			const mic = micRef.current;
@@ -523,11 +526,23 @@ export function Composer() {
 					/>
 				</div>
 
-				{voiceEnabled && !isStreaming && (
-					<Button
-						variant={recording ? "danger" : "secondary"}
-						size="icon" icon={transcribing ? Loader2 : recording ? Square : Mic} loading={transcribing} onClick={() => void handleMic()} disabled={transcribing} aria-label={recording ? "Stop recording" : "Voice input"} className={recording ? "animate-pulse" : ""}
-					/>
+				{voiceEnabled && !isStreaming && !callActive && (
+					<>
+						<Button
+							variant={recording ? "danger" : "secondary"}
+							size="icon" icon={transcribing ? Loader2 : recording ? Square : Mic} loading={transcribing} onClick={() => void handleMic()} disabled={transcribing} aria-label={recording ? "Stop recording" : "Voice input"} className={recording ? "animate-pulse" : ""}
+						/>
+						{connected && (
+							<Button
+								variant="secondary"
+								size="icon"
+								icon={PhoneCall}
+								onClick={() => void voiceCall.start()}
+								aria-label="Start voice call"
+								title="Start voice call - hands-free, speak and get spoken replies"
+							/>
+						)}
+					</>
 				)}
 				{isStreaming ? (
 					<Button

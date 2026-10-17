@@ -84,6 +84,21 @@ export interface SettingsState {
 	setVoiceAutoSubmit: (enabled: boolean) => void;
 	voiceAutoSpeak: boolean;
 	setVoiceAutoSpeak: (enabled: boolean) => void;
+	/** Call mode: quiet (ms) before an utterance auto-sends. */
+	voiceCallSilenceMs: number;
+	setVoiceCallSilenceMs: (ms: number) => void;
+	/** Call mode: hard cap (ms) on one spoken utterance. */
+	voiceCallMaxUtteranceMs: number;
+	setVoiceCallMaxUtteranceMs: (ms: number) => void;
+	/** Call mode: keep the mic armed while the reply speaks; loud speech barges. */
+	voiceBargeIn: boolean;
+	setVoiceBargeIn: (enabled: boolean) => void;
+	/** Call mode: max chars of a reply read aloud (0 = unlimited). */
+	voiceMaxSpokenChars: number;
+	setVoiceMaxSpokenChars: (chars: number) => void;
+	/** Call mode: synthesized state cues (connected / tools / thinking / hangup). */
+	voiceCallCues: boolean;
+	setVoiceCallCues: (enabled: boolean) => void;
 
 	// ---- A-Coder Bench (local UI pref; persisted) ----
 	/** Model to benchmark as "provider/model-id" (or a custom endpoint model). */
@@ -202,6 +217,16 @@ export const useSettingsStore = create<SettingsState>()(
 			setVoiceAutoSubmit: (voiceAutoSubmit) => set({ voiceAutoSubmit }),
 			voiceAutoSpeak: true,
 			setVoiceAutoSpeak: (voiceAutoSpeak) => set({ voiceAutoSpeak }),
+			voiceCallSilenceMs: 1200,
+			setVoiceCallSilenceMs: (voiceCallSilenceMs) => set({ voiceCallSilenceMs }),
+			voiceCallMaxUtteranceMs: 15000,
+			setVoiceCallMaxUtteranceMs: (voiceCallMaxUtteranceMs) => set({ voiceCallMaxUtteranceMs }),
+			voiceBargeIn: false,
+			setVoiceBargeIn: (voiceBargeIn) => set({ voiceBargeIn }),
+			voiceMaxSpokenChars: 1200,
+			setVoiceMaxSpokenChars: (voiceMaxSpokenChars) => set({ voiceMaxSpokenChars }),
+			voiceCallCues: true,
+			setVoiceCallCues: (voiceCallCues) => set({ voiceCallCues }),
 
 			// ---- A-Coder Bench ----
 			benchModel: "",
@@ -254,6 +279,11 @@ export const useSettingsStore = create<SettingsState>()(
 			voiceTtsVoice: state.voiceTtsVoice,
 			voiceAutoSubmit: state.voiceAutoSubmit,
 			voiceAutoSpeak: state.voiceAutoSpeak,
+			voiceCallSilenceMs: state.voiceCallSilenceMs,
+			voiceCallMaxUtteranceMs: state.voiceCallMaxUtteranceMs,
+			voiceBargeIn: state.voiceBargeIn,
+			voiceMaxSpokenChars: state.voiceMaxSpokenChars,
+			voiceCallCues: state.voiceCallCues,
 			benchModel: state.benchModel,
 			benchEndpoint: state.benchEndpoint,
 			benchApiKey: state.benchApiKey,

@@ -1,4 +1,4 @@
-import { Mic, Volume2, Eye, EyeOff, Loader2, Check, AlertCircle } from "lucide-react";
+import { Mic, Volume2, Eye, EyeOff, Loader2, Check, AlertCircle, Phone } from "lucide-react";
 import { useState } from "react";
 import { useSettingsStore } from "../../../stores/settings-store";
 import { createMicRecorder, transcribe, synthesize, playAudioBlob, type VoiceSettings } from "../../../lib/voice";
@@ -202,6 +202,62 @@ export function VoiceSection() {
 						<p className="text-2xs text-pi-text-muted">Read assistant responses aloud automatically.</p>
 					</div>
 					<Toggle checked={s.voiceAutoSpeak} onChange={s.setVoiceAutoSpeak} />
+				</div>
+			</SectionCard>
+
+			<SectionCard title="Call mode" icon={<Phone className="h-4 w-4 text-pi-text-muted" />}>
+				<p className="-mt-1 mb-1 text-2xs text-pi-text-muted">
+					Hands-free mode: speak, pause, and the app sends and replies aloud automatically.
+				</p>
+				<div className="flex items-center justify-between">
+					<div className="pr-4">
+						<p className="text-xs font-medium text-pi-text">Auto-barge into replies</p>
+						<p className="text-2xs text-pi-text-muted">
+							Speak over the agent to interrupt. Best with headphones; without them the reply's own sound can trigger it.
+						</p>
+					</div>
+					<Toggle checked={s.voiceBargeIn} onChange={s.setVoiceBargeIn} />
+				</div>
+				<div className="flex items-center justify-between">
+					<div className="pr-4">
+						<p className="text-xs font-medium text-pi-text">Status sounds</p>
+						<p className="text-2xs text-pi-text-muted">
+							Connected, thinking, tool ticks and hang-up cues from the same sound bank as turn-end chimes.
+						</p>
+					</div>
+					<Toggle checked={s.voiceCallCues} onChange={s.setVoiceCallCues} />
+				</div>
+				<div className="grid grid-cols-3 gap-3">
+					<LabeledInput
+						label="Silence (ms)"
+						value={String(s.voiceCallSilenceMs)}
+						onChange={(v) => {
+							const n = Number.parseInt(v, 10);
+							if (!Number.isNaN(n) && n >= 300 && n <= 5000) s.setVoiceCallSilenceMs(n);
+						}}
+						mono
+						hint="Quiet before sending (300–5000)."
+					/>
+					<LabeledInput
+						label="Max utterance (s)"
+						value={String(Math.round(s.voiceCallMaxUtteranceMs / 1000))}
+						onChange={(v) => {
+							const n = Number.parseInt(v, 10);
+							if (!Number.isNaN(n) && n >= 3 && n <= 120) s.setVoiceCallMaxUtteranceMs(n * 1000);
+						}}
+						mono
+						hint="Hard cap (3–120s)."
+					/>
+					<LabeledInput
+						label="Spoken limit (chars)"
+						value={String(s.voiceMaxSpokenChars)}
+						onChange={(v) => {
+							const n = Number.parseInt(v, 10);
+							if (!Number.isNaN(n) && n >= 0) s.setVoiceMaxSpokenChars(n);
+						}}
+						mono
+						hint="0 replies fully."
+					/>
 				</div>
 			</SectionCard>
 

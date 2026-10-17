@@ -467,7 +467,7 @@ export const COMPLETION_SOUND_VARIANTS: readonly CompletionSoundVariant[] = [
 	},
 ] as const;
 
-async function playVariant(variantId: number) {
+async function playVariant(variantId: number, volumeScale = 1) {
 	const variant = COMPLETION_SOUND_VARIANTS.find((v) => v.id === variantId);
 
 	if (!variant) {
@@ -508,7 +508,7 @@ async function playVariant(variantId: number) {
 	// conservative (0.48 dry / 0.34 wet) so even 100% is not startling.
 	const { completionSoundVolume } = useSettingsStore.getState();
 	const volume = Math.min(1, Math.max(0, completionSoundVolume ?? 0.8));
-	master.gain.setValueAtTime(0.48 * volume, ac.currentTime);
+	master.gain.setValueAtTime(0.48 * volume * volumeScale, ac.currentTime);
 	master.connect(tone);
 
 	const dry = ac.createGain();
@@ -518,7 +518,7 @@ async function playVariant(variantId: number) {
 
 	const reverb = makeReverb(ac);
 	const wet = ac.createGain();
-	wet.gain.setValueAtTime(0.34 * volume, ac.currentTime);
+	wet.gain.setValueAtTime(0.34 * volume * volumeScale, ac.currentTime);
 	tone.connect(reverb);
 	reverb.connect(wet);
 	wet.connect(ac.destination);
@@ -543,6 +543,17 @@ export function playCompletionSound() {
 	}
 
 	void playVariant(resolveCompletionSoundVariantId(completionSoundVariantId));
+}
+
+/**
+ * Play a specific variant from the bank as a generic UI cue, at a volume scale
+ * relative to the user's completion-sound volume. Used by voice-call mode for
+ * its audible state (connected / tool tick / thinking / hang-up); the caller
+ * owns the enable gate, so the completion toggle is deliberately bypassed.
+ */
+export function playCueVariant(variantId: number, volumeScale = 1) {
+	// Clamp so callers can't push the mix past the user's configured volume.
+	void playVariant(resolveCompletionSoundVariantId(variantId), Math.min(1, Math.max(0, volumeScale || 0)));
 }
 
 interface AirPuffSpec {
