@@ -44,6 +44,10 @@ export interface AgentEventDeps {
 	sessionStartGenerationRef: { current: number };
 	/** Questions parked for background sessions, promoted on activation. */
 	parkedQuestionsRef: Map<string, QuestionUiRequest>;
+	/** User echoes that arrived while history was loading: the latch defers
+	 *  them here instead of dropping (a first send inside the boot window),
+	 *  and the history fetch drains + merges them into the fetched snapshot. */
+	deferredUserEchoesRef: { current: AgentMessage[] };
 	/** Pull the authoritative engine state into the stores (App's callback). */
 	syncEngineState: () => Promise<void>;
 }
@@ -101,11 +105,33 @@ async function speakReply(text: string): Promise<void> {
 	}
 }
 
-function getUserMessageText(message: import("@earendil-works/pi-ai").UserMessage): string {
+/** Plain text of a user message, both content shapes. */
+export function getUserMessageText(message: import("@earendil-works/pi-ai").UserMessage): string {
 	const content = message.content;
 	if (typeof content === "string") return content;
 	if (!Array.isArray(content)) return "";
 	return content.map((c) => (c.type === "text" ? c.text : "")).join("");
+}
+
+/** Merge a fetched history snapshot with locally appended user echoes: the
+ *  boot history fetch is issued before the first send, so a user echo that
+ *  appended live during the fetch's flight must survive the snapshot's
+ *  setMessages — otherwise the row the user just typed vanishes from the
+ *  transcript until a tab switch or restart refetches it. Only TRAILING
+ *  local user rows the snapshot lacks are re-added, by text identity. */
+export function mergeUserEchoes(fetched: AgentMessage[], local: AgentMessage[]): AgentMessage[] {
+	if (local.length === 0) return fetched;
+	const fetchedUserTexts = new Set(
+		fetched
+			.filter((m) => m.role === "user")
+			.map((m) => getUserMessageText(m as import("@earendil-works/pi-ai").UserMessage)),
+	);
+	const orphans = local.filter(
+		(m) =>
+			m.role === "user" &&
+			!fetchedUserTexts.has(getUserMessageText(m as import("@earendil-works/pi-ai").UserMessage)),
+	);
+	return orphans.length > 0 ? [...fetched, ...orphans] : fetched;
 }
 
 /** Generate a concise session name from the first user message. */
@@ -178,7 +204,7 @@ function maybeRevealBrowserPanel(message: { role: string; content?: unknown }): 
 }
 
 export function processAgentEvent(event: rpc.RpcEvent, deps: AgentEventDeps): void {
-	const { loadingHistoryRef, sessionStartGenerationRef, parkedQuestionsRef, syncEngineState } = deps;
+const { loadingHistoryRef, sessionStartGenerationRef, parkedQuestionsRef, deferredUserEchoesRef, syncEngineState } = deps;
 	const session = useSessionStore.getState();
 
 	switch (event.type) {
@@ -431,7 +457,14 @@ export function processAgentEvent(event: rpc.RpcEvent, deps: AgentEventDeps): vo
 			session.setSessionName(event.name ?? null);
 			break;
 		case "message_start":
-			if (loadingHistoryRef.current) break;
+			if (loadingHistoryRef.current) {
+				// Defer, don't drop: a first send inside the boot window echoes
+				// while the history fetch is in flight; discarding it loses the
+				// row until a tab switch or restart refetches. The boot flow
+				// drains this into the fetched snapshot (mergeUserEchoes).
+				if (event.message.role === "user") deferredUserEchoesRef.current.push(event.message);
+				break;
+			}
 			if (event.message.role === "user") {
 				// Avoid double-appending the same user message if the engine echoes it
 				// after it was already injected by the composer.

@@ -6,7 +6,7 @@ import { rendererLog } from "../../lib/renderer-log";
 /** Tauri's manual resize-direction strings (Window.startResizeDragging). */
 type ResizeDirection = "East" | "North" | "NorthEast" | "NorthWest" | "South" | "SouthEast" | "SouthWest" | "West";
 import * as rpc from "../../lib/rpc";
-import { processAgentEvent } from "../../lib/agent-event-pipeline";
+import { processAgentEvent, mergeUserEchoes } from "../../lib/agent-event-pipeline";
 import { MessageList } from "../MessageList";
 import { Composer } from "../Composer";
 import { useSessionStore, type QuestionUiRequest } from "../../stores/session-store";
@@ -57,6 +57,8 @@ export function HudShell() {
 	const loadingHistoryRef = useRef(true);
 	const sessionStartGenerationRef = useRef(0);
 	const parkedQuestionsRef = useRef<Map<string, QuestionUiRequest>>(new Map());
+	// User echoes deferred by the history latch during the boot fetch.
+	const deferredUserEchoesRef = useRef<import("@earendil-works/pi-agent-core").AgentMessage[]>([]);
 	const sessionName = useSessionStore((s) => s.sessionName);
 	const connected = useSessionStore((s) => Boolean(s.sessionFile || s.sessionId));
 
@@ -73,24 +75,34 @@ export function HudShell() {
 					loadingHistoryRef,
 					sessionStartGenerationRef,
 					parkedQuestionsRef: parkedQuestionsRef.current,
+					deferredUserEchoesRef,
 					syncEngineState: hudSyncEngineState,
 				});
 			});
 			if (disposed) u();
 			else unlisten = u;
-
 			// The engine is already connected by the main window — this window only
 			// paints state and listens; it never spawns a second engine.
 			await hudSyncEngineState();
+			let fetchedMessages: import("@earendil-works/pi-agent-core").AgentMessage[] | undefined;
 			try {
 				const msgsRes = (await rpc.sendCommand({ type: "get_messages" })) as {
 					messages: import("@earendil-works/pi-agent-core").AgentMessage[];
 				};
-				useSessionStore.getState().setMessages(msgsRes?.messages ?? []);
+				fetchedMessages = msgsRes?.messages;
 			} catch (e) {
 				console.warn("[hud] history load failed", e);
 			} finally {
+				// Latch off, then drain deferred user echoes into the snapshot —
+				// single setMessages, mirroring the main window's boot flow.
 				loadingHistoryRef.current = false;
+				const deferred = deferredUserEchoesRef.current;
+				deferredUserEchoesRef.current = [];
+				if (fetchedMessages || deferred.length > 0) {
+					useSessionStore
+						.getState()
+						.setMessages(fetchedMessages ? mergeUserEchoes(fetchedMessages, deferred) : deferred);
+				}
 			}
 
 			// Drag/close failures log to the shared renderer diagnostics sink —

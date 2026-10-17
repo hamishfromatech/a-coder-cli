@@ -3,7 +3,7 @@ import { Bell, ChevronsUpDown, FolderGit2, MessageSquare, Plus, Settings, X } fr
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { initDesktopAnalytics } from "./lib/analytics";
 import * as rpc from "./lib/rpc";
-import { processAgentEvent } from "./lib/agent-event-pipeline";
+import { processAgentEvent, mergeUserEchoes } from "./lib/agent-event-pipeline";
 import { useVoiceCallStore, voiceCall } from "./lib/voice-call";
 import { ESCAPE_PRIORITY, isTopEscapeLayer } from "./lib/escape-layers";
 import { abortRun } from "./lib/session-abort";
@@ -115,6 +115,9 @@ export default function App() {
 	const unlistenRef = useRef<(() => void) | null>(null);
 	const switchProjectRef = useRef<(path: string) => void>(() => {});
 	const loadingHistoryRef = useRef(false);
+	// User echoes deferred by the history latch during the boot fetch (the
+	// pipeline pushes here); drained + merged into the snapshot on arrival.
+	const deferredUserEchoesRef = useRef<import("@earendil-works/pi-agent-core").AgentMessage[]>([]);
 	/** Increments on every session_start. Async history loads compare their
 	 *  generation before painting, so a slow fetch from a previous session can
 	 *  never paint over a newer switch (the A→B cross-paint bug hermes guards
@@ -369,6 +372,7 @@ export default function App() {
 						loadingHistoryRef,
 						sessionStartGenerationRef,
 						parkedQuestionsRef: parkedQuestionsRef.current,
+						deferredUserEchoesRef,
 						syncEngineState,
 					});
 				});
@@ -403,20 +407,31 @@ export default function App() {
 				// on a fresh launch it's empty. The initial session_start event is
 				// not forwarded to subscribers, so we fetch the history ourselves.
 				loadingHistoryRef.current = true;
+				deferredUserEchoesRef.current = [];
 				// Resumed sessions may take a moment to load history — show the
 				// loading state instead of flashing the new-conversation EmptyState.
 				if (options?.continueSession) setSessionLoading(true);
+				let fetchedMessages: import("@earendil-works/pi-agent-core").AgentMessage[] | undefined;
 				try {
 					const msgsRes = (await rpc.sendCommand({ type: "get_messages" })) as {
 						messages: import("@earendil-works/pi-agent-core").AgentMessage[];
 					};
-					if (msgsRes?.messages) {
-						setMessages(msgsRes.messages);
-					}
+					if (msgsRes?.messages) fetchedMessages = msgsRes.messages;
 				} catch (e) {
 					toast.error("Failed to load session history", e instanceof Error ? e.message : String(e));
 				} finally {
+					// Latch off FIRST, then drain: user echoes deferred during the
+					// flight (a first send inside the boot window) merge into the
+					// snapshot here — the single setMessages, so nothing appended
+					// live in between can be wiped and nothing is left stranded.
 					loadingHistoryRef.current = false;
+					const deferred = deferredUserEchoesRef.current;
+					deferredUserEchoesRef.current = [];
+					if (fetchedMessages || deferred.length > 0) {
+						setMessages(
+							fetchedMessages ? mergeUserEchoes(fetchedMessages, deferred) : deferred,
+						);
+					}
 					setSessionLoading(false);
 				}
 
