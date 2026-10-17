@@ -4,8 +4,10 @@
 
 ### Added
 
+- The voice-call card's orb is now the ElevenLabs UI orb (github.com/elevenlabs/ui, MIT): the same three.js fragment shader (flow-warped ovals, perlin-driven rings, 4-stop grayscale ramp), driven by call phase — thinking / listening / talking states each get their ElevenLabs animation signature. Shipped with pinned three/@react-three/fiber (+ @types/three) and a bundled perlin-noise tile (no CDN fetch); `@react-three/drei` was dropped in the port (its useTexture became a plain TextureLoader). The CSS gradient blob is removed.
+
 - Browser tool permission modes in the browser panel chrome (dropdown in the tab bar): **Agent: ask** — every new host asks once and remembered answers pass (the existing behavior); **Agent: auto** — ordinary sites run without asking, while the sensitive list (mailbox, sign-in, payments) keeps asking in every mode. Persisted as `browser.agentPermissionMode` in the engine settings read per op by the MCP gate, validated on write, surfaced in a new `browser_get/set_permission_mode` command pair.
-- Browser panel auto-reveal: when the assistant's turn invokes a `browser_*` tool and the right rail isn't showing the browser panel, the rail slides to the browser tab automatically (deduped per tool-call id so a streaming tool's updates don't re-pop it) — the agent pulling the browser out should feel like magic, not a hunt.
+- Browser panel auto-reveal: when the assistant's turn invokes a `browser_*` tool and the rail isn't showing the browser panel — including the rail being closed, which keeps its tab on browser — the rail slides to the browser tab automatically (deduped per tool-call id so a streaming tool's updates don't re-pop it) — the agent pulling the browser out should feel like magic, not a hunt.
 
 - Voice-call rail panel: the call moves out of the full-screen click-through overlay into the right sidebar's own tab (phone icon; auto-opens when a call starts, pulsing dot on the rail when hidden). The panel carries the call card — mic-level orb, phase caption, tool chip, live dictation, sentence progress, mute/skip/hang-up — plus a capped call log of the user's turns and the agent's replies as they send/play. Esc still interrupts and hangs up; approvals and the composer were never covered by a scrim in the first place now.
 

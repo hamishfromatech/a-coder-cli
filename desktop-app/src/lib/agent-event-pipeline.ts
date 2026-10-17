@@ -171,7 +171,9 @@ function maybeRevealBrowserPanel(message: { role: string; content?: unknown }): 
 		if (!name.startsWith("browser_")) continue;
 		lastBrowserToolId = id;
 		const ui = useUiStore.getState();
-		if (ui.rightSidebarTab !== "browser") ui.setRightSidebarTab("browser");
+		// Reveal when the panel isn't showing — a closed sidebar keeps its tab on
+		// "browser", so the closed state alone is also a reason to open it.
+		if (!ui.rightSidebarOpen || ui.rightSidebarTab !== "browser") ui.setRightSidebarTab("browser");
 	}
 }
 

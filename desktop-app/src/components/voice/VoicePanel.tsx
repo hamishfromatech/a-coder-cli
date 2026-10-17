@@ -1,16 +1,27 @@
 import { useEffect, useRef } from "react";
-import { Loader2, MicOff, Phone, PhoneOff, SkipForward, Volume2 } from "lucide-react";
+import { Suspense } from "react";
+import { MicOff, Phone, PhoneOff, SkipForward, Volume2 } from "lucide-react";
 import { useVoiceCallStore, voiceCall, type VoiceCallPhase } from "../../lib/voice-call";
 import { IconButton } from "../ui/Button";
+import { Orb, type AgentState } from "../ui/orb";
 
 /** Voice-call panel for the right sidebar's drawer rail — the call card lives
- *  here instead of a full-screen overlay, next to the panels it plays over. */
+ *  here instead of a full-screen overlay, next to the panels it plays over.
+ *  The orb is the ElevenLabs UI component (three.js shader); its state-driven
+ *  animation follows the call phase (thinking/listening/talking). */
 
 const PHASE_LABEL: Record<VoiceCallPhase, string> = {
 	connecting: "Connecting…",
 	listening: "Listening",
 	transcribing: "Transcribing…",
 	speaking: "Speaking",
+};
+
+const ORB_AGENT_STATE: Record<VoiceCallPhase, AgentState> = {
+	connecting: "thinking",
+	listening: "listening",
+	transcribing: "thinking",
+	speaking: "talking",
 };
 
 function activityLine(phase: VoiceCallPhase, agentBusy: boolean, muted: boolean): string {
@@ -33,29 +44,17 @@ function CallCard() {
 	}, [s.transcriptLog.length, s.transcript]);
 
 	const phaseLabel = PHASE_LABEL[s.phase];
-	// The orb breathes with the mic while listening, pulses while speaking.
-	const orbScale = s.phase === "listening" || s.phase === "connecting" ? 1 + s.level * 0.55 : 1;
 
 	return (
 		<div className="flex flex-col gap-3 p-3">
 			<div className="flex flex-col items-center text-center">
-				<div className="relative flex h-20 items-center justify-center">
-					<div
-						className="absolute h-20 w-20 rounded-full bg-gradient-to-br from-sky-400/70 to-indigo-500/70 blur-[1px]"
-						style={{
-							transform: `scale(${orbScale})`,
-							opacity: s.muted ? 0.25 : 0.75,
-							transition: "opacity 200ms ease",
-						}}
-					/>
-					<div className="absolute h-13 w-13 rounded-full bg-gradient-to-br from-sky-200 to-indigo-300 opacity-90" />
-					{s.phase === "connecting" || s.phase === "transcribing" ? (
-						<Loader2 className="relative h-5 w-5 animate-spin text-[#14141a]" />
-					) : s.muted ? (
-						<MicOff className="relative h-5 w-5 text-[#14141a]" />
-					) : (
-						<Volume2 className="relative h-5 w-5 text-[#14141a]" />
-					)}
+				<div className="h-24 w-24">
+					<Suspense fallback={null}>
+						<Orb
+							colors={["#5FA8FF", "#8B7BFF"]}
+							agentState={ORB_AGENT_STATE[s.phase]}
+						/>
+					</Suspense>
 				</div>
 				<p className="mt-1 text-xs font-semibold text-pi-text">
 					{phaseLabel}
