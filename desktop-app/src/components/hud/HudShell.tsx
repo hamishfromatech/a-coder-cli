@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { X, GripHorizontal } from "lucide-react";
+import { rendererLog } from "../../lib/renderer-log";
 
 /** Tauri's manual resize-direction strings (Window.startResizeDragging). */
 type ResizeDirection = "East" | "North" | "NorthEast" | "NorthWest" | "South" | "SouthEast" | "SouthWest" | "West";
@@ -88,6 +89,14 @@ export function HudShell() {
 			});
 			if (disposed) u();
 			else unlisten = u;
+
+			// TEMP diagnostics: window identity + drag/close permission probes
+			// (log-only; the explicit API calls are the real user path).
+			const w = getCurrentWindow();
+			rendererLog(`[hud] mounted label=${w.label}`);
+			w.startDragging()
+				.then(() => rendererLog("[hud] probe startDragging: ok"))
+				.catch((e) => rendererLog(`[hud] probe startDragging FAILED: ${e}`));
 		})();
 
 		return () => {
@@ -102,13 +111,22 @@ export function HudShell() {
 		// Explicit API call — the injected data-tauri-drag-region listener is
 		// flaky in a transparent, undecorated WKWebView window.
 		e.preventDefault();
-		void win.startDragging().catch(() => undefined);
+		rendererLog("[hud] drag begin");
+		win.startDragging().catch((e) => rendererLog(`[hud] drag failed: ${e}`));
 	};
 
 	const beginResize = (e: React.PointerEvent, direction: ResizeDirection) => {
 		e.preventDefault();
 		e.stopPropagation();
-		void win.startResizeDragging(direction).catch(() => undefined);
+		rendererLog("[hud] resize begin " + direction);
+		win.startResizeDragging(direction).catch((e) => rendererLog(`[hud] resize failed: ${e}`));
+	};
+
+	const closeHud = () => {
+		rendererLog("[hud] close click");
+		getCurrentWindow()
+			.close()
+			.catch((e) => rendererLog(`[hud] close failed: ${e}`));
 	};
 
 	return (
@@ -152,7 +170,7 @@ export function HudShell() {
 					</div>
 					<button
 						type="button"
-						onClick={() => void getCurrentWindow().close()}
+						onClick={closeHud}
 						aria-label="Close HUD"
 						className="rounded-md p-1 text-white/50 hover:bg-white/10 hover:text-white"
 					>

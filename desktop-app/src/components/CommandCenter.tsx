@@ -10,8 +10,9 @@
  * Inspired by Hermes Desktop's command-center.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { ESCAPE_PRIORITY, isTopEscapeLayer, pushEscapeLayer } from '../lib/escape-layers';
 
 import { Button } from './ui/Button';
 import {
@@ -126,6 +127,23 @@ export function CommandCenter({
 	}, [stats?.daily]);
 
 	if (!open) return null;
+
+	// Esc closes the command center — overlay priority, below palette/approval.
+	useEffect(() => {
+		const unregister = pushEscapeLayer(ESCAPE_PRIORITY.picker);
+		const onKey = (event: KeyboardEvent) => {
+			if (event.defaultPrevented || !isTopEscapeLayer(ESCAPE_PRIORITY.picker)) return;
+			if (event.key === 'Escape') {
+				event.preventDefault();
+				onClose();
+			}
+		};
+		window.addEventListener('keydown', onKey);
+		return () => {
+			unregister();
+			window.removeEventListener('keydown', onKey);
+		};
+	}, [onClose]);
 
 	return createPortal(
 		<div

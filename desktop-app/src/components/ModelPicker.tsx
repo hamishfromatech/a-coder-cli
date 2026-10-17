@@ -7,6 +7,7 @@ import { useSessionStore } from "../stores/session-store";
 import { IconButton } from "./ui/Button";
 import { Badge } from "./ui/Badge";
 import { ModalBackdrop, ModalPanel } from "./ui/Modal";
+import { ESCAPE_PRIORITY, isTopEscapeLayer, pushEscapeLayer } from "../lib/escape-layers";
 
 type AnyModel = Model<Api>;
 
@@ -97,8 +98,11 @@ export function ModelPicker({
 	}, [filter]);
 
 	useEffect(() => {
+		const unregister = pushEscapeLayer(ESCAPE_PRIORITY.picker); // while mounted
 		const handler = (e: KeyboardEvent) => {
+			if (e.defaultPrevented || !isTopEscapeLayer(ESCAPE_PRIORITY.picker)) return;
 			if (e.key === "Escape") {
+				e.preventDefault();
 				onClose();
 			} else if (e.key === "ArrowDown") {
 				e.preventDefault();
@@ -113,7 +117,10 @@ export function ModelPicker({
 			}
 		};
 		window.addEventListener("keydown", handler);
-		return () => window.removeEventListener("keydown", handler);
+		return () => {
+			unregister();
+			window.removeEventListener("keydown", handler);
+		};
 	}, [filtered, highlight, onClose, onSelect]);
 
 	useEffect(() => {

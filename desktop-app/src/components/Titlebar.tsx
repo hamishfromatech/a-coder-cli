@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
 	ChevronDown,
 	FileText,
@@ -12,6 +12,7 @@ import { useSessionStore } from "../stores/session-store";
 import * as rpc from "../lib/rpc";
 import { isMacOS } from "../lib/platform";
 import { triggerHaptic } from "../lib/haptics";
+import { ESCAPE_PRIORITY, pushEscapeLayer } from "../lib/escape-layers";
 import { BrandMark } from "./ui/BrandMark";
 import { WindowControls } from "./WindowControls";
 import { openHud } from "../lib/hud";
@@ -19,6 +20,13 @@ import { openHud } from "../lib/hud";
 export function Titlebar() {
 	const [editingName, setEditingName] = useState(false);
 	const [nameDraft, setNameDraft] = useState("");
+
+	// While the inline rename is open, Esc belongs to the rename (cancel),
+	// not to lower-priority window handlers (engine stop).
+	useEffect(() => {
+		if (!editingName) return;
+		return pushEscapeLayer(ESCAPE_PRIORITY.titlebarEdit);
+	}, [editingName]);
 
 	const {
 		leftSidebarOpen,

@@ -1,7 +1,7 @@
 {
 	"$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
 	"productName": "A-Coder Desktop",
-	"version": "0.80.146",
+	"version": "0.80.147",
 	"identifier": "works.earendil.a-coder-desktop",
 	"build": {
 		"beforeDevCommand": "npm run dev",
@@ -24,7 +24,8 @@
 			},
 			"csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob: asset: http://asset.localhost; media-src 'self' blob: data: asset: http://asset.localhost; connect-src 'self' https: http: ws: wss:; frame-src 'self' blob: data: asset: http://asset.localhost http://127.0.0.1:* http://localhost:*",
 			"capabilities": [
-				"default"
+				"default",
+				"hud"
 			]
 		},
 		"windows": [

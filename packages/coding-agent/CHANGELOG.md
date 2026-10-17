@@ -4,6 +4,7 @@
 
 ### Added
 
+- Escape stops an in-flight run in the desktop app (mirrors the CLI's Esc interrupt): Esc while the agent is running calls the shared abort path (haptic, user-cancel flag, engine abort) from the main window or the HUD. Its priority is the NEW escape-layer system (`src/lib/escape-layers.ts`, ported from hermes desktop): a single Esc dismisses exactly the top-most urgent surface — pending approval (deny) > command palette > find bar > model picker/command center > tab context menu > titlebar rename > engine stop — each layer registers while open and lower handlers bail on `defaultPrevented`/priority.
 - Voice-call conversation style: while a voice call is live the desktop applies a runtime system-prompt addendum (new `set_system_prompt_addendum` RPC — appended to the base/extension prompt on every turn while set, cleared when the call ends, never persisted) so spoken replies read like a natural phone call: short spoken-first answers, no markdown/lists/code fences, descriptions instead of pasted output, one clarifying question instead of guessing.
 - Voice settings model/voice pickers: the STT and TTS model fields and the TTS voice field are dropdowns that load their catalogs from the endpoint (`{base}/models` for models, `{base}/voices` for voices, fetched through a new `voice_fetch_json` Rust CORS-bridge command) on focus or refresh click. Shapes accepted: OpenAI `{data:[{id}]}`, plain arrays, `{voices:[…]}`, id/name/voice keys — with a manual text-input fallback (the old behavior) for endpoints without a catalog or when the user picks Custom….
 
@@ -21,6 +22,7 @@
 
 ### Fixed
 
+- HUD window drag/resize/close all failing: the `hud` capability file existed but was never registered in `tauri.conf.json`'s `capabilities` list, so the HUD window ran with no ACL grants — every ACL-gated core:window invoke (startDragging, startResizeDragging, close) was denied while ungated custom commands kept working (hence "engine connected" but "can't drag or close"). The capability is now registered, and drag/close failures are reported through the renderer diagnostics log instead of being swallowed.
 - HUD open failing with `Command plugin:window|get_all_windows not allowed by ACL`: `WebviewWindow.getByLabel` needs `core:window:allow-get-all-windows`, now granted on the main-window capability. The HUD also gained a titlebar toggle (picture-in-picture icon next to the right-sidebar toggle) beside the `/hud` slash command.
 
 

@@ -10,6 +10,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { Search } from 'lucide-react';
+import { ESCAPE_PRIORITY, isTopEscapeLayer, pushEscapeLayer } from '../lib/escape-layers';
 
 export interface CommandItem {
 	id: string;
@@ -119,7 +120,9 @@ export function CommandPalette({ open, commands, onClose }: CommandPaletteProps)
 	useEffect(() => {
 		if (!open) return undefined;
 
+		const unregister = pushEscapeLayer(ESCAPE_PRIORITY.palette);
 		function handleGlobalKeyDown(event: KeyboardEvent) {
+			if (event.defaultPrevented || !isTopEscapeLayer(ESCAPE_PRIORITY.palette)) return;
 			if (event.key === 'Escape') {
 				event.preventDefault();
 				onClose();
@@ -127,7 +130,10 @@ export function CommandPalette({ open, commands, onClose }: CommandPaletteProps)
 		}
 
 		window.addEventListener('keydown', handleGlobalKeyDown, { capture: true });
-		return () => window.removeEventListener('keydown', handleGlobalKeyDown, { capture: true });
+		return () => {
+			unregister();
+			window.removeEventListener('keydown', handleGlobalKeyDown, { capture: true });
+		};
 	}, [open, onClose]);
 
 	if (!open) return null;

@@ -3,6 +3,7 @@ import { AlertCircle, ChevronDown, Loader2, Workflow } from "lucide-react";
 import { useSessionStore, type UiRequest } from "../stores/session-store";
 import { addSessionAllowRules } from "../lib/rpc";
 import { triggerHaptic } from "../lib/haptics";
+import { ESCAPE_PRIORITY, isTopEscapeLayer, pushEscapeLayer } from "../lib/escape-layers";
 
 // Tool-approval bar matching Hermes desktop's in-chat permission UI.
 //
@@ -93,7 +94,9 @@ export const ToolApprovalBar: FC<ToolApprovalBarProps> = ({ request, surface }) 
 	// coexist: the first to fire resolves and clears the request, the second
 	// bails. ⌘/Ctrl+Enter → allow, Esc → deny.
 	useEffect(() => {
+		const unregister = pushEscapeLayer(ESCAPE_PRIORITY.approval); // while mounted
 		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.defaultPrevented || !isTopEscapeLayer(ESCAPE_PRIORITY.approval)) return;
 			if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
 				event.preventDefault();
 				respond("allow");
@@ -103,7 +106,10 @@ export const ToolApprovalBar: FC<ToolApprovalBarProps> = ({ request, surface }) 
 			}
 		};
 		window.addEventListener("keydown", onKeyDown, true);
-		return () => window.removeEventListener("keydown", onKeyDown, true);
+		return () => {
+			unregister();
+			window.removeEventListener("keydown", onKeyDown, true);
+		};
 	}, [respond]);
 
 	const bar = (

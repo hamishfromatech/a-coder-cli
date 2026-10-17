@@ -11,6 +11,7 @@ import { createPortal } from 'react-dom';
 
 import { Button } from './ui/Button';
 import { ChevronUp, ChevronDown, X } from 'lucide-react';
+import { ESCAPE_PRIORITY, isTopEscapeLayer, pushEscapeLayer } from '../lib/escape-layers';
 
 interface FindBarProps {
 	open: boolean;
@@ -91,7 +92,9 @@ export function FindBar({ open, onClose }: FindBarProps) {
 	useEffect(() => {
 		if (!open) return undefined;
 
+		const unregister = pushEscapeLayer(ESCAPE_PRIORITY.findBar);
 		function handleGlobalKeyDown(event: KeyboardEvent) {
+			if (event.defaultPrevented || !isTopEscapeLayer(ESCAPE_PRIORITY.findBar)) return;
 			if ((event.metaKey || event.ctrlKey) && event.key === 'g') {
 				event.preventDefault();
 				if (event.shiftKey) {
@@ -100,12 +103,16 @@ export function FindBar({ open, onClose }: FindBarProps) {
 					findNext();
 				}
 			} else if (event.key === 'Escape') {
+				event.preventDefault();
 				onClose();
 			}
 		}
 
 		window.addEventListener('keydown', handleGlobalKeyDown, { capture: true });
-		return () => window.removeEventListener('keydown', handleGlobalKeyDown, { capture: true });
+		return () => {
+			unregister();
+			window.removeEventListener('keydown', handleGlobalKeyDown, { capture: true });
+		};
 	}, [open, query, onClose]);
 
 	if (!open) return null;

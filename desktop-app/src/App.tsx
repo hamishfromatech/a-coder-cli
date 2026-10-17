@@ -5,6 +5,8 @@ import { initDesktopAnalytics } from "./lib/analytics";
 import * as rpc from "./lib/rpc";
 import { processAgentEvent } from "./lib/agent-event-pipeline";
 import { useVoiceCallStore, voiceCall } from "./lib/voice-call";
+import { ESCAPE_PRIORITY, isTopEscapeLayer } from "./lib/escape-layers";
+import { abortRun } from "./lib/session-abort";
 import { VoiceCallOverlay } from "./components/voice/VoiceCallOverlay";
 import { triggerHaptic } from "./lib/haptics";
 import { rafCoalesce } from "./lib/raf-coalesce";
@@ -689,6 +691,25 @@ export default function App() {
 				closedAt: Date.now(),
 			});
 		}
+	}, []);
+
+	// Escape stops an in-flight run (mirrors the CLI's Esc interrupt). Only acts
+	// at base priority: approvals, palette, find bar, pickers, menus, and voice
+	// calls own Esc first, via escape-layer priorities and their own handlers.
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key !== "Escape" || e.repeat) return;
+			if (e.defaultPrevented) return; // a higher layer already handled Esc
+			if (!isTopEscapeLayer(ESCAPE_PRIORITY.engineStop)) return;
+			if (!useSessionStore.getState().isStreaming) return;
+			if (useSessionStore.getState().uiRequests.length > 0) return; // approval Esc = deny
+			if (useVoiceCallStore.getState().active) return; // Esc = hang up
+			e.preventDefault();
+			e.stopPropagation();
+			void abortRun();
+		};
+		window.addEventListener("keydown", onKey, true);
+		return () => window.removeEventListener("keydown", onKey, true);
 	}, []);
 
 	// Voice call keybindings: Escape ends the call, Space barges an in-progress

@@ -6,6 +6,7 @@
 
 import { useEffect, useRef } from "react";
 import { useBrowserStore } from "../../stores/browser-store";
+import { ESCAPE_PRIORITY, isTopEscapeLayer, pushEscapeLayer } from "../../lib/escape-layers";
 
 const MENU_WIDTH = 176;
 const MENU_HEIGHT = 148;
@@ -34,8 +35,13 @@ export function TabContextMenu({
 	const copyUrl = useBrowserStore((state) => state.copyUrl);
 
 	useEffect(() => {
+		const unregister = pushEscapeLayer(ESCAPE_PRIORITY.contextMenu); // while open
 		const onKey = (event: KeyboardEvent) => {
-			if (event.key === "Escape") onClose();
+			if (event.key === "Escape") {
+				if (event.defaultPrevented || !isTopEscapeLayer(ESCAPE_PRIORITY.contextMenu)) return;
+				event.preventDefault();
+				onClose();
+			}
 		};
 		const onDown = (event: MouseEvent) => {
 			if (menuRef.current && !menuRef.current.contains(event.target as Node)) onClose();
@@ -43,6 +49,7 @@ export function TabContextMenu({
 		document.addEventListener("keydown", onKey);
 		document.addEventListener("mousedown", onDown);
 		return () => {
+			unregister();
 			document.removeEventListener("keydown", onKey);
 			document.removeEventListener("mousedown", onDown);
 		};

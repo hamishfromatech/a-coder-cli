@@ -28,6 +28,7 @@ import { useDraftStore } from "../stores/draft-store";
 import { useVoiceCallStore, voiceCall } from "../lib/voice-call";
 import * as rpc from "../lib/rpc";
 import { triggerHaptic } from "../lib/haptics";
+import { abortRun } from "../lib/session-abort";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import {
 	BUILTIN_COMMANDS,
@@ -226,14 +227,7 @@ export function Composer() {
 	};
 
 	const handleAbort = async () => {
-		triggerHaptic("cancel");
-		// Mark the turn as user-cancelled so agent_end doesn't play the cue.
-		useSessionStore.getState().setAbortRequested(true);
-		try {
-			await rpc.abort();
-		} finally {
-			setIsStreaming(false);
-		}
+		await abortRun();
 	};
 
 	const handleMic = async () => {
