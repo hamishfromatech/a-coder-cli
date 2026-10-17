@@ -435,6 +435,98 @@
 		return at instanceof Element ? at : null;
 	}
 
+	// ---------------------------------------------------------------------
+	// Magic cursor: a pointer ghost that glides to wherever an agent op acts.
+	// Lives in the page DOM (fixed, pointer-events none), so it renders above
+	// the page in every mode and needs no IPC. Enters off-screen, glides,
+	// ripples on actions, fades after a short idle.
+	var agentCursor = null; // { root, svg, rippleHolder, visible, x, y }
+	var agentCursorHideTimer = null;
+	var AGENT_CURSOR_FADE_MS = 1400;
+
+	function agentCursorEnsure() {
+		if (agentCursor && agentCursor.root.isConnected) return agentCursor;
+		var root = document.createElement("div");
+		root.setAttribute("data-agent-cursor", "");
+		root.setAttribute("aria-hidden", "true");
+		root.style.cssText =
+			"position:fixed;left:0;top:0;pointer-events:none;z-index:2147483000;opacity:0;" +
+			"transition:opacity 260ms ease;will-change:transform;";
+		root.innerHTML =
+			'<svg width="26" height="30" viewBox="0 0 26 30" style="display:block;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.45))">' +
+			'<path d="M2 1 L2 24 L8.6 18.6 L12.6 28 L15.8 26.6 L11.9 17.3 L20 17 Z" ' +
+			'fill="rgba(255,255,255,0.96)" stroke="rgba(17,17,22,0.85)" stroke-width="1.4" ' +
+			'stroke-linejoin="round"/></svg>';
+		document.body
+			? document.body.appendChild(root)
+			: document.documentElement.appendChild(root);
+		var holder = document.createElement("div"); // ripple rings mount here
+		holder.style.cssText = "position:fixed;left:0;top:0;pointer-events:none;z-index:2147482999;";
+		(document.body || document.documentElement).appendChild(holder);
+		agentCursor = { root: root, holder: holder, visible: false, x: -80, y: -80 };
+		return agentCursor;
+	}
+
+	function agentCursorMove(x, y, glide) {
+		var c = agentCursorEnsure();
+		if (!isFinite(x) || !isFinite(y)) return;
+		var vw = window.innerWidth || 800;
+		var vh = window.innerHeight || 600;
+		x = Math.max(4, Math.min(vw - 8, x));
+		y = Math.max(4, Math.min(vh - 8, y));
+		if (agentCursorHideTimer) {
+			clearTimeout(agentCursorHideTimer);
+			agentCursorHideTimer = null;
+		}
+		if (!c.visible) {
+			// Off-screen entry: come in from the nearer horizontal edge.
+			var fromX = x < vw / 2 ? -70 : vw + 70;
+			c.root.style.transition = "none";
+			c.root.style.transform = "translate3d(" + fromX + "px," + y + "px,0)";
+			void c.root.offsetWidth; // flush so the glide below animates
+			c.root.style.transition =
+				"transform 240ms cubic-bezier(0.2,0.7,0.3,1), opacity 260ms ease";
+			c.root.style.opacity = "1";
+			c.visible = true;
+		}
+		c.root.style.transform = "translate3d(" + x + "px," + y + "px,0)";
+		if (glide === false) {
+			// No glide requested: snap (first paint path).
+		}
+		c.x = x;
+		c.y = y;
+		agentCursorHideTimer = setTimeout(function () {
+			if (!agentCursor) return;
+			agentCursor.root.style.opacity = "0";
+			agentCursor.visible = false;
+		}, AGENT_CURSOR_FADE_MS);
+	}
+
+	function agentCursorRipple(x, y) {
+		var c = agentCursorEnsure();
+		var ring = document.createElement("span");
+		ring.style.cssText =
+			"position:fixed;left:" + Math.max(0, x - 3) + "px;top:" + Math.max(0, y - 3) + "px;width:6px;height:6px;" +
+			"border-radius:50%;pointer-events:none;border:2px solid rgba(99,140,255,0.9);" +
+			"box-shadow:0 0 10px rgba(99,140,255,0.35);animation:agent-cursor-ripple 520ms ease-out forwards;";
+		c.holder.appendChild(ring);
+		setTimeout(function () {
+			ring.remove();
+		}, 560);
+	}
+
+	function agentCursorStyle() {
+		if (document.getElementById("a-coder-agent-cursor-style")) return;
+		var style = document.createElement("style");
+		style.id = "a-coder-agent-cursor-style";
+		style.textContent =
+			"@keyframes agent-cursor-ripple { from { opacity:0.9; transform:scale(1); } " +
+			"to { opacity:0; transform:scale(7); } }";
+		(document.head || document.documentElement).appendChild(style);
+	}
+
+	agentCursorStyle();
+
 	// Coordinates for point ops; anything NaN-shaped (missing, string) reads
 	// as a mistake, not as 0,0 at the top-left corner.
 	function coordsOf(raw) {
@@ -742,6 +834,10 @@
 			case "click": {
 				var el3 = lookup(op.ref);
 				el3.scrollIntoView({ block: "center", inline: "center" });
+				var cr = el3.getBoundingClientRect();
+				var ccx = cr.left + cr.width / 2;
+				var ccy = cr.top + cr.height / 2;
+				agentCursorMove(ccx, ccy);
 				var over = covering(el3);
 				if (over) {
 					return {
@@ -750,9 +846,14 @@
 					};
 				}
 				var handback = linkHandback(el3.closest ? el3.closest("a[href]") : null, op.navigateLinks);
-				if (handback) return { ok: true, navigate: handback };
+				if (handback) {
+					agentCursorRipple(ccx, ccy);
+					return { ok: true, navigate: handback };
+				}
 				mouse(el3, "pointerover");
+				agentCursorMove(ccx, ccy);
 				mouse(el3, "pointerdown");
+				agentCursorRipple(ccx, ccy);
 				mouse(el3, "mousedown");
 				if (typeof el3.focus === "function") el3.focus({ preventScroll: true });
 				mouse(el3, "pointerup");
@@ -767,12 +868,18 @@
 				// at, and elementFromPoint already named the top of it.
 				var point = coordsOf(op);
 				if (!point) return { ok: false, error: "click_at needs numeric x and y in CSS viewport pixels" };
+				agentCursorMove(point.x, point.y);
 				var at = hitAt(point.x, point.y);
 				if (!at) return { ok: false, error: "no element at " + Math.round(point.x) + "," + Math.round(point.y) + "; scroll or resize the window, or snapshot for refs" };
 				var pointerHandback = linkHandback(at.closest ? at.closest("a[href]") : null, op.navigateLinks);
-				if (pointerHandback) return { ok: true, hit: pointDescribe(at, point.x, point.y), navigate: pointerHandback };
+				if (pointerHandback) {
+					agentCursorRipple(point.x, point.y);
+					return { ok: true, hit: pointDescribe(at, point.x, point.y), navigate: pointerHandback };
+				}
 				hoverMove(at, point.x, point.y);
+				agentCursorMove(point.x, point.y);
 				mouseAt(at, "pointerdown", point.x, point.y);
+				agentCursorRipple(point.x, point.y);
 				mouseAt(at, "mousedown", point.x, point.y);
 				if (typeof at.focus === "function") at.focus({ preventScroll: true });
 				mouseAt(at, "pointerup", point.x, point.y);
@@ -793,6 +900,7 @@
 				var onto = hitAt(toPoint.x, toPoint.y);
 				if (!onto) return { ok: false, error: "no element at " + Math.round(toPoint.x) + "," + Math.round(toPoint.y) };
 				hoverMove(onto, toPoint.x, toPoint.y);
+				agentCursorMove(toPoint.x, toPoint.y);
 				return { ok: true, hit: pointDescribe(onto, toPoint.x, toPoint.y), ref: refOf(onto), quietMs: quietMs() };
 			}
 			case "drag": {
@@ -811,8 +919,11 @@
 				var source = hitAt(from.x, from.y);
 				if (!source) return { ok: false, error: "no element at " + Math.round(from.x) + "," + Math.round(from.y) + "; scroll or snapshot for refs" };
 				hoverMove(source, from.x, from.y);
+				agentCursorMove(from.x, from.y);
+				agentCursorRipple(from.x, from.y);
 				mouseAt(source, "pointerdown", from.x, from.y);
 				mouseAt(source, "mousedown", from.x, from.y);
+				agentCursorMove(to.x, to.y);
 				// Moves land on whatever is under each step, so elements along
 				// the path see the pointer coming; past the page (a drop over
 				// nothing, e.g. past the viewport edge) the last holder keeps
@@ -841,6 +952,8 @@
 			case "type": {
 				var el4 = lookup(op.ref);
 				el4.scrollIntoView({ block: "center" });
+				var typRect = el4.getBoundingClientRect();
+				agentCursorMove(typRect.left + Math.min(typRect.width / 2, 160), typRect.top + typRect.height / 2);
 				if (typeof el4.focus === "function") el4.focus({ preventScroll: true });
 				setValue(el4, String(op.text == null ? "" : op.text));
 				if (op.submit) pressKey(el4, "Enter");
@@ -853,6 +966,9 @@
 				var option = findOption(el5, String(op.value == null ? "" : op.value));
 				if (!option) return { ok: false, error: "no such option" };
 				el5.scrollIntoView({ block: "center" });
+				var selRect = el5.getBoundingClientRect();
+				agentCursorMove(selRect.left + selRect.width / 2, selRect.top + selRect.height / 2);
+				agentCursorRipple(selRect.left + selRect.width / 2, selRect.top + selRect.height / 2);
 				el5.value = option.value;
 				el5.dispatchEvent(new Event("input", { bubbles: true }));
 				el5.dispatchEvent(new Event("change", { bubbles: true }));
@@ -867,6 +983,8 @@
 			}
 			case "press": {
 				var focus = document.activeElement || document.body;
+				var fr = focus.getBoundingClientRect();
+				agentCursorMove(fr.left + fr.width / 2, fr.top + fr.height / 2);
 				pressKey(focus, String(op.key || "Enter"));
 				return { ok: true, quietMs: quietMs() };
 			}

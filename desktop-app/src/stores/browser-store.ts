@@ -8,6 +8,7 @@ import browser, { onBrowserEvent, type BrowserEvent, type TabInfo } from "../lib
 import { rendererLog } from "../lib/renderer-log";
 import { toast } from "./toast-store";
 import { openExternalLink } from "../lib/external-link";
+import { readSettingsFile } from "../lib/rpc";
 import { triggerHaptic } from "../lib/haptics";
 import { useUiStore } from "./ui-store";
 
@@ -56,6 +57,8 @@ interface BrowserState {
 	gateway: string | null;
 	layered: boolean;
 	captureSupported: boolean;
+	/** Where external links open: "default" browser or this app's panel. */
+	linkTarget: "default" | "desktop";
 	tabs: BrowserTab[];
 	activeId: string | null;
 	downloads: DownloadPrompt[];
@@ -206,6 +209,10 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 	gateway: null,
 	layered: false,
 	captureSupported: false,
+	/** Where chat/panel external links open: the system default or this app's
+	 *  browser panel. Hydrated from the CLI settings' browser.linkTarget at
+	 *  boot; the settings widget writes both sides. */
+	linkTarget: "default" as "default" | "desktop",
 	tabs: [],
 	activeId: null,
 	downloads: [],
@@ -411,7 +418,8 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 			triggerHaptic("cancel");
 			return;
 		}
-		openExternalLink(prompt.url);
+		// The user accepted an explicit handoff: system browser, setting aside.
+		openExternalLink(prompt.url, { forceDefault: true });
 		triggerHaptic("open");
 	},
 
@@ -512,7 +520,10 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 				// http(s) handoffs (downloads, target=_blank the view won't
 				// host) stay automatic: the system browser is the only reader.
 				if (isWebUrl(event.url)) {
-					openExternalLink(event.url);
+					// A page inside the panel is handing off its own link: the
+					// panel already declined to host it, so it belongs in the
+					// system browser regardless of the link-target setting.
+					openExternalLink(event.url, { forceDefault: true });
 					break;
 				}
 				// Non-web schemes can trigger mail clients, file handlers and
@@ -638,4 +649,21 @@ if (!bound) {
 			rendererLog(`browser: store binding failed: ${String(error)}`);
 			return onBrowserEvent((event) => useBrowserStore.getState().applyEvent(event));
 		});
+}
+/** Hydrate the link-target preference from the CLI settings' browser object
+ *  (browser.linkTarget). Called once at app boot; the settings widget syncs
+ *  the store immediately on change so link clicks see the new value without
+ *  waiting for the next boot. */
+export async function hydrateLinkTarget(): Promise<void> {
+	try {
+		const global = await readSettingsFile({ scope: "global" }).then(
+			(v) => (v ?? {}) as Record<string, unknown>,
+			() => ({}) as Record<string, unknown>,
+		);
+		const browser = (global.browser ?? {}) as Record<string, unknown>;
+		const value = (browser as { linkTarget?: unknown }).linkTarget;
+		useBrowserStore.setState({ linkTarget: value === "desktop" ? "desktop" : "default" });
+	} catch {
+		// Unreadable settings keep the default (system browser).
+	}
 }

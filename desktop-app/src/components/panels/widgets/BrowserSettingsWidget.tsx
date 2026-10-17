@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { Check, Copy, FolderOpen, RotateCcw } from "lucide-react";
 import * as rpc from "../../../lib/rpc";
 import { Button } from "../../ui/Button";
+import { useBrowserStore } from "../../../stores/browser-store";
 
 interface Props {
 	value?: unknown;
@@ -15,6 +16,7 @@ interface Props {
 interface BrowserPrefs {
 	downloadFolder?: string;
 	agentTools?: boolean;
+	linkTarget?: "default" | "desktop";
 }
 
 function prefsOf(value: unknown): BrowserPrefs {
@@ -24,14 +26,18 @@ function prefsOf(value: unknown): BrowserPrefs {
 export function BrowserSettingsWidget({ value, onChange }: Props) {
 	const prefs = prefsOf(value);
 	const [folder, setFolder] = useState(prefs.downloadFolder ?? "");
+	const [linkTarget, setLinkTargetState] = useState<"default" | "desktop">(
+		(prefs.linkTarget === "desktop" ? "desktop" : "default") as "default" | "desktop",
+	);
 	const [endpoint, setEndpoint] = useState<string | null>(null);
 	const [copied, setCopied] = useState(false);
 
 	// Track external schema edits (scope switches, file reloads).
 	useEffect(() => {
 		setFolder(prefs.downloadFolder ?? "");
+		setLinkTargetState((prefs.linkTarget === "desktop" ? "desktop" : "default") as "default" | "desktop");
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [prefs.downloadFolder]);
+	}, [prefs.downloadFolder, prefs.linkTarget]);
 
 	// The MCP endpoint exists only with native page views (macOS 14+/Windows).
 	useEffect(() => {
@@ -64,6 +70,13 @@ export function BrowserSettingsWidget({ value, onChange }: Props) {
 		commit({ ...prefs, agentTools: enabled });
 	};
 
+	/** Where chat/panel-external links open; synced into the live store so
+	 *  clicks see the new routing without a restart. */
+	const setLinkTarget = (linkTarget: "default" | "desktop") => {
+		useBrowserStore.setState({ linkTarget });
+		commit({ ...prefs, linkTarget });
+	};
+
 	useEffect(() => {
 		if (!prefs.agentTools) return;
 		void rpc.getAgentServerUrl().then(setEndpoint).catch(() => setEndpoint(null));
@@ -75,6 +88,24 @@ export function BrowserSettingsWidget({ value, onChange }: Props) {
 
 	return (
 		<div className="flex flex-col gap-4 py-1">
+			<div>
+				<div className="mb-1.5 text-xs font-medium text-pi-text">Open links in</div>
+				<select
+					value={linkTarget}
+					onChange={(event) => setLinkTarget(event.target.value === "desktop" ? "desktop" : "default")}
+					aria-label="Where to open URLs"
+					title="Default browser hands every link to the system; This app's browser opens them as tabs in the desktop browser panel."
+					className="h-8 w-full cursor-pointer rounded border border-pi-border bg-pi-surface-raised px-2 text-xs text-pi-text focus:outline-none focus:ring-1 focus:ring-pi-accent"
+				>
+					<option value="default">Default browser</option>
+					<option value="desktop">This app's browser</option>
+				</select>
+				<p className="mt-1 text-3xs text-pi-text-muted">
+					Handoffs the panel can't host (downloads, target blank) and OAuth sign-ins always go to
+					the system browser.
+				</p>
+			</div>
+
 			<div>
 				<div className="mb-1.5 text-xs font-medium text-pi-text">Download folder</div>
 				<div className="flex items-center gap-1.5">

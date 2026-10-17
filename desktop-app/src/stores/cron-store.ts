@@ -5,7 +5,7 @@
 
 import { create } from "zustand";
 import * as rpc from "../lib/rpc";
-import type { CronJob } from "../lib/rpc";
+import type { CronJob, CronRun } from "../lib/rpc";
 
 interface CronState {
 	jobs: CronJob[];
@@ -13,15 +13,21 @@ interface CronState {
 	error: string | null;
 	/** Epoch ms of the last successful load. */
 	loadedAt: number | null;
+	/** All runs (every job), fetched for the calendar view; may trail live fires. */
+	runs: CronRun[];
+	runsLoadedAt: number | null;
 
 	refresh: () => Promise<void>;
 	applyJobs: (jobs: CronJob[]) => void;
+	refreshRuns: () => Promise<void>;
 }
 
 export const useCronStore = create<CronState>((set) => ({
 	jobs: [],
 	error: null,
 	loadedAt: null,
+	runs: [],
+	runsLoadedAt: null,
 
 	refresh: async () => {
 		try {
@@ -33,4 +39,13 @@ export const useCronStore = create<CronState>((set) => ({
 	},
 
 	applyJobs: (jobs) => set({ jobs, error: null, loadedAt: Date.now() }),
+
+	refreshRuns: async () => {
+		try {
+			const result = await rpc.cronRuns();
+			set({ runs: result.runs, runsLoadedAt: Date.now() });
+		} catch {
+			// Calendar still renders upcoming fires without history.
+		}
+	},
 }));

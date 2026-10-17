@@ -340,7 +340,7 @@ const { loadingHistoryRef, sessionStartGenerationRef, parkedQuestionsRef, deferr
 			// The engine is headless — the desktop owns browser opening.
 			const oauth = event as import("./rpc").OAuthLoginEvent;
 			if (oauth.phase === "browser" && oauth.url) {
-				openExternalLink(oauth.url);
+				openExternalLink(oauth.url, { forceDefault: true });
 			}
 			if (oauth.phase === "error" && oauth.message) {
 				toast.error("Sign-in failed", oauth.message);

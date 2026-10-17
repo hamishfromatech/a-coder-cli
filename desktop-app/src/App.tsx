@@ -6,6 +6,7 @@ import * as rpc from "./lib/rpc";
 import { processAgentEvent, mergeUserEchoes } from "./lib/agent-event-pipeline";
 import { useVoiceCallStore, voiceCall } from "./lib/voice-call";
 import { ESCAPE_PRIORITY, isTopEscapeLayer } from "./lib/escape-layers";
+import { hydrateLinkTarget } from "./stores/browser-store";
 import { abortRun } from "./lib/session-abort";
 import { triggerHaptic } from "./lib/haptics";
 import { rafCoalesce } from "./lib/raf-coalesce";
@@ -769,6 +770,12 @@ export default function App() {
 		if (!isVoiceCallActive) return;
 		useUiStore.getState().setRightSidebarTab("voice");
 	}, [isVoiceCallActive]);
+
+	// Hydrate the link-target preference once at boot (browser.card syncs it
+	// live after that).
+	useEffect(() => {
+		void hydrateLinkTarget();
+	}, []);
 
 	// Background-session attention: needs-input sessions take priority over
 	// merely-finished ones. Both feed the sidebar rail's notification orb.

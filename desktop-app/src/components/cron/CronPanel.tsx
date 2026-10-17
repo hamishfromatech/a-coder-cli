@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { Bot, ChevronDown, ChevronRight, History, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
+import { Bot, CalendarDays, ChevronDown, ChevronRight, History, List, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "../ui/Button";
 import { Switch } from "../ui/Switch";
 import { cronDelete, cronRunNow, cronRuns, cronUpdate, type CronJob, type CronRun } from "../../lib/rpc";
@@ -13,6 +13,7 @@ import { useCronStore } from "../../stores/cron-store";
 import { useSessionStore } from "../../stores/session-store";
 import { openSessionFile } from "../../lib/open-session";
 import { CronEditor } from "./CronEditor";
+import { CronCalendar } from "./CronCalendar";
 
 function relativeTime(ms: number | undefined): string {
 	if (!ms) return "";
@@ -41,6 +42,7 @@ export function CronPanel() {
 	const refresh = useCronStore((s) => s.refresh);
 	const cwd = useSessionStore((s) => s.cwd);
 	const [editor, setEditor] = useState<{ open: boolean; job?: CronJob }>({ open: false });
+	const [view, setView] = useState<"list" | "calendar">("list");
 
 	useEffect(() => {
 		void refresh();
@@ -52,13 +54,23 @@ export function CronPanel() {
 		<div className="flex h-full min-h-0 flex-col">
 			<div className="flex items-center justify-between border-b border-pi-border px-3 py-2">
 				<span className="text-xs font-semibold text-pi-text">Scheduled tasks</span>
-				<Button
-					variant="ghost"
-					size="icon-sm"
-					icon={Plus}
-					aria-label="New scheduled task"
-					onClick={() => setEditor({ open: true })}
-				/>
+				<div className="flex items-center gap-0.5">
+					<Button
+						variant="ghost"
+						size="icon-sm"
+						icon={view === "list" ? CalendarDays : List}
+						aria-label={view === "list" ? "Switch to calendar view" : "Switch to list view"}
+						title={view === "list" ? "Calendar view" : "List view"}
+						onClick={() => setView(view === "list" ? "calendar" : "list")}
+					/>
+					<Button
+						variant="ghost"
+						size="icon-sm"
+						icon={Plus}
+						aria-label="New scheduled task"
+						onClick={() => setEditor({ open: true })}
+					/>
+				</div>
 			</div>
 
 			{error && (
@@ -70,22 +82,26 @@ export function CronPanel() {
 				</div>
 			)}
 
-			<div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-4">
-				{visible.length === 0 && (
-					<div className="px-1.5 py-2 text-2xs leading-relaxed text-pi-text-faint">
-						{jobs.length === 0
-							? "No scheduled tasks yet. Schedule standing work — the agent runs it in this project and reports in the conversation."
-							: "No scheduled tasks for this project."}
-					</div>
-				)}
-				{visible.map((job) => (
-					<CronRow
-						key={job.id}
-						job={job}
-						onEdit={() => setEditor({ open: true, job })}
-					/>
-				))}
-			</div>
+			{view === "calendar" ? (
+				<CronCalendar jobs={visible} />
+			) : (
+				<div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-4">
+					{visible.length === 0 && (
+						<div className="px-1.5 py-2 text-2xs leading-relaxed text-pi-text-faint">
+							{jobs.length === 0
+								? "No scheduled tasks yet. Schedule standing work — the agent runs it in this project and reports in the conversation."
+								: "No scheduled tasks for this project."}
+						</div>
+					)}
+					{visible.map((job) => (
+						<CronRow
+							key={job.id}
+							job={job}
+							onEdit={() => setEditor({ open: true, job })}
+						/>
+					))}
+				</div>
+			)}
 
 			{editor.open && <CronEditor job={editor.job} onClose={() => setEditor({ open: false })} />}
 		</div>

@@ -7,6 +7,8 @@ import type { ComponentProps, ReactNode } from "react";
 import { useMemo } from "react";
 import { ArrowUpRight } from "lucide-react";
 import { cn } from "./cn";
+import { useBrowserStore } from "../stores/browser-store";
+import { useUiStore } from "../stores/ui-store";
 
 const DOMAIN_RE = /^(?:www\.)?[a-z0-9](?:[a-z0-9-]*\.)+[a-z]{2,}(?::\d+)?(?:\/[^\s]*)?$/i;
 const SKIP_PROTO_RE = /^(?:file|data|mailto|javascript|blob|chrome|about|tauri):/i;
@@ -64,10 +66,28 @@ export function urlSlugTitleLabel(value: string): string {
 	return hostPathLabel(value);
 }
 
-export function openExternalLink(href: string): void {
+export function openExternalLink(href: string, options?: { forceDefault?: boolean }): void {
 	if (!href || SKIP_PROTO_RE.test(href)) return;
 	const target = normalizeExternalUrl(href);
 	if (!/^https?:\/\//i.test(target)) return;
+
+	// The setting routes ordinary links into the app's own browser panel;
+	// handoff affordances (OAuth, panel "open in system browser") force the
+	// system default via forceDefault.
+	if (!options?.forceDefault && useBrowserStore.getState().linkTarget === "desktop") {
+		const state = useBrowserStore.getState();
+		if (state.supported) {
+			// Panel takes it (localhost links included — dev servers belong here).
+			void useBrowserStore.getState().openTab(target).catch(() => {
+				// Panel refused (rare); fall back to the system browser.
+				void open(target).catch(() => undefined);
+			});
+			const ui = useUiStore.getState();
+			if (ui.rightSidebarTab !== "browser") ui.setRightSidebarTab("browser");
+			return;
+		}
+	}
+
 	if (LOCAL_HOST_RE.test(parseUrl(target)?.host ?? "")) return;
 	void open(target).catch(() => undefined);
 }
