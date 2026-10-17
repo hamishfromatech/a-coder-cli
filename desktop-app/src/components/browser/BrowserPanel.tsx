@@ -20,6 +20,7 @@ import {
 	Globe,
 } from "lucide-react";
 import browser, { boundsOf, type ViewBounds } from "../../lib/browser";
+import * as rpc from "../../lib/rpc";
 import { closeHole, updateHole } from "../../lib/browser-hole";
 import { openExternalLink } from "../../lib/external-link";
 import { normalizeUrl, useBrowserStore } from "../../stores/browser-store";
@@ -51,6 +52,14 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 	const [findQuery, setFindQuery] = useState("");
 	const [zoomValue, setZoomValue] = useState(1);
 	const [capturing, setCapturing] = useState(false);
+	// Agent tool permissions: Ask vs Auto — the gate reads this pref per op.
+	const [permissionMode, setPermissionMode] = useState<"ask" | "auto">("ask");
+
+	useEffect(() => {
+		void rpc.getBrowserPermissionMode()
+			.then((m) => setPermissionMode(m === "auto" ? "auto" : "ask"))
+			.catch(() => {});
+	}, []);
 
 	const active = tabs.find((tab) => tab.id === activeId) ?? null;
 	const captureUrl = active?.captureUrl;
@@ -290,10 +299,27 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 					>
 						<Plus className="h-3.5 w-3.5" />
 					</button>
+					{supported && (
+						<select
+							data-browser-input
+							value={permissionMode}
+							onChange={(event) => {
+								const next = event.target.value === "auto" ? "auto" : "ask";
+								setPermissionMode(next);
+								void rpc.setBrowserPermissionMode(next).catch(() => setPermissionMode("ask"));
+							}}
+							aria-label="AI tool permissions"
+							title="AI tool permissions — Ask: the AI checks before touching a new site and remembers your answer. Auto: ordinary sites run without asking; sensitive sites (mail, sign-in, payments) still ask."
+							className="ml-auto h-6 cursor-pointer rounded border border-pi-border bg-pi-surface-raised px-1 text-2xs text-pi-text focus:outline-none"
+						>
+							<option value="ask">Agent: ask</option>
+							<option value="auto">Agent: auto</option>
+						</select>
+					)}
 					<button
 						data-browser-input
 						onClick={onClose}
-						className={`${iconButton} ml-auto`}
+						className={iconButton}
 						aria-label="Close browser panel"
 					>
 						<X className="h-3.5 w-3.5" />

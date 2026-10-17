@@ -26,6 +26,7 @@ import {
 	type UiRequestMethod,
 } from "../stores/session-store";
 import { useSettingsStore } from "../stores/settings-store";
+import { useUiStore } from "../stores/ui-store";
 import { useRuntimeStatusStore } from "../stores/runtime-status-store";
 import { useStatsStore, type SessionStats } from "../stores/stats-store";
 import { useTabsStore } from "../stores/tabs-store";
@@ -150,6 +151,29 @@ async function refreshSessionStats(): Promise<void> {
 // ============================================================================
 // The pipeline.
 // ============================================================================
+
+// The last browser_* toolCall id this window revealed for — dedupes the
+// per-message-update scans so a single call reveals once.
+let lastBrowserToolId = "";
+
+/** When the agent reaches for a desktop-browser tool (browser_* toolCall
+ *  block) and the right rail isn't showing the browser panel, bring the
+ *  panel forward — the hand-off should feel automatic, like the agent just
+ *  pulled the browser out. A new tool call re-reveals; the same call's
+ *  streamed updates don't. */
+function maybeRevealBrowserPanel(message: { role: string; content?: unknown }): void {
+	if (message.role !== "assistant" || !Array.isArray(message.content)) return;
+	for (const block of message.content as Array<Record<string, unknown>>) {
+		if (block?.type !== "toolCall") continue;
+		const id = typeof block.id === "string" ? block.id : "";
+		if (!id || id === lastBrowserToolId) continue;
+		const name = typeof block.name === "string" ? block.name : "";
+		if (!name.startsWith("browser_")) continue;
+		lastBrowserToolId = id;
+		const ui = useUiStore.getState();
+		if (ui.rightSidebarTab !== "browser") ui.setRightSidebarTab("browser");
+	}
+}
 
 export function processAgentEvent(event: rpc.RpcEvent, deps: AgentEventDeps): void {
 	const { loadingHistoryRef, sessionStartGenerationRef, parkedQuestionsRef, syncEngineState } = deps;
@@ -436,6 +460,7 @@ export function processAgentEvent(event: rpc.RpcEvent, deps: AgentEventDeps): vo
 			if (loadingHistoryRef.current) break;
 			if (event.message.role === "assistant") {
 				voiceCall.notifyAssistantMessage(event.message);
+				maybeRevealBrowserPanel(event.message);
 				const messages = useSessionStore.getState().messages;
 				const hasAssistantRow = messages.length > 0 && messages[messages.length - 1].role === "assistant";
 				if (hasAssistantRow) {

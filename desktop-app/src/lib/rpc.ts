@@ -811,6 +811,9 @@ export const setAgentServerEnabled = (enabled: boolean) =>
 	invoke<void>("browser_set_agent_server_enabled", { enabled });
 export const getAgentServerUrl = () =>
 	invoke<string | null>("browser_agent_server_url");
+export const getBrowserPermissionMode = () => invoke<string>("browser_get_permission_mode");
+export const setBrowserPermissionMode = (mode: "ask" | "auto") =>
+	invoke<void>("browser_set_permission_mode", { mode });
 
 export const setSteeringMode = (mode: MessageDeliveryMode) =>
 	sendCommand({ type: "set_steering_mode", mode });

@@ -90,6 +90,8 @@ fn main() {
 			browser::agentserver::browser_agent_server_url,
 			browser::agentserver::browser_set_agent_server_enabled,
 			browser::agentserver::browser_agent_decide,
+			browser::agentserver::browser_get_permission_mode,
+			browser::agentserver::browser_set_permission_mode,
 			cli::get_initial_workspace,
 			bootstrap::bootstrap_cli,
 			bench::bench_list_tasks,

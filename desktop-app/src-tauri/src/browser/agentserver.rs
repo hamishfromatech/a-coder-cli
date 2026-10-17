@@ -114,11 +114,31 @@ enum GateCheck {
 	Ask { sensitive: bool },
 }
 
-/// The pure gate: the sensitive list wins over the memory every time.
-fn gate_check(host: &str, approved: &[String]) -> GateCheck {
+/// The panel's permission mode for agent tool ops. `Ask` holds every
+/// un-remembered host; `Auto` runs ordinary hosts without asking but keeps
+/// the sensitive list (mailbox, sign-in, payments) asking — no automation
+/// tier ever touches those without the user.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum GateMode {
+	Ask,
+	Auto,
+}
+
+fn gate_mode() -> GateMode {
+	match super::browser_pref("agentPermissionMode")
+		.and_then(|value| value.as_str().map(str::to_string))
+		.as_deref()
+	{
+		Some("auto") => GateMode::Auto,
+		_ => GateMode::Ask,
+	}
+}
+
+/// The pure gate: the sensitive list outranks both the memory and the mode.
+fn gate_check(host: &str, approved: &[String], mode: GateMode) -> GateCheck {
 	if is_sensitive_host(host) {
 		GateCheck::Ask { sensitive: true }
-	} else if approved.iter().any(|known| known == host) {
+	} else if mode == GateMode::Auto || approved.iter().any(|known| known == host) {
 		GateCheck::Allowed
 	} else {
 		GateCheck::Ask { sensitive: false }
@@ -546,7 +566,7 @@ async fn permission_gate<R: Runtime>(
 	let Some(host) = host_of(&url) else {
 		return Ok(None);
 	};
-	let sensitive = match gate_check(&host, &approved_hosts()) {
+	let sensitive = match gate_check(&host, &approved_hosts(), gate_mode()) {
 		GateCheck::Allowed => return Ok(None),
 		GateCheck::Ask { sensitive } => sensitive,
 	};
@@ -907,7 +927,7 @@ async fn call_tool<R: Runtime>(
 				if let Some(host) = navigated.then(|| host_of(&navigate_url)).flatten() {
 					// The gate holds here, before any navigation happens: the
 					// ask is about a page the panel has not yet loaded.
-					let allowed = match gate_check(&host, &approved_hosts()) {
+					let allowed = match gate_check(&host, &approved_hosts(), gate_mode()) {
 						GateCheck::Allowed => true,
 						GateCheck::Ask { sensitive } => {
 							ask_user(app, &tab_id, &host, &navigate_url, name, sensitive)
@@ -1260,20 +1280,58 @@ mod tests {
 	#[test]
 	fn the_gate_asks_memory_passes_memory_never_outweighs_sensitive() {
 		let approved = vec!["docs.example.dev".to_string()];
-		if let GateCheck::Allowed = gate_check("docs.example.dev", &approved) {
+		if let GateCheck::Allowed = gate_check("docs.example.dev", &approved, GateMode::Ask) {
 			// remembered, ordinary-host op: the gate passes it
 		} else {
 			panic!("a remembered host must pass");
 		}
-		if let GateCheck::Ask { sensitive } = gate_check("gmail.com", &approved) {
+		if let GateCheck::Ask { sensitive } = gate_check("gmail.com", &approved, GateMode::Ask) {
 			assert!(sensitive, "a sensitive host asks even in memory");
 		} else {
 			panic!("a sensitive host never passes on memory");
 		}
-		if let GateCheck::Ask { sensitive } = gate_check("other.example.net", &approved) {
+		if let GateCheck::Ask { sensitive } = gate_check("other.example.net", &approved, GateMode::Ask) {
 			assert!(!sensitive, "an unremembered ordinary host asks softly");
 		} else {
 			panic!("an unknown host must ask");
 		}
 	}
+
+	#[test]
+	fn auto_mode_passes_ordinary_hosts_but_sensitive_still_asks() {
+		let approved: Vec<String> = Vec::new();
+		if let GateCheck::Allowed = gate_check("docs.example.dev", &approved, GateMode::Auto) {
+			// auto: unremembered ordinary host runs without asking
+		} else {
+			panic!("auto mode must not ask for ordinary hosts");
+		}
+		if let GateCheck::Ask { sensitive } = gate_check("mail.google.com", &approved, GateMode::Auto) {
+			assert!(sensitive, "auto mode must still ask on sensitive hosts");
+		} else {
+			panic!("auto mode never passes a sensitive host");
+		}
+	}
+}
+
+/// The panel's read command for the permission mode (the dropdown in the
+/// browser chrome reflects whatever the settings file holds).
+#[tauri::command]
+pub fn browser_get_permission_mode() -> String {
+	match gate_mode() {
+		GateMode::Auto => "auto".into(),
+		GateMode::Ask => "ask".into(),
+	}
+}
+
+/// The panel's write path for the permission mode. Validated server-side;
+/// persisted as the `browser.agentPermissionMode` pref the gate reads per op.
+#[tauri::command]
+pub fn browser_set_permission_mode(webview: tauri::Webview<tauri::Wry>, mode: String) -> Result<(), String> {
+	super::require_main(&webview)?;
+	let mode = match mode.as_str() {
+		"auto" => "auto",
+		"ask" => "ask",
+		_ => return Err(format!("unknown permission mode: {mode}")),
+	};
+	super::write_browser_pref("agentPermissionMode", serde_json::json!(mode))
 }
