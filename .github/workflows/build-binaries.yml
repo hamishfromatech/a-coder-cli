@@ -360,6 +360,47 @@ jobs:
           console.log("Generated latest.json:");
           console.log(fs.readFileSync("release-assets/latest.json", "utf8"));
           NODE
+      - name: Verify staged assets match the release version
+        env:
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+        run: |
+          set -euo pipefail
+
+          expected="${RELEASE_TAG#v}"
+
+          # The CLI binary must report exactly the release version — this is
+          # the check the managed updater's smoke test enforces on install,
+          # so it failing here (not after tagging) keeps a version-slip
+          # release from ever publishing.
+          rm -rf /tmp/vercheck && mkdir -p /tmp/vercheck
+          tar -xzf release-assets/pi-darwin-arm64.tar.gz -C /tmp/vercheck --strip-components=1
+          reported="$(/tmp/vercheck/pi --version)"
+          if [ "$reported" != "$expected" ]; then
+            echo "::error::CLI binary reports version ${reported}; release tag says ${expected} — rebuild with the tag's version committed."
+            exit 1
+          fi
+
+          # The installer lockfile root pins its own version too.
+          pkg_version="$(node -e 'console.log(JSON.parse(require("fs").readFileSync("release-assets/pi-coding-agent-install-package.json","utf8")).version)')"
+          if [ "$pkg_version" != "$expected" ]; then
+            echo "::error::pi-coding-agent-install-package.json version ${pkg_version}; release tag says ${expected}."
+            exit 1
+          fi
+
+          # Desktop installers are version-named; any embedded semver in a
+          # staged filename must be the release version.
+          for f in release-assets/*; do
+            base="$(basename "$f")"
+            found="$(printf '%s\n' "$base" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)"
+            if [ -n "$found" ] && [ "$found" != "$expected" ]; then
+              echo "::error::$base embeds version ${found}; release tag says ${expected}."
+              exit 1
+            fi
+          done
+
+          echo "All staged assets match version ${expected}."
+
       - name: Create draft GitHub Release and upload binaries
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
