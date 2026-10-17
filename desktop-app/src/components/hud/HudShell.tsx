@@ -1,0 +1,127 @@
+import { useEffect, useRef } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { X } from "lucide-react";
+import * as rpc from "../../lib/rpc";
+import { processAgentEvent } from "../../lib/agent-event-pipeline";
+import { MessageList } from "../MessageList";
+import { Composer } from "../Composer";
+import { useSessionStore, type QuestionUiRequest } from "../../stores/session-store";
+
+/** Pull the authoritative engine state into the stores — a condensed copy of
+ *  App's syncEngineState covering what the HUD renders (identity, model pill,
+ *  streaming state, counts). Dedupe with App's version when the app window
+ *  itself is refactored onto store-level sync. */
+async function hudSyncEngineState(): Promise<void> {
+	try {
+		const s = (await rpc.sendCommand({ type: "get_state" })) as {
+			model?: { provider: string; id: string; name?: string };
+			thinkingLevel?: string;
+			permissionMode?: import("../../stores/session-store").PermissionMode;
+			sessionName?: string;
+			sessionFile?: string;
+			isStreaming?: boolean;
+			messageCount?: number;
+			pendingMessageCount?: number;
+		};
+		const store = useSessionStore.getState();
+		if (s?.model) store.setModel(s.model as never);
+		if (s?.thinkingLevel) store.setThinkingLevel(s.thinkingLevel);
+		if (s?.permissionMode) store.setPermissionMode(s.permissionMode);
+		store.setSessionName(s?.sessionName ?? null);
+		store.setSessionFile(s?.sessionFile ?? null);
+		if (typeof s?.messageCount === "number") store.setMessageCount(s.messageCount);
+		if (typeof s?.pendingMessageCount === "number") store.setPendingMessageCount(s.pendingMessageCount);
+		try {
+			const cmds = await rpc.getCommands();
+			store.setAvailableCommands(cmds.commands ?? []);
+		} catch {
+			// slash catalog is best-effort in the HUD
+		}
+	} catch (e) {
+		console.warn("[hud] state sync failed", e);
+	}
+}
+
+/**
+ * The chrome-free floating chat surface (HUD mode). Runs the same event
+ * pipeline as the main window against the same stores, renders the real
+ * message list + composer with a drag-region grip on top.
+ */
+export function HudShell() {
+	const loadingHistoryRef = useRef(true);
+	const sessionStartGenerationRef = useRef(0);
+	const parkedQuestionsRef = useRef<Map<string, QuestionUiRequest>>(new Map());
+	const sessionName = useSessionStore((s) => s.sessionName);
+	const connected = useSessionStore((s) => Boolean(s.sessionFile || s.sessionId));
+
+	useEffect(() => {
+		let unlisten: (() => void) | null = null;
+		let disposed = false;
+
+		void (async () => {
+			loadingHistoryRef.current = true;
+			// The engine is already connected by the main window — this window only
+			// paints state and listens; it never spawns a second engine.
+			await hudSyncEngineState();
+			try {
+				const msgsRes = (await rpc.sendCommand({ type: "get_messages" })) as {
+					messages: import("@earendil-works/pi-agent-core").AgentMessage[];
+				};
+				useSessionStore.getState().setMessages(msgsRes?.messages ?? []);
+			} catch (e) {
+				console.warn("[hud] history load failed", e);
+			} finally {
+				loadingHistoryRef.current = false;
+			}
+			const u = await rpc.onRpcEvent((event) => {
+				processAgentEvent(event, {
+					loadingHistoryRef,
+					sessionStartGenerationRef,
+					parkedQuestionsRef: parkedQuestionsRef.current,
+					syncEngineState: hudSyncEngineState,
+				});
+			});
+			if (disposed) u();
+			else unlisten = u;
+		})();
+
+		return () => {
+			disposed = true;
+			unlisten?.();
+		};
+	}, []);
+
+	return (
+		<div className="h-screen p-1.5">
+			<div className="flex h-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#101016]/90 shadow-2xl backdrop-blur-xl">
+				{/* Grip strip: drag region for the whole bar except the buttons. */}
+				<header className="flex h-9 shrink-0 items-center gap-2 px-3">
+					<div data-tauri-drag-region className="flex h-full min-w-0 flex-1 items-center gap-2">
+						<span className="text-2xs font-semibold text-white/80" data-tauri-drag-region>
+							{sessionName || (connected ? "Session" : "Connecting…")}
+						</span>
+						<span className="text-2xs text-white/40" data-tauri-drag-region>
+							HUD
+						</span>
+					</div>
+					<button
+						type="button"
+						onClick={() => void getCurrentWindow().close()}
+						aria-label="Close HUD"
+						className="rounded-md p-1 text-white/50 hover:bg-white/10 hover:text-white"
+					>
+						<X className="h-3.5 w-3.5" />
+					</button>
+				</header>
+
+				<div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3">
+					<MessageList />
+				</div>
+
+				<div className="shrink-0 px-2 pb-2">
+					<Composer />
+				</div>
+			</div>
+		</div>
+	);
+}

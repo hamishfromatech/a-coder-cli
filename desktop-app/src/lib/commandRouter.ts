@@ -13,6 +13,7 @@
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 
 import * as rpc from "./rpc";
+import { openHud } from "./hud";
 import { toast } from "../stores/toast-store";
 
 export type RoutedAction =
@@ -299,7 +300,16 @@ export const BUILTIN_COMMANDS: BuiltinCommand[] = [
 				await rpc.compact(args.trim() || undefined);
 				toast.success("Context compacted");
 			},
-			label: args.trim() ? "Compact (with instructions)" : "Compact context",
+		label: args.trim() ? "Compact (with instructions)" : "Compact context",
+		}),
+	},
+	{
+		name: "hud",
+		description: "Toggle the HUD floating chat (always-on-top mini composer)",
+		route: () => ({
+			kind: "open",
+			open: () => void openHud(),
+			label: "Open HUD chat…",
 		}),
 	},
 	{

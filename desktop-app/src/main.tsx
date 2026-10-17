@@ -15,6 +15,8 @@ window.addEventListener("unhandledrejection", (e) => {
 
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { HudShell } from "./components/hud/HudShell";
+import { isHudWindow } from "./lib/hud";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { HapticsProvider } from "./components/HapticsProvider";
 import { primeAudio } from "./lib/completion-sound";
@@ -32,12 +34,25 @@ document.addEventListener("keydown", primeAudioOnce, { capture: true, once: true
 // haptic can prime audio even if no pointer/key gesture has happened yet.
 document.addEventListener("a-coder:prime-audio", primeAudioOnce, { once: true });
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-	<React.StrictMode>
-		<ErrorBoundary label="app">
-			<HapticsProvider>
-				<App />
-			</HapticsProvider>
-		</ErrorBoundary>
-	</React.StrictMode>,
-);
+const mount = ReactDOM.createRoot(document.getElementById("root") as HTMLElement);
+// HUD mode mounts a chrome-free surface in its own window; everything else is
+// the regular app.
+if (isHudWindow()) {
+	mount.render(
+		<React.StrictMode>
+			<ErrorBoundary label="hud">
+				<HudShell />
+			</ErrorBoundary>
+		</React.StrictMode>,
+	);
+} else {
+	mount.render(
+		<React.StrictMode>
+			<ErrorBoundary label="app">
+				<HapticsProvider>
+					<App />
+				</HapticsProvider>
+			</ErrorBoundary>
+		</React.StrictMode>,
+	);
+}
