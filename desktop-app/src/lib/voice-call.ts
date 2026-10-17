@@ -99,8 +99,10 @@ interface VoiceCallState {
 	phase: VoiceCallPhase;
 	/** Smoothed mic level 0..1 for the orb. */
 	level: number;
-	/** Last finished transcription (overlay ticker). */
+	/** Last finished transcription (panel ticker). */
 	transcript: string;
+	/** Call log: user turns + agent replies, newest last. Capped; runtime only. */
+	transcriptLog: string[];
 	/** True while an agent run is in flight (thinking chip). */
 	agentBusy: boolean;
 	/** Name of the most recent tool call, for the activity chip. */
@@ -117,6 +119,7 @@ export const useVoiceCallStore = create<VoiceCallState>()(() => ({
 	phase: "listening",
 	level: 0,
 	transcript: "",
+	transcriptLog: [],
 	agentBusy: false,
 	toolLabel: "",
 	spokenIndex: 0,
@@ -127,6 +130,14 @@ export const useVoiceCallStore = create<VoiceCallState>()(() => ({
 
 function setCall(patch: Partial<VoiceCallState>): void {
 	useVoiceCallStore.setState(patch);
+}
+
+const MAX_LOG = 40;
+function pushCallLog(line: string): void {
+	const trimmed = line.trim();
+	if (!trimmed) return;
+	const log = useVoiceCallStore.getState().transcriptLog;
+	setCall({ transcriptLog: [...log, trimmed].slice(-MAX_LOG) });
 }
 
 // ---------------------------------------------------------------------------
@@ -574,6 +585,7 @@ class VoiceCallController {
 		const send = busy ? rpc.followUp : rpc.prompt;
 		try {
 			await send(text);
+			pushCallLog(`You: ${text}`);
 			setCall({ agentBusy: true, toolLabel: "" });
 		} catch (e) {
 			setCall({ error: e instanceof Error ? e.message : String(e) });
@@ -660,9 +672,10 @@ class VoiceCallController {
 		setCall({ agentBusy: false, toolLabel: "" });
 		// A queued follow-up's reply supersedes whatever reply is still playing.
 		this.abortSpeech();
+		const capped = capForSpeech(text, useSettingsStore.getState().voiceMaxSpokenChars);
+		pushCallLog(`Agent: ${capped}`);
 		const muted = useVoiceCallStore.getState().muted;
-		const capped = muted ? "" : capForSpeech(text, useSettingsStore.getState().voiceMaxSpokenChars);
-		const sentences = splitForSpeech(capped);
+		const sentences = splitForSpeech(muted ? "" : capped);
 		if (!sentences.length) {
 			void this.speakDone();
 			return;
@@ -680,6 +693,7 @@ class VoiceCallController {
 	notifyAgentAborted(): void {
 		if (!this.active) return;
 		setCall({ agentBusy: false, toolLabel: "" });
+		pushCallLog("(interrupted)");
 	}
 
 	// ---- speaking → listening -----------------------------------------------

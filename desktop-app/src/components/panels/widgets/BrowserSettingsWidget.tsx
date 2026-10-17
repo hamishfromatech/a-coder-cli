@@ -143,8 +143,9 @@ export function BrowserSettingsWidget({ value, onChange }: Props) {
 				)}
 				{(prefs.agentTools ?? true) && endpoint && (
 					<p className="mt-1 text-3xs text-pi-text-muted">
-						CLI sessions connect via settings <code>mcpServers</code> →
-						<code>{'{ "name": "desktop-browser", "transport": "http", "commandOrUrl": "' + endpoint + '" }'}</code>
+						The entry <code>desktop-browser</code> is added to the engine's settings automatically
+						on app start, so coding sessions get the browser tools without manual setup. If the
+						port ever changes, the entry is updated on the next start.
 					</p>
 				)}
 			</div>

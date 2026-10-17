@@ -7,7 +7,6 @@ import { processAgentEvent } from "./lib/agent-event-pipeline";
 import { useVoiceCallStore, voiceCall } from "./lib/voice-call";
 import { ESCAPE_PRIORITY, isTopEscapeLayer } from "./lib/escape-layers";
 import { abortRun } from "./lib/session-abort";
-import { VoiceCallOverlay } from "./components/voice/VoiceCallOverlay";
 import { triggerHaptic } from "./lib/haptics";
 import { rafCoalesce } from "./lib/raf-coalesce";
 import { pickLoadingVerb } from "./lib/loading-verbs";
@@ -741,6 +740,14 @@ export default function App() {
 		return () => window.removeEventListener("keydown", onKey, true);
 	}, [voiceCallActive]);
 
+	// A starting call moves the right rail to the voice panel, wherever the
+	// composer button that started it lives. Ending a call leaves the panel up.
+	const isVoiceCallActive = useVoiceCallStore((s) => s.active);
+	useEffect(() => {
+		if (!isVoiceCallActive) return;
+		useUiStore.getState().setRightSidebarTab("voice");
+	}, [isVoiceCallActive]);
+
 	// Background-session attention: needs-input sessions take priority over
 	// merely-finished ones. Both feed the sidebar rail's notification orb.
 	const needsBackgroundInput = useRuntimeStatusStore((s) =>
@@ -1094,9 +1101,6 @@ export default function App() {
 					projectPath={projectPath}
 				/>
 			</div>
-
-			{/* ================== Voice call overlay ================== */}
-			<VoiceCallOverlay />
 
 			{/* ================== Toast notifications ================== */}
 			<Toaster />

@@ -1,12 +1,14 @@
 import { useEffect } from "react";
-import { AlarmClock, CalendarClock, FileText, GitBranch, Globe, Inbox } from "lucide-react";
+import { AlarmClock, CalendarClock, FileText, GitBranch, Globe, Inbox, PhoneCall } from "lucide-react";
 import { useUiStore, type RightSidebarTab } from "../stores/ui-store";
 import { useActivityAttentionCount } from "../stores/activity-store";
+import { useVoiceCallStore } from "../lib/voice-call";
 import { triggerHaptic } from "../lib/haptics";
 import { ArtifactViewer } from "./panels/ArtifactViewer";
 import { FileExplorer } from "./panels/FileExplorer";
 import { GitPanel } from "./panels/GitPanel";
 import { OfficePanel } from "./office/OfficePanel";
+import { VoicePanel } from "./voice/VoicePanel";
 import { CronPanel } from "./cron/CronPanel";
 import { ActivityPanel } from "./activity/ActivityPanel";
 import { BrowserPanel } from "./browser/BrowserPanel";
@@ -24,6 +26,7 @@ const TABS: {
 	{ id: "git", label: "Git changes", icon: GitBranch },
 	{ id: "browser", label: "Browser", icon: Globe },
 	{ id: "office", label: "Office", icon: CalendarClock },
+	{ id: "voice", label: "Voice call", icon: PhoneCall },
 	{ id: "cron", label: "Scheduled", icon: AlarmClock },
 	{ id: "activity", label: "Activity", icon: Inbox },
 ];
@@ -32,6 +35,7 @@ export function RightSidebar({ projectPath }: Props) {
 	const { rightSidebarTab, setRightSidebarTab, selectedArtifactPath, rightSidebarWidth, setRightSidebarWidth } =
 		useUiStore();
 	const attention = useActivityAttentionCount();
+	const callActive = useVoiceCallStore((s) => s.active);
 	const activeLabel = TABS.find(({ id }) => id === rightSidebarTab)?.label ?? "";
 
 	// The browser needs more than the default 320px to be usable beside the
@@ -75,6 +79,9 @@ export function RightSidebar({ projectPath }: Props) {
 							}`}
 						>
 							<Icon className="h-4 w-4 transition-smooth" />
+							{id === "voice" && callActive && !active && (
+								<span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 animate-pulse rounded-full bg-rose-400" />
+							)}
 							{id === "activity" && attention > 0 && (
 								<span
 									className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-pi-accent px-1 text-[9px] font-semibold leading-none text-white"
@@ -110,6 +117,7 @@ export function RightSidebar({ projectPath }: Props) {
 						))}
 					{rightSidebarTab === "git" && <GitPanel projectPath={projectPath} />}
 					{rightSidebarTab === "office" && <OfficePanel />}
+					{rightSidebarTab === "voice" && <VoicePanel />}
 					{rightSidebarTab === "cron" && <CronPanel />}
 					{rightSidebarTab === "activity" && <ActivityPanel />}
 				{rightSidebarTab === "browser" && (

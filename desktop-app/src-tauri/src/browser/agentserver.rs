@@ -21,6 +21,8 @@ use uuid::Uuid;
 
 static START: OnceLock<()> = OnceLock::new();
 static PORT: OnceLock<u16> = OnceLock::new();
+/** Guards the one-time engine-settings provisioning (first decision wins). */
+static SETTINGS_PROVISIONED: OnceLock<()> = OnceLock::new();
 static SESSION: Mutex<Option<String>> = Mutex::new(None);
 /// The settings page can turn the tools off; a disabled server answers no URLs
 /// and refuses calls. Defaults on; the setting persists in the settings file.
@@ -165,10 +167,12 @@ pub(crate) fn ensure_started<R: Runtime>(app: &AppHandle<R>) -> Option<u16> {
 
 fn start<R: Runtime>(app: &AppHandle<R>) -> Option<u16> {
 	if !super::tabs::native_pages_supported() {
+		ensure_settings_entry(None);
 		return None;
 	}
 	if !enabled_at_startup() {
 		log::info!("agent browser MCP server disabled in settings");
+		ensure_settings_entry(None);
 		return None;
 	}
 	if START.get().is_some() {
@@ -193,7 +197,105 @@ fn start<R: Runtime>(app: &AppHandle<R>) -> Option<u16> {
 	let app2 = app.clone();
 	tauri::async_runtime::spawn(serve_loop(port, app2));
 	log::info!("agent browser MCP server listening on port {port}");
+	ensure_settings_entry(Some(&format!("http://127.0.0.1:{port}/mcp")));
 	Some(port)
+}
+
+/// Ensure the engine's global settings file carries the `desktop-browser`
+/// mcpServers entry so the coding agent gets the panel's browser tools with no
+/// manual setup. `Some(url)` upserts (only entries that are ours by name and
+/// shape are rewritten; hand-made custom entries are left alone; an absent
+/// entry is added); `None` — the server is off or the platform can't do it —
+/// removes a previously provisioned entry. Runs once per app start.
+fn ensure_settings_entry(url: Option<&str>) {
+	if SETTINGS_PROVISIONED.set(()).is_err() {
+		return;
+	}
+	let Ok(path) = crate::settings::global_settings_path() else {
+		return;
+	};
+	let raw = std::fs::read_to_string(&path).unwrap_or_else(|_| "{}".to_string());
+	let mut root: serde_json::Value = serde_json::from_str(&raw).unwrap_or_else(|_| serde_json::json!({}));
+	let changed = upsert_mcp_servers(&mut root, url);
+	if !changed {
+		return;
+	}
+	match serde_json::to_string_pretty(&root) {
+		Ok(body) => {
+			let result = std::fs::write(&path, format!("{body}\n"));
+			if result.is_err() {
+				log::warn!("could not write desktop-browser mcpServers entry: {:?}", result.err());
+			}
+		}
+		Err(_) => return,
+	}
+}
+
+/// Pure part of the provisioning: returns true when the servers list was
+/// modified. `url = None` drops an entry that looks provisioned; otherwise the
+/// named entry must exist with this exact URL (missing → added, ours
+/// mis-pointed → fixed, user-customized → left alone).
+fn upsert_mcp_servers(root: &mut serde_json::Value, url: Option<&str>) -> bool {
+	let servers = match root.get_mut("mcpServers").and_then(|v| v.as_array_mut()) {
+		Some(existing) => existing,
+		None => {
+			if url.is_none() {
+				return false; // nothing to remove
+			}
+			root["mcpServers"] = serde_json::json!([]);
+			root["mcpServers"].as_array_mut().expect("just set")
+		}
+	};
+
+	let ours_index = servers.iter().position(|entry| {
+		entry.get("name").and_then(|v| v.as_str()) == Some("desktop-browser")
+			&& entry.get("transport").and_then(|v| v.as_str()) == Some("http")
+	});
+
+	match url {
+		None => match ours_index {
+			None => false,
+			Some(index) => {
+				// Only drop entries that match the shape we would have made; a
+				// hand-customized desktop-browser stays for its owner to remove.
+				let entry = &servers[index];
+				let managed = entry.get("headers").is_none()
+					&& entry.get("args").is_none()
+					&& entry
+						.get("commandOrUrl")
+						.and_then(|v| v.as_str())
+						.is_some_and(|u| u.starts_with("http://127.0.0.1:"));
+				if managed {
+					servers.remove(index);
+				}
+				managed
+			}
+		},
+		Some(target) => match ours_index {
+			None => {
+				servers.push(serde_json::json!({
+					"name": "desktop-browser",
+					"transport": "http",
+					"commandOrUrl": target
+				}));
+				true
+			}
+			Some(index) => {
+				let current = servers[index]
+					.get("commandOrUrl")
+					.and_then(|v| v.as_str())
+					.unwrap_or_default();
+				if current == target {
+					return false;
+				}
+				if servers[index].get("headers").is_none() && servers[index].get("args").is_none() {
+					servers[index]["commandOrUrl"] = serde_json::Value::String(target.to_string());
+					return true;
+				}
+				false
+			}
+		},
+	}
 }
 
 async fn serve_loop<R: Runtime>(port: u16, app: AppHandle<R>) {
@@ -977,6 +1079,50 @@ static BASE64_STANDARD: base64::engine::GeneralPurpose = base64::engine::general
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn settings_entry_provision_upserts_and_respects_custom() {
+		// Absent entry is added.
+		let mut root = json!({ "theme": "dark" });
+		assert!(upsert_mcp_servers(&mut root, Some("http://127.0.0.1:47615/mcp")));
+		assert_eq!(root["mcpServers"][0]["name"], json!("desktop-browser"));
+
+		// Same URL is a no-op (no disk write churn).
+		let mut root = json!({ "mcpServers": [json!({
+			"name": "desktop-browser", "transport": "http",
+			"commandOrUrl": "http://127.0.0.1:47615/mcp"
+		})] });
+		assert!(!upsert_mcp_servers(&mut root, Some("http://127.0.0.1:47615/mcp")));
+
+		// An ours-shaped entry mis-pointed (ephemeral-port hop) is re-fixed.
+		let mut root = json!({ "mcpServers": [json!({
+			"name": "desktop-browser", "transport": "http",
+			"commandOrUrl": "http://127.0.0.1:39999/mcp"
+		})] });
+		assert!(upsert_mcp_servers(&mut root, Some("http://127.0.0.1:47615/mcp")));
+		assert_eq!(root["mcpServers"][0]["commandOrUrl"], json!("http://127.0.0.1:47615/mcp"));
+
+		// A hand-customized entry (headers/args) is left alone.
+		let mut root = json!({ "mcpServers": [json!({
+			"name": "desktop-browser", "transport": "http",
+			"commandOrUrl": "http://127.0.0.1:9999/mcp", "headers": { "x": "y" }
+		})] });
+		assert!(!upsert_mcp_servers(&mut root, Some("http://127.0.0.1:47615/mcp")));
+
+		// Provisioned entries are removed when the server is off; custom ones stay.
+		let mut root = json!({ "mcpServers": [json!({
+			"name": "desktop-browser", "transport": "http",
+			"commandOrUrl": "http://127.0.0.1:47615/mcp"
+		})] });
+		assert!(upsert_mcp_servers(&mut root, None));
+		assert_eq!(root["mcpServers"].as_array().map(Vec::len), Some(0));
+		let mut root = json!({ "mcpServers": [json!({
+			"name": "desktop-browser", "transport": "http",
+			"commandOrUrl": "http://192.168.0.5/mcp"
+		})] });
+		assert!(!upsert_mcp_servers(&mut root, None));
+		assert_eq!(root["mcpServers"].as_array().map(Vec::len), Some(1));
+	}
 
 	#[test]
 	fn pointer_tools_map_to_their_runtime_ops() {
