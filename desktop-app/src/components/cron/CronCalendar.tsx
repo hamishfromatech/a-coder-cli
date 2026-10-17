@@ -269,7 +269,7 @@ export function CronCalendar({ jobs }: { jobs: CronJob[] }) {
 						<span className="shrink-0 text-pi-text-faint">{scheduleLabel(fire.job)}</span>
 					</div>
 				))}
-				{entry.runs.map((run) => (
+				{entry.runs.slice(0, 30).map((run) => (
 					<div key={run.id} className="flex items-center gap-1.5 py-0.5 text-2xs">
 						<span className={`h-1.5 w-1.5 shrink-0 rounded-full ${RUN_DOT[run.status]} ${run.status === "running" ? "animate-pulse" : ""}`} />
 						<span className="w-12 shrink-0 text-pi-text-muted">{timeOfDay(run.startedAt)}</span>
@@ -295,6 +295,9 @@ export function CronCalendar({ jobs }: { jobs: CronJob[] }) {
 						)}
 					</div>
 				))}
+				{entry.runs.length > 30 && (
+					<div className="py-0.5 text-2xs text-pi-text-faint">…and {entry.runs.length - 30} more runs</div>
+				)}
 			</div>
 		</div>
 	);
