@@ -369,15 +369,34 @@ jobs:
 
           expected="${RELEASE_TAG#v}"
 
-          # The CLI binary must report exactly the release version — this is
-          # the check the managed updater's smoke test enforces on install,
-          # so it failing here (not after tagging) keeps a version-slip
-          # release from ever publishing.
+          # Identity check across every CLI archive by reading the packaged
+          # package.json (no execution needed — the runner is linux-x64 and
+          # the darwin/windows binaries cannot run here).
           rm -rf /tmp/vercheck && mkdir -p /tmp/vercheck
-          tar -xzf release-assets/pi-darwin-arm64.tar.gz -C /tmp/vercheck --strip-components=1
-          reported="$(/tmp/vercheck/pi --version)"
+          for archive in pi-darwin-arm64.tar.gz pi-darwin-x64.tar.gz pi-linux-arm64.tar.gz pi-linux-x64.tar.gz; do
+            packaged="$(tar -xzOf release-assets/${archive} pi/package.json | grep -oE '"version"\s*:\s*"[^"]+"' | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
+            if [ "$packaged" != "$expected" ]; then
+              echo "::error::${archive} packages version ${packaged:-none}; release tag says ${expected} — rebuild with the tag's version committed."
+              exit 1
+            fi
+          done
+          if command -v unzip > /dev/null; then
+            # Windows zips are created from inside the platform dir, so the
+            # member path is package.json (no pi/ wrapper, unlike the tarballs).
+            for archive in pi-windows-x64.zip pi-windows-arm64.zip; do
+              packaged="$(unzip -p release-assets/${archive} package.json | grep -oE '"version"\s*:\s*"[^"]+"' | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
+              if [ "$packaged" != "$expected" ]; then
+                echo "::error::${archive} packages version ${packaged:-none}; release tag says ${expected}."
+                exit 1
+              fi
+            done
+          fi
+          # Also execute one binary the same way the managed updater's smoke
+          # test does (linux-x64 matches the runner arch).
+          tar -xzf release-assets/pi-linux-x64.tar.gz -C /tmp/vercheck
+          reported="$(/tmp/vercheck/pi/pi --version)"
           if [ "$reported" != "$expected" ]; then
-            echo "::error::CLI binary reports version ${reported}; release tag says ${expected} — rebuild with the tag's version committed."
+            echo "::error::CLI binary reports version ${reported}; release tag says ${expected}."
             exit 1
           fi
 
