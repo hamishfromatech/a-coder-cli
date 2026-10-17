@@ -358,6 +358,23 @@ export default function App() {
 				setStatus("connected");
 				setCwd(targetCwd);
 
+				// Register the event pipeline BEFORE the state fetches: events that
+				// arrive during history load are latched by loadingHistoryRef, but
+				// registering late silently drops anything sent in the boot window —
+				// typically the user's first message after opening the app (its echo
+				// never renders, and the reply lands without it).
+				loadingHistoryRef.current = true;
+				const unlistenEarly = await rpc.onRpcEvent((event) => {
+					processAgentEvent(event, {
+						loadingHistoryRef,
+						sessionStartGenerationRef,
+						parkedQuestionsRef: parkedQuestionsRef.current,
+						syncEngineState,
+					});
+				});
+				unlistenRef.current?.();
+				unlistenRef.current = unlistenEarly;
+
 				// Sync the full engine state and prompt for trust if needed.
 				// Theme is applied by a dedicated effect (see resolvedTheme) — not here,
 				// to avoid re-creating connectEngine and reconnecting the backend
@@ -411,16 +428,6 @@ export default function App() {
 					toast.error("Failed to load slash commands", e instanceof Error ? e.message : String(e));
 				}
 
-				const unlisten = await rpc.onRpcEvent((event) => {
-					processAgentEvent(event, {
-						loadingHistoryRef,
-						sessionStartGenerationRef,
-						parkedQuestionsRef: parkedQuestionsRef.current,
-						syncEngineState,
-					});
-				});
-				unlistenRef.current = unlisten;
-
 				// Refresh stats periodically.
 				const statsInterval = setInterval(async () => {
 					try {
@@ -433,7 +440,7 @@ export default function App() {
 					}
 				}, 5000);
 				unlistenRef.current = () => {
-					unlisten();
+					unlistenEarly();
 					clearInterval(statsInterval);
 				};
 			} catch (e) {

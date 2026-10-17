@@ -236,6 +236,12 @@ fn ensure_settings_entry(url: Option<&str>) {
 /// named entry must exist with this exact URL (missing → added, ours
 /// mis-pointed → fixed, user-customized → left alone).
 fn upsert_mcp_servers(root: &mut serde_json::Value, url: Option<&str>) -> bool {
+	// Foreign config shapes (e.g. map-style mcpServers used by other tools)
+	// are never rewritten — provisioning may not silently reformat a file the
+	// engine or another app owns.
+	if root.get("mcpServers").is_some_and(|v| !v.is_array()) {
+		return false;
+	}
 	let servers = match root.get_mut("mcpServers").and_then(|v| v.as_array_mut()) {
 		Some(existing) => existing,
 		None => {
@@ -1108,6 +1114,11 @@ mod tests {
 			"commandOrUrl": "http://127.0.0.1:9999/mcp", "headers": { "x": "y" }
 		})] });
 		assert!(!upsert_mcp_servers(&mut root, Some("http://127.0.0.1:47615/mcp")));
+
+		// Foreign map-shaped mcpServers are left untouched.
+		let mut root = json!({ "mcpServers": {} });
+		assert!(!upsert_mcp_servers(&mut root, Some("http://127.0.0.1:47615/mcp")));
+		assert!(root["mcpServers"].is_object());
 
 		// Provisioned entries are removed when the server is off; custom ones stay.
 		let mut root = json!({ "mcpServers": [json!({

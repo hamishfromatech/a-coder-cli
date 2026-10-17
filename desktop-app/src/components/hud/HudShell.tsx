@@ -66,6 +66,19 @@ export function HudShell() {
 
 		void (async () => {
 			loadingHistoryRef.current = true;
+			// Register BEFORE the state fetches: same boot-window race as the main
+			// window — late registration drops the events of a first message.
+			const u = await rpc.onRpcEvent((event) => {
+				processAgentEvent(event, {
+					loadingHistoryRef,
+					sessionStartGenerationRef,
+					parkedQuestionsRef: parkedQuestionsRef.current,
+					syncEngineState: hudSyncEngineState,
+				});
+			});
+			if (disposed) u();
+			else unlisten = u;
+
 			// The engine is already connected by the main window — this window only
 			// paints state and listens; it never spawns a second engine.
 			await hudSyncEngineState();
@@ -79,24 +92,12 @@ export function HudShell() {
 			} finally {
 				loadingHistoryRef.current = false;
 			}
-			const u = await rpc.onRpcEvent((event) => {
-				processAgentEvent(event, {
-					loadingHistoryRef,
-					sessionStartGenerationRef,
-					parkedQuestionsRef: parkedQuestionsRef.current,
-					syncEngineState: hudSyncEngineState,
-				});
-			});
-			if (disposed) u();
-			else unlisten = u;
 
-			// TEMP diagnostics: window identity + drag/close permission probes
-			// (log-only; the explicit API calls are the real user path).
+			// Drag/close failures log to the shared renderer diagnostics sink —
+			// startDragging in a transparent undecorated WKWebView is opaque to
+			// reason about otherwise.
 			const w = getCurrentWindow();
-			rendererLog(`[hud] mounted label=${w.label}`);
-			w.startDragging()
-				.then(() => rendererLog("[hud] probe startDragging: ok"))
-				.catch((e) => rendererLog(`[hud] probe startDragging FAILED: ${e}`));
+			if (import.meta.env.DEV) rendererLog(`[hud] mounted label=${w.label}`);
 		})();
 
 		return () => {
