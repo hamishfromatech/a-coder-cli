@@ -3,10 +3,11 @@
 // Values live under the "browser" object in the CLI's global settings file.
 
 import { useEffect, useState } from "react";
-import { Check, Copy, FolderOpen, RotateCcw } from "lucide-react";
+import { Check, Copy, Download, FolderOpen, RotateCcw, X } from "lucide-react";
 import * as rpc from "../../../lib/rpc";
 import { Button } from "../../ui/Button";
 import { useBrowserStore } from "../../../stores/browser-store";
+import browser from "../../../lib/browser";
 
 interface Props {
 	value?: unknown;
@@ -17,6 +18,9 @@ interface BrowserPrefs {
 	downloadFolder?: string;
 	agentTools?: boolean;
 	linkTarget?: "default" | "desktop";
+	/** Hosts the AI's permission gate remembered (written by the native gate,
+	 *  read here so the user can inspect and revoke them). */
+	agentApprovedHosts?: string[];
 }
 
 function prefsOf(value: unknown): BrowserPrefs {
@@ -30,6 +34,8 @@ export function BrowserSettingsWidget({ value, onChange }: Props) {
 		(prefs.linkTarget === "desktop" ? "desktop" : "default") as "default" | "desktop",
 	);
 	const [endpoint, setEndpoint] = useState<string | null>(null);
+	const recentDownloads = useBrowserStore((s) => s.recentDownloads);
+	const approvedHosts = Array.isArray(prefs.agentApprovedHosts) ? prefs.agentApprovedHosts : [];
 	const [copied, setCopied] = useState(false);
 
 	// Track external schema edits (scope switches, file reloads).
@@ -180,6 +186,71 @@ export function BrowserSettingsWidget({ value, onChange }: Props) {
 					</p>
 				)}
 			</div>
+
+			<section className="space-y-2 border-t border-pi-border pt-3">
+				<div>
+					<p className="text-xs font-medium text-pi-text">Sites the AI may act on</p>
+					<p className="text-2xs text-pi-text-muted">
+						Remembered approvals from the permission gate. Bank, mail and payment domains are never remembered.
+					</p>
+				</div>
+				{approvedHosts.length === 0 ? (
+					<p className="text-2xs text-pi-text-faint">No sites remembered yet — the AI asks on first visit.</p>
+				) : (
+					<ul className="space-y-1">
+						{approvedHosts.map((host) => (
+							<li key={host} className="flex items-center justify-between gap-2 rounded-md border border-pi-border bg-pi-surface px-2 py-1">
+								<span className="min-w-0 truncate font-mono text-2xs text-pi-text">{host}</span>
+								<button
+									type="button"
+									onClick={() => commit({ ...prefs, agentApprovedHosts: approvedHosts.filter((h) => h !== host) })}
+									className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-3xs text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+									aria-label={`Revoke access for ${host}`}
+								>
+									<X className="h-2.5 w-2.5" /> Revoke
+								</button>
+							</li>
+						))}
+					</ul>
+				)}
+			</section>
+
+			<section className="space-y-2 border-t border-pi-border pt-3">
+				<div>
+					<p className="text-xs font-medium text-pi-text">Recent downloads</p>
+					<p className="text-2xs text-pi-text-muted">Files saved from the browser panel this run.</p>
+				</div>
+				{recentDownloads.length === 0 ? (
+					<p className="text-2xs text-pi-text-faint">Nothing downloaded yet.</p>
+				) : (
+					<ul className="space-y-1">
+						{recentDownloads.map((item) => (
+							<li key={`${item.path}-${item.at}`} className="flex items-center justify-between gap-2 rounded-md border border-pi-border bg-pi-surface px-2 py-1">
+								<span className="flex min-w-0 items-center gap-1.5">
+									<Download className="h-3 w-3 shrink-0 text-pi-text-faint" />
+									<span className="min-w-0 truncate font-mono text-3xs text-pi-text-muted">{item.path.split(/[/\\]/).pop()}</span>
+								</span>
+								<span className="flex shrink-0 items-center gap-1">
+									<button
+										type="button"
+										onClick={() => void browser.downloadOpen(item.path)}
+										className="rounded px-1.5 py-0.5 text-3xs text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+									>
+										Open
+									</button>
+									<button
+										type="button"
+										onClick={() => void browser.downloadReveal(item.path)}
+										className="rounded px-1.5 py-0.5 text-3xs text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+									>
+										Reveal
+									</button>
+								</span>
+							</li>
+						))}
+					</ul>
+				)}
+			</section>
 		</div>
 	);
 }

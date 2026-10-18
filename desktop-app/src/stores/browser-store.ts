@@ -62,6 +62,8 @@ interface BrowserState {
 	tabs: BrowserTab[];
 	activeId: string | null;
 	downloads: DownloadPrompt[];
+	/** Completed downloads this run (newest first), for the settings surface. */
+	recentDownloads: Array<{ path: string; at: number }>;
 	initialized: boolean;
 	/** An agent tool asked for a tab while the panel was closed. */
 	pendingUrl: string | null;
@@ -216,6 +218,7 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 	tabs: [],
 	activeId: null,
 	downloads: [],
+	recentDownloads: [],
 	initialized: false,
 	pendingUrl: null,
 	externalPrompt: null,
@@ -562,7 +565,13 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 				set({ downloads: [...state.downloads, event] });
 				break;
 			case "downloadSettled":
-				set({ downloads: state.downloads.filter((prompt) => prompt.id !== event.id) });
+				set({
+					downloads: state.downloads.filter((prompt) => prompt.id !== event.id),
+					recentDownloads:
+						event.success && event.path
+							? [{ path: event.path, at: Date.now() }, ...state.recentDownloads].slice(0, 10)
+							: state.recentDownloads,
+				});
 				break;
 			case "agentAsk":
 				// Newest ask at the front; the oldest (rare burst) waits.

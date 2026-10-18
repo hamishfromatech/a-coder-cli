@@ -4,6 +4,8 @@
 
 ### Added
 
+- Desktop browser settings: the AI permission gate's remembered sites are now inspectable and revocable in place (revoking writes `browser.agentApprovedHosts`, which the native gate re-reads per check), and completed downloads from this run are listed with Open/Reveal.
+- Desktop browser tab restore: verified — open tabs' URLs and the active tab persist per run of the panel (previous run's tab set is restored once on a fresh mount).
 - Voice call: the orb is driven by real audio amplitude — mic RMS while listening and a metered `AnalyserNode` over TTS playback while speaking (manual volume mode) instead of the synthesized oscillation.
 - Voice-turn model routing: `prompt` accepts `voiceTurn`, the engine binds `voiceTurnModel` (`provider/id`, new setting) for that turn only and unbinds when it settles, so spoken turns can use a fast model while typed turns and background work keep the user's model. Desktop gets a "Model for voice turns" picker in Settings → Voice.
 - Desktop chat text size (Settings → Appearance): a conversation-only scale (85–140%, default 110%) driven by `--chat-text-scale`, so message text grows without resizing the sidebar, settings, or panes.
