@@ -19,6 +19,7 @@ import { triggerHaptic } from "./haptics";
 import { pickLoadingVerb } from "./loading-verbs";
 import { getCachedSessionMessages, setCachedSessionMessages } from "./session-cache";
 import { toast } from "../stores/toast-store";
+import { notice } from "../stores/notice-store";
 import { voiceCall, useVoiceCallStore } from "./voice-call";
 import {
 	useSessionStore,
@@ -215,6 +216,51 @@ function maybeRevealBrowserPanel(message: { role: string; content?: unknown }): 
 	}
 }
 
+/** Error text that means the run failed for missing/expired credentials. */
+const AUTH_ERROR_RE =
+	/(not (?:logged|signed) in|authentication (?:failed|required)|unauthorized|\b401\b|invalid api key|api key (?:is )?(?:missing|invalid|expired)|token (?:expired|invalid)|credentials? (?:missing|expired|invalid))/i;
+
+/** Error text that means an MCP server could not be reached. */
+const MCP_ERROR_RE =
+	/(mcp[^\n]*(?:fail|error|not connected|unavailable|timed out|refused)|(?:failed to connect|connection (?:closed|refused)|server unavailable)[^\n]*mcp)/i;
+
+/** Surface credential failures as a persistent, actionable notice: the
+ *  transcript error block scrolls away, but the problem does not fix itself. */
+function noticeForRunError(message: import("@earendil-works/pi-ai").AssistantMessage): void {
+	const text = (message as { errorMessage?: string }).errorMessage ?? "";
+	if (!text || !AUTH_ERROR_RE.test(text)) return;
+	notice({
+		id: "auth-expired",
+		title: "Credentials expired or missing",
+		message: text.replace(/\s+/g, " ").slice(0, 180),
+		tone: "warning",
+		persistKey: "auth-expired",
+		action: {
+			label: "Open account",
+			onSelect: () => window.dispatchEvent(new CustomEvent("a-coder:open-account")),
+		},
+	});
+}
+
+/** Same for an MCP server that cannot connect: repeated tool failures should
+ *  read as one standing condition, not N transient toasts. */
+function noticeForToolError(message: AgentMessage): void {
+	if ((message as { isError?: boolean }).isError !== true) return;
+	const text = getUserMessageText(message as unknown as import("@earendil-works/pi-ai").UserMessage);
+	if (!text || !MCP_ERROR_RE.test(text)) return;
+	notice({
+		id: "mcp-unavailable",
+		title: "An MCP server is unavailable",
+		message: text.replace(/\s+/g, " ").slice(0, 180),
+		tone: "warning",
+		persistKey: "mcp-unavailable",
+		action: {
+			label: "Open settings",
+			onSelect: () => window.dispatchEvent(new CustomEvent("a-coder:open-settings")),
+		},
+	});
+}
+
 export function processAgentEvent(event: rpc.RpcEvent, deps: AgentEventDeps): void {
 const { loadingHistoryRef, sessionStartGenerationRef, parkedQuestionsRef, deferredUserEchoesRef, syncEngineState } = deps;
 	const session = useSessionStore.getState();
@@ -225,10 +271,15 @@ const { loadingHistoryRef, sessionStartGenerationRef, parkedQuestionsRef, deferr
 			// protocol contract. Missing event = legacy engine = contract 1.
 			if (event.contract !== rpc.ENGINE_RPC_CONTRACT) {
 				const newer = event.contract > rpc.ENGINE_RPC_CONTRACT;
-				toast.warning(
-					newer ? "Engine newer than this app" : "Engine older than this app",
-					`The CLI engine (v${event.version}) speaks protocol contract ${event.contract}; this app expects ${rpc.ENGINE_RPC_CONTRACT}. Update the ${newer ? "app" : "CLI"}.`,
-				);
+				// Persistent, not a toast: skew stays true until something is
+				// updated, and the notice carries the remedy in place.
+				notice({
+					id: "engine-skew",
+					title: newer ? "Engine newer than this app" : "Engine older than this app",
+					message: `CLI v${event.version} speaks contract ${event.contract}; this app expects ${rpc.ENGINE_RPC_CONTRACT}. Update the ${newer ? "app" : "CLI"}.`,
+					tone: "warning",
+					persistKey: `engine-skew:${rpc.ENGINE_RPC_CONTRACT}`,
+				});
 			}
 			break;
 		}
@@ -545,6 +596,7 @@ const { loadingHistoryRef, sessionStartGenerationRef, parkedQuestionsRef, deferr
 			if (loadingHistoryRef.current) break;
 			if (event.message.role === "assistant") {
 				voiceCall.notifyAssistantMessage(event.message);
+				if (event.type === "message_end") noticeForRunError(event.message);
 				maybeRevealBrowserPanel(event.message);
 				const messages = useSessionStore.getState().messages;
 				const hasAssistantRow = messages.length > 0 && messages[messages.length - 1].role === "assistant";
@@ -554,6 +606,7 @@ const { loadingHistoryRef, sessionStartGenerationRef, parkedQuestionsRef, deferr
 					session.appendMessage(event.message);
 				}
 			} else if (event.message.role === "toolResult") {
+				if (event.type === "message_end") noticeForToolError(event.message);
 				// Append or replace an existing tool result with the same id so streaming
 				// tool output stays visible without duplicating final results.
 				const messages = useSessionStore.getState().messages;

@@ -61,6 +61,7 @@ import { SessionTabs } from "./components/SessionTabs";
 import { SessionTree } from "./components/SessionTree";
 import { SidebarProjects } from "./components/SidebarProjects";
 import { StatusBar } from "./components/StatusBar";
+import { Butterbar } from "./components/Butterbar";
 import { Titlebar } from "./components/Titlebar";
 import { SubagentPanel } from "./components/SubagentPanel";
 import { TeammateViewer } from "./components/TeammateViewer";
@@ -1121,6 +1122,7 @@ export default function App() {
 						)}
 						<Composer />
 					</ChatContainer>
+					<Butterbar />
 					<StatusBar projectPath={projectPath} onReconnect={handleReconnect} />
 				</main>
 
