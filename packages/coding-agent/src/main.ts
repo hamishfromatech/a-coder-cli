@@ -22,6 +22,7 @@ import {
 import { handleBenchCommand } from "./cli/bench-command.ts";
 import { handleCloudCommand } from "./cli/cloud-command.ts";
 import { launchDesktop } from "./cli/desktop.ts";
+import { handleDoctorCommand } from "./cli/doctor-command.ts";
 import { processFileArguments } from "./cli/file-processor.ts";
 import { buildInitialMessage } from "./cli/initial-message.ts";
 import { listModels } from "./cli/list-models.ts";
@@ -621,6 +622,11 @@ export async function main(args: string[], options?: MainOptions) {
 		return;
 	}
 
+	if (await handleDoctorCommand(args)) {
+		process.exit(process.exitCode ?? 0);
+		return;
+	}
+
 	if (await handleCloudCommand(args)) {
 		process.exit(process.exitCode ?? 0);
 		return;
@@ -1013,7 +1019,7 @@ export async function main(args: string[], options?: MainOptions) {
 		return;
 	} else if (appMode === "rpc") {
 		printTimings();
-		await runRpcMode(runtime);
+		await runRpcMode(runtime, { logPath: parsed.rpcLog });
 	} else if (appMode === "interactive") {
 		const interactiveMode = new InteractiveMode(runtime, {
 			migratedProviders,

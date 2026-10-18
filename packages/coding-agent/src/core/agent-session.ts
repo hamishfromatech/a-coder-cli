@@ -128,6 +128,7 @@ import {
 } from "./permission-policy.ts";
 import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.ts";
 import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.ts";
+import { redactSecrets } from "./secret-redaction.ts";
 import type { BranchSummaryEntry, CompactionEntry, SessionEntry, SessionManager } from "./session-manager.ts";
 import { CURRENT_SESSION_VERSION, getLatestCompactionEntry, type SessionHeader } from "./session-manager.ts";
 import type { PermissionMode, PermissionPolicyConfig, PermissionRule, SettingsManager } from "./settings-manager.ts";
@@ -5326,7 +5327,8 @@ export class AgentSession {
 		let prevId: string | null = null;
 		for (const entry of branchEntries) {
 			const linear = { ...entry, parentId: prevId };
-			lines.push(JSON.stringify(linear));
+			// Exported files leave the machine: scrub credential shapes first.
+			lines.push(redactSecrets(JSON.stringify(linear)).text);
 			prevId = entry.id;
 		}
 

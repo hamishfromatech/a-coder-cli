@@ -4,6 +4,15 @@
 
 ### Added
 
+- `--rpc-log <path>`: RPC mode appends a direction-tagged JSONL trace of every inbound command and outbound frame, so client event-ordering races can be diagnosed from one file.
+- Event-ordering conformance tests for RPC mode: handshake first, one `agent_start`/`agent_end` per turn, `message_start` before `message_end` for user then assistant, `get_state` not disturbing the event stream, and the trace format itself.
+- `/search <text>`: content search across stored session transcripts (message text, names, folders) with match snippets; selecting a hit resumes that session.
+- `/sessions`: store dashboard (count, size, folder, newest/oldest, largest files) and `/sessions archive` for recoverable archiving into `<sessions>/.trash`.
+- `doctor` command (`a-coder-cli doctor [--json]`) and `/doctor`: version + RPC contract, config paths and parse errors, per-provider auth state, MCP server status with tool counts, session-store health, and free disk space.
+- Session exports now redact recognizable secrets (provider keys, `Bearer` tokens, JWTs, PEM private keys, key/value credential assignments) before writing HTML or JSONL.
+- `/mcp` shows each server's discovered tool count, and `/mcp reconnect [server]` reconnects and re-discovers without a full `/reload`.
+- `/debug` is now listed in builtin command discovery (it existed but was undiscoverable).
+
 - Desktop browser settings: the AI permission gate's remembered sites are now inspectable and revocable in place (revoking writes `browser.agentApprovedHosts`, which the native gate re-reads per check), and completed downloads from this run are listed with Open/Reveal.
 - Desktop browser tab restore: verified — open tabs' URLs and the active tab persist per run of the panel (previous run's tab set is restored once on a fresh mount).
 - Voice call: the orb is driven by real audio amplitude — mic RMS while listening and a metered `AnalyserNode` over TTS playback while speaking (manual volume mode) instead of the synthesized oscillation.

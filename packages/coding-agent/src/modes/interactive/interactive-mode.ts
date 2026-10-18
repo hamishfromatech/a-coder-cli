@@ -58,6 +58,7 @@ import {
 } from "@earendil-works/pi-tui";
 import chalk from "chalk";
 import { spawn, spawnSync } from "child_process";
+import { collectDoctorReport, formatDoctorReport } from "../../cli/doctor-command.ts";
 import {
 	APP_NAME,
 	APP_TITLE,
@@ -97,6 +98,7 @@ import {
 	KEYLESS_LOCAL_PROVIDER_ENV,
 	KEYLESS_LOCAL_PROVIDERS,
 } from "../../core/local-providers.ts";
+import { reconnectMcpServer } from "../../core/mcp/inline-extension.ts";
 import { getMcpServerStates } from "../../core/mcp/status-store.ts";
 import { createCompactionSummaryMessage } from "../../core/messages.ts";
 import { defaultModelPerProvider, findExactModelReferenceMatch, resolveModelScope } from "../../core/model-resolver.ts";
@@ -111,6 +113,12 @@ import { DefaultPackageManager } from "../../core/package-manager.ts";
 import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "../../core/provider-display-names.ts";
 import type { ResourceDiagnostic } from "../../core/resource-loader.ts";
 import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.ts";
+import {
+	archiveSessionFile,
+	formatBytes,
+	getSessionStoreStats,
+	searchSessions,
+} from "../../core/session-maintenance.ts";
 import { type SessionEntry, SessionManager, sessionEntryToContextMessages } from "../../core/session-manager.ts";
 import type { FullscreenExitOutput, TuiMode } from "../../core/settings-manager.ts";
 import { createInteractiveTui, createInteractiveTuiReference } from "./tui-renderer.ts";
@@ -193,6 +201,7 @@ import { PlanExitDialogComponent } from "./components/plan-exit-dialog.ts";
 import { QuestionPromptComponent } from "./components/question-prompt.ts";
 import { RunningTasksViewerComponent } from "./components/running-tasks-viewer.ts";
 import { ScopedModelsSelectorComponent } from "./components/scoped-models-selector.ts";
+import { SessionPickSelectorComponent } from "./components/session-pick-selector.ts";
 import { SessionSelectorComponent } from "./components/session-selector.ts";
 import { SettingsSelectorComponent } from "./components/settings-selector.ts";
 import { SkillInvocationMessageComponent } from "./components/skill-invocation-message.ts";
@@ -3534,9 +3543,28 @@ export class InteractiveMode {
 				await this.handleSubagentsCommand();
 				return;
 			}
-			if (text === "/mcp") {
-				this.handleMcpCommand();
+			if (text === "/mcp" || text.startsWith("/mcp ")) {
+				const arg = text.slice("/mcp".length).trim();
 				this.editor.setText("");
+				void this.handleMcpCommand(arg);
+				return;
+			}
+			if (text === "/doctor") {
+				this.editor.setText("");
+				// Strip ANSI: the CLI formatter uses chalk, the TUI renders its own.
+				this.printInfoBlock(formatDoctorReport(collectDoctorReport()).replace(/\x1b\[[0-9;]*m/g, ""));
+				return;
+			}
+			if (text === "/search" || text.startsWith("/search ")) {
+				const query = text.slice("/search".length).trim();
+				this.editor.setText("");
+				void this.handleSearchCommand(query);
+				return;
+			}
+			if (text === "/sessions" || text.startsWith("/sessions ")) {
+				const arg = text.slice("/sessions".length).trim();
+				this.editor.setText("");
+				void this.handleSessionsCommand(arg);
 				return;
 			}
 			if (text === "/todos") {
@@ -7270,7 +7298,149 @@ export class InteractiveMode {
 	 * count of failed servers; this command shows the full per-server detail,
 	 * including the error message, on demand.
 	 */
-	private handleMcpCommand(): void {
+	/** Print a plain multi-line block into the transcript. */
+	private printInfoBlock(text: string): void {
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(text, 1, 0));
+		this.ui.requestRender();
+	}
+
+	/** `/search <text>` — content search across stored session transcripts. */
+	private async handleSearchCommand(query: string): Promise<void> {
+		const trimmed = query.trim();
+		if (!trimmed) {
+			this.printInfoBlock(
+				`${theme.bold("Search sessions")}\n\nUsage: /search <text>\nSearches message text, session names, and working folders.`,
+			);
+			return;
+		}
+		this.showStatus(`Searching sessions for “${trimmed}”…`);
+		let hits: Awaited<ReturnType<typeof searchSessions>> = [];
+		try {
+			hits = await searchSessions(trimmed, { limit: 40 });
+		} finally {
+			this.clearStatusIndicator();
+		}
+		if (hits.length === 0) {
+			this.printInfoBlock(`No stored session matches ${theme.bold(trimmed)}.`);
+			return;
+		}
+		this.showSelector((done) => {
+			const selector = new SessionPickSelectorComponent(
+				hits.map((hit, index) => ({
+					value: String(index),
+					label: hit.session.name?.trim() || (hit.session.firstMessage || "Untitled session").slice(0, 60),
+					description: hit.snippet,
+				})),
+				{
+					onSelect: (value) => {
+						done();
+						const hit = hits[Number(value)];
+						if (hit) void this.handleResumeSession(hit.session.path);
+					},
+					onCancel: () => {
+						done();
+						this.ui.requestRender();
+					},
+				},
+			);
+			return { component: selector, focus: selector };
+		});
+	}
+
+	/** `/sessions` — store stats; `/sessions archive` — recoverable archiving. */
+	private async handleSessionsCommand(arg: string): Promise<void> {
+		if (arg === "archive") {
+			let sessions: Awaited<ReturnType<typeof SessionManager.listAll>> = [];
+			try {
+				sessions = await SessionManager.listAll();
+			} catch (e) {
+				this.printInfoBlock(`Could not list sessions: ${e instanceof Error ? e.message : String(e)}`);
+				return;
+			}
+			const sorted = [...sessions].sort((a, b) => b.modified.getTime() - a.modified.getTime());
+			if (sorted.length === 0) {
+				this.printInfoBlock("No stored sessions to archive.");
+				return;
+			}
+			const activePath = this.sessionManager.getSessionFile();
+			this.showSelector((done) => {
+				const selector = new SessionPickSelectorComponent(
+					sorted.map((session) => ({
+						value: session.path,
+						label: session.name?.trim() || (session.firstMessage || "Untitled session").slice(0, 60),
+						description: `${session.modified.toLocaleDateString()} · ${session.cwd.split(/[/\\]/).filter(Boolean).at(-1) ?? session.cwd}`,
+					})),
+					{
+						onSelect: (path) => {
+							done();
+							void (async () => {
+								if (path === activePath) {
+									this.printInfoBlock("Cannot archive the open session — switch to another session first.");
+									return;
+								}
+								const confirmed = await this.showExtensionConfirm(
+									"Archive this session?",
+									"It moves to the sessions .trash folder and can be restored from there.",
+								);
+								if (!confirmed) return;
+								try {
+									const { trashPath } = archiveSessionFile(path, { activePath });
+									this.printInfoBlock(`Archived to ${trashPath}`);
+								} catch (e) {
+									this.printInfoBlock(`Archive failed: ${e instanceof Error ? e.message : String(e)}`);
+								}
+							})();
+						},
+						onCancel: () => {
+							done();
+							this.ui.requestRender();
+						},
+					},
+				);
+				return { component: selector, focus: selector };
+			});
+			return;
+		}
+
+		const stats = getSessionStoreStats();
+		const lines: string[] = [
+			theme.bold("Sessions"),
+			"",
+			`Stored: ${stats.count}`,
+			`Size: ${formatBytes(stats.totalBytes)}`,
+			`Folder: ${theme.fg("dim", stats.dir)}`,
+		];
+		if (stats.newest) {
+			lines.push(`Newest: ${stats.newest.modified.toLocaleString()}`);
+		}
+		if (stats.oldest) {
+			lines.push(`Oldest: ${stats.oldest.modified.toLocaleString()}`);
+		}
+		if (stats.largest.length > 0) {
+			lines.push("", theme.bold("Largest"));
+			for (const item of stats.largest) {
+				lines.push(`  ${formatBytes(item.bytes).padStart(8)}  ${theme.fg("dim", item.path)}`);
+			}
+		}
+		lines.push("", theme.fg("dim", "Archive one: /sessions archive   ·   Search transcripts: /search <text>"));
+		this.printInfoBlock(lines.join("\n"));
+	}
+
+	private async handleMcpCommand(arg = ""): Promise<void> {
+		const trimmed = arg.trim();
+		if (trimmed === "reconnect" || trimmed.startsWith("reconnect ")) {
+			const name = trimmed.slice("reconnect".length).trim() || undefined;
+			this.showStatus(`Reconnecting ${name ?? "MCP servers"}…`);
+			const result = await reconnectMcpServer(name);
+			this.clearStatusIndicator();
+			this.printInfoBlock(
+				result.ok
+					? `Reconnected ${name ?? "MCP servers"}.`
+					: `Reconnect failed${name ? ` for ${name}` : ""}: ${result.error ?? "unknown error"}`,
+			);
+			// Fall through so the refreshed state is visible immediately.
+		}
 		const states = getMcpServerStates();
 		let body = `${theme.bold("MCP Servers")}\n\n`;
 		if (states.length === 0) {
@@ -7282,7 +7452,9 @@ export class InteractiveMode {
 				switch (state.status) {
 					case "ok":
 						marker = theme.fg("success", "✓");
-						line = state.source === "project" ? `${state.name} ${theme.fg("dim", "(project)")}` : `${state.name}`;
+						line =
+							(state.source === "project" ? `${state.name} ${theme.fg("dim", "(project)")}` : `${state.name}`) +
+							(state.toolCount !== undefined ? theme.fg("dim", ` · ${state.toolCount} tools`) : "");
 						break;
 					case "connecting":
 						marker = theme.fg("dim", "…");
@@ -7302,7 +7474,7 @@ export class InteractiveMode {
 				}
 				body += `${marker} ${line}\n`;
 			}
-			body += `\n${theme.fg("dim", "Reconnect: /reload  ·  edit: settings.json")}`;
+			body += `\n${theme.fg("dim", "Reconnect: /mcp reconnect [server]  ·  /reload  ·  edit: settings.json")}`;
 		}
 
 		this.chatContainer.addChild(new Spacer(1));

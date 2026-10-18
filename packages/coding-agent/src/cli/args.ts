@@ -23,6 +23,8 @@ export interface Args {
 	help?: boolean;
 	version?: boolean;
 	mode?: Mode;
+	/** Append a JSONL trace of RPC commands and events (rpc mode). */
+	rpcLog?: string;
 	permissionMode?: PermissionModeArg;
 	name?: string;
 	noSession?: boolean;
@@ -173,6 +175,8 @@ export function parseArgs(args: string[]): Args {
 			}
 		} else if (arg === "--export" && i + 1 < args.length) {
 			result.export = args[++i];
+		} else if (arg === "--rpc-log" && i + 1 < args.length) {
+			result.rpcLog = args[++i];
 		} else if ((arg === "--extension" || arg === "-e") && i + 1 < args.length) {
 			result.extensions = result.extensions ?? [];
 			result.extensions.push(args[++i]);
@@ -294,6 +298,7 @@ ${chalk.bold("Commands:")}
   ${APP_NAME} update [source|self|${APP_NAME}]   Update ${APP_NAME} (use --all for ${APP_NAME} and extensions)
   ${APP_NAME} list                      List installed extensions from settings
   ${APP_NAME} config                    Open TUI to enable/disable package resources
+  ${APP_NAME} doctor                    Diagnose version, config, auth, MCP, and the session store
   ${APP_NAME} <command> --help          Show help for install/remove/uninstall/update/list
 
 ${chalk.bold("Options:")}
@@ -303,6 +308,7 @@ ${chalk.bold("Options:")}
   --system-prompt <text>         System prompt (default: coding assistant prompt)
   --append-system-prompt <text>  Append text or file contents to the system prompt (can be used multiple times)
   --mode <mode>                  Output mode: text (default), json, stream-json, or rpc
+  --rpc-log <path>               Append a JSONL trace of RPC commands and events (rpc mode)
   --permission-mode <mode>       Permission mode: ask, allow, read-only, or auto
   --print, -p                    Non-interactive mode: process prompt and exit
   --continue, -c                 Continue previous session

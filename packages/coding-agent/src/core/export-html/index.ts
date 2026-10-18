@@ -5,6 +5,7 @@ import { APP_NAME, getExportTemplateDir } from "../../config.ts";
 import { getResolvedThemeColors, getThemeExportColors } from "../../modes/interactive/theme/theme.ts";
 import { normalizePath, resolvePath } from "../../utils/paths.ts";
 import type { ToolDefinition } from "../extensions/types.ts";
+import { redactSecrets } from "../secret-redaction.ts";
 import type { SessionEntry } from "../session-manager.ts";
 import { SessionManager } from "../session-manager.ts";
 
@@ -277,7 +278,8 @@ export async function exportSessionToHtml(
 		outputPath = `${APP_NAME}-session-${sessionBasename}.html`;
 	}
 
-	writeFileSync(outputPath, html, "utf8");
+	// Standalone HTML leaves the machine: scrub credential shapes first.
+	writeFileSync(outputPath, redactSecrets(html).text, "utf8");
 	return outputPath;
 }
 
@@ -311,6 +313,6 @@ export async function exportFromFile(inputPath: string, options?: ExportOptions 
 		outputPath = `${APP_NAME}-session-${inputBasename}.html`;
 	}
 
-	writeFileSync(outputPath, html, "utf8");
+	writeFileSync(outputPath, redactSecrets(html).text, "utf8");
 	return outputPath;
 }

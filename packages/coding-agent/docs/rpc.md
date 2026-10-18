@@ -907,6 +907,20 @@ Delete a stored session. The file is moved into the sessions directory's `.trash
 
 Response: `{"type": "response", "command": "delete_session", "success": true, "data": {"trashPath": "..."}}`.
 
+### Protocol tracing
+
+Pass `--rpc-log <path>` when starting RPC mode to append a JSONL trace of every
+inbound command and outbound frame:
+
+```bash
+a-coder-cli --mode rpc --rpc-log /tmp/engine-trace.jsonl
+```
+
+Each line is `{"ts": "...", "dir": "in" | "out", "payload": {...}}`. The trace
+is what client-side event-ordering bugs are diagnosed from: you can see
+exactly when `session_start`, `get_messages`, and `message_start` crossed the
+wire relative to each other. Tracing failures never affect the engine.
+
 ### Session Management
 
 #### list_sessions

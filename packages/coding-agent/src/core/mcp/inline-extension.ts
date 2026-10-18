@@ -30,6 +30,31 @@ export interface McpExtensionFactoryOptions {
  */
 export const MAX_FIRST_CLASS_TOOLS = 50;
 
+/** Per-server reconnect hooks registered by the live extension instance. */
+const reconnectHandlers = new Map<string, () => Promise<void>>();
+
+/** Force a reconnect + tool re-discovery for one server (or all, when omitted). */
+export async function reconnectMcpServer(name?: string): Promise<{ ok: boolean; error?: string }> {
+	const targets = name ? [[name, reconnectHandlers.get(name)] as const] : [...reconnectHandlers.entries()];
+	if (name && !reconnectHandlers.has(name)) {
+		return { ok: false, error: `Unknown MCP server: ${name}` };
+	}
+	let firstError: string | undefined;
+	for (const [, handler] of targets) {
+		if (!handler) continue;
+		try {
+			await handler();
+		} catch (e) {
+			firstError ??= e instanceof Error ? e.message : String(e);
+		}
+	}
+	const states = getMcpServerStates();
+	const failed = targets
+		.map(([targetName]) => states.find((state) => state.name === targetName))
+		.find((state) => state?.status === "error");
+	return failed ? { ok: false, error: failed.error ?? firstError } : { ok: true, error: firstError };
+}
+
 /** Restrict a tool-name segment to characters accepted by provider tool-name validators. */
 function sanitizeNamePart(part: string): string {
 	const sanitized = part.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -366,7 +391,7 @@ export function createMcpExtensionFactory(options: McpExtensionFactoryOptions): 
 				try {
 					await client.connect();
 					discoveredTools = await client.listTools();
-					setMcpServerState(client.serverName, { status: "ok" });
+					setMcpServerState(client.serverName, { status: "ok", toolCount: discoveredTools.length });
 					recomputeMcpChip();
 					if (discoveredTools.length > MAX_FIRST_CLASS_TOOLS) {
 						registerGatewayStub(discoveredTools.length);
@@ -381,6 +406,12 @@ export function createMcpExtensionFactory(options: McpExtensionFactoryOptions): 
 					return { tools: [], error: discoveryError };
 				}
 			};
+
+			// `/mcp reconnect` (and doctor) drive this without a full /reload.
+			reconnectHandlers.set(client.serverName, async () => {
+				invalidateDiscovery();
+				await discover();
+			});
 
 			// If the server process dies or the transport drops mid-session, the
 			// client's connected flag flips to false via onclose. Drop the cached

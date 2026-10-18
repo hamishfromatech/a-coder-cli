@@ -12,10 +12,10 @@
  */
 
 import * as crypto from "node:crypto";
-import { existsSync, mkdirSync, renameSync } from "node:fs";
-import { basename, join, resolve, sep } from "node:path";
+import { createWriteStream, existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { getOAuthProvider } from "@earendil-works/pi-ai/oauth";
-import { getSessionsDir, VERSION } from "../../config.ts";
+import { VERSION } from "../../config.ts";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import { captureCliSessionEnd } from "../../core/analytics.ts";
 import { CronService } from "../../core/cron/service.ts";
@@ -33,6 +33,7 @@ import {
 	waitForRawStdoutBackpressure,
 	writeRawStdout,
 } from "../../core/output-guard.ts";
+import { archiveSessionFile } from "../../core/session-maintenance.ts";
 import { type SessionInfo, SessionManager } from "../../core/session-manager.ts";
 import { getBackgroundProcesses, subscribeBackgroundProcesses } from "../../core/stores/index.ts";
 import { findWorkflow } from "../../core/workflows/loader.ts";
@@ -69,8 +70,18 @@ export type {
  * Run in RPC mode.
  * Listens for JSON commands on stdin, outputs events and responses on stdout.
  */
-export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<never> {
+export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { logPath?: string }): Promise<never> {
 	takeOverStdout();
+	// Protocol trace: one JSONL line per inbound command and outbound frame,
+	// direction-tagged. Client races (event ordering, latch windows) are
+	// otherwise invisible from the engine side; this is the flight recorder.
+	// Tracing failures are swallowed: diagnostics must never break the engine.
+	const logStream = options?.logPath ? createWriteStream(options.logPath, { flags: "a" }) : undefined;
+	logStream?.on("error", () => {});
+	const trace = (dir: "in" | "out", payload: unknown) => {
+		if (!logStream) return;
+		logStream.write(`${JSON.stringify({ ts: new Date().toISOString(), dir, payload })}\n`);
+	};
 	let session = runtimeHost.session;
 	let cronService: import("../../core/cron/service.ts").CronService | undefined;
 	let unsubscribe: (() => void) | undefined;
@@ -79,6 +90,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	let unsubscribeWorkflowRuns: (() => void) | undefined;
 
 	const output = (obj: RpcResponse | RpcExtensionUIRequest | object) => {
+		trace("out", obj);
 		writeRawStdout(serializeJsonLine(obj));
 	};
 
@@ -1189,22 +1201,14 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				// Delete moves the file into the sessions dir's .trash folder:
 				// recoverable, never touches live runtimes, and refuses paths
 				// outside the store so the RPC cannot unlink arbitrary files.
-				const target = resolve(command.sessionPath);
 				if (runtimeHost.getSessionForPath(command.sessionPath)) {
 					return error(id, "delete_session", "Cannot delete the active session or one with a running turn");
 				}
-				const sessionsDir = resolve(getSessionsDir());
-				if (target !== sessionsDir && !target.startsWith(`${sessionsDir}${sep}`)) {
-					return error(id, "delete_session", "Not a stored session file");
-				}
-				if (!existsSync(target)) {
+				if (!existsSync(resolve(command.sessionPath))) {
 					return error(id, "delete_session", `Unknown session: ${command.sessionPath}`);
 				}
 				try {
-					const trashDir = join(sessionsDir, ".trash");
-					mkdirSync(trashDir, { recursive: true });
-					const trashPath = join(trashDir, `${basename(target)}.${Date.now()}`);
-					renameSync(target, trashPath);
+					const { trashPath } = archiveSessionFile(command.sessionPath);
 					return success(id, "delete_session", { trashPath });
 				} catch (e) {
 					return error(id, "delete_session", e instanceof Error ? e.message : String(e));
@@ -1471,7 +1475,12 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		let parsed: unknown;
 		try {
 			parsed = JSON.parse(line);
+			trace("in", parsed);
 		} catch (parseError: unknown) {
+			trace("in", {
+				parseError: parseError instanceof Error ? parseError.message : String(parseError),
+				raw: line.slice(0, 4000),
+			});
 			output(
 				error(
 					undefined,
