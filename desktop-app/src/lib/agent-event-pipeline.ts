@@ -447,9 +447,23 @@ const { loadingHistoryRef, sessionStartGenerationRef, parkedQuestionsRef, deferr
 						}
 					}
 				} finally {
+					// Drain deferred echoes for this switch BEFORE discarding stale
+					// ones: user sends arriving while this chain was in flight are
+					// merged into the store once, and a superseded chain (newer
+					// session_start landed) still resets the ref so its old-session
+					// echoes can never paint into the new session.
+					const deferred = deferredUserEchoesRef.current;
+					deferredUserEchoesRef.current = [];
 					if (isCurrent()) {
-						// History load finished (painted, failed, or stale) — hand the
-						// chat area back to EmptyState / the painted transcript.
+						// History load finished (painted, failed, or stale). Latch off
+						// FIRST (mirror the boot flow), then merge any echoes deferred
+						// during the flight into one extra paint, then hand the chat
+						// area back to EmptyState / the painted transcript.
+						loadingHistoryRef.current = false;
+						if (deferred.length > 0) {
+							const store = useSessionStore.getState();
+							store.setMessages(mergeUserEchoes(store.messages, deferred));
+						}
 						useSessionStore.getState().setSessionLoading(false);
 					}
 				}
