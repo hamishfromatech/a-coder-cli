@@ -1,15 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import {
-	Copy,
-	MoreHorizontal,
-	Pencil,
-	Pin,
-	PinOff,
-	Plus,
-	Search,
-	Trash2,
-	X,
-} from "lucide-react";
+import { Copy, MoreHorizontal, Pencil, Pin, PinOff, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import * as rpc from "../lib/rpc";
 import { useRuntimeStatusStore } from "../stores/runtime-status-store";
@@ -24,6 +14,8 @@ import { adoptSwitchResult } from "../lib/adopt-session";
 import { readPinnedSessions, togglePin } from "../lib/session-pins";
 import { sessionJsonlToMarkdown } from "../lib/session-export";
 import { confirm } from "../stores/confirm-store";
+import { SearchField } from "./ui/SearchField";
+import { Tip } from "./ui/Tip";
 
 /** Sessions shown before the list is capped (the full history lives behind the
  *  ⌘P picker). */
@@ -317,41 +309,24 @@ export function SessionList() {
 		<div>
 			{/* Search + new session */}
 			<div className="flex items-center gap-1 px-1 pb-1.5">
-				<div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md border border-transparent bg-pi-surface-overlay/60 px-2 py-1 transition-hover focus-within:border-pi-border">
-					<Search className="h-3 w-3 shrink-0 text-pi-text-faint" />
-					<input
-						value={query}
-						onChange={(e) => setQuery(e.target.value)}
-						onKeyDown={(e) => {
-							if (e.key === "ArrowDown" || e.key === "Enter") {
-								e.preventDefault();
-								moveFocus(1);
-							}
-						}}
-						placeholder="Filter sessions…"
-						className="min-w-0 flex-1 bg-transparent text-2xs text-pi-text placeholder:text-pi-text-faint focus:outline-none"
-						aria-label="Filter sessions"
-					/>
-					{query && (
-						<button
-							type="button"
-							onClick={() => setQuery("")}
-							className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded text-pi-text-faint transition-hover hover:text-pi-text"
-							aria-label="Clear filter"
-						>
-							<X className="h-2.5 w-2.5" />
-						</button>
-					)}
-				</div>
-				<button
-					type="button"
-					onClick={() => void startNew()}
-					className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
-					aria-label="New session"
-					title="New session"
-				>
-					<Plus className="h-3.5 w-3.5" />
-				</button>
+				<SearchField
+					value={query}
+					onChange={setQuery}
+					placeholder="Filter sessions…"
+					ariaLabel="Filter sessions"
+					onSubmit={() => moveFocus(1)}
+					className="min-w-0 flex-1"
+				/>
+				<Tip content="New session" placement="toolbar">
+					<button
+						type="button"
+						onClick={() => void startNew()}
+						className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+						aria-label="New session"
+					>
+						<Plus className="h-3.5 w-3.5" />
+					</button>
+				</Tip>
 			</div>
 
 			{loading ? (
@@ -508,7 +483,6 @@ function SessionRow({
 					openMenu();
 				}
 			}}
-			title={editing ? undefined : session.firstMessage.trim() || undefined}
 			className={`group flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-left transition-hover focus-visible:shadow-focus focus-visible:outline-none ${
 				current ? "bg-pi-accent-soft" : openInTab ? "hover:bg-pi-surface-raised/70" : "hover:bg-pi-surface-raised"
 			} ${pending ? "opacity-60" : ""}`}
@@ -553,19 +527,20 @@ function SessionRow({
 				{session.messageCount > 0 ? `${session.messageCount}m · ` : ""}
 				{relativeTime(session.modified)}
 			</span>
-			<button
-				ref={menuButtonRef}
-				type="button"
-				onClick={(e) => {
-					e.stopPropagation();
-					openMenu();
-				}}
-				className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-pi-text-faint opacity-0 transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:opacity-100 focus-visible:shadow-focus focus-visible:outline-none group-hover:opacity-100"
-				aria-label="Session actions"
-				title="Session actions"
-			>
-				<MoreHorizontal className="h-3.5 w-3.5" />
-			</button>
+			<Tip content="Session actions" placement="row">
+				<button
+					ref={menuButtonRef}
+					type="button"
+					onClick={(e) => {
+						e.stopPropagation();
+						openMenu();
+					}}
+					className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-pi-text-faint opacity-0 transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:opacity-100 focus-visible:shadow-focus focus-visible:outline-none group-hover:opacity-100"
+					aria-label="Session actions"
+				>
+					<MoreHorizontal className="h-3.5 w-3.5" />
+				</button>
+			</Tip>
 		</div>
 	);
 }
@@ -638,7 +613,6 @@ function SessionMenu({
 				className={`${item} ${active ? "opacity-40" : ""}`}
 				onClick={onDelete}
 				disabled={active}
-				title={active ? "Switch away before deleting the open session" : undefined}
 			>
 				<Trash2 className="h-3 w-3" />
 				{active ? "Cannot delete open session" : "Delete session"}

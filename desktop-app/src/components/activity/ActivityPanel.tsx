@@ -7,6 +7,7 @@
 import { Inbox, Loader2, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "../ui/Button";
+import { FadeScroll } from "../ui/FadeScroll";
 import {
 	useActivityStore,
 	type ActivityItem,
@@ -59,7 +60,7 @@ export function ActivityPanel() {
 				)}
 			</div>
 
-			<div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-4">
+			<FadeScroll className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-4">
 				{items.length === 0 && (
 					<div className="flex flex-col items-center gap-2 px-3 py-8 text-center">
 						<Inbox className="h-5 w-5 text-pi-text-faint" />
@@ -95,7 +96,7 @@ export function ActivityPanel() {
 						))}
 					</ActivitySection>
 				)}
-			</div>
+			</FadeScroll>
 		</div>
 	);
 }

@@ -17,6 +17,7 @@ import {
 	Zap,
 } from "lucide-react";
 import { Loader } from "./ui/Loader";
+import { Tip } from "./ui/Tip";
 import * as rpc from "../lib/rpc";
 import { useSessionStore } from "../stores/session-store";
 import { useSettingsStore } from "../stores/settings-store";
@@ -148,22 +149,20 @@ export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
 			{/* Right: status / streaming / compacting / error */}
 			<div className="flex items-center gap-1.5">
 				{isCompacting && (
-					<div
-						title="Summarizing older messages to reclaim context window"
-						className="flex items-center gap-1 rounded bg-pi-warning/10 px-1.5 py-0.5 text-pi-warning"
-					>
-						<Loader2 className="h-2.5 w-2.5 animate-spin" />
-						<span className="font-medium uppercase tracking-wide">Compacting</span>
-					</div>
+					<Tip content="Summarizing older messages to reclaim context window" placement="control">
+						<div className="flex items-center gap-1 rounded bg-pi-warning/10 px-1.5 py-0.5 text-pi-warning">
+							<Loader2 className="h-2.5 w-2.5 animate-spin" />
+							<span className="font-medium uppercase tracking-wide">Compacting</span>
+						</div>
+					</Tip>
 				)}
 				{awaitingInput && (
-					<div
-						className="flex items-center gap-1 rounded bg-pi-warning/10 px-1.5 py-0.5 text-pi-warning"
-						title="A tool is waiting for your approval"
-					>
-						<Hand className="h-2.5 w-2.5" />
-						<span className="font-medium uppercase tracking-wide">Waiting for you</span>
-					</div>
+					<Tip content="A tool is waiting for your approval" placement="control">
+						<div className="flex items-center gap-1 rounded bg-pi-warning/10 px-1.5 py-0.5 text-pi-warning">
+							<Hand className="h-2.5 w-2.5" />
+							<span className="font-medium uppercase tracking-wide">Waiting for you</span>
+						</div>
+					</Tip>
 				)}
 
 				{isStreaming && !awaitingInput && (

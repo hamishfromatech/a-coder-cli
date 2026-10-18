@@ -8,6 +8,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { FadeScroll } from "./ui/FadeScroll";
 
 import { Search } from 'lucide-react';
 import { ESCAPE_PRIORITY, isTopEscapeLayer, pushEscapeLayer } from '../lib/escape-layers';
@@ -169,7 +170,7 @@ export function CommandPalette({ open, commands, onClose }: CommandPaletteProps)
 				</div>
 
 				{/* Results */}
-				<div ref={listRef} className="max-h-[50vh] overflow-y-auto py-1">
+				<FadeScroll className="max-h-[50vh] overflow-y-auto py-1">
 					{flat.length === 0 ? (
 						<div className="px-3 py-6 text-center text-sm text-[var(--pi-text-muted)]">
 							No commands found for "{query}"
@@ -212,7 +213,7 @@ export function CommandPalette({ open, commands, onClose }: CommandPaletteProps)
 							</div>
 						))
 					)}
-				</div>
+				</FadeScroll>
 
 				{/* Footer */}
 				<div className="flex items-center gap-4 border-t border-[var(--pi-border)] px-3 py-2 text-[0.6875rem] text-[var(--pi-text-faint)]">

@@ -4,6 +4,7 @@
 
 ### Added
 
+- Desktop UI primitives: `Tip` (200 ms open, warm re-open, placement intents, keyboard-focus aware — raw `title=` retired on the surfaces touched), `SearchField` (borderless, underline on focus, hidden when the list is empty), and `FadeScroll` (masked scroll edges that follow the scroll position, `overscroll-auto` so nested lists hand the wheel back). Wired through the session rail, status bar, activity panel, and command palette.
 - Desktop: named z-order ladder (`z-content/backdrop/modal/popover/over-modal/switcher/toast/boot/zoom`) replaces every ad-hoc `z-50`/`z-[80]`/`z-[1200]`/`z-[2000]`, so overlapping surfaces pick distinct rungs by construction.
 - Desktop: one confirmation primitive — `confirm()` from anywhere renders a single `ConfirmHost` dialog: focus on Confirm, Enter confirms, Esc cancels, the action runs pending, failures stay open with the error inline, and success plays a short done beat. The session-rail delete now uses it.
 
