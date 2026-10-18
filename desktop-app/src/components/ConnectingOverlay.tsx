@@ -109,7 +109,7 @@ export function ConnectingOverlay({ pickerOpen = false }: { pickerOpen?: boolean
 	return (
 		<div
 			className={cn(
-				"fixed inset-0 z-[1200] grid place-items-center bg-pi-bg transition-opacity duration-500 ease-out",
+				"fixed inset-0 z-boot grid place-items-center bg-pi-bg transition-opacity duration-500 ease-out",
 				overlayHidden ? "pointer-events-none opacity-0" : "opacity-100",
 			)}
 		>
@@ -174,7 +174,7 @@ function BootFailureCard({ message }: { message: string }) {
 	}, [needsEngine]);
 
 	return (
-		<div className="fixed inset-0 z-[1200] grid place-items-center bg-pi-bg p-6">
+		<div className="fixed inset-0 z-boot grid place-items-center bg-pi-bg p-6">
 			<div className="pi-card-overlay w-full max-w-xl overflow-hidden p-6">
 				<ErrorState
 					title={needsEngine && bootstrapping ? "Installing the CLI engine" : "Engine failed to start"}

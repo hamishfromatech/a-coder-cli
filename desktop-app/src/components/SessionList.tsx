@@ -23,6 +23,7 @@ import { triggerHaptic } from "../lib/haptics";
 import { adoptSwitchResult } from "../lib/adopt-session";
 import { readPinnedSessions, togglePin } from "../lib/session-pins";
 import { sessionJsonlToMarkdown } from "../lib/session-export";
+import { confirm } from "../stores/confirm-store";
 
 /** Sessions shown before the list is capped (the full history lives behind the
  *  ⌘P picker). */
@@ -130,7 +131,6 @@ export function SessionList() {
 	const [pins, setPins] = useState<string[]>(() => readPinnedSessions());
 	const [editingPath, setEditingPath] = useState<string | null>(null);
 	const [menu, setMenu] = useState<MenuAnchor | null>(null);
-	const [confirmDeletePath, setConfirmDeletePath] = useState<string | null>(null);
 	const listRef = useRef<HTMLDivElement | null>(null);
 	const sessionFile = useSessionStore((s) => s.sessionFile);
 	const isStreaming = useSessionStore((s) => s.isStreaming);
@@ -179,7 +179,6 @@ export function SessionList() {
 		if (!menu) return;
 		const close = () => {
 			setMenu(null);
-			setConfirmDeletePath(null);
 		};
 		window.addEventListener("scroll", close, true);
 		window.addEventListener("resize", close);
@@ -263,7 +262,6 @@ export function SessionList() {
 	const deleteSession = async (path: string) => {
 		try {
 			await rpc.sendCommand({ type: "delete_session", sessionPath: path });
-			setConfirmDeletePath(null);
 			setMenu(null);
 			setPins((current) => current.filter((p) => p !== path));
 			await refetch();
@@ -386,9 +384,7 @@ export function SessionList() {
 										onMenu={(top, left) => {
 											if (menu?.path === s.path) {
 												setMenu(null);
-												setConfirmDeletePath(null);
 											} else {
-												setConfirmDeletePath(null);
 												setMenu({ path: s.path, top, left });
 											}
 										}}
@@ -413,11 +409,7 @@ export function SessionList() {
 					session={menuSession}
 					pinned={pins.includes(menuSession.path)}
 					active={menuSession.path === activePath}
-					confirmDelete={confirmDeletePath === menuSession.path}
-					onClose={() => {
-						setMenu(null);
-						setConfirmDeletePath(null);
-					}}
+					onClose={() => setMenu(null)}
 					onTogglePin={() => {
 						togglePinned(menuSession.path);
 						setMenu(null);
@@ -428,8 +420,14 @@ export function SessionList() {
 					}}
 					onCopy={() => void copyTranscript(menuSession)}
 					onDelete={() => {
-						if (confirmDeletePath === menuSession.path) void deleteSession(menuSession.path);
-						else setConfirmDeletePath(menuSession.path);
+						setMenu(null);
+						void confirm({
+							title: "Delete session?",
+							message: `${sessionTitle(menuSession)} is moved to the sessions trash folder — you can restore the file from there.`,
+							confirmLabel: "Delete",
+							danger: true,
+							onConfirm: () => deleteSession(menuSession.path),
+						});
 					}}
 				/>
 			)}
@@ -577,7 +575,6 @@ interface SessionMenuProps {
 	session: rpc.RpcSessionInfo;
 	pinned: boolean;
 	active: boolean;
-	confirmDelete: boolean;
 	onClose: () => void;
 	onTogglePin: () => void;
 	onRename: () => void;
@@ -590,7 +587,6 @@ function SessionMenu({
 	session,
 	pinned,
 	active,
-	confirmDelete,
 	onClose,
 	onTogglePin,
 	onRename,
@@ -639,13 +635,13 @@ function SessionMenu({
 			<button
 				type="button"
 				role="menuitem"
-				className={`${item} ${confirmDelete ? "text-pi-danger" : ""} ${active ? "opacity-40" : ""}`}
+				className={`${item} ${active ? "opacity-40" : ""}`}
 				onClick={onDelete}
 				disabled={active}
 				title={active ? "Switch away before deleting the open session" : undefined}
 			>
 				<Trash2 className="h-3 w-3" />
-				{confirmDelete ? "Click again to delete" : active ? "Cannot delete open session" : "Delete session"}
+				{active ? "Cannot delete open session" : "Delete session"}
 			</button>
 		</div>
 	);

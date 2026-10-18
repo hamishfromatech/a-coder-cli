@@ -92,6 +92,20 @@ const config: Config = {
 			minHeight: {
 				"git-empty": "7.5rem",
 			},
+			// Named z-order ladder. Floating surfaces take a rung from here,
+			// never an ad-hoc z-50/z-[80]: overlay bugs came from two surfaces
+			// picking the same arbitrary value.
+			zIndex: {
+				content: "2",
+				backdrop: "60",
+				modal: "70",
+				popover: "80",
+				"over-modal": "90",
+				switcher: "100",
+				toast: "110",
+				boot: "1200",
+				zoom: "2000",
+			},
 		},
 	},
 	plugins: [require("@tailwindcss/typography")],

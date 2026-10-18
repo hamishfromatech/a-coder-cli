@@ -65,7 +65,7 @@ export function TabContextMenu({
 			role="menu"
 			aria-label="Tab actions"
 			data-browser-input
-			className="fixed z-50 w-44 rounded border border-pi-border bg-pi-bg py-1 shadow-lg"
+			className="fixed z-popover w-44 rounded border border-pi-border bg-pi-bg py-1 shadow-lg"
 			style={{ left: x, top: y }}
 		>
 			<button

@@ -4,6 +4,9 @@
 
 ### Added
 
+- Desktop: named z-order ladder (`z-content/backdrop/modal/popover/over-modal/switcher/toast/boot/zoom`) replaces every ad-hoc `z-50`/`z-[80]`/`z-[1200]`/`z-[2000]`, so overlapping surfaces pick distinct rungs by construction.
+- Desktop: one confirmation primitive — `confirm()` from anywhere renders a single `ConfirmHost` dialog: focus on Confirm, Enter confirms, Esc cancels, the action runs pending, failures stay open with the error inline, and success plays a short done beat. The session-rail delete now uses it.
+
 - Session rail management in the desktop app: ↑/↓/Home/End move between rows (Enter resumes, F2 renames, Delete opens the actions menu), inline rename, pin-to-top (persisted per install, shown as its own group), delete (moved to the sessions `.trash` folder, refused for the open session), and "Copy transcript" — the stored JSONL is converted to a Markdown transcript with tool calls and results included.
 - Engine RPC: `rename_session` (rename any stored session by path, live or not) and `delete_session` (recoverable move into `<sessions>/.trash`, refusing the active session, live runtimes, and paths outside the sessions store).
 

@@ -301,7 +301,7 @@ function PermissionModePicker({ mode }: { mode: PermissionMode }) {
 				<div
 					ref={menuRef}
 					role="listbox"
-					className="absolute bottom-full left-0 z-50 mb-1.5 w-56 origin-bottom-left rounded-xl bg-pi-surface-overlay shadow-overlay overflow-hidden py-1"
+					className="absolute bottom-full left-0 z-popover mb-1.5 w-56 origin-bottom-left rounded-xl bg-pi-surface-overlay shadow-overlay overflow-hidden py-1"
 				>
 					{PERMISSION_MODES.map((m) => {
 						const meta = MODE_META[m];

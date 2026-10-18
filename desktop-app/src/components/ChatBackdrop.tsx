@@ -17,7 +17,7 @@ export function ChatBackdrop() {
 	return (
 		<div
 			aria-hidden
-			className="pointer-events-none absolute inset-0 z-[2]"
+			className="pointer-events-none absolute inset-0 z-content"
 			style={{
 				mixBlendMode: "difference",
 				opacity: 0.025,

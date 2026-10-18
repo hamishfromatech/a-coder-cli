@@ -65,6 +65,7 @@ import { Titlebar } from "./components/Titlebar";
 import { SubagentPanel } from "./components/SubagentPanel";
 import { TeammateViewer } from "./components/TeammateViewer";
 import { Toaster } from "./components/Toaster";
+import { ConfirmHost } from "./components/ui/ConfirmDialog";
 import { UpdateModal } from "./components/UpdateModal";
 import { ApprovalModal } from "./components/panels/ApprovalModal";
 import { ToolApprovalBar } from "./components/ToolApprovalBar";
@@ -1133,6 +1134,7 @@ export default function App() {
 
 			{/* ================== Toast notifications ================== */}
 			<Toaster />
+			<ConfirmHost />
 
 			{/* ================== Modals ================== */}
 			{showOnboarding && (
@@ -1655,7 +1657,7 @@ function TrustModal({
 }) {
 	return (
 		<div
-			className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+			className="fixed inset-0 z-modal flex items-center justify-center bg-black/60 p-4"
 			onClick={onClose}
 		>
 			<div
@@ -1701,7 +1703,7 @@ function SimpleModal({
 }) {
 	return (
 		<div
-			className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+			className="fixed inset-0 z-modal flex items-center justify-center bg-black/60 p-4"
 			onClick={onClose}
 		>
 			<div
