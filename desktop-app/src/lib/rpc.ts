@@ -459,8 +459,12 @@ export interface SubAgentRecord {
 	updatedAt: number;
 	/** The task/prompt the sub-agent was spawned with (its goal). */
 	goal?: string;
+	/** Full spawn prompt (reruns use this; the goal is a derived one-liner). */
+	prompt?: string;
 	/** The model id the sub-agent is running with. */
 	model?: string;
+	/** Provider of the model above (so a rerun resolves the same model). */
+	modelProvider?: string;
 	finalText?: string;
 	toolUseCount: number;
 	turnCount: number;
@@ -471,6 +475,8 @@ export interface SubAgentRecord {
 	worktreePath?: string;
 	worktreeBranch?: string;
 	teammateName?: string;
+	teamName?: string;
+	isolation?: "none" | "worktree";
 	outputFile?: string;
 	error?: string;
 	/** Ordered progress events (live transcript tail for the viewer). */
@@ -852,6 +858,10 @@ export const abortSession = (sessionPath: string) =>
 	sendCommand({ type: "abort_session", sessionPath }) as Promise<{ found: boolean }>;
 export const stopWorkflowRun = (runId: string) =>
 	sendCommand({ type: "stop_workflow_run", runId }) as Promise<{ stopped: boolean }>;
+export const killSubagent = (subagentId: string) =>
+	sendCommand({ type: "kill_subagent", subagentId }) as Promise<{ subagent: SubAgentRecord }>;
+export const rerunSubagent = (subagentId: string) =>
+	sendCommand({ type: "rerun_subagent", subagentId }) as Promise<{ id: string }>;
 export const fork = (entryId: string) =>
 	sendCommand({ type: "fork", entryId }) as Promise<ForkResult>;
 export const clone = () => sendCommand({ type: "clone" }) as Promise<CloneResult>;

@@ -26,6 +26,8 @@ The editor can be replaced temporarily by built-in UI such as `/settings` or by 
 | Shell command | `!command` runs and sends output to the model |
 | Hidden shell command | `!!command` runs without sending output to the model |
 | External editor | Ctrl+G opens `externalEditor`, `$VISUAL`, `$EDITOR`, Notepad on Windows, or `nano` elsewhere |
+| Prompt history | Up/Down browses; Ctrl+R opens a searchable list and inserts the choice into the editor |
+| Transcript | Ctrl+Shift+T opens the verbose scrollback; `/` searches it, `n`/`N` jump between matches |
 
 See [Keybindings](keybindings.md) for all shortcuts and customization.
 
@@ -60,6 +62,7 @@ Type `/` in the editor to open command completion. Extensions can register custo
 | `/memory` | Open the persistent `MEMORY.md` notes file |
 | `/office` | The virtual office: AI coworkers, errands, huddles (2D/3D) |
 | `/output-style` | Set the assistant's output style |
+| `/theme` | Browse themes with live preview; Enter saves, Esc restores |
 | `/permission`, `/permissions` | Set the permission mode; manage allow/deny rules |
 | `/plan` | Toggle plan mode |
 | `/subagents` | List running and completed background subagents |
@@ -76,6 +79,12 @@ Type `/` in the editor to open command completion. Extensions can register custo
 | `/hotkeys` | Show all keyboard shortcuts |
 | `/changelog` | Display version history |
 | `/quit` | Quit a-coder-cli |
+
+## Running Tasks
+
+Down (with an empty editor), Shift+Down, or Ctrl+Shift+B opens the unified running-tasks viewer: background bash processes and background sub-agents in one list, running and finished (`h` toggles finished). Enter opens the live view — a sub-agent timeline or the process output tail — and `k` stops the selected task.
+
+In the detail view: `c` copies the final result (or failure), `o` opens the event log in `$EDITOR`, `y` copies the log path, `d` shows a kept worktree's `git status` + `--stat`, and `r` re-runs a finished sub-agent with its original prompt, model, isolation, and teammate binding. Finished sub-agents lead with their final answer, so the timeline below is the audit trail rather than the outcome.
 
 ## Dynamic Workflows
 
@@ -107,6 +116,8 @@ Configure delivery in [Settings](settings.md) with `steeringMode` and `followUpM
 Fullscreen mode, the default, keeps the editor and status area fixed while the transcript scrolls within the terminal window. Regular mode uses the terminal's normal scrollback. Choose a mode through `/settings` or `--tui-mode`.
 
 Terminals vary in mouse input, keyboard shortcuts, and inline image support. See [Keybindings](keybindings.md) for every configurable shortcut and run `/hotkeys` to inspect the shortcuts active in your current session.
+
+The terminal tab title tracks activity: `◐` while the agent is running, `●` while it is waiting on you (approval, question, permission), and no glyph when idle — useful when the terminal is in the background.
 
 ## Scheduled Tasks (Cron)
 

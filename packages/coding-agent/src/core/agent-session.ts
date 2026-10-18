@@ -4624,12 +4624,15 @@ export class AgentSession {
 			startedAt: now,
 			updatedAt: now,
 			goal: deriveSubAgentGoal(params.prompt),
+			prompt: params.prompt,
 			finalText: undefined,
 			toolUseCount: 0,
 			turnCount: 0,
 			timeline: [],
 			detached: params.detached ?? false,
+			isolation: params.isolation ?? "none",
 			...(teammateName ? { teammateName } : {}),
+			...(teammateName && params.teamName ? { teamName: params.teamName } : {}),
 		};
 		if (params.agentType && !def) {
 			record.status = "failed";
@@ -4684,6 +4687,7 @@ export class AgentSession {
 			(def?.model ? this._modelRegistry.getAvailable().find((m) => m.id === def.model) : undefined) ??
 			this.model;
 		record.model = subModel?.id;
+		record.modelProvider = subModel?.provider;
 		if (!subModel) {
 			record.status = "failed";
 			record.error = record.error ?? "No model available for sub-agent.";

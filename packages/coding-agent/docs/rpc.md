@@ -625,6 +625,36 @@ Response:
 
 `stopped` is `false` when the run is unknown or already finished.
 
+### Sub-agents
+
+Background sub-agents surface through `subagents_update` snapshots (state below). The desktop task manager and the CLI running-tasks viewer use these two commands to act on a finished or running task.
+
+#### kill_subagent
+
+Stop a running background sub-agent by record id. Returns the updated record.
+
+```json
+{"type": "kill_subagent", "subagentId": "general-purpose-1727000000000"}
+```
+
+```json
+{"type": "response", "command": "kill_subagent", "success": true, "data": {"subagent": {"id": "general-purpose-1727000000000", "status": "killed"}}}
+```
+
+#### rerun_subagent
+
+Re-spawn a finished sub-agent with its original prompt, model, isolation, and teammate binding. Returns the new record id. Fails for running tasks and for records with no prompt (pre-rerun records only carry the derived goal).
+
+```json
+{"type": "rerun_subagent", "subagentId": "general-purpose-1727000000000"}
+```
+
+```json
+{"type": "response", "command": "rerun_subagent", "success": true, "data": {"id": "general-purpose-rerun-m1k2j3"}}
+```
+
+The new run appears in the next `subagents_update`.
+
 ### Session
 
 #### get_session_stats

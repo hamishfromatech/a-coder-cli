@@ -190,6 +190,7 @@ Type `/` in the editor to trigger commands. [Extensions](#extensions) can regist
 | `/model` | Switch models |
 | `/scoped-models` | Enable/disable models for Ctrl+P cycling |
 | `/settings` | Thinking level, theme, message delivery, transport |
+| `/theme` | Browse themes with live preview; Enter saves, Esc restores |
 | `/resume` | Pick from previous sessions |
 | `/search <text>` | Search stored sessions by transcript text, name, or folder |
 | `/sessions [archive]` | Session-store stats; archive one session recoverably |

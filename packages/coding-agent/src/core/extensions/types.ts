@@ -384,8 +384,12 @@ export interface InProcessSubAgentRecord {
 	updatedAt: number;
 	/** The task/prompt the sub-agent was spawned with (its goal). */
 	goal?: string;
+	/** Full spawn prompt. The goal is a derived one-liner; reruns use this. */
+	prompt?: string;
 	/** The model id the sub-agent is running with. */
 	model?: string;
+	/** Provider of the model above, so a rerun resolves the same model. */
+	modelProvider?: string;
 	finalText?: string;
 	toolUseCount: number;
 	turnCount: number;
@@ -403,6 +407,10 @@ export interface InProcessSubAgentRecord {
 	worktreeBranch?: string;
 	/** Teammate name when this sub-agent was spawned as a named Agent Teams member. */
 	teammateName?: string;
+	/** Team name when spawned as a named Agent Teams member (paired with teammateName on rerun). */
+	teamName?: string;
+	/** Filesystem isolation used for the run (kept so a rerun reproduces it). */
+	isolation?: "none" | "worktree";
 	/** True for detached background sub-agents (card persists after completion). False for foreground-awaited runs (card removed on completion since the result appears inline). */
 	detached: boolean;
 	/** Absolute path to the JSONL event log this sub-agent appends to while running (see subagents/task-output.ts). */

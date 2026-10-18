@@ -29,7 +29,9 @@ Disable discovery with `--no-themes`.
 
 ## Selecting a Theme
 
-Select a theme via `/settings` or in `settings.json`:
+Run `/theme` for a gallery with live preview: moving the selection applies the theme immediately, Enter saves it to `settings.json`, and Esc restores the theme you had before. The sample block below the list shows the palette (accents, text, tool background, diff colors) before you commit.
+
+You can also select a theme via `/settings` or directly in `settings.json`:
 
 ```json
 {

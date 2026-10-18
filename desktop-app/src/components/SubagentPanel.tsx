@@ -1,10 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Loader2, Sparkles, Square, Terminal, X } from "lucide-react";
+import { open as openPath } from "@tauri-apps/plugin-shell";
+import {
+	AlertCircle,
+	CheckCircle2,
+	ChevronDown,
+	ChevronRight,
+	Copy,
+	FolderOpen,
+	Loader2,
+	RotateCcw,
+	Sparkles,
+	Square,
+	Terminal,
+	X,
+} from "lucide-react";
 import { useModalA11y } from "../hooks/useModalA11y";
 import { useSessionStore } from "../stores/session-store";
-import { stopWorkflowRun } from "../lib/rpc";
+import { killSubagent, rerunSubagent, stopWorkflowRun } from "../lib/rpc";
 import type { BackgroundProcessRecord, SubAgentRecord, SubAgentTimelineEvent, WorkflowRunSummary } from "../lib/rpc";
-import { IconButton } from "./ui/Button";
+import { Button, IconButton } from "./ui/Button";
 import { ModalBackdrop, ModalPanel } from "./ui/Modal";
 
 export interface SubagentPanelProps {
@@ -103,10 +117,35 @@ function TimelineEntry({ event }: { event: SubAgentTimelineEvent }) {
 	}
 }
 
+function RowAction({
+	label,
+	icon,
+	onClick,
+	disabled,
+	tone = "ghost",
+}: {
+	label: string;
+	icon: React.ComponentType<{ className?: string }>;
+	onClick: () => void;
+	disabled?: boolean;
+	tone?: "ghost" | "ghost-danger";
+}) {
+	return (
+		<Button size="xs" variant={tone} icon={icon} onClick={onClick} disabled={disabled}>
+			{label}
+		</Button>
+	);
+}
+
 function SubagentRow({ record, now }: { record: SubAgentRecord; now: number }) {
 	const [open, setOpen] = useState(record.status === "running");
+	const [busy, setBusy] = useState<string | undefined>();
+	const [notice, setNotice] = useState<string | undefined>();
 	const name = record.teammateName ? `${record.teammateName} · ${record.agentType}` : record.agentType;
 	const workflow = workflowNameFor(record.id);
+	const result = record.finalText?.trim();
+	const logPath = record.outputFile;
+	const worktreePath = record.worktreePath;
 	const subtitle = [
 		record.model,
 		record.toolUseCount > 0 ? `${record.toolUseCount} tools` : "",
@@ -115,6 +154,19 @@ function SubagentRow({ record, now }: { record: SubAgentRecord; now: number }) {
 	]
 		.filter(Boolean)
 		.join(" · ");
+
+	const run = async (key: string, fn: () => Promise<unknown>, done?: string) => {
+		setBusy(key);
+		setNotice(undefined);
+		try {
+			await fn();
+			if (done) setNotice(done);
+		} catch (error) {
+			setNotice(error instanceof Error ? error.message : String(error));
+		} finally {
+			setBusy(undefined);
+		}
+	};
 
 	return (
 		<div className="rounded-lg bg-pi-surface-raised shadow-ring">
@@ -135,8 +187,11 @@ function SubagentRow({ record, now }: { record: SubAgentRecord; now: number }) {
 						<span className="text-3xs text-pi-text-faint">{STATUS_LABEL[record.status]}</span>
 					</div>
 					{record.goal ? <p className="mt-1 truncate text-2xs text-pi-text-secondary">{record.goal}</p> : null}
+					{record.status === "completed" && result ? (
+						<p className="mt-1 truncate text-2xs text-pi-text-secondary">{result.split("\n")[0]}</p>
+					) : null}
 					{subtitle ? <p className="mt-1 font-mono text-3xs text-pi-text-muted">{subtitle}</p> : null}
-					{record.error ? (
+					{record.status === "failed" && record.error ? (
 						<p className="mt-1.5 rounded bg-pi-error/10 px-2 py-1 text-2xs text-pi-error">{record.error}</p>
 					) : null}
 				</div>
@@ -147,7 +202,80 @@ function SubagentRow({ record, now }: { record: SubAgentRecord; now: number }) {
 				)}
 			</button>
 			{open ? (
-				<div className="flex flex-col gap-1 border-t border-pi-border px-3 py-2">
+				<div className="flex flex-col gap-2 border-t border-pi-border px-3 py-2">
+					{record.status !== "running" ? (
+						<div className="rounded bg-pi-surface px-2 py-1.5">
+							<div className="text-3xs font-medium tracking-wider text-pi-text-faint uppercase">
+								{record.status === "completed" ? "Result" : record.status === "failed" ? "Failure" : "Stopped"}
+							</div>
+							{record.error ? (
+								<p className="mt-1 whitespace-pre-wrap text-2xs text-pi-error">{record.error}</p>
+							) : null}
+							{result ? (
+								<pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-3xs leading-relaxed text-pi-text-secondary">
+									{result}
+								</pre>
+							) : record.status === "completed" ? (
+								<p className="mt-1 text-3xs text-pi-text-faint">(no final text recorded)</p>
+							) : null}
+						</div>
+					) : null}
+
+					<div className="flex flex-wrap items-center gap-1">
+						{record.status === "running" ? (
+							<RowAction
+								label="Stop"
+								icon={Square}
+								tone="ghost-danger"
+								disabled={busy !== undefined}
+								onClick={() => void run("stop", () => killSubagent(record.id), "Stop requested.")}
+							/>
+						) : (
+							<RowAction
+								label="Rerun"
+								icon={RotateCcw}
+								disabled={busy !== undefined || !record.prompt}
+								onClick={() =>
+									void run("rerun", async () => {
+										const { id } = await rerunSubagent(record.id);
+										setNotice(`Rerunning as ${id}`);
+									})
+								}
+							/>
+						)}
+						{logPath ? (
+							<RowAction
+								label="Open log"
+								icon={FolderOpen}
+								disabled={busy !== undefined}
+								onClick={() => void run("log", () => openPath(logPath), "Opened the log.")}
+							/>
+						) : null}
+						{worktreePath ? (
+							<RowAction
+								label="Open worktree"
+								icon={FolderOpen}
+								disabled={busy !== undefined}
+								onClick={() => void run("worktree", () => openPath(worktreePath), "Opened the worktree.")}
+							/>
+						) : null}
+						{result || record.error ? (
+							<RowAction
+								label="Copy result"
+								icon={Copy}
+								disabled={busy !== undefined}
+								onClick={() =>
+									void run(
+										"copy",
+										() => navigator.clipboard.writeText(result ?? record.error ?? ""),
+										"Copied the result.",
+									)
+								}
+							/>
+						) : null}
+					</div>
+					{notice ? <div className="text-3xs text-pi-text-faint">{notice}</div> : null}
+
 					{record.timeline && record.timeline.length > 0 ? (
 						<>
 							<div className="text-3xs font-medium tracking-wider text-pi-text-faint uppercase">Activity</div>
@@ -158,11 +286,11 @@ function SubagentRow({ record, now }: { record: SubAgentRecord; now: number }) {
 					) : (
 						<div className="text-3xs text-pi-text-faint">(no activity yet)</div>
 					)}
-					{record.outputFile ? (
-						<div className="mt-1 truncate font-mono text-3xs text-pi-text-faint">log: {record.outputFile}</div>
+					{logPath ? (
+						<div className="truncate font-mono text-3xs text-pi-text-faint">log: {logPath}</div>
 					) : null}
-					{record.worktreePath ? (
-						<div className="truncate font-mono text-3xs text-pi-text-faint">worktree: {record.worktreePath}</div>
+					{worktreePath ? (
+						<div className="truncate font-mono text-3xs text-pi-text-faint">worktree: {worktreePath}</div>
 					) : null}
 				</div>
 			) : null}

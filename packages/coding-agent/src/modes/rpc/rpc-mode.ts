@@ -780,6 +780,45 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 				return success(id, "stop_workflow_run", { stopped: stopWorkflowRun(command.runId) });
 			}
 
+			case "kill_subagent": {
+				const record = session.killSubAgent(command.subagentId, "user");
+				if (!record) {
+					return error(id, "kill_subagent", `Unknown sub-agent: ${command.subagentId}`);
+				}
+				return success(id, "kill_subagent", { subagent: record });
+			}
+
+			case "rerun_subagent": {
+				const record = session.listSubAgents().find((r) => r.id === command.subagentId);
+				if (!record) {
+					return error(id, "rerun_subagent", `Unknown sub-agent: ${command.subagentId}`);
+				}
+				if (record.status === "running") {
+					return error(id, "rerun_subagent", "Sub-agent is still running. Stop it before rerunning.");
+				}
+				const prompt = record.prompt ?? record.goal;
+				if (!prompt) {
+					return error(id, "rerun_subagent", "No prompt recorded for this sub-agent.");
+				}
+				const model = record.model
+					? record.modelProvider
+						? session.modelRegistry.find(record.modelProvider, record.model)
+						: session.modelRegistry.getAll().find((m) => m.id === record.model)
+					: undefined;
+				const rerunId = `${record.agentType}-rerun-${Date.now().toString(36)}`;
+				session.runSubAgentBackground({
+					id: rerunId,
+					agentType: record.agentType,
+					prompt,
+					model,
+					detached: true,
+					isolation: record.isolation,
+					name: record.teammateName,
+					teamName: record.teamName,
+				});
+				return success(id, "rerun_subagent", { id: rerunId });
+			}
+
 			case "new_session": {
 				const options = {
 					parentSession: command.parentSession,

@@ -128,7 +128,7 @@ export function formatDoctorReport(report: DoctorReport): string {
 	row("auth", report.paths.auth);
 	row(
 		"sessions",
-		`${report.paths.sessions}  (${report.sessions.count} sessions, ${formatBytes(report.sessions.totalBytes)}${report.writable.sessions ? "" : ", " + chalk.red("not writable")})`,
+		`${report.paths.sessions}  (${report.sessions.count} sessions, ${formatBytes(report.sessions.totalBytes)}${report.writable.sessions ? "" : `, ${chalk.red("not writable")}`})`,
 	);
 	if (report.diskFreeBytes !== undefined) row("disk free", formatBytes(report.diskFreeBytes));
 

@@ -57,7 +57,7 @@ import {
 	visibleWidth,
 } from "@earendil-works/pi-tui";
 import chalk from "chalk";
-import { spawn, spawnSync } from "child_process";
+import { execFileSync, spawn, spawnSync } from "child_process";
 import { collectDoctorReport, formatDoctorReport } from "../../cli/doctor-command.ts";
 import {
 	APP_NAME,
@@ -181,6 +181,7 @@ import {
 	GroupedToolCardComponent,
 	isCollapsibleTool,
 } from "./components/grouped-tool-card.ts";
+import { HistorySearchComponent } from "./components/history-search.ts";
 import { formatKeyText, keyDisplayText, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.ts";
 import { pickLoadingVerb } from "./components/loading-verbs.ts";
 import { LoginDialogComponent } from "./components/login-dialog.ts";
@@ -217,6 +218,7 @@ import { StatusLineComponent, type StatusLineContext } from "./components/status
 import { StatusRailComponent } from "./components/status-rail.ts";
 import { TaskListComponent } from "./components/task-list.ts";
 import { TaskPanelComponent } from "./components/task-panel.ts";
+import { ThemeGalleryComponent } from "./components/theme-gallery.ts";
 import { ThinkingSelectorComponent } from "./components/thinking-selector.ts";
 import { readTodosFromBranch, TodoListComponent } from "./components/todo-list.ts";
 import { ToolExecutionComponent } from "./components/tool-execution.ts";
@@ -438,6 +440,8 @@ export class InteractiveMode {
 	private onInputCallback?: (text: string) => void;
 	private pendingUserInputs: string[] = [];
 	private activeStatusIndicator: StatusIndicator | undefined = undefined;
+	/** Terminal-tab state: idle / agent running / blocked on the user. */
+	private terminalTitleState: "idle" | "running" | "attention" = "idle";
 	private activeWorkingIndicatorEmbedded = false;
 	private readonly idleStatus = new IdleStatus();
 	private workingMessage: string | undefined = undefined;
@@ -1246,16 +1250,21 @@ export class InteractiveMode {
 	}
 
 	/**
-	 * Update terminal title with session name and cwd.
+	 * Update terminal title with session name and cwd. The leading glyph tracks
+	 * activity so the tab itself says running / needs input while unfocused.
 	 */
 	private updateTerminalTitle(): void {
 		const cwdBasename = path.basename(this.sessionManager.getCwd());
 		const sessionName = this.sessionManager.getSessionName();
-		if (sessionName) {
-			this.ui.terminal.setTitle(`${APP_TITLE} - ${sessionName} - ${cwdBasename}`);
-		} else {
-			this.ui.terminal.setTitle(`${APP_TITLE} - ${cwdBasename}`);
-		}
+		const prefix = this.terminalTitleState === "running" ? "◐ " : this.terminalTitleState === "attention" ? "● " : "";
+		const base = sessionName ? `${APP_TITLE} - ${sessionName} - ${cwdBasename}` : `${APP_TITLE} - ${cwdBasename}`;
+		this.ui.terminal.setTitle(`${prefix}${base}`);
+	}
+
+	private setTerminalTitleState(state: "idle" | "running" | "attention"): void {
+		if (this.terminalTitleState === state) return;
+		this.terminalTitleState = state;
+		this.updateTerminalTitle();
 	}
 
 	/**
@@ -2785,6 +2794,7 @@ export class InteractiveMode {
 			};
 			opts?.signal?.addEventListener("abort", onAbort, { once: true });
 
+			this.setTerminalTitleState("attention");
 			this.extensionSelector = new ExtensionSelectorComponent(
 				title,
 				options,
@@ -2817,6 +2827,7 @@ export class InteractiveMode {
 		this.editorContainer.addChild(this.editor);
 		this.extensionSelector = undefined;
 		this.ui.setFocus(this.editor);
+		this.setTerminalTitleState(this.session.isStreaming ? "running" : "idle");
 		this.ui.requestRender();
 	}
 
@@ -2848,6 +2859,7 @@ export class InteractiveMode {
 
 			// Container-compatible overlay; no cast needed since the field accepts
 			// any editor overlay with an optional dispose().
+			this.setTerminalTitleState("attention");
 			this.extensionSelector = component;
 			this.editorContainer.clear();
 			this.editorContainer.addChild(component);
@@ -3267,6 +3279,7 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.model.select", () => this.showModelSelector());
 		this.defaultEditor.onAction("app.tools.expand", () => this.toggleToolOutputExpansion());
 		this.defaultEditor.onAction("app.transcript.toggle", () => this.toggleTranscriptOverlay());
+		this.defaultEditor.onAction("app.history.search", () => this.showHistorySearch());
 		this.defaultEditor.onAction("app.thinking.toggle", () => this.toggleThinkingBlockVisibility());
 		this.defaultEditor.onAction("app.editor.external", () => this.openExternalEditor());
 		this.defaultEditor.onAction(
@@ -3368,6 +3381,11 @@ export class InteractiveMode {
 			// Handle commands
 			if (text === "/settings") {
 				this.showSettingsSelector();
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/theme") {
+				this.showThemeSelector();
 				this.editor.setText("");
 				return;
 			}
@@ -3765,6 +3783,7 @@ export class InteractiveMode {
 
 		switch (event.type) {
 			case "agent_start":
+				this.setTerminalTitleState("running");
 				this.clearPendingTools();
 				this.currentWorkingVerb = pickLoadingVerb();
 				this.updateActiveFormLabel();
@@ -4031,6 +4050,7 @@ export class InteractiveMode {
 			}
 
 			case "agent_end":
+				if (event.willRetry !== true) this.setTerminalTitleState("idle");
 				// Branch commits tool results at turn end — refresh the inline
 				// task board now (mid-turn branch reads were stale/empty).
 				void this.syncTaskPanel();
@@ -5328,11 +5348,62 @@ export class InteractiveMode {
 		});
 	}
 
+	/** Ctrl+R: filter this session's prompts and put the choice back in the editor. */
+	private showHistorySearch(): void {
+		const history = this.defaultEditor.getHistory();
+		if (history.length === 0) {
+			this.showStatus("No prompt history yet.");
+			return;
+		}
+		this.showSelector((done) => {
+			const component = new HistorySearchComponent(
+				history,
+				(text) => {
+					done();
+					this.defaultEditor.setText(text);
+					this.ui.setFocus(this.defaultEditor);
+					this.ui.requestRender();
+				},
+				() => {
+					done();
+					this.ui.requestRender();
+				},
+			);
+			return { component, focus: component };
+		});
+	}
+
 	private async showTasksPanel(): Promise<void> {
 		const taskListId = getTaskListId(this.sessionManager.getSessionId());
 		const { live, archived } = await listTasksWithArchive(taskListId);
 		this.showSelector((done) => {
 			const component = new TaskListComponent(live, archived.length, done);
+			return { component, focus: component };
+		});
+	}
+
+	/** `/theme` — preview themes live; Enter persists, Esc restores the previous theme. */
+	private showThemeSelector(): void {
+		const original = this.themeController.getThemeSelection();
+		const themes = getAvailableThemesWithPaths();
+		this.showSelector((done) => {
+			const component = new ThemeGalleryComponent({
+				themes,
+				current: original,
+				onPreview: (name) => this.themeController.preview(name),
+				onConfirm: (name) => {
+					done();
+					const result = this.themeController.setThemeName(name, true);
+					if (result.success) {
+						this.settingsManager.setTheme(name);
+						this.showStatus(`Theme: ${name}`);
+					}
+				},
+				onCancel: () => {
+					done();
+					if (original) this.themeController.preview(original);
+				},
+			});
 			return { component, focus: component };
 		});
 	}
@@ -5841,35 +5912,13 @@ export class InteractiveMode {
 
 	/** Open one memory file in the external editor, creating it with a template when new. */
 	private async openMemoryFileInEditor(entry: MemoryFileEntry): Promise<void> {
-		const editorCmd = this.settingsManager.getExternalEditorCommand();
-		if (!editorCmd) {
-			this.showWarning("No editor configured. Set externalEditor in settings.json or $VISUAL/$EDITOR.");
-			return;
+		if (entry.isNew) {
+			fs.mkdirSync(path.dirname(entry.path), { recursive: true });
+			fs.writeFileSync(entry.path, MEMORY_NEW_FILE_TEMPLATE, "utf-8");
 		}
-
-		try {
-			if (entry.isNew) {
-				fs.mkdirSync(path.dirname(entry.path), { recursive: true });
-				fs.writeFileSync(entry.path, MEMORY_NEW_FILE_TEMPLATE, "utf-8");
-			}
-
-			this.ui.stop();
-			process.stdout.write(`Opening ${entry.path} in ${editorCmd}...\n`);
-
-			const [editor, ...editorArgs] = editorCmd.split(" ");
-			await new Promise<number | null>((resolve) => {
-				const child = spawn(editor, [...editorArgs, entry.path], {
-					stdio: "inherit",
-					shell: process.platform === "win32",
-				});
-				child.on("error", () => resolve(null));
-				child.on("close", (code) => resolve(code));
-			});
-		} finally {
-			this.ui.start();
-			this.ui.requestRender(true);
+		if (await this.openPathInExternalEditor(entry.path)) {
+			this.showStatus(`Memory file closed: ${path.basename(entry.path)} (the agent reads it fresh next turn)`);
 		}
-		this.showStatus(`Memory file closed: ${path.basename(entry.path)} (the agent reads it fresh next turn)`);
 	}
 
 	private handleOutputStyleCommand(arg: string | undefined): void {
@@ -6914,11 +6963,101 @@ export class InteractiveMode {
 				else this.killBackgroundProcess(item.record.id);
 			},
 			this.ui,
+			{
+				openPath: (filePath) => {
+					void this.openPathInExternalEditor(filePath);
+				},
+				copyText: (text) => copyToClipboard(text),
+				diffStat: (worktreePath) => this.worktreeDiffStat(worktreePath),
+				rerunAgent: (record) => this.rerunSubAgent(record),
+			},
 		);
 		this.editorContainer.clear();
 		this.editorContainer.addChild(this.runningTasksViewer);
 		this.ui.setFocus(this.runningTasksViewer);
 		this.ui.requestRender();
+	}
+
+	/**
+	 * Open any file or directory in the configured external editor, suspending
+	 * the TUI while the child runs. Returns false when no editor is configured.
+	 */
+	private async openPathInExternalEditor(targetPath: string): Promise<boolean> {
+		const editorCmd = this.settingsManager.getExternalEditorCommand();
+		if (!editorCmd) {
+			this.showWarning("No editor configured. Set externalEditor in settings.json or $VISUAL/$EDITOR.");
+			return false;
+		}
+
+		try {
+			this.ui.stop();
+			process.stdout.write(`Opening ${targetPath} in ${editorCmd}...\n`);
+
+			const [editor, ...editorArgs] = editorCmd.split(" ");
+			await new Promise<number | null>((resolve) => {
+				const child = spawn(editor, [...editorArgs, targetPath], {
+					stdio: "inherit",
+					shell: process.platform === "win32",
+				});
+				child.on("error", () => resolve(null));
+				child.on("close", (code) => resolve(code));
+			});
+		} finally {
+			this.ui.start();
+			this.ui.requestRender(true);
+		}
+		return true;
+	}
+
+	/** Status + diffstat for a kept sub-agent worktree, rendered inline in the viewer. */
+	private worktreeDiffStat(worktreePath: string): string {
+		try {
+			const status = execFileSync("git", ["-C", worktreePath, "status", "--short"], {
+				encoding: "utf-8",
+				timeout: 4000,
+			}).trim();
+			const stat = execFileSync("git", ["-C", worktreePath, "diff", "HEAD", "--stat"], {
+				encoding: "utf-8",
+				timeout: 4000,
+			}).trim();
+			if (!status && !stat) return "Worktree is clean (no changes vs HEAD).";
+			const lines = [status, stat].filter(Boolean).join("\n").split("\n");
+			const max = 14;
+			const body =
+				lines.length > max
+					? `${lines.slice(0, max).join("\n")}\n… ${lines.length - max} more lines`
+					: lines.join("\n");
+			return `${body}\n(${worktreePath})`;
+		} catch (error) {
+			return `Could not read the worktree diff: ${error instanceof Error ? error.message : String(error)}`;
+		}
+	}
+
+	/** Re-spawn a finished sub-agent with its original prompt, model, and isolation. */
+	private rerunSubAgent(record: InProcessSubAgentRecord): { id: string } | { error: string } {
+		const prompt = record.prompt ?? record.goal;
+		if (!prompt) return { error: "No prompt recorded for this sub-agent." };
+		const model = record.model
+			? record.modelProvider
+				? this.session.modelRegistry.find(record.modelProvider, record.model)
+				: this.session.modelRegistry.getAll().find((m) => m.id === record.model)
+			: undefined;
+		const id = `${record.agentType}-rerun-${Date.now().toString(36)}`;
+		try {
+			this.session.runSubAgentBackground({
+				id,
+				agentType: record.agentType,
+				prompt,
+				model,
+				detached: true,
+				isolation: record.isolation,
+				name: record.teammateName,
+				teamName: record.teamName,
+			});
+			return { id };
+		} catch (error) {
+			return { error: `Could not rerun: ${error instanceof Error ? error.message : String(error)}` };
+		}
 	}
 
 	/**

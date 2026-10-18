@@ -63,6 +63,7 @@ export interface AppKeybindings {
 	"app.tree.filter.cycleForward": true;
 	"app.tree.filter.cycleBackward": true;
 	"app.transcript.toggle": true;
+	"app.history.search": true;
 }
 
 export type AppKeybinding = keyof AppKeybindings;
@@ -274,6 +275,10 @@ export const KEYBINDINGS = {
 	"app.transcript.toggle": {
 		defaultKeys: "ctrl+shift+t",
 		description: "Toggle transcript overlay",
+	},
+	"app.history.search": {
+		defaultKeys: "ctrl+r",
+		description: "Search prompt history",
 	},
 } as const satisfies KeybindingDefinitions;
 

@@ -4,6 +4,7 @@ import { createAllToolDefinitions, type ToolName } from "../../../core/tools/ind
 import { getTextOutput as getRenderedTextOutput } from "../../../core/tools/render-utils.ts";
 import { formatPreviewResult } from "../../../core/tools/result-headline.ts";
 import { getToolRendererOverride } from "../../../core/tools/tool-renderer-registry.ts";
+import { formatDuration } from "../../../utils/duration.ts";
 import { convertToPng } from "../../../utils/image-convert.ts";
 import { theme } from "../theme/theme.ts";
 import { isBlinkVisible, subscribeBlink } from "./blink-clock.ts";
@@ -34,6 +35,8 @@ export class ToolExecutionComponent extends Container {
 	private ui: TUI;
 	private cwd: string;
 	private executionStarted = false;
+	private executionStartedAt: number | undefined;
+	private elapsedTimer: ReturnType<typeof setInterval> | undefined;
 	private waitingPermission = false;
 	private argsComplete = false;
 	private result?: {
@@ -192,12 +195,28 @@ export class ToolExecutionComponent extends Container {
 
 	markExecutionStarted(): void {
 		this.executionStarted = true;
+		this.executionStartedAt = Date.now();
 		// Start the shared blink clock so the status dot pulses while running.
 		if (!this.blinkUnsubscribe) {
 			this.blinkUnsubscribe = subscribeBlink(this.ui);
 		}
+		// A calm 1s tick keeps the elapsed readout moving even with reduced motion
+		// (where the blink clock intentionally does not tick).
+		if (!this.elapsedTimer) {
+			this.elapsedTimer = setInterval(() => {
+				if (this.isRunning()) this.ui.requestRender();
+				else this.stopElapsedTimer();
+			}, 1000);
+			this.elapsedTimer.unref?.();
+		}
 		this.updateDisplay();
 		this.ui.requestRender();
+	}
+
+	private stopElapsedTimer(): void {
+		if (!this.elapsedTimer) return;
+		clearInterval(this.elapsedTimer);
+		this.elapsedTimer = undefined;
 	}
 
 	setArgsComplete(): void {
@@ -221,6 +240,7 @@ export class ToolExecutionComponent extends Container {
 			this.blinkUnsubscribe();
 			this.blinkUnsubscribe = undefined;
 		}
+		if (!isPartial) this.stopElapsedTimer();
 		this.updateDisplay();
 		this.maybeConvertImagesForKitty();
 	}
@@ -279,7 +299,9 @@ export class ToolExecutionComponent extends Container {
 		if (this.isRunning()) {
 			const dotVisible = isBlinkVisible();
 			const dot = dotVisible ? "●" : " ";
-			lines.push(`${theme.fg("accent", dot)} ${theme.fg("toolTitle", theme.bold(this.toolName))}`);
+			const elapsedMs = this.executionStartedAt !== undefined ? Date.now() - this.executionStartedAt : 0;
+			const elapsed = elapsedMs >= 1000 ? ` ${theme.fg("dim", `· ${formatDuration(elapsedMs)}`)}` : "";
+			lines.push(`${theme.fg("accent", dot)} ${theme.fg("toolTitle", theme.bold(this.toolName))}${elapsed}`);
 		}
 
 		if (this.hasRendererDefinition() && this.getRenderShell() === "self") {
@@ -451,6 +473,7 @@ export class ToolExecutionComponent extends Container {
 	 * Called when this component is removed from the chat.
 	 */
 	dispose(): void {
+		this.stopElapsedTimer();
 		if (this.blinkUnsubscribe) {
 			this.blinkUnsubscribe();
 			this.blinkUnsubscribe = undefined;

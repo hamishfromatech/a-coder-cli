@@ -12,6 +12,7 @@ import type { RuntimeSessionStatus } from "../../core/agent-session-runtime.ts";
 import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
 import type { CronJob, CronRun, CronSchedule, CronSnapshot } from "../../core/cron/types.ts";
+import type { InProcessSubAgentRecord } from "../../core/extensions/types.ts";
 import type {
 	Coworker,
 	Errand,
@@ -48,6 +49,8 @@ export type RpcCommand =
 	| { id?: string; type: "clear_queue"; sessionPath?: string }
 	| { id?: string; type: "queue_remove"; kind: "steering" | "followUp"; index: number; sessionPath?: string }
 	| { id?: string; type: "stop_workflow_run"; runId: string }
+	| { id?: string; type: "kill_subagent"; subagentId: string }
+	| { id?: string; type: "rerun_subagent"; subagentId: string }
 	| { id?: string; type: "new_session"; parentSession?: string; cwd?: string }
 	| { id?: string; type: "clear_conversation" }
 
@@ -409,6 +412,16 @@ export type RpcResponse =
 			data: { sessions: RuntimeSessionStatus[] };
 	  }
 	| { id?: string; type: "response"; command: "abort_session"; success: true; data: { found: boolean } }
+
+	// Sub-agents (running-tasks viewer / desktop manager)
+	| {
+			id?: string;
+			type: "response";
+			command: "kill_subagent";
+			success: true;
+			data: { subagent: InProcessSubAgentRecord };
+	  }
+	| { id?: string; type: "response"; command: "rerun_subagent"; success: true; data: { id: string } }
 
 	// Messages
 	| { id?: string; type: "response"; command: "get_messages"; success: true; data: { messages: AgentMessage[] } }

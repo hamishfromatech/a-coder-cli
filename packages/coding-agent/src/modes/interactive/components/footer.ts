@@ -43,6 +43,57 @@ export function formatCwdForFooter(cwd: string, home: string | undefined): strin
 }
 
 /**
+ * Shorten from the middle so the leaf directory stays visible — the start of a
+ * path is the least informative part once it is too wide for the footer.
+ */
+function truncateMiddle(text: string, width: number): string {
+	if (width <= 1 || visibleWidth(text) <= width) return text;
+	const keep = width - 1;
+	// Bias the visible remainder toward the tail: the leaf directory is what
+	// identifies the project, while the leading path is predictable.
+	const left = Math.max(1, Math.floor(keep * 0.3));
+	const right = keep - left;
+	const chars = [...text];
+	return `${chars.slice(0, left).join("")}…${right > 0 ? chars.slice(-right).join("") : ""}`;
+}
+
+interface FooterSegment {
+	key: string;
+	/** Styled text (may contain its own color, e.g. the context percentage). */
+	text: string;
+	/** Unstyled text used for width calculations. */
+	plain: string;
+	/** Higher survives longer when the footer is narrow. */
+	priority: number;
+	/** Apply the dim base color (off for segments that carry their own emphasis). */
+	dim: boolean;
+}
+
+function segmentsWidth(segments: FooterSegment[]): number {
+	return segments.reduce((sum, segment) => sum + visibleWidth(segment.plain), 0) + Math.max(0, segments.length - 1);
+}
+
+/** Drop the lowest-priority segment until the line fits; the context meter always survives. */
+function fitSegments(segments: FooterSegment[], maxWidth: number): FooterSegment[] {
+	const fitted = [...segments];
+	while (fitted.length > 1 && segmentsWidth(fitted) > maxWidth) {
+		let dropIndex = 0;
+		for (let i = 1; i < fitted.length; i++) {
+			if (fitted[i].priority < fitted[dropIndex].priority) dropIndex = i;
+		}
+		if (fitted[dropIndex].key === "context") break;
+		fitted.splice(dropIndex, 1);
+	}
+	return fitted;
+}
+
+function renderSegments(segments: FooterSegment[]): string {
+	return segments
+		.map((segment) => (segment.dim ? theme.fg("dim", segment.text) : segment.text))
+		.join(theme.fg("dim", " "));
+}
+
+/**
  * Footer component that shows pwd, token stats, and context usage.
  * Computes token/context stats from session, gets git branch and extension statuses from provider.
  */
@@ -113,45 +164,48 @@ export class FooterComponent implements Component {
 		const contextPercentValue = contextUsage?.percent ?? 0;
 		const contextPercent = contextUsage?.percent !== null ? contextPercentValue.toFixed(1) : "?";
 
-		// Replace home directory with ~
-		let pwd = formatCwdForFooter(this.session.sessionManager.getCwd(), process.env.HOME || process.env.USERPROFILE);
-
-		// Add git branch if available
+		// Location line: path first, decorations dropped as width shrinks.
+		const basePwd = formatCwdForFooter(
+			this.session.sessionManager.getCwd(),
+			process.env.HOME || process.env.USERPROFILE,
+		);
 		const branch = this.footerData.getGitBranch();
-		if (branch) {
-			pwd = `${pwd} (${branch})`;
-		}
-
-		// Add session name if set
 		const sessionName = this.session.sessionManager.getSessionName();
-		if (sessionName) {
-			pwd = `${pwd} • ${sessionName}`;
-		}
+		const withBranch = branch ? `${basePwd} (${branch})` : basePwd;
+		const fullLocation = sessionName ? `${withBranch} • ${sessionName}` : withBranch;
+		let locationText: string;
+		if (visibleWidth(fullLocation) <= width) locationText = fullLocation;
+		else if (visibleWidth(withBranch) <= width) locationText = withBranch;
+		else if (visibleWidth(basePwd) <= width) locationText = basePwd;
+		else locationText = truncateMiddle(basePwd, width);
+		const pwdLine = theme.fg("dim", locationText);
 
-		// Build stats line
-		const statsParts = [];
-		if (totalInput) statsParts.push(`↑${formatTokens(totalInput)}`);
-		if (totalOutput) statsParts.push(`↓${formatTokens(totalOutput)}`);
-		if (totalCacheRead) statsParts.push(`R${formatTokens(totalCacheRead)}`);
-		if (totalCacheWrite) statsParts.push(`W${formatTokens(totalCacheWrite)}`);
+		// Stats line: whole segments with drop priorities; the model stays pinned right.
+		const segments: FooterSegment[] = [];
+		const addSegment = (key: string, plain: string, priority: number, text = plain) => {
+			if (plain) segments.push({ key, text, plain, priority, dim: true });
+		};
+		if (totalInput) addSegment("input", `↑${formatTokens(totalInput)}`, 55);
+		if (totalOutput) addSegment("output", `↓${formatTokens(totalOutput)}`, 54);
+		if (totalCacheRead) addSegment("cacheRead", `R${formatTokens(totalCacheRead)}`, 30);
+		if (totalCacheWrite) addSegment("cacheWrite", `W${formatTokens(totalCacheWrite)}`, 29);
 		if ((totalCacheRead > 0 || totalCacheWrite > 0) && latestCacheHitRate !== undefined) {
-			statsParts.push(`CH${latestCacheHitRate.toFixed(1)}%`);
+			addSegment("cacheHit", `CH${latestCacheHitRate.toFixed(1)}%`, 28);
 		}
 
 		// Show cost with "(sub)" indicator if using OAuth subscription
 		const usingSubscription = state.model ? this.session.modelRegistry.isUsingOAuth(state.model) : false;
 		if (totalCost || usingSubscription) {
-			const costStr = `$${totalCost.toFixed(3)}${usingSubscription ? " (sub)" : ""}`;
-			statsParts.push(costStr);
+			addSegment("cost", `$${totalCost.toFixed(3)}${usingSubscription ? " (sub)" : ""}`, 70);
 		}
 
-		// Colorize context percentage based on usage
-		let contextPercentStr: string;
+		// Colorize context percentage based on usage. This segment is never dropped.
 		const autoIndicator = this.autoCompactEnabled ? " (auto)" : "";
 		const contextPercentDisplay =
 			contextPercent === "?"
 				? `?/${formatTokens(contextWindow)}${autoIndicator}`
 				: `${contextPercent}%/${formatTokens(contextWindow)}${autoIndicator}`;
+		let contextPercentStr: string;
 		if (contextPercentValue > 90) {
 			contextPercentStr = theme.fg("error", contextPercentDisplay);
 		} else if (contextPercentValue > 70) {
@@ -159,76 +213,58 @@ export class FooterComponent implements Component {
 		} else {
 			contextPercentStr = contextPercentDisplay;
 		}
-		statsParts.push(contextPercentStr);
+		segments.push({
+			key: "context",
+			text: contextPercentStr,
+			plain: contextPercentDisplay,
+			priority: 100,
+			// Dim at normal usage; keep the warning/error color intact when high.
+			dim: contextPercentValue <= 70,
+		});
 		if (areExperimentalFeaturesEnabled()) {
-			statsParts.push(`${theme.fg("dim", "•")} ${theme.bold(theme.fg("warning", "xp"))}`);
+			addSegment("xp", "• xp", 10, `${theme.fg("dim", "•")} ${theme.bold(theme.fg("warning", "xp"))}`);
 		}
 
-		let statsLeft = statsParts.join(" ");
-
-		// Add model name on the right side, plus thinking level if model supports it
+		// Right side: model, thinking level, and provider when there is room.
 		const modelName = state.model?.id || "no-model";
-
-		let statsLeftWidth = visibleWidth(statsLeft);
-
-		// If statsLeft is too wide, truncate it
-		if (statsLeftWidth > width) {
-			statsLeft = truncateToWidth(statsLeft, width, "...");
-			statsLeftWidth = visibleWidth(statsLeft);
-		}
-
-		// Calculate available space for padding (minimum 2 spaces between stats and model)
-		const minPadding = 2;
-
-		// Add thinking level indicator if model supports reasoning
 		let rightSideWithoutProvider = modelName;
 		if (state.model?.reasoning) {
 			const thinkingLevel = state.thinkingLevel || "off";
 			rightSideWithoutProvider =
 				thinkingLevel === "off" ? `${modelName} • thinking off` : `${modelName} • ${thinkingLevel}`;
 		}
-
-		// Prepend the provider in parentheses if there are multiple providers and there's enough room
 		let rightSide = rightSideWithoutProvider;
 		if (this.footerData.getAvailableProviderCount() > 1 && state.model) {
-			rightSide = `(${state.model!.provider}) ${rightSideWithoutProvider}`;
-			if (statsLeftWidth + minPadding + visibleWidth(rightSide) > width) {
-				// Too wide, fall back
-				rightSide = rightSideWithoutProvider;
+			const withProvider = `(${state.model.provider}) ${rightSideWithoutProvider}`;
+			if (visibleWidth(withProvider) <= Math.max(18, Math.floor(width * 0.45))) {
+				rightSide = withProvider;
 			}
 		}
+		const rightMax = Math.max(8, Math.min(visibleWidth(rightSide), Math.floor(width * 0.5)));
+		const rightTrimmed = truncateToWidth(rightSide, rightMax, "…");
+		const rightWidth = visibleWidth(rightTrimmed);
+		const minPadding = rightWidth > 0 ? 2 : 0;
+		const leftBudget = Math.max(1, width - rightWidth - minPadding);
 
-		const rightSideWidth = visibleWidth(rightSide);
-		const totalNeeded = statsLeftWidth + minPadding + rightSideWidth;
+		let statsLeft = renderSegments(fitSegments(segments, leftBudget));
+		if (visibleWidth(statsLeft) > leftBudget) {
+			statsLeft = truncateToWidth(statsLeft, leftBudget, "…");
+		}
+		const statsLeftWidth = visibleWidth(statsLeft);
+		const totalNeeded = statsLeftWidth + minPadding + rightWidth;
 
 		let statsLine: string;
 		if (totalNeeded <= width) {
-			// Both fit - add padding to right-align model
-			const padding = " ".repeat(width - statsLeftWidth - rightSideWidth);
-			statsLine = statsLeft + padding + rightSide;
+			statsLine = statsLeft + " ".repeat(width - statsLeftWidth - rightWidth) + theme.fg("dim", rightTrimmed);
 		} else {
-			// Need to truncate right side
-			const availableForRight = width - statsLeftWidth - minPadding;
-			if (availableForRight > 0) {
-				const truncatedRight = truncateToWidth(rightSide, availableForRight, "");
-				const truncatedRightWidth = visibleWidth(truncatedRight);
-				const padding = " ".repeat(Math.max(0, width - statsLeftWidth - truncatedRightWidth));
-				statsLine = statsLeft + padding + truncatedRight;
-			} else {
-				// Not enough space for right side at all
-				statsLine = statsLeft;
-			}
+			const availableForRight = Math.max(0, width - statsLeftWidth - minPadding);
+			const trimmedRight = availableForRight > 0 ? truncateToWidth(rightTrimmed, availableForRight, "") : "";
+			const trimmedWidth = visibleWidth(trimmedRight);
+			statsLine =
+				statsLeft + " ".repeat(Math.max(0, width - statsLeftWidth - trimmedWidth)) + theme.fg("dim", trimmedRight);
 		}
 
-		// Apply dim to each part separately. statsLeft may contain color codes (for context %)
-		// that end with a reset, which would clear an outer dim wrapper. So we dim the parts
-		// before and after the colored section independently.
-		const dimStatsLeft = theme.fg("dim", statsLeft);
-		const remainder = statsLine.slice(statsLeft.length); // padding + rightSide
-		const dimRemainder = theme.fg("dim", remainder);
-
-		const pwdLine = truncateToWidth(theme.fg("dim", pwd), width, theme.fg("dim", "..."));
-		const lines = [pwdLine, dimStatsLeft + dimRemainder];
+		const lines = [pwdLine, statsLine];
 
 		// Add extension statuses on a single line, sorted by key alphabetically
 		const extensionStatuses = this.footerData.getExtensionStatuses();

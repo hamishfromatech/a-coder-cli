@@ -31,6 +31,21 @@ interface TuiLike {
 	terminal: { rows: number };
 }
 
+/**
+ * Host-provided side effects. The component never touches the clipboard, the
+ * filesystem, or the agent directly, which keeps it renderable in isolation.
+ */
+export interface RunningTasksActions {
+	/** Open a log file or worktree in the user's editor / OS handler. */
+	openPath?: (path: string) => void | Promise<void>;
+	/** Copy text to the system clipboard. */
+	copyText?: (text: string) => void | Promise<void>;
+	/** Short diff summary for a kept worktree (status + --stat), rendered inline. */
+	diffStat?: (worktreePath: string) => string;
+	/** Re-run a finished sub-agent; returns the new record id or a user-facing error. */
+	rerunAgent?: (record: InProcessSubAgentRecord) => { id: string } | { error: string };
+}
+
 interface AgentItem {
 	kind: "agent";
 	record: InProcessSubAgentRecord;
@@ -172,9 +187,10 @@ export class RunningTasksViewerComponent extends Container {
 	private viewScroll = 0;
 	private onClose: () => void;
 	private onKill: (item: TaskItem) => void;
+	private actions: RunningTasksActions;
 	private bodyContainer: Container;
 	private hint: Text;
-	private killedNotice: string | undefined;
+	private notice: string | undefined;
 	/** 1s render ticker so elapsed/duration displays advance while idle. */
 	private elapsedTimer: ReturnType<typeof setInterval> | undefined;
 	private tui: TuiLike | undefined;
@@ -185,10 +201,12 @@ export class RunningTasksViewerComponent extends Container {
 		onClose: () => void,
 		onKill: (item: TaskItem) => void,
 		tui?: TuiLike,
+		actions: RunningTasksActions = {},
 	) {
 		super();
 		this.onClose = onClose;
 		this.onKill = onKill;
+		this.actions = actions;
 		this.tui = tui;
 		this.setItems(subagents, backgrounds);
 
@@ -340,6 +358,10 @@ export class RunningTasksViewerComponent extends Container {
 		if (last < this.items.length) {
 			this.bodyContainer.addChild(new Text(theme.fg("dim", `… ${this.items.length - last} more below`), 1, 1));
 		}
+		if (this.notice) {
+			this.bodyContainer.addChild(new Spacer(1));
+			this.bodyContainer.addChild(new Text(theme.fg("muted", this.notice), 1, 1));
+		}
 		this.hint.setText(
 			rawKeyHint("↑↓", "navigate") +
 				"  " +
@@ -365,19 +387,22 @@ export class RunningTasksViewerComponent extends Container {
 		} else {
 			this.renderBashView(item.record);
 		}
-		if (this.killedNotice) {
+		if (this.notice) {
 			this.bodyContainer.addChild(new Spacer(1));
-			this.bodyContainer.addChild(new Text(theme.fg("error", this.killedNotice), 1, 1));
+			this.bodyContainer.addChild(new Text(theme.fg("muted", this.notice), 1, 1));
 		}
-		if (item.kind === "agent") {
-			this.hint.setText(
-				`${rawKeyHint("↑↓", "scroll")}  ${rawKeyHint("k", "kill")}  ${keyHint("tui.select.cancel", "back")}`,
-			);
-		} else {
-			this.hint.setText(
-				`${rawKeyHint("↑↓", "scroll")}  ${rawKeyHint("k", "kill")}  ${keyHint("tui.select.cancel", "back")}`,
-			);
-		}
+		this.hint.setText(
+			[
+				rawKeyHint("↑↓", "scroll"),
+				rawKeyHint("c", "copy result"),
+				rawKeyHint("o", "open log"),
+				rawKeyHint("y", "copy path"),
+				rawKeyHint("d", "diff"),
+				rawKeyHint("r", "rerun"),
+				rawKeyHint("k", "kill"),
+				keyHint("tui.select.cancel", "back"),
+			].join("  "),
+		);
 	}
 
 	private renderAgentView(record: InProcessSubAgentRecord): void {
@@ -405,6 +430,7 @@ export class RunningTasksViewerComponent extends Container {
 		if (record.outputFile) this.bodyContainer.addChild(new Text(theme.fg("dim", `log: ${record.outputFile}`), 1, 1));
 		if (record.worktreePath)
 			this.bodyContainer.addChild(new Text(theme.fg("dim", `worktree: ${record.worktreePath}`), 1, 1));
+		this.renderOutcome(record);
 		this.bodyContainer.addChild(new Spacer(1));
 
 		const timelineTail = 12;
@@ -473,6 +499,127 @@ export class RunningTasksViewerComponent extends Container {
 		}
 	}
 
+	/**
+	 * Lead with what the user opened the viewer for: the final answer, the
+	 * failure, or the stop. The timeline below stays as the audit trail.
+	 */
+	private renderOutcome(record: InProcessSubAgentRecord): void {
+		if (record.status === "running") return;
+		this.bodyContainer.addChild(new Spacer(1));
+		const heading = record.status === "completed" ? "Result" : record.status === "failed" ? "Failure" : "Stopped";
+		const tone = record.status === "completed" ? "success" : "error";
+		this.bodyContainer.addChild(new Text(theme.fg(tone, theme.bold(heading)), 1, 1));
+		if (record.error) {
+			this.bodyContainer.addChild(new Text(theme.fg("error", record.error), 1, 1));
+		} else if (record.status === "failed") {
+			this.bodyContainer.addChild(new Text(theme.fg("error", "No error detail recorded."), 1, 1));
+		}
+		const text = record.finalText?.trim();
+		if (!text) {
+			if (record.status === "completed") {
+				this.bodyContainer.addChild(new Text(theme.fg("muted", "(no final text recorded)"), 1, 1));
+			}
+			return;
+		}
+		const lines = text.split("\n");
+		const maxLines = 24;
+		const shown = lines.length > maxLines ? lines.slice(-maxLines) : lines;
+		if (lines.length > maxLines) {
+			this.bodyContainer.addChild(
+				new Text(theme.fg("dim", `… ${lines.length - maxLines} earlier lines hidden`), 1, 1),
+			);
+		}
+		for (const line of shown) {
+			this.bodyContainer.addChild(new Text(theme.fg("text", line), 1, 1));
+		}
+	}
+
+	private itemPath(item: TaskItem): string | undefined {
+		return item.kind === "agent" ? (item.record.outputFile ?? item.record.worktreePath) : item.record.fullOutputPath;
+	}
+
+	private copyResult(): void {
+		const item = this.viewItem();
+		if (!item) return;
+		const text =
+			item.kind === "agent"
+				? (item.record.finalText?.trim() ?? item.record.error?.trim() ?? "")
+				: item.record.output.trim();
+		if (!text) {
+			this.notice =
+				item.kind === "agent" && item.record.status === "running"
+					? "No result yet — the sub-agent is still running."
+					: "Nothing to copy for this task yet.";
+		} else if (!this.actions.copyText) {
+			this.notice = "Clipboard is unavailable here.";
+		} else {
+			void this.actions.copyText(text);
+			this.notice = `Copied ${text.length.toLocaleString()} chars to the clipboard.`;
+		}
+		this.rerender();
+	}
+
+	private copyPath(): void {
+		const item = this.viewItem();
+		const path = item ? this.itemPath(item) : undefined;
+		if (!path) {
+			this.notice = "This task has no log path.";
+		} else if (!this.actions.copyText) {
+			this.notice = "Clipboard is unavailable here.";
+		} else {
+			void this.actions.copyText(path);
+			this.notice = `Copied path: ${path}`;
+		}
+		this.rerender();
+	}
+
+	private openLog(): void {
+		const item = this.viewItem();
+		const path = item ? this.itemPath(item) : undefined;
+		if (!path) {
+			this.notice = "This task has no log path.";
+		} else if (!this.actions.openPath) {
+			this.notice = "Opening files is unavailable here.";
+		} else {
+			void this.actions.openPath(path);
+			this.notice = `Opening ${path}…`;
+		}
+		this.rerender();
+	}
+
+	private showDiff(): void {
+		const item = this.viewItem();
+		if (!item || item.kind !== "agent" || !item.record.worktreePath) {
+			this.notice = "No kept worktree for this task.";
+		} else {
+			this.notice = this.actions.diffStat?.(item.record.worktreePath) ?? "Could not read the worktree diff.";
+		}
+		this.rerender();
+	}
+
+	private rerun(): void {
+		const item = this.viewItem();
+		if (!item || item.kind !== "agent") {
+			this.notice = "Only sub-agents can be rerun.";
+			this.rerender();
+			return;
+		}
+		if (item.record.status === "running") {
+			this.notice = "Stop the sub-agent before rerunning it.";
+			this.rerender();
+			return;
+		}
+		const result = this.actions.rerunAgent?.(item.record);
+		if (!result) {
+			this.notice = "Rerun is unavailable here.";
+		} else if ("error" in result) {
+			this.notice = result.error;
+		} else {
+			this.notice = `Rerunning as ${result.id} — it appears in the list.`;
+		}
+		this.rerender();
+	}
+
 	private renderBashView(record: BackgroundProcessRecord): void {
 		const cmd = truncateText(record.command, 80);
 		this.bodyContainer.addChild(
@@ -530,7 +677,7 @@ export class RunningTasksViewerComponent extends Container {
 				const item = this.selectedItem();
 				if (item) {
 					this.onKill(item);
-					this.killedNotice = `Kill requested for ${item.kind} "${truncateText(itemLabel(item), 30)}".`;
+					this.notice = `Kill requested for ${item.kind} "${truncateText(itemLabel(item), 30)}".`;
 				}
 				return;
 			}
@@ -548,7 +695,7 @@ export class RunningTasksViewerComponent extends Container {
 					this.mode = "viewing";
 					this.viewingId = itemId(item);
 					this.viewScroll = 0;
-					this.killedNotice = undefined;
+					this.notice = undefined;
 					this.rerender();
 				}
 			} else if (back) {
@@ -562,7 +709,7 @@ export class RunningTasksViewerComponent extends Container {
 			this.mode = "picking";
 			this.viewingId = undefined;
 			this.viewScroll = 0;
-			this.killedNotice = undefined;
+			this.notice = undefined;
 			this.rerender();
 		} else if (kb.matches(keyData, "tui.select.up") || kb.matches(keyData, "tui.select.down")) {
 			// Scroll the viewed task (↑ = older, ↓ = newer toward live): the
@@ -574,11 +721,21 @@ export class RunningTasksViewerComponent extends Container {
 				this.viewScroll = Math.max(0, this.viewScroll - step);
 			}
 			this.rerender();
+		} else if (keyData === "c") {
+			this.copyResult();
+		} else if (keyData === "y") {
+			this.copyPath();
+		} else if (keyData === "o") {
+			this.openLog();
+		} else if (keyData === "d") {
+			this.showDiff();
+		} else if (keyData === "r") {
+			this.rerun();
 		} else if (keyData === "k") {
 			const item = this.viewItem();
 			if (item) {
 				this.onKill(item);
-				this.killedNotice = `Kill requested for ${item.kind} "${truncateText(itemLabel(item), 30)}".`;
+				this.notice = `Kill requested for ${item.kind} "${truncateText(itemLabel(item), 30)}".`;
 				this.rerender();
 			}
 		}
