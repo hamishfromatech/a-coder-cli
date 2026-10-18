@@ -12,8 +12,10 @@
  */
 
 import * as crypto from "node:crypto";
+import { existsSync, mkdirSync, renameSync } from "node:fs";
+import { basename, join, resolve, sep } from "node:path";
 import { getOAuthProvider } from "@earendil-works/pi-ai/oauth";
-import { VERSION } from "../../config.ts";
+import { getSessionsDir, VERSION } from "../../config.ts";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import { captureCliSessionEnd } from "../../core/analytics.ts";
 import { CronService } from "../../core/cron/service.ts";
@@ -1142,6 +1144,56 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				const targetSession = runtimeHost.getSessionForPath(command.sessionPath) ?? session;
 				targetSession.setSessionName(name);
 				return success(id, "set_session_name");
+			}
+
+			case "rename_session": {
+				// Rename any stored session, including one with no live runtime:
+				// open its file and append the session_info entry, exactly what
+				// AgentSession.setSessionName does for the active session.
+				const name = command.name.replace(/[\r\n]+/g, " ").trim();
+				if (!name) {
+					return error(id, "rename_session", "Session name cannot be empty");
+				}
+				const live = runtimeHost.getSessionForPath(command.sessionPath);
+				if (live) {
+					live.setSessionName(name);
+					return success(id, "rename_session");
+				}
+				if (!existsSync(command.sessionPath)) {
+					return error(id, "rename_session", `Unknown session: ${command.sessionPath}`);
+				}
+				try {
+					SessionManager.open(command.sessionPath).appendSessionInfo(name);
+				} catch (e) {
+					return error(id, "rename_session", e instanceof Error ? e.message : String(e));
+				}
+				return success(id, "rename_session");
+			}
+
+			case "delete_session": {
+				// Delete moves the file into the sessions dir's .trash folder:
+				// recoverable, never touches live runtimes, and refuses paths
+				// outside the store so the RPC cannot unlink arbitrary files.
+				const target = resolve(command.sessionPath);
+				if (runtimeHost.getSessionForPath(command.sessionPath)) {
+					return error(id, "delete_session", "Cannot delete the active session or one with a running turn");
+				}
+				const sessionsDir = resolve(getSessionsDir());
+				if (target !== sessionsDir && !target.startsWith(`${sessionsDir}${sep}`)) {
+					return error(id, "delete_session", "Not a stored session file");
+				}
+				if (!existsSync(target)) {
+					return error(id, "delete_session", `Unknown session: ${command.sessionPath}`);
+				}
+				try {
+					const trashDir = join(sessionsDir, ".trash");
+					mkdirSync(trashDir, { recursive: true });
+					const trashPath = join(trashDir, `${basename(target)}.${Date.now()}`);
+					renameSync(target, trashPath);
+					return success(id, "delete_session", { trashPath });
+				} catch (e) {
+					return error(id, "delete_session", e instanceof Error ? e.message : String(e));
+				}
 			}
 
 			case "set_entry_label": {

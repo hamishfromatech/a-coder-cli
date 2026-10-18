@@ -887,6 +887,26 @@ Response:
 
 The current session name is available via `get_state` in the `sessionName` field. To set the initial name when starting RPC mode, pass `--name <name>` or `-n <name>` to the `a-coder-cli --mode rpc` process.
 
+#### rename_session
+
+Rename any stored session by path, including one with no live runtime. Unlike `set_session_name`, which resolves only the active session (and detached background runtimes), this opens the session file and appends the same `session_info` entry.
+
+```json
+{"type": "rename_session", "sessionPath": "/path/to/session.jsonl", "name": "New name"}
+```
+
+Response: `{"type": "response", "command": "rename_session", "success": true}`. Empty names are rejected.
+
+#### delete_session
+
+Delete a stored session. The file is moved into the sessions directory's `.trash/` folder (recoverable — this is not an unlink), so a mistaken delete can be restored by moving the file back. Refused for the active session, for any path with a live runtime, and for paths outside the sessions directory.
+
+```json
+{"type": "delete_session", "sessionPath": "/path/to/session.jsonl"}
+```
+
+Response: `{"type": "response", "command": "delete_session", "success": true, "data": {"trashPath": "..."}}`.
+
 ### Session Management
 
 #### list_sessions

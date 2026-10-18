@@ -109,6 +109,8 @@ export type RpcCommand =
 	| { id?: string; type: "list_sessions" }
 	| { id?: string; type: "get_last_assistant_text" }
 	| { id?: string; type: "set_session_name"; name: string; sessionPath?: string }
+	| { id?: string; type: "rename_session"; sessionPath: string; name: string }
+	| { id?: string; type: "delete_session"; sessionPath: string }
 	| { id?: string; type: "set_entry_label"; entryId: string; label: string | undefined }
 
 	// Messages
@@ -392,6 +394,8 @@ export type RpcResponse =
 			data: { text: string | null };
 	  }
 	| { id?: string; type: "response"; command: "set_session_name"; success: true }
+	| { id?: string; type: "response"; command: "rename_session"; success: true }
+	| { id?: string; type: "response"; command: "delete_session"; success: true; data: { trashPath: string } }
 	| { id?: string; type: "response"; command: "set_entry_label"; success: true }
 
 	// Runtime registry (background sessions)

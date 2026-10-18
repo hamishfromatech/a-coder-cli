@@ -4,6 +4,9 @@
 
 ### Added
 
+- Session rail management in the desktop app: ↑/↓/Home/End move between rows (Enter resumes, F2 renames, Delete opens the actions menu), inline rename, pin-to-top (persisted per install, shown as its own group), delete (moved to the sessions `.trash` folder, refused for the open session), and "Copy transcript" — the stored JSONL is converted to a Markdown transcript with tool calls and results included.
+- Engine RPC: `rename_session` (rename any stored session by path, live or not) and `delete_session` (recoverable move into `<sessions>/.trash`, refusing the active session, live runtimes, and paths outside the sessions store).
+
 - Desktop: regression suite for the engine-event pipeline (11 tests, `npm test` in `desktop-app`): history-latch release on switch, echo deferral + single-paint drain, stale-switch generation guards, cross-session echo isolation, warm-cache behaviour.
 
 - Desktop: the browser panel now opens for **any** desktop-browser tool call — the reveal matches every tool on the desktop-browser server, including MCP-qualified names (`mcp__desktop-browser__browser_tabs` and friends) that the old bare `browser_*` matcher missed (MCP tools register as `mcp__<server>__<tool>`, so the panel stayed closed while the engine's error promised it would open).
