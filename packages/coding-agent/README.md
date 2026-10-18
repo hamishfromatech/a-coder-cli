@@ -191,6 +191,8 @@ Type `/` in the editor to trigger commands. [Extensions](#extensions) can regist
 | `/scoped-models` | Enable/disable models for Ctrl+P cycling |
 | `/settings` | Thinking level, theme, message delivery, transport |
 | `/resume` | Pick from previous sessions |
+| `/search <text>` | Search stored sessions by transcript text, name, or folder |
+| `/sessions [archive]` | Session-store stats; archive one session recoverably |
 | `/new` | Start a new session |
 | `/name <name>` | Set session display name |
 | `/session` | Show session info (file, ID, messages, tokens, cost) |
@@ -200,11 +202,12 @@ Type `/` in the editor to trigger commands. [Extensions](#extensions) can regist
 | `/clone` | Duplicate the current active branch into a new session |
 | `/compact [prompt]` | Manually compact context, optional custom instructions |
 | `/copy` | Copy last assistant message to clipboard |
-| `/export [file]` | Export session to HTML or JSONL file |
+| `/export [file]` | Export session to HTML or JSONL file (credentials redacted) |
 | `/import <file>` | Import and resume a session from a JSONL file |
 | `/share` | Upload as private GitHub gist with shareable HTML link |
 | `/reload` | Reload keybindings, extensions, skills, prompts, and context files (themes hot-reload automatically) |
 | `/hotkeys` | Show all keyboard shortcuts |
+| `/doctor` | Diagnose version, config, auth, MCP, and the session store |
 | `/changelog` | Display version history |
 | `/quit` | Quit pi |
 
@@ -530,6 +533,7 @@ a-coder-cli update --self --force     # Reinstall a-coder-cli even if current
 a-coder-cli update --extension <src>  # Update one package
 a-coder-cli list                      # List installed packages
 a-coder-cli config                    # Enable/disable package resources
+a-coder-cli doctor [--json]           # Diagnose version, config, auth, MCP, and the session store
 ```
 
 `a-coder-cli config` and project package commands accept `--approve`/`--no-approve` to trust or ignore project-local settings for one command. `a-coder-cli update` never prompts for project trust.
@@ -542,6 +546,7 @@ a-coder-cli config                    # Enable/disable package resources
 | `-p`, `--print` | Print response and exit |
 | `--mode json` | Output all events as JSON lines (see [docs/json.md](docs/json.md)) |
 | `--mode rpc` | RPC mode for process integration (see [docs/rpc.md](docs/rpc.md)) |
+| `--rpc-log <path>` | Append a JSONL trace of RPC commands and events (RPC mode) |
 | `--export <file>` | Export current session to HTML and exit |
 
 In print mode, a-coder-cli also reads piped stdin and merges it into the initial prompt:

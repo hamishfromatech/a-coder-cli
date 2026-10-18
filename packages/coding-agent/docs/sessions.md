@@ -31,7 +31,9 @@ For the JSONL file format and SessionManager API, see [Session Format](session-f
 | `/fork` | Create a new session from a previous user message |
 | `/clone` | Duplicate the current active branch into a new session |
 | `/compact [prompt]` | Summarize older context; see [Compaction](compaction.md) |
-| `/export [file]` | Export session to HTML |
+| `/search <text>` | Search transcripts across stored sessions; selecting a hit resumes it |
+| `/sessions [archive]` | Store stats (count, size, largest files); `archive` moves one session to `.trash` |
+| `/export [file]` | Export session to HTML (credentials are redacted) |
 | `/share` | Upload as private GitHub gist with shareable HTML link |
 
 ## Resuming and Deleting Sessions
@@ -48,6 +50,20 @@ In the picker you can:
 - delete with Ctrl+D, then confirm
 
 When available, a-coder-cli uses the `trash` CLI for deletion instead of permanently removing files.
+
+## Searching and Maintaining the Store
+
+`/search <text>` matches message text, session names, and working folders across
+every stored session, and shows a snippet around the first match. Selecting a
+result resumes that session.
+
+`/sessions` reports how much space the store uses and which sessions are
+largest. `/sessions archive` moves a session into `<sessions>/.trash` — a
+recoverable move, not a delete; restore it by moving the file back. The open
+session cannot be archived.
+
+For a machine-readable health report (version, config paths, auth, MCP, store
+size), run `a-coder-cli doctor --json`.
 
 ## Naming Sessions
 

@@ -40,6 +40,8 @@ Type `/` in the editor to open command completion. Extensions can register custo
 | `/scoped-models` | Enable/disable models for Ctrl+P cycling |
 | `/settings` | Full settings list: thinking level, theme, TUI mode, message delivery, transport, computer use, and more |
 | `/resume` | Pick from previous sessions |
+| `/search <text>` | Search stored sessions by transcript text, name, or folder; selecting a hit resumes it |
+| `/sessions [archive]` | Session-store stats (count, size, largest); `archive` moves a session to the recoverable `.trash` |
 | `/new` | Start a new session |
 | `/name <name>` | Set session display name |
 | `/session` | Show session file, ID, messages, tokens, and cost |
@@ -54,7 +56,7 @@ Type `/` in the editor to open command completion. Extensions can register custo
 | `/share` | Upload as private GitHub gist with shareable HTML link |
 | `/workflows` | List saved workflows and runs; drill into agents, stop/pause runs, save a run's script as a command |
 | `/cron` | Scheduled tasks: `/cron add <name> every:30m\|daily:HH:MM\|once:<ISO> <prompt>`, plus run/pause/resume/remove |
-| `/mcp` | Show connected MCP servers and their tools |
+| `/mcp [reconnect [server]]` | Show connected MCP servers, tool counts, and errors; `reconnect` re-connects and re-discovers |
 | `/memory` | Open the persistent `MEMORY.md` notes file |
 | `/office` | The virtual office: AI coworkers, errands, huddles (2D/3D) |
 | `/output-style` | Set the assistant's output style |
@@ -65,6 +67,8 @@ Type `/` in the editor to open command completion. Extensions can register custo
 | `/think`, `/thinking` | Set the thinking level |
 | `/todos` | Toggle the todo list display |
 | `/context` | Show context-window usage |
+| `/doctor` | Diagnose version, config, auth, MCP, and the session store |
+| `/debug` | Show the current debug/status dump |
 | `/apps` | Show the apps dashboard |
 | `/clear` | Clear the terminal |
 | `/diff` | Show working-tree changes the session made |
@@ -142,6 +146,8 @@ Useful session commands:
 - `/fork` creates a new session from an earlier user message.
 - `/clone` duplicates the current active branch into a new session file.
 - `/compact` summarizes older messages to free context.
+- `/search <text>` finds sessions by what was said in them, not just the title.
+- `/sessions` reports store size; `/sessions archive` moves a session into the recoverable `.trash` folder.
 
 See [Sessions](sessions.md) and [Compaction](compaction.md) for details.
 
@@ -185,6 +191,8 @@ Use `/export [file]` to write a session to HTML.
 
 Use `/share` to upload a private GitHub gist with a shareable HTML link.
 
+Exports redact recognizable credentials before writing — provider API keys, `Bearer` tokens, JWTs, PEM private keys, and `key: value` secret assignments become `[REDACTED]`. Review the file anyway if the transcript contains unusual secret formats.
+
 If you use a-coder-cli for open source work and want to publish sessions for model, prompt, tool, and evaluation research, see [`badlogic/pi-share-hf`](https://github.com/badlogic/pi-share-hf). It publishes sessions to Hugging Face datasets.
 
 ## CLI Reference
@@ -206,6 +214,7 @@ a-coder-cli update --self             # Update a-coder-cli only
 a-coder-cli update --extension <src>  # Update one package
 a-coder-cli list                      # List installed packages
 a-coder-cli config                    # Enable/disable package resources
+a-coder-cli doctor [--json]           # Diagnose version, config, auth, MCP, and the session store
 ```
 
 These commands manage packages; `a-coder-cli update` can update the a-coder-cli CLI installation. To uninstall a-coder-cli itself, see [Quickstart](quickstart.md#uninstall). `a-coder-cli config` and project package commands accept `--approve`/`--no-approve` to trust or ignore project-local settings for one command. `a-coder-cli update` never prompts for project trust.
@@ -220,6 +229,7 @@ See [Packages](packages.md) for package sources and security notes.
 | `-p`, `--print` | Print response and exit |
 | `--mode json` | Output all events as JSON lines; see [JSON mode](json.md) |
 | `--mode rpc` | RPC mode over stdin/stdout; see [RPC mode](rpc.md) |
+| `--rpc-log <path>` | Append a JSONL trace of RPC commands and events (RPC mode) |
 | `--export <file>` | Export the current session to HTML and exit |
 
 In print mode, a-coder-cli also reads piped stdin and merges it into the initial prompt:
