@@ -445,8 +445,11 @@ input[type="range"].pi-range,
 /* ================== Markdown (Streamdown) rendering ================== */
 /* Tokens — conversation typography rhythm, ported from Hermes desktop. */
 :root {
-	--conversation-text-font-size: 0.8125rem;
-	--conversation-tool-font-size: 0.6875rem;
+	/* Conversation typography scale (Settings -> Appearance -> Chat text size).
+	   Chat-only: chrome keeps its size; window zoom is the wrong tool for it. */
+	--chat-text-scale: 1.1;
+	--conversation-text-font-size: calc(0.8125rem * var(--chat-text-scale));
+	--conversation-tool-font-size: calc(0.6875rem * var(--chat-text-scale));
 	--dt-line-height: 1.5;
 	--paragraph-gap: 0.7rem;
 	--pi-image-preview-max-width: 34rem;

@@ -18,6 +18,8 @@ import {
 } from "lucide-react";
 import { Loader } from "./ui/Loader";
 import { Tip } from "./ui/Tip";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { FolderOpen } from "lucide-react";
 import * as rpc from "../lib/rpc";
 import { useSessionStore } from "../stores/session-store";
 import { useSettingsStore } from "../stores/settings-store";
@@ -84,6 +86,16 @@ export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
 		? projectPath.split(/[/\\]/).filter(Boolean).at(-1) ?? projectPath
 		: "No project";
 
+	// The engine models cwd per runtime, so "change the folder" means switching
+	// the workspace: App resumes that folder's latest session (or starts one).
+	// The dialog is native, so this stays a one-click affordance in the status bar.
+	const pickProject = async () => {
+		const picked = await openDialog({ directory: true, multiple: false, title: "Choose a working folder" });
+		if (typeof picked === "string" && picked) {
+			window.dispatchEvent(new CustomEvent("a-coder:switch-project", { detail: { path: picked } }));
+		}
+	};
+
 	return (
 		<div className="flex h-7 shrink-0 items-center justify-between gap-3 border-t border-pi-border bg-pi-surface/60 px-3 text-3xs backdrop-blur">
 			{/* Left: project + thinking + permission */}
@@ -92,12 +104,17 @@ export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
 					className={`h-1.5 w-1.5 shrink-0 rounded-full shadow-[0_0_6px_var(--pi-${status === "error" ? "error" : status === "connecting" ? "warning" : "success"})] ${status === "error" ? "bg-pi-error" : status === "connecting" ? "bg-pi-warning" : "bg-pi-success"}`}
 					aria-hidden
 				/>
-				<span
-					className="truncate font-medium text-pi-text-secondary"
-					title={projectPath ?? undefined}
-				>
-					{projectName}
-				</span>
+				<Tip content="Change working folder" placement="control">
+					<button
+						type="button"
+						onClick={() => void pickProject()}
+						className="flex min-w-0 items-center gap-1 rounded px-0.5 text-pi-text-secondary transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+						aria-label="Change working folder"
+					>
+						<span className="truncate font-medium">{projectName}</span>
+						<FolderOpen className="h-2.5 w-2.5 shrink-0 opacity-60" />
+					</button>
+				</Tip>
 				{thinkingLevel && thinkingLevel !== "off" && (
 					<>
 						<Sep />

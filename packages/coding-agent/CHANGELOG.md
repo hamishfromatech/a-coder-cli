@@ -4,6 +4,9 @@
 
 ### Added
 
+- Desktop chat text size (Settings → Appearance): a conversation-only scale (85–140%, default 110%) driven by `--chat-text-scale`, so message text grows without resizing the sidebar, settings, or panes.
+- Desktop status bar: the project name is now a working-folder switcher (native folder picker → resumes that folder's latest session, or starts one), since the engine models cwd per runtime rather than mutating it in place.
+- Desktop tray: "Keep running in the menu bar" was already wired end to end (settings toggle → `minimizeToTray` → Tauri tray with Show/Quit); verified, no change needed.
 - Desktop butterbar: a persistent notice strip above the status bar (priority carousel with dots and hover-pause, one tone CSS variable, `persistKey` for remembered dismissal). Toasts stay for events; notices are for conditions that are still true. Wired to engine-protocol skew, expired/missing credentials (action: Open account), and MCP servers that cannot connect (action: Open settings).
 - Desktop UI primitives: `Tip` (200 ms open, warm re-open, placement intents, keyboard-focus aware — raw `title=` retired on the surfaces touched), `SearchField` (borderless, underline on focus, hidden when the list is empty), and `FadeScroll` (masked scroll edges that follow the scroll position, `overscroll-auto` so nested lists hand the wheel back). Wired through the session rail, status bar, activity panel, and command palette.
 - Desktop: named z-order ladder (`z-content/backdrop/modal/popover/over-modal/switcher/toast/boot/zoom`) replaces every ad-hoc `z-50`/`z-[80]`/`z-[1200]`/`z-[2000]`, so overlapping surfaces pick distinct rungs by construction.

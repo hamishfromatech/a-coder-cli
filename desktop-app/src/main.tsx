@@ -20,7 +20,12 @@ import { isHudWindow } from "./lib/hud";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { HapticsProvider } from "./components/HapticsProvider";
 import { primeAudio } from "./lib/completion-sound";
+import { applyChatTextScale, useChatTextStore } from "./stores/chat-text-store";
 import "./index.css";
+
+// Apply the persisted chat typography scale before first paint of the transcript.
+applyChatTextScale(useChatTextStore.getState().scale);
+useChatTextStore.subscribe((state) => applyChatTextScale(state.scale));
 
 // Desktop webviews (Tauri/WKWebView) gate AudioContext playback on a user
 // gesture. Prime audio on the first click/key anywhere in the app so

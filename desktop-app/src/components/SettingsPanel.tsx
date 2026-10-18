@@ -44,6 +44,7 @@ import {
 } from "../lib/settings-schema";
 import * as rpc from "../lib/rpc";
 import { ThemePicker } from "./panels/widgets/ThemePicker";
+import { ChatTextSizeSection } from "./panels/widgets/ChatTextSizeSection";
 import { ThinkingPresetPicker } from "./panels/widgets/ThinkingPresetPicker";
 import { ModelsPicker } from "./panels/widgets/ModelsPicker";
 import { DefaultModelPicker } from "./panels/widgets/DefaultModelPicker";
@@ -433,6 +434,8 @@ function renderCustom(
 	switch (spec.widget) {
 		case "theme":
 			return <ThemePicker />;
+		case "chatTextSize":
+			return <ChatTextSizeSection />;
 		case "thinking":
 			return (
 				<ThinkingPresetPicker
