@@ -2,17 +2,19 @@
 
 ## [Unreleased]
 
-### Fixed
-
-- Desktop: the browser panel now opens for **any** desktop-browser tool call, including MCP-qualified names (`mcp__desktop-browser__*`). The auto-reveal only matched bare `browser_*` names, so calls like `mcp__desktop-browser__browser_tabs` erred "No browser tab is open… (the panel opens for the user)" without the panel ever appearing — MCP tools register as `mcp__<server>__<tool>`, so every tool on the desktop-browser server now triggers the reveal.
-
 ### Added
+
+- Desktop: the browser panel now opens for **any** desktop-browser tool call — the reveal matches every tool on the desktop-browser server, including MCP-qualified names (`mcp__desktop-browser__browser_tabs` and friends) that the old bare `browser_*` matcher missed (MCP tools register as `mcp__<server>__<tool>`, so the panel stayed closed while the engine's error promised it would open).
 
 - Link-open target in Settings → Browser: "Open links in" — **Default browser** or **This app's browser**. The desktop reads `browser.linkTarget` at boot (and the settings widget syncs the live store on change), and `openExternalLink` routes accordingly: in-panel links open as a new browser-panel tab and slide the rail to the browser. Handoffs the panel declined to host, download/prompt accepts, and OAuth sign-in windows always go to the system browser regardless of the setting.
 - Magic cursor in the browser panel: the page agent's runtime now renders a pointer ghost (in-page DOM, pointer-events none) that glides off-screen-in to every point an agent op acts on — element clicks and `click_at` glide then ripple at the exact dispatch coordinates, `move` glides, `type`/`select`/`press` glide, `drag` follows both ends. No IPC: the cursor lives in the page layer, so it composites correctly over layered native views and needs no panel changes. It fades out after ~1.4 s idle.
 - Calendar view for scheduled tasks: the Scheduled panel gains a list/calendar toggle. The month grid shows each day's upcoming firings (daily/once jobs) and past runs as status-colored dots, with a selected-day detail listing firings and runs (plus continue-session shortcuts). Interval and event-trigger jobs render in an "Ongoing (no fixed day)" strip under the grid.
 - Voice-call start screen gains a microphone picker (ElevenLabs-house-styled pill select): lists `audioinput` devices with the system default as the fallback, persists the choice (localStorage) and honors it in both the call's mic open and the composer dictation recorder; device labels appear after mic permission is granted once, with a hint covering that window.
 - The shimmering connect/status text is calmer — the sweep eased from 2.2 s to 3.2 s per pass.
+
+### Changed
+
+- Removed the persistent "Permission mode: …" footer chip in the interactive CLI: it only updated at startup and on in-CLI mode changes, so it showed a stale value whenever the session's permission mode changed from elsewhere (desktop, voice, scheduled runs). Switching modes via the selector still announces the change transiently; `/permission` shows and sets the live mode.
 
 - The voice-call card's orb is now the ElevenLabs UI orb (github.com/elevenlabs/ui, MIT): the same three.js fragment shader (flow-warped ovals, perlin-driven rings, 4-stop grayscale ramp), driven by call phase — thinking / listening / talking states each get their ElevenLabs animation signature. Shipped with pinned three/@react-three/fiber (+ @types/three) and a bundled perlin-noise tile (no CDN fetch); `@react-three/drei` was dropped in the port (its useTexture became a plain TextureLoader). The CSS gradient blob is removed. The panel styling likewise follows the ElevenLabs voice blocks: the orb sits in their muted circular well (inset-shadow ring), connect/transcribe states shimmer (a CSS-only ShimmeringText port — `.shimmer-text` keyframes, no motion dependency), speaking lights an emerald dot, controls are rounded pills, and the start screen is their Conversation empty-state composition (orb, "Start a conversation", shimmering hint, AudioLines pill).
 

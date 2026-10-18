@@ -112,7 +112,7 @@ import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "../../core/provider-display-nam
 import type { ResourceDiagnostic } from "../../core/resource-loader.ts";
 import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.ts";
 import { type SessionEntry, SessionManager, sessionEntryToContextMessages } from "../../core/session-manager.ts";
-import type { FullscreenExitOutput, PermissionMode, TuiMode } from "../../core/settings-manager.ts";
+import type { FullscreenExitOutput, TuiMode } from "../../core/settings-manager.ts";
 import { createInteractiveTui, createInteractiveTuiReference } from "./tui-renderer.ts";
 
 export { createInteractiveTui, createInteractiveTuiReference } from "./tui-renderer.ts";
@@ -2167,7 +2167,6 @@ export class InteractiveMode {
 				});
 			});
 		});
-		this.updatePermissionModeStatus(this.session.permissionMode);
 		this.updatePlanModeStatus(this.session.planMode);
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
 		this.outputPad = this.settingsManager.getOutputPad();
@@ -5744,7 +5743,6 @@ export class InteractiveMode {
 				this.session.permissionMode,
 				(mode) => {
 					this.session.setPermissionMode(mode);
-					this.updatePermissionModeStatus(mode);
 					done();
 					this.showStatus(`Permission mode: ${mode}`);
 				},
@@ -5844,11 +5842,6 @@ export class InteractiveMode {
 			this.ui.requestRender(true);
 		}
 		this.showStatus(`Memory file closed: ${path.basename(entry.path)} (the agent reads it fresh next turn)`);
-	}
-
-	private updatePermissionModeStatus(mode: PermissionMode): void {
-		this.footerDataProvider.setExtensionStatus("permissionMode", `Permission mode: ${mode}`);
-		this.ui.requestRender();
 	}
 
 	private handleOutputStyleCommand(arg: string | undefined): void {
