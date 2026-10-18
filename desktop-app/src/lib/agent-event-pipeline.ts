@@ -134,6 +134,15 @@ export function mergeUserEchoes(fetched: AgentMessage[], local: AgentMessage[]):
 	return orphans.length > 0 ? [...fetched, ...orphans] : fetched;
 }
 
+/** Keep the warm session cache in step with live mutations. Without this,
+ *  switching back to a session that had streaming activity paints the
+ *  transcript as it looked when the session was last left, then repaints on
+ *  the fetch — a visible stale-then-fresh flash. */
+function cacheCurrentTranscript(): void {
+	const store = useSessionStore.getState();
+	if (store.sessionFile) setCachedSessionMessages(store.sessionFile, store.messages);
+}
+
 /** Generate a concise session name from the first user message. */
 function deriveSessionName(text: string): string | null {
 	const normalized = text.replace(/[\r\n]+/g, " ").trim();
@@ -383,6 +392,11 @@ const { loadingHistoryRef, sessionStartGenerationRef, parkedQuestionsRef, deferr
 			// authoritative snapshot.
 			loadingHistoryRef.current = true;
 			const generation = ++sessionStartGenerationRef.current;
+			// Echoes deferred by an older switch belonged to that session. Clear
+			// them at the start of this one so this chain's drain can never paint
+			// an abandoned session's send into the session now being loaded
+			// (the superseded chain drops its own share on exit).
+			deferredUserEchoesRef.current = [];
 			session.resetSession();
 			// History is loading — swap the EmptyState for a loading screen
 			// until get_messages paints (or fails).
@@ -404,68 +418,86 @@ const { loadingHistoryRef, sessionStartGenerationRef, parkedQuestionsRef, deferr
 					if (cached && cached.length > 0 && useSessionStore.getState().messages.length === 0) {
 						useSessionStore.getState().setMessages(cached);
 					}
-					// Best-effort tree refresh after a session switch. The connect-time get_tree
-					// already populated it, so a failure here is non-critical: retry silently
-					// (a lost/delayed response usually succeeds on retry) and never nag.
-					// If every retry fails, clear the stale tree rather than show the
-					// previous session's structure against the new session's messages.
-					let treeLoaded = false;
-					for (let attempt = 0; attempt < 3; attempt++) {
-						try {
-							const treeRes = (await rpc.sendCommand({ type: "get_tree" })) as {
-								tree: rpc.SessionTreeNode[];
-								leafId: string | null;
-							};
-							if (treeRes?.tree) {
-								useSessionTreeStore.getState().setTree(treeRes.tree, treeRes.leafId);
-								treeLoaded = true;
+					// Tree + history in flight together: the transcript is what the
+					// user is waiting for, so it must never queue behind the tree
+					// refresh's retry backoff. The tree applies whenever it lands.
+					// Best-effort: the connect-time get_tree already populated it, so
+					// a failure here is non-critical — retry silently and never nag.
+					const treePromise = (async () => {
+						for (let attempt = 0; attempt < 3; attempt++) {
+							try {
+								const treeRes = (await rpc.sendCommand({ type: "get_tree" })) as {
+									tree: rpc.SessionTreeNode[];
+									leafId: string | null;
+								};
+								if (treeRes?.tree) return treeRes;
+								return null;
+							} catch (e) {
+								console.warn("session_start get_tree attempt failed", attempt, e);
+								if (attempt < 2) await new Promise((r) => setTimeout(r, 1500));
 							}
-							break;
-						} catch (e) {
-							console.warn("session_start get_tree attempt failed", attempt, e);
-							if (attempt < 2) await new Promise((r) => setTimeout(r, 1500));
 						}
-					}
-					if (!isCurrent()) return;
-					if (!treeLoaded) useSessionTreeStore.getState().setTree([], null);
+						return null;
+					})();
 					try {
-						const msgsRes = (await rpc.sendCommand({ type: "get_messages" })) as {
-							messages: import("@earendil-works/pi-agent-core").AgentMessage[];
-						};
-						if (!isCurrent()) return;
-						if (msgsRes?.messages) {
-							useSessionStore.getState().setMessages(msgsRes.messages);
-							const sessionFile = useSessionStore.getState().sessionFile;
-							if (sessionFile) setCachedSessionMessages(sessionFile, msgsRes.messages);
+						try {
+							const msgsRes = (await rpc.sendCommand({ type: "get_messages" })) as {
+								messages: import("@earendil-works/pi-agent-core").AgentMessage[];
+							};
+							if (!isCurrent()) return;
+							if (msgsRes?.messages) {
+								useSessionStore.getState().setMessages(msgsRes.messages);
+								const sessionFile = useSessionStore.getState().sessionFile;
+								if (sessionFile) setCachedSessionMessages(sessionFile, msgsRes.messages);
+							}
+						} catch (e) {
+							if (isCurrent()) {
+								toast.error(
+									"Failed to load messages after session start",
+									e instanceof Error ? e.message : String(e),
+								);
+							}
 						}
-					} catch (e) {
+					} finally {
+						// Drain deferred echoes for this switch BEFORE discarding stale
+						// ones: user sends arriving while this chain was in flight are
+						// merged into the store once, and a superseded chain (newer
+						// session_start landed) still resets the ref so its old-session
+						// echoes can never paint into the new session.
+						const deferred = deferredUserEchoesRef.current;
+						deferredUserEchoesRef.current = [];
 						if (isCurrent()) {
-							toast.error(
-								"Failed to load messages after session start",
-								e instanceof Error ? e.message : String(e),
-							);
+							// Transcript settled (painted, failed, or stale). Latch off
+							// FIRST (mirror the boot flow), then merge any echoes deferred
+							// during the flight into one extra paint, then hand the chat
+							// area back to EmptyState / the painted transcript. The tree
+							// may still be in flight — it does not gate live messages.
+							loadingHistoryRef.current = false;
+							if (deferred.length > 0) {
+								const store = useSessionStore.getState();
+								store.setMessages(mergeUserEchoes(store.messages, deferred));
+							}
+							useSessionStore.getState().setSessionLoading(false);
 						}
 					}
-				} finally {
-					// Drain deferred echoes for this switch BEFORE discarding stale
-					// ones: user sends arriving while this chain was in flight are
-					// merged into the store once, and a superseded chain (newer
-					// session_start landed) still resets the ref so its old-session
-					// echoes can never paint into the new session.
-					const deferred = deferredUserEchoesRef.current;
-					deferredUserEchoesRef.current = [];
+					const treeRes = await treePromise;
+					if (!isCurrent()) return;
+					// A failed tree clears the previous session's structure rather
+					// than showing it against the new session's messages.
+					if (treeRes?.tree) {
+						useSessionTreeStore.getState().setTree(treeRes.tree, treeRes.leafId);
+					} else {
+						useSessionTreeStore.getState().setTree([], null);
+					}
+				} catch (e) {
+					// syncEngineState (or any unexpected throw before the transcript
+					// settled) must still release the latch — otherwise every later
+					// send is swallowed exactly like the original switch bug.
 					if (isCurrent()) {
-						// History load finished (painted, failed, or stale). Latch off
-						// FIRST (mirror the boot flow), then merge any echoes deferred
-						// during the flight into one extra paint, then hand the chat
-						// area back to EmptyState / the painted transcript.
 						loadingHistoryRef.current = false;
-						if (deferred.length > 0) {
-							const store = useSessionStore.getState();
-							store.setMessages(mergeUserEchoes(store.messages, deferred));
-						}
 						useSessionStore.getState().setSessionLoading(false);
 					}
+					console.error("session_start history load failed", e);
 				}
 			})();
 			break;
@@ -497,6 +529,7 @@ const { loadingHistoryRef, sessionStartGenerationRef, parkedQuestionsRef, deferr
 				);
 				if (!isDuplicateUser) {
 					session.appendMessage(event.message);
+					cacheCurrentTranscript();
 					// Name new sessions from the first non-trivial user message.
 					if (!useSessionStore.getState().sessionName) {
 						const autoName = deriveSessionName(userText);
@@ -538,6 +571,7 @@ const { loadingHistoryRef, sessionStartGenerationRef, parkedQuestionsRef, deferr
 					session.appendMessage(event.message);
 				}
 			}
+			cacheCurrentTranscript();
 			break;
 		case "queue_update":
 			session.updateQueue(event.steering ?? [], event.followUp ?? []);
