@@ -27,6 +27,7 @@ import { playCueVariant } from "./completion-sound";
 import { assetPath } from "./asset-path";
 import { useSessionStore } from "../stores/session-store";
 import { useSettingsStore } from "../stores/settings-store";
+import { speechify } from "./speech-text";
 import { toast } from "../stores/toast-store";
 import {
 	MIC_DEVICE_STORAGE_KEY,
@@ -710,7 +711,10 @@ class VoiceCallController {
 		setCall({ agentBusy: false, toolLabel: "" });
 		// A queued follow-up's reply supersedes whatever reply is still playing.
 		this.abortSpeech();
-		const capped = capForSpeech(text, useSettingsStore.getState().voiceMaxSpokenChars);
+		// Speak the sanitized copy: markdown, URLs, paths and code are noise
+		// aloud. The transcript keeps the raw reply.
+		const spokenText = speechify(text, { mode: useSettingsStore.getState().voiceSpeechMode });
+		const capped = capForSpeech(spokenText, useSettingsStore.getState().voiceMaxSpokenChars);
 		pushCallLog(`Agent: ${capped}`);
 		const muted = useVoiceCallStore.getState().muted;
 		const sentences = splitForSpeech(muted ? "" : capped);

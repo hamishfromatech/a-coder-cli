@@ -4,6 +4,7 @@
 
 ### Added
 
+- Voice replies are now prepared for speech before TTS: markdown structure, emphasis, fenced code (replaced by a single "with a code sample"), links (labels kept, bare URLs become "a link"), bare emails, file paths ("the file"), UUIDs/hashes, CLI flags, emoji and HTML are stripped in one ordered pass, then sentence-split. Code-only replies speak "The reply is in the transcript." instead of silence. Applies to call mode and auto-speak; the transcript keeps the raw text. New Settings → Voice → "Spoken replies": Concise (default) or Verbatim.
 - `--rpc-log <path>`: RPC mode appends a direction-tagged JSONL trace of every inbound command and outbound frame, so client event-ordering races can be diagnosed from one file.
 - Event-ordering conformance tests for RPC mode: handshake first, one `agent_start`/`agent_end` per turn, `message_start` before `message_end` for user then assistant, `get_state` not disturbing the event stream, and the trace format itself.
 - `/search <text>`: content search across stored session transcripts (message text, names, folders) with match snippets; selecting a hit resumes that session.

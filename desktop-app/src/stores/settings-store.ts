@@ -93,6 +93,10 @@ export interface SettingsState {
 	/** Call mode: keep the mic armed while the reply speaks; loud speech barges. */
 	voiceBargeIn: boolean;
 	setVoiceBargeIn: (enabled: boolean) => void;
+	/** How replies are prepared for speech: strip markdown/URLs/paths
+	 *  ("concise", default) or read the text exactly as written ("verbatim"). */
+	voiceSpeechMode: "concise" | "verbatim";
+	setVoiceSpeechMode: (mode: "concise" | "verbatim") => void;
 	/** Call mode: max chars of a reply read aloud (0 = unlimited). */
 	voiceMaxSpokenChars: number;
 	setVoiceMaxSpokenChars: (chars: number) => void;
@@ -223,6 +227,8 @@ export const useSettingsStore = create<SettingsState>()(
 			setVoiceCallMaxUtteranceMs: (voiceCallMaxUtteranceMs) => set({ voiceCallMaxUtteranceMs }),
 			voiceBargeIn: false,
 			setVoiceBargeIn: (voiceBargeIn) => set({ voiceBargeIn }),
+			voiceSpeechMode: "concise",
+			setVoiceSpeechMode: (voiceSpeechMode) => set({ voiceSpeechMode }),
 			voiceMaxSpokenChars: 1200,
 			setVoiceMaxSpokenChars: (voiceMaxSpokenChars) => set({ voiceMaxSpokenChars }),
 			voiceCallCues: true,
@@ -282,6 +288,7 @@ export const useSettingsStore = create<SettingsState>()(
 			voiceCallSilenceMs: state.voiceCallSilenceMs,
 			voiceCallMaxUtteranceMs: state.voiceCallMaxUtteranceMs,
 			voiceBargeIn: state.voiceBargeIn,
+			voiceSpeechMode: state.voiceSpeechMode,
 			voiceMaxSpokenChars: state.voiceMaxSpokenChars,
 			voiceCallCues: state.voiceCallCues,
 			benchModel: state.benchModel,

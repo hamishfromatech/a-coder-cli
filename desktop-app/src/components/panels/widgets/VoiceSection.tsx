@@ -413,6 +413,23 @@ export function VoiceSection() {
 					</div>
 					<Toggle checked={s.voiceAutoSpeak} onChange={s.setVoiceAutoSpeak} />
 				</div>
+				<div className="flex items-center justify-between gap-4">
+					<div className="pr-4">
+						<p className="text-xs font-medium text-pi-text">Spoken replies</p>
+						<p className="text-2xs text-pi-text-muted">
+							Concise strips markdown, links, file paths and code before speaking. Verbatim reads the text exactly as written.
+						</p>
+					</div>
+					<select
+						value={s.voiceSpeechMode}
+						onChange={(e) => s.setVoiceSpeechMode(e.target.value === "verbatim" ? "verbatim" : "concise")}
+						className="h-7 shrink-0 rounded-md border border-pi-border bg-pi-surface px-2 text-2xs text-pi-text focus:border-pi-accent focus:outline-none"
+						aria-label="Spoken reply style"
+					>
+						<option value="concise">Concise</option>
+						<option value="verbatim">Verbatim</option>
+					</select>
+				</div>
 			</SectionCard>
 
 			<SectionCard title="Call mode" icon={<Phone className="h-4 w-4 text-pi-text-muted" />}>

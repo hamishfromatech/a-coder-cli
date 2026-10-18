@@ -15,6 +15,7 @@ import * as rpc from "./rpc";
 import { openExternalLink } from "./external-link";
 import { playCompletionSound } from "./completion-sound";
 import { playAudioBlob, synthesize, type VoiceSettings } from "./voice";
+import { speechify } from "./speech-text";
 import { triggerHaptic } from "./haptics";
 import { pickLoadingVerb } from "./loading-verbs";
 import { getCachedSessionMessages, setCachedSessionMessages } from "./session-cache";
@@ -99,7 +100,9 @@ async function speakReply(text: string): Promise<void> {
 		voiceTtsVoice: voice.voiceTtsVoice,
 	};
 	try {
-		const blob = await synthesize(text, settings);
+		// Same sanitizer as call mode: never read markdown/URLs/paths aloud.
+		const spoken = speechify(text, { mode: voice.voiceSpeechMode });
+		const blob = await synthesize(spoken, settings);
 		playAudioBlob(blob);
 	} catch (e) {
 		console.warn("TTS failed", e);
