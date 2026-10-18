@@ -187,8 +187,23 @@ export interface MicRecorder {
 	cancel: () => void;
 }
 
+// The chosen microphone persists across calls and dictation (localStorage;
+// the picker on the voice-call start screen writes it).
+export const MIC_DEVICE_STORAGE_KEY = "a-coder.voice.micDeviceId";
+
+/** Audio track constraints honoring the picked mic; non-`exact` deviceId, so
+ *  a vanished device degrades to the default instead of failing the call. */
+export function micAudioConstraints(): MediaTrackConstraints | boolean {
+	try {
+		const id = localStorage.getItem(MIC_DEVICE_STORAGE_KEY);
+		return id ? { deviceId: id } : true;
+	} catch {
+		return true;
+	}
+}
+
 export async function createMicRecorder(): Promise<MicRecorder> {
-	const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+	const stream = await navigator.mediaDevices.getUserMedia({ audio: micAudioConstraints() });
 	// Prefer a widely-supported mime type; fall back to the default.
 	const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
 		? "audio/webm;codecs=opus"

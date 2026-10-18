@@ -1,6 +1,6 @@
-import { Suspense, useEffect, useRef, type ReactNode } from "react";
-import { AudioLines, MicOff, PhoneOff, SkipForward, Volume2 } from "lucide-react";
-import { useVoiceCallStore, voiceCall, type VoiceCallPhase } from "../../lib/voice-call";
+import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
+import { AudioLines, Mic, MicOff, PhoneOff, SkipForward, Volume2 } from "lucide-react";
+import { useVoiceCallStore, voiceCall, setMicDeviceId, type VoiceCallPhase } from "../../lib/voice-call";
 import { IconButton } from "../ui/Button";
 import { Orb, type AgentState } from "../ui/orb";
 import { ShimmeringText } from "../ui/shimmering-text";
@@ -168,6 +168,57 @@ function CallCard() {
 	);
 }
 
+/** Microphone selector (device list from enumerateDevices, persisted so
+ *  calls and composer dictation both honor the pick). Labels are empty
+ *  until mic permission is granted once — the hint covers that. */
+function MicPicker() {
+	const micDeviceId = useVoiceCallStore((s) => s.micDeviceId);
+	const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+	const [labelsHidden, setLabelsHidden] = useState(false);
+
+	useEffect(() => {
+		const load = () => {
+			void navigator.mediaDevices
+				?.enumerateDevices()
+				.then((all) => {
+					const inputs = all.filter((d) => d.kind === "audioinput");
+					setDevices(inputs);
+					setLabelsHidden(inputs.length > 0 && inputs.every((d) => !d.label));
+				})
+				.catch(() => undefined);
+		};
+		void load();
+		const media = navigator.mediaDevices;
+		media?.addEventListener?.("devicechange", load);
+		return () => media?.removeEventListener?.("devicechange", load);
+	}, []);
+
+	return (
+		<div className="flex max-w-64 flex-col items-center gap-1">
+			<div className="flex h-8 w-full items-center gap-1.5 rounded-full border border-pi-border bg-pi-surface-raised pl-2.5 pr-1 transition-hover hover:border-pi-text-muted/40">
+				<Mic className="h-3 w-3 shrink-0 text-pi-text-faint" />
+				<select
+					value={micDeviceId ?? ""}
+					onChange={(event) => setMicDeviceId(event.target.value || null)}
+					aria-label="Microphone"
+					title="Microphone used by voice calls and dictation"
+					className="h-full min-w-0 flex-1 cursor-pointer appearance-none bg-transparent text-2xs text-pi-text focus:outline-none"
+				>
+					<option value="">System default</option>
+					{devices.map((device, i) => (
+						<option key={device.deviceId || i} value={device.deviceId}>
+							{device.label || `Microphone ${i + 1}`}
+						</option>
+					))}
+				</select>
+			</div>
+			{labelsHidden && (
+				<p className="text-2xs text-pi-text-faint">Device names appear after the mic is allowed once.</p>
+			)}
+		</div>
+	);
+}
+
 /** Rail panel body: the active call, or the ElevenLabs-style empty state. */
 export function VoicePanel() {
 	const active = useVoiceCallStore((s) => s.active);
@@ -195,6 +246,7 @@ export function VoicePanel() {
 				<AudioLines className="h-4 w-4 text-pi-accent" />
 				Start call
 			</button>
+			<MicPicker />
 			<p className="max-w-56 text-2xs leading-4 text-pi-text-faint">
 				Half-duplex by default — the mic parks while a reply speaks; Space/Esc takes the floor back.
 				Tuning: Settings → Voice → Call mode.

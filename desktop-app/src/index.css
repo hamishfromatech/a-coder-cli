@@ -620,5 +620,5 @@ input[type="range"].pi-range,
 	-webkit-background-clip: text;
 	background-clip: text;
 	color: transparent;
-	animation: shimmer-text 2.2s linear infinite;
+	animation: shimmer-text 3.2s linear infinite;
 }

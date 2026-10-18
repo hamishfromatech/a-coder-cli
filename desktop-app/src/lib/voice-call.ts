@@ -29,6 +29,8 @@ import { useSessionStore } from "../stores/session-store";
 import { useSettingsStore } from "../stores/settings-store";
 import { toast } from "../stores/toast-store";
 import {
+	MIC_DEVICE_STORAGE_KEY,
+	micAudioConstraints,
 	synthesize,
 	stopAudio,
 	transcribe,
@@ -112,6 +114,9 @@ interface VoiceCallState {
 	spokenTotal: number;
 	error: string;
 	muted: boolean;
+	/** Picked microphone (device id); null = system default. Persisted, so
+	 *  calls and the composer dictation recorder both honor it. */
+	micDeviceId: string | null;
 }
 
 export const useVoiceCallStore = create<VoiceCallState>()(() => ({
@@ -126,7 +131,27 @@ export const useVoiceCallStore = create<VoiceCallState>()(() => ({
 	spokenTotal: 0,
 	error: "",
 	muted: false,
+	micDeviceId: readStoredMicDeviceId(),
 }));
+
+function readStoredMicDeviceId(): string | null {
+	try {
+		return localStorage.getItem(MIC_DEVICE_STORAGE_KEY);
+	} catch {
+		return null;
+	}
+}
+
+/** Pick the call (and dictation) microphone; persists for future calls. */
+export function setMicDeviceId(id: string | null): void {
+	try {
+		if (id) localStorage.setItem(MIC_DEVICE_STORAGE_KEY, id);
+		else localStorage.removeItem(MIC_DEVICE_STORAGE_KEY);
+	} catch {
+		// Storage disabled: session-only pick.
+	}
+	useVoiceCallStore.setState({ micDeviceId: id });
+}
 
 function setCall(patch: Partial<VoiceCallState>): void {
 	useVoiceCallStore.setState(patch);
@@ -391,7 +416,7 @@ class VoiceCallController {
 
 	private async openMic(): Promise<void> {
 		if (this.stream) return;
-		this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+		this.stream = await navigator.mediaDevices.getUserMedia({ audio: micAudioConstraints() });
 		try {
 			this.ctx = new AudioContext();
 			// The call starts from a button click — a gesture — so resuming here

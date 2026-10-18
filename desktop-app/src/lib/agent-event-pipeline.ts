@@ -182,11 +182,14 @@ async function refreshSessionStats(): Promise<void> {
 // per-message-update scans so a single call reveals once.
 let lastBrowserToolId = "";
 
-/** When the agent reaches for a desktop-browser tool (browser_* toolCall
- *  block) and the right rail isn't showing the browser panel, bring the
- *  panel forward — the hand-off should feel automatic, like the agent just
- *  pulled the browser out. A new tool call re-reveals; the same call's
- *  streamed updates don't. */
+/** When the agent reaches for a desktop-browser tool and the right rail
+ *  isn't showing the browser panel, bring the panel forward — the hand-off
+ *  should feel automatic, like the agent just pulled the browser out. MCP
+ *  tools register as mcp__<server>__<tool>, so desktop-browser calls arrive
+ *  as "mcp__desktop-browser__browser_tabs" and friends; any tool on the
+ *  desktop-browser server counts (its whole purpose is the panel). Bare
+ *  `browser_` names are covered too for non-MCP callers. A new tool call
+ *  re-reveals; the same call's streamed updates don't. */
 function maybeRevealBrowserPanel(message: { role: string; content?: unknown }): void {
 	if (message.role !== "assistant" || !Array.isArray(message.content)) return;
 	for (const block of message.content as Array<Record<string, unknown>>) {
@@ -194,7 +197,7 @@ function maybeRevealBrowserPanel(message: { role: string; content?: unknown }): 
 		const id = typeof block.id === "string" ? block.id : "";
 		if (!id || id === lastBrowserToolId) continue;
 		const name = typeof block.name === "string" ? block.name : "";
-		if (!name.startsWith("browser_")) continue;
+		if (!name.startsWith("browser_") && !name.startsWith("mcp__desktop-browser__")) continue;
 		lastBrowserToolId = id;
 		const ui = useUiStore.getState();
 		// Reveal when the panel isn't showing — a closed sidebar keeps its tab on
