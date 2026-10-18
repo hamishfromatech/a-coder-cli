@@ -31,6 +31,7 @@ import { toast } from "../stores/toast-store";
 import {
 	MIC_DEVICE_STORAGE_KEY,
 	micAudioConstraints,
+	startAudioMeter,
 	synthesize,
 	stopAudio,
 	transcribe,
@@ -295,7 +296,12 @@ class SpeechQueue {
 			const url = URL.createObjectURL(blob);
 			const audio = new Audio(url);
 			this.current = audio;
+			// Drive the orb with the reply you can actually hear.
+			const stopMeter = startAudioMeter(audio, (level) => {
+				if (useVoiceCallStore.getState().phase === "speaking") setCall({ level });
+			});
 			const finish = (played: boolean) => {
+				stopMeter();
 				URL.revokeObjectURL(url);
 				if (this.current === audio) this.current = null;
 				resolve(played);
@@ -501,9 +507,14 @@ class VoiceCallController {
 				sum += buffer[i] * buffer[i];
 			}
 			const rms = Math.sqrt(sum / buffer.length);
-			const level = Math.min(1, rms * 12);
-			const prev = useVoiceCallStore.getState().level;
-			setCall({ level: prev + (level - prev) * LEVEL_SMOOTHING });
+			// While the reply is speaking the orb belongs to the playback
+			// meter (real TTS amplitude, wired in playBlob); the mic keeps
+			// running only to hear a barge-in.
+			if (useVoiceCallStore.getState().phase !== "speaking") {
+				const level = Math.min(1, rms * 12);
+				const prev = useVoiceCallStore.getState().level;
+				setCall({ level: prev + (level - prev) * LEVEL_SMOOTHING });
+			}
 			this.onLevel(rms);
 		}, METER_INTERVAL_MS);
 	}
@@ -607,7 +618,9 @@ class VoiceCallController {
 		const busy = useSessionStore.getState().isStreaming;
 		// In a call the utterance always sends; a mid-run utterance stacks as a
 		// follow-up on the engine's queue.
-		const send = busy ? rpc.followUp : rpc.prompt;
+		// Voice turns carry the flag so the engine can bind the auxiliary
+		// voice model for this turn only (typed turns keep the user's model).
+		const send = busy ? rpc.followUp : (message: string) => rpc.prompt(message, undefined, undefined, { voiceTurn: true });
 		try {
 			await send(text);
 			pushCallLog(`You: ${text}`);

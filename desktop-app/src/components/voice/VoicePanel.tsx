@@ -63,7 +63,19 @@ function CallCard() {
 			<div className="flex flex-col items-center text-center">
 				<OrbWell size="h-20 w-20">
 					<Suspense fallback={null}>
-						<Orb colors={["#5FA8FF", "#8B7BFF"]} agentState={ORB_AGENT_STATE[s.phase]} />
+						<Orb
+							colors={["#5FA8FF", "#8B7BFF"]}
+							agentState={ORB_AGENT_STATE[s.phase]}
+							volumeMode="manual"
+							getInputVolume={() => {
+								const state = useVoiceCallStore.getState();
+								return state.phase === "listening" ? state.level : 0;
+							}}
+							getOutputVolume={() => {
+								const state = useVoiceCallStore.getState();
+								return state.phase === "speaking" ? state.level : 0;
+							}}
+						/>
 					</Suspense>
 				</OrbWell>
 				<p className="mt-2 text-sm font-medium leading-none text-pi-text">{PHASE_LABEL[s.phase]}</p>

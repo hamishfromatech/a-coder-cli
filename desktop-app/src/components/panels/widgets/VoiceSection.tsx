@@ -1,5 +1,5 @@
 import { Mic, Volume2, Eye, EyeOff, Loader2, Check, AlertCircle, Phone, RefreshCw } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSettingsStore } from "../../../stores/settings-store";
 import {
 	createMicRecorder,
@@ -14,6 +14,8 @@ import { Button } from "../../ui/Button";
 import { IconButton } from "../../ui/Button";
 import { Input } from "../../ui/Input";
 import { Switch } from "../../ui/Switch";
+import * as rpc from "../../../lib/rpc";
+import { toast } from "../../../stores/toast-store";
 
 /**
  * Voice mode settings. Users supply OpenAI-compatible STT/TTS endpoints so
@@ -200,6 +202,77 @@ function SectionCard({ title, icon, children }: { title: string; icon: React.Rea
 	);
 }
 
+/**
+ * Voice-turn model: spoken turns are latency-sensitive, so they can answer on
+ * a dedicated fast model while typed turns and background work stay on the
+ * user's model. Stored in the CLI's settings.json (`voiceTurnModel`) because
+ * the engine performs the per-turn bind; empty means "same as the main model".
+ */
+function VoiceTurnModelPicker() {
+	const [models, setModels] = useState<Array<{ provider: string; id: string; name?: string }>>([]);
+	const [value, setValue] = useState("");
+	const [ready, setReady] = useState(false);
+
+	useEffect(() => {
+		void (async () => {
+			try {
+				const [res, settings] = await Promise.all([
+					rpc.getAvailableModels(),
+					rpc.readSettingsFile({ scope: "global" }),
+				]);
+				setModels((res.models ?? []) as Array<{ provider: string; id: string; name?: string }>);
+				const configured = settings.voiceTurnModel;
+				setValue(typeof configured === "string" ? configured : "");
+			} catch {
+				// Engine not running yet: the select stays empty until Settings is reopened.
+			} finally {
+				setReady(true);
+			}
+		})();
+	}, []);
+
+	const commit = async (next: string) => {
+		const previous = value;
+		setValue(next);
+		try {
+			const settings = await rpc.readSettingsFile({ scope: "global" });
+			const updated = { ...settings };
+			if (next) updated.voiceTurnModel = next;
+			else delete updated.voiceTurnModel;
+			await rpc.writeSettingsFile({ scope: "global", value: updated });
+			toast.success("Voice model saved", next ? "Voice calls will use it for their turns." : "Voice calls use your main model.");
+		} catch (e) {
+			setValue(previous);
+			toast.error("Failed to save voice model", e instanceof Error ? e.message : String(e));
+		}
+	};
+
+	return (
+		<div className="flex items-center justify-between gap-4">
+			<div className="pr-4">
+				<p className="text-xs font-medium text-pi-text">Model for voice turns</p>
+				<p className="text-2xs text-pi-text-muted">
+					Spoken turns can use a faster model than typed work. Background tasks keep your main model.
+				</p>
+			</div>
+			<select
+				value={value}
+				disabled={!ready}
+				onChange={(e) => void commit(e.target.value)}
+				className="h-7 max-w-[14rem] shrink-0 rounded-md border border-pi-border bg-pi-surface px-2 text-2xs text-pi-text focus:border-pi-accent focus:outline-none disabled:opacity-50"
+				aria-label="Model for voice turns"
+			>
+				<option value="">Same as main model</option>
+				{models.map((m) => (
+					<option key={`${m.provider}/${m.id}`} value={`${m.provider}/${m.id}`}>
+						{m.name ?? m.id} ({m.provider})
+					</option>
+				))}
+			</select>
+		</div>
+	);
+}
+
 export function VoiceSection() {
 	const s = useSettingsStore();
 	const [testing, setTesting] = useState(false);
@@ -346,6 +419,7 @@ export function VoiceSection() {
 				<p className="-mt-1 mb-1 text-2xs text-pi-text-muted">
 					Hands-free mode: speak, pause, and the app sends and replies aloud automatically.
 				</p>
+				<VoiceTurnModelPicker />
 				<div className="flex items-center justify-between">
 					<div className="pr-4">
 						<p className="text-xs font-medium text-pi-text">Auto-barge into replies</p>

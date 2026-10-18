@@ -148,11 +148,79 @@ export async function synthesize(
 let currentAudio: HTMLAudioElement | null = null;
 
 /** Play an audio blob, interrupting any currently-playing voice audio. */
-export function playAudioBlob(blob: Blob): HTMLAudioElement {
+let outputContext: AudioContext | null = null;
+let outputAnalyser: AnalyserNode | null = null;
+
+function ensureOutputAnalyser(): AnalyserNode | null {
+	try {
+		if (!outputContext) {
+			outputContext = new AudioContext();
+			outputAnalyser = outputContext.createAnalyser();
+			outputAnalyser.fftSize = 512;
+			outputAnalyser.connect(outputContext.destination);
+		}
+		if (outputContext.state === "suspended") void outputContext.resume();
+		return outputAnalyser;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Meter an <audio> element's real playback amplitude (0..1 RMS) and call
+ * `onLevel` every animation frame until it ends. Returns a stop function.
+ *
+ * This is what makes a voice UI honest: the orb moves with the audio you can
+ * hear, not with a synthesized sine wave. One shared AudioContext keeps the
+ * graph cheap; a per-element MediaElementSource is created once (WebKit allows
+ * exactly one per element).
+ */
+export function startAudioMeter(audio: HTMLAudioElement, onLevel: (level: number) => void): () => void {
+	const analyser = ensureOutputAnalyser();
+	if (!analyser) return () => {};
+	let source: MediaElementAudioSourceNode | null = null;
+	try {
+		source = outputContext!.createMediaElementSource(audio);
+		source.connect(analyser);
+	} catch {
+		// Already routed (or unsupported): fall back to silence, never throw.
+		return () => {};
+	}
+	const buffer = new Float32Array(analyser.fftSize);
+	let raf = 0;
+	let stopped = false;
+	const tick = () => {
+		if (stopped) return;
+		analyser.getFloatTimeDomainData(buffer);
+		let sum = 0;
+		for (let i = 0; i < buffer.length; i += 1) sum += buffer[i] * buffer[i];
+		onLevel(Math.min(1, Math.sqrt(sum / buffer.length) * 10));
+		raf = requestAnimationFrame(tick);
+	};
+	raf = requestAnimationFrame(tick);
+	const stop = () => {
+		if (stopped) return;
+		stopped = true;
+		cancelAnimationFrame(raf);
+		try {
+			source?.disconnect();
+		} catch {
+			/* already disconnected */
+		}
+		onLevel(0);
+	};
+	audio.addEventListener("ended", stop);
+	audio.addEventListener("error", stop);
+	audio.addEventListener("pause", stop);
+	return stop;
+}
+
+export function playAudioBlob(blob: Blob, onLevel?: (level: number) => void): HTMLAudioElement {
 	stopAudio();
 	const url = URL.createObjectURL(blob);
 	const audio = new Audio(url);
 	currentAudio = audio;
+	if (onLevel) startAudioMeter(audio, onLevel);
 	audio.addEventListener("ended", () => {
 		URL.revokeObjectURL(url);
 		if (currentAudio === audio) currentAudio = null;

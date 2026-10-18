@@ -39,6 +39,8 @@ export type RpcCommand =
 			streamingBehavior?: "steer" | "followUp";
 			/** Target a background (detached) session by file path. */
 			sessionPath?: string;
+			/** Voice-call turn: bind `voiceTurnModel` for this turn only. */
+			voiceTurn?: boolean;
 	  }
 	| { id?: string; type: "steer"; message: string; images?: ImageContent[]; sessionPath?: string }
 	| { id?: string; type: "follow_up"; message: string; images?: ImageContent[]; sessionPath?: string }

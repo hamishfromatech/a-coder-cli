@@ -259,6 +259,10 @@ export interface Settings {
 	lastChangelogVersion?: string;
 	defaultProvider?: string;
 	defaultModel?: string;
+	/** Model for voice-call turns (`provider/id`): these turns are spoken, so a
+	 *  dedicated fast model keeps latency down without changing the user's
+	 *  model for typed turns or background work. */
+	voiceTurnModel?: string;
 	defaultThinkingLevel?: ThinkingLevel;
 	modelThinkingLevels?: Record<string, ThinkingLevel>; // per-model default thinking level overrides keyed by "provider/modelId"
 	transport?: TransportSetting; // default: "auto"
@@ -1002,6 +1006,16 @@ export class SettingsManager {
 
 	getDefaultModel(): string | undefined {
 		return this.settings.defaultModel;
+	}
+
+	getVoiceTurnModel(): string | undefined {
+		return this.settings.voiceTurnModel;
+	}
+
+	setVoiceTurnModel(model: string | undefined): void {
+		this.globalSettings.voiceTurnModel = model;
+		this.markModified("voiceTurnModel");
+		this.save();
 	}
 
 	setDefaultProvider(provider: string): void {

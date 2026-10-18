@@ -684,6 +684,18 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				// Start prompt handling immediately, but emit the authoritative response only after
 				// prompt preflight succeeds. Queued and immediately handled prompts also count as success.
 				let preflightSucceeded = false;
+				// Voice turns bind the auxiliary voice model for this turn only:
+				// speech is latency-sensitive, typed turns and background work
+				// keep the user's model. Unknown/unconfigured ids are ignored by
+				// bindTurnModel (the turn simply runs on the current model).
+				let unbindTurnModel: (() => void) | undefined;
+				if (command.voiceTurn) {
+					const configured = target.settingsManager.getVoiceTurnModel();
+					const slash = configured?.indexOf("/") ?? -1;
+					if (configured && slash > 0) {
+						unbindTurnModel = target.bindTurnModel(configured.slice(0, slash), configured.slice(slash + 1));
+					}
+				}
 				void target
 					.prompt(command.message, {
 						images: command.images,
@@ -700,6 +712,9 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 						if (!preflightSucceeded) {
 							output(error(id, "prompt", e.message));
 						}
+					})
+					.finally(() => {
+						unbindTurnModel?.();
 					});
 				return undefined;
 			}

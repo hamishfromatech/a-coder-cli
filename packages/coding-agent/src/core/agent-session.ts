@@ -2620,6 +2620,24 @@ export class AgentSession {
 	}
 
 	/**
+	 * Bind a model for a single turn without persisting it anywhere.
+	 *
+	 * Voice-call turns use this: speech is latency-sensitive, so a dedicated
+	 * fast model can answer the call while typed turns and background work
+	 * stay on the user's model. The unbind function restores the previous
+	 * model; unknown or unconfigured models leave the session untouched.
+	 */
+	bindTurnModel(provider: string, modelId: string): () => void {
+		const next = this._modelRegistry.find(provider, modelId);
+		if (!next || !this._modelRegistry.hasConfiguredAuth(next)) return () => {};
+		const previous = this.agent.state.model;
+		this.agent.state.model = next;
+		return () => {
+			this.agent.state.model = previous;
+		};
+	}
+
+	/**
 	 * Set model directly.
 	 * Validates that auth is configured, saves to session and settings.
 	 * @throws Error if no auth is configured for the model

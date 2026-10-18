@@ -748,8 +748,12 @@ export interface GetCommandsResult {
 }
 
 // ---- prompting ----
-export const prompt = (message: string, images?: ImageContent[], sessionPath?: string) =>
-	sendCommand({ type: "prompt", message, images, sessionPath });
+export const prompt = (
+	message: string,
+	images?: ImageContent[],
+	sessionPath?: string,
+	options?: { voiceTurn?: boolean },
+) => sendCommand({ type: "prompt", message, images, sessionPath, voiceTurn: options?.voiceTurn });
 export const steer = (message: string, images?: ImageContent[], sessionPath?: string) =>
 	sendCommand({ type: "steer", message, images, sessionPath });
 export const followUp = (message: string, images?: ImageContent[], sessionPath?: string) =>

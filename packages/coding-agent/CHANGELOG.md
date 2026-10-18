@@ -4,6 +4,8 @@
 
 ### Added
 
+- Voice call: the orb is driven by real audio amplitude — mic RMS while listening and a metered `AnalyserNode` over TTS playback while speaking (manual volume mode) instead of the synthesized oscillation.
+- Voice-turn model routing: `prompt` accepts `voiceTurn`, the engine binds `voiceTurnModel` (`provider/id`, new setting) for that turn only and unbinds when it settles, so spoken turns can use a fast model while typed turns and background work keep the user's model. Desktop gets a "Model for voice turns" picker in Settings → Voice.
 - Desktop chat text size (Settings → Appearance): a conversation-only scale (85–140%, default 110%) driven by `--chat-text-scale`, so message text grows without resizing the sidebar, settings, or panes.
 - Desktop status bar: the project name is now a working-folder switcher (native folder picker → resumes that folder's latest session, or starts one), since the engine models cwd per runtime rather than mutating it in place.
 - Desktop tray: "Keep running in the menu bar" was already wired end to end (settings toggle → `minimizeToTray` → Tauri tray with Show/Quit); verified, no change needed.
