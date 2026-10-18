@@ -31,7 +31,7 @@ describe("speechify", () => {
 
 	it("drops fenced code and mentions it once", () => {
 		const md = "Here is the fix:\n\n```ts\nconst a = 1;\n```\n\nThat should do it.\n\n```sh\nnpm run build\n```";
-		expect(speechify(md)).toBe("Here is the fix with a code sample That should do it.");
+		expect(speechify(md)).toBe("Here is the fix: With a code sample. That should do it.");
 	});
 
 	it("falls back to the transcript when the reply is only code", () => {
@@ -51,7 +51,7 @@ describe("speechify", () => {
 
 	it("cleans up punctuation left behind by removals", () => {
 		const out = speechify("Look here:\n\n```js\nx();\n```");
-		expect(out).toBe("Look here with a code sample");
+		expect(out).toBe("Look here: With a code sample.");
 	});
 
 	it("returns the input unchanged in verbatim mode", () => {

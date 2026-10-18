@@ -25,7 +25,7 @@ export interface SpeechifyOptions {
 	fallback?: string;
 }
 
-const DEFAULT_CODE_MARKER = "with a code sample";
+const DEFAULT_CODE_MARKER = "With a code sample";
 const DEFAULT_FALLBACK = "The reply is in the transcript.";
 
 const FENCED_CODE = /```[^\n]*\n[\s\S]*?```/g;
@@ -109,13 +109,13 @@ export function speechify(input: string, options: SpeechifyOptions = {}): string
 	// 1. Fenced code. Insert the marker once, only if the reply has prose that
 	//    survives — a code-only reply gets the fallback instead.
 	let markerInserted = false;
-	// "Here is the fix:" followed by a block reads as "Here is the fix with a
-	// code sample" — the colon introduces the block, so it goes with it.
-	text = text.replace(/:\s*(```[^\n]*\n[\s\S]*?```)/g, " $1");
+	// The marker is a sentence of its own: "…at the PR. With a code sample.
+	// Tests pass." reads naturally, while splicing a clause into the middle
+	// produces comma soup.
 	text = text.replace(FENCED_CODE, () => {
 		if (!markerInserted && marker) {
 			markerInserted = true;
-			return ` ${marker} `;
+			return ` ${marker}. `;
 		}
 		return " ";
 	});
