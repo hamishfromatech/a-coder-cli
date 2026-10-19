@@ -3,6 +3,7 @@ import { AlarmClock, CalendarClock, FileText, GitBranch, Globe, Inbox, PhoneCall
 import { useUiStore, type RightSidebarTab } from "../stores/ui-store";
 import { useActivityAttentionCount } from "../stores/activity-store";
 import { useVoiceCallStore } from "../lib/voice-call";
+import { useHuddleCallStore } from "../lib/huddle-call";
 import { triggerHaptic } from "../lib/haptics";
 import { ArtifactViewer } from "./panels/ArtifactViewer";
 import { FileExplorer } from "./panels/FileExplorer";
@@ -36,6 +37,7 @@ export function RightSidebar({ projectPath }: Props) {
 		useUiStore();
 	const attention = useActivityAttentionCount();
 	const callActive = useVoiceCallStore((s) => s.active);
+	const officeCallActive = useHuddleCallStore((s) => s.active);
 	const activeLabel = TABS.find(({ id }) => id === rightSidebarTab)?.label ?? "";
 
 	// The browser needs more than the default 320px to be usable beside the
@@ -81,6 +83,9 @@ export function RightSidebar({ projectPath }: Props) {
 							<Icon className="h-4 w-4 transition-smooth" />
 							{id === "voice" && callActive && !active && (
 								<span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 animate-pulse rounded-full bg-rose-400" />
+							)}
+							{id === "office" && officeCallActive && !active && (
+								<span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
 							)}
 							{id === "activity" && attention > 0 && (
 								<span

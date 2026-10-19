@@ -49,6 +49,7 @@ import type {
 	RpcExtensionUIRequest,
 	RpcExtensionUIResponse,
 	RpcOfficeActivityEvent,
+	RpcOfficeHuddleDeltaEvent,
 	RpcOfficeHuddleEvent,
 	RpcOfficeUpdateEvent,
 	RpcResponse,
@@ -627,6 +628,9 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 			},
 			huddle: (payload) => {
 				output({ type: "office_huddle", payload } satisfies RpcOfficeHuddleEvent);
+			},
+			delta: (delta) => {
+				output({ type: "office_huddle_delta", delta } satisfies RpcOfficeHuddleDeltaEvent);
 			},
 			activity: (activity) => {
 				output({ type: "office_activity", activity } satisfies RpcOfficeActivityEvent);

@@ -12,16 +12,26 @@ with live activity, and status auras (thinking / tool calling).
 - `src/types.ts` — the feed contract (`VirtualOfficeFeed`) the host provides
 - `src/geometry.ts` — zones, desk slots, meeting seats, walk paths (pure)
 - `src/store.ts` — zustand store: derives status/bubbles/links from the feed,
-  animates walks with a single rAF loop
+  animates walks with one rAF loop per store. Motion is written in a single
+  batched state update per frame; `visualVersion` changes only on feeds, so
+  renderers that read positions in their own loop (the 3D scene) skip walk
+  ticks. `dispose()` stops the loop and drops bookkeeping.
 - `src/avatar.tsx` — procedural SVG faces from the engine's Face model
   (shape + color, user uploads override) with status-driven features
-- `src/VirtualOffice.tsx` — the 2D scene (zones, furniture, links, avatars)
+- `src/VirtualOffice.tsx` — the 2D scene (zones, furniture, links, avatars).
+  The static shell/furniture are memoized on the theme; only links, avatars,
+  the clock, and the room banner reconcile on motion.
 - `src/furniture2d.tsx` — SVG furniture pieces
-- `src/palette.ts` — themes + status hues shared by both views
+- `src/palette.ts` — themes + status hues shared by both views (idle loops
+  respect `prefers-reduced-motion`)
 - `src/office3d.tsx` — the 3D scene (three + @react-three/fiber, no drei):
   capsule characters with walk bob and status auras, emissive monitors,
-  windowed walls, canvas-texture labels, drag/zoom orbit camera
-- `src/OfficeView.tsx` — 2D/3D switcher (3D is lazy-loaded)
+  windowed walls, canvas-texture labels, drag/zoom orbit camera. Scene
+  re-renders follow `visualVersion`, not positions; bubbles expire on
+  wall-clock time; rendering pauses while the document is hidden.
+- `src/OfficeView.tsx` — 2D/3D switcher (3D is lazy-loaded). It owns one floor
+  store for both renderers, remembers the last view per client, and draws the
+  status legend. `onCoworkerClick` makes avatars clickable in both views.
 - `src/mock.ts` — mock scenario + loop for standalone development
 - `src/dev-main.tsx` + `index.html` + `vite.config.ts` — standalone dev harness
 

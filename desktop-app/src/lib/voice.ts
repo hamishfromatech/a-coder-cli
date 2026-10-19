@@ -314,3 +314,35 @@ export async function createMicRecorder(): Promise<MicRecorder> {
 		},
 	};
 }
+
+/** Max chars per TTS sentence chunk before a hard word wrap. */
+const MAX_SENTENCE_CHARS = 280;
+
+/**
+ * Split a reply into TTS-sized sentences: sentence-enders first, then hard
+ * wraps over MAX_SENTENCE_CHARS on a word boundary. Empty chunks are dropped.
+ */
+export function splitForSpeech(text: string): string[] {
+	const trimmed = text.trim();
+	if (!trimmed) return [];
+	const rough = trimmed.split(/(?<=[.!?。！？])\s+/);
+	const out: string[] = [];
+	for (const piece of rough) {
+		const p = piece.trim();
+		if (!p) continue;
+		if (p.length <= MAX_SENTENCE_CHARS) {
+			out.push(p);
+			continue;
+		}
+		// Hard-wrap oversized chunks on word boundaries.
+		let rest = p;
+		while (rest.length > MAX_SENTENCE_CHARS) {
+			let cut = rest.lastIndexOf(" ", MAX_SENTENCE_CHARS);
+			if (cut <= 0) cut = MAX_SENTENCE_CHARS;
+			out.push(rest.slice(0, cut).trim());
+			rest = rest.slice(cut).trim();
+		}
+		if (rest) out.push(rest);
+	}
+	return out;
+}

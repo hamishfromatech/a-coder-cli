@@ -42,6 +42,8 @@ export interface Coworker {
 	face: Face;
 	/** Model override as "provider/modelId". Inherited when absent. */
 	model?: string;
+	/** TTS voice id for this coworker in huddle calls. Inherited when absent. */
+	voice?: string;
 	autonomy: Autonomy;
 	createdAt: number;
 	/**
@@ -208,6 +210,17 @@ export interface OfficeSnapshot {
 	pendingPrompts: OfficePrompt[];
 }
 
+/** Incremental huddle update: messages appended since the last push plus the
+ *  live drive state. Full payloads are reserved for first contact and resets
+ *  (for example after the log cap drops old lines). */
+export interface OfficeHuddleDelta {
+	huddleId: string;
+	epoch: number;
+	messages: OfficeMessage[];
+	running?: HuddleData["running"];
+	working: Record<string, boolean>;
+}
+
 /** Per-huddle payload pushed on log changes. */
 export interface OfficeHuddlePayload {
 	huddleId: string;
@@ -222,6 +235,8 @@ export interface OfficeEventSink {
 	update: (snapshot: OfficeSnapshot) => void;
 	/** A huddle's log changed. */
 	huddle: (payload: OfficeHuddlePayload) => void;
+	/** Appended messages + drive state; preferred over another full payload. */
+	delta?: (delta: OfficeHuddleDelta) => void;
 	/** A supervised prompt opened (snapshot also carries it). */
 	prompt?: (prompt: OfficePrompt) => void;
 	/** Live coworker activity (turn/tool/speech), for office visualizations. */
@@ -242,6 +257,9 @@ export const OFFICE_MAX_MESSAGES = 10;
 /** Bounded continuation rounds for cited-but-unanswered @mention handoffs. */
 export const OFFICE_MAX_CONTINUATIONS = 2;
 export const OFFICE_HISTORY_LIMIT = 24;
+/** Stored log cap per huddle. Older lines are dropped with watermarks shifted;
+ *  the full-file JSON write and the payload stay bounded on long-running rooms. */
+export const OFFICE_MAX_LOG_MESSAGES = 500;
 export const OFFICE_MAX_MEMBERS = 6;
 export const OFFICE_TURN_TIMEOUT_MS = 180_000;
 /** A visibly-working turn keeps its slot up to this hard cap before abort. */

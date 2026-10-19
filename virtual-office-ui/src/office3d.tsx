@@ -11,11 +11,11 @@
  */
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { DESK_SLOTS, MEETING_TABLES, meetingSeat } from "./geometry.ts";
 import { STATUS_COLORS, THEMES, type Palette } from "./palette.ts";
-import { createFloorStore, useFloor, type CoworkerVisual, type FloorStore } from "./store.ts";
+import { type CoworkerVisual, type FloorStore, createFloorStore, useFloorSelector } from "./store.ts";
 import type { VirtualOfficeProps } from "./types.ts";
 
 /** Floor (2D) coordinates to world: x 0..160, y 0..100 → centered grid. */
@@ -25,6 +25,33 @@ function to3d(x: number, y: number): [number, number, number] {
 }
 
 const WALL_H = 3.4;
+
+/** Track tab/window visibility so a hidden sidebar stops rendering frames. */
+function useDocumentVisible(): boolean {
+	const [visible, setVisible] = useState(
+		() => typeof document === "undefined" || document.visibilityState !== "hidden",
+	);
+	useEffect(() => {
+		const onChange = (): void => setVisible(document.visibilityState !== "hidden");
+		document.addEventListener("visibilitychange", onChange);
+		return () => document.removeEventListener("visibilitychange", onChange);
+	}, []);
+	return visible;
+}
+
+/** Honor the OS reduced-motion preference for ambient camera drift. */
+function usePrefersReducedMotion(): boolean {
+	const [reduced, setReduced] = useState(
+		() => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+	);
+	useEffect(() => {
+		const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+		const onChange = (): void => setReduced(query.matches);
+		query.addEventListener("change", onChange);
+		return () => query.removeEventListener("change", onChange);
+	}, []);
+	return reduced;
+}
 
 // ── textures ────────────────────────────────────────────────────────────────
 
@@ -610,7 +637,17 @@ function Bookshelf3D({ theme }: { theme: Palette }) {
 
 // ── characters ──────────────────────────────────────────────────────────────
 
-function Character({ visual, store, theme }: { visual: CoworkerVisual; store: FloorStore; theme: Palette }) {
+function Character({
+	visual,
+	store,
+	theme,
+	onCoworkerClick,
+}: {
+	visual: CoworkerVisual;
+	store: FloorStore;
+	theme: Palette;
+	onCoworkerClick?: (coworkerId: string) => void;
+}) {
 	const group = useRef<THREE.Group>(null);
 	const bodyRef = useRef<THREE.Group>(null);
 	const headRef = useRef<THREE.Group>(null);
@@ -619,10 +656,14 @@ function Character({ visual, store, theme }: { visual: CoworkerVisual; store: Fl
 	const leftFoot = useRef<THREE.Mesh>(null);
 	const rightFoot = useRef<THREE.Mesh>(null);
 	const aura = useRef<THREE.Mesh>(null);
+	const bubbleSprite = useRef<THREE.Sprite>(null);
 	const labelTex = useMemo(() => labelTexture(visual.name, theme), [visual.name, theme]);
 	const [worldX, , worldZ] = to3d(visual.pos.x, visual.pos.y);
 
 	useEffect(() => () => labelTex.dispose(), [labelTex]);
+	useEffect(() => () => {
+		document.body.style.cursor = "default";
+	}, []);
 
 	const bubble = visual.bubble && Date.now() < visual.bubble.until ? visual.bubble : null;
 	const bubbleTex = useMemo(
@@ -634,6 +675,10 @@ function Character({ visual, store, theme }: { visual: CoworkerVisual; store: Fl
 	useFrame((state, delta) => {
 		const live = store.getState().coworkers.find((c) => c.id === visual.id);
 		if (!live || !group.current) return;
+		// Bubbles expire on wall-clock time; the sprite is hidden here so a
+		// quiet floor does not need a React update to clear it.
+		const liveBubble = live.bubble && Date.now() < live.bubble.until ? live.bubble : null;
+		if (bubbleSprite.current) bubbleSprite.current.visible = Boolean(liveBubble);
 		const [tx, , tz] = to3d(live.pos.x, live.pos.y);
 		const lerp = 1 - Math.pow(0.02, delta);
 		const pos = group.current.position;
@@ -643,7 +688,7 @@ function Character({ visual, store, theme }: { visual: CoworkerVisual; store: Fl
 		if (bodyRef.current) {
 			if (live.walkT !== null) {
 				bodyRef.current.position.y = Math.abs(Math.sin(t * 9)) * 0.06;
-			} else if (bubble) {
+			} else if (liveBubble) {
 				bodyRef.current.position.y = Math.abs(Math.sin(t * 5)) * 0.04;
 			} else if (live.status === "tool_calling") {
 				bodyRef.current.position.y = Math.abs(Math.sin(t * 12)) * 0.025;
@@ -662,7 +707,7 @@ function Character({ visual, store, theme }: { visual: CoworkerVisual; store: Fl
 		if (rightFoot.current) rightFoot.current.position.z = 0.02 - stride;
 		// Talking: the head gives a little bounce.
 		if (headRef.current) {
-			headRef.current.scale.y = bubble ? 1 + Math.sin(t * 7) * 0.05 : 1;
+			headRef.current.scale.y = liveBubble ? 1 + Math.sin(t * 7) * 0.05 : 1;
 		}
 		if (aura.current) {
 			const show = live.status === "thinking" || live.status === "tool_calling";
@@ -679,7 +724,33 @@ function Character({ visual, store, theme }: { visual: CoworkerVisual; store: Fl
 	const seatedScale = visual.inMeeting ? 0.88 : 1;
 
 	return (
-		<group ref={group} position={[worldX, 0, worldZ]} scale={seatedScale}>
+		<group
+			ref={group}
+			position={[worldX, 0, worldZ]}
+			scale={seatedScale}
+			onClick={
+				onCoworkerClick
+					? (event) => {
+							event.stopPropagation();
+							onCoworkerClick(visual.id);
+						}
+					: undefined
+			}
+			onPointerOver={
+				onCoworkerClick
+					? () => {
+							document.body.style.cursor = "pointer";
+						}
+					: undefined
+			}
+			onPointerOut={
+				onCoworkerClick
+					? () => {
+							document.body.style.cursor = "default";
+						}
+					: undefined
+			}
+		>
 			{/* contact shadow */}
 			<mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
 				<circleGeometry args={[0.42, 24]} />
@@ -731,7 +802,7 @@ function Character({ visual, store, theme }: { visual: CoworkerVisual; store: Fl
 				<spriteMaterial map={labelTex} transparent depthTest={false} />
 			</sprite>
 			{bubbleTex && (
-				<sprite position={[0, 3.15, 0]} scale={[2.6, 0.82, 1]}>
+				<sprite ref={bubbleSprite} position={[0, 3.15, 0]} scale={[2.6, 0.82, 1]}>
 					<spriteMaterial map={bubbleTex} transparent depthTest={false} />
 				</sprite>
 			)}
@@ -741,7 +812,7 @@ function Character({ visual, store, theme }: { visual: CoworkerVisual; store: Fl
 
 // ── camera rig ──────────────────────────────────────────────────────────────
 
-function CameraRig({ target = [0, 0, 0] as [number, number, number] }) {
+function CameraRig({ target = [0, 0, 0] as [number, number, number], idleOrbit = true }: { target?: [number, number, number]; idleOrbit?: boolean }) {
 	const { camera } = useThree();
 	const state = useRef({ azimuth: 0.66, polar: 1.02, radius: 21, dragging: false, lx: 0, ly: 0 });
 
@@ -782,7 +853,7 @@ function CameraRig({ target = [0, 0, 0] as [number, number, number] }) {
 
 	useFrame((_, delta) => {
 		const s = state.current;
-		if (!s.dragging) s.azimuth += delta * 0.02; // gentle idle orbit
+		if (!s.dragging && idleOrbit) s.azimuth += delta * 0.02; // gentle idle orbit
 		const [tx, ty, tz] = target;
 		camera.position.set(
 			tx + s.radius * Math.sin(s.polar) * Math.sin(s.azimuth),
@@ -950,13 +1021,21 @@ function Scene({
 	theme,
 	themeName,
 	activeTable,
+	idleOrbit,
+	onCoworkerClick,
 }: {
 	store: FloorStore;
 	theme: Palette;
 	themeName: "dark" | "light";
 	activeTable: number;
+	idleOrbit: boolean;
+	onCoworkerClick?: (coworkerId: string) => void;
 }) {
-	const floor = useFloor(store);
+	// Re-render on feed changes only. Walk ticks update positions in the store
+	// every frame, and Character reads them in its own useFrame — subscribing
+	// to the whole state here would reconcile the entire scene at 60fps.
+	const visualVersion = useFloorSelector(store, (state) => state.visualVersion);
+	const coworkers = useMemo(() => store.getState().coworkers, [store, visualVersion]);
 	const dark = themeName === "dark";
 	const bg = dark ? "#0a1020" : "#dfe7f0";
 	return (
@@ -970,8 +1049,8 @@ function Scene({
 				intensity={dark ? 1.45 : 1.15}
 				color={dark ? "#e8f0ff" : "#fff6e6"}
 				castShadow
-				shadow-mapSize-width={2048}
-				shadow-mapSize-height={2048}
+				shadow-mapSize-width={1024}
+				shadow-mapSize-height={1024}
 				shadow-camera-left={-18}
 				shadow-camera-right={18}
 				shadow-camera-top={14}
@@ -981,10 +1060,10 @@ function Scene({
 			<pointLight position={[-7, 4.6, -3.4]} intensity={dark ? 5 : 3} distance={14} decay={2} color={dark ? "#ffdcae" : "#fff2d8"} />
 			<pointLight position={[7.4, 4.6, -2.8]} intensity={dark ? 5 : 3} distance={14} decay={2} color={dark ? "#ffdcae" : "#fff2d8"} />
 			<pointLight position={[0.5, 4.2, 3.2]} intensity={dark ? 3.5 : 2} distance={11} decay={2} color={dark ? "#ffdcae" : "#fff2d8"} />
-			<CameraRig />
+			<CameraRig idleOrbit={idleOrbit} />
 			<Environment3D theme={theme} />
 			{DESK_SLOTS.map((slot, i) => {
-				const owner = floor.coworkers.find((c) => c.deskIndex === i);
+				const owner = coworkers.find((c) => c.deskIndex === i);
 				const on = owner?.status === "tool_calling" || owner?.status === "thinking";
 				const flip = slot.x > 53;
 				return <Desk3D key={`d${i}`} x={slot.x} y={slot.y} theme={theme} on={on} flip={flip} />;
@@ -1004,19 +1083,40 @@ function Scene({
 			<Plant3D x={152} y={10.6} theme={theme} size={0.9} />
 			<CoffeeBar3D theme={theme} />
 			<Bookshelf3D theme={theme} />
-			{floor.coworkers.map((visual) => (
-				<Character key={visual.id} visual={visual} store={store} theme={theme} />
+			{coworkers.map((visual) => (
+				<Character
+					key={visual.id}
+					visual={visual}
+					store={store}
+					theme={theme}
+					onCoworkerClick={onCoworkerClick}
+				/>
 			))}
 		</>
 	);
 }
 
-export function Office3D({ feed, theme: themeName = "dark", className, style }: VirtualOfficeProps) {
-	const storeRef = useRef<FloorStore | null>(null);
-	if (storeRef.current === null) {
-		storeRef.current = createFloorStore();
+export function Office3D({
+	feed,
+	theme: themeName = "dark",
+	className,
+	style,
+	store: sharedStore,
+	onCoworkerClick,
+}: VirtualOfficeProps) {
+	const ownedStore = useRef<FloorStore | null>(null);
+	if (!sharedStore && ownedStore.current === null) {
+		ownedStore.current = createFloorStore();
 	}
-	const store = storeRef.current;
+	const store = sharedStore ?? (ownedStore.current as FloorStore);
+	const visible = useDocumentVisible();
+	const reducedMotion = usePrefersReducedMotion();
+
+	useEffect(() => {
+		if (sharedStore) return;
+		const owned = ownedStore.current;
+		return () => owned?.dispose();
+	}, [sharedStore]);
 
 	useEffect(() => {
 		store.getState().applyFeed(feed);
@@ -1027,15 +1127,18 @@ export function Office3D({ feed, theme: themeName = "dark", className, style }: 
 		<div className={className} style={style}>
 			<Canvas
 				shadows="percentage"
+				frameloop={visible ? "always" : "never"}
 				gl={{ antialias: true, alpha: false }}
 				camera={{ fov: 42, position: [16, 15, 16], near: 0.1, far: 120 }}
-				dpr={[1, 2]}
+				dpr={[1, 1.5]}
 			>
 				<Scene
 					store={store}
 					theme={theme}
 					themeName={themeName}
 					activeTable={feed.roomRunning ? Math.floor((feed.roomMembers.length - 1) / 3) % MEETING_TABLES.length : -1}
+					idleOrbit={!reducedMotion}
+					onCoworkerClick={onCoworkerClick}
 				/>
 			</Canvas>
 		</div>

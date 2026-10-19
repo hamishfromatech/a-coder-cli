@@ -2827,7 +2827,7 @@ export class InteractiveMode {
 		this.editorContainer.addChild(this.editor);
 		this.extensionSelector = undefined;
 		this.ui.setFocus(this.editor);
-		this.setTerminalTitleState(this.session.isStreaming ? "running" : "idle");
+		this.setTerminalTitleState(this.session?.isStreaming ? "running" : "idle");
 		this.ui.requestRender();
 	}
 

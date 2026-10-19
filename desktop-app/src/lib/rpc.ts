@@ -52,6 +52,7 @@ export interface OfficeCoworker {
 	soul: string;
 	face: OfficeFace;
 	model?: string;
+	voice?: string;
 	autonomy: "supervised" | "auto";
 	createdAt: number;
 	sessions: Record<string, string>;
@@ -147,6 +148,14 @@ export interface OfficeHuddlePayload {
 	working: Record<string, boolean>;
 }
 
+export interface OfficeHuddleDelta {
+	huddleId: string;
+	epoch: number;
+	messages: OfficeMessage[];
+	running?: OfficeHuddleData["running"];
+	working: Record<string, boolean>;
+}
+
 export interface OfficeActivityItem {
 	coworkerId: string;
 	kind: "turn_start" | "tool_start" | "tool_end" | "speaking" | "turn_end" | "error";
@@ -167,6 +176,11 @@ export interface OfficeUpdateEvent {
 export interface OfficeHuddleEvent {
 	type: "office_huddle";
 	payload: OfficeHuddlePayload;
+}
+
+export interface OfficeHuddleDeltaEvent {
+	type: "office_huddle_delta";
+	delta: OfficeHuddleDelta;
 }
 
 export interface OfficeActivityEvent {
@@ -253,6 +267,7 @@ export interface OfficeCoworkerInput {
 	keepSoul?: boolean;
 	face?: Partial<OfficeFace>;
 	model?: string;
+	voice?: string;
 	autonomy?: "supervised" | "auto";
 }
 
@@ -293,6 +308,7 @@ export type RpcEvent =
 	| ThinkingLevelChangedEvent
 	| OfficeUpdateEvent
 	| OfficeHuddleEvent
+	| OfficeHuddleDeltaEvent
 	| OfficeActivityEvent
 	| CronUpdateEvent
 	| CronRunEvent;

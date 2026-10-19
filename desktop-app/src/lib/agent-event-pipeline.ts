@@ -22,6 +22,7 @@ import { getCachedSessionMessages, setCachedSessionMessages } from "./session-ca
 import { toast } from "../stores/toast-store";
 import { notice } from "../stores/notice-store";
 import { voiceCall, useVoiceCallStore } from "./voice-call";
+import { huddleCall } from "./huddle-call";
 import {
 	useSessionStore,
 	type QuestionUiRequest,
@@ -378,12 +379,20 @@ const { loadingHistoryRef, sessionStartGenerationRef, parkedQuestionsRef, deferr
 			});
 			break;
 		}
-		case "office_huddle":
-			// A huddle's log changed.
-			useOfficeStore.getState().applyHuddle(
-				(event as import("./rpc").OfficeHuddleEvent).payload,
-			);
+		case "office_huddle": {
+			// A huddle's full log (first contact or a reset after trimming).
+			const payload = (event as import("./rpc").OfficeHuddleEvent).payload;
+			useOfficeStore.getState().applyHuddle(payload);
+			huddleCall.notifyHuddle(payload);
 			break;
+		}
+		case "office_huddle_delta": {
+			// Appended messages + live drive state; merge into the warm room.
+			const delta = (event as import("./rpc").OfficeHuddleDeltaEvent).delta;
+			useOfficeStore.getState().applyHuddleDelta(delta);
+			huddleCall.notifyHuddleDelta(delta);
+			break;
+		}
 		case "office_activity": {
 			// Live coworker activity for the floor view.
 			const activity = (event as import("./rpc").OfficeActivityEvent).activity;

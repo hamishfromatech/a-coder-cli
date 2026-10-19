@@ -28,6 +28,7 @@ export function CoworkerEditor({ editing, onClose }: Props) {
 	const [color, setColor] = useState<string | undefined>(editing?.face.color);
 	const [shape, setShape] = useState<FaceShapeName>(editing?.face.shape ?? "circle");
 	const [model, setModel] = useState(editing?.model ?? "");
+	const [voice, setVoice] = useState(editing?.voice ?? "");
 	const [models, setModels] = useState<Array<{ value: string; label: string }>>([]);
 	const [autonomy, setAutonomy] = useState<"supervised" | "auto">(editing?.autonomy ?? "supervised");
 	const [busy, setBusy] = useState(false);
@@ -74,6 +75,7 @@ export function CoworkerEditor({ editing, onClose }: Props) {
 				keepSoul: editing ? keepSoul && !soul.trim() : undefined,
 				face: { shape, color },
 				model: model.trim() || undefined,
+				voice: voice.trim() || undefined,
 				autonomy,
 			});
 			await refresh();
@@ -206,6 +208,17 @@ export function CoworkerEditor({ editing, onClose }: Props) {
 								</Button>
 							</div>
 						</div>
+					</div>
+
+					<div>
+						<div className="mb-1 text-2xs font-semibold uppercase tracking-wide text-pi-text-muted">
+							Voice (huddle calls)
+						</div>
+						<Input
+							placeholder="TTS voice id — leave blank to inherit Settings → Voice"
+							value={voice}
+							onChange={(e) => setVoice(e.target.value)}
+						/>
 					</div>
 
 					{error && <div className="text-2xs text-pi-error">{error}</div>}

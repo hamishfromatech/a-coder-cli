@@ -40,12 +40,32 @@ export function meetingSeat(tableIndex: number, seat: number): Point {
 	};
 }
 
+/** Overflow standing spots along the corridor for roster members past the
+ *  six desks. Keeping these distinct from DESK_SLOTS prevents a seventh
+ *  coworker from standing exactly on top of the first. */
+export const HOT_DESK_SLOTS: Point[] = [
+	{ x: 24, y: 84 },
+	{ x: 32, y: 84 },
+	{ x: 40, y: 84 },
+	{ x: 46, y: 84 },
+	{ x: 118, y: 84 },
+	{ x: 126, y: 84 },
+	{ x: 134, y: 84 },
+	{ x: 142, y: 84 },
+	{ x: 150, y: 84 },
+];
+
 /** Corridor entrance — where unseated/new coworkers stand. */
 export const CORRIDOR_ENTRANCE: Point = { x: 12, y: 88 };
 
-/** Deterministic desk slot for a roster index (caps at desk count, wraps). */
+/** Seat slot for a roster index. Desk seats come first; extra coworkers stand
+ *  at a distinct hot-desk spot in the corridor. */
 export function deskSlot(index: number): Point {
-	return DESK_SLOTS[index % DESK_SLOTS.length] ?? CORRIDOR_ENTRANCE;
+	const desk = DESK_SLOTS[index];
+	if (desk) return desk;
+	const hot = HOT_DESK_SLOTS[index - DESK_SLOTS.length];
+	if (hot) return hot;
+	return CORRIDOR_ENTRANCE;
 }
 
 /** Walk duration for a path in ms (bounded). */

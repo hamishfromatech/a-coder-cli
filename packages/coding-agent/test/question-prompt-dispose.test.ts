@@ -44,6 +44,8 @@ describe("hideExtensionSelector with a QuestionPromptComponent overlay", () => {
 			editorContainer,
 			editor,
 			ui: { setFocus, requestRender },
+			session: { isStreaming: false },
+			setTerminalTitleState: vi.fn(),
 		};
 
 		expect(() =>
@@ -70,6 +72,8 @@ describe("hideExtensionSelector with a QuestionPromptComponent overlay", () => {
 			editorContainer,
 			editor,
 			ui: { setFocus: vi.fn(), requestRender: vi.fn() },
+			session: { isStreaming: true },
+			setTerminalTitleState: vi.fn(),
 		};
 
 		(InteractiveMode.prototype as unknown as { hideExtensionSelector: () => void }).hideExtensionSelector.call(

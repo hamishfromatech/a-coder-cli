@@ -32,6 +32,7 @@ import { toast } from "../stores/toast-store";
 import {
 	MIC_DEVICE_STORAGE_KEY,
 	micAudioConstraints,
+	splitForSpeech,
 	startAudioMeter,
 	synthesize,
 	stopAudio,
@@ -39,6 +40,7 @@ import {
 	type MicRecorder,
 	type VoiceSettings,
 } from "./voice";
+import { huddleCall } from "./huddle-call";
 import { create } from "zustand";
 
 // ---------------------------------------------------------------------------
@@ -85,8 +87,6 @@ const BARGE_SETTLE_MS = 600;
 const METER_INTERVAL_MS = 50;
 /** Level smoothing factor for the store value (EMA). */
 const LEVEL_SMOOTHING = 0.3;
-/** Max chars per TTS sentence chunk before a hard word wrap. */
-const MAX_SENTENCE_CHARS = 280;
 
 export const DEFAULT_VOICE_CALL_SILENCE_MS = 1200;
 export const DEFAULT_VOICE_CALL_MAX_UTTERANCE_MS = 15000;
@@ -182,35 +182,6 @@ function voiceSettingsFromStore(): VoiceSettings {
 		voiceTtsModel: s.voiceTtsModel,
 		voiceTtsVoice: s.voiceTtsVoice,
 	};
-}
-
-/**
- * Split a reply into TTS-sized sentences: sentence-enders first, then hard
- * wraps over MAX_SENTENCE_CHARS on a word boundary. Empty chunks are dropped.
- */
-export function splitForSpeech(text: string): string[] {
-	const trimmed = text.trim();
-	if (!trimmed) return [];
-	const rough = trimmed.split(/(?<=[.!?。！？])\s+/);
-	const out: string[] = [];
-	for (const piece of rough) {
-		const p = piece.trim();
-		if (!p) continue;
-		if (p.length <= MAX_SENTENCE_CHARS) {
-			out.push(p);
-			continue;
-		}
-		// Hard-wrap oversized chunks on word boundaries.
-		let rest = p;
-		while (rest.length > MAX_SENTENCE_CHARS) {
-			let cut = rest.lastIndexOf(" ", MAX_SENTENCE_CHARS);
-			if (cut <= 0) cut = MAX_SENTENCE_CHARS;
-			out.push(rest.slice(0, cut).trim());
-			rest = rest.slice(cut).trim();
-		}
-		if (rest) out.push(rest);
-	}
-	return out;
 }
 
 /** Truncate a long reply for speaking, marking the elision with "…" */
@@ -350,6 +321,8 @@ class VoiceCallController {
 
 	async start(): Promise<void> {
 		if (this.active) return;
+		// One microphone, one call: a huddle call yields to the 1:1 call.
+		if (huddleCall.active) await huddleCall.stop();
 		const s = useSettingsStore.getState();
 		if (!s.voiceSttBaseUrl.trim() || !s.voiceTtsBaseUrl.trim()) {
 			toast.warning(

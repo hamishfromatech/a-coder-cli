@@ -1,9 +1,14 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import * as store from "../../src/core/office/store.ts";
-import type { Coworker, OfficeMessage } from "../../src/core/office/types.ts";
+import {
+	type Coworker,
+	type HuddleData,
+	OFFICE_MAX_LOG_MESSAGES,
+	type OfficeMessage,
+} from "../../src/core/office/types.ts";
 
 const roots: string[] = [];
 
@@ -80,6 +85,90 @@ describe("office store", () => {
 		await store.deleteHuddle("h1", root);
 		expect(await store.loadHuddleData("h1", root)).toEqual(await store.emptyHuddleData());
 		expect(await store.listHuddles(root)).toEqual([]);
+	});
+
+	it("stores the log append-only and keeps state separately", async () => {
+		const root = tempRoot();
+		const message = (id: string): OfficeMessage => ({
+			id,
+			at: 1,
+			from: { kind: "user", name: "User" },
+			text: id,
+		});
+		await store.appendHuddleMessage("h1", message("m1"), "a1", root);
+		await store.appendHuddleMessage("h1", message("m2"), undefined, root);
+
+		const logPath = join(root, "huddles-data", "h1.log.jsonl");
+		const statePath = join(root, "huddles-data", "h1.state.json");
+		expect(existsSync(logPath)).toBe(true);
+		expect(existsSync(statePath)).toBe(true);
+		expect(existsSync(join(root, "huddles-data", "h1.json"))).toBe(false);
+		const lines = readFileSync(logPath, "utf-8").trim().split("\n");
+		expect(lines).toHaveLength(2);
+		expect(JSON.parse(lines[1] ?? "{}").id).toBe("m2");
+
+		const data = await store.loadHuddleData("h1", root);
+		expect(data.log.map((m) => m.id)).toEqual(["m1", "m2"]);
+		expect(data.watermarks.a1).toBe(1);
+	});
+
+	it("migrates a legacy combined huddle file on first write", async () => {
+		const root = tempRoot();
+		mkdirSync(join(root, "huddles-data"), { recursive: true });
+		const legacy: HuddleData = {
+			epoch: 3,
+			log: [{ id: "old", at: 1, from: { kind: "user", name: "User" }, text: "old" }],
+			watermarks: { a1: 1 },
+			holds: {},
+		};
+		writeFileSync(join(root, "huddles-data", "legacy.json"), JSON.stringify(legacy), "utf-8");
+
+		const loaded = await store.loadHuddleData("legacy", root);
+		expect(loaded.epoch).toBe(3);
+		expect(loaded.log.map((m) => m.id)).toEqual(["old"]);
+
+		await store.updateHuddleData(
+			"legacy",
+			(room) => {
+				room.log.push({ id: "new", at: 2, from: { kind: "user", name: "User" }, text: "new" });
+			},
+			root,
+		);
+		const migrated = await store.loadHuddleData("legacy", root);
+		expect(migrated.epoch).toBe(3);
+		expect(migrated.log.map((m) => m.id)).toEqual(["old", "new"]);
+		expect(migrated.watermarks.a1).toBe(1);
+		const lines = readFileSync(join(root, "huddles-data", "legacy.log.jsonl"), "utf-8")
+			.trim()
+			.split("\n");
+		expect(lines).toHaveLength(2);
+	});
+
+	it("caps the huddle log and shifts read pointers", async () => {
+		const root = tempRoot();
+		const total = OFFICE_MAX_LOG_MESSAGES + 7;
+		await store.updateHuddleData(
+			"h1",
+			(room) => {
+				for (let i = 0; i < total; i += 1) {
+					room.log.push({
+						id: `m${i}`,
+						at: i,
+						from: { kind: "user", name: "User" },
+						text: `message ${i}`,
+					});
+				}
+				room.watermarks.a1 = total;
+				room.stranded = { a1: { before: total, thread: 1 } };
+			},
+			root,
+		);
+
+		const data = await store.loadHuddleData("h1", root);
+		expect(data.log).toHaveLength(OFFICE_MAX_LOG_MESSAGES);
+		expect(data.log[0]?.id).toBe("m7");
+		expect(data.watermarks.a1).toBe(OFFICE_MAX_LOG_MESSAGES);
+		expect(data.stranded?.a1.before).toBe(OFFICE_MAX_LOG_MESSAGES);
 	});
 
 	it("deleteCoworkerEverywhere removes the DM huddle and membership everywhere", async () => {

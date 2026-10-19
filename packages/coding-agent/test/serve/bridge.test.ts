@@ -293,7 +293,9 @@ describe("bridge conformance (server + engine over the wire)", () => {
 		const { port } = await startBridge();
 		const ws = await connect(port);
 		server!.broadcast(`${JSON.stringify({ type: "bridge", event: "connected", clients: 1 })}\n`);
-		const got = await collectUntil(ws, (frames) => frames.length >= 1);
+		const got = await collectUntil(ws, (frames) =>
+			frames.some((f) => (f as { event?: string }).event === "connected"),
+		);
 		const connected = got.find((f) => (f as { type?: string }).type === "bridge") as { event?: string } | undefined;
 		expect(connected?.event).toBe("connected");
 		expect(isBridgeFrame(connected)).toBe(true);

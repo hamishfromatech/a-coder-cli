@@ -1101,7 +1101,7 @@ Response `data`: the full office snapshot — `coworkers` (roster records with f
 {"type": "office_stop", "huddleId": "<id>"}
 ```
 
-`office_send` logs the user message, applies hold directives, and starts a huddle drive in the background — the response returns immediately; watch `office_huddle` events for replies. `office_stop` bumps the drive epoch and aborts in-flight turns.
+`office_send` logs the user message, applies hold directives, and starts a huddle drive in the background — the response returns immediately; watch `office_huddle_delta` events for replies (or `office_huddle` on first contact / after the log cap drops history). `office_stop` bumps the drive epoch and aborts in-flight turns.
 
 #### office_errand_save / office_errand_run / office_errand_delete
 
@@ -1180,7 +1180,8 @@ Events are streamed to stdout as JSON lines during agent operation. Events do NO
 | `extension_error` | Extension threw an error |
 | `sessions_update` | Runtime registry changed (background sessions) |
 | `office_update` | Your Office roster changed (coworkers, statuses, huddle summaries, errands, pending prompts) |
-| `office_huddle` | A huddle's log changed (new messages, drive running state) |
+| `office_huddle` | A huddle's full log (first contact, or a reset after the log cap drops old lines) |
+| `office_huddle_delta` | Messages appended to a huddle plus the live drive state; clients that have not loaded the room should ignore it and fetch `office_huddle_get` |
 | `cron_update` | Cron jobs changed (created, edited, fired) — full job list snapshot |
 | `cron_run` | A cron run started or finished (`event: "started"|"finished"`, `run: CronRun`) — feeds activity inboxes |
 | `workflows_update` | Workflow-run snapshots changed (full runs list; the desktop workflows view follows it) |

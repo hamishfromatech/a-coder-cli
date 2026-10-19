@@ -5,7 +5,8 @@
 
 import { create } from "zustand";
 import * as rpc from "../lib/rpc";
-import type { OfficeActivityItem, OfficeHuddlePayload, OfficeSnapshot } from "../lib/rpc";
+import { useOfficeReadStore } from "./office-read-store";
+import type { OfficeActivityItem, OfficeHuddleDelta, OfficeHuddlePayload, OfficeSnapshot } from "../lib/rpc";
 
 /** Ring-buffer cap for live activity feeding the floor view. */
 const ACTIVITY_LIMIT = 300;
@@ -25,6 +26,7 @@ interface OfficeState {
 	refresh: () => Promise<void>;
 	applySnapshot: (snapshot: OfficeSnapshot) => void;
 	applyHuddle: (payload: OfficeHuddlePayload) => void;
+	applyHuddleDelta: (delta: OfficeHuddleDelta) => void;
 	applyActivity: (item: OfficeActivityItem) => void;
 	openHuddle: (huddleId: string | null) => Promise<void>;
 	send: (text: string) => Promise<void>;
@@ -53,6 +55,31 @@ export const useOfficeStore = create<OfficeState>((set, get) => ({
 	applyHuddle: (payload) =>
 		set((state) => ({ huddles: { ...state.huddles, [payload.huddleId]: payload } })),
 
+	applyHuddleDelta: (delta) =>
+		set((state) => {
+			const previous = state.huddles[delta.huddleId];
+			// A delta is only meaningful once the room has been loaded (full
+			// payload or fetch); otherwise the next open fetches it.
+			if (!previous) return state;
+			const seen = new Set(previous.data.log.map((message) => message.id));
+			const messages = delta.messages.filter((message) => !seen.has(message.id));
+			return {
+				huddles: {
+					...state.huddles,
+					[delta.huddleId]: {
+						huddleId: delta.huddleId,
+						working: delta.working,
+						data: {
+							...previous.data,
+							epoch: delta.epoch,
+							running: delta.running,
+							log: [...previous.data.log, ...messages],
+						},
+					},
+				},
+			};
+		}),
+
 	applyActivity: (item) =>
 		set((state) => ({
 			activity: [...state.activity.slice(-(ACTIVITY_LIMIT - 1)), item],
@@ -61,6 +88,7 @@ export const useOfficeStore = create<OfficeState>((set, get) => ({
 	openHuddle: async (huddleId) => {
 		set({ openHuddleId: huddleId });
 		if (!huddleId) return;
+		useOfficeReadStore.getState().markRead(huddleId);
 		// Fetch if not warm; events keep it fresh afterwards.
 		if (get().huddles[huddleId]) return;
 		try {

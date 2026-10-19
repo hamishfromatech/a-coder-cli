@@ -9,6 +9,7 @@
  */
 
 import type { CSSProperties } from "react";
+import type { FloorStore } from "./store.ts";
 
 /** Face geometry — mirrors the engine's procedural avatar model. */
 export type FaceShape = "circle" | "hexagon" | "squircle" | "triangle" | "drop" | "cloud";
@@ -73,4 +74,8 @@ export interface VirtualOfficeProps {
 	theme?: "dark" | "light";
 	className?: string;
 	style?: CSSProperties;
+	/** Shared floor store. Omit to let the component own one. */
+	store?: FloorStore;
+	/** Click a coworker avatar on the floor. */
+	onCoworkerClick?: (coworkerId: string) => void;
 }

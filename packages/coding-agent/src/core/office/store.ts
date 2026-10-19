@@ -5,7 +5,9 @@
  *
  *   coworkers.json            ← Coworker[]
  *   huddles.json              ← Huddle[]
- *   huddles-data/<id>.json    ← HuddleData (log + watermarks + holds)
+ *   huddles-data/<id>.log.jsonl   ← append-only message log
+ *   huddles-data/<id>.state.json  ← epoch, watermarks, holds, running, stranded
+ *   huddles-data/<id>.json        ← legacy combined file (read fallback)
  *   errands.json              ← Errand[]
  *
  * Every writer rewrites the full file atomically (write + rename);
@@ -13,11 +15,19 @@
  * same tolerance the teams mailboxes use for concurrent writers.
  */
 
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { appendFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { getOfficeRoot } from "../../config.ts";
 import { withKeyedLock } from "../../utils/async-mutex.ts";
-import type { Coworker, Errand, Huddle, HuddleData, OfficeMessage } from "./types.ts";
+import {
+	type Coworker,
+	type Errand,
+	type Huddle,
+	type HuddleData,
+	OFFICE_MAX_LOG_MESSAGES,
+	type OfficeMessage,
+} from "./types.ts";
 
 function coworkersPath(root = getOfficeRoot()): string {
 	return join(root, "coworkers.json");
@@ -29,6 +39,14 @@ function huddlesPath(root = getOfficeRoot()): string {
 
 function huddleDataPath(huddleId: string, root = getOfficeRoot()): string {
 	return join(root, "huddles-data", `${sanitizeId(huddleId)}.json`);
+}
+
+function huddleStatePath(huddleId: string, root = getOfficeRoot()): string {
+	return join(root, "huddles-data", `${sanitizeId(huddleId)}.state.json`);
+}
+
+function huddleLogPath(huddleId: string, root = getOfficeRoot()): string {
+	return join(root, "huddles-data", `${sanitizeId(huddleId)}.log.jsonl`);
 }
 
 function errandsPath(root = getOfficeRoot()): string {
@@ -111,46 +129,139 @@ export async function deleteHuddle(id: string, root?: string): Promise<void> {
 			list.filter((h) => h.id !== id),
 		);
 	});
-	await rm(huddleDataPath(id, root), { force: true });
+	await Promise.all([
+		rm(huddleDataPath(id, root), { force: true }),
+		rm(huddleStatePath(id, root), { force: true }),
+		rm(huddleLogPath(id, root), { force: true }),
+	]);
 }
 
 export function emptyHuddleData(): HuddleData {
 	return { epoch: 0, log: [], watermarks: {}, holds: {} };
 }
 
-export async function loadHuddleData(huddleId: string, root?: string): Promise<HuddleData> {
-	const data = await readJson<HuddleData | null>(huddleDataPath(huddleId, root), null);
-	if (!data || !Array.isArray(data.log)) return emptyHuddleData();
+/** Read a JSONL message log, skipping blank or torn lines (a crash mid-append
+ *  can leave at most one malformed tail line). */
+async function readLog(path: string): Promise<OfficeMessage[]> {
+	try {
+		const content = await readFile(path, "utf-8");
+		const out: OfficeMessage[] = [];
+		for (const line of content.split("\n")) {
+			const trimmed = line.trim();
+			if (!trimmed) continue;
+			try {
+				out.push(JSON.parse(trimmed) as OfficeMessage);
+			} catch {
+				// Skip a partial line rather than losing the rest of the room.
+			}
+		}
+		return out;
+	} catch {
+		return [];
+	}
+}
+
+/** Atomically replace a JSONL log (used on first write and after trimming). */
+async function writeLog(path: string, log: OfficeMessage[]): Promise<void> {
+	await mkdir(join(path, ".."), { recursive: true });
+	const tmp = `${path}.${process.pid}.${Date.now()}.tmp`;
+	const body = log.map((message) => JSON.stringify(message)).join("\n");
+	await writeFile(tmp, log.length > 0 ? `${body}\n` : "", "utf-8");
+	await rename(tmp, path);
+}
+
+/** The state half of a HuddleData record (the log lives in the JSONL file). */
+function stateOf(data: HuddleData): Omit<HuddleData, "log"> {
 	return {
-		epoch: typeof data.epoch === "number" ? data.epoch : 0,
-		log: data.log,
-		watermarks: data.watermarks ?? {},
-		holds: data.holds ?? {},
+		epoch: data.epoch,
+		watermarks: data.watermarks,
+		holds: data.holds,
 		running: data.running,
 		stranded: data.stranded,
 	};
 }
 
-export async function saveHuddleData(huddleId: string, data: HuddleData, root?: string): Promise<void> {
-	await writeJson(huddleDataPath(huddleId, root), data);
+function normalizeData(state: Omit<HuddleData, "log"> | null, log: OfficeMessage[]): HuddleData {
+	return {
+		epoch: typeof state?.epoch === "number" ? state.epoch : 0,
+		log,
+		watermarks: state?.watermarks ?? {},
+		holds: state?.holds ?? {},
+		running: state?.running,
+		stranded: state?.stranded,
+	};
 }
 
 /**
- * Read-modify-write a huddle's data under the file lock. The mutator runs
- * synchronously on the loaded record; a thrown mutator leaves the file alone.
+ * Load a huddle. New rooms live as `<id>.state.json` + `<id>.log.jsonl`;
+ * rooms written by older builds still live in `<id>.json` and are migrated on
+ * their next write (the legacy file is left in place as a fallback).
+ */
+export async function loadHuddleData(huddleId: string, root?: string): Promise<HuddleData> {
+	const state = await readJson<Omit<HuddleData, "log"> | null>(huddleStatePath(huddleId, root), null);
+	const log = await readLog(huddleLogPath(huddleId, root));
+	if (state || log.length > 0) return normalizeData(state, log);
+
+	const legacy = await readJson<HuddleData | null>(huddleDataPath(huddleId, root), null);
+	if (!legacy || !Array.isArray(legacy.log)) return emptyHuddleData();
+	return normalizeData(legacy, legacy.log);
+}
+
+export async function saveHuddleData(huddleId: string, data: HuddleData, root?: string): Promise<void> {
+	trimHuddleLog(data);
+	await withFileLock(huddleDataPath(huddleId, root), async () => {
+		await writeLog(huddleLogPath(huddleId, root), data.log);
+		await writeJson(huddleStatePath(huddleId, root), stateOf(data));
+	});
+}
+
+/**
+ * Read-modify-write a huddle under the file lock. The mutator runs
+ * synchronously on the loaded record; a thrown mutator leaves storage alone.
+ * Appended messages go to the JSONL file; the state file is rewritten (it is
+ * small). Trimming rewrites the log once.
  */
 export async function updateHuddleData(
 	huddleId: string,
 	mutate: (data: HuddleData) => void,
 	root?: string,
 ): Promise<HuddleData> {
-	const path = huddleDataPath(huddleId, root);
-	return withFileLock(path, async () => {
+	return withFileLock(huddleDataPath(huddleId, root), async () => {
+		const statePath = huddleStatePath(huddleId, root);
+		const logPath = huddleLogPath(huddleId, root);
+		const hadState = existsSync(statePath);
 		const data = await loadHuddleData(huddleId, root);
+		const before = data.log.length;
 		mutate(data);
-		await writeJson(path, data);
+		const overflow = trimHuddleLog(data);
+
+		await mkdir(join(logPath, ".."), { recursive: true });
+		if (!hadState || overflow > 0 || !existsSync(logPath)) {
+			// First write (including legacy migration) or a trim: rewrite the log.
+			await writeLog(logPath, data.log);
+		} else if (data.log.length > before) {
+			const appended = data.log.slice(before);
+			await appendFile(logPath, `${appended.map((message) => JSON.stringify(message)).join("\n")}\n`, "utf-8");
+		}
+		await writeJson(statePath, stateOf(data));
 		return data;
 	});
+}
+
+/** Drop the oldest log lines past the cap, shifting every index-based
+ *  pointer so watermarks and stranded markers keep referring to the same
+ *  messages. Returns the number of dropped messages. */
+export function trimHuddleLog(data: HuddleData, max = OFFICE_MAX_LOG_MESSAGES): number {
+	const overflow = data.log.length - max;
+	if (overflow <= 0) return 0;
+	data.log = data.log.slice(overflow);
+	for (const key of Object.keys(data.watermarks)) {
+		data.watermarks[key] = Math.max(0, (data.watermarks[key] ?? 0) - overflow);
+	}
+	for (const marker of Object.values(data.stranded ?? {})) {
+		marker.before = Math.max(0, marker.before - overflow);
+	}
+	return overflow;
 }
 
 /** Append one message + advance the reader's watermark past it. */

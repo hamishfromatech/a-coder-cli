@@ -5,10 +5,11 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bot, Building2, CalendarClock, Loader2, Pencil, Plus, Send, Square, Users } from "lucide-react";
+import { Bot, Building2, CalendarClock, Loader2, Mic, MicOff, Pencil, PhoneCall, PhoneOff, Plus, Send, SkipForward, Square, Users } from "lucide-react";
 import { Button } from "../ui/Button";
 import { officeDeleteErrand, officeRunErrand } from "../../lib/rpc";
 import { useOfficeStore } from "../../stores/office-store";
+import { isHuddleUnread, useOfficeReadStore } from "../../stores/office-read-store";
 import { cn } from "../../lib/cn";
 import type { OfficeCoworker, OfficeHuddleSummary, OfficeMessage, OfficePrompt } from "../../lib/rpc";
 import { MarkdownTextContent } from "../markdown/MarkdownText";
@@ -17,12 +18,24 @@ import { FloorView } from "./FloorView";
 import { CoworkerEditor } from "./CoworkerEditor";
 import { HuddleEditor } from "./HuddleEditor";
 import { ErrandEditor } from "./ErrandEditor";
+import { huddleCall, useHuddleCallStore } from "../../lib/huddle-call";
+import { voiceCall } from "../../lib/voice-call";
 
 function relativeTime(ms: number | undefined): string {
 	if (!ms) return "";
 	const delta = Date.now() - ms;
 	if (delta < 60_000) return "now";
 	if (delta < 3_600_000) return `${Math.floor(delta / 60_000)}m`;
+	if (delta < 86_400_000) return `${Math.floor(delta / 3_600_000)}h`;
+	return `${Math.floor(delta / 86_400_000)}d`;
+}
+
+/** Compact time until a future epoch (errand next run). */
+function untilTime(ms: number | undefined): string {
+	if (!ms) return "";
+	const delta = ms - Date.now();
+	if (delta <= 0) return "due";
+	if (delta < 3_600_000) return `${Math.max(1, Math.floor(delta / 60_000))}m`;
 	if (delta < 86_400_000) return `${Math.floor(delta / 3_600_000)}h`;
 	return `${Math.floor(delta / 86_400_000)}d`;
 }
@@ -35,11 +48,12 @@ interface RosterRowProps {
 	face: React.ReactNode;
 	working?: boolean;
 	needsInput?: boolean;
+	unread?: boolean;
 	age?: string;
 	actions?: React.ReactNode;
 }
 
-function RosterRow({ label, sublabel, active, onClick, face, working, needsInput, age, actions }: RosterRowProps) {
+function RosterRow({ label, sublabel, active, onClick, face, working, needsInput, unread, age, actions }: RosterRowProps) {
 	return (
 		<div className="flex w-full items-center gap-0.5">
 			<div
@@ -65,6 +79,9 @@ function RosterRow({ label, sublabel, active, onClick, face, working, needsInput
 					<span className="truncate">{label}</span>
 					{needsInput && (
 						<span className="h-1.5 w-1.5 shrink-0 rounded-full bg-pi-warning" title="Waiting for you" />
+					)}
+					{unread && (
+						<span className="h-1.5 w-1.5 shrink-0 rounded-full bg-pi-accent" title="Unread messages" />
 					)}
 				</span>
 				{sublabel && (
@@ -167,6 +184,91 @@ function MessageBubble({ message, coworker }: { message: OfficeMessage; coworker
 	);
 }
 
+function HuddleCallBar({ huddleId }: { huddleId: string }) {
+	const call = useHuddleCallStore();
+	if (!call.active || call.huddleId !== huddleId) return null;
+	const phaseLabel =
+		call.phase === "connecting"
+			? "Connecting…"
+			: call.phase === "transcribing"
+				? "Transcribing…"
+				: call.phase === "thinking"
+					? "The room is thinking…"
+					: call.phase === "speaking"
+						? `${call.speakingName || "A coworker"} is speaking…`
+						: call.muted
+							? "Muted"
+							: "Listening…";
+	const tone =
+		call.phase === "speaking"
+			? "bg-pi-accent"
+			: call.phase === "listening" && !call.muted
+				? "bg-emerald-400"
+				: "bg-pi-warning";
+	return (
+		<div className="border-b border-pi-border bg-pi-surface-raised/60 px-3 py-2">
+			<div className="flex items-center gap-2">
+				<span className={cn("h-2 w-2 shrink-0 rounded-full", tone, call.phase !== "listening" && "animate-pulse")} />
+				<span className="min-w-0 flex-1 truncate text-2xs text-pi-text-secondary">
+					{phaseLabel}
+					{call.transcript && call.phase !== "listening" && (
+						<span className="text-pi-text-faint"> · “{call.transcript}”</span>
+					)}
+				</span>
+				<Button
+					variant="ghost"
+					size="icon-sm"
+					icon={call.muted ? MicOff : Mic}
+					aria-label={call.muted ? "Unmute mic" : "Mute mic"}
+					title={call.muted ? "Unmute the mic" : "Mute the mic (the room keeps talking)"}
+					onClick={() => huddleCall.toggleMute()}
+				/>
+				<Button
+					variant="ghost"
+					size="icon-sm"
+					icon={SkipForward}
+					aria-label="Skip the sentence being spoken"
+					title="Skip the sentence being spoken"
+					disabled={call.phase !== "speaking"}
+					onClick={() => huddleCall.skipSentence()}
+				/>
+				<Button
+					variant="ghost"
+					size="icon-sm"
+					icon={PhoneOff}
+					aria-label="End huddle call"
+					title="End the huddle call"
+					onClick={() => void huddleCall.stop()}
+				/>
+			</div>
+			<div className="mt-1.5 h-1 overflow-hidden rounded-full bg-pi-border/60">
+				<div
+					className="h-full rounded-full bg-pi-accent transition-[width] duration-100"
+					style={{ width: `${Math.round(call.level * 100)}%` }}
+				/>
+			</div>
+			{call.spokenTotal > 1 && (
+				<div className="mt-1 flex items-center gap-1">
+					{Array.from({ length: call.spokenTotal }, (_, i) => (
+						<span
+							key={i}
+							className={cn(
+								"h-0.5 flex-1 rounded-full",
+								i < call.spokenIndex
+									? "bg-pi-text-muted/60"
+									: i === call.spokenIndex
+										? "bg-pi-text"
+										: "bg-pi-border",
+							)}
+						/>
+					))}
+				</div>
+			)}
+			{call.error && <div className="mt-1 text-2xs text-pi-error">{call.error}</div>}
+		</div>
+	);
+}
+
 function HuddleChat({ huddleId }: { huddleId: string }) {
 	const snapshot = useOfficeStore((s) => s.snapshot);
 	const huddle = useOfficeStore((s) => s.huddles[huddleId]);
@@ -177,11 +279,15 @@ function HuddleChat({ huddleId }: { huddleId: string }) {
 	const scrollRef = useRef<HTMLDivElement | null>(null);
 
 	const log = huddle?.data.log ?? [];
+	const logLength = log.length;
 	const working = huddle?.data.running;
 	const coworkers = snapshot?.coworkers ?? [];
 	const byId = useMemo(() => new Map(coworkers.map((c) => [c.id, c])), [coworkers]);
 	const memberIds = snapshot?.huddles.find((h) => h.id === huddleId)?.members ?? [];
 	const dmTarget = memberIds.length === 1 ? byId.get(memberIds[0]) : undefined;
+	const huddleSummary = snapshot?.huddles.find((h) => h.id === huddleId);
+	const title = dmTarget ? dmTarget.name : (huddleSummary?.name ?? "Huddle");
+	const callActive = useHuddleCallStore((s) => s.active && s.huddleId === huddleId);
 	// The coworker currently generating the reply (running.current is a name).
 	const typingCoworker = working?.current ? coworkers.find((c) => c.name === working.current) : undefined;
 
@@ -189,6 +295,12 @@ function HuddleChat({ huddleId }: { huddleId: string }) {
 		const node = scrollRef.current;
 		if (node) node.scrollTop = node.scrollHeight;
 	}, [log.length, working?.current]);
+
+	// Reading the room clears its unread dot, including messages that land
+	// while the chat is open.
+	useEffect(() => {
+		useOfficeReadStore.getState().markRead(huddleId);
+	}, [huddleId, logLength]);
 
 	const submit = async () => {
 		const text = draft.trim();
@@ -209,7 +321,7 @@ function HuddleChat({ huddleId }: { huddleId: string }) {
 					← Roster
 				</Button>
 				<span className="min-w-0 flex-1 truncate text-xs font-semibold text-pi-text">
-					{dmTarget ? dmTarget.name : snapshot?.huddles.find((h) => h.id === huddleId)?.name}
+					{title}
 				</span>
 				{working && (
 					<span className="flex items-center gap-1 text-2xs text-pi-text-muted">
@@ -217,12 +329,33 @@ function HuddleChat({ huddleId }: { huddleId: string }) {
 						{working.current ? `${working.current} is working…` : "working…"}
 					</span>
 				)}
+				<Button
+					variant="ghost"
+					size="xs"
+					icon={callActive ? PhoneOff : PhoneCall}
+					title={callActive ? "End the huddle call" : "Start a voice call in this huddle"}
+					onClick={() => {
+						void (async () => {
+							if (callActive) {
+								await huddleCall.stop();
+								return;
+							}
+							// One mic at a time.
+							if (voiceCall.active) await voiceCall.stop();
+							await huddleCall.start(huddleId, title);
+						})();
+					}}
+				>
+					{callActive ? "End" : "Call"}
+				</Button>
 				{working && (
 					<Button variant="ghost" size="xs" icon={Square} onClick={() => void stop()}>
 						Stop
 					</Button>
 				)}
 			</div>
+
+			<HuddleCallBar huddleId={huddleId} />
 
 			<div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto py-2">
 				{log.length === 0 && (
@@ -319,14 +452,38 @@ export function OfficePanel() {
 	const openHuddleId = useOfficeStore((s) => s.openHuddleId);
 	const openHuddle = useOfficeStore((s) => s.openHuddle);
 	const refresh = useOfficeStore((s) => s.refresh);
+	const callHuddleId = useHuddleCallStore((s) => (s.active ? s.huddleId : null));
+	const readAt = useOfficeReadStore((s) => s.readAt);
+	const initializedAt = useOfficeReadStore((s) => s.initializedAt);
 	const [coworkerEditor, setCoworkerEditor] = useState<{ open: boolean; editing?: OfficeCoworker }>({ open: false });
 	const [huddleEditor, setHuddleEditor] = useState<{ open: boolean; editing?: OfficeHuddleSummary }>({ open: false });
 	const [errandEditor, setErrandEditor] = useState(false);
-	const [floorView, setFloorView] = useState(false);
+	const [floorView, setFloorView] = useState(() => {
+		if (typeof window === "undefined") return false;
+		try {
+			return window.localStorage.getItem("a-coder.office.floorOpen") === "1";
+		} catch {
+			return false;
+		}
+	});
+
+	const toggleFloor = (): void => {
+		setFloorView((current) => {
+			const next = !current;
+			try {
+				window.localStorage.setItem("a-coder.office.floorOpen", next ? "1" : "0");
+			} catch {
+				// Storage can be disabled; the in-memory toggle still works.
+			}
+			return next;
+		});
+	};
 
 	useEffect(() => {
-		void refresh();
-	}, [refresh]);
+		// The engine pushes office_update snapshots; only fetch when we have
+		// nothing to paint (first open after launch).
+		if (!snapshot) void refresh();
+	}, [refresh, snapshot]);
 
 	const coworkers = snapshot?.coworkers ?? [];
 	const statuses = snapshot?.statuses ?? {};
@@ -358,7 +515,7 @@ export function OfficePanel() {
 						icon={Building2}
 						aria-label="Floor view"
 						aria-pressed={floorView}
-						onClick={() => setFloorView((v) => !v)}
+						onClick={() => toggleFloor()}
 					/>
 					<Button
 						variant="ghost"
@@ -383,6 +540,8 @@ export function OfficePanel() {
 					/>
 				</div>
 			</div>
+
+			{!openHuddleId && callHuddleId && <HuddleCallBar huddleId={callHuddleId} />}
 
 			{error && (
 				<div className="px-3 py-2 text-2xs text-pi-error">
@@ -426,6 +585,7 @@ export function OfficePanel() {
 								active={openHuddleId === dmId}
 								working={status?.working}
 								needsInput={status?.needsInput}
+								unread={isHuddleUnread(summary?.lastActive, readAt, initializedAt, dmId)}
 								age={relativeTime(summary?.lastActive)}
 								face={
 									<Face
@@ -474,6 +634,7 @@ export function OfficePanel() {
 							.filter(Boolean)
 							.join(", ")}
 						active={openHuddleId === huddle.id}
+						unread={isHuddleUnread(huddle.lastActive, readAt, initializedAt, huddle.id)}
 						age={relativeTime(huddle.lastActive)}
 						face={
 							<span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full bg-pi-surface-raised">
@@ -525,6 +686,7 @@ export function OfficePanel() {
 									{owner ? ` · @${owner.handle}` : ""}
 									{errand.lastStatus === "error" ? " · failed" : ""}
 									{errand.lastStatus === "timeout" ? " · timed out" : ""}
+									{errand.enabled && errand.nextRunAt ? ` · next in ${untilTime(errand.nextRunAt)}` : ""}
 								</div>
 							</div>
 							<Button
@@ -532,7 +694,7 @@ export function OfficePanel() {
 								size="xs"
 								icon={Bot}
 								aria-label="Run now"
-									onClick={() => void officeRunErrand(errand.id)}
+								onClick={() => void officeRunErrand(errand.id).catch(() => {})}
 							/>
 								<Button
 									variant="ghost"

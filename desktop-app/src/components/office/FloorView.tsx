@@ -18,7 +18,9 @@ import { OfficeView, type OfficeRoomMessage, type VirtualOfficeFeed } from "../.
 import { useSettingsStore } from "../../stores/settings-store";
 
 function toRoomMessages(log: OfficeMessage[]): OfficeRoomMessage[] {
-	return log.map((entry) => ({
+	// Links only live for a minute; the tail is all the floor needs, and long
+	// huddles should not be re-mapped on every payload push.
+	return log.slice(-200).map((entry) => ({
 		id: entry.id,
 		at: entry.at,
 		kind: entry.from.kind,
@@ -66,6 +68,7 @@ export function FloorView() {
 	const activity = useOfficeStore((s) => s.activity);
 	const openHuddleId = useOfficeStore((s) => s.openHuddleId);
 	const huddles = useOfficeStore((s) => s.huddles);
+	const openHuddle = useOfficeStore((s) => s.openHuddle);
 	const theme = useSettingsStore((s) => s.theme);
 
 	const shown = useMemo<ShownRoom | undefined>(() => {
@@ -93,6 +96,7 @@ export function FloorView() {
 				theme={resolveFloorTheme(theme)}
 				className="min-h-0 w-full flex-1"
 				style={{ display: "flex" }}
+				onCoworkerClick={(coworkerId) => void openHuddle(`dm:${coworkerId}`)}
 			/>
 		</div>
 	);

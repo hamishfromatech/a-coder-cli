@@ -6,8 +6,11 @@
  * a tiled entry corridor with a welcome mat, and north windows that cast
  * light shafts across the floor. Curved collaboration links with glow and
  * flowing dashes, walk-animated coworker avatars with status rings, thinking
- * dots, tool chips, and speech bubbles. Pure derivation from the feed; motion
- * lives in the store's rAF.
+ * dots, tool chips, and speech bubbles.
+ *
+ * The static shell and furniture are memoized on the theme (and the small set
+ * of props that actually change), so a walk tick only reconciles the dynamic
+ * layers: links, avatars, the wall clock, and the room banner.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -32,7 +35,7 @@ import {
 } from "./furniture2d.tsx";
 import { DESK_SLOTS, MEETING_TABLES, SEATS_PER_TABLE, meetingSeat } from "./geometry.ts";
 import { SCENE_STYLES, THEMES, type Palette } from "./palette.ts";
-import { createFloorStore, useFloor } from "./store.ts";
+import { type FloorStore, createFloorStore, useFloor } from "./store.ts";
 import type { VirtualOfficeProps } from "./types.ts";
 
 function wrapText(text: string, maxChars: number, maxLines: number): string[] {
@@ -113,7 +116,9 @@ function SpeechBubbleTag({
 }
 
 /** Curved collaboration link: quadratic bezier with a perpendicular offset,
- *  a soft glow underlayer, and a flowing dash. Strength fades with age. */
+ *  a soft underlayer, and a flowing dash. Strength fades with age. The glow
+ *  is a wider stroke rather than a blur filter — same softness, no offscreen
+ *  buffer per link. */
 function Link({
 	x1,
 	y1,
@@ -142,7 +147,7 @@ function Link({
 	const opacity = Math.max(0.16, strength * 0.8);
 	return (
 		<g>
-			<path d={d} fill="none" stroke={theme.link} strokeWidth={width + 2} opacity={strength * 0.14} style={{ filter: "blur(2px)" }} />
+			<path d={d} fill="none" stroke={theme.link} strokeWidth={width + 3.6} opacity={strength * 0.09} strokeLinecap="round" />
 			<path
 				d={d}
 				fill="none"
@@ -158,17 +163,79 @@ function Link({
 	);
 }
 
-export function VirtualOffice({ feed, theme: themeName = "dark", className, style }: VirtualOfficeProps) {
-	const storeRef = useRef<ReturnType<typeof createFloorStore> | null>(null);
-	if (storeRef.current === null) {
-		storeRef.current = createFloorStore();
+/** Theme-scoped SVG definitions. Rebuilt only when the palette changes. */
+function SceneDefs({ theme, themeName }: { theme: Palette; themeName: "dark" | "light" }) {
+	return (
+		<defs>
+			{/* desk-zone planks */}
+			<pattern id="vo-planks" width="12" height="5" patternUnits="userSpaceOnUse">
+				<rect width="12" height="5" fill={theme.zoneDesk} />
+				<line x1="0" y1="0" x2="12" y2="0" stroke={theme.grid} strokeWidth="0.3" opacity="0.5" />
+				<line x1="6" y1="0" x2="6" y2="5" stroke={theme.grid} strokeWidth="0.25" opacity="0.3" />
+			</pattern>
+			{/* meeting-zone carpet */}
+			<pattern id="vo-carpet" width="4" height="4" patternUnits="userSpaceOnUse">
+				<rect width="4" height="4" fill={theme.zoneMeeting} />
+				<circle cx="2" cy="2" r="0.35" fill={theme.grid} />
+			</pattern>
+			{/* corridor tiles */}
+			<pattern id="vo-tiles" width="5" height="5" patternUnits="userSpaceOnUse">
+				<rect width="5" height="5" fill={theme.corridor} />
+				<rect x="0.4" y="0.4" width="4.2" height="4.2" fill="none" stroke={theme.grid} strokeWidth="0.25" opacity="0.6" />
+			</pattern>
+			{/* lounge rug weave */}
+			<pattern id="vo-weave" width="3.2" height="3.2" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+				<rect width="3.2" height="3.2" fill={theme.zoneLounge} />
+				<line x1="0" y1="0" x2="0" y2="3.2" stroke={theme.grid} strokeWidth="0.3" opacity="0.5" />
+			</pattern>
+			{/* ceiling light pool */}
+			<radialGradient id="vo-pool" cx="50%" cy="50%" r="50%">
+				<stop offset="0%" stopColor={theme.lightPool} stopOpacity={0.16} />
+				<stop offset="70%" stopColor={theme.lightPool} stopOpacity={0.05} />
+				<stop offset="100%" stopColor={theme.lightPool} stopOpacity={0} />
+			</radialGradient>
+			{/* window light shaft */}
+			<linearGradient id="vo-shaft" x1="0" y1="0" x2="0" y2="1">
+				<stop offset="0%" stopColor={theme.shaft} stopOpacity={0.13} />
+				<stop offset="100%" stopColor={theme.shaft} stopOpacity={0} />
+			</linearGradient>
+			{/* scene vignette */}
+			<radialGradient id="vo-vignette" cx="50%" cy="42%" r="75%">
+				<stop offset="62%" stopColor="#000" stopOpacity={0} />
+				<stop offset="100%" stopColor="#000" stopOpacity={themeName === "dark" ? 0.34 : 0.14} />
+			</radialGradient>
+			<filter id="vo-soft" x="-20%" y="-20%" width="140%" height="140%">
+				<feGaussianBlur stdDeviation="0.5" />
+			</filter>
+		</defs>
+	);
+}
+
+export function VirtualOffice({
+	feed,
+	theme: themeName = "dark",
+	className,
+	style,
+	store: sharedStore,
+	onCoworkerClick,
+}: VirtualOfficeProps) {
+	const ownedStore = useRef<FloorStore | null>(null);
+	if (!sharedStore && ownedStore.current === null) {
+		ownedStore.current = createFloorStore();
 	}
-	const floor = useFloor(storeRef.current);
+	const store = sharedStore ?? (ownedStore.current as FloorStore);
+	useEffect(() => {
+		if (sharedStore) return;
+		const owned = ownedStore.current;
+		return () => owned?.dispose();
+	}, [sharedStore]);
+
+	const floor = useFloor(store);
 	const [now, setNow] = useState(() => Date.now());
 
 	useEffect(() => {
-		storeRef.current?.getState().applyFeed(feed);
-	}, [feed]);
+		store.getState().applyFeed(feed);
+	}, [feed, store]);
 
 	useEffect(() => {
 		const timer = setInterval(() => setNow(Date.now()), 1000);
@@ -178,115 +245,95 @@ export function VirtualOffice({ feed, theme: themeName = "dark", className, styl
 	const byId = useMemo(() => new Map(floor.coworkers.map((c) => [c.id, c])), [floor.coworkers]);
 	const theme = THEMES[themeName];
 	const roomLabel = feed.roomRunning ? feed.roomName : undefined;
-	const activeTable = feed.roomRunning ? Math.floor((feed.roomMembers.length - 1) / 3) % MEETING_TABLES.length : -1;
+	const activeTable = feed.roomRunning
+		? Math.floor((feed.roomMembers.length - 1) / 3) % MEETING_TABLES.length
+		: -1;
 	const wallNow = useMemo(() => new Date(now), [now]);
 
-	return (
-		<svg
-			viewBox="0 -28 160 128"
-			className={className}
-			style={style}
-			role="img"
-			aria-label="Virtual office floor"
-		>
-			<defs>
-				{/* desk-zone planks */}
-				<pattern id="vo-planks" width="12" height="5" patternUnits="userSpaceOnUse">
-					<rect width="12" height="5" fill={theme.zoneDesk} />
-					<line x1="0" y1="0" x2="12" y2="0" stroke={theme.grid} strokeWidth="0.3" opacity="0.5" />
-					<line x1="6" y1="0" x2="6" y2="5" stroke={theme.grid} strokeWidth="0.25" opacity="0.3" />
-				</pattern>
-				{/* meeting-zone carpet */}
-				<pattern id="vo-carpet" width="4" height="4" patternUnits="userSpaceOnUse">
-					<rect width="4" height="4" fill={theme.zoneMeeting} />
-					<circle cx="2" cy="2" r="0.35" fill={theme.grid} />
-				</pattern>
-				{/* corridor tiles */}
-				<pattern id="vo-tiles" width="5" height="5" patternUnits="userSpaceOnUse">
-					<rect width="5" height="5" fill={theme.corridor} />
-					<rect x="0.4" y="0.4" width="4.2" height="4.2" fill="none" stroke={theme.grid} strokeWidth="0.25" opacity="0.6" />
-				</pattern>
-				{/* lounge rug weave */}
-				<pattern id="vo-weave" width="3.2" height="3.2" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-					<rect width="3.2" height="3.2" fill={theme.zoneLounge} />
-					<line x1="0" y1="0" x2="0" y2="3.2" stroke={theme.grid} strokeWidth="0.3" opacity="0.5" />
-				</pattern>
-				{/* ceiling light pool */}
-				<radialGradient id="vo-pool" cx="50%" cy="50%" r="50%">
-					<stop offset="0%" stopColor={theme.lightPool} stopOpacity={0.16} />
-					<stop offset="70%" stopColor={theme.lightPool} stopOpacity={0.05} />
-					<stop offset="100%" stopColor={theme.lightPool} stopOpacity={0} />
-				</radialGradient>
-				{/* window light shaft */}
-				<linearGradient id="vo-shaft" x1="0" y1="0" x2="0" y2="1">
-					<stop offset="0%" stopColor={theme.shaft} stopOpacity={0.13} />
-					<stop offset="100%" stopColor={theme.shaft} stopOpacity={0} />
-				</linearGradient>
-				{/* scene vignette */}
-				<radialGradient id="vo-vignette" cx="50%" cy="42%" r="75%">
-					<stop offset="62%" stopColor="#000" stopOpacity={0} />
-					<stop offset="100%" stopColor="#000" stopOpacity={themeName === "dark" ? 0.34 : 0.14} />
-				</radialGradient>
-				<filter id="vo-soft" x="-20%" y="-20%" width="140%" height="140%">
-					<feGaussianBlur stdDeviation="0.5" />
-				</filter>
-			</defs>
+	const defs = useMemo(() => <SceneDefs theme={theme} themeName={themeName} />, [theme, themeName]);
+	const shell = useMemo(
+		() => (
+			<>
+				{/* building shell */}
+				<rect x={-4} y={-28} width={168} height={136} fill={theme.wallDeep} />
+				<rect x={-4} y={-28} width={168} height={136} fill="url(#vo-vignette)" opacity={0.5} />
+				{/* slab with drop shadow */}
+				<rect x={2.6} y={2.6} width={156.8} height={96.8} rx={3} fill="#000" opacity={0.35} />
+				<rect x={1.6} y={1.6} width={156.8} height={96.8} rx={2.5} fill={theme.floor} stroke={theme.floorEdge} strokeWidth={0.6} />
+				<rect x={1.6} y={1.6} width={156.8} height={96.8} rx={2.5} fill={theme.floorGlow} />
 
-			<style>{SCENE_STYLES}</style>
+				{/* zone floors */}
+				<rect x={9} y={8} width={72} height={68} fill="url(#vo-planks)" rx={1.5} />
+				<rect x={9} y={8} width={72} height={68} fill="none" stroke={theme.zoneDeskEdge} strokeWidth={0.35} opacity={0.8} rx={1.5} />
+				<rect x={9} y={8} width={72} height={1.1} fill={theme.wallEdge} opacity={0.18} rx={0.55} />
+				<rect x={88} y={6} width={66} height={58} fill="url(#vo-carpet)" rx={2} />
+				<rect x={88} y={6} width={66} height={58} fill="none" stroke={theme.zoneMeetingEdge} strokeWidth={0.35} opacity={0.8} rx={2} />
+				<rect x={88} y={6} width={66} height={1.1} fill={theme.wallEdge} opacity={0.18} rx={0.55} />
+				<rect x={88} y={66} width={66} height={28} fill="url(#vo-weave)" rx={2} />
+				<rect x={88} y={66} width={66} height={28} fill="none" stroke={theme.zoneLoungeEdge} strokeWidth={0.35} opacity={0.8} rx={2} />
+				{/* corridor: full-width tiled band + entry alcove */}
+				<rect x={1.6} y={78} width={156.8} height={20.4} fill="url(#vo-tiles)" rx={2.5} />
+				<line x1={1.6} y1={78} x2={158.4} y2={78} stroke={theme.baseboard} strokeWidth={0.5} opacity={0.55} />
+				<rect x={4} y={79} width={22} height={17.4} fill="url(#vo-tiles)" rx={1} />
 
-			{/* building shell */}
-			<rect x={-4} y={-28} width={168} height={136} fill={theme.wallDeep} />
-			<rect x={-4} y={-28} width={168} height={136} fill="url(#vo-vignette)" opacity={0.5} />
-			{/* slab with drop shadow */}
-			<rect x={2.6} y={2.6} width={156.8} height={96.8} rx={3} fill="#000" opacity={0.35} />
-			<rect x={1.6} y={1.6} width={156.8} height={96.8} rx={2.5} fill={theme.floor} stroke={theme.floorEdge} strokeWidth={0.6} />
-			<rect x={1.6} y={1.6} width={156.8} height={96.8} rx={2.5} fill={theme.floorGlow} />
+				{/* zone labels */}
+				<text x={17} y={13.1} fontSize={2.7} fontWeight={700} letterSpacing={0.7} fill={theme.labelMuted} opacity={0.85} fontFamily="system-ui, sans-serif">
+					WORKSTATIONS
+				</text>
+				<text x={151} y={61.2} textAnchor="end" fontSize={2.7} fontWeight={700} letterSpacing={0.7} fill={theme.labelMuted} opacity={0.85} fontFamily="system-ui, sans-serif">
+					MEETING PODS
+				</text>
+				<text x={151} y={69.6} textAnchor="end" fontSize={2.7} fontWeight={700} letterSpacing={0.7} fill={theme.labelMuted} opacity={0.85} fontFamily="system-ui, sans-serif">
+					LOUNGE
+				</text>
 
-			{/* zone floors */}
-			<rect x={9} y={8} width={72} height={68} fill="url(#vo-planks)" rx={1.5} />
-			<rect x={9} y={8} width={72} height={68} fill="none" stroke={theme.zoneDeskEdge} strokeWidth={0.35} opacity={0.8} rx={1.5} />
-			<rect x={9} y={8} width={72} height={1.1} fill={theme.wallEdge} opacity={0.18} rx={0.55} />
-			<rect x={88} y={6} width={66} height={58} fill="url(#vo-carpet)" rx={2} />
-			<rect x={88} y={6} width={66} height={58} fill="none" stroke={theme.zoneMeetingEdge} strokeWidth={0.35} opacity={0.8} rx={2} />
-			<rect x={88} y={6} width={66} height={1.1} fill={theme.wallEdge} opacity={0.18} rx={0.55} />
-			<rect x={88} y={66} width={66} height={28} fill="url(#vo-weave)" rx={2} />
-			<rect x={88} y={66} width={66} height={28} fill="none" stroke={theme.zoneLoungeEdge} strokeWidth={0.35} opacity={0.8} rx={2} />
-			{/* corridor: full-width tiled band + entry alcove */}
-			<rect x={1.6} y={78} width={156.8} height={20.4} fill="url(#vo-tiles)" rx={2.5} />
-			<line x1={1.6} y1={78} x2={158.4} y2={78} stroke={theme.baseboard} strokeWidth={0.5} opacity={0.55} />
-			<rect x={4} y={79} width={22} height={17.4} fill="url(#vo-tiles)" rx={1} />
+				{/* north wall: windows + light shafts */}
+				<Window x={30} y={-6.4} theme={theme} withShaft />
+				<Window x={76} y={-6.4} theme={theme} withShaft />
+				<Window x={106} y={-6.4} theme={theme} w={10} />
+				<WallArt x={140} y={-1} theme={theme} variant={0} />
+				<WallArt x={148.6} y={-1} theme={theme} variant={1} />
 
-			{/* zone labels */}
-			<text x={17} y={13.1} fontSize={2.7} fontWeight={700} letterSpacing={0.7} fill={theme.labelMuted} opacity={0.85} fontFamily="system-ui, sans-serif">
-				WORKSTATIONS
-			</text>
-			<text x={151} y={61.2} textAnchor="end" fontSize={2.7} fontWeight={700} letterSpacing={0.7} fill={theme.labelMuted} opacity={0.85} fontFamily="system-ui, sans-serif">
-				MEETING PODS
-			</text>
-			<text x={151} y={69.6} textAnchor="end" fontSize={2.7} fontWeight={700} letterSpacing={0.7} fill={theme.labelMuted} opacity={0.85} fontFamily="system-ui, sans-serif">
-				LOUNGE
-			</text>
+				{/* ceiling light pools over the zones */}
+				<ellipse cx={44} cy={30} rx={26} ry={20} fill="url(#vo-pool)" />
+				<ellipse cx={121} cy={34} rx={24} ry={19} fill="url(#vo-pool)" />
+				<ellipse cx={121} cy={80} rx={22} ry={12} fill="url(#vo-pool)" />
 
-			{/* north wall: windows + light shafts */}
-			<Window x={30} y={-6.4} theme={theme} withShaft />
-			<Window x={76} y={-6.4} theme={theme} withShaft />
-			<Window x={106} y={-6.4} theme={theme} w={10} />
-			<WallClock x={57} y={-1.8} theme={theme} now={wallNow} />
-			<WallArt x={140} y={-1} theme={theme} variant={0} />
-			<WallArt x={148.6} y={-1} theme={theme} variant={1} />
+				{/* whiteboard in the meeting area */}
+				<Whiteboard x={97} y={12} theme={theme} />
 
-			{/* ceiling light pools over the zones */}
-			<ellipse cx={44} cy={30} rx={26} ry={20} fill="url(#vo-pool)" />
-			<ellipse cx={121} cy={34} rx={24} ry={19} fill="url(#vo-pool)" />
-			<ellipse cx={121} cy={80} rx={22} ry={12} fill="url(#vo-pool)" />
+				{/* lounge: rug, sofa, coffee table, lamp, plants */}
+				<Rug x={122} y={83.4} theme={theme} r={11.5} />
+				<FloorLamp x={108.4} y={78.6} theme={theme} />
+				<Sofa x={126} y={85.4} theme={theme} />
+				<CoffeeTable x={124} y={92.6} theme={theme} />
+				<Plant x={146} y={90} theme={theme} size={1.1} variant={1} />
+				<Plant x={99} y={88} theme={theme} size={1.2} variant={2} />
 
-			{/* whiteboard in the meeting area */}
-			<Whiteboard x={97} y={12} theme={theme} />
+				{/* greenery + coffee bar + shelf */}
+				<Plant x={10.6} y={13.4} theme={theme} variant={1} />
+				<Plant x={78} y={12.5} theme={theme} size={0.85} variant={2} />
+				<Plant x={88} y={60} theme={theme} />
+				<Plant x={152} y={10.6} theme={theme} size={0.9} variant={1} />
+				<CoffeeMachine x={68} y={82} theme={theme} />
+				<Bookshelf x={150} y={42} theme={theme} />
 
-			{/* desks + chairs (empty slots stay made-up) */}
-			{DESK_SLOTS.map((slot, i) => {
-				const owner = floor.coworkers.find((c) => c.deskIndex === i);
-				const working = owner?.status === "tool_calling" || owner?.status === "thinking";
+				{/* entrance */}
+				<Entrance x={17} y={84.4} theme={theme} />
+			</>
+		),
+		[theme, themeName],
+	);
+
+	// Only status changes should rebuild the desks; motion ticks must not.
+	const workingMask = DESK_SLOTS.map((_, index) => {
+		const owner = floor.coworkers.find((c) => c.deskIndex === index);
+		return owner?.status === "tool_calling" || owner?.status === "thinking" ? "1" : "0";
+	}).join("");
+	const desks = useMemo(
+		() =>
+			DESK_SLOTS.map((slot, i) => {
+				const working = workingMask[i] === "1";
 				const flip = slot.x > 53;
 				return (
 					<g key={`desk-${i}`}>
@@ -294,10 +341,13 @@ export function VirtualOffice({ feed, theme: themeName = "dark", className, styl
 						<Desk x={slot.x} y={slot.y + 6.4} theme={theme} on={working} flip={flip} />
 					</g>
 				);
-			})}
+			}),
+		[theme, workingMask],
+	);
 
-			{/* meeting pods with hanging pendants */}
-			{MEETING_TABLES.map((table, i) => (
+	const meetingPods = useMemo(
+		() =>
+			MEETING_TABLES.map((table, i) => (
 				<g key={`table-${i}`}>
 					<Pendant x={table.x} y={table.y - 9.4} theme={theme} on={i === activeTable && feed.roomRunning} />
 					{Array.from({ length: SEATS_PER_TABLE }, (_, seat) => {
@@ -307,26 +357,29 @@ export function VirtualOffice({ feed, theme: themeName = "dark", className, styl
 					})}
 					<MeetingTable x={table.x} y={table.y} theme={theme} active={i === activeTable && feed.roomRunning} />
 				</g>
-			))}
+			)),
+		[theme, activeTable, feed.roomRunning],
+	);
 
-			{/* lounge: rug, sofa, coffee table, lamp, plants */}
-			<Rug x={122} y={83.4} theme={theme} r={11.5} />
-			<FloorLamp x={108.4} y={78.6} theme={theme} />
-			<Sofa x={126} y={85.4} theme={theme} />
-			<CoffeeTable x={124} y={92.6} theme={theme} />
-			<Plant x={146} y={90} theme={theme} size={1.1} variant={1} />
-			<Plant x={99} y={88} theme={theme} size={1.2} variant={2} />
+	const interactive = Boolean(onCoworkerClick);
+	return (
+		<svg
+			width="100%"
+			height="100%"
+			viewBox="0 -28 160 128"
+			preserveAspectRatio="xMidYMid meet"
+			className={className}
+			style={style}
+			role={interactive ? "group" : "img"}
+			aria-label="Virtual office floor"
+		>
+			{defs}
+			<style>{SCENE_STYLES}</style>
+			{shell}
 
-			{/* greenery + coffee bar + shelf */}
-			<Plant x={10.6} y={13.4} theme={theme} variant={1} />
-			<Plant x={78} y={12.5} theme={theme} size={0.85} variant={2} />
-			<Plant x={88} y={60} theme={theme} />
-			<Plant x={152} y={10.6} theme={theme} size={0.9} variant={1} />
-			<CoffeeMachine x={68} y={82} theme={theme} />
-			<Bookshelf x={150} y={42} theme={theme} />
-
-			{/* entrance */}
-			<Entrance x={17} y={84.4} theme={theme} />
+			<WallClock x={57} y={-1.8} theme={theme} now={wallNow} />
+			{desks}
+			{meetingPods}
 
 			{/* collaboration links */}
 			{floor.links.map((link) => {
@@ -350,7 +403,26 @@ export function VirtualOffice({ feed, theme: themeName = "dark", className, styl
 
 			{/* coworkers */}
 			{floor.coworkers.map((visual) => (
-				<g key={visual.id} transform={`translate(${visual.pos.x}, ${visual.pos.y})`}>
+				<g
+					key={visual.id}
+					transform={`translate(${visual.pos.x}, ${visual.pos.y})`}
+					onClick={onCoworkerClick ? () => onCoworkerClick(visual.id) : undefined}
+					onKeyDown={
+						onCoworkerClick
+							? (event) => {
+									if (event.key === "Enter" || event.key === " ") {
+										event.preventDefault();
+										onCoworkerClick(visual.id);
+									}
+								}
+							: undefined
+					}
+					role={onCoworkerClick ? "button" : undefined}
+					tabIndex={onCoworkerClick ? 0 : undefined}
+					aria-label={onCoworkerClick ? `Message ${visual.name}` : undefined}
+					style={onCoworkerClick ? { cursor: "pointer" } : undefined}
+				>
+					{onCoworkerClick && <title>{`${visual.name} — click to message`}</title>}
 					<CoworkerAvatar visual={visual} now={now} theme={theme} />
 					{visual.bubble && visual.bubble.until > now && (
 						<SpeechBubbleTag

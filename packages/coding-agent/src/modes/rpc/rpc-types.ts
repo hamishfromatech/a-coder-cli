@@ -19,6 +19,7 @@ import type {
 	ErrandSchedule,
 	Face,
 	OfficeActivityEvent,
+	OfficeHuddleDelta,
 	OfficeHuddlePayload,
 	OfficeSnapshot,
 } from "../../core/office/types.ts";
@@ -165,6 +166,8 @@ export interface OfficeRpcCoworkerInput {
 	keepSoul?: boolean;
 	face?: Partial<Face>;
 	model?: string;
+	/** TTS voice id for huddle calls; clears when omitted. */
+	voice?: string;
 	autonomy?: Coworker["autonomy"];
 }
 
@@ -596,6 +599,13 @@ export interface RpcOfficeUpdateEvent {
 export interface RpcOfficeHuddleEvent {
 	type: "office_huddle";
 	payload: OfficeHuddlePayload;
+}
+
+/** Appended messages + live drive state for a huddle. Clients that have not
+ *  loaded the room yet should ignore this and fetch `office_huddle_get`. */
+export interface RpcOfficeHuddleDeltaEvent {
+	type: "office_huddle_delta";
+	delta: OfficeHuddleDelta;
 }
 
 /** Live coworker activity (turn lifecycle, tool calls, completed speech). */

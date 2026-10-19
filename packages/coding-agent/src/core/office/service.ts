@@ -65,6 +65,7 @@ import {
 	type OfficeActivityEvent,
 	type OfficeAttachment,
 	type OfficeEventSink,
+	type OfficeHuddleDelta,
 	type OfficeHuddlePayload,
 	type OfficeMessage,
 	type OfficePrompt,
@@ -125,6 +126,7 @@ export interface CreateCoworkerInput {
 	soul?: string;
 	face?: Partial<Face>;
 	model?: string;
+	voice?: string;
 	autonomy?: Coworker["autonomy"];
 }
 
@@ -166,6 +168,13 @@ export class OfficeService {
 	private pendingPrompts = new Map<string, PendingPrompt>();
 	/** Live coworker statuses (working / needsInput). */
 	private statuses = new Map<string, CoworkerStatus>();
+	/** Last-known huddle preview/activity, so snapshots do not re-read every
+	 *  huddle log file on each status change. */
+	private summaryCache = new Map<string, { preview?: string; lastActive?: number }>();
+	/** Errands with a run in flight (the 30s ticker must not double-fire). */
+	private activeErrands = new Set<string>();
+	/** Last log position pushed per huddle, for append deltas. */
+	private huddlePushState = new Map<string, { count: number; firstId?: string }>();
 	/** Activity unsubscriptions per session key. */
 	private activityUnsubs = new Map<string, () => void>();
 	private ticker: ReturnType<typeof setInterval> | undefined;
@@ -205,6 +214,9 @@ export class OfficeService {
 			unsub();
 		}
 		this.activityUnsubs.clear();
+		this.summaryCache.clear();
+		this.activeErrands.clear();
+		this.huddlePushState.clear();
 		const aborts: Promise<void>[] = [];
 		for (const session of this.sessions.values()) {
 			if (session.isStreaming) {
@@ -230,7 +242,19 @@ export class OfficeService {
 		}
 		const summaries: HuddleSummary[] = [];
 		for (const huddle of huddles) {
-			summaries.push(await this.summarizeHuddle(huddle));
+			const cached = this.summaryCache.get(huddle.id);
+			if (cached) {
+				summaries.push({
+					id: huddle.id,
+					name: huddle.name,
+					members: huddle.members,
+					pinned: huddle.pinned,
+					preview: cached.preview,
+					lastActive: cached.lastActive,
+				});
+			} else {
+				summaries.push(await this.summarizeHuddle(huddle));
+			}
 		}
 		return {
 			coworkers,
@@ -245,13 +269,16 @@ export class OfficeService {
 		try {
 			const data = await store.loadHuddleData(huddle.id);
 			const last = data.log[data.log.length - 1];
+			const preview = last?.text.slice(0, 120);
+			const lastActive = last?.at;
+			this.summaryCache.set(huddle.id, { preview, lastActive });
 			return {
 				id: huddle.id,
 				name: huddle.name,
 				members: huddle.members,
 				pinned: huddle.pinned,
-				preview: last?.text.slice(0, 120),
-				lastActive: last?.at,
+				preview,
+				lastActive,
 			};
 		} catch {
 			return { id: huddle.id, name: huddle.name, members: huddle.members, pinned: huddle.pinned };
@@ -266,14 +293,39 @@ export class OfficeService {
 		}
 	}
 
-	private async emitHuddle(huddleId: string, data?: HuddleData): Promise<void> {
+	private async emitHuddle(huddleId: string, data?: HuddleData, options?: { full?: boolean }): Promise<void> {
 		try {
 			const huddleData = data ?? (await store.loadHuddleData(huddleId));
+			const last = huddleData.log[huddleData.log.length - 1];
+			this.summaryCache.set(huddleId, {
+				preview: last?.text.slice(0, 120),
+				lastActive: last?.at,
+			});
 			const working: Record<string, boolean> = {};
 			for (const [id, status] of this.statuses) {
 				working[id] = status.working;
 			}
-			this.sink.huddle({ huddleId, data: huddleData, working });
+
+			// Full payload on first contact, an explicit reset, or when the log
+			// cap dropped lines (the first id changes). Otherwise send only the
+			// messages appended since the last push plus the live drive state.
+			const pushed = this.huddlePushState.get(huddleId);
+			const firstId = huddleData.log[0]?.id;
+			const reset =
+				options?.full === true || !pushed || pushed.firstId !== firstId || huddleData.log.length < pushed.count;
+			if (reset || !this.sink.delta) {
+				this.sink.huddle({ huddleId, data: huddleData, working });
+			} else {
+				const delta: OfficeHuddleDelta = {
+					huddleId,
+					epoch: huddleData.epoch,
+					messages: huddleData.log.slice(pushed.count),
+					running: huddleData.running,
+					working,
+				};
+				this.sink.delta(delta);
+			}
+			this.huddlePushState.set(huddleId, { count: huddleData.log.length, firstId });
 		} catch {
 			// ignore
 		}
@@ -309,6 +361,7 @@ export class OfficeService {
 				image: input.face?.image,
 			},
 			model: input.model?.trim() || undefined,
+			voice: input.voice?.trim() || undefined,
 			autonomy: input.autonomy ?? "supervised",
 			createdAt: Date.now(),
 			sessions: {},
@@ -344,6 +397,7 @@ export class OfficeService {
 			title: input.title?.trim() || undefined,
 			description: input.description?.trim() || undefined,
 			model: input.model?.trim() || undefined,
+			voice: input.voice?.trim() || undefined,
 			autonomy: input.autonomy ?? existing.autonomy,
 			face: {
 				shape: input.face?.shape ?? existing.face.shape,
@@ -369,6 +423,8 @@ export class OfficeService {
 
 	async deleteCoworker(id: string): Promise<void> {
 		await store.deleteCoworkerEverywhere(id, dmHuddleId(id));
+		this.summaryCache.delete(dmHuddleId(id));
+		this.huddlePushState.delete(dmHuddleId(id));
 		// Drop the side runtime if live.
 		for (const [key, session] of this.sessions) {
 			if (key.startsWith(`${id}::`)) {
@@ -411,6 +467,8 @@ export class OfficeService {
 		await store.deleteHuddle(id);
 		this.driveChains.delete(id);
 		this.driveCounts.delete(id);
+		this.summaryCache.delete(id);
+		this.huddlePushState.delete(id);
 		this.clearStrandedTimer(id);
 		await this.emitUpdate();
 	}
@@ -875,6 +933,7 @@ export class OfficeService {
 					this.armIdleTimer(key);
 					return;
 				}
+				this.detachActivity(key);
 				session.dispose();
 				this.sessions.delete(key);
 			}, this.idleTimeoutMs),
@@ -1192,6 +1251,7 @@ export class OfficeService {
 		const now = Date.now();
 		for (const errand of errands) {
 			if (!isDue(errand, now)) continue;
+			if (this.activeErrands.has(errand.id)) continue;
 			try {
 				await this.fireErrand(errand);
 			} catch (error) {
@@ -1210,58 +1270,65 @@ export class OfficeService {
 	async runErrandNow(id: string): Promise<void> {
 		const errand = (await store.listErrands()).find((e) => e.id === id);
 		if (!errand) throw new Error("Errand not found");
+		if (this.activeErrands.has(id)) throw new Error("Errand is already running");
 		await this.fireErrand(errand);
 	}
 
 	private async fireErrand(errand: Errand): Promise<void> {
-		const coworker = (await store.listCoworkers()).find((c) => c.id === errand.coworkerId);
-		if (!coworker) {
+		if (this.activeErrands.has(errand.id)) return;
+		this.activeErrands.add(errand.id);
+		try {
+			const coworker = (await store.listCoworkers()).find((c) => c.id === errand.coworkerId);
+			if (!coworker) {
+				await store.updateErrand(errand.id, (e) => {
+					e.lastStatus = "error";
+					e.lastError = "Coworker no longer on the roster";
+					e.enabled = false;
+				});
+				await this.emitUpdate();
+				return;
+			}
+
+			const head = `[Errand: ${errand.name}] ${identityReminder(coworker)} A scheduled errand from the user. Do the work, then report the result plainly — your reply is delivered${errand.delivery === "huddle" ? " to the huddle" : " to your DM with the user"}.`;
+			const prompt = `${head}\n\n${errand.prompt}`;
+
+			let reply: string | null = null;
+			let status: "ok" | "error" | "timeout" = "ok";
+			let error: string | undefined;
+			try {
+				if (errand.continuity) {
+					const outcome = await this.enqueueTurn(coworker.id, () => this.runCoworkerTurn(coworker, prompt));
+					reply = outcome.reply;
+					if (outcome.timedOut) {
+						status = "timeout";
+					}
+				} else {
+					// Fresh eyes: ephemeral side session, disposed after the run.
+					reply = await this.runEphemeralTurn(coworker, prompt);
+				}
+			} catch (e) {
+				status = "error";
+				error = e instanceof Error ? e.message : String(e);
+			}
+
+			if (reply && !isPassText(reply)) {
+				await this.deliverErrandOutput(coworker, errand, reply);
+			}
+
 			await store.updateErrand(errand.id, (e) => {
-				e.lastStatus = "error";
-				e.lastError = "Coworker no longer on the roster";
-				e.enabled = false;
+				e.lastRunAt = Date.now();
+				e.lastStatus = status;
+				e.lastError = error;
+				const next = nextRunAt(e.schedule, Date.now());
+				e.nextRunAt = next;
+				if (e.schedule.kind === "once") {
+					e.enabled = false;
+				}
 			});
 			await this.emitUpdate();
-			return;
+		} finally {
+			this.activeErrands.delete(errand.id);
 		}
-
-		const head = `[Errand: ${errand.name}] ${identityReminder(coworker)} A scheduled errand from the user. Do the work, then report the result plainly — your reply is delivered${errand.delivery === "huddle" ? " to the huddle" : " to your DM with the user"}.`;
-		const prompt = `${head}\n\n${errand.prompt}`;
-
-		let reply: string | null = null;
-		let status: "ok" | "error" | "timeout" = "ok";
-		let error: string | undefined;
-		try {
-			if (errand.continuity) {
-				const outcome = await this.enqueueTurn(coworker.id, () => this.runCoworkerTurn(coworker, prompt));
-				reply = outcome.reply;
-				if (outcome.timedOut) {
-					status = "timeout";
-				}
-			} else {
-				// Fresh eyes: ephemeral side session, disposed after the run.
-				reply = await this.runEphemeralTurn(coworker, prompt);
-			}
-		} catch (e) {
-			status = "error";
-			error = e instanceof Error ? e.message : String(e);
-		}
-
-		if (reply && !isPassText(reply)) {
-			await this.deliverErrandOutput(coworker, errand, reply);
-		}
-
-		await store.updateErrand(errand.id, (e) => {
-			e.lastRunAt = Date.now();
-			e.lastStatus = status;
-			e.lastError = error;
-			const next = nextRunAt(e.schedule, Date.now());
-			e.nextRunAt = next;
-			if (e.schedule.kind === "once") {
-				e.enabled = false;
-			}
-		});
-		await this.emitUpdate();
 	}
 
 	private async deliverErrandOutput(coworker: Coworker, errand: Errand, text: string): Promise<void> {

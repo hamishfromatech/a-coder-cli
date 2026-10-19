@@ -205,4 +205,13 @@ export const SCENE_STYLES = `
 @keyframes vo-steam { 0% { opacity: 0; transform: translateY(0); } 40% { opacity: .7; } 100% { opacity: 0; transform: translateY(-2.4); } }
 .vo-blink { animation: vo-blink 4.2s ease-in-out infinite; transform-origin: center -1.6px; }
 @keyframes vo-blink { 0%, 94%, 100% { transform: scaleY(1); } 97% { transform: scaleY(.08); } }
+
+/* Idle motion is decorative; respect the OS preference and keep status
+   changes (which are discrete) intact. */
+@media (prefers-reduced-motion: reduce) {
+  .vo-pulse, .vo-pulse-fast, .vo-ring, .vo-spawn, .vo-link, .vo-bubble,
+  .vo-dots circle, .vo-steam, .vo-blink {
+    animation: none !important;
+  }
+}
 `;
