@@ -4,6 +4,8 @@
 
 ### Added
 
+- Session list views: compact, comfortable, and detailed row densities, plus optional message-count, token, cost, and model metadata, persisted per install. `list_sessions` now reports the last assistant `model` and summed `totalTokens`/`totalCost`, and the sidebar search stays pinned while the list scrolls. Sidebar sections (Sessions, Projects, Current session, Tree) collapse and remember their state; rail shortcuts open a collapsed target before scrolling to it.
+
 - RPC tree deltas: persisted message/label/compaction entries emit `session_tree_changed`, streamed to contract-2 clients as a slim `tree_delta` (`added`/`updated`, `leafId`, `version`). The desktop applies it to the session tree without a `get_tree` refetch.
 - Structured RPC error codes and request control: error responses carry `code`/`retryable`/`details` (e.g. `missing_session_cwd`), every command has a per-type timeout, pending requests are failed on engine exit, and the desktop can cancel a client-supplied request id. The desktop normalizes the structured payload into an `Error` with `code`.
 - Transport polish: the Rust engine client forwards event lines as raw JSON strings (one parse in the frontend) and buffers frames emitted before the listener registers, replaying them on `rpc_ready` so `engine_info` and initial snapshots are never lost.

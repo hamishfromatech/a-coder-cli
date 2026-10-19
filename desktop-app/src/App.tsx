@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Bell, ChevronsUpDown, FolderGit2, GitBranch, MessageSquare, Plus, Settings, X } from "lucide-react";
+import { Bell, ChevronDown, ChevronRight, ChevronsUpDown, FolderGit2, GitBranch, MessageSquare, Plus, Settings, X } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { initDesktopAnalytics } from "./lib/analytics";
@@ -333,9 +333,9 @@ export default function App() {
 	useEffect(() => {
 		if (!pendingSidebarSection) return;
 		const frame = requestAnimationFrame(() => {
-			document
-				.getElementById(`sidebar-${pendingSidebarSection}`)
-				?.scrollIntoView({ block: "start", behavior: "smooth" });
+			const id = `sidebar-${pendingSidebarSection}`;
+			window.dispatchEvent(new CustomEvent("a-coder:open-sidebar-section", { detail: { id } }));
+			document.getElementById(id)?.scrollIntoView({ block: "start", behavior: "smooth" });
 			setPendingSidebarSection(null);
 		});
 		return () => cancelAnimationFrame(frame);
@@ -1416,14 +1416,56 @@ function SidebarSection({
 	children: React.ReactNode;
 	className?: string;
 }) {
+	const storageKey = id ? `a-coder:sidebar-section:${id}` : null;
+	const [open, setOpen] = useState(() => {
+		if (!storageKey) return true;
+		try {
+			return globalThis.localStorage.getItem(storageKey) !== "collapsed";
+		} catch {
+			return true;
+		}
+	});
+
+	const setSectionOpen = (next: boolean) => {
+		setOpen(next);
+		if (!storageKey) return;
+		try {
+			globalThis.localStorage.setItem(storageKey, next ? "open" : "collapsed");
+		} catch {
+			/* storage unavailable — the section still collapses for this run */
+		}
+	};
+
+	const toggle = () => setSectionOpen(!open);
+
+	useEffect(() => {
+		if (!id) return;
+		const onOpen = (event: Event) => {
+			const detail = (event as CustomEvent<{ id?: string }>).detail;
+			if (detail?.id === id) setSectionOpen(true);
+		};
+		window.addEventListener("a-coder:open-sidebar-section", onOpen);
+		return () => window.removeEventListener("a-coder:open-sidebar-section", onOpen);
+	}, [id, storageKey]);
+
 	return (
 		<div id={id} className={`scroll-mt-3 ${className}`}>
-			<div className="mb-1.5 flex items-center justify-between px-2.5">
+			<button
+				type="button"
+				onClick={toggle}
+				aria-expanded={open}
+				className="mb-1.5 flex w-full items-center gap-1 rounded px-2.5 py-0.5 text-left transition-hover hover:bg-pi-surface-raised/60 focus-visible:shadow-focus focus-visible:outline-none"
+			>
 				<span className="text-3xs font-semibold uppercase tracking-[0.08em] text-pi-text-faint">
 					{title}
 				</span>
-			</div>
-			{children}
+				{open ? (
+					<ChevronDown className="ml-auto h-3 w-3 shrink-0 text-pi-text-faint opacity-60" />
+				) : (
+					<ChevronRight className="ml-auto h-3 w-3 shrink-0 text-pi-text-faint opacity-60" />
+				)}
+			</button>
+			{open && children}
 		</div>
 	);
 }

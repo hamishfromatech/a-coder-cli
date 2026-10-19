@@ -1165,6 +1165,9 @@ export interface RpcSessionInfo {
 	modified: string;
 	messageCount: number;
 	firstMessage: string;
+	model?: string;
+	totalTokens?: number;
+	totalCost?: number;
 }
 
 export const listSessions = (limit?: number) =>

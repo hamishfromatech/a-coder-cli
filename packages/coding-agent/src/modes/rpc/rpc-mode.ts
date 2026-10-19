@@ -1385,6 +1385,9 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 						modified: s.modified.toISOString(),
 						messageCount: s.messageCount,
 						firstMessage: s.firstMessage,
+						model: s.model,
+						totalTokens: s.totalTokens,
+						totalCost: s.totalCost,
 					})),
 				});
 			}

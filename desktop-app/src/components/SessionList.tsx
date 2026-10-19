@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { Copy, MoreHorizontal, Pencil, Pin, PinOff, Plus, Trash2 } from "lucide-react";
+import { Check, Copy, MoreHorizontal, Pencil, Pin, PinOff, Plus, SlidersHorizontal, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import * as rpc from "../lib/rpc";
 import { useRuntimeStatusStore } from "../stores/runtime-status-store";
@@ -15,6 +15,14 @@ import { readPinnedSessions, togglePin } from "../lib/session-pins";
 import { sessionJsonlToMarkdown } from "../lib/session-export";
 import { confirm } from "../stores/confirm-store";
 import { SearchField } from "./ui/SearchField";
+import {
+	DEFAULT_SESSION_LIST_PREFS,
+	readSessionListPrefs,
+	SESSION_LIST_DENSITIES,
+	SESSION_META_ITEMS,
+	type SessionListPrefs,
+	writeSessionListPrefs,
+} from "../lib/session-list-prefs";
 import { Tip } from "./ui/Tip";
 
 /** Sessions shown before the list is capped (the full history lives behind the
@@ -34,6 +42,22 @@ function relativeTime(iso: string): string {
 	if (days < 7) return `${days}d`;
 	if (days < 30) return `${Math.floor(days / 7)}w`;
 	return `${Math.floor(days / 30)}mo`;
+}
+
+function compactNumber(value: number): string {
+	if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}m`;
+	if (value >= 1_000) return `${(value / 1_000).toFixed(value >= 10_000 ? 0 : 1)}k`;
+	return String(value);
+}
+
+function costLabel(value: number | undefined): string | null {
+	if (!value || value < 0.0001) return null;
+	return value >= 1 ? `$${value.toFixed(2)}` : `$${value.toFixed(4)}`;
+}
+
+function modelLabel(model: string | undefined): string | null {
+	const leaf = model?.split("/").at(-1)?.trim();
+	return leaf || null;
 }
 
 function sessionTitle(s: rpc.RpcSessionInfo): string {
@@ -123,6 +147,9 @@ export function SessionList() {
 	const [pins, setPins] = useState<string[]>(() => readPinnedSessions());
 	const [editingPath, setEditingPath] = useState<string | null>(null);
 	const [menu, setMenu] = useState<MenuAnchor | null>(null);
+	const [prefs, setPrefs] = useState<SessionListPrefs>(() => readSessionListPrefs());
+	const [viewMenu, setViewMenu] = useState<{ top: number; left: number } | null>(null);
+	const viewButtonRef = useRef<HTMLButtonElement | null>(null);
 	const listRef = useRef<HTMLDivElement | null>(null);
 	const sessionFile = useSessionStore((s) => s.sessionFile);
 	const isStreaming = useSessionStore((s) => s.isStreaming);
@@ -310,8 +337,8 @@ export function SessionList() {
 
 	return (
 		<div>
-			{/* Search + new session */}
-			<div className="flex items-center gap-1 px-1 pb-1.5">
+			{/* Search + view options + new session */}
+			<div className="sticky top-0 z-10 -mx-1 flex items-center gap-1 bg-pi-surface/95 px-1 pb-1.5 pt-1 backdrop-blur">
 				<SearchField
 					value={query}
 					onChange={setQuery}
@@ -320,6 +347,30 @@ export function SessionList() {
 					onSubmit={() => moveFocus(1)}
 					className="min-w-0 flex-1"
 				/>
+				<Tip content="Session list view" placement="toolbar">
+					<button
+						ref={viewButtonRef}
+						type="button"
+						onClick={() => {
+							const rect = viewButtonRef.current?.getBoundingClientRect();
+							if (!rect) return;
+							setViewMenu(
+								viewMenu
+									? null
+									: {
+											top: rect.bottom + 4,
+											left: Math.max(8, rect.right - 216),
+										},
+							);
+						}}
+						className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none ${viewMenu ? "bg-pi-surface-raised text-pi-text" : "text-pi-text-muted"}`}
+						aria-label="Session list view"
+						aria-haspopup="menu"
+						aria-expanded={Boolean(viewMenu)}
+					>
+						<SlidersHorizontal className="h-3.5 w-3.5" />
+					</button>
+				</Tip>
 				<Tip content="New session" placement="toolbar">
 					<button
 						type="button"
@@ -357,6 +408,8 @@ export function SessionList() {
 										streaming={s.path === activePath && isStreaming}
 										pinned={pins.includes(s.path)}
 										editing={editingPath === s.path}
+										density={prefs.density}
+										meta={prefs.meta}
 										onResume={() => void switchTo(s.path)}
 										onStartRename={() => setEditingPath(s.path)}
 										onMenu={(top, left) => {
@@ -379,6 +432,18 @@ export function SessionList() {
 				<p className="px-2.5 pt-1 text-3xs text-pi-text-faint">
 					+{sessions.length - MAX_ROWS} older — search all with ⌘P
 				</p>
+			)}
+
+			{viewMenu && (
+				<SessionViewMenu
+					anchor={viewMenu}
+					prefs={prefs}
+					onChange={(next) => {
+						setPrefs(next);
+						writeSessionListPrefs(next);
+					}}
+					onClose={() => setViewMenu(null)}
+				/>
 			)}
 
 			{menu && menuSession && (
@@ -423,6 +488,8 @@ interface SessionRowProps {
 	streaming: boolean;
 	pinned: boolean;
 	editing: boolean;
+	density: SessionListPrefs["density"];
+	meta: SessionListPrefs["meta"];
 	onResume: () => void;
 	onStartRename: () => void;
 	onMenu: (top: number, left: number) => void;
@@ -439,6 +506,8 @@ function SessionRow({
 	streaming,
 	pinned,
 	editing,
+	density,
+	meta,
 	onResume,
 	onStartRename,
 	onMenu,
@@ -447,6 +516,15 @@ function SessionRow({
 }: SessionRowProps) {
 	const title = sessionTitle(session);
 	const projectLeaf = workspaceLeaf && cwdLeaf(session.cwd) !== workspaceLeaf ? cwdLeaf(session.cwd) : null;
+	const preview = session.firstMessage.trim().replace(/\s+/g, " ");
+	const showPreview =
+		!editing && density !== "compact" && Boolean(session.name?.trim()) && preview.length > 0 && preview !== title;
+	const model = meta.includes("model") ? modelLabel(session.model) : null;
+	const figures = [
+		meta.includes("messages") && session.messageCount > 0 ? `${session.messageCount}m` : null,
+		meta.includes("tokens") && session.totalTokens ? `${compactNumber(session.totalTokens)} tok` : null,
+		meta.includes("cost") ? costLabel(session.totalCost) : null,
+	].filter((value): value is string => Boolean(value));
 	const menuButtonRef = useRef<HTMLButtonElement | null>(null);
 	const rowRef = useRef<HTMLDivElement | null>(null);
 	// Enter commits and unmounts the input, which also fires blur — finish
@@ -486,50 +564,70 @@ function SessionRow({
 					openMenu();
 				}
 			}}
-			className={`group flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-left transition-hover focus-visible:shadow-focus focus-visible:outline-none ${
+			className={`group flex w-full cursor-pointer items-start gap-2 rounded-md px-2.5 text-left transition-hover focus-visible:shadow-focus focus-visible:outline-none ${
+				density === "compact" ? "py-1.5" : "py-2"
+			} ${
 				current ? "bg-pi-accent-soft" : openInTab ? "hover:bg-pi-surface-raised/70" : "hover:bg-pi-surface-raised"
 			} ${pending ? "opacity-60" : ""}`}
 		>
-			<SessionDot path={session.path} />
-			<span className="flex min-w-0 flex-1 flex-col leading-snug">
-				{editing ? (
-					<input
-						autoFocus
-						defaultValue={title}
-						onClick={(e) => e.stopPropagation()}
-						onKeyDown={(e) => {
-							e.stopPropagation();
-							if (e.key === "Enter") {
-								e.preventDefault();
-								finishRename((e.target as HTMLInputElement).value);
-							} else if (e.key === "Escape") {
-								e.preventDefault();
-								finishRename(null);
-							}
-						}}
-						onBlur={(e) => finishRename(e.target.value)}
-						className="min-w-0 rounded border border-pi-border bg-pi-surface px-1 py-0.5 text-xs text-pi-text focus:border-pi-accent focus:outline-none"
-						aria-label="Session name"
-					/>
-				) : (
-					<span
-						className={`truncate text-xs ${current ? "font-medium text-pi-accent" : "text-pi-text"} ${
-							title === "Untitled session" ? "italic text-pi-text-faint" : ""
-						}`}
-					>
-						{title}
+			<span className={density === "compact" ? "self-center" : "self-start pt-1"}>
+				<SessionDot path={session.path} />
+			</span>
+			<div className="min-w-0 flex-1">
+				<div className="flex min-w-0 items-center gap-1.5">
+					{editing ? (
+						<input
+							autoFocus
+							defaultValue={title}
+							onClick={(e) => e.stopPropagation()}
+							onKeyDown={(e) => {
+								e.stopPropagation();
+								if (e.key === "Enter") {
+									e.preventDefault();
+									finishRename((e.target as HTMLInputElement).value);
+								} else if (e.key === "Escape") {
+									e.preventDefault();
+									finishRename(null);
+								}
+							}}
+							onBlur={(e) => finishRename(e.target.value)}
+							className="min-w-0 flex-1 rounded border border-pi-border bg-pi-surface px-1 py-0.5 text-xs text-pi-text focus:border-pi-accent focus:outline-none"
+							aria-label="Session name"
+						/>
+					) : (
+						<span
+							className={`min-w-0 flex-1 truncate text-xs ${current ? "font-medium text-pi-accent" : "text-pi-text"} ${
+								title === "Untitled session" ? "italic text-pi-text-faint" : ""
+							}`}
+						>
+							{title}
+						</span>
+					)}
+					{density === "compact" && projectLeaf && (
+						<span className="shrink-0 truncate font-mono text-3xs text-pi-text-faint">{projectLeaf}</span>
+					)}
+					{pinned && <Pin className="h-2.5 w-2.5 shrink-0 text-pi-text-faint" aria-label="pinned" />}
+					{streaming && (
+						<span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-pi-accent" aria-label="streaming" />
+					)}
+					{density !== "detailed" && figures.length > 0 && (
+						<span className="shrink-0 font-mono pi-tabular text-3xs text-pi-text-faint">{figures.join(" · ")}</span>
+					)}
+					<span className="ml-auto shrink-0 font-mono pi-tabular text-3xs text-pi-text-faint">
+						{relativeTime(session.modified)}
 					</span>
+				</div>
+				{showPreview && (
+					<div className="truncate pt-0.5 text-3xs leading-snug text-pi-text-faint">{preview}</div>
 				)}
-				{projectLeaf && (
-					<span className="truncate font-mono text-3xs text-pi-text-faint">{projectLeaf}</span>
+				{density === "detailed" && (model || figures.length > 0 || projectLeaf) && (
+					<div className="mt-0.5 flex min-w-0 items-center gap-1.5 font-mono text-3xs text-pi-text-faint">
+						{projectLeaf && <span className="shrink-0">{projectLeaf}</span>}
+						{model && <span className="max-w-32 truncate">{model}</span>}
+						{figures.length > 0 && <span className="shrink-0">{figures.join(" · ")}</span>}
+					</div>
 				)}
-			</span>
-			{pinned && <Pin className="h-2.5 w-2.5 shrink-0 text-pi-text-faint" aria-label="pinned" />}
-			{streaming && <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-pi-accent" aria-label="streaming" />}
-			<span className="shrink-0 font-mono pi-tabular text-3xs text-pi-text-faint">
-				{session.messageCount > 0 ? `${session.messageCount}m · ` : ""}
-				{relativeTime(session.modified)}
-			</span>
+			</div>
 			<Tip content="Session actions" placement="row">
 				<button
 					ref={menuButtonRef}
@@ -538,12 +636,115 @@ function SessionRow({
 						e.stopPropagation();
 						openMenu();
 					}}
-					className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-pi-text-faint opacity-0 transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:opacity-100 focus-visible:shadow-focus focus-visible:outline-none group-hover:opacity-100"
+					className={`flex h-5 w-5 shrink-0 items-center justify-center rounded text-pi-text-faint opacity-0 transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:opacity-100 focus-visible:shadow-focus focus-visible:outline-none group-hover:opacity-100 ${
+						density === "compact" ? "self-center" : "mt-0.5 self-start"
+					}`}
 					aria-label="Session actions"
 				>
 					<MoreHorizontal className="h-3.5 w-3.5" />
 				</button>
 			</Tip>
+		</div>
+	);
+}
+
+interface SessionViewMenuProps {
+	anchor: { top: number; left: number };
+	prefs: SessionListPrefs;
+	onChange: (prefs: SessionListPrefs) => void;
+	onClose: () => void;
+}
+
+function SessionViewMenu({ anchor, prefs, onChange, onClose }: SessionViewMenuProps) {
+	const ref = useRef<HTMLDivElement | null>(null);
+
+	useEffect(() => {
+		const onPointerDown = (event: PointerEvent) => {
+			if (ref.current && !ref.current.contains(event.target as Node)) onClose();
+		};
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.key === "Escape") onClose();
+		};
+		window.addEventListener("pointerdown", onPointerDown, true);
+		window.addEventListener("keydown", onKeyDown, true);
+		return () => {
+			window.removeEventListener("pointerdown", onPointerDown, true);
+			window.removeEventListener("keydown", onKeyDown, true);
+		};
+	}, [onClose]);
+
+	const setDensity = (density: SessionListPrefs["density"]) => onChange({ ...prefs, density });
+
+	const toggleMeta = (id: SessionListPrefs["meta"][number]) => {
+		const meta = prefs.meta.includes(id)
+			? prefs.meta.filter((value) => value !== id)
+			: [...prefs.meta, id];
+		onChange({ ...prefs, meta });
+	};
+
+	const row =
+		"flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-2xs text-pi-text-secondary transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:bg-pi-surface-raised focus-visible:outline-none";
+
+	return (
+		<div
+			ref={ref}
+			role="menu"
+			aria-label="Session list view"
+			style={{ position: "fixed", top: Math.max(8, anchor.top), left: anchor.left, width: 216, zIndex: 80 }}
+			className="rounded-md border border-pi-border bg-pi-surface-overlay p-1 shadow-lg backdrop-blur"
+		>
+			<div className="px-2 pb-1 pt-0.5 text-4xs font-semibold uppercase tracking-[0.08em] text-pi-text-faint">
+				Row density
+			</div>
+			{SESSION_LIST_DENSITIES.map((option) => {
+				const active = prefs.density === option.id;
+				return (
+					<button
+						key={option.id}
+						type="button"
+						role="menuitemradio"
+						aria-checked={active}
+						onClick={() => setDensity(option.id)}
+						className={row}
+					>
+						<Check className={`h-3 w-3 shrink-0 ${active ? "text-pi-accent" : "opacity-0"}`} />
+						<span className="flex-1">
+							<span className="block font-medium">{option.label}</span>
+							<span className="block text-3xs text-pi-text-faint">{option.detail}</span>
+						</span>
+					</button>
+				);
+			})}
+			<div className="my-1 h-px bg-pi-border" />
+			<div className="px-2 pb-1 text-4xs font-semibold uppercase tracking-[0.08em] text-pi-text-faint">
+				Show
+			</div>
+			{SESSION_META_ITEMS.map((item) => {
+				const active = prefs.meta.includes(item.id);
+				return (
+					<button
+						key={item.id}
+						type="button"
+						role="menuitemcheckbox"
+						aria-checked={active}
+						onClick={() => toggleMeta(item.id)}
+						className={row}
+					>
+						<Check className={`h-3 w-3 shrink-0 ${active ? "text-pi-accent" : "opacity-0"}`} />
+						<span className="flex-1">{item.label}</span>
+					</button>
+				);
+			})}
+			<div className="my-1 h-px bg-pi-border" />
+			<button
+				type="button"
+				role="menuitem"
+				onClick={() => onChange({ ...DEFAULT_SESSION_LIST_PREFS, meta: [...DEFAULT_SESSION_LIST_PREFS.meta] })}
+				className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-2xs text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text"
+			>
+				<span className="w-3 shrink-0" />
+				Reset view
+			</button>
 		</div>
 	);
 }

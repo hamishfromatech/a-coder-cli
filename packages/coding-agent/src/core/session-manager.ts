@@ -1,5 +1,5 @@
 import { type AgentMessage, uuidv7 } from "@earendil-works/pi-agent-core";
-import type { ImageContent, Message, TextContent } from "@earendil-works/pi-ai";
+import type { AssistantMessage, ImageContent, Message, TextContent } from "@earendil-works/pi-ai";
 import { randomUUID } from "crypto";
 import {
 	appendFileSync,
@@ -196,6 +196,11 @@ export interface SessionInfo {
 	modified: Date;
 	messageCount: number;
 	firstMessage: string;
+	/** Last assistant model id, when the session has any assistant turn. */
+	model?: string;
+	/** Summed provider-reported usage across assistant messages. */
+	totalTokens?: number;
+	totalCost?: number;
 	allMessagesText: string;
 }
 
@@ -635,6 +640,9 @@ async function buildSessionInfo(filePath: string): Promise<SessionInfo | null> {
 		const allMessages: string[] = [];
 		let name: string | undefined;
 		let lastActivityTime: number | undefined;
+		let model: string | undefined;
+		let totalTokens = 0;
+		let totalCost = 0;
 
 		const rl = createInterface({
 			input: createReadStream(filePath, { encoding: "utf8" }),
@@ -666,6 +674,15 @@ async function buildSessionInfo(filePath: string): Promise<SessionInfo | null> {
 
 			const message = entry.message;
 			if (!isMessageWithContent(message)) continue;
+			if (message.role === "assistant") {
+				const assistant = message as AssistantMessage;
+				model = assistant.responseModel ?? assistant.model ?? model;
+				const usage = assistant.usage;
+				if (usage) {
+					totalTokens += usage.totalTokens || usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
+					totalCost += usage.cost?.total ?? 0;
+				}
+			}
 			if (message.role !== "user" && message.role !== "assistant") continue;
 
 			const textContent = extractTextContent(message);
@@ -699,6 +716,9 @@ async function buildSessionInfo(filePath: string): Promise<SessionInfo | null> {
 			modified,
 			messageCount,
 			firstMessage: firstMessage || "(no messages)",
+			model,
+			totalTokens: totalTokens > 0 ? totalTokens : undefined,
+			totalCost: totalCost > 0 ? totalCost : undefined,
 			allMessagesText: allMessages.join(" "),
 		};
 	} catch {

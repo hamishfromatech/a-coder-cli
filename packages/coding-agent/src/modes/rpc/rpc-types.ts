@@ -256,6 +256,11 @@ export interface RpcSessionInfo {
 	modified: string;
 	messageCount: number;
 	firstMessage: string;
+	/** Last assistant model id, when available. */
+	model?: string;
+	/** Summed provider-reported usage. */
+	totalTokens?: number;
+	totalCost?: number;
 }
 
 /** Incremental tree change for contract-2 clients. */

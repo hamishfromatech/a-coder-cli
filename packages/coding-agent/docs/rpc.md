@@ -1007,7 +1007,7 @@ List known sessions (all projects), newest first. Pass `limit` to page (capped a
 {"type": "list_sessions", "limit": 50}
 ```
 
-Response `data.sessions` entries carry `path`, `id`, `cwd`, `name`, `parentSessionPath`, `created`, `modified`, `messageCount`, `firstMessage` (ISO date strings).
+Response `data.sessions` entries carry `path`, `id`, `cwd`, `name`, `parentSessionPath`, `created`, `modified`, `messageCount`, `firstMessage` (ISO date strings), plus optional `model`, `totalTokens`, and `totalCost` summed from the session's assistant turns.
 
 #### get_sessions_status
 
