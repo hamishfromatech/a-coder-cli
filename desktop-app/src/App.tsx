@@ -1245,7 +1245,7 @@ export default function App() {
 				{/* ================== Main column ================== */}
 				<main className="flex min-w-0 flex-1 flex-col overflow-hidden">
 					<SessionTabs />
-					<header className="flex h-9 shrink-0 items-center justify-between border-b border-pi-border bg-pi-bg/60 px-3 backdrop-blur">
+					<header className="relative z-30 flex h-9 shrink-0 items-center justify-between border-b border-pi-border bg-pi-bg/60 px-3 backdrop-blur">
 						<Toolbar
 							onShowMemory={() => setShowMemory(true)}
 							onToggleBrowser={() => {
