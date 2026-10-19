@@ -71,6 +71,8 @@
 
 ### Changed
 
+- Desktop shell: model and thinking controls moved from the app header to the composer footer as compact pills, where they apply to the next turn. The header now carries New, Browser, and one overflow menu (Memory, Compact, copy/clone/fork/export), and is shorter. The status bar gains a right-click menu to show or hide thinking, permission, agents, context, and stats items (persisted, with reset). The collapsed left rail now links directly to Sessions, Projects, and Tree, with tooltips and section-aware expansion.
+
 - Desktop rendering: tool rows resolve their result from a memoized `toolCallId` index instead of each scanning the transcript; `RichToolCall`/`AskUserQuestionCard` are memoized; markdown preprocessing and short messages are LRU-cached; KaTeX cache hits no longer deep-clone; the chat backdrop no longer sits above the transcript with `mix-blend-mode`.
 
 - Removed the persistent "Permission mode: …" footer chip in the interactive CLI: it only updated at startup and on in-CLI mode changes, so it showed a stale value whenever the session's permission mode changed from elsewhere (desktop, voice, scheduled runs). Switching modes via the selector still announces the change transiently; `/permission` shows and sets the live mode.

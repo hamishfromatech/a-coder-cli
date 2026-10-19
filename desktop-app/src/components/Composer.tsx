@@ -42,6 +42,7 @@ import { QueuePanel } from "./QueuePanel";
 import { ExtensionWidgets } from "./ExtensionWidgets";
 import { Autocomplete } from "./Autocomplete";
 import { ComposerBreadcrumb } from "./ComposerBreadcrumb";
+import { ComposerPills } from "./ComposerPills";
 import { Button, IconButton } from "./ui/Button";
 import { useShallow } from "zustand/react/shallow";
 
@@ -585,37 +586,34 @@ export function Composer() {
 				</div>
 			)}
 
-			{/* Hint footer */}
-			<div className="flex items-center justify-between px-2 pt-1.5 text-3xs text-pi-text-faint">
-				<div className="flex items-center gap-3">
-					<span className="flex items-center gap-1">
-						<kbd className="rounded border border-pi-border bg-pi-surface px-1 font-mono text-4xs text-pi-text-muted">
-							↵
-						</kbd>
-						{slashMatch ? "select command" : isStreaming ? "steer" : "send"}
-					</span>
-					<span className="flex items-center gap-1">
-						<kbd className="rounded border border-pi-border bg-pi-surface px-1 font-mono text-4xs text-pi-text-muted">
-							⇧↵
-						</kbd>
-						newline
-					</span>
-					{slashMatch && (
+			{/* Composer footer: turn-scoped controls, then keyboard hints. */}
+			<div className="flex items-center justify-between gap-3 px-2 pt-1.5 text-3xs text-pi-text-faint">
+				<div className="flex min-w-0 items-center gap-2">
+					<ComposerPills />
+					<div className="hidden min-w-0 items-center gap-3 md:flex">
 						<span className="flex items-center gap-1">
 							<kbd className="rounded border border-pi-border bg-pi-surface px-1 font-mono text-4xs text-pi-text-muted">
-								esc
+								↵
 							</kbd>
-							cancel
+							{slashMatch ? "select command" : isStreaming ? "steer" : "send"}
 						</span>
-					)}
-					<span className="flex items-center gap-1">
-						<kbd className="rounded border border-pi-border bg-pi-surface px-1 font-mono text-4xs text-pi-text-muted">
-							⌘G
-						</kbd>
-						external editor
-					</span>
+						<span className="flex items-center gap-1">
+							<kbd className="rounded border border-pi-border bg-pi-surface px-1 font-mono text-4xs text-pi-text-muted">
+								⇧↵
+							</kbd>
+							newline
+						</span>
+						{slashMatch && (
+							<span className="flex items-center gap-1">
+								<kbd className="rounded border border-pi-border bg-pi-surface px-1 font-mono text-4xs text-pi-text-muted">
+									esc
+								</kbd>
+								cancel
+							</span>
+						)}
+					</div>
 				</div>
-				<span className="font-mono uppercase tracking-wide opacity-70">
+				<span className="shrink-0 font-mono uppercase tracking-wide opacity-70">
 					{isStreaming ? `● ${streamingVerb.toLowerCase()}` : connected ? "ready" : "offline"}
 				</span>
 			</div>

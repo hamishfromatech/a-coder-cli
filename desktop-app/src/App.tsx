@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Bell, ChevronsUpDown, FolderGit2, MessageSquare, Plus, Settings, X } from "lucide-react";
+import { Bell, ChevronsUpDown, FolderGit2, GitBranch, MessageSquare, Plus, Settings, X } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { initDesktopAnalytics } from "./lib/analytics";
@@ -53,6 +53,7 @@ import { FirstRunSetup } from "./components/FirstRunSetup";
 import { ProjectPicker } from "./components/ProjectPicker";
 import { RightSidebar } from "./components/RightSidebar";
 import { SettingsPanel } from "./components/SettingsPanel";
+import { Tip } from "./components/ui/Tip";
 import { TodoPanel } from "./components/TodoPanel";
 import { RuntimePanel } from "./components/RuntimePanel";
 import { TaskPanel } from "./components/TaskPanel";
@@ -323,6 +324,22 @@ export default function App() {
 	);
 	const { leftSidebarOpen, setLeftSidebarOpen, rightSidebarOpen, setRightSidebarOpen, rightSidebarWidth } = useUiStore();
 	const rightSidebarTab = useUiStore((state) => state.rightSidebarTab);
+	type SidebarSectionId = "sessions" | "projects" | "tree";
+	const [pendingSidebarSection, setPendingSidebarSection] = useState<SidebarSectionId | null>(null);
+	const jumpToSidebarSection = (section: SidebarSectionId) => {
+		setLeftSidebarOpen(true);
+		setPendingSidebarSection(section);
+	};
+	useEffect(() => {
+		if (!pendingSidebarSection) return;
+		const frame = requestAnimationFrame(() => {
+			document
+				.getElementById(`sidebar-${pendingSidebarSection}`)
+				?.scrollIntoView({ block: "start", behavior: "smooth" });
+			setPendingSidebarSection(null);
+		});
+		return () => cancelAnimationFrame(frame);
+	}, [pendingSidebarSection]);
 	const setRightSidebarTab = useUiStore((state) => state.setRightSidebarTab);
 	const effectiveCwd = projectPath || FALLBACK_CWD;
 
@@ -1180,6 +1197,7 @@ export default function App() {
 						onOpenSettings={() => setShowSettings(true)}
 						onExpand={() => setLeftSidebarOpen(true)}
 						onPickProject={(path) => void switchProject(path)}
+						onJump={jumpToSidebarSection}
 						needsBackgroundInput={needsBackgroundInput}
 						hasBackgroundFinished={hasBackgroundFinished}
 						onFocusBackground={focusBackgroundSession}
@@ -1189,9 +1207,8 @@ export default function App() {
 				{/* ================== Main column ================== */}
 				<main className="flex min-w-0 flex-1 flex-col overflow-hidden">
 					<SessionTabs />
-					<header className="flex h-11 shrink-0 items-center justify-between border-b border-pi-border bg-pi-bg/60 px-4 backdrop-blur">
+					<header className="flex h-9 shrink-0 items-center justify-between border-b border-pi-border bg-pi-bg/60 px-3 backdrop-blur">
 						<Toolbar
-							onShowModelPicker={() => setShowModelPicker(true)}
 							onShowMemory={() => setShowMemory(true)}
 							onToggleBrowser={() => {
 								if (rightSidebarOpen && rightSidebarTab === "browser") {
@@ -1389,16 +1406,18 @@ export default function App() {
 }
 
 function SidebarSection({
+	id,
 	title,
 	children,
 	className = "",
 }: {
+	id?: string;
 	title: string;
 	children: React.ReactNode;
 	className?: string;
 }) {
 	return (
-		<div className={className}>
+		<div id={id} className={`scroll-mt-3 ${className}`}>
 			<div className="mb-1.5 flex items-center justify-between px-2.5">
 				<span className="text-3xs font-semibold uppercase tracking-[0.08em] text-pi-text-faint">
 					{title}
@@ -1456,16 +1475,16 @@ function SidebarContent({
 
 				{/* Sidebar content */}
 			<div className="flex-1 overflow-auto px-2 py-3">
-				<SidebarSection title="Sessions">
+				<SidebarSection id="sidebar-sessions" title="Sessions">
 					<SessionList />
 				</SidebarSection>
-				<SidebarSection title="Projects" className="mt-4">
+				<SidebarSection id="sidebar-projects" title="Projects" className="mt-4">
 					<SidebarProjects onSelect={onPickProject} onAdd={onOpenPicker} />
 				</SidebarSection>
-				<SidebarSection title="Current session" className="mt-4">
+				<SidebarSection id="sidebar-current" title="Current session" className="mt-4">
 					<SessionActions />
 				</SidebarSection>
-				<SidebarSection title="Tree" className="mt-4">
+				<SidebarSection id="sidebar-tree" title="Tree" className="mt-4">
 					<SessionTree />
 				</SidebarSection>
 			</div>
@@ -1491,6 +1510,7 @@ interface SidebarRailProps {
 	onOpenSettings: () => void;
 	onExpand: () => void;
 	onPickProject: (path: string) => void;
+	onJump: (section: "sessions" | "projects" | "tree") => void;
 	/** A background session is blocked on a permission prompt / dialog. */
 	needsBackgroundInput: boolean;
 	/** A background turn finished since its session was last visited. */
@@ -1504,6 +1524,7 @@ function SidebarRail({
 	onOpenSettings,
 	onExpand,
 	onPickProject,
+	onJump,
 	needsBackgroundInput,
 	hasBackgroundFinished,
 	onFocusBackground,
@@ -1524,15 +1545,18 @@ function SidebarRail({
 				>
 <BrandMark className="h-6 w-6" />
 				</button>
-				<RailIcon icon={FolderGit2} label="Projects" onClick={onExpand} />
+				<div className="my-1 h-px w-5 bg-pi-border" />
+				<RailIcon icon={MessageSquare} label="Sessions" onClick={() => onJump("sessions")} />
+				<RailIcon icon={FolderGit2} label="Projects" onClick={() => onJump("projects")} />
+				<RailIcon icon={GitBranch} label="Session tree" onClick={() => onJump("tree")} />
 				<RailIcon icon={Plus} label="New / open project" onClick={onOpenPicker} />
-				<RailIcon icon={MessageSquare} label="Session tree — pin sidebar" onClick={onExpand} />
 				<div className="flex-1" />
 				<BackgroundAttentionOrb
 					needsInput={needsBackgroundInput}
 					finished={hasBackgroundFinished}
 					onClick={onFocusBackground}
 				/>
+				<div className="my-1 h-px w-5 bg-pi-border" />
 				<RailIcon icon={Settings} label="Settings" onClick={onOpenSettings} />
 			</aside>
 
@@ -1561,12 +1585,15 @@ function RailIcon({
 	onClick: () => void;
 }) {
 	return (
-		<button
-			onClick={onClick}
-			className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none" aria-label={label}
-		>
-			<IconCmp className="h-4 w-4" />
-		</button>
+		<Tip content={label} placement="row">
+			<button
+				onClick={onClick}
+				className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+				aria-label={label}
+			>
+				<IconCmp className="h-4 w-4" />
+			</button>
+		</Tip>
 	);
 }
 

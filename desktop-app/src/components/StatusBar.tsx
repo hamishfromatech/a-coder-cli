@@ -27,6 +27,13 @@ import { useStatsStore } from "../stores/stats-store";
 import type { PermissionMode } from "../lib/settings.types";
 import { Badge, type BadgeVariant } from "./ui/Badge";
 import { useShallow } from "zustand/react/shallow";
+import { ESCAPE_PRIORITY, isTopEscapeLayer, pushEscapeLayer } from "../lib/escape-layers";
+import {
+	readHiddenStatusItems,
+	STATUS_BAR_ITEMS,
+	type StatusBarItemId,
+	writeHiddenStatusItems,
+} from "../lib/statusbar-prefs";
 
 export interface StatusBarProps {
 	projectPath: string | null;
@@ -92,6 +99,46 @@ export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
 		),
 	);
 	const { stats } = useStatsStore();
+	const [hidden, setHidden] = useState<ReadonlySet<StatusBarItemId>>(() => readHiddenStatusItems());
+	const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
+	const menuRef = useRef<HTMLDivElement | null>(null);
+
+	useEffect(() => {
+		if (!menuAt) return;
+		const unregister = pushEscapeLayer(ESCAPE_PRIORITY.contextMenu);
+		const onDown = (event: MouseEvent) => {
+			if (!menuRef.current?.contains(event.target as Node)) setMenuAt(null);
+		};
+		const onKey = (event: KeyboardEvent) => {
+			if (event.key !== "Escape") return;
+			if (event.defaultPrevented || !isTopEscapeLayer(ESCAPE_PRIORITY.contextMenu)) return;
+			event.preventDefault();
+			setMenuAt(null);
+		};
+		document.addEventListener("mousedown", onDown);
+		document.addEventListener("keydown", onKey);
+		return () => {
+			unregister();
+			document.removeEventListener("mousedown", onDown);
+			document.removeEventListener("keydown", onKey);
+		};
+	}, [menuAt]);
+
+	const toggleItem = (id: StatusBarItemId) => {
+		setHidden((previous) => {
+			const next = new Set(previous);
+			if (next.has(id)) next.delete(id);
+			else next.add(id);
+			writeHiddenStatusItems(next);
+			return next;
+		});
+	};
+
+	const resetItems = () => {
+		const next = new Set<StatusBarItemId>();
+		writeHiddenStatusItems(next);
+		setHidden(next);
+	};
 
 	const runningAgents = subAgents.filter((a) => a.status === "running");
 
@@ -110,7 +157,16 @@ export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
 	};
 
 	return (
-		<div className="flex h-7 shrink-0 items-center justify-between gap-3 border-t border-pi-border bg-pi-surface/60 px-3 text-3xs backdrop-blur">
+		<div
+			onContextMenu={(event) => {
+				event.preventDefault();
+				setMenuAt({
+					x: Math.max(8, Math.min(event.clientX, window.innerWidth - 240)),
+					y: event.clientY,
+				});
+			}}
+			className="relative flex h-7 shrink-0 items-center justify-between gap-3 border-t border-pi-border bg-pi-surface/60 px-3 text-3xs backdrop-blur"
+		>
 			{/* Left: project + thinking + permission */}
 			<div className="flex min-w-0 items-center gap-1.5">
 				<span
@@ -128,7 +184,7 @@ export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
 						<FolderOpen className="h-2.5 w-2.5 shrink-0 opacity-60" />
 					</button>
 				</Tip>
-				{thinkingLevel && thinkingLevel !== "off" && (
+				{thinkingLevel && thinkingLevel !== "off" && !hidden.has("thinking") && (
 					<>
 						<Sep />
 						<span className="flex items-center gap-1 text-pi-text-muted">
@@ -139,13 +195,13 @@ export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
 						</span>
 					</>
 				)}
-				{status === "connected" && permissionMode && (
+				{status === "connected" && permissionMode && !hidden.has("permission") && (
 					<>
 						<Sep />
 						<PermissionModePicker mode={permissionMode} />
 					</>
 				)}
-				{runningAgents.length > 0 && (
+				{runningAgents.length > 0 && !hidden.has("agents") && (
 					<>
 						<Sep />
 						<span
@@ -161,10 +217,10 @@ export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
 
 			{/* Middle: context usage + stats */}
 			<div className="flex shrink-0 items-center gap-1 font-mono pi-tabular text-pi-text-muted">
-				{contextUsage && contextUsage.contextWindow > 0 && (
+				{contextUsage && contextUsage.contextWindow > 0 && !hidden.has("context") && (
 					<ContextUsageBar usage={contextUsage} />
 				)}
-				{stats && (
+				{stats && !hidden.has("stats") && (
 					<>
 						<Stat icon={MessageSquare} label="Msgs" value={stats.totalMessages} />
 						{stats.toolCalls > 0 && (
@@ -229,6 +285,46 @@ aria-label="Reconnect"
 					</div>
 				)}
 			</div>
+
+			{menuAt && (
+				<div
+					ref={menuRef}
+					role="menu"
+					aria-label="Status bar items"
+					className="fixed z-popover w-60 overflow-hidden rounded-lg border border-pi-border bg-pi-surface-overlay py-1 shadow-overlay"
+					style={{ left: menuAt.x, bottom: window.innerHeight - menuAt.y + 4 }}
+				>
+					<div className="px-2.5 py-1 text-3xs font-semibold uppercase tracking-[0.08em] text-pi-text-faint">
+						Status bar items
+					</div>
+					{STATUS_BAR_ITEMS.map((item) => {
+						const visible = !hidden.has(item.id);
+						return (
+							<button
+								key={item.id}
+								type="button"
+								role="menuitemcheckbox"
+								aria-checked={visible}
+								onClick={() => toggleItem(item.id)}
+								className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-2xs text-pi-text-secondary transition-hover hover:bg-pi-surface-raised hover:text-pi-text"
+							>
+								<Check className={`h-3 w-3 shrink-0 ${visible ? "text-pi-accent" : "opacity-0"}`} />
+								<span className="truncate">{item.label}</span>
+							</button>
+						);
+					})}
+					<div className="my-1 h-px bg-pi-border" role="separator" />
+					<button
+						type="button"
+						role="menuitem"
+						onClick={resetItems}
+						className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-2xs text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text"
+					>
+						<span className="w-3 shrink-0" />
+						Reset status bar
+					</button>
+				</div>
+			)}
 		</div>
 	);
 }
