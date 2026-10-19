@@ -1647,7 +1647,7 @@ function SidebarRail({
 			</aside>
 
 			{hovered && (
-				<aside className="absolute left-12 top-0 z-30 flex h-full w-64 flex-col border-r border-pi-border bg-pi-surface shadow-card">
+				<aside className="absolute left-12 top-0 z-[var(--z-modal)] flex h-full w-64 flex-col border-r border-pi-border bg-pi-surface shadow-overlay">
 					<SidebarContent
 						projectName={projectName}
 						onPickProject={onPickProject}
