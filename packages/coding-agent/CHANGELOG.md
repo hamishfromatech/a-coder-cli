@@ -104,6 +104,8 @@
 
 ### Fixed
 
+- Desktop browser: explicit user navigation to loopback hosts (`localhost`, `*.localhost`, `127/8`, `::1`) now loads local dev servers. A bare `localhost:3000` address defaults to `http://`; the proxy and gateway allow only the loopback host the user visited, while public pages and private LAN ranges stay blocked.
+
 - The desktop's engine transport now drains stderr concurrently for the child's whole lifetime instead of only after stdout closes. A CLI that writes more than one pipe buffer (~64KB) of stderr no longer blocks on write and appears hung.
 
 - Office floor: speech and error bubbles now expire by the event's timestamp, not by feed arrival — a status update no longer resurrects a 12-second-old speech bubble or a 20-second-old error. A coworker whose `turn_start` fell out of the host's 300-event activity buffer keeps its last known status instead of dropping to idle, and roster members past the six desks get distinct corridor hot-desks instead of standing on top of desk 0. Office errands can no longer double-fire while a run is in flight (`nextRunAt` previously advanced only after the run finished), snapshot pushes reuse cached huddle summaries instead of re-reading every huddle log file on each status change, and idle reaping now detaches a coworker session's activity listener.

@@ -19,7 +19,7 @@ use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 use uuid::Uuid;
 
-use super::security::{navigation_allowed, page_url, reportable, MAX_REPORTABLE_URL};
+use super::security::{navigation_allowed, navigation_allowed_local, page_url, reportable, MAX_REPORTABLE_URL};
 
 const TIMEOUT: Duration = Duration::from_secs(30);
 /// One resource at most; a real asset fits far below.
@@ -98,7 +98,7 @@ async fn serve_loop(port: u16) {
 	}
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 enum Route {
 	/// `?u=` names the page to render as a reading frame.
 	Page,
@@ -179,8 +179,20 @@ fn routed(base: &str, href: &str, as_document: bool) -> Option<String> {
 	let absolute = reqwest::Url::parse(href)
 		.or_else(|_| reqwest::Url::parse(base).and_then(|base| base.join(href)))
 		.ok()?;
-	if !navigation_allowed(&absolute) {
+	let local = navigation_allowed_local(&absolute);
+	if !navigation_allowed(&absolute) && !local {
 		return None;
+	}
+	if local {
+		let base_is_local = reqwest::Url::parse(base)
+			.map(|url| navigation_allowed_local(&url))
+			.unwrap_or(false);
+		let allowed = absolute
+			.host_str()
+			.is_some_and(super::proxy::local_allowed);
+		if !base_is_local || !allowed {
+			return None;
+		}
 	}
 	let _route = if as_document { "/page" } else { "/asset" };
 	Some(format!(
@@ -376,6 +388,11 @@ async fn serve(mut client: TcpStream) -> Result<(), String> {
 		return Err("address too long".into());
 	}
 	let http_url = page_url(&target)?;
+	if route == Route::Page && navigation_allowed_local(&http_url) {
+		if let Some(host) = http_url.host_str() {
+			super::proxy::allow_local(host);
+		}
+	}
 	let http_url_str = http_url.to_string();
 	let http_client = ADDRESS
 		.get()

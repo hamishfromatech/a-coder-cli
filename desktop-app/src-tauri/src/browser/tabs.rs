@@ -20,7 +20,7 @@ use tauri::{
 
 #[cfg(target_os = "macos")]
 use super::rules;
-use super::security::{is_external_handoff, navigation_allowed, page_url, reportable};
+use super::security::{is_external_handoff, navigation_allowed, navigation_allowed_local, page_url, reportable};
 use super::{emit, require_main, BrowserEvent, ViewBounds};
 #[cfg(target_os = "macos")]
 use objc2_foundation::{NSPoint, NSRect, NSSize};
@@ -342,8 +342,8 @@ pub async fn browser_view_show<R: Runtime>(
 				// so it arrived with url + no bounds).
 				let reserved = state.inner.lock().unwrap().pending_url.remove(tab_id);
 				let url = match (url.as_deref(), reserved) {
-					(Some(address), _) => parse_page_url(address)?,
-					(None, Some(reserved)) => parse_page_url(&reserved)?,
+					(Some(address), _) => parse_page_url(address, true)?,
+					(None, Some(reserved)) => parse_page_url(&reserved, true)?,
 					(None, None) => return Err("no address to open".into()),
 				};
 				#[cfg(target_os = "macos")]
@@ -385,7 +385,7 @@ pub fn browser_navigate_tab<R: Runtime>(
 	url: String,
 ) -> Result<(), String> {
 	require_main(&webview)?;
-	tauri::async_runtime::block_on(navigate_tab(webview.app_handle(), &tab_id, &url))
+	tauri::async_runtime::block_on(navigate_tab(webview.app_handle(), &tab_id, &url, true))
 }
 
 /// The navigate core, shared with the agent's MCP server.
@@ -393,8 +393,9 @@ pub(crate) async fn navigate_tab<R: Runtime>(
 	app: &AppHandle<R>,
 	tab_id: &str,
 	url: &str,
+	allow_local: bool,
 ) -> Result<(), String> {
-	let nav = parse_page_url(url)?;
+	let nav = parse_page_url(url, allow_local)?;
 	let page = app
 		.get_webview(&label_for(tab_id))
 		.ok_or_else(|| "That tab is closed".to_string())?;
@@ -575,15 +576,21 @@ pub async fn browser_find_in_page<R: Runtime>(
 
 // ---- creation ----
 
-fn parse_page_url(input: &str) -> Result<Url, String> {
+fn parse_page_url(input: &str, allow_local: bool) -> Result<Url, String> {
 	let url = page_url(input)?;
 	if !reportable(url.as_str()) {
 		return Err("Address too long to open".into());
 	}
-	if !navigation_allowed(&url) {
-		return Err("Only public web pages load in the panel".into());
+	if navigation_allowed(&url) {
+		return Ok(url);
 	}
-	Ok(url)
+	if allow_local && navigation_allowed_local(&url) {
+		if let Some(host) = url.host_str() {
+			super::proxy::allow_local(host);
+		}
+		return Ok(url);
+	}
+	Err("Only public web pages load in the panel".into())
 }
 
 /// The window's device pixel ratio, so the panel's CSS-pixel bounds can be
@@ -692,7 +699,13 @@ fn open_view<R: Runtime>(
 	let builder = WebviewBuilder::new(&label, WebviewUrl::External(initial))
 		.on_navigation(move |url| {
 			log::info!("page navigation requested: {}", url.as_str());
-			if navigation_allowed(url) && reportable(url.as_str()) {
+			if reportable(url.as_str()) && navigation_allowed(url) {
+				return true;
+			}
+			if reportable(url.as_str()) && navigation_allowed_local(url) {
+				if let Some(host) = url.host_str() {
+					super::proxy::allow_local(host);
+				}
 				return true;
 			}
 			log::info!("page navigation refused: {}", url.as_str());
@@ -729,7 +742,12 @@ fn open_view<R: Runtime>(
 			if !reportable(url.as_str()) {
 				return NewWindowResponse::Deny;
 			}
-			if navigation_allowed(&url) {
+			if navigation_allowed(&url) || navigation_allowed_local(&url) {
+				if navigation_allowed_local(&url) {
+					if let Some(host) = url.host_str() {
+						super::proxy::allow_local(host);
+					}
+				}
 				emit(
 					&window_app,
 					BrowserEvent::NewTab {

@@ -3,15 +3,16 @@
 //! rebinding DNS answer cannot reach a private one. The page webviews (and
 //! nothing else in the app) are pointed at it.
 
+use std::collections::HashSet;
 use std::net::{IpAddr, SocketAddr};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use url::{Host, Position, Url};
 
-use super::security::{host_is_private, ip_is_private};
+use super::security::{host_is_private, ip_is_loopback, ip_is_private};
 
 const MAX_HEAD: usize = 16 * 1024;
 const TIMEOUT: Duration = Duration::from_secs(30);
@@ -20,6 +21,44 @@ const TIMEOUT: Duration = Duration::from_secs(30);
 const ADDRESS_TIMEOUT: Duration = Duration::from_secs(10);
 
 static ADDRESS: OnceLock<Result<SocketAddr, String>> = OnceLock::new();
+/// Loopback hosts the user navigated to explicitly. The proxy still refuses
+/// every private LAN host; this set only opens localhost/127/8/::1.
+static ALLOWED_LOCAL: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+
+fn allowed_local() -> &'static Mutex<HashSet<String>> {
+	ALLOWED_LOCAL.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+fn local_host_key(host: &str) -> Option<String> {
+	let trimmed = host.trim().trim_end_matches('.');
+	let url = Url::parse(&format!("http://{trimmed}/")).ok()?;
+	let parsed = url.host()?;
+	match parsed {
+		Host::Ipv4(ip) if ip.is_loopback() => Some(ip.to_string()),
+		Host::Ipv6(ip) if ip.is_loopback() => Some(format!("[{ip}]")),
+		Host::Domain(name)
+			if name == "localhost" || name.ends_with(".localhost") =>
+		{
+			Some(name.to_string())
+		}
+		_ => None,
+	}
+}
+
+/// Allow a loopback host for this process after an explicit user navigation.
+pub fn allow_local(host: &str) {
+	if let Some(key) = local_host_key(host) {
+		if let Ok(mut set) = allowed_local().lock() {
+			if set.len() < 64 {
+				set.insert(key);
+			}
+		}
+	}
+}
+
+pub fn local_allowed(host: &str) -> bool {
+	local_host_key(host).is_some_and(|key| allowed_local().lock().is_ok_and(|set| set.contains(&key)))
+}
 
 /// The proxy's loopback address, starting its accept loop on first call.
 pub fn address() -> Result<SocketAddr, String> {
@@ -119,7 +158,8 @@ async fn connect_within(host: &str, port: u16) -> Result<TcpStream, Refusal> {
 		Host::Ipv4(ip) => Host::Ipv4(*ip),
 		Host::Ipv6(ip) => Host::Ipv6(*ip),
 	};
-	if host_is_private(&borrowed) {
+	let allowed_local = local_allowed(host);
+	if host_is_private(&borrowed) && !allowed_local {
 		return Err(Refusal::Private);
 	}
 	let addresses: Vec<SocketAddr> = match parsed {
@@ -130,7 +170,10 @@ async fn connect_within(host: &str, port: u16) -> Result<TcpStream, Refusal> {
 			.map_err(|_| Refusal::Unreachable)?
 			.collect(),
 	};
-	if addresses.iter().any(|address| ip_is_private(&address.ip())) {
+	if addresses
+		.iter()
+		.any(|address| ip_is_private(&address.ip()) && !(allowed_local && ip_is_loopback(&address.ip())))
+	{
 		return Err(Refusal::Private);
 	}
 	for address in addresses {
@@ -222,8 +265,28 @@ async fn reply(client: &mut TcpStream, status: &str) -> std::io::Result<()> {
 }
 
 #[cfg(test)]
+static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+#[cfg(test)]
+fn clear_local_allowlist() {
+	if let Ok(mut set) = allowed_local().lock() {
+		set.clear();
+	}
+}
+
+#[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn only_loopback_hosts_can_be_allowlisted() {
+		assert_eq!(local_host_key("localhost"), Some("localhost".into()));
+		assert_eq!(local_host_key("APP.localhost"), Some("app.localhost".into()));
+		assert_eq!(local_host_key("127.0.0.1"), Some("127.0.0.1".into()));
+		assert_eq!(local_host_key("[::1]"), Some("[::1]".into()));
+		assert_eq!(local_host_key("10.0.0.1"), None);
+		assert_eq!(local_host_key("example.com"), None);
+	}
 
 	#[test]
 	fn parses_tunnels_and_plain_requests() {
@@ -264,6 +327,8 @@ mod tests {
 
 	#[tokio::test]
 	async fn private_hosts_are_refused_however_written() {
+		let _guard = TEST_LOCK.lock().unwrap();
+		clear_local_allowlist();
 		for host in [
 			"localhost",
 			"127.0.0.1",
@@ -281,6 +346,20 @@ mod tests {
 	}
 
 	#[tokio::test]
+	async fn allowlisted_loopback_connects() {
+		let _guard = TEST_LOCK.lock().unwrap();
+		clear_local_allowlist();
+		let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+		let port = listener.local_addr().unwrap().port();
+		tokio::spawn(async move {
+			let _ = listener.accept().await;
+		});
+		allow_local("127.0.0.1");
+		assert!(connect("127.0.0.1", port).await.is_ok());
+		clear_local_allowlist();
+	}
+
+	#[tokio::test]
 	async fn unreachable_hosts_answer_unreachable() {
 		// A public, never-answering literal: TEST-NET (203.0.113.x) is public
 		// by the private-address rules but cannot connect.
@@ -292,6 +371,8 @@ mod tests {
 
 	#[tokio::test]
 	async fn the_proxy_answers_a_private_tunnel_with_403() {
+		let _guard = TEST_LOCK.lock().unwrap();
+		clear_local_allowlist();
 		let address = tokio::task::spawn_blocking(address).await.unwrap().unwrap();
 		let mut client = TcpStream::connect(address).await.unwrap();
 		client

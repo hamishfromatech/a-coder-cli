@@ -50,6 +50,18 @@ pub fn navigation_allowed(url: &Url) -> bool {
 	}
 }
 
+/// Loopback-only navigation (localhost, *.localhost, 127/8, ::1) for explicit
+/// user browsing of local dev servers. Private LAN ranges stay refused.
+pub fn navigation_allowed_local(url: &Url) -> bool {
+	if !matches!(url.scheme(), "http" | "https") {
+		return false;
+	}
+	match url.host() {
+		Some(host) => host_is_loopback(&host),
+		None => false,
+	}
+}
+
 /// Whether the URL should be handed the OS instead of loaded (mailto:, tel:, …).
 pub fn is_external_handoff(url: &Url) -> bool {
 	EXTERNAL_SCHEMES.contains(&url.scheme())
@@ -78,6 +90,25 @@ pub fn host_is_private(host: &Host<&str>) -> bool {
 				|| name.ends_with(".internal")
 				|| name.ends_with(".home.arpa")
 		}
+	}
+}
+
+pub fn host_is_loopback(host: &Host<&str>) -> bool {
+	match *host {
+		Host::Ipv4(ip) => ip.is_loopback(),
+		Host::Ipv6(ip) => ip.is_loopback(),
+		Host::Domain(name) => {
+			let name = name.trim_end_matches('.').to_ascii_lowercase();
+			name == "localhost" || name.ends_with(".localhost")
+		}
+	}
+}
+
+/// The IP ranges a local page may reach: loopback only.
+pub fn ip_is_loopback(ip: &IpAddr) -> bool {
+	match *ip {
+		IpAddr::V4(ipv4) => ipv4.is_loopback(),
+		IpAddr::V6(ipv6) => ipv6.is_loopback() || ipv6.to_ipv4_mapped().is_some_and(|v4| v4.is_loopback()),
 	}
 }
 
@@ -171,6 +202,29 @@ mod tests {
 		assert!(allowed("https://example.com/"));
 		assert!(allowed("http://8.8.8.8/"));
 		assert!(allowed("http://100.128.0.1/"));
+	}
+
+	#[test]
+	fn local_navigation_is_loopback_only() {
+		for address in [
+			"http://localhost:1425/",
+			"http://app.localhost/",
+			"http://127.0.0.1:3000/",
+			"http://127.9.9.9/",
+			"http://[::1]:8080/",
+		] {
+			let url = Url::parse(address).unwrap();
+			assert!(navigation_allowed_local(&url), "{address}");
+			assert!(!navigation_allowed(&url), "{address}");
+		}
+		for address in [
+			"http://10.0.0.1/",
+			"http://192.168.1.4/",
+			"http://169.254.1.1/",
+			"https://example.com/",
+		] {
+			assert!(!navigation_allowed_local(&Url::parse(address).unwrap()), "{address}");
+		}
 	}
 
 	#[test]

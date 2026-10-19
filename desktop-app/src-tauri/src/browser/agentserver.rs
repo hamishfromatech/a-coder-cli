@@ -892,7 +892,7 @@ async fn call_tool<R: Runtime>(
 			// The settle starts before the navigation could commit: an earlier
 			// page left complete and idle must not read as quiet.
 			let start_ms = super::tabs::now_ms();
-			super::tabs::navigate_tab(app, &tab_id, url).await?;
+			super::tabs::navigate_tab(app, &tab_id, url, false).await?;
 			if wait_page_quiet(app, &tab_id, start_ms).await {
 				Ok(text(format!(
 					"Navigated the active tab to {url}; the page has settled. Take browser_snapshot now."
@@ -952,7 +952,7 @@ async fn call_tool<R: Runtime>(
 					// Same settle as browser_navigate, so the next snapshot reads
 					// the link's page once it is quiet, not mid-load markup.
 					let start_ms = super::tabs::now_ms();
-					super::tabs::navigate_tab(app, &tab_id, &navigate_url).await?;
+					super::tabs::navigate_tab(app, &tab_id, &navigate_url, false).await?;
 					if wait_page_quiet(app, &tab_id, start_ms).await {
 						format!(
 							"The click followed a link to {navigate_url}; the page has settled. Take a new browser_snapshot."
