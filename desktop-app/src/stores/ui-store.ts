@@ -3,12 +3,14 @@ import { persist } from "zustand/middleware";
 
 export type RightSidebarTab = "files" | "git" | "office" | "cron" | "activity" | "browser" | "voice";
 export type ArtifactViewMode = "raw" | "preview";
+export type InterfaceMode = "simple" | "advanced";
 
 export interface UiState {
 	leftSidebarOpen: boolean;
 	rightSidebarOpen: boolean;
 	rightSidebarWidth: number;
 	rightSidebarTab: RightSidebarTab;
+	interfaceMode: InterfaceMode;
 
 	selectedGitFile: string | null;
 	selectedGitStaged: boolean;
@@ -20,11 +22,13 @@ export interface UiState {
 	setRightSidebarOpen: (open: boolean) => void;
 	setRightSidebarWidth: (width: number) => void;
 	setRightSidebarTab: (tab: RightSidebarTab) => void;
+	setInterfaceMode: (mode: InterfaceMode) => void;
 	setSelectedGitFile: (path: string | null, staged?: boolean) => void;
 	setSelectedArtifactPath: (path: string | null) => void;
 	setSelectedArtifactViewMode: (mode: ArtifactViewMode) => void;
 	toggleLeftSidebar: () => void;
 	toggleRightSidebar: () => void;
+	toggleInterfaceMode: () => void;
 }
 
 export const useUiStore = create<UiState>()(
@@ -34,6 +38,7 @@ export const useUiStore = create<UiState>()(
 			rightSidebarOpen: false,
 			rightSidebarWidth: 320,
 			rightSidebarTab: "files",
+			interfaceMode: "advanced",
 
 			selectedGitFile: null,
 			selectedGitStaged: false,
@@ -44,12 +49,15 @@ export const useUiStore = create<UiState>()(
 			setRightSidebarOpen: (open) => set({ rightSidebarOpen: open }),
 			setRightSidebarWidth: (width) => set({ rightSidebarWidth: width }),
 			setRightSidebarTab: (tab) => set({ rightSidebarTab: tab, rightSidebarOpen: true }),
+			setInterfaceMode: (interfaceMode) => set({ interfaceMode }),
 			setSelectedGitFile: (path, staged) =>
 				set({ selectedGitFile: path, selectedGitStaged: staged ?? false }),
 			setSelectedArtifactPath: (path) => set({ selectedArtifactPath: path }),
 			setSelectedArtifactViewMode: (mode) => set({ selectedArtifactViewMode: mode }),
 			toggleLeftSidebar: () => set({ leftSidebarOpen: !get().leftSidebarOpen }),
 			toggleRightSidebar: () => set({ rightSidebarOpen: !get().rightSidebarOpen }),
+			toggleInterfaceMode: () =>
+				set({ interfaceMode: get().interfaceMode === "simple" ? "advanced" : "simple" }),
 		}),
 		{
 			name: "a-coder-desktop-ui",
@@ -71,6 +79,7 @@ export const useUiStore = create<UiState>()(
 				rightSidebarOpen: state.rightSidebarOpen,
 				rightSidebarWidth: state.rightSidebarWidth,
 				rightSidebarTab: state.rightSidebarTab,
+				interfaceMode: state.interfaceMode,
 			}),
 		},
 	),

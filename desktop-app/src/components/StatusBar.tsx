@@ -23,6 +23,7 @@ import { FolderOpen } from "lucide-react";
 import * as rpc from "../lib/rpc";
 import { useSessionStore } from "../stores/session-store";
 import { useSettingsStore } from "../stores/settings-store";
+import { useUiStore } from "../stores/ui-store";
 import { useStatsStore } from "../stores/stats-store";
 import type { PermissionMode } from "../lib/settings.types";
 import { Badge, type BadgeVariant } from "./ui/Badge";
@@ -99,6 +100,7 @@ export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
 		),
 	);
 	const { stats } = useStatsStore();
+	const simple = useUiStore((s) => s.interfaceMode === "simple");
 	const [hidden, setHidden] = useState<ReadonlySet<StatusBarItemId>>(() => readHiddenStatusItems());
 	const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
 	const menuRef = useRef<HTMLDivElement | null>(null);
@@ -184,7 +186,7 @@ export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
 						<FolderOpen className="h-2.5 w-2.5 shrink-0 opacity-60" />
 					</button>
 				</Tip>
-				{thinkingLevel && thinkingLevel !== "off" && !hidden.has("thinking") && (
+				{!simple && thinkingLevel && thinkingLevel !== "off" && !hidden.has("thinking") && (
 					<>
 						<Sep />
 						<span className="flex items-center gap-1 text-pi-text-muted">
@@ -201,7 +203,7 @@ export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
 						<PermissionModePicker mode={permissionMode} />
 					</>
 				)}
-				{runningAgents.length > 0 && !hidden.has("agents") && (
+				{!simple && runningAgents.length > 0 && !hidden.has("agents") && (
 					<>
 						<Sep />
 						<span
@@ -217,10 +219,10 @@ export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
 
 			{/* Middle: context usage + stats */}
 			<div className="flex shrink-0 items-center gap-1 font-mono pi-tabular text-pi-text-muted">
-				{contextUsage && contextUsage.contextWindow > 0 && !hidden.has("context") && (
+				{!simple && contextUsage && contextUsage.contextWindow > 0 && !hidden.has("context") && (
 					<ContextUsageBar usage={contextUsage} />
 				)}
-				{stats && !hidden.has("stats") && (
+				{!simple && stats && !hidden.has("stats") && (
 					<>
 						<Stat icon={MessageSquare} label="Msgs" value={stats.totalMessages} />
 						{stats.toolCalls > 0 && (
@@ -297,7 +299,7 @@ aria-label="Reconnect"
 					<div className="px-2.5 py-1 text-3xs font-semibold uppercase tracking-[0.08em] text-pi-text-faint">
 						Status bar items
 					</div>
-					{STATUS_BAR_ITEMS.map((item) => {
+					{(simple ? STATUS_BAR_ITEMS.filter((item) => item.id === "permission") : STATUS_BAR_ITEMS).map((item) => {
 						const visible = !hidden.has(item.id);
 						return (
 							<button

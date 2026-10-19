@@ -4,6 +4,10 @@
 
 ### Added
 
+- Interface modes: Simple hides the standing developer chrome (stats, context, thinking, agents, tree, current-session panel, right-sidebar toggles, browser/memory header actions) and keeps the conversation, model/thinking pills, permission mode, and every command reachable from ⌘K. Advanced restores the full shell. Switch from Settings → Appearance, the header overflow menu, or the command palette.
+- Command palette depth: commands can open nested pages (starting with Interface mode), with a breadcrumb, back navigation, Escape-to-go-back, keyword aliases, and keybind hints on each row.
+- Accessibility: `prefers-reduced-transparency` and `forced-colors` drop backdrop blur, `prefers-contrast: more` strengthens hairlines and secondary text, focus outlines survive forced colors, and the shared radius/spacing/control-height tokens now back the core card surfaces.
+
 - Session list views: compact, comfortable, and detailed row densities, plus optional message-count, token, cost, and model metadata, persisted per install. `list_sessions` now reports the last assistant `model` and summed `totalTokens`/`totalCost`, and the sidebar search stays pinned while the list scrolls. Sidebar sections (Sessions, Projects, Current session, Tree) collapse and remember their state; rail shortcuts open a collapsed target before scrolling to it.
 
 - RPC tree deltas: persisted message/label/compaction entries emit `session_tree_changed`, streamed to contract-2 clients as a slim `tree_delta` (`added`/`updated`, `leafId`, `version`). The desktop applies it to the session tree without a `get_tree` refetch.

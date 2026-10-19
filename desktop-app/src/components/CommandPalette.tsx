@@ -10,7 +10,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FadeScroll } from "./ui/FadeScroll";
 
-import { Search } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { ESCAPE_PRIORITY, isTopEscapeLayer, pushEscapeLayer } from '../lib/escape-layers';
 
 export interface CommandItem {
@@ -20,7 +20,11 @@ export interface CommandItem {
 	keybinding?: string;
 	icon?: React.ReactNode;
 	group: 'session' | 'navigate' | 'tools' | 'settings' | 'view';
-	action: () => void;
+	/** Search aliases that are not shown in the row. */
+	keywords?: string[];
+	/** Nested page of commands; selecting the row opens it instead of closing. */
+	children?: CommandItem[];
+	action?: () => void;
 }
 
 interface CommandPaletteProps {
@@ -42,20 +46,24 @@ const GROUP_ORDER: CommandItem['group'][] = ['session', 'navigate', 'view', 'too
 export function CommandPalette({ open, commands, onClose }: CommandPaletteProps) {
 	const [query, setQuery] = useState('');
 	const [selectedIndex, setSelectedIndex] = useState(0);
+	const [pages, setPages] = useState<{ title: string; items: CommandItem[] }[]>([]);
+	const page = pages.at(-1);
+	const commandsForPage = page?.items ?? commands;
 	const inputRef = useRef<HTMLInputElement>(null);
 	const listRef = useRef<HTMLDivElement>(null);
 
 	// Filter commands by query.
 	const filtered = useMemo(() => {
-		if (!query.trim()) return commands;
+		if (!query.trim()) return commandsForPage;
 		const needle = query.trim().toLowerCase();
-		return commands.filter(
+		return commandsForPage.filter(
 			(item) =>
 				item.label.toLowerCase().includes(needle) ||
 				item.hint?.toLowerCase().includes(needle) ||
-				item.group.toLowerCase().includes(needle)
+				item.group.toLowerCase().includes(needle) ||
+				item.keywords?.some((keyword) => keyword.toLowerCase().includes(needle))
 		);
-	}, [commands, query]);
+	}, [commandsForPage, query]);
 
 	// Group commands by their group, ordered.
 	const grouped = useMemo(() => {
@@ -76,6 +84,7 @@ export function CommandPalette({ open, commands, onClose }: CommandPaletteProps)
 		if (open) {
 			setQuery('');
 			setSelectedIndex(0);
+			setPages([]);
 			const id = requestAnimationFrame(() => inputRef.current?.focus());
 			return () => cancelAnimationFrame(id);
 		}
@@ -96,8 +105,20 @@ export function CommandPalette({ open, commands, onClose }: CommandPaletteProps)
 	}, [selectedIndex]);
 
 	function execute(item: CommandItem) {
-		item.action();
+		if (item.children && item.children.length > 0) {
+			setPages((current) => [...current, { title: item.label, items: item.children! }]);
+			setQuery('');
+			setSelectedIndex(0);
+			return;
+		}
+		item.action?.();
 		onClose();
+	}
+
+	function goBack() {
+		setPages((current) => current.slice(0, -1));
+		setQuery('');
+		setSelectedIndex(0);
 	}
 
 	function handleKeyDown(event: React.KeyboardEvent) {
@@ -112,8 +133,10 @@ export function CommandPalette({ open, commands, onClose }: CommandPaletteProps)
 			const item = flat[selectedIndex];
 			if (item) execute(item);
 		} else if (event.key === 'Escape') {
+			if (event.defaultPrevented) return;
 			event.preventDefault();
-			onClose();
+			if (pages.length > 0) goBack();
+			else onClose();
 		}
 	}
 
@@ -126,7 +149,8 @@ export function CommandPalette({ open, commands, onClose }: CommandPaletteProps)
 			if (event.defaultPrevented || !isTopEscapeLayer(ESCAPE_PRIORITY.palette)) return;
 			if (event.key === 'Escape') {
 				event.preventDefault();
-				onClose();
+				if (pages.length > 0) goBack();
+				else onClose();
 			}
 		}
 
@@ -135,7 +159,7 @@ export function CommandPalette({ open, commands, onClose }: CommandPaletteProps)
 			unregister();
 			window.removeEventListener('keydown', handleGlobalKeyDown, { capture: true });
 		};
-	}, [open, onClose]);
+	}, [open, onClose, pages.length]);
 
 	if (!open) return null;
 
@@ -157,10 +181,26 @@ export function CommandPalette({ open, commands, onClose }: CommandPaletteProps)
 			>
 				{/* Input */}
 				<div className="flex items-center gap-2 border-b border-[var(--pi-border)] px-3 py-2.5">
-					<Search className="size-4 shrink-0 text-[var(--pi-text-muted)]" />
+					{pages.length > 0 ? (
+						<button
+							type="button"
+							onClick={goBack}
+							className="flex size-5 shrink-0 items-center justify-center rounded text-[var(--pi-text-muted)] transition-colors hover:bg-[var(--pi-surface-raised)] hover:text-[var(--pi-text)]"
+							aria-label="Back to commands"
+						>
+							<ChevronLeft className="size-3.5" />
+						</button>
+					) : (
+						<Search className="size-4 shrink-0 text-[var(--pi-text-muted)]" />
+					)}
+					{pages.length > 0 && (
+						<span className="shrink-0 text-xs text-[var(--pi-text-faint)]">
+							{pages.map((entry) => entry.title).join(" / ")}
+						</span>
+					)}
 					<input
 						ref={inputRef}
-						className="w-full bg-transparent text-sm text-[var(--pi-text)] outline-none placeholder:text-[var(--pi-text-muted)]"
+						className="min-w-0 flex-1 bg-transparent text-sm text-[var(--pi-text)] outline-none placeholder:text-[var(--pi-text-muted)]"
 						onChange={(e) => setQuery(e.target.value)}
 						onKeyDown={handleKeyDown}
 						placeholder="Type a command..."
@@ -201,6 +241,9 @@ export function CommandPalette({ open, commands, onClose }: CommandPaletteProps)
 											<span className="min-w-0 flex-1 truncate">{item.label}</span>
 											{item.hint && (
 												<span className="shrink-0 text-xs text-[var(--pi-text-faint)]">{item.hint}</span>
+											)}
+											{item.children && item.children.length > 0 && (
+												<ChevronRight className="size-3.5 shrink-0 text-[var(--pi-text-faint)]" />
 											)}
 											{item.keybinding && (
 												<kbd className="shrink-0 rounded border border-[var(--pi-border)] bg-[var(--pi-surface)] px-1.5 py-0.5 text-[0.625rem] text-[var(--pi-text-muted)]">

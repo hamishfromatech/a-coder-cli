@@ -6,6 +6,7 @@ import {
 	Globe,
 	MoreHorizontal,
 	Plus,
+	SlidersHorizontal,
 	Sparkles,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -13,6 +14,7 @@ import * as rpc from "../lib/rpc";
 import { triggerHaptic } from "../lib/haptics";
 import { ESCAPE_PRIORITY, isTopEscapeLayer, pushEscapeLayer } from "../lib/escape-layers";
 import { useSessionStore } from "../stores/session-store";
+import { useUiStore } from "../stores/ui-store";
 import { Button } from "./ui/Button";
 import { Tip } from "./ui/Tip";
 import { useShallow } from "zustand/react/shallow";
@@ -28,6 +30,7 @@ interface MenuItem {
 	icon: typeof Copy;
 	onSelect: () => void;
 	disabled?: boolean;
+	separatorBefore?: boolean;
 }
 
 /** Header actions only. Model and thinking are turn-scoped and live in the
@@ -35,6 +38,13 @@ interface MenuItem {
 export function Toolbar({ onShowMemory, onToggleBrowser, browserOpen }: ToolbarProps) {
 	const [menuOpen, setMenuOpen] = useState(false);
 	const menuRef = useRef<HTMLDivElement | null>(null);
+	const { interfaceMode, toggleInterfaceMode } = useUiStore(
+		useShallow((s) => ({
+			interfaceMode: s.interfaceMode,
+			toggleInterfaceMode: s.toggleInterfaceMode,
+		})),
+	);
+	const simple = interfaceMode === "simple";
 	const { isStreaming, isCompacting, setIsCompacting } = useSessionStore(
 		useShallow((s) => ({
 			isStreaming: s.isStreaming,
@@ -133,17 +143,27 @@ export function Toolbar({ onShowMemory, onToggleBrowser, browserOpen }: ToolbarP
 	};
 
 	const overflowItems: MenuItem[] = [
-		{ label: "Memory", icon: Brain, onSelect: onShowMemory },
-		{
-			label: isCompacting ? "Compacting…" : "Compact context",
-			icon: Sparkles,
-			onSelect: () => void handleCompact(),
-			disabled: isCompacting || isStreaming,
-		},
-		{ label: "Copy last reply", icon: Copy, onSelect: () => void handleCopyLastReply() },
+		...(simple
+			? []
+			: [
+					{ label: "Memory", icon: Brain, onSelect: onShowMemory },
+					{
+						label: isCompacting ? "Compacting…" : "Compact context",
+						icon: Sparkles,
+						onSelect: () => void handleCompact(),
+						disabled: isCompacting || isStreaming,
+					},
+				]),
+		{ label: "Copy last reply", icon: Copy, onSelect: () => void handleCopyLastReply(), separatorBefore: !simple },
 		{ label: "Clone session", icon: Copy, onSelect: () => void handleClone() },
 		{ label: "Fork session", icon: GitBranch, onSelect: () => void handleFork() },
 		{ label: "Export HTML", icon: FileDown, onSelect: () => void handleExport() },
+		{
+			label: simple ? "Use advanced interface" : "Use simple interface",
+			icon: SlidersHorizontal,
+			onSelect: toggleInterfaceMode,
+			separatorBefore: true,
+		},
 	];
 
 	return (
@@ -158,7 +178,7 @@ export function Toolbar({ onShowMemory, onToggleBrowser, browserOpen }: ToolbarP
 				/>
 			</Tip>
 
-			{onToggleBrowser && (
+			{onToggleBrowser && !simple && (
 				<Tip content={browserOpen ? "Close browser panel" : "Open browser panel"} placement="toolbar">
 					<Button
 						variant="ghost"
@@ -195,9 +215,9 @@ export function Toolbar({ onShowMemory, onToggleBrowser, browserOpen }: ToolbarP
 						aria-label="Session actions"
 						className="absolute left-0 top-full z-popover mt-1 w-52 overflow-hidden rounded-lg border border-pi-border bg-pi-surface-overlay py-1 shadow-overlay"
 					>
-						{overflowItems.map((item, index) => (
+						{overflowItems.map((item) => (
 							<div key={item.label}>
-								{index === 2 && <div className="my-1 h-px bg-pi-border" role="separator" />}
+								{item.separatorBefore && <div className="my-1 h-px bg-pi-border" role="separator" />}
 								<button
 									type="button"
 									role="menuitem"

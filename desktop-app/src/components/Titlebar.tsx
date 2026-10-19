@@ -35,7 +35,9 @@ export function Titlebar() {
 		toggleRightSidebar,
 		setRightSidebarTab,
 		rightSidebarTab,
+		interfaceMode,
 	} = useUiStore();
+	const simple = interfaceMode === "simple";
 	const sessionName = useSessionStore((s) => s.sessionName);
 	const setSessionName = useSessionStore((s) => s.setSessionName);
 	const status = useSessionStore((s) => s.status);
@@ -138,51 +140,54 @@ export function Titlebar() {
 			{/* Center spacer */}
 			<div data-tauri-drag-region className="flex-1" />
 
-			{/* Right slot: right sidebar controls. */}
-			<div data-tauri-drag-region className="flex h-full shrink-0 items-center gap-0.5 px-1.5">
-				{(
-					[
-						{ tab: "files", label: "Files", icon: FileText },
-						{ tab: "git", label: "Git changes", icon: GitBranch },
-					] as const
-				).map(({ tab, label, icon: Icon }) => (
-					<button
-						key={tab}
-						onClick={() => {
-							triggerHaptic("selection");
-							if (rightSidebarTab === tab && rightSidebarOpen) {
-								toggleRightSidebar();
-							} else {
-								setRightSidebarTab(tab);
-							}
-						}}
-						className={`flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-pi-text-muted transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
-							rightSidebarOpen && rightSidebarTab === tab
-								? "bg-pi-accent-soft text-pi-accent"
-								: "hover:bg-pi-surface-raised hover:text-pi-text"
-						}`}
-						aria-label={label}
+			{/* Right slot: right sidebar controls. Simple mode rests them out of
+			    the chrome; the command palette still opens every pane. */}
+			{!simple && (
+				<div data-tauri-drag-region className="flex h-full shrink-0 items-center gap-0.5 px-1.5">
+					{(
+						[
+							{ tab: "files", label: "Files", icon: FileText },
+							{ tab: "git", label: "Git changes", icon: GitBranch },
+						] as const
+					).map(({ tab, label, icon: Icon }) => (
+						<button
+							key={tab}
+							onClick={() => {
+								triggerHaptic("selection");
+								if (rightSidebarTab === tab && rightSidebarOpen) {
+									toggleRightSidebar();
+								} else {
+									setRightSidebarTab(tab);
+								}
+							}}
+							className={`flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-pi-text-muted transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
+								rightSidebarOpen && rightSidebarTab === tab
+									? "bg-pi-accent-soft text-pi-accent"
+									: "hover:bg-pi-surface-raised hover:text-pi-text"
+							}`}
+							aria-label={label}
+						>
+							<Icon className="h-3.5 w-3.5 transition-smooth" />
+						</button>
+					))}
+
+					<SidebarToggle
+						onClick={toggleRightSidebar}
+						active={rightSidebarOpen}
+						label="Toggle right sidebar"
 					>
-						<Icon className="h-3.5 w-3.5 transition-smooth" />
-					</button>
-				))}
+						<PanelRight className="h-3.5 w-3.5 transition-smooth" />
+					</SidebarToggle>
 
-				<SidebarToggle
-					onClick={toggleRightSidebar}
-					active={rightSidebarOpen}
-					label="Toggle right sidebar"
-				>
-					<PanelRight className="h-3.5 w-3.5 transition-smooth" />
-				</SidebarToggle>
-
-				<SidebarToggle
-					onClick={() => void openHud()}
-					active={false}
-					label="Open HUD floating chat"
-				>
-					<PictureInPicture2 className="h-3.5 w-3.5 transition-smooth" />
-				</SidebarToggle>
-			</div>
+					<SidebarToggle
+						onClick={() => void openHud()}
+						active={false}
+						label="Open HUD floating chat"
+					>
+						<PictureInPicture2 className="h-3.5 w-3.5 transition-smooth" />
+					</SidebarToggle>
+				</div>
+			)}
 
 			{/* Window controls: flush at the top-right edge (non-macOS). */}
 			{!isMacOS && <WindowControls />}

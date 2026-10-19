@@ -28,6 +28,22 @@
 	   set this to 0 to keep the image's original colors. */
 	--backdrop-invert-mul: 1;
 
+	/* ---------- Shape and spacing scale ----------
+	   One control language: new surfaces should pick a step here instead of
+	   inventing a radius. Tailwind utilities still map to the same 0.25rem
+	   spacing unit. */
+	--pi-radius-xs: 4px;
+	--pi-radius-sm: 6px;
+	--pi-radius-md: 8px;
+	--pi-radius-lg: 12px;
+	--pi-radius-xl: 16px;
+	--pi-space-1: 0.25rem;
+	--pi-space-2: 0.5rem;
+	--pi-space-3: 0.75rem;
+	--pi-space-4: 1rem;
+	--pi-control-h-sm: 1.5rem;
+	--pi-control-h-md: 1.75rem;
+
 	/* ---------- Z-index ladder ---------- */
 	--z-base: 0;
 	--z-sticky: 10;
@@ -298,12 +314,12 @@ html.has-page body::after {
    in-panel structure as hairlines, not heavy shadow. */
 .pi-card {
 	background: var(--pi-surface);
-	border-radius: 10px;
+	border-radius: var(--pi-radius-lg);
 	box-shadow: 0 0 0 1px var(--pi-border);
 }
 .pi-card-overlay {
 	background: var(--pi-surface-overlay);
-	border-radius: 14px;
+	border-radius: var(--pi-radius-xl);
 	/* Borderless elevation: layered soft shadow, no hard 1px ring. */
 	box-shadow:
 		0 1px 1px rgba(0, 0, 0, 0.04),
@@ -439,6 +455,45 @@ input[type="range"].pi-range,
 }
 .active-press:active {
 	transform: scale(0.98);
+}
+
+/* Accessibility: backdrop blur is texture, never the legibility layer.
+   Drop it when the OS asks for reduced transparency or has no compositor
+   headroom (forced colors). */
+@media (prefers-reduced-transparency: reduce) {
+	*,
+	*::before,
+	*::after {
+		backdrop-filter: none !important;
+		-webkit-backdrop-filter: none !important;
+	}
+}
+@media (forced-colors: active) {
+	.pi-glass,
+	.pi-card,
+	.pi-card-overlay {
+		backdrop-filter: none;
+		-webkit-backdrop-filter: none;
+	}
+	button:focus-visible,
+	a:focus-visible,
+	input:focus-visible,
+	textarea:focus-visible,
+	select:focus-visible {
+		outline: 2px solid CanvasText;
+		outline-offset: 2px;
+	}
+}
+
+/* Higher contrast without changing the palette: strengthen the hairlines and
+   lift secondary text one step. */
+@media (prefers-contrast: more) {
+	:root {
+		--pi-border: color-mix(in srgb, var(--pi-accent) 38%, transparent);
+		--pi-border-strong: color-mix(in srgb, var(--pi-accent) 55%, transparent);
+		--pi-text-secondary: var(--pi-text);
+		--pi-text-muted: var(--pi-text-secondary);
+	}
 }
 
 /* Respect reduced motion. */

@@ -45,6 +45,7 @@ import {
 import * as rpc from "../lib/rpc";
 import { ThemePicker } from "./panels/widgets/ThemePicker";
 import { ChatTextSizeSection } from "./panels/widgets/ChatTextSizeSection";
+import { InterfaceModeSection } from "./panels/widgets/InterfaceModeSection";
 import { ThinkingPresetPicker } from "./panels/widgets/ThinkingPresetPicker";
 import { ModelsPicker } from "./panels/widgets/ModelsPicker";
 import { DefaultModelPicker } from "./panels/widgets/DefaultModelPicker";
@@ -436,6 +437,8 @@ function renderCustom(
 			return <ThemePicker />;
 		case "chatTextSize":
 			return <ChatTextSizeSection />;
+		case "interfaceMode":
+			return <InterfaceModeSection />;
 		case "thinking":
 			return (
 				<ThinkingPresetPicker

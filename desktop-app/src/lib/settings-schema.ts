@@ -63,7 +63,7 @@ export interface CliSettingsFieldSpec {
 	/** Number-only: step */
 	step?: number;
 	/** Custom-widget name when kind === "custom" */
-	widget?: "theme" | "thinking" | "models" | "defaultModel" | "mcpServers" | "permissionPolicies" | "packages" | "resources" | "completionSound" | "benchRunner" | "onboardingTour" | "computerUse" | "browserSettings" | "chatTextSize";
+	widget?: "theme" | "thinking" | "models" | "defaultModel" | "mcpServers" | "permissionPolicies" | "packages" | "resources" | "completionSound" | "benchRunner" | "onboardingTour" | "computerUse" | "browserSettings" | "chatTextSize" | "interfaceMode";
 	/** If true, change is also pushed to the engine at runtime (not just persisted) */
 	runtimeSync?:
 		| "thinkingLevel"
@@ -329,6 +329,13 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 				hint: "Scale the conversation only — sidebar, settings and panes keep their size.",
 				kind: "custom",
 				widget: "chatTextSize",
+			},
+			{
+				path: "interfaceMode",
+				label: "Interface mode",
+				hint: "Simple keeps the conversation in front. Advanced shows every panel and readout.",
+				kind: "custom",
+				widget: "interfaceMode",
 			},
 			{
 				path: "completionSound",

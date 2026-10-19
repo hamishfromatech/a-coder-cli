@@ -324,6 +324,12 @@ export default function App() {
 	);
 	const { leftSidebarOpen, setLeftSidebarOpen, rightSidebarOpen, setRightSidebarOpen, rightSidebarWidth } = useUiStore();
 	const rightSidebarTab = useUiStore((state) => state.rightSidebarTab);
+	const interfaceMode = useUiStore((state) => state.interfaceMode);
+	const setInterfaceMode = useUiStore((state) => state.setInterfaceMode);
+	const simple = interfaceMode === "simple";
+	useEffect(() => {
+		if (simple) setRightSidebarOpen(false);
+	}, [simple, setRightSidebarOpen]);
 	type SidebarSectionId = "sessions" | "projects" | "tree";
 	const [pendingSidebarSection, setPendingSidebarSection] = useState<SidebarSectionId | null>(null);
 	const jumpToSidebarSection = (section: SidebarSectionId) => {
@@ -1087,6 +1093,29 @@ export default function App() {
 			{ id: "subagents", label: "View sub-agents", group: "tools", action: () => setShowSubagents(true) },
 			{ id: "teams", label: "View teams", group: "tools", action: () => setShowTeams(true) },
 			{ id: "memory", label: "View memory", group: "tools", action: () => setShowMemory(true) },
+			{
+				id: "interface-mode",
+				label: "Interface mode",
+				hint: simple ? "Simple" : "Advanced",
+				keywords: ["ui", "layout", "chrome", "simple", "advanced"],
+				group: "view",
+				children: [
+					{
+						id: "interface-simple",
+						label: "Simple interface",
+						hint: "Conversation-first",
+						group: "view",
+						action: () => setInterfaceMode("simple"),
+					},
+					{
+						id: "interface-advanced",
+						label: "Advanced interface",
+						hint: "All panels and instrumentation",
+						group: "view",
+						action: () => setInterfaceMode("advanced"),
+					},
+				],
+			},
 			{ id: "command-center", label: "Open command center", group: "navigate", action: () => setShowCommandCenter(true) },
 			{ id: "toggle-left-sidebar", label: leftSidebarOpen ? "Hide left sidebar" : "Show left sidebar", group: "view", action: () => setLeftSidebarOpen(!leftSidebarOpen) },
 			{ id: "toggle-right-sidebar", label: rightSidebarOpen ? "Hide right sidebar" : "Show right sidebar", group: "view", action: () => setRightSidebarOpen(!rightSidebarOpen) },
@@ -1104,7 +1133,16 @@ export default function App() {
 				},
 			},
 		],
-		[leftSidebarOpen, rightSidebarOpen, setLeftSidebarOpen, setRightSidebarOpen, rightSidebarTab, setRightSidebarTab],
+		[
+			leftSidebarOpen,
+			rightSidebarOpen,
+			setLeftSidebarOpen,
+			setRightSidebarOpen,
+			rightSidebarTab,
+			setRightSidebarTab,
+			simple,
+			setInterfaceMode,
+		],
 	);
 
 	// Session list for the Command Center.
@@ -1485,6 +1523,7 @@ function SidebarContent({
 	onOpenSettings,
 	onCollapse,
 }: SidebarContentProps) {
+	const simple = useUiStore((state) => state.interfaceMode === "simple");
 	return (
 		<>
 			{/* Workspace switcher */}
@@ -1523,12 +1562,16 @@ function SidebarContent({
 				<SidebarSection id="sidebar-projects" title="Projects" className="mt-4">
 					<SidebarProjects onSelect={onPickProject} onAdd={onOpenPicker} />
 				</SidebarSection>
-				<SidebarSection id="sidebar-current" title="Current session" className="mt-4">
-					<SessionActions />
-				</SidebarSection>
-				<SidebarSection id="sidebar-tree" title="Tree" className="mt-4">
-					<SessionTree />
-				</SidebarSection>
+				{!simple && (
+					<>
+						<SidebarSection id="sidebar-current" title="Current session" className="mt-4">
+							<SessionActions />
+						</SidebarSection>
+						<SidebarSection id="sidebar-tree" title="Tree" className="mt-4">
+							<SessionTree />
+						</SidebarSection>
+					</>
+				)}
 			</div>
 
 			{/* Footer */}
@@ -1572,6 +1615,7 @@ function SidebarRail({
 	onFocusBackground,
 }: SidebarRailProps) {
 	const [hovered, setHovered] = useState(false);
+	const simple = useUiStore((state) => state.interfaceMode === "simple");
 	return (
 		<div
 			className="relative flex shrink-0"
@@ -1590,7 +1634,7 @@ function SidebarRail({
 				<div className="my-1 h-px w-5 bg-pi-border" />
 				<RailIcon icon={MessageSquare} label="Sessions" onClick={() => onJump("sessions")} />
 				<RailIcon icon={FolderGit2} label="Projects" onClick={() => onJump("projects")} />
-				<RailIcon icon={GitBranch} label="Session tree" onClick={() => onJump("tree")} />
+				{!simple && <RailIcon icon={GitBranch} label="Session tree" onClick={() => onJump("tree")} />}
 				<RailIcon icon={Plus} label="New / open project" onClick={onOpenPicker} />
 				<div className="flex-1" />
 				<BackgroundAttentionOrb
