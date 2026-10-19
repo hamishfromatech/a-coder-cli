@@ -871,7 +871,13 @@ function FirstLaunchBanner({ onDismiss, onGoToAccount }: { onDismiss: () => void
 // Main panel — upgraded with better transitions, hover states, and layout polish
 // ============================================================================
 
-export function SettingsPanel({ onClose }: { onClose: () => void }) {
+export function SettingsPanel({
+	onClose,
+	initialNavId,
+}: {
+	onClose: () => void;
+	initialNavId?: string;
+}) {
 	const [scope, setScope] = useState<Scope>("global");
 	const [activeNavId, setActiveNavId] = useState<string>(() => {
 		if (typeof window !== "undefined" && window.location.hash) {
@@ -893,6 +899,10 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 	const [authEmpty, setAuthEmpty] = useState<boolean | null>(null);
 	const modalRef = useRef<HTMLDivElement>(null);
 	useModalA11y(modalRef, true, onClose);
+
+	useEffect(() => {
+		if (initialNavId) setActiveNavId(normalizeNavId(initialNavId));
+	}, [initialNavId]);
 
 	// Mirror section id into the URL hash so other components can deep-link.
 	useEffect(() => {

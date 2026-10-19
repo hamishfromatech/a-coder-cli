@@ -179,7 +179,7 @@ export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
 					<button
 						type="button"
 						onClick={() => void pickProject()}
-						className="flex min-w-0 items-center gap-1 rounded px-0.5 text-pi-text-secondary transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+						className="flex min-w-0 items-center gap-1 rounded-pi-sm px-0.5 text-pi-text-secondary transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
 						aria-label="Change working folder"
 					>
 						<span className="truncate font-medium">{projectName}</span>
@@ -238,7 +238,7 @@ export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
 			<div className="flex items-center gap-1.5">
 				{isCompacting && (
 					<Tip content="Summarizing older messages to reclaim context window" placement="control">
-						<div className="flex items-center gap-1 rounded bg-pi-warning/10 px-1.5 py-0.5 text-pi-warning">
+						<div className="flex items-center gap-1 rounded-pi-sm bg-pi-warning/10 px-1.5 py-0.5 text-pi-warning">
 							<Loader2 className="h-2.5 w-2.5 animate-spin" />
 							<span className="font-medium uppercase tracking-wide">Compacting</span>
 						</div>
@@ -246,7 +246,7 @@ export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
 				)}
 				{awaitingInput && (
 					<Tip content="A tool is waiting for your approval" placement="control">
-						<div className="flex items-center gap-1 rounded bg-pi-warning/10 px-1.5 py-0.5 text-pi-warning">
+						<div className="flex items-center gap-1 rounded-pi-sm bg-pi-warning/10 px-1.5 py-0.5 text-pi-warning">
 							<Hand className="h-2.5 w-2.5" />
 							<span className="font-medium uppercase tracking-wide">Waiting for you</span>
 						</div>
@@ -254,7 +254,7 @@ export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
 				)}
 
 				{isStreaming && !awaitingInput && (
-					<div className="flex items-center gap-1 rounded bg-pi-accent-soft px-1.5 py-0.5 text-pi-accent">
+					<div className="flex items-center gap-1 rounded-pi-sm bg-pi-accent-soft px-1.5 py-0.5 text-pi-accent">
 						<span className="flex items-center gap-0.5">
 							<span className="pi-dot h-1 w-1 rounded-full bg-pi-accent" />
 							<span className="pi-dot h-1 w-1 rounded-full bg-pi-accent" />
@@ -267,7 +267,7 @@ export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
 				{status === "error" ? (
 					<button
 						onClick={() => void onReconnect()}
-						className="group flex items-center gap-1.5 rounded bg-pi-error-soft px-2 py-0.5 text-pi-error transition-hover active-press hover:bg-pi-error hover:text-white"
+						className="group flex items-center gap-1.5 rounded-pi-sm bg-pi-error-soft px-2 py-0.5 text-pi-error transition-hover active-press hover:bg-pi-error hover:text-white"
 aria-label="Reconnect"
 					>
 						<AlertCircle className="h-3 w-3" />
@@ -293,7 +293,7 @@ aria-label="Reconnect"
 					ref={menuRef}
 					role="menu"
 					aria-label="Status bar items"
-					className="fixed z-popover w-60 overflow-hidden rounded-lg border border-pi-border bg-pi-surface-overlay py-1 shadow-overlay"
+					className="fixed z-popover w-60 overflow-hidden rounded-pi-lg border border-pi-border bg-pi-surface-overlay py-1 shadow-overlay"
 					style={{ left: menuAt.x, bottom: window.innerHeight - menuAt.y + 4 }}
 				>
 					<div className="px-2.5 py-1 text-3xs font-semibold uppercase tracking-[0.08em] text-pi-text-faint">
@@ -428,7 +428,7 @@ function PermissionModePicker({ mode }: { mode: PermissionMode }) {
 				<div
 					ref={menuRef}
 					role="listbox"
-					className="absolute bottom-full left-0 z-popover mb-1.5 w-56 origin-bottom-left rounded-xl bg-pi-surface-overlay shadow-overlay overflow-hidden py-1"
+					className="absolute bottom-full left-0 z-popover mb-1.5 w-56 origin-bottom-left rounded-pi-xl bg-pi-surface-overlay shadow-overlay overflow-hidden py-1"
 				>
 					{PERMISSION_MODES.map((m) => {
 						const meta = MODE_META[m];
@@ -442,7 +442,7 @@ function PermissionModePicker({ mode }: { mode: PermissionMode }) {
 								aria-selected={active}
 								className={`flex w-full items-start gap-2 px-2.5 py-2 text-left transition-hover focus-visible:shadow-focus focus-visible:outline-none ${active ? "bg-pi-surface-raised" : "hover:bg-pi-surface-raised"}`}
 							>
-								<div className={`mt-0.5 rounded p-1 ${meta.variant === "warning" ? "text-pi-warning bg-pi-warning/15" : meta.variant === "success" ? "text-pi-success bg-pi-success/15" : meta.variant === "accent" ? "text-pi-accent bg-pi-accent-soft" : "text-pi-text-secondary bg-pi-surface-raised"}`}>
+								<div className={`mt-0.5 rounded-pi-sm p-1 ${meta.variant === "warning" ? "text-pi-warning bg-pi-warning/15" : meta.variant === "success" ? "text-pi-success bg-pi-success/15" : meta.variant === "accent" ? "text-pi-accent bg-pi-accent-soft" : "text-pi-text-secondary bg-pi-surface-raised"}`}>
 									<OptionIcon className="h-3 w-3" />
 								</div>
 								<div className="flex-1">
@@ -475,7 +475,7 @@ function Stat({
 	value: number | string;
 }) {
 	return (
-		<span className="flex items-center gap-1 rounded px-1.5 py-0.5">
+		<span className="flex items-center gap-1 rounded-pi-sm px-1.5 py-0.5">
 			<Icon className="h-3 w-3 text-pi-text-faint" />
 			<span className="text-pi-text-faint">{label}</span>
 			<span className="font-semibold text-pi-text-secondary">

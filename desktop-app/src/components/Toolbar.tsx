@@ -213,7 +213,7 @@ export function Toolbar({ onShowMemory, onToggleBrowser, browserOpen }: ToolbarP
 					<div
 						role="menu"
 						aria-label="Session actions"
-						className="absolute left-0 top-full z-popover mt-1 w-52 overflow-hidden rounded-lg border border-pi-border bg-pi-surface-overlay py-1 shadow-overlay"
+						className="absolute left-0 top-full z-popover mt-1 w-52 overflow-hidden rounded-pi-lg border border-pi-border bg-pi-surface-overlay py-1 shadow-overlay"
 					>
 						{overflowItems.map((item) => (
 							<div key={item.label}>
@@ -307,7 +307,7 @@ function ActionButton({
 	return (
 		<button
 			onClick={() => void onClick()}
-			className="group flex h-7 items-center gap-2 rounded-md px-2.5 text-left text-xs text-pi-text-secondary transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+			className="group flex h-7 items-center gap-2 rounded-pi-md px-2.5 text-left text-xs text-pi-text-secondary transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
 
 		>
 			<Icon className="h-3.5 w-3.5 text-pi-text-muted transition-smooth group-hover:text-pi-text-secondary" />

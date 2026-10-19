@@ -11,7 +11,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 
 const DEFAULT_FADE = 14;
 
-export interface FadeScrollProps {
+export interface FadeScrollProps extends Omit<React.ComponentProps<"div">, "onScroll"> {
 	children: ReactNode;
 	className?: string;
 	/** Fade depth in px. */
@@ -20,7 +20,7 @@ export interface FadeScrollProps {
 	onScroll?: () => void;
 }
 
-export function FadeScroll({ children, className, fade = DEFAULT_FADE, onScroll }: FadeScrollProps) {
+export function FadeScroll({ children, className, fade = DEFAULT_FADE, onScroll, ...rest }: FadeScrollProps) {
 	const ref = useRef<HTMLDivElement | null>(null);
 	const [fadeTop, setFadeTop] = useState(false);
 	const [fadeBottom, setFadeBottom] = useState(false);
@@ -63,6 +63,7 @@ export function FadeScroll({ children, className, fade = DEFAULT_FADE, onScroll 
 			ref={ref}
 			className={`overscroll-auto ${className ?? ""}`}
 			style={mask ? { maskImage: mask, WebkitMaskImage: mask } : undefined}
+			{...rest}
 		>
 			{children}
 		</div>

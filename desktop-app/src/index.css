@@ -32,11 +32,12 @@
 	   One control language: new surfaces should pick a step here instead of
 	   inventing a radius. Tailwind utilities still map to the same 0.25rem
 	   spacing unit. */
-	--pi-radius-xs: 4px;
-	--pi-radius-sm: 6px;
-	--pi-radius-md: 8px;
-	--pi-radius-lg: 12px;
-	--pi-radius-xl: 16px;
+	--pi-radius-xs: 2px;
+	--pi-radius-sm: 4px;
+	--pi-radius-md: 6px;
+	--pi-radius-lg: 8px;
+	--pi-radius-xl: 12px;
+	--pi-radius-2xl: 16px;
 	--pi-space-1: 0.25rem;
 	--pi-space-2: 0.5rem;
 	--pi-space-3: 0.75rem;

@@ -12,6 +12,7 @@ import { FadeScroll } from "./ui/FadeScroll";
 
 import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { ESCAPE_PRIORITY, isTopEscapeLayer, pushEscapeLayer } from '../lib/escape-layers';
+import { readRecentCommands, recordRecentCommand } from '../lib/command-recents';
 
 export interface CommandItem {
 	id: string;
@@ -24,6 +25,10 @@ export interface CommandItem {
 	keywords?: string[];
 	/** Nested page of commands; selecting the row opens it instead of closing. */
 	children?: CommandItem[];
+	/** Live preview while the row is highlighted (theme pickers). */
+	onHighlight?: () => void;
+	/** Keep the previewed value when this row runs instead of restoring it. */
+	commitPreview?: boolean;
 	action?: () => void;
 }
 
@@ -31,6 +36,8 @@ interface CommandPaletteProps {
 	open: boolean;
 	commands: CommandItem[];
 	onClose: () => void;
+	/** Called when the palette closes without running a command (revert previews). */
+	onDismiss?: () => void;
 }
 
 const GROUP_LABELS: Record<CommandItem['group'], string> = {
@@ -43,10 +50,12 @@ const GROUP_LABELS: Record<CommandItem['group'], string> = {
 
 const GROUP_ORDER: CommandItem['group'][] = ['session', 'navigate', 'view', 'tools', 'settings'];
 
-export function CommandPalette({ open, commands, onClose }: CommandPaletteProps) {
+export function CommandPalette({ open, commands, onClose, onDismiss }: CommandPaletteProps) {
 	const [query, setQuery] = useState('');
 	const [selectedIndex, setSelectedIndex] = useState(0);
 	const [pages, setPages] = useState<{ title: string; items: CommandItem[] }[]>([]);
+	const [recentIds, setRecentIds] = useState<string[]>(() => readRecentCommands());
+	const executedRef = useRef(false);
 	const page = pages.at(-1);
 	const commandsForPage = page?.items ?? commands;
 	const inputRef = useRef<HTMLInputElement>(null);
@@ -65,19 +74,40 @@ export function CommandPalette({ open, commands, onClose }: CommandPaletteProps)
 		);
 	}, [commandsForPage, query]);
 
+	const recentItems = useMemo(() => {
+		if (query.trim() || pages.length > 0) return [];
+		const byId = new Map(commandsForPage.map((item) => [item.id, item]));
+		return recentIds
+			.map((id) => byId.get(id))
+			.filter((item): item is CommandItem => Boolean(item));
+	}, [commandsForPage, query, pages.length, recentIds]);
+	const recentSet = useMemo(() => new Set(recentItems.map((item) => item.id)), [recentItems]);
+	const baseFiltered = useMemo(
+		() => filtered.filter((item) => !recentSet.has(item.id)),
+		[filtered, recentSet],
+	);
+
 	// Group commands by their group, ordered.
 	const grouped = useMemo(() => {
 		const groups = new Map<CommandItem['group'], CommandItem[]>();
-		for (const item of filtered) {
+		for (const item of baseFiltered) {
 			const list = groups.get(item.group) ?? [];
 			list.push(item);
 			groups.set(item.group, list);
 		}
 		return GROUP_ORDER.filter((g) => groups.has(g)).map((g) => ({ group: g, items: groups.get(g)! }));
-	}, [filtered]);
+	}, [baseFiltered]);
+
+	const sections = useMemo(
+		() => [
+			...(recentItems.length > 0 ? [{ key: 'recent', label: 'Recent', items: recentItems }] : []),
+			...grouped.map((group) => ({ key: group.group, label: GROUP_LABELS[group.group], items: group.items })),
+		],
+		[grouped, recentItems],
+	);
 
 	// Flatten for index-based selection.
-	const flat = useMemo(() => grouped.flatMap((g) => g.items), [grouped]);
+	const flat = useMemo(() => sections.flatMap((section) => section.items), [sections]);
 
 	// Reset on open.
 	useEffect(() => {
@@ -85,6 +115,8 @@ export function CommandPalette({ open, commands, onClose }: CommandPaletteProps)
 			setQuery('');
 			setSelectedIndex(0);
 			setPages([]);
+			setRecentIds(readRecentCommands());
+			executedRef.current = false;
 			const id = requestAnimationFrame(() => inputRef.current?.focus());
 			return () => cancelAnimationFrame(id);
 		}
@@ -95,6 +127,12 @@ export function CommandPalette({ open, commands, onClose }: CommandPaletteProps)
 	useEffect(() => {
 		setSelectedIndex(0);
 	}, [query]);
+
+	// Live preview for picker commands (theme) while a row is highlighted.
+	useEffect(() => {
+		if (!open) return;
+		flat[selectedIndex]?.onHighlight?.();
+	}, [flat, selectedIndex, open]);
 
 	// Scroll selected item into view.
 	useEffect(() => {
@@ -111,7 +149,16 @@ export function CommandPalette({ open, commands, onClose }: CommandPaletteProps)
 			setSelectedIndex(0);
 			return;
 		}
+		if (!item.commitPreview) onDismiss?.();
+		executedRef.current = true;
+		setRecentIds(recordRecentCommand(item.id));
 		item.action?.();
+		onClose();
+	}
+
+	function dismiss() {
+		if (!executedRef.current) onDismiss?.();
+		executedRef.current = false;
 		onClose();
 	}
 
@@ -136,7 +183,7 @@ export function CommandPalette({ open, commands, onClose }: CommandPaletteProps)
 			if (event.defaultPrevented) return;
 			event.preventDefault();
 			if (pages.length > 0) goBack();
-			else onClose();
+			else dismiss();
 		}
 	}
 
@@ -150,7 +197,7 @@ export function CommandPalette({ open, commands, onClose }: CommandPaletteProps)
 			if (event.key === 'Escape') {
 				event.preventDefault();
 				if (pages.length > 0) goBack();
-				else onClose();
+				else dismiss();
 			}
 		}
 
@@ -159,7 +206,7 @@ export function CommandPalette({ open, commands, onClose }: CommandPaletteProps)
 			unregister();
 			window.removeEventListener('keydown', handleGlobalKeyDown, { capture: true });
 		};
-	}, [open, onClose, pages.length]);
+	}, [open, pages.length]);
 
 	if (!open) return null;
 
@@ -171,11 +218,11 @@ export function CommandPalette({ open, commands, onClose }: CommandPaletteProps)
 			{/* Backdrop */}
 			<div
 				className="fixed inset-0 bg-black/50"
-				onClick={onClose}
+				onClick={dismiss}
 			/>
 			{/* Panel */}
 			<div
-				className="relative w-full max-w-lg overflow-hidden rounded-xl border border-[var(--pi-border)] bg-[var(--pi-surface-overlay)] shadow-2xl"
+				className="relative w-full max-w-lg overflow-hidden rounded-pi-xl border border-[var(--pi-border)] bg-[var(--pi-surface-overlay)] shadow-2xl"
 				role="dialog"
 				aria-label="Command palette"
 			>
@@ -185,7 +232,7 @@ export function CommandPalette({ open, commands, onClose }: CommandPaletteProps)
 						<button
 							type="button"
 							onClick={goBack}
-							className="flex size-5 shrink-0 items-center justify-center rounded text-[var(--pi-text-muted)] transition-colors hover:bg-[var(--pi-surface-raised)] hover:text-[var(--pi-text)]"
+							className="flex size-5 shrink-0 items-center justify-center rounded-pi-sm text-[var(--pi-text-muted)] transition-colors hover:bg-[var(--pi-surface-raised)] hover:text-[var(--pi-text)]"
 							aria-label="Back to commands"
 						>
 							<ChevronLeft className="size-3.5" />
@@ -203,6 +250,9 @@ export function CommandPalette({ open, commands, onClose }: CommandPaletteProps)
 						className="min-w-0 flex-1 bg-transparent text-sm text-[var(--pi-text)] outline-none placeholder:text-[var(--pi-text-muted)]"
 						onChange={(e) => setQuery(e.target.value)}
 						onKeyDown={handleKeyDown}
+						aria-label="Command search"
+						aria-controls="command-palette-list"
+						aria-activedescendant={flat[selectedIndex] ? `command-option-${selectedIndex}` : undefined}
 						placeholder="Type a command..."
 						spellCheck={false}
 						value={query}
@@ -210,16 +260,21 @@ export function CommandPalette({ open, commands, onClose }: CommandPaletteProps)
 				</div>
 
 				{/* Results */}
-				<FadeScroll className="max-h-[50vh] overflow-y-auto py-1">
+				<FadeScroll
+					className="max-h-[50vh] overflow-y-auto py-1"
+					role="listbox"
+					aria-label="Commands"
+					id="command-palette-list"
+				>
 					{flat.length === 0 ? (
 						<div className="px-3 py-6 text-center text-sm text-[var(--pi-text-muted)]">
 							No commands found for "{query}"
 						</div>
 					) : (
-						grouped.map(({ group, items }) => (
-							<div key={group}>
+						sections.map(({ key, label, items }) => (
+							<div key={key}>
 								<div className="px-3 pb-0.5 pt-2 text-[0.625rem] font-medium uppercase tracking-[0.08em] text-[var(--pi-text-faint)]">
-									{GROUP_LABELS[group]}
+									{label}
 								</div>
 								{items.map((item) => {
 									const index = flat.indexOf(item);
@@ -227,6 +282,9 @@ export function CommandPalette({ open, commands, onClose }: CommandPaletteProps)
 									return (
 										<button
 											key={item.id}
+											id={`command-option-${index}`}
+											role="option"
+											aria-selected={selected}
 											data-index={index}
 											className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors"
 											style={{
@@ -246,7 +304,7 @@ export function CommandPalette({ open, commands, onClose }: CommandPaletteProps)
 												<ChevronRight className="size-3.5 shrink-0 text-[var(--pi-text-faint)]" />
 											)}
 											{item.keybinding && (
-												<kbd className="shrink-0 rounded border border-[var(--pi-border)] bg-[var(--pi-surface)] px-1.5 py-0.5 text-[0.625rem] text-[var(--pi-text-muted)]">
+												<kbd className="shrink-0 rounded-pi-sm border border-[var(--pi-border)] bg-[var(--pi-surface)] px-1.5 py-0.5 text-[0.625rem] text-[var(--pi-text-muted)]">
 													{item.keybinding}
 												</kbd>
 											)}
@@ -261,13 +319,13 @@ export function CommandPalette({ open, commands, onClose }: CommandPaletteProps)
 				{/* Footer */}
 				<div className="flex items-center gap-4 border-t border-[var(--pi-border)] px-3 py-2 text-[0.6875rem] text-[var(--pi-text-faint)]">
 					<span className="flex items-center gap-1">
-						<kbd className="rounded border border-[var(--pi-border)] px-1">↑↓</kbd> navigate
+						<kbd className="rounded-pi-sm border border-[var(--pi-border)] px-1">↑↓</kbd> navigate
 					</span>
 					<span className="flex items-center gap-1">
-						<kbd className="rounded border border-[var(--pi-border)] px-1">↵</kbd> run
+						<kbd className="rounded-pi-sm border border-[var(--pi-border)] px-1">↵</kbd> run
 					</span>
 					<span className="flex items-center gap-1">
-						<kbd className="rounded border border-[var(--pi-border)] px-1">esc</kbd> close
+						<kbd className="rounded-pi-sm border border-[var(--pi-border)] px-1">esc</kbd> close
 					</span>
 				</div>
 			</div>

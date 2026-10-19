@@ -4,6 +4,13 @@
 
 ### Added
 
+- Model picker: recent models (persisted, six max), provider-grouped sections, compact context/cost hints, and listbox semantics with a live highlight.
+- Session title menu: the titlebar name opens rename, pin, copy last reply, clone, fork, export, and delete (delete starts a fresh session first so the engine allows it).
+- Session rows: Shift-click or Shift+Enter pins, Cmd/Ctrl-click and middle-click open a background tab, drag reorders with a persisted manual order, and the list can group by recent activity or project.
+- Collapsed rail: the Sessions icon carries a needs-input/finished count badge alongside the attention orb.
+- Command palette: recent commands, nested Settings sections, a live-preview theme picker (Escape or running another command restores the original), keyword aliases, and keybind hints.
+- Accessibility: model and command listboxes expose active-descendant/option semantics; radius tokens now back the core surfaces, and reduced-transparency, forced-colors, and higher-contrast overrides are in place.
+
 - Interface modes: Simple hides the standing developer chrome (stats, context, thinking, agents, tree, current-session panel, right-sidebar toggles, browser/memory header actions) and keeps the conversation, model/thinking pills, permission mode, and every command reachable from ⌘K. Advanced restores the full shell. Switch from Settings → Appearance, the header overflow menu, or the command palette.
 - Command palette depth: commands can open nested pages (starting with Interface mode), with a breadcrumb, back navigation, Escape-to-go-back, keyword aliases, and keybind hints on each row.
 - Accessibility: `prefers-reduced-transparency` and `forced-colors` drop backdrop blur, `prefers-contrast: more` strengthens hairlines and secondary text, focus outlines survive forced colors, and the shared radius/spacing/control-height tokens now back the core card surfaces.

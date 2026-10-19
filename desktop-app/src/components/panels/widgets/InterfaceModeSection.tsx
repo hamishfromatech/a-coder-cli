@@ -37,7 +37,7 @@ export function InterfaceModeSection() {
 							setMode(option.id);
 						}}
 						aria-pressed={active}
-						className={`flex flex-col gap-1.5 rounded-lg border px-3 py-2.5 text-left transition-hover focus-visible:shadow-focus focus-visible:outline-none ${
+						className={`flex flex-col gap-1.5 rounded-pi-lg border px-3 py-2.5 text-left transition-hover focus-visible:shadow-focus focus-visible:outline-none ${
 							active
 								? "border-pi-accent/40 bg-pi-accent-soft"
 								: "border-pi-border bg-pi-surface hover:bg-pi-surface-raised"

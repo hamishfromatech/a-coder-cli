@@ -28,6 +28,14 @@ const config: Config = {
 				"pi-error": "rgb(var(--pi-error-rgb) / <alpha-value>)",
 				"pi-error-soft": "var(--pi-error-soft)",
 			},
+			borderRadius: {
+				"pi-xs": "var(--pi-radius-xs)",
+				"pi-sm": "var(--pi-radius-sm)",
+				"pi-md": "var(--pi-radius-md)",
+				"pi-lg": "var(--pi-radius-lg)",
+				"pi-xl": "var(--pi-radius-xl)",
+				"pi-2xl": "var(--pi-radius-2xl)",
+			},
 			fontFamily: {
 				sans: [
 					"-apple-system",

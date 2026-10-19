@@ -1,9 +1,11 @@
 export type SessionListDensity = "compact" | "comfortable" | "detailed";
+export type SessionListGrouping = "date" | "project";
 export type SessionMetaId = "messages" | "tokens" | "cost" | "model";
 
 export interface SessionListPrefs {
 	density: SessionListDensity;
 	meta: SessionMetaId[];
+	grouping: SessionListGrouping;
 }
 
 export const SESSION_LIST_DENSITIES: { id: SessionListDensity; label: string; detail: string }[] = [
@@ -26,6 +28,7 @@ const META = new Set<SessionMetaId>(SESSION_META_ITEMS.map((item) => item.id));
 export const DEFAULT_SESSION_LIST_PREFS: SessionListPrefs = {
 	density: "compact",
 	meta: ["messages"],
+	grouping: "date",
 };
 
 export function readSessionListPrefs(storage?: Pick<Storage, "getItem">): SessionListPrefs {
@@ -37,7 +40,8 @@ export function readSessionListPrefs(storage?: Pick<Storage, "getItem">): Sessio
 		const meta = Array.isArray(parsed?.meta)
 			? parsed.meta.filter((id): id is SessionMetaId => typeof id === "string" && META.has(id as SessionMetaId))
 			: [...DEFAULT_SESSION_LIST_PREFS.meta];
-		return { density, meta };
+		const grouping = parsed?.grouping === "project" ? "project" : "date";
+		return { density, meta, grouping };
 	} catch {
 		return { ...DEFAULT_SESSION_LIST_PREFS, meta: [...DEFAULT_SESSION_LIST_PREFS.meta] };
 	}

@@ -8,6 +8,7 @@ import { IconButton } from "./ui/Button";
 import { Badge } from "./ui/Badge";
 import { ModalBackdrop, ModalPanel } from "./ui/Modal";
 import { ESCAPE_PRIORITY, isTopEscapeLayer, pushEscapeLayer } from "../lib/escape-layers";
+import { modelKey, readRecentModels, recordRecentModel } from "../lib/model-recents";
 
 type AnyModel = Model<Api>;
 
@@ -24,6 +25,7 @@ export function ModelPicker({
 	const [refreshing, setRefreshing] = useState(false);
 	const [refreshError, setRefreshError] = useState<string | null>(null);
 	const [highlight, setHighlight] = useState(0);
+	const [recentKeys, setRecentKeys] = useState(() => readRecentModels());
 	const inputRef = useRef<HTMLInputElement>(null);
 	const listRef = useRef<HTMLDivElement>(null);
 	const modalRef = useRef<HTMLDivElement>(null);
@@ -87,11 +89,47 @@ export function ModelPicker({
 	}, []);
 
 	const filtered = useMemo(() => {
-		const q = filter.toLowerCase();
-		return models.filter((m) =>
+		const q = filter.trim().toLowerCase();
+		const matches = models.filter((m) =>
 			`${m.provider} ${m.name} ${m.id}`.toLowerCase().includes(q),
 		);
+		return matches.sort((a, b) => a.provider.localeCompare(b.provider) || a.name.localeCompare(b.name));
 	}, [models, filter]);
+
+	const recentModels = useMemo(() => {
+		const byKey = new Map(models.map((model) => [modelKey(model.provider, model.id), model]));
+		return recentKeys
+			.map((entry) => byKey.get(modelKey(entry.provider, entry.id)))
+			.filter((model): model is AnyModel => Boolean(model));
+	}, [models, recentKeys]);
+
+	const groups = useMemo(() => {
+		const searching = filter.trim().length > 0;
+		const recent = searching ? [] : recentModels;
+		const recentSet = new Set(recent.map((model) => modelKey(model.provider, model.id)));
+		const rest = filtered.filter((model) => !recentSet.has(modelKey(model.provider, model.id)));
+		const providers = [...new Set(rest.map((model) => model.provider))];
+		return [
+			...(recent.length > 0 ? [{ label: "Recent", models: recent, start: 0 }] : []),
+			...providers.map((provider) => ({
+				label: provider,
+				models: rest.filter((model) => model.provider === provider),
+				start: 0,
+			})),
+		].map((group, _index, all) => {
+			const start = all
+				.slice(0, _index)
+				.reduce((total, entry) => total + entry.models.length, 0);
+			return { ...group, start };
+		});
+	}, [filtered, filter, recentModels]);
+	const ordered = useMemo(() => groups.flatMap((group) => group.models), [groups]);
+
+	const choose = (model: AnyModel) => {
+		setRecentKeys(recordRecentModel(model.provider, model.id));
+		onSelect(model);
+		onClose();
+	};
 
 	useEffect(() => {
 		setHighlight(0);
@@ -106,14 +144,13 @@ export function ModelPicker({
 				onClose();
 			} else if (e.key === "ArrowDown") {
 				e.preventDefault();
-				setHighlight((h) => Math.min(h + 1, filtered.length - 1));
+				setHighlight((h) => Math.min(h + 1, ordered.length - 1));
 			} else if (e.key === "ArrowUp") {
 				e.preventDefault();
 				setHighlight((h) => Math.max(h - 1, 0));
-			} else if (e.key === "Enter" && filtered[highlight]) {
+			} else if (e.key === "Enter" && ordered[highlight]) {
 				e.preventDefault();
-				onSelect(filtered[highlight]);
-				onClose();
+				choose(ordered[highlight]!);
 			}
 		};
 		window.addEventListener("keydown", handler);
@@ -121,7 +158,7 @@ export function ModelPicker({
 			unregister();
 			window.removeEventListener("keydown", handler);
 		};
-	}, [filtered, highlight, onClose, onSelect]);
+	}, [ordered, highlight, onClose, onSelect]);
 
 	useEffect(() => {
 		const list = listRef.current;
@@ -149,6 +186,7 @@ export function ModelPicker({
 						ref={inputRef}
 						type="text"
 						placeholder="Search models…"
+						aria-label="Search models"
 						value={filter}
 						onChange={(e) => setFilter(e.target.value)}
 						className="flex-1 bg-transparent text-[13px] text-pi-text placeholder:text-pi-text-faint focus:outline-none"
@@ -174,7 +212,13 @@ export function ModelPicker({
 				</div>
 
 				{/* List */}
-				<div ref={listRef} className="max-h-[60vh] overflow-y-auto p-1.5">
+				<div
+					ref={listRef}
+					role="listbox"
+					aria-label="Available models"
+					aria-activedescendant={`model-option-${highlight}`}
+					className="max-h-[60vh] overflow-y-auto p-1.5"
+				>
 					{loading ? (
 						<div className="px-3 py-6 text-center text-xs text-pi-text-muted">
 							Loading models…
@@ -186,51 +230,64 @@ export function ModelPicker({
 							</p>
 							<p className="mt-1 text-pi-text-muted">{refreshError}</p>
 						</div>
-					) : filtered.length === 0 ? (
+					) : ordered.length === 0 ? (
 						<div className="px-3 py-6 text-center text-xs text-pi-text-muted">
 							No models found.
 						</div>
 					) : (
-						filtered.map((model, idx) => {
-							const isActive =
-								currentModel?.id === model.id &&
-								currentModel?.provider === model.provider;
-							return (
-								<button
-									key={`${model.provider}/${model.id}`}
-										data-model-idx={idx}
-									onClick={() => {
-										onSelect(model);
-										onClose();
-									}}
-									onMouseEnter={() => setHighlight(idx)}
-									className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
-										idx === highlight
-											? "bg-pi-surface-raised"
-											: "hover:bg-pi-surface-raised/50"
-									}`}
-								>
-									<Cpu
-										className={`h-3.5 w-3.5 shrink-0 ${
-											isActive ? "text-pi-accent" : "text-pi-text-muted"
-										}`}
-									/>
-									<div className="min-w-0 flex-1">
-										<div className="flex items-center gap-2">
-											<span className="truncate text-xs font-medium text-pi-text">
-												{model.name}
-											</span>
-											{isActive && (
-												<Badge variant="accent" size="sm">active</Badge>
-											)}
-										</div>
-										<div className="mt-0.5 truncate font-mono text-3xs text-pi-text-muted">
-											{model.provider} · {model.contextWindow.toLocaleString()} ctx
-										</div>
-									</div>
-								</button>
-							);
-						})
+						groups.map((group) => (
+							<div key={group.label}>
+								<div className="sticky top-0 z-10 bg-pi-surface-overlay px-2.5 pb-1 pt-2 text-4xs font-semibold uppercase tracking-[0.08em] text-pi-text-faint">
+									{group.label}
+								</div>
+								{group.models.map((model, index) => {
+									const idx = group.start + index;
+									const isActive =
+										currentModel?.id === model.id &&
+										currentModel?.provider === model.provider;
+									const cost =
+										model.cost && (model.cost.input > 0 || model.cost.output > 0)
+											? `${money(model.cost.input)}/${money(model.cost.output)}`
+											: null;
+									return (
+										<button
+											key={`${model.provider}/${model.id}`}
+											id={`model-option-${idx}`}
+											role="option"
+											aria-selected={idx === highlight}
+											data-model-idx={idx}
+											onClick={() => choose(model)}
+											onMouseEnter={() => setHighlight(idx)}
+											className={`flex w-full items-center gap-2.5 rounded-pi-md px-2.5 py-2 text-left transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
+												idx === highlight
+													? "bg-pi-surface-raised"
+													: "hover:bg-pi-surface-raised/50"
+											}`}
+										>
+											<Cpu
+												className={`h-3.5 w-3.5 shrink-0 ${
+													isActive ? "text-pi-accent" : "text-pi-text-muted"
+												}`}
+											/>
+											<div className="min-w-0 flex-1">
+												<div className="flex items-center gap-2">
+													<span className="truncate text-xs font-medium text-pi-text">
+														{model.name}
+													</span>
+													{isActive && (
+														<Badge variant="accent" size="sm">active</Badge>
+													)}
+												</div>
+												<div className="mt-0.5 truncate font-mono text-3xs text-pi-text-muted">
+													{model.provider} · {compactContext(model.contextWindow)} ctx
+													{cost ? ` · $${cost} / Mtok` : " · free"}
+												</div>
+											</div>
+										</button>
+									);
+								})}
+							</div>
+						))
 					)}
 				</div>
 
@@ -245,7 +302,7 @@ export function ModelPicker({
 						<span>close</span>
 					</div>
 					<span className="font-mono">
-						{filtered.length}/{models.length}
+						{ordered.length}/{models.length}
 					</span>
 				</div>
 			</ModalPanel>
@@ -253,9 +310,19 @@ export function ModelPicker({
 	);
 }
 
+function compactContext(value: number): string {
+	if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}m`;
+	if (value >= 1_000) return `${Math.round(value / 1_000)}k`;
+	return String(value);
+}
+
+function money(value: number): string {
+	return Number.isInteger(value) ? String(value) : value.toFixed(2);
+}
+
 function Kbd({ children }: { children: React.ReactNode }) {
 	return (
-		<kbd className="rounded border border-pi-border bg-pi-surface-raised px-1 font-mono text-4xs text-pi-text-muted">
+		<kbd className="rounded-pi-sm border border-pi-border bg-pi-surface-raised px-1 font-mono text-4xs text-pi-text-muted">
 			{children}
 		</kbd>
 	);

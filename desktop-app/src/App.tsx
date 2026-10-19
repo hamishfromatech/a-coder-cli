@@ -18,7 +18,7 @@ import { runSwitch } from "./lib/session-switch";
 import { isAuthoritativeSession, setAuthoritativeSession } from "./lib/session-authority";
 import { useRuntimeStatusStore } from "./stores/runtime-status-store";
 import { useSessionStore, type QuestionUiRequest } from "./stores/session-store";
-import { useSettingsStore } from "./stores/settings-store";
+import { persistCliSettings, useSettingsStore, type Skin, type Theme } from "./stores/settings-store";
 import { useWorkspaceStore } from "./stores/workspace-store";
 import { useSessionTreeStore } from "./stores/session-tree-store";
 // Bind the desktop browser's event channel at startup: the agent's openPanel
@@ -31,7 +31,7 @@ import { useUiStore } from "./stores/ui-store";
 import { useWidgetStore } from "./stores/widget-store";
 import { useUpdateStore } from "./stores/update-store";
 import { toast } from "./stores/toast-store";
-import { applyNamedTheme } from "./lib/themes";
+import { applyNamedTheme, SKIN_LIST } from "./lib/themes";
 import { useGlobalKeybindings } from "./hooks/useGlobalKeybindings";
 import { useClosedTabsStore } from "./stores/closed-tabs-store";
 import { useUpdateCheck } from "./hooks/useUpdateCheck";
@@ -53,6 +53,7 @@ import { FirstRunSetup } from "./components/FirstRunSetup";
 import { ProjectPicker } from "./components/ProjectPicker";
 import { RightSidebar } from "./components/RightSidebar";
 import { SettingsPanel } from "./components/SettingsPanel";
+import { listNavItems } from "./lib/settings-schema";
 import { Tip } from "./components/ui/Tip";
 import { TodoPanel } from "./components/TodoPanel";
 import { RuntimePanel } from "./components/RuntimePanel";
@@ -88,6 +89,7 @@ export default function App() {
 	const [showFindBar, setShowFindBar] = useState(false);
 	const [showCommandPalette, setShowCommandPalette] = useState(false);
 	const [showCommandCenter, setShowCommandCenter] = useState(false);
+	const [settingsNavId, setSettingsNavId] = useState<string | null>(null);
 	const [showHome, setShowHome] = useState(false);
 	const [showSubagents, setShowSubagents] = useState(false);
 	const [showTeams, setShowTeams] = useState(false);
@@ -352,10 +354,40 @@ export default function App() {
 	// Apply theme class to the document root. Applies live (skin/mode changes
 	// from the settings panel) and after the engine loads cliGlobalSettings.theme,
 	// without re-running connectEngine (which would reconnect the backend).
-	const resolvedTheme = (cliGlobalSettings.theme as import("./stores/settings-store").Theme) ?? theme;
+	const resolvedTheme = (cliGlobalSettings.theme as Theme) ?? theme;
 	useEffect(() => {
 		applyNamedTheme(skin, resolvedTheme);
 	}, [skin, resolvedTheme]);
+
+	const themeSnapshot = useRef<{ skin: Skin; theme: Theme } | null>(null);
+	useEffect(() => {
+		if (showCommandPalette) {
+			themeSnapshot.current ??= { skin: useSettingsStore.getState().skin, theme: resolvedTheme };
+		} else {
+			themeSnapshot.current = null;
+		}
+	}, [showCommandPalette, resolvedTheme]);
+
+	const restoreTheme = () => {
+		const snapshot = themeSnapshot.current;
+		if (!snapshot) return;
+		useSettingsStore.getState().setSkin(snapshot.skin);
+		applyNamedTheme(snapshot.skin, snapshot.theme);
+	};
+
+	const chooseSkin = (skinName: string) => {
+		const store = useSettingsStore.getState();
+		store.setSkin(skinName);
+		applyNamedTheme(skinName, resolvedTheme);
+		store.patchCliSettings("global", { skin: skinName });
+		void persistCliSettings("global", { ...store.cliGlobalSettings, skin: skinName }).catch(() => {});
+	};
+
+	const openSettingsSection = (navId: string) => {
+		window.location.hash = `#${navId}`;
+		setSettingsNavId(navId);
+		setShowSettings(true);
+	};
 
 	// Resolve a workspace preselected by the `pi --desktop` CLI launcher
 	// (A_CODER_DESKTOP_WORKSPACE) and apply it before booting the engine so the
@@ -910,10 +942,14 @@ export default function App() {
 
 	// Background-session attention: needs-input sessions take priority over
 	// merely-finished ones. Both feed the sidebar rail's notification orb.
-	const needsBackgroundInput = useRuntimeStatusStore((s) =>
-		Object.entries(s.needsInput).some(([path, v]) => v && path !== sessionFile),
+	const needsBackgroundInputCount = useRuntimeStatusStore(
+		(s) => Object.entries(s.needsInput).filter(([path, value]) => value && path !== sessionFile).length,
 	);
-	const hasBackgroundFinished = useRuntimeStatusStore((s) => Object.keys(s.finishedWhileAway).length > 0);
+	const backgroundFinishedCount = useRuntimeStatusStore(
+		(s) => Object.keys(s.finishedWhileAway).filter((path) => path !== sessionFile).length,
+	);
+	const needsBackgroundInput = needsBackgroundInputCount > 0;
+	const hasBackgroundFinished = backgroundFinishedCount > 0;
 	const focusBackgroundSession = useCallback(() => {
 		const status = useRuntimeStatusStore.getState();
 		const needsInputPath = Object.entries(status.needsInput).find(([path, v]) => v && path !== sessionFile)?.[0];
@@ -1086,7 +1122,35 @@ export default function App() {
 			{ id: "find", label: "Find in page", keybinding: "⌘F", group: "navigate", action: () => setShowFindBar(true) },
 			{ id: "home", label: "Open home dashboard", keybinding: "⇧⌘H", group: "navigate", action: () => setShowHome(true) },
 			{ id: "reopen-closed-tab", label: "Reopen closed session", keybinding: "⇧⌘T", group: "session", action: () => window.dispatchEvent(new CustomEvent("a-coder:reopen-closed-tab")) },
-			{ id: "settings", label: "Open settings", keybinding: "⌘,", group: "settings", action: () => setShowSettings(true) },
+			{ id: "settings", label: "Open settings", keybinding: "⌘,", group: "settings", action: () => openSettingsSection("general") },
+			{
+				id: "settings-sections",
+				label: "Settings sections",
+				keywords: ["preferences", "appearance", "models", "voice", "browser", "privacy"],
+				group: "settings",
+				children: listNavItems().map((item) => ({
+					id: `settings-${item.id}`,
+					label: item.label,
+					group: "settings",
+					action: () => openSettingsSection(item.id),
+				})),
+			},
+			{
+				id: "theme-picker",
+				label: "Change theme",
+				hint: skin,
+				keywords: ["skin", "appearance", "colors", "dark", "light"],
+				group: "settings",
+				children: SKIN_LIST.map((item) => ({
+					id: `theme-${item.name}`,
+					label: item.label,
+					hint: item.description,
+					group: "settings",
+					commitPreview: true,
+					onHighlight: () => applyNamedTheme(item.name, resolvedTheme),
+					action: () => chooseSkin(item.name),
+				})),
+			},
 			{ id: "hotkeys", label: "Show keyboard shortcuts", group: "settings", action: () => setShowHotkeys(true) },
 			{ id: "changelog", label: "Show changelog", group: "settings", action: () => setShowChangelog(true) },
 			{ id: "check-updates", label: "Check for updates", group: "settings", action: () => window.dispatchEvent(new CustomEvent("a-coder:check-updates")) },
@@ -1142,6 +1206,8 @@ export default function App() {
 			setRightSidebarTab,
 			simple,
 			setInterfaceMode,
+			resolvedTheme,
+			skin,
 		],
 	);
 
@@ -1238,6 +1304,8 @@ export default function App() {
 						onJump={jumpToSidebarSection}
 						needsBackgroundInput={needsBackgroundInput}
 						hasBackgroundFinished={hasBackgroundFinished}
+						needsBackgroundInputCount={needsBackgroundInputCount}
+						backgroundFinishedCount={backgroundFinishedCount}
 						onFocusBackground={focusBackgroundSession}
 					/>
 				)}
@@ -1352,7 +1420,13 @@ export default function App() {
 			)}
 
 			{showSettings && (
-				<SettingsPanel onClose={() => setShowSettings(false)} />
+				<SettingsPanel
+					onClose={() => {
+						setShowSettings(false);
+						setSettingsNavId(null);
+					}}
+					initialNavId={settingsNavId ?? undefined}
+				/>
 			)}
 
 			{modalRequest && (
@@ -1405,6 +1479,7 @@ export default function App() {
 				open={showCommandPalette}
 				commands={commandItems}
 				onClose={() => setShowCommandPalette(false)}
+				onDismiss={restoreTheme}
 			/>
 
 			{/* ================== Command center (⇧⌘C) ================== */}
@@ -1600,6 +1675,8 @@ interface SidebarRailProps {
 	needsBackgroundInput: boolean;
 	/** A background turn finished since its session was last visited. */
 	hasBackgroundFinished: boolean;
+	needsBackgroundInputCount: number;
+	backgroundFinishedCount: number;
 	onFocusBackground: () => void;
 }
 
@@ -1612,6 +1689,8 @@ function SidebarRail({
 	onJump,
 	needsBackgroundInput,
 	hasBackgroundFinished,
+	needsBackgroundInputCount,
+	backgroundFinishedCount,
 	onFocusBackground,
 }: SidebarRailProps) {
 	const [hovered, setHovered] = useState(false);
@@ -1632,7 +1711,13 @@ function SidebarRail({
 <BrandMark className="h-6 w-6" />
 				</button>
 				<div className="my-1 h-px w-5 bg-pi-border" />
-				<RailIcon icon={MessageSquare} label="Sessions" onClick={() => onJump("sessions")} />
+				<RailIcon
+					icon={MessageSquare}
+					label="Sessions"
+					onClick={() => onJump("sessions")}
+					badge={needsBackgroundInputCount + backgroundFinishedCount}
+					badgeTone={needsBackgroundInputCount > 0 ? "warning" : "success"}
+				/>
 				<RailIcon icon={FolderGit2} label="Projects" onClick={() => onJump("projects")} />
 				{!simple && <RailIcon icon={GitBranch} label="Session tree" onClick={() => onJump("tree")} />}
 				<RailIcon icon={Plus} label="New / open project" onClick={onOpenPicker} />
@@ -1665,19 +1750,34 @@ function RailIcon({
 	icon: IconCmp,
 	label,
 	onClick,
+	badge = 0,
+	badgeTone = "success",
 }: {
 	icon: typeof FolderGit2;
 	label: string;
 	onClick: () => void;
+	badge?: number;
+	badgeTone?: "warning" | "success";
 }) {
+	const accessibilityLabel = badge > 0 ? `${label} (${badge} need attention)` : label;
 	return (
-		<Tip content={label} placement="row">
+		<Tip content={accessibilityLabel} placement="row">
 			<button
 				onClick={onClick}
-				className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
-				aria-label={label}
+				className="relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+				aria-label={accessibilityLabel}
 			>
 				<IconCmp className="h-4 w-4" />
+				{badge > 0 && (
+					<span
+						aria-hidden
+						className={`absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-0.5 font-mono text-[8px] font-semibold text-white ${
+							badgeTone === "warning" ? "bg-pi-warning" : "bg-pi-success"
+						}`}
+					>
+						{badge > 9 ? "9+" : badge}
+					</span>
+				)}
 			</button>
 		</Tip>
 	);

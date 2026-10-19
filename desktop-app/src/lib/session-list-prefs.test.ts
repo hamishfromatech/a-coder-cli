@@ -19,16 +19,17 @@ describe("session list preferences", () => {
 
 	it("round-trips density and metadata", () => {
 		const storage = memoryStorage();
-		writeSessionListPrefs({ density: "detailed", meta: ["tokens", "cost", "model"] }, storage);
+		writeSessionListPrefs({ density: "detailed", grouping: "project", meta: ["tokens", "cost", "model"] }, storage);
 		expect(readSessionListPrefs(storage)).toEqual({
 			density: "detailed",
+			grouping: "project",
 			meta: ["tokens", "cost", "model"],
 		});
 	});
 
 	it("drops unknown values", () => {
-		const storage = memoryStorage(JSON.stringify({ density: "huge", meta: ["tokens", "nope"] }));
-		expect(readSessionListPrefs(storage)).toEqual({ density: "compact", meta: ["tokens"] });
+		const storage = memoryStorage(JSON.stringify({ density: "huge", grouping: "year", meta: ["tokens", "nope"] }));
+		expect(readSessionListPrefs(storage)).toEqual({ density: "compact", grouping: "date", meta: ["tokens"] });
 	});
 
 	it("survives malformed storage", () => {

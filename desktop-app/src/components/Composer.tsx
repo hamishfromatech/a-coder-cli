@@ -482,7 +482,7 @@ export function Composer() {
 				<div className="pi-composer-fade pointer-events-none absolute inset-x-0 -top-4 h-8 rounded-t-2xl" />
 				<ComposerBreadcrumb />
 				<div
-				className={`pi-glass group relative flex items-end gap-2 rounded-2xl border border-pi-border p-2 transition-smooth ${
+				className={`pi-glass group relative flex items-end gap-2 rounded-pi-2xl border border-pi-border p-2 transition-smooth ${
 					focused
 						? "shadow-focus border-transparent"
 						: "shadow-card hover:shadow-card-hover"
@@ -568,7 +568,7 @@ export function Composer() {
 					{attachedImages.map((_, idx) => (
 						<div
 							key={idx}
-							className="group flex items-center gap-2 rounded-md border border-pi-border bg-pi-surface px-2 py-1"
+							className="group flex items-center gap-2 rounded-pi-md border border-pi-border bg-pi-surface px-2 py-1"
 						>
 							<ImageIcon className="h-3.5 w-3.5 text-pi-text-muted" />
 							<span className="max-w-32 truncate text-2xs text-pi-text-secondary">
@@ -592,20 +592,20 @@ export function Composer() {
 					<ComposerPills />
 					<div className="hidden min-w-0 items-center gap-3 md:flex">
 						<span className="flex items-center gap-1">
-							<kbd className="rounded border border-pi-border bg-pi-surface px-1 font-mono text-4xs text-pi-text-muted">
+							<kbd className="rounded-pi-sm border border-pi-border bg-pi-surface px-1 font-mono text-4xs text-pi-text-muted">
 								↵
 							</kbd>
 							{slashMatch ? "select command" : isStreaming ? "steer" : "send"}
 						</span>
 						<span className="flex items-center gap-1">
-							<kbd className="rounded border border-pi-border bg-pi-surface px-1 font-mono text-4xs text-pi-text-muted">
+							<kbd className="rounded-pi-sm border border-pi-border bg-pi-surface px-1 font-mono text-4xs text-pi-text-muted">
 								⇧↵
 							</kbd>
 							newline
 						</span>
 						{slashMatch && (
 							<span className="flex items-center gap-1">
-								<kbd className="rounded border border-pi-border bg-pi-surface px-1 font-mono text-4xs text-pi-text-muted">
+								<kbd className="rounded-pi-sm border border-pi-border bg-pi-surface px-1 font-mono text-4xs text-pi-text-muted">
 									esc
 								</kbd>
 								cancel

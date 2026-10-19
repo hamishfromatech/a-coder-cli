@@ -1,25 +1,38 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
 	ChevronDown,
+	Copy,
+	FileDown,
 	FileText,
 	GitBranch,
 	PanelLeft,
 	PanelRight,
+	Pencil,
 	PictureInPicture2,
+	Pin,
+	PinOff,
+	Trash2,
 } from "lucide-react";
 import { useUiStore } from "../stores/ui-store";
 import { useSessionStore } from "../stores/session-store";
 import * as rpc from "../lib/rpc";
 import { isMacOS } from "../lib/platform";
 import { triggerHaptic } from "../lib/haptics";
-import { ESCAPE_PRIORITY, pushEscapeLayer } from "../lib/escape-layers";
+import { ESCAPE_PRIORITY, isTopEscapeLayer, pushEscapeLayer } from "../lib/escape-layers";
 import { BrandMark } from "./ui/BrandMark";
 import { WindowControls } from "./WindowControls";
 import { openHud } from "../lib/hud";
+import { readPinnedSessions, togglePin } from "../lib/session-pins";
+import { confirm } from "../stores/confirm-store";
+import { toast } from "../stores/toast-store";
 
 export function Titlebar() {
 	const [editingName, setEditingName] = useState(false);
 	const [nameDraft, setNameDraft] = useState("");
+	const [titleMenu, setTitleMenu] = useState<{ top: number; left: number } | null>(null);
+	const [pinned, setPinned] = useState(false);
+	const titleMenuRef = useRef<HTMLDivElement | null>(null);
 
 	// While the inline rename is open, Esc belongs to the rename (cancel),
 	// not to lower-priority window handlers (engine stop).
@@ -40,11 +53,112 @@ export function Titlebar() {
 	const simple = interfaceMode === "simple";
 	const sessionName = useSessionStore((s) => s.sessionName);
 	const setSessionName = useSessionStore((s) => s.setSessionName);
+	const sessionFile = useSessionStore((s) => s.sessionFile);
 	const status = useSessionStore((s) => s.status);
+
+	useEffect(() => {
+		if (!titleMenu) return;
+		const unregister = pushEscapeLayer(ESCAPE_PRIORITY.contextMenu);
+		const onDown = (event: MouseEvent) => {
+			if (!titleMenuRef.current?.contains(event.target as Node)) setTitleMenu(null);
+		};
+		const onKey = (event: KeyboardEvent) => {
+			if (event.key !== "Escape") return;
+			if (event.defaultPrevented || !isTopEscapeLayer(ESCAPE_PRIORITY.contextMenu)) return;
+			event.preventDefault();
+			setTitleMenu(null);
+		};
+		document.addEventListener("mousedown", onDown);
+		document.addEventListener("keydown", onKey);
+		return () => {
+			unregister();
+			document.removeEventListener("mousedown", onDown);
+			document.removeEventListener("keydown", onKey);
+		};
+	}, [titleMenu]);
 
 	const beginEditName = () => {
 		setNameDraft(sessionName ?? "");
 		setEditingName(true);
+	};
+
+	const openTitleMenu = (element: HTMLElement) => {
+		const rect = element.getBoundingClientRect();
+		setPinned(Boolean(sessionFile && readPinnedSessions().includes(sessionFile)));
+		setTitleMenu({
+			top: rect.bottom + 4,
+			left: Math.max(8, Math.min(rect.left, window.innerWidth - 208)),
+		});
+	};
+
+	const copyLastReply = async () => {
+		setTitleMenu(null);
+		try {
+			const result = await rpc.getLastAssistantText();
+			if (result.text) await navigator.clipboard.writeText(result.text).catch(() => {});
+		} catch (e) {
+			toast.error("Failed to copy reply", e instanceof Error ? e.message : String(e));
+		}
+	};
+
+	const cloneSession = async () => {
+		setTitleMenu(null);
+		try {
+			await rpc.sendCommand({ type: "clone" });
+		} catch (e) {
+			toast.error("Failed to clone session", e instanceof Error ? e.message : String(e));
+		}
+	};
+
+	const forkSession = async () => {
+		setTitleMenu(null);
+		try {
+			const res = (await rpc.sendCommand({ type: "get_fork_messages" })) as {
+				messages?: Array<{ entryId: string; text: string }>;
+			};
+			const messages = res?.messages ?? [];
+			if (messages.length === 0) return;
+			await rpc.sendCommand({ type: "fork", entryId: messages[messages.length - 1]!.entryId });
+		} catch (e) {
+			toast.error("Failed to fork session", e instanceof Error ? e.message : String(e));
+		}
+	};
+
+	const exportSession = async () => {
+		setTitleMenu(null);
+		try {
+			await rpc.sendCommand({ type: "export_html" });
+		} catch (e) {
+			toast.error("Failed to export session", e instanceof Error ? e.message : String(e));
+		}
+	};
+
+	const togglePinned = () => {
+		if (!sessionFile) return;
+		setPinned(togglePin(sessionFile).includes(sessionFile));
+		setTitleMenu(null);
+	};
+
+	const deleteSession = () => {
+		setTitleMenu(null);
+		if (!sessionFile) return;
+		void confirm({
+			title: "Delete session?",
+			message: "This session is moved to the sessions trash folder. You can restore the file from there.",
+			confirmLabel: "Delete",
+			danger: true,
+			onConfirm: async () => {
+				try {
+					// The engine refuses to delete the active session. Start a fresh
+					// one first, then remove the old file.
+					await rpc.sendCommand({ type: "new_session" });
+					await rpc.sendCommand({ type: "delete_session", sessionPath: sessionFile });
+					toast.success("Session deleted", "Moved to the sessions trash folder.");
+				} catch (e) {
+					toast.error("Failed to delete session", e instanceof Error ? e.message : String(e));
+				}
+			},
+		});
 	};
 	const commitName = async () => {
 		const trimmed = nameDraft.trim();
@@ -114,21 +228,19 @@ export function Titlebar() {
 								}
 							}}
 							placeholder="Untitled session"
-							className="w-48 rounded-md border border-pi-border bg-pi-surface-raised px-1.5 py-0.5 text-xs text-pi-text transition-smooth focus:shadow-focus focus:outline-none"
+							className="w-48 rounded-pi-md border border-pi-border bg-pi-surface-raised px-1.5 py-0.5 text-xs text-pi-text transition-smooth focus:shadow-focus focus:outline-none"
 						/>
 					) : (
 						<button
 							type="button"
 							onClick={(e) => {
 								e.stopPropagation();
-								beginEditName();
+								openTitleMenu(e.currentTarget);
 							}}
-							onDoubleClick={(e) => {
-								e.stopPropagation();
-								beginEditName();
-							}}
-							aria-label="Rename session"
-							className="flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-pi-text-muted transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+							aria-label="Session actions"
+							aria-haspopup="menu"
+							aria-expanded={Boolean(titleMenu)}
+							className="flex cursor-pointer items-center gap-1 rounded-pi-md px-1.5 py-0.5 text-pi-text-muted transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
 						>
 							<span className="truncate">{sessionName || "Untitled session"}</span>
 							<ChevronDown className="h-3 w-3 shrink-0 text-pi-text-faint transition-smooth" />
@@ -160,7 +272,7 @@ export function Titlebar() {
 									setRightSidebarTab(tab);
 								}
 							}}
-							className={`flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-pi-text-muted transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
+							className={`flex h-7 w-7 cursor-pointer items-center justify-center rounded-pi-md text-pi-text-muted transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
 								rightSidebarOpen && rightSidebarTab === tab
 									? "bg-pi-accent-soft text-pi-accent"
 									: "hover:bg-pi-surface-raised hover:text-pi-text"
@@ -191,7 +303,67 @@ export function Titlebar() {
 
 			{/* Window controls: flush at the top-right edge (non-macOS). */}
 			{!isMacOS && <WindowControls />}
+
+			{titleMenu &&
+				createPortal(
+					<div
+						ref={titleMenuRef}
+						role="menu"
+						aria-label="Session actions"
+						style={{
+							position: "fixed",
+							top: titleMenu.top,
+							left: titleMenu.left,
+							width: 200,
+							zIndex: 80,
+						}}
+						className="rounded-pi-md border border-pi-border bg-pi-surface-overlay p-1 shadow-overlay backdrop-blur"
+					>
+						<TitleMenuItem icon={Pencil} label="Rename" onClick={() => { setTitleMenu(null); beginEditName(); }} />
+						<TitleMenuItem
+							icon={pinned ? PinOff : Pin}
+							label={pinned ? "Unpin session" : "Pin to top"}
+							onClick={togglePinned}
+						/>
+						<div className="my-1 h-px bg-pi-border" role="separator" />
+						<TitleMenuItem icon={Copy} label="Copy last reply" onClick={() => void copyLastReply()} />
+						<TitleMenuItem icon={Copy} label="Clone session" onClick={() => void cloneSession()} />
+						<TitleMenuItem icon={GitBranch} label="Fork session" onClick={() => void forkSession()} />
+						<TitleMenuItem icon={FileDown} label="Export HTML" onClick={() => void exportSession()} />
+						<div className="my-1 h-px bg-pi-border" role="separator" />
+						<TitleMenuItem icon={Trash2} label="Delete session" onClick={deleteSession} danger />
+					</div>,
+					document.body,
+				)}
 		</div>
+	);
+}
+
+function TitleMenuItem({
+	icon: Icon,
+	label,
+	onClick,
+	danger = false,
+}: {
+	icon: typeof Copy;
+	label: string;
+	onClick: () => void;
+	danger?: boolean;
+}) {
+	return (
+		<button
+			type="button"
+			role="menuitem"
+			onClick={onClick}
+			className={`flex w-full items-center gap-2 rounded-pi-sm px-2 py-1.5 text-left text-2xs transition-hover focus-visible:bg-pi-surface-raised focus-visible:outline-none ${
+				danger
+					? "text-pi-text-muted hover:bg-pi-error-soft hover:text-pi-error"
+					: "text-pi-text hover:bg-pi-surface-raised"
+			}`}
+		>
+			<Icon className="h-3 w-3 shrink-0" />
+			{label}
+		</button>
 	);
 }
 
@@ -213,7 +385,7 @@ function SidebarToggle({
 				onClick();
 			}}
 			aria-label={label}
-			className={`flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-pi-text-muted transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
+			className={`flex h-7 w-7 cursor-pointer items-center justify-center rounded-pi-md text-pi-text-muted transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
 				active
 					? "bg-pi-surface-raised text-pi-text"
 					: "hover:bg-pi-surface-raised hover:text-pi-text"

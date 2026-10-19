@@ -14,6 +14,8 @@ export interface TabsState {
 	 *  omitted an existing tab keeps its current label — used while the engine
 	 *  name for the newly activated session is not yet authoritative. */
 	openTab: (path: string, name?: string) => void;
+	/** Add a tab without activating it. */
+	openBackgroundTab: (path: string, name?: string) => void;
 	/** Remove a tab. Returns the path to activate next when the closed tab was
 	 *  active, otherwise null (no switch needed). */
 	closeTab: (path: string) => string | null;
@@ -25,6 +27,13 @@ export interface TabsState {
 export const useTabsStore = create<TabsState>((set, get) => ({
 	tabs: [],
 	activePath: null,
+	openBackgroundTab: (path, name) =>
+		set((s) => {
+			if (s.tabs.some((tab) => tab.path === path)) return {};
+			return {
+				tabs: [...s.tabs, { path, name: name || "Untitled session" }],
+			};
+		}),
 	openTab: (path, name) =>
 		set((s) => {
 			const idx = s.tabs.findIndex((t) => t.path === path);

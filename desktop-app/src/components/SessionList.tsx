@@ -12,6 +12,7 @@ import { runSwitch } from "../lib/session-switch";
 import { triggerHaptic } from "../lib/haptics";
 import { adoptSwitchResult } from "../lib/adopt-session";
 import { readPinnedSessions, togglePin } from "../lib/session-pins";
+import { applySessionOrder, readSessionOrder, writeSessionOrder } from "../lib/session-order";
 import { sessionJsonlToMarkdown } from "../lib/session-export";
 import { confirm } from "../stores/confirm-store";
 import { SearchField } from "./ui/SearchField";
@@ -103,6 +104,19 @@ function groupByDate(sessions: rpc.RpcSessionInfo[], now = new Date()): DateGrou
 	return groups.filter((g) => g.sessions.length > 0);
 }
 
+function groupByProject(sessions: rpc.RpcSessionInfo[]): DateGroup[] {
+	const groups = new Map<string, rpc.RpcSessionInfo[]>();
+	for (const session of sessions) {
+		const label = cwdLeaf(session.cwd) || "No folder";
+		const list = groups.get(label) ?? [];
+		list.push(session);
+		groups.set(label, list);
+	}
+	return [...groups.entries()]
+		.sort(([left], [right]) => left.localeCompare(right))
+		.map(([label, list]) => ({ label, sessions: list }));
+}
+
 /** Row status dot: what the session needs from the user right now, mirroring
  *  the tab strip's badges — blocked-on-input (amber, pulsing) > turn running
  *  (accent, pulsing) > finished-while-away (green) > quiet (grey). */
@@ -148,6 +162,8 @@ export function SessionList() {
 	const [editingPath, setEditingPath] = useState<string | null>(null);
 	const [menu, setMenu] = useState<MenuAnchor | null>(null);
 	const [prefs, setPrefs] = useState<SessionListPrefs>(() => readSessionListPrefs());
+	const [order, setOrder] = useState<string[]>(() => readSessionOrder());
+	const [draggedPath, setDraggedPath] = useState<string | null>(null);
 	const [viewMenu, setViewMenu] = useState<{ top: number; left: number } | null>(null);
 	const viewButtonRef = useRef<HTMLButtonElement | null>(null);
 	const listRef = useRef<HTMLDivElement | null>(null);
@@ -188,6 +204,20 @@ export function SessionList() {
 		};
 	}, []);
 
+	// New sessions appear at the top of the manual order instead of after every
+	// ranked path. The saved order is expanded once per unseen path.
+	useEffect(() => {
+		if (sessions.length === 0) return;
+		setOrder((previous) => {
+			const known = new Set(previous);
+			const fresh = sessions.map((session) => session.path).filter((path) => !known.has(path));
+			if (fresh.length === 0) return previous;
+			const next = [...fresh, ...previous];
+			writeSessionOrder(next);
+			return next;
+		});
+	}, [sessions]);
+
 	// A turn just ended: session metadata (modified, messageCount) changed.
 	const wasStreaming = useRef(isStreaming);
 	useEffect(() => {
@@ -212,7 +242,10 @@ export function SessionList() {
 
 	const filtered = useMemo(() => {
 		const q = query.trim().toLowerCase();
-		const sorted = [...sessions].sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime());
+		const sorted = applySessionOrder(
+			[...sessions].sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime()),
+			order,
+		);
 		if (!q) return sorted.slice(0, MAX_ROWS);
 		return sorted
 			.filter((s) => {
@@ -220,15 +253,15 @@ export function SessionList() {
 				return hay.includes(q);
 			})
 			.slice(0, MAX_ROWS);
-	}, [sessions, query]);
+	}, [sessions, query, order]);
 
 	const groups = useMemo(() => {
 		if (query.trim()) return [{ label: "Results", sessions: filtered }];
 		const pinned = filtered.filter((s) => pins.includes(s.path));
 		const rest = filtered.filter((s) => !pins.includes(s.path));
-		const dateGroups = groupByDate(rest);
-		return pinned.length > 0 ? [{ label: "Pinned", sessions: pinned }, ...dateGroups] : dateGroups;
-	}, [filtered, query, pins]);
+		const restGroups = prefs.grouping === "project" ? groupByProject(rest) : groupByDate(rest);
+		return pinned.length > 0 ? [{ label: "Pinned", sessions: pinned }, ...restGroups] : restGroups;
+	}, [filtered, query, pins, prefs.grouping]);
 
 	const switchTo = useCallback(
 		async (path: string) => {
@@ -305,6 +338,17 @@ export function SessionList() {
 		}
 	};
 
+	const reorderSessions = (dragPath: string, targetPath: string) => {
+		if (dragPath === targetPath) return;
+		const visible = filtered.map((session) => session.path).filter((path) => path !== dragPath);
+		const index = visible.indexOf(targetPath);
+		visible.splice(index < 0 ? visible.length : index, 0, dragPath);
+		const tail = order.filter((path) => !visible.includes(path));
+		const next = [...visible, ...tail];
+		setOrder(next);
+		writeSessionOrder(next);
+	};
+
 	// Roving focus across rows: browser-native tab order would stop on every
 	// row plus its menu button, which makes arrow keys the only sane way to
 	// sweep a 50-row list.
@@ -363,7 +407,7 @@ export function SessionList() {
 										},
 							);
 						}}
-						className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none ${viewMenu ? "bg-pi-surface-raised text-pi-text" : "text-pi-text-muted"}`}
+						className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-pi-md transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none ${viewMenu ? "bg-pi-surface-raised text-pi-text" : "text-pi-text-muted"}`}
 						aria-label="Session list view"
 						aria-haspopup="menu"
 						aria-expanded={Boolean(viewMenu)}
@@ -375,7 +419,7 @@ export function SessionList() {
 					<button
 						type="button"
 						onClick={() => void startNew()}
-						className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+						className="flex h-6 w-6 shrink-0 items-center justify-center rounded-pi-md text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
 						aria-label="New session"
 					>
 						<Plus className="h-3.5 w-3.5" />
@@ -411,7 +455,18 @@ export function SessionList() {
 										density={prefs.density}
 										meta={prefs.meta}
 										onResume={() => void switchTo(s.path)}
+										onTogglePin={() => togglePinned(s.path)}
+										onOpenBackground={() =>
+											useTabsStore.getState().openBackgroundTab(s.path, sessionTitle(s))
+										}
 										onStartRename={() => setEditingPath(s.path)}
+										dragging={draggedPath === s.path}
+										onDragStart={() => setDraggedPath(s.path)}
+										onDragEnd={() => setDraggedPath(null)}
+										onDrop={() => {
+											if (draggedPath && draggedPath !== s.path) reorderSessions(draggedPath, s.path);
+											setDraggedPath(null);
+										}}
 										onMenu={(top, left) => {
 											if (menu?.path === s.path) {
 												setMenu(null);
@@ -491,6 +546,12 @@ interface SessionRowProps {
 	density: SessionListPrefs["density"];
 	meta: SessionListPrefs["meta"];
 	onResume: () => void;
+	onTogglePin: () => void;
+	onOpenBackground: () => void;
+	dragging: boolean;
+	onDragStart: () => void;
+	onDragEnd: () => void;
+	onDrop: () => void;
 	onStartRename: () => void;
 	onMenu: (top: number, left: number) => void;
 	onCommitRename: (name: string) => void;
@@ -509,6 +570,12 @@ function SessionRow({
 	density,
 	meta,
 	onResume,
+	onTogglePin,
+	onOpenBackground,
+	dragging,
+	onDragStart,
+	onDragEnd,
+	onDrop,
 	onStartRename,
 	onMenu,
 	onCommitRename,
@@ -550,10 +617,45 @@ function SessionRow({
 			aria-selected={current}
 			data-session-row
 			tabIndex={-1}
-			onClick={onResume}
+			draggable={!editing}
+			onDragStart={(e) => {
+				e.dataTransfer.effectAllowed = "move";
+				e.dataTransfer.setData("text/plain", session.path);
+				onDragStart();
+			}}
+			onDragEnd={onDragEnd}
+			onDragOver={(e) => {
+				e.preventDefault();
+				e.dataTransfer.dropEffect = "move";
+			}}
+			onDrop={(e) => {
+				e.preventDefault();
+				onDrop();
+			}}
+			onClick={(e) => {
+				if (e.shiftKey) {
+					e.preventDefault();
+					onTogglePin();
+					return;
+				}
+				if (e.metaKey || e.ctrlKey) {
+					e.preventDefault();
+					onOpenBackground();
+					return;
+				}
+				onResume();
+			}}
+			onAuxClick={(e) => {
+				if (e.button !== 1) return;
+				e.preventDefault();
+				onOpenBackground();
+			}}
 			onKeyDown={(e) => {
 				if (editing) return;
-				if (e.key === "Enter" || e.key === " ") {
+				if (e.key === "Enter" && e.shiftKey) {
+					e.preventDefault();
+					onTogglePin();
+				} else if (e.key === "Enter" || e.key === " ") {
 					e.preventDefault();
 					onResume();
 				} else if (e.key === "F2") {
@@ -564,11 +666,11 @@ function SessionRow({
 					openMenu();
 				}
 			}}
-			className={`group flex w-full cursor-pointer items-start gap-2 rounded-md px-2.5 text-left transition-hover focus-visible:shadow-focus focus-visible:outline-none ${
+			className={`group flex w-full cursor-pointer items-start gap-2 rounded-pi-md px-2.5 text-left transition-hover focus-visible:shadow-focus focus-visible:outline-none ${
 				density === "compact" ? "py-1.5" : "py-2"
 			} ${
 				current ? "bg-pi-accent-soft" : openInTab ? "hover:bg-pi-surface-raised/70" : "hover:bg-pi-surface-raised"
-			} ${pending ? "opacity-60" : ""}`}
+			} ${pending ? "opacity-60" : ""} ${dragging ? "opacity-40" : ""}`}
 		>
 			<span className={density === "compact" ? "self-center" : "self-start pt-1"}>
 				<SessionDot path={session.path} />
@@ -591,7 +693,7 @@ function SessionRow({
 								}
 							}}
 							onBlur={(e) => finishRename(e.target.value)}
-							className="min-w-0 flex-1 rounded border border-pi-border bg-pi-surface px-1 py-0.5 text-xs text-pi-text focus:border-pi-accent focus:outline-none"
+							className="min-w-0 flex-1 rounded-pi-sm border border-pi-border bg-pi-surface px-1 py-0.5 text-xs text-pi-text focus:border-pi-accent focus:outline-none"
 							aria-label="Session name"
 						/>
 					) : (
@@ -636,7 +738,7 @@ function SessionRow({
 						e.stopPropagation();
 						openMenu();
 					}}
-					className={`flex h-5 w-5 shrink-0 items-center justify-center rounded text-pi-text-faint opacity-0 transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:opacity-100 focus-visible:shadow-focus focus-visible:outline-none group-hover:opacity-100 ${
+					className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-pi-sm text-pi-text-faint opacity-0 transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:opacity-100 focus-visible:shadow-focus focus-visible:outline-none group-hover:opacity-100 ${
 						density === "compact" ? "self-center" : "mt-0.5 self-start"
 					}`}
 					aria-label="Session actions"
@@ -674,6 +776,7 @@ function SessionViewMenu({ anchor, prefs, onChange, onClose }: SessionViewMenuPr
 	}, [onClose]);
 
 	const setDensity = (density: SessionListPrefs["density"]) => onChange({ ...prefs, density });
+	const setGrouping = (grouping: SessionListPrefs["grouping"]) => onChange({ ...prefs, grouping });
 
 	const toggleMeta = (id: SessionListPrefs["meta"][number]) => {
 		const meta = prefs.meta.includes(id)
@@ -683,7 +786,7 @@ function SessionViewMenu({ anchor, prefs, onChange, onClose }: SessionViewMenuPr
 	};
 
 	const row =
-		"flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-2xs text-pi-text-secondary transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:bg-pi-surface-raised focus-visible:outline-none";
+		"flex w-full items-center gap-2 rounded-pi-sm px-2 py-1.5 text-left text-2xs text-pi-text-secondary transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:bg-pi-surface-raised focus-visible:outline-none";
 
 	return (
 		<div
@@ -691,7 +794,7 @@ function SessionViewMenu({ anchor, prefs, onChange, onClose }: SessionViewMenuPr
 			role="menu"
 			aria-label="Session list view"
 			style={{ position: "fixed", top: Math.max(8, anchor.top), left: anchor.left, width: 216, zIndex: 80 }}
-			className="rounded-md border border-pi-border bg-pi-surface-overlay p-1 shadow-lg backdrop-blur"
+			className="rounded-pi-md border border-pi-border bg-pi-surface-overlay p-1 shadow-lg backdrop-blur"
 		>
 			<div className="px-2 pb-1 pt-0.5 text-4xs font-semibold uppercase tracking-[0.08em] text-pi-text-faint">
 				Row density
@@ -712,6 +815,26 @@ function SessionViewMenu({ anchor, prefs, onChange, onClose }: SessionViewMenuPr
 							<span className="block font-medium">{option.label}</span>
 							<span className="block text-3xs text-pi-text-faint">{option.detail}</span>
 						</span>
+					</button>
+				);
+			})}
+			<div className="my-1 h-px bg-pi-border" />
+			<div className="px-2 pb-1 text-4xs font-semibold uppercase tracking-[0.08em] text-pi-text-faint">
+				Group by
+			</div>
+			{(["date", "project"] as const).map((grouping) => {
+				const active = prefs.grouping === grouping;
+				return (
+					<button
+						key={grouping}
+						type="button"
+						role="menuitemradio"
+						aria-checked={active}
+						onClick={() => setGrouping(grouping)}
+						className={row}
+					>
+						<Check className={`h-3 w-3 shrink-0 ${active ? "text-pi-accent" : "opacity-0"}`} />
+						<span className="flex-1 capitalize">{grouping === "date" ? "Recent activity" : "Project"}</span>
 					</button>
 				);
 			})}
@@ -740,7 +863,7 @@ function SessionViewMenu({ anchor, prefs, onChange, onClose }: SessionViewMenuPr
 				type="button"
 				role="menuitem"
 				onClick={() => onChange({ ...DEFAULT_SESSION_LIST_PREFS, meta: [...DEFAULT_SESSION_LIST_PREFS.meta] })}
-				className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-2xs text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text"
+				className="flex w-full items-center gap-2 rounded-pi-sm px-2 py-1.5 text-left text-2xs text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text"
 			>
 				<span className="w-3 shrink-0" />
 				Reset view
@@ -790,7 +913,7 @@ function SessionMenu({
 	}, [onClose]);
 
 	const item =
-		"flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-2xs text-pi-text transition-hover hover:bg-pi-surface-raised focus-visible:bg-pi-surface-raised focus-visible:outline-none";
+		"flex w-full items-center gap-2 rounded-pi-sm px-2 py-1.5 text-left text-2xs text-pi-text transition-hover hover:bg-pi-surface-raised focus-visible:bg-pi-surface-raised focus-visible:outline-none";
 
 	return (
 		<div
@@ -798,7 +921,7 @@ function SessionMenu({
 			role="menu"
 			aria-label={`Actions for ${sessionTitle(session)}`}
 			style={{ position: "fixed", top: Math.max(8, anchor.top), left: anchor.left, width: 176, zIndex: 80 }}
-			className="rounded-md border border-pi-border bg-pi-surface-overlay p-1 shadow-lg backdrop-blur"
+			className="rounded-pi-md border border-pi-border bg-pi-surface-overlay p-1 shadow-lg backdrop-blur"
 		>
 			<button type="button" role="menuitem" className={item} onClick={onRename}>
 				<Pencil className="h-3 w-3" /> Rename
