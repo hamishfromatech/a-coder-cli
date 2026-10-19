@@ -201,6 +201,30 @@ export interface OfficeActivityEvent {
 	at: number;
 }
 
+/** Stats + session list for one coworker (office detail view). */
+export interface CoworkerSessionSummary {
+	path: string;
+	cwd: string;
+	name?: string;
+	messageCount: number;
+	turns: number;
+	tokens: number;
+	lastActivity: number;
+}
+
+export interface CoworkerDetails {
+	coworkerId: string;
+	name: string;
+	handle: string;
+	sessions: CoworkerSessionSummary[];
+	totals: {
+		sessions: number;
+		turns: number;
+		tokens: number;
+		lastActivity: number;
+	};
+}
+
 /** Full state snapshot pushed to clients on every change. */
 export interface OfficeSnapshot {
 	coworkers: Coworker[];

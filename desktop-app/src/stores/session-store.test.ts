@@ -94,55 +94,45 @@ describe("session-store", () => {
 			expect(useSessionStore.getState().messages).toEqual(messages);
 		});
 
-		it("updateLastAssistantMessage updates only last assistant message", () => {
+		it("keeps the in-flight assistant out of the committed transcript", () => {
 			const store = useSessionStore.getState();
 			store.resetSession();
-			const messages = [
-				{ role: "user", content: "Hello" } as any,
-				{ role: "assistant", content: "Original" } as any,
-			];
+			const messages = [{ role: "user", content: "Hello" } as any];
 			store.setMessages(messages);
-
-			const updatedMessage = {
-				role: "assistant",
-				content: "Updated",
-			} as any;
-			store.updateLastAssistantMessage(updatedMessage);
+			const streaming = { role: "assistant", content: [{ type: "text", text: "Hel" }] } as any;
+			store.setStreamingMessage(streaming);
 
 			const state = useSessionStore.getState();
-			expect(state.messages.length).toBe(2);
-			expect((state.messages[1] as any).content).toBe("Updated");
+			expect(state.messages).toBe(messages);
+			expect(state.streamingMessage).toBe(streaming);
 		});
 
-		it("updateLastAssistantMessage does nothing if last message is not assistant", () => {
+		it("commits the final assistant message once and clears the stream", () => {
 			const store = useSessionStore.getState();
 			store.resetSession();
-			const messages = [
-				{ role: "user", content: "Hello" } as any,
-				{ role: "user", content: "World" } as any,
-			];
-			store.setMessages(messages);
+			store.setMessages([{ role: "user", content: "Hello" } as any]);
+			const final = { role: "assistant", timestamp: 10, content: [{ type: "text", text: "Hi" }] } as any;
+			store.setStreamingMessage(final);
+			store.commitAssistantMessage(final);
 
-			const updatedMessage = {
-				role: "assistant",
-				content: "Updated",
-			} as any;
-			store.updateLastAssistantMessage(updatedMessage);
-
-			expect((useSessionStore.getState().messages[1] as any).content).toBe("World");
+			const state = useSessionStore.getState();
+			expect(state.streamingMessage).toBeNull();
+			expect(state.messages).toHaveLength(2);
+			expect(state.messages[1]).toBe(final);
 		});
 
-		it("updateLastAssistantMessage does nothing if no messages", () => {
+		it("replaces a partially committed assistant with the same timestamp", () => {
 			const store = useSessionStore.getState();
 			store.resetSession();
-			const updatedMessage = {
-				role: "assistant",
-				content: "Updated",
-			} as any;
-			store.updateLastAssistantMessage(updatedMessage);
-			expect(useSessionStore.getState().messages.length).toBe(0);
-		});
-	});
+			const partial = { role: "assistant", timestamp: 10, content: [{ type: "text", text: "par" }] } as any;
+			store.setMessages([partial]);
+			const final = { role: "assistant", timestamp: 10, content: [{ type: "text", text: "final" }] } as any;
+			store.commitAssistantMessage(final);
+
+			const state = useSessionStore.getState();
+			expect(state.messages).toHaveLength(1);
+			expect((state.messages[0] as any).content[0].text).toBe("final");
+		});	});
 
 	describe("resetSession", () => {
 		it("clears all session data", () => {
@@ -232,6 +222,38 @@ describe("session-store", () => {
 			];
 			store.setAvailableCommands(commands);
 			expect(useSessionStore.getState().availableCommands).toEqual(commands);
+		});
+	});
+
+	describe("history paging", () => {
+		it("setHistoryPage records the window and whether older pages exist", () => {
+			const store = useSessionStore.getState();
+			store.setHistoryPage([{ role: "user", content: "tail" }] as any, 40, 39);
+			const state = useSessionStore.getState();
+			expect(state.messages).toHaveLength(1);
+			expect(state.messagesTotal).toBe(40);
+			expect(state.messagesStart).toBe(39);
+			expect(state.hasMoreOlder).toBe(true);
+		});
+
+		it("prependHistoryPage puts older messages first and moves the cursor", () => {
+			const store = useSessionStore.getState();
+			store.setHistoryPage([{ role: "assistant", content: "tail" }] as any, 40, 39);
+			store.prependHistoryPage([{ role: "user", content: "older" }] as any, 38, 40);
+			const state = useSessionStore.getState();
+			expect(state.messages.map((m: any) => m.content)).toEqual(["older", "tail"]);
+			expect(state.messagesStart).toBe(38);
+			expect(state.hasMoreOlder).toBe(true);
+		});
+
+		it("resetSession clears paging state", () => {
+			const store = useSessionStore.getState();
+			store.setHistoryPage([{ role: "user", content: "x" }] as any, 10, 9);
+			store.resetSession();
+			const state = useSessionStore.getState();
+			expect(state.messagesStart).toBe(0);
+			expect(state.messagesTotal).toBe(0);
+			expect(state.hasMoreOlder).toBe(false);
 		});
 	});
 

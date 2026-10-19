@@ -263,6 +263,16 @@ html.has-page body::after {
 /* ============================================================
    Chat surface — drawer-aware horizontal rhythm
    ============================================================ */
+/* Static chat texture. Kept behind the message column (z-0, first child) and
+   free of `mix-blend-mode`, so streaming text never re-blends the full rect. */
+.chat-backdrop {
+	background-image: var(--chat-backdrop-image);
+	background-position: center;
+	background-size: cover;
+	opacity: 0.025;
+	filter: invert(var(--backdrop-invert-mul, 1)) saturate(1) brightness(1);
+}
+
 .chat-surface {
 	padding-left: var(--chat-gutter, 1.5rem);
 	padding-right: var(--chat-gutter-right, var(--chat-gutter, 1.5rem));
@@ -624,4 +634,11 @@ input[type="range"].pi-range,
 	background-clip: text;
 	color: transparent;
 	animation: shimmer-text 3.2s linear infinite;
+}
+
+/* Skip layout/paint for off-screen transcript rows. `auto` remembers the real
+   size once a row has rendered, so scroll height settles after first paint. */
+.chat-row {
+	content-visibility: auto;
+	contain-intrinsic-size: auto 120px;
 }

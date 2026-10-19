@@ -21,7 +21,8 @@ interface QueueItem {
 // the TaskPanel (task graph) and RuntimePanel (sub-agents / background
 // terminals), mounted in the same chat-column slot above the composer.
 export function QueuePanel({ onSend }: QueuePanelProps) {
-	const { steering, followUp } = useSessionStore();
+	const steering = useSessionStore((s) => s.steering);
+	const followUp = useSessionStore((s) => s.followUp);
 	const [collapsed, setCollapsed] = useState(false);
 
 	const items = [

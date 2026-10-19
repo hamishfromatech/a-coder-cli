@@ -19,7 +19,8 @@ Common options:
 
 ## Protocol Overview
 
-- **Handshake**: the first line on stdout is an `engine_info` event: `{ "type": "engine_info", "version": "<engine version>", "contract": <protocol contract number> }`. Bump detection: clients compare `contract` against the version they speak (see `RPC_CONTRACT`) and fail fast on skew instead of failing cryptically later.
+- **Handshake**: the first line on stdout is an `engine_info` event: `{ "type": "engine_info", "version": "<engine version>", "contract": <protocol contract number>, "capabilities": [...] }`. Bump detection: clients compare `contract` against the version they speak (see `RPC_CONTRACT`) and fail fast on skew instead of failing cryptically later.
+- **Additive features**: a client may send `client_info` to opt into compact deltas and batched frames. Clients that never send it keep the full `message_update` stream described below.
 - **Commands**: JSON objects sent to stdin, one per line
 - **Responses**: JSON objects with `type: "response"` indicating command success/failure
 - **Events**: Agent events streamed to stdout as JSON lines
@@ -195,6 +196,27 @@ Response:
 
 ### State
 
+#### client_info
+
+Opt into additive protocol features. Safe to send once after connect; clients that omit it receive contract-1 events.
+
+```json
+{"type": "client_info", "contract": 1, "capabilities": ["delta", "batch"]}
+```
+
+Response:
+```json
+{"type": "response", "command": "client_info", "success": true, "data": {"contract": 1, "capabilities": ["delta", "batch"]}}
+```
+
+Capabilities:
+
+| Capability | Effect |
+|---|---|
+| `delta` | Send `message_delta` / `message_snapshot` instead of per-token `message_update`; `tool_execution_*` and duplicate `turn_end` / `entry_appended` frames are suppressed. |
+| `batch` | Coalesce session events into `event_batch` frames (~30Hz). Responses and structural events flush immediately. |
+| `tool-progress` | Keep `tool_execution_*` events (off by default for contract-2 clients). |
+
 #### get_state
 
 Get current session state.
@@ -219,6 +241,7 @@ Response:
     "sessionFile": "/path/to/session.jsonl",
     "sessionId": "abc123",
     "sessionName": "my-feature-work",
+    "activationId": 3,
     "autoCompactionEnabled": true,
     "messageCount": 5,
     "pendingMessageCount": 0
@@ -228,12 +251,23 @@ Response:
 
 The `model` field is a full [Model](#model) object or `null`. The `sessionName` field is the display name set via `set_session_name`, or omitted if not set.
 
-#### get_messages
+#### get_session_snapshot
 
-Get all messages in the conversation.
+One activation round trip: current state plus session stats (including `contextUsage`). Prefer this over `get_state` + `get_session_stats` when switching or resuming a session.
 
 ```json
-{"type": "get_messages"}
+{"type": "get_session_snapshot"}
+```
+
+Response `data`: `{ state: <get_state data>, stats: <get_session_stats data> }`.
+
+#### get_messages
+
+Get conversation messages. With no options this returns the full context array (contract-1 behavior). With `limit` it returns a page; `before` selects an older page by index.
+
+```json
+{"type": "get_messages", "limit": 120}
+{"type": "get_messages", "limit": 100, "before": 380}
 ```
 
 Response:
@@ -242,9 +276,17 @@ Response:
   "type": "response",
   "command": "get_messages",
   "success": true,
-  "data": {"messages": [...]}
+  "data": {
+    "messages": [...],
+    "total": 500,
+    "start": 380,
+    "end": 500,
+    "hasMore": true
+  }
 }
 ```
+
+`start` is the index of the first returned message in the live context array; pass it as `before` to load the previous page. A page never starts on a tool result: the engine walks the start back to the assistant/user message that owns the call, so tool results are never rendered without their call. `hasMore` is `start > 0`.
 
 Messages are `AgentMessage` objects (see [Message Types](#message-types)).
 
@@ -733,8 +775,10 @@ Load a different session file. Can be cancelled by a `session_before_switch` ext
 
 Response:
 ```json
-{"type": "response", "command": "switch_session", "success": true, "data": {"cancelled": false}}
+{"type": "response", "command": "switch_session", "success": true, "data": {"cancelled": false, "sessionFile": "/path/to/session.jsonl", "sessionId": "abc123", "activationId": 4}}
 ```
+
+`activationId` identifies this session activation. Events carry the same value; discard frames whose `activationId` differs from the current one.
 
 If an extension cancelled the switch:
 ```json
@@ -854,6 +898,8 @@ Response:
 
 Get the session as a tree of entries. Each node is `{entry, children, label?, labelTimestamp?}`. A well-formed session has a single root; orphaned entries (broken parent chain) also appear as roots.
 
+Pass `flat: true` to receive `nodes: [{id, parentId, type, messageRole?, timestamp?, label?, labelTimestamp?}]` plus `version` (entry count) instead of the nested tree. Flat avoids deep recursion on long sessions; the client builds the parent/child map itself.
+
 ```json
 {"type": "get_tree"}
 ```
@@ -955,10 +1001,10 @@ wire relative to each other. Tracing failures never affect the engine.
 
 #### list_sessions
 
-List all known sessions (all projects):
+List known sessions (all projects), newest first. Pass `limit` to page (capped at 500):
 
 ```json
-{"type": "list_sessions"}
+{"type": "list_sessions", "limit": 50}
 ```
 
 Response `data.sessions` entries carry `path`, `id`, `cwd`, `name`, `parentSessionPath`, `created`, `modified`, `messageCount`, `firstMessage` (ISO date strings).
@@ -970,6 +1016,19 @@ Status of the runtime's background (detached) sessions:
 ```json
 {"type": "get_sessions_status"}
 ```
+
+#### subscribe_session / unsubscribe_session
+
+Forward live events from a detached (background) runtime. At most four sessions can be subscribed; the active session does not need a subscription.
+
+```json
+{"type": "subscribe_session", "sessionPath": "/path/to/session.jsonl"}
+{"type": "unsubscribe_session", "sessionPath": "/path/to/session.jsonl"}
+```
+
+`subscribe_session` returns `{subscribed, sessionFile, sessionId, activationId}` (or `active: true` when the path is the active session). While subscribed, every session frame carries that session's `sessionId`/`sessionFile` and a distinct `activationId`; clients must route it by `sessionFile`, not into the active transcript. Subscriptions are dropped automatically when the runtime is reaped or becomes active.
+
+`get_messages` accepts `sessionPath` to read a background runtime's history without switching.
 
 #### abort_session
 
@@ -1166,9 +1225,13 @@ Events are streamed to stdout as JSON lines during agent operation. Events do NO
 | `agent_end` | Agent completes (includes all generated messages) |
 | `turn_start` | New turn begins |
 | `turn_end` | Turn completes (includes assistant message and tool results) |
-| `message_start` | Message begins |
-| `message_update` | Streaming update (text/thinking/toolcall deltas) |
-| `message_end` | Message completes |
+| `message_start` | Message begins (assistant frames include `messageId`) |
+| `message_update` | Streaming update (contract 1; full partial per token) |
+| `message_delta` | Contract 2: compact text/thinking delta for one `messageId` |
+| `message_snapshot` | Contract 2: full partial message at a block boundary (tool-call end) |
+| `event_batch` | Contract 2: coalesced ordered events |
+| `message_end` | Message completes (authoritative full message) |
+| `tree_delta` | Contract 2: incremental session-tree change (`added`/`updated`/`removed`, `leafId`, `version`) |
 | `tool_execution_start` | Tool begins execution |
 | `tool_execution_update` | Tool execution progress (streaming output) |
 | `tool_execution_end` | Tool completes |
@@ -1179,6 +1242,8 @@ Events are streamed to stdout as JSON lines during agent operation. Events do NO
 | `auto_retry_end` | Auto-retry completes (success or final failure) |
 | `extension_error` | Extension threw an error |
 | `sessions_update` | Runtime registry changed (background sessions) |
+| `session_stats` | Token/cost/context stats after a turn or compaction (no polling needed) |
+| `session_changed` | A stored session was created, renamed/updated, or deleted (`sessionPath`, optional `name`) |
 | `office_update` | Your Office roster changed (coworkers, statuses, huddle summaries, errands, pending prompts) |
 | `office_huddle` | A huddle's full log (first contact, or a reset after the log cap drops old lines) |
 | `office_huddle_delta` | Messages appended to a huddle plus the live drive state; clients that have not loaded the room should ignore it and fetch `office_huddle_get` |
@@ -1188,6 +1253,25 @@ Events are streamed to stdout as JSON lines during agent operation. Events do NO
 | `office_activity` | Office activity feed entry (errand/huddle activity for the Activity inbox) |
 | `background_processes_update` | Background process list changed (bash background jobs and their states) |
 | `oauth_login_status` | OAuth login progress for `oauth_login`: `phase` is `started`, `browser`, `device_code`, `progress`, `success`, or `error` |
+
+### Contract 2: identity, deltas, and batches
+
+When a client sends `client_info` with `delta`/`batch`, session frames gain identity and are reshaped:
+
+```json
+{"seq":1842,"type":"message_delta","sessionId":"abc123","sessionFile":"/path/to/session.jsonl","activationId":4,"messageId":"message-7","contentIndex":0,"kind":"text","delta":"Hel"}
+```
+
+- `seq` is monotonic for session events. A gap means frames were lost; refetch state/history. Responses remain correlated by `id`.
+- `sessionId`, `sessionFile`, and `activationId` let a client drop late frames from a session or activation it already switched away from.
+- `messageId` is stable for the lifetime of one assistant message and appears on `message_start`, `message_delta`, `message_snapshot`, and `message_end`.
+- `message_delta` covers text/thinking only. Tool-call blocks arrive as a `message_snapshot` at `toolcall_end`; `message_end` remains authoritative.
+- `message_snapshot` at most replaces the draft for the same `messageId`; it is the recovery path after a dropped delta.
+- With `batch`, frames are delivered as:
+  ```json
+  {"type":"event_batch","seq":1843,"events":[{"seq":1841,...},{"seq":1842,...}]}
+  ```
+  Events inside a batch are in order. `agent_start`, `agent_end`, `message_start`, `message_end`, `session_start`, compaction, queue updates, retries, and extension UI requests flush immediately; text/thinking deltas may wait up to ~33ms.
 
 ### agent_start
 
@@ -1235,7 +1319,7 @@ Emitted when a message begins and completes. The `message` field contains an `Ag
 
 ### message_update (Streaming)
 
-Emitted during streaming of assistant messages. Contains both the partial message and a streaming delta event.
+Contract-1 streaming. Contains both the partial message and a streaming delta event. Clients that negotiated `delta` receive `message_delta` / `message_snapshot` instead.
 
 ```json
 {
@@ -1655,16 +1739,21 @@ Dismiss any dialog method. The extension receives `undefined` (for select/input/
 
 ## Error Handling
 
-Failed commands return a response with `success: false`:
+Failed commands return a response with `success: false`. `error` is the human-readable message; `code`, `retryable`, and `details` are additive so clients can branch without parsing text:
 
 ```json
 {
   "type": "response",
-  "command": "set_model",
+  "id": "req-1",
+  "command": "switch_session",
   "success": false,
-  "error": "Model not found: invalid/model"
+  "error": "Stored session working directory does not exist: /old/path",
+  "code": "missing_session_cwd",
+  "retryable": true
 }
 ```
+
+Common codes: `unknown_command`, `parse_error`, `command_failed`, `missing_session_cwd`, `engine_exited`, `timeout`, `cancelled`. Transport-level cancellation uses the client-supplied `id`: the desktop sends `cancel_command { id }` and stops waiting (the engine may still finish the work).
 
 Parse errors:
 

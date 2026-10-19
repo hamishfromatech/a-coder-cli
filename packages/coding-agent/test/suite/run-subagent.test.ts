@@ -130,11 +130,16 @@ describe("AgentSession background sub-agents (in-process store)", () => {
 
 		const record = harness.session.getSubAgent(id);
 		expect(record?.outputFile).toBeTruthy();
-		const events = await readTaskOutputEvents(record!.outputFile!);
+		// `waitSubAgent` settles when the record reaches its terminal status; the
+		// JSONL writer can flush the final event a tick later under load.
+		const events = await vi.waitFor(async () => {
+			const current = await readTaskOutputEvents(record!.outputFile!);
+			expect(current.map((r) => r.event.type)).toContain("completed");
+			return current;
+		});
 		const types = events.map((r) => r.event.type);
 		expect(types).toContain("started");
 		expect(types).toContain("text");
-		expect(types).toContain("completed");
 	});
 
 	it("kill_subagent aborts a running background sub-agent", async () => {

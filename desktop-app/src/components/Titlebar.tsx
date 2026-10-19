@@ -36,7 +36,9 @@ export function Titlebar() {
 		setRightSidebarTab,
 		rightSidebarTab,
 	} = useUiStore();
-	const { sessionName, setSessionName, status } = useSessionStore();
+	const sessionName = useSessionStore((s) => s.sessionName);
+	const setSessionName = useSessionStore((s) => s.setSessionName);
+	const status = useSessionStore((s) => s.status);
 
 	const beginEditName = () => {
 		setNameDraft(sessionName ?? "");

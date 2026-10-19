@@ -7,7 +7,7 @@ use std::sync::Arc;
 use crate::cli::{build_cli_command, reconstructed_path};
 
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -19,7 +19,13 @@ use uuid::Uuid;
 
 /// A pending request waiting for a correlated response.
 pub(crate) struct PendingRequest {
-	resolve: oneshot::Sender<Result<Value, String>>,
+	pub(crate) resolve: oneshot::Sender<Result<Value, Value>>,
+}
+
+/// Structured error returned to the frontend. `message` is preserved for older
+/// call sites; `code`/`retryable`/`details` are additive.
+pub(crate) fn rpc_error(code: &str, message: &str, retryable: bool) -> Value {
+	json!({ "code": code, "message": message, "retryable": retryable })
 }
 
 pub struct RpcClient {
@@ -30,7 +36,11 @@ pub struct RpcClient {
 	/// engine's stdin fails silently and the agent blocks on a prompt nobody
 	/// can answer.
 	alive: Arc<AtomicBool>,
-	_app_handle: AppHandle,
+	/// Flipped once the frontend listener is registered; events before that are
+	/// buffered so the engine's handshake and initial snapshots cannot be lost.
+	ready: Arc<AtomicBool>,
+	buffered: Arc<Mutex<Vec<String>>>,
+	app_handle: AppHandle,
 	_io_handle: JoinHandle<()>,
 	// Retain the Child so kill_on_drop keeps the CLI alive for the client's
 	// lifetime (and kills it on disconnect). Without this the Child is dropped
@@ -80,11 +90,15 @@ impl RpcClient {
 			Arc::new(Mutex::new(HashMap::new()));
 		let (stdin_tx, stdin_rx) = mpsc::channel::<String>(64);
 		let alive = Arc::new(AtomicBool::new(true));
+		let ready = Arc::new(AtomicBool::new(false));
+		let buffered: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
 		let io_handle = Self::start_io(
 			&mut child,
 			stdin_rx,
 			pending.clone(),
 			alive.clone(),
+			ready.clone(),
+			buffered.clone(),
 			app_handle.clone(),
 		)?;
 
@@ -92,7 +106,9 @@ impl RpcClient {
 			stdin_tx,
 			pending,
 			alive,
-			_app_handle: app_handle,
+			ready,
+			buffered,
+			app_handle,
 			_io_handle: io_handle,
 			_child: child,
 		})
@@ -111,6 +127,22 @@ impl RpcClient {
 		(self.stdin_tx.clone(), self.pending.clone())
 	}
 
+	/// Frontend listener is registered: replay buffered event lines in order and
+	/// switch to live delivery.
+	pub async fn mark_ready(&self) -> usize {
+		let buffered = {
+			let mut guard = self.buffered.lock().await;
+			// Flip under the lock so a producer that already decided to buffer
+			// re-checks and emits live instead of stranding the frame.
+			self.ready.store(true, Ordering::SeqCst);
+			std::mem::take(&mut *guard)
+		};
+		for line in &buffered {
+			let _ = self.app_handle.emit("rpc://event", line);
+		}
+		buffered.len()
+	}
+
 	/// Send + await a response using cloned handles (no client lock held during the
 	/// await). A response timeout guarantees a lost/unmatched response can never
 	/// hang the caller indefinitely.
@@ -118,39 +150,46 @@ impl RpcClient {
 		stdin_tx: mpsc::Sender<String>,
 		pending: Arc<Mutex<HashMap<String, PendingRequest>>>,
 		command: Value,
-	) -> Result<Value, String> {
-		let id = Uuid::new_v4().to_string();
+	) -> Result<Value, Value> {
+		// Honor a caller-supplied id so `cancel_command` can target it.
+		let supplied_id = command.get("id").and_then(|v| v.as_str()).map(str::to_string);
+		let id = supplied_id.clone().unwrap_or_else(|| Uuid::new_v4().to_string());
 		let mut command_with_id = command.clone();
 		if let Some(obj) = command_with_id.as_object_mut() {
-			obj.insert("id".to_string(), Value::String(id.clone()));
+			if supplied_id.is_none() {
+				obj.insert("id".to_string(), Value::String(id.clone()));
+			}
 		} else {
-			return Err("Command must be a JSON object".to_string());
+			return Err(rpc_error("invalid_command", "Command must be a JSON object", false));
 		}
 
-		let (tx, rx) = oneshot::channel::<Result<Value, String>>();
+		let (tx, rx) = oneshot::channel::<Result<Value, Value>>();
 		{
 			let mut guard = pending.lock().await;
 			guard.insert(id.clone(), PendingRequest { resolve: tx });
 		}
 
-		let line = serde_json::to_string(&command_with_id).map_err(|e| e.to_string())?;
+		let line = serde_json::to_string(&command_with_id)
+			.map_err(|e| rpc_error("serialize_failed", &e.to_string(), false))?;
 		tracing::debug!("RPC send: {}", line);
 		stdin_tx
 			.send(line)
 			.await
-			.map_err(|e| format!("Failed to send command: {}", e))?;
+			.map_err(|e| rpc_error("engine_exited", &format!("Failed to send command: {}", e), false))?;
 
-		// Bound the wait so a missing response (CLI died, line lost, or an
-		// unhandled command) can never block the caller — and thus never hold the
-		// client lock — forever. On timeout, drop the stale pending entry. Long
-		// history fetches (get_messages) can take a while for big sessions, so
-		// allow up to 60 seconds.
-		match timeout(Duration::from_secs(60), rx).await {
+		// Per-command bounds: session/history reads can be large, prompt/steer
+		// settle immediately, and everything else gets a generous default.
+		let timeout_secs = match command.get("type").and_then(|t| t.as_str()) {
+			Some("get_messages" | "list_sessions" | "switch_session" | "import_jsonl" | "export_jsonl" | "export_html") => 120,
+			Some("prompt" | "steer" | "follow_up" | "abort" | "clear_queue" | "queue_remove" | "get_state" | "client_info" | "cancel_command") => 30,
+			_ => 60,
+		};
+		match timeout(Duration::from_secs(timeout_secs), rx).await {
 			Ok(Ok(result)) => result,
-			Ok(Err(_)) => Err("RPC channel closed".to_string()),
+			Ok(Err(_)) => Err(rpc_error("engine_exited", "RPC channel closed", false)),
 			Err(_) => {
 				pending.lock().await.remove(&id);
-				Err("RPC response timed out".to_string())
+				Err(rpc_error("timeout", "RPC response timed out", true))
 			}
 		}
 	}
@@ -173,6 +212,8 @@ impl RpcClient {
 		mut stdin_rx: mpsc::Receiver<String>,
 		pending: Arc<Mutex<HashMap<String, PendingRequest>>>,
 		alive: Arc<AtomicBool>,
+		ready: Arc<AtomicBool>,
+		buffered: Arc<Mutex<Vec<String>>>,
 		app_handle: AppHandle,
 	) -> Result<JoinHandle<()>, String> {
 		let stdout = child.stdout.take().expect("stdout pipe");
@@ -190,19 +231,48 @@ impl RpcClient {
 				}
 			});
 
+			// Drain stderr concurrently for the whole child lifetime. Reading it only
+			// after stdout closes deadlocks: a CLI that writes >1 pipe buffer (~64KB)
+			// of stderr blocks on write and the app looks hung. Closing stderr is NOT
+			// an exit signal — only stdout drives `alive`/cli-exited.
+			let stderr_task = tokio::spawn(async move {
+				let err_reader = BufReader::new(stderr);
+				let mut err_lines = err_reader.lines();
+				while let Ok(Some(line)) = err_lines.next_line().await {
+					tracing::error!("cli stderr: {}", line);
+				}
+			});
+
 			// Read stdout line by line and dispatch responses/events.
 			let reader = BufReader::new(stdout);
 			let mut lines = reader.lines();
 			while let Ok(Some(line)) = lines.next_line().await {
-				// Disable serde_json's default ~128-level recursion limit: the session
-				// tree is a nested chain that can be hundreds of levels deep for long
-				// sessions, and a too-deep response line would otherwise fail to parse
-				// here and be silently dropped (the lost-response bug). This is a
-				// trusted local CLI, so unbounded recursion is safe.
-				// Parse with the recursion limit disabled (long sessions produce a nested
-				// tree chain hundreds of levels deep; serde_json's default 128-level limit
-				// would otherwise drop the response). serde_stacker moves the deserialize
-				// stack to the heap so deep input can't overflow the task stack.
+				// Responses are the only frames we need to parse in Rust (to match
+				// request ids). Event lines are forwarded as raw JSON strings and
+				// parsed once in the frontend, avoiding a Value round trip per token.
+				let is_response = line.starts_with("{\"id\":") || line.starts_with("{\"type\":\"response\"");
+				if !is_response {
+					if ready.load(Ordering::SeqCst) {
+						let _ = app_handle.emit("rpc://event", &line);
+					} else {
+						let mut guard = buffered.lock().await;
+						if ready.load(Ordering::SeqCst) {
+							drop(guard);
+							let _ = app_handle.emit("rpc://event", &line);
+						} else {
+							if guard.len() >= 500 {
+								guard.remove(0);
+							}
+							guard.push(line);
+						}
+					}
+					continue;
+				}
+
+				// Disable serde_json's default ~128-level recursion limit: nested
+				// responses (for clients still asking for the nested tree) can be
+				// hundreds of levels deep. serde_stacker moves the deserialize stack
+				// to the heap so deep input cannot overflow the task stack.
 				let mut de = serde_json::Deserializer::from_str(&line);
 				de.disable_recursion_limit();
 				match Value::deserialize(serde_stacker::Deserializer::new(&mut de)) {
@@ -216,21 +286,24 @@ impl RpcClient {
 				}
 			}
 
-			// Drain stderr for diagnostics.
-			let err_reader = BufReader::new(stderr);
-			let mut err_lines = err_reader.lines();
-			while let Ok(Some(line)) = err_lines.next_line().await {
-				tracing::error!("cli stderr: {}", line);
-			}
-
 			// The CLI engine exited (stdout closed). Without this signal the
 			// frontend keeps rendering a dead session — sends silently time out and
 			// the window looks frozen. Tell it so it can surface a reconnect
 			// affordance. The alive flag flips first so any send racing the exit
 			// is refused (an error) rather than silently dropped.
 			alive.store(false, Ordering::SeqCst);
+			{
+				let mut guard = pending.lock().await;
+				for (_, request) in guard.drain() {
+					let _ = request
+						.resolve
+						.send(Err(rpc_error("engine_exited", "RPC channel closed", false)));
+				}
+			}
 			let _ = app_handle.emit("desktop://cli-exited", ());
 
+			// Emit first, then wait for stderr (it may stay open until process exit).
+			let _ = stderr_task.await;
 			let _ = forwarder.await;
 		});
 
@@ -251,11 +324,23 @@ impl RpcClient {
 					let result = if value.get("success").and_then(|s| s.as_bool()) == Some(true) {
 						Ok(value.get("data").cloned().unwrap_or(Value::Null))
 					} else {
-						Err(value
+						let code = value
+							.get("code")
+							.and_then(|c| c.as_str())
+							.unwrap_or("command_failed");
+						let message = value
 							.get("error")
 							.and_then(|e| e.as_str())
-							.unwrap_or("Unknown RPC error")
-							.to_string())
+							.unwrap_or("Unknown RPC error");
+						let retryable = value
+							.get("retryable")
+							.and_then(|r| r.as_bool())
+							.unwrap_or(false);
+						let mut err = rpc_error(code, message, retryable);
+						if let Some(details) = value.get("details") {
+							err["details"] = details.clone();
+						}
+						Err(err)
 					};
 					let _ = req.resolve.send(result);
 				}

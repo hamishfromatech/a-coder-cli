@@ -25,6 +25,7 @@ export function adoptSwitchResult(result: SwitchSessionResult): void {
 		store.setSessionFile(result.sessionFile);
 	}
 	setAuthoritativeSession(result.sessionFile);
+	if (typeof result.activationId === "number") store.setActivationId(result.activationId);
 	if (result.cwd) {
 		store.setCwd(result.cwd);
 		const workspace = useWorkspaceStore.getState();

@@ -1,13 +1,19 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { AgentEvent } from "@earendil-works/pi-agent-core";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { PermissionMode } from "../stores/session-store";
 
 // Events emitted by the engine include standard AgentEvents plus extension UI requests and queue updates.
 export interface SessionStartEvent {
 	type: "session_start";
-		reason: "startup" | "reload" | "new" | "resume" | "fork" | "clear";
+	reason: "startup" | "reload" | "new" | "resume" | "fork" | "clear";
 	previousSessionFile?: string;
+	/** Session identity, applied before the history fetch resolves. */
+	sessionId?: string;
+	sessionFile?: string;
+	/** Monotonic engine activation id; frames from earlier activations are stale. */
+	activationId?: number;
 }
 
 /** The engine renamed the active session. Emitted by the CLI's AgentSession. */
@@ -293,12 +299,19 @@ export type RpcEvent =
 	| AgentEvent
 	| EngineInfoEvent
 	| SessionStartEvent
+	| MessageDeltaEvent
+	| MessageSnapshotEvent
+	| EventBatchEvent
 	| SessionInfoChangedEvent
 	| ExtensionUiRequestEvent
 	| QueueUpdateEvent
 	| SubagentsUpdateEvent
 	| BackgroundProcessesUpdateEvent
 	| WorkflowsUpdateEvent
+	| AgentEndSummaryEvent
+	| ToolStartEvent
+	| ToolDeltaEvent
+	| ToolEndEvent
 	| AutoRetryStartEvent
 	| AutoRetryEndEvent
 	| CompactionStartEvent
@@ -311,7 +324,63 @@ export type RpcEvent =
 	| OfficeHuddleDeltaEvent
 	| OfficeActivityEvent
 	| CronUpdateEvent
-	| CronRunEvent;
+	| CronRunEvent
+	| TreeDeltaEvent
+	| SessionStatsEvent
+	| SessionChangedEvent;
+
+/** A stored session was created/renamed/deleted. */
+export interface SessionChangedEvent {
+	type: "session_changed";
+	event: "created" | "updated" | "deleted";
+	sessionPath: string;
+	name?: string;
+}
+
+/** Pushed session statistics (turn end / compaction). */
+export interface SessionStatsEvent {
+	type: "session_stats";
+	stats: SessionStats;
+}
+
+/** Incremental session-tree change (contract 2). */
+export interface TreeDeltaEvent {
+	type: "tree_delta";
+	version?: number;
+	leafId?: string | null;
+	added?: SessionTreeFlatNode[];
+	updated?: SessionTreeFlatNode[];
+	removed?: string[];
+}
+
+/** Compact contract-2 streaming delta (text/thinking only). */
+export interface MessageDeltaEvent {
+	type: "message_delta";
+	sessionId: string;
+	sessionFile?: string;
+	activationId?: number;
+	messageId: string;
+	contentIndex: number;
+	kind: "text" | "thinking";
+	delta: string;
+}
+
+/** Full partial assistant message at a block boundary (e.g. tool-call end). */
+export interface MessageSnapshotEvent {
+	type: "message_snapshot";
+	sessionId: string;
+	sessionFile?: string;
+	activationId?: number;
+	messageId: string;
+	message: AssistantMessage;
+}
+
+/** Coalesced contract-2 event frame; events are already sequenced. */
+export interface EventBatchEvent {
+	type: "event_batch";
+	seq: number;
+	events: RpcEvent[];
+}
 
 /** First event on the engine stream: identifies the engine and its protocol
  *  contract so the app can detect engine/client skew early. Older engines
@@ -320,17 +389,58 @@ export interface EngineInfoEvent {
 	type: "engine_info";
 	version: string;
 	contract: number;
+	capabilities?: string[];
 }
 
 /** Contract version this desktop build speaks. Bump alongside the CLI when the
  *  RPC event/command vocabulary changes incompatibly. */
 export const ENGINE_RPC_CONTRACT = 1;
 
+/** Tell the tray which status row/tooltip to show (idle/working/needs-input). */
+export async function setTrayStatus(status: "idle" | "working" | "needs-input"): Promise<void> {
+	await invoke("tray_status", { status });
+}
+
 /** The engine re-emits agent_end with a retry hint after a retryable failure. */
 export interface AgentEndWillRetry {
 	type: "agent_end";
 	messages: unknown[];
 	willRetry: boolean;
+}
+
+/** Contract-2 `agent_end` carries a summary instead of the full run messages. */
+export interface AgentEndSummaryEvent {
+	type: "agent_end";
+	willRetry?: boolean;
+	summary: {
+		messageCount: number;
+		lastAssistantText: string;
+		stopReason?: string;
+		usage?: unknown;
+	};
+}
+
+export interface ToolStartEvent {
+	type: "tool_start";
+	toolCallId: string;
+	toolName: string;
+	args?: unknown;
+}
+
+export interface ToolDeltaEvent {
+	type: "tool_delta";
+	toolCallId: string;
+	toolName: string;
+	stream: "stdout" | "stderr";
+	delta: string;
+	reset?: boolean;
+}
+
+export interface ToolEndEvent {
+	type: "tool_end";
+	toolCallId: string;
+	toolName: string;
+	isError: boolean;
 }
 
 export interface ThinkingLevelChangedEvent {
@@ -633,12 +743,113 @@ export async function disconnect(): Promise<void> {
 	await invoke("disconnect");
 }
 
+export interface RpcCommandError extends Error {
+	code?: string;
+	retryable?: boolean;
+	details?: unknown;
+}
+
+/** Normalize the Rust error payload into an Error with the structured fields
+ *  attached, so existing `e instanceof Error` call sites keep working. */
+function normalizeRpcError(value: unknown): RpcCommandError {
+	if (value && typeof value === "object" && "message" in value) {
+		const payload = value as { message?: unknown; code?: unknown; retryable?: unknown; details?: unknown };
+		const error = new Error(
+			typeof payload.message === "string" ? payload.message : "RPC command failed",
+		) as RpcCommandError;
+		if (typeof payload.code === "string") error.code = payload.code;
+		if (typeof payload.retryable === "boolean") error.retryable = payload.retryable;
+		if (payload.details !== undefined) error.details = payload.details;
+		return error;
+	}
+	return value instanceof Error ? (value as RpcCommandError) : new Error(String(value));
+}
+
 export async function sendCommand(command: unknown): Promise<unknown> {
-	return await invoke("send_command", { command });
+	try {
+		return await invoke("send_command", { command });
+	} catch (error) {
+		throw normalizeRpcError(error);
+	}
+}
+
+/** Drop a pending request by the client-supplied id. The engine may still
+ *  finish the work; the caller stops waiting. */
+export async function cancelRequest(id: string): Promise<boolean> {
+	const result = (await invoke("cancel_command", { id })) as { cancelled?: boolean };
+	return result?.cancelled === true;
 }
 
 export async function sendUiResponse(response: ExtensionUiResponse): Promise<void> {
-	await invoke("send_ui_response", { response });
+	try {
+		await invoke("send_ui_response", { response });
+	} catch (error) {
+		throw normalizeRpcError(error);
+	}
+}
+
+/** Negotiate additive protocol features. Older engines reject the command; the
+ *  client then keeps contract-1 full-message events. */
+export async function clientInfo(
+	capabilities: Array<"delta" | "batch" | "tool-progress" | "attachments">,
+	contract = ENGINE_RPC_CONTRACT,
+): Promise<{ contract: number; capabilities: string[] }> {
+	return (await sendCommand({ type: "client_info", contract, capabilities })) as {
+		contract: number;
+		capabilities: string[];
+	};
+}
+
+/** Full-transcript entry (includes pre-compaction history). */
+export interface TranscriptEntry {
+	id: string;
+	parentId: string | null;
+	type: string;
+	timestamp: string;
+	message?: AgentMessage;
+	summary?: string;
+	fromId?: string;
+	firstKeptEntryId?: string;
+	tokensBefore?: number;
+	customType?: string;
+	content?: unknown;
+	display?: boolean;
+}
+
+/** Read the active branch including entries hidden by compaction. */
+export async function getTranscriptPage(options: {
+	limit?: number;
+	before?: number;
+	sessionPath?: string;
+} = {}): Promise<{
+	entries: TranscriptEntry[];
+	total: number;
+	start: number;
+	end: number;
+	hasMore: boolean;
+}> {
+	return (await sendCommand({ type: "get_transcript_page", ...options })) as {
+		entries: TranscriptEntry[];
+		total: number;
+		start: number;
+		end: number;
+		hasMore: boolean;
+	};
+}
+
+/** Fetch an out-of-band history attachment (base64). */
+export async function getAttachment(attachmentId: string): Promise<{
+	id: string;
+	mimeType: string;
+	bytes: number;
+	data: string;
+}> {
+	return (await sendCommand({ type: "get_attachment", attachmentId })) as {
+		id: string;
+		mimeType: string;
+		bytes: number;
+		data: string;
+	};
 }
 
 // ============================================================================
@@ -664,7 +875,26 @@ export interface SessionStats {
 	cost?: number;
 	durationMs?: number;
 	messageCount?: number;
+	contextUsage?: { tokens: number | null; contextWindow: number; percent: number | null };
 	[key: string]: unknown;
+}
+
+/** `get_state` / `get_session_snapshot` state payload. */
+export interface EngineSessionState {
+	model?: { provider: string; id: string; name?: string };
+	thinkingLevel?: string;
+	permissionMode?: PermissionMode;
+	sessionName?: string;
+	sessionId?: string;
+	sessionFile?: string;
+	activationId?: number;
+	cwd?: string;
+	isCompacting?: boolean;
+	autoCompactionEnabled?: boolean;
+	steeringMode?: MessageDeliveryMode;
+	followUpMode?: MessageDeliveryMode;
+	messageCount?: number;
+	pendingMessageCount?: number;
 }
 
 export interface CompactionResult {
@@ -697,6 +927,8 @@ export interface SwitchSessionResult {
 	/** State of the re-attached runtime at switch time — lets the UI adopt an
 	 *  in-flight turn immediately instead of waiting for the next event. */
 	snapshot?: { running: boolean; needsInput: boolean; pendingMessageCount: number };
+	/** Engine activation id for this switch; frames with another value are stale. */
+	activationId?: number;
 	/** Authoritative identity of the switched-to session (absent when cancelled).
 	 *  Adopting these keeps tab labels and the workspace indicator correct even
 	 *  when the session_start event races the optimistic UI update. */
@@ -747,6 +979,28 @@ export interface CycleModelResult {
 
 export interface GetMessagesResult {
 	messages: AgentMessage[];
+	/** Present when the engine supports paging; otherwise derive from messages. */
+	total?: number;
+	start?: number;
+	end?: number;
+	hasMore?: boolean;
+}
+
+export interface SessionTreeFlatNode {
+	id: string;
+	parentId: string | null;
+	type: string;
+	messageRole?: string;
+	timestamp?: string;
+	label?: string;
+	labelTimestamp?: string;
+}
+
+export interface GetTreeResult {
+	tree?: SessionTreeNode[];
+	nodes?: SessionTreeFlatNode[];
+	leafId: string | null;
+	version?: number;
 }
 
 export interface RpcSlashCommand {
@@ -872,6 +1126,19 @@ export const getSessionsStatus = () =>
 	sendCommand({ type: "get_sessions_status" }) as Promise<{ sessions: RuntimeSessionStatus[] }>;
 export const abortSession = (sessionPath: string) =>
 	sendCommand({ type: "abort_session", sessionPath }) as Promise<{ found: boolean }>;
+
+/** Forward live events from a detached (background) runtime. */
+export const subscribeSession = (sessionPath: string) =>
+	sendCommand({ type: "subscribe_session", sessionPath }) as Promise<{
+		subscribed: boolean;
+		sessionFile?: string;
+		sessionId?: string;
+		activationId?: number;
+		active?: boolean;
+	}>;
+
+export const unsubscribeSession = (sessionPath: string) =>
+	sendCommand({ type: "unsubscribe_session", sessionPath }) as Promise<{ unsubscribed: boolean }>;
 export const stopWorkflowRun = (runId: string) =>
 	sendCommand({ type: "stop_workflow_run", runId }) as Promise<{ stopped: boolean }>;
 export const killSubagent = (subagentId: string) =>
@@ -885,7 +1152,8 @@ export const getForkMessages = () =>
 	sendCommand({ type: "get_fork_messages" }) as Promise<ForkMessagesResult>;
 export const getEntries = (since?: string) =>
 	sendCommand({ type: "get_entries", since }) as Promise<GetEntriesResult>;
-export const getTree = () => sendCommand({ type: "get_tree" });
+export const getTree = (flat = false) =>
+	sendCommand({ type: "get_tree", flat }) as Promise<GetTreeResult>;
 
 export interface RpcSessionInfo {
 	path: string;
@@ -899,8 +1167,8 @@ export interface RpcSessionInfo {
 	firstMessage: string;
 }
 
-export const listSessions = () =>
-	sendCommand({ type: "list_sessions" }) as Promise<{ sessions: RpcSessionInfo[] }>;
+export const listSessions = (limit?: number) =>
+	sendCommand({ type: "list_sessions", limit }) as Promise<{ sessions: RpcSessionInfo[] }>;
 export const getLastAssistantText = () =>
 	sendCommand({ type: "get_last_assistant_text" }) as Promise<LastAssistantTextResult>;
 export const setSessionName = (name: string) =>
@@ -909,8 +1177,15 @@ export const setEntryLabel = (entryId: string, label: string | undefined) =>
 	sendCommand({ type: "set_entry_label", entryId, label }) as Promise<void>;
 
 // ---- messages ----
-export const getMessages = () =>
-	sendCommand({ type: "get_messages" }) as Promise<GetMessagesResult>;
+export const getMessages = (options?: { limit?: number; before?: number; sessionPath?: string }) =>
+	sendCommand({ type: "get_messages", ...options }) as Promise<GetMessagesResult>;
+
+/** One activation round trip: state + stats together. */
+export const getSessionSnapshot = () =>
+	sendCommand({ type: "get_session_snapshot" }) as Promise<{
+		state: EngineSessionState;
+		stats: SessionStats;
+	}>;
 
 // ---- file history / rewind ----
 export interface RewindResult {
@@ -934,8 +1209,22 @@ export const getCommands = () =>
 
 export async function onRpcEvent(handler: (event: RpcEvent) => void): Promise<UnlistenFn> {
 	return await listen<unknown>("rpc://event", (payload) => {
-		handler(payload.payload as RpcEvent);
+		const raw = payload.payload;
+		if (typeof raw !== "string") {
+			handler(raw as RpcEvent);
+			return;
+		}
+		try {
+			handler(JSON.parse(raw) as RpcEvent);
+		} catch (error) {
+			console.warn("Dropping malformed RPC event", error);
+		}
 	});
+}
+
+/** Replay frames buffered before the listener was registered. */
+export async function markRpcReady(): Promise<number> {
+	return (await invoke("rpc_ready")) as number;
 }
 
 export async function onMenuAction(handler: (action: string) => void): Promise<UnlistenFn> {
@@ -1376,6 +1665,27 @@ export async function toggleResource(args: ResourceToggleArgs): Promise<void> {
  *  with the engine's error string — office wrappers are thin casts. */
 
 export const officeList = () => sendCommand({ type: "office_list" }) as Promise<OfficeSnapshot>;
+
+export interface OfficeCoworkerSession {
+	path: string;
+	cwd: string;
+	name?: string;
+	messageCount: number;
+	turns: number;
+	tokens: number;
+	lastActivity: number;
+}
+
+export interface OfficeCoworkerDetails {
+	coworkerId: string;
+	name: string;
+	handle: string;
+	sessions: OfficeCoworkerSession[];
+	totals: { sessions: number; turns: number; tokens: number; lastActivity: number };
+}
+
+export const officeCoworkerDetails = (coworkerId: string) =>
+	sendCommand({ type: "office_coworker_details", coworkerId }) as Promise<OfficeCoworkerDetails>;
 
 export const officeSaveCoworker = (coworker: OfficeCoworkerInput) =>
 	sendCommand({ type: "office_coworker_save", coworker }) as Promise<{ coworker: OfficeCoworker }>;

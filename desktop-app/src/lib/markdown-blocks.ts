@@ -7,14 +7,15 @@ import { parseMarkdownIntoBlocks } from "@assistant-ui/react-streamdown";
 // `parseMarkdownIntoBlocks` is a full `marked` lex of the entire text. During
 // streaming every flush is a new string, so the stock splitter pays that
 // O(full-text) cost ~30x/s on long replies. Two caches remove it:
-//   1. Exact-string LRU — a message that remounts with unchanged text reuses
-//      its parse outright.
+//   1. Exact-string LRU — a message that remounts (or a settled block that is
+//      re-split) with unchanged text reuses its parse outright. Short
+//      messages are cached too: they are the most frequent remount case
+//      (tool rows, one-liners) and their parse is cheap to hold.
 //   2. Streaming-append cache — when the new text starts with a recently
 //      parsed text, the previous parse's blocks are reused up to a settled
 //      boundary and only the suffix is lexed.
 
 const EXACT_CACHE_MAX = 64;
-const EXACT_CACHE_MIN_LENGTH = 1024;
 const exactCache = new Map<string, string[]>();
 
 const APPEND_CACHE_MAX = 4;
@@ -58,10 +59,6 @@ function lexIncrementally(text: string): null | string[] {
 }
 
 export function parseMarkdownIntoBlocksCached(markdown: string): string[] {
-	if (markdown.length < EXACT_CACHE_MIN_LENGTH) {
-		return parseMarkdownIntoBlocks(markdown);
-	}
-
 	const hit = exactCache.get(markdown);
 	if (hit) {
 		exactCache.delete(markdown);

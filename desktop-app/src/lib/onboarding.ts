@@ -1,6 +1,7 @@
 /** Onboarding flow state: first-run detection and replay plumbing. */
 
 export const ONBOARDING_FLAG = "onboarding-complete";
+export const ONBOARDING_SETUP_FLAG = "onboarding-setup-complete";
 
 /** DOM event App.tsx listens for to re-open the onboarding overlay. */
 export const REPLAY_ONBOARDING_EVENT = "a-coder:replay-onboarding";
@@ -11,6 +12,14 @@ export function isOnboardingComplete(): boolean {
 
 export function markOnboardingComplete(): void {
 	localStorage.setItem(ONBOARDING_FLAG, "true");
+}
+
+export function isFirstRunSetupComplete(): boolean {
+	return localStorage.getItem(ONBOARDING_SETUP_FLAG) === "true";
+}
+
+export function markFirstRunSetupComplete(): void {
+	localStorage.setItem(ONBOARDING_SETUP_FLAG, "true");
 }
 
 /** Request the onboarding overlay (tour + setup) from anywhere (e.g. Settings). */

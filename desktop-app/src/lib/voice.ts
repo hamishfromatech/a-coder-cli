@@ -10,6 +10,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { normalizeOutputLevel } from "./voice-level";
 
 export interface VoiceSettings {
 	voiceSttBaseUrl: string;
@@ -194,7 +195,7 @@ export function startAudioMeter(audio: HTMLAudioElement, onLevel: (level: number
 		analyser.getFloatTimeDomainData(buffer);
 		let sum = 0;
 		for (let i = 0; i < buffer.length; i += 1) sum += buffer[i] * buffer[i];
-		onLevel(Math.min(1, Math.sqrt(sum / buffer.length) * 10));
+		onLevel(normalizeOutputLevel(Math.sqrt(sum / buffer.length)));
 		raf = requestAnimationFrame(tick);
 	};
 	raf = requestAnimationFrame(tick);

@@ -107,6 +107,8 @@ fn main() {
 			rpc_commands::connect,
 			rpc_commands::disconnect,
 			rpc_commands::send_command,
+			rpc_commands::cancel_command,
+			rpc_commands::rpc_ready,
 			rpc_commands::send_ui_response,
 			git::git_status,
 			git::git_diff,
@@ -141,9 +143,11 @@ fn main() {
 			resources::update_package,
 			resources::toggle_resource,
 			share::share_session_gist,
+			tray::tray_status,
 		])
 		.setup(|app| {
 			let app_handle = app.handle().clone();
+			app.manage(tray::TrayState::default());
 
 			// File diagnostics (level Info): `open`-launched builds have no
 			// stderr, and the browser panel's proxy/routing decisions are the

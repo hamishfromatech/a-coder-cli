@@ -142,10 +142,14 @@ function createMemoizedRehypeKatex(options: KatexMemoOptions = {}): Pluggable {
 					cache.set(key, cached);
 				}
 
-				const clonedChildren = cached.map((child) => structuredClone(child));
+				// Splice the cached fragment straight in. On a hit this used to
+				// deep-clone every math node — the dominant cost for math-heavy
+				// replies, since the same equations are re-walked on each flush.
+				// The hast tree is read-only downstream (it is converted to React
+				// elements, never mutated), so the cached nodes can be shared.
 				const index = parent.children.indexOf(scope as ElementContent);
 				if (index === -1) return;
-				parent.children.splice(index, 1, ...clonedChildren);
+				parent.children.splice(index, 1, ...cached);
 				return SKIP;
 			});
 		};

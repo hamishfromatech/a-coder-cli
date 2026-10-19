@@ -1,4 +1,6 @@
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
+import { useSessionViewStore } from "../../stores/session-view-store";
+import { useToolProgressStore } from "../../stores/tool-progress-store";
 import {
 	AlertTriangle,
 	Check,
@@ -22,6 +24,11 @@ export interface RichToolCallProps {
 	/** Pending permission request for this tool call, when it is the row awaiting
 	 * approval. Undefined means no approval is pending for this row. */
 	approvalRequest?: UiRequest;
+	/** This call's tool result, resolved once per `messages` change by the list
+	 * that owns the transcript (see MessageList's result index). Passing it in
+	 * keeps every row from subscribing to the whole message array and scanning
+	 * backwards for its own result on every render. */
+	result?: ToolResultMessage;
 }
 
 type ToolStatus = "pending" | "running" | "success" | "error";
@@ -87,22 +94,27 @@ function editResultDiff(result: ToolResultMessage | undefined): string | undefin
 	return details.diff;
 }
 
-export function RichToolCall({ toolCall, approvalRequest }: RichToolCallProps) {
-	const [open, setOpen] = useState(false);
-	const [copied, setCopied] = useState(false);
-	const messages = useSessionStore((s) => s.messages);
-	const isStreaming = useSessionStore((s) => s.isStreaming);
-
-	const result = useMemo<ToolResultMessage | undefined>(() => {
-		if (!toolCall.id) return undefined;
-		for (let i = messages.length - 1; i >= 0; i--) {
-			const m = messages[i];
-			if (m.role !== "toolResult") continue;
-			const r = m as ToolResultMessage;
-			if (r.toolCallId === toolCall.id) return r;
+// Memoized: the transcript re-renders on every streaming flush, but a row whose
+// tool call and result are unchanged (everything above the streaming message)
+// should not re-render with it. Props are stable because MessageList resolves
+// results from an index built once per `messages` change.
+export const RichToolCall = memo(function RichToolCall({
+	toolCall,
+	approvalRequest,
+	result,
+}: RichToolCallProps) {
+	const sessionFile = useSessionStore((s) => s.sessionFile);
+	const open = useSessionViewStore((s) =>
+		sessionFile ? (s.expanded[sessionFile] ?? []).includes(toolCall.id ?? "") : false,
+	);
+	const setOpen = (next: boolean) => {
+		if (sessionFile && toolCall.id) {
+			useSessionViewStore.getState().setToolExpanded(sessionFile, toolCall.id, next);
 		}
-		return undefined;
-	}, [messages, toolCall.id]);
+	};
+	const [copied, setCopied] = useState(false);
+	const isStreaming = useSessionStore((s) => s.isStreaming);
+	const progress = useToolProgressStore((s) => (toolCall.id ? s.streams[toolCall.id] : undefined));
 
 	const status: ToolStatus = result
 		? result.isError
@@ -113,9 +125,12 @@ export function RichToolCall({ toolCall, approvalRequest }: RichToolCallProps) {
 			: "pending";
 
 	const argsJson = useMemo(() => JSON.stringify(toolCall.arguments, null, 2), [toolCall.arguments]);
-	const summary = summarizeArgs(toolCall.name, toolCall.arguments);
-	const output = resultText(result);
-	const diff = editResultDiff(result);
+	const summary = useMemo(
+		() => summarizeArgs(toolCall.name, toolCall.arguments),
+		[toolCall.name, toolCall.arguments],
+	);
+	const output = useMemo(() => resultText(result), [result]);
+	const diff = useMemo(() => editResultDiff(result), [result]);
 	const stats = useMemo(() => (diff ? diffStats(diff) : undefined), [diff]);
 
 	const onCopy = async (e: React.MouseEvent) => {
@@ -143,7 +158,7 @@ export function RichToolCall({ toolCall, approvalRequest }: RichToolCallProps) {
 	return (
 		<div className="group/tool w-full overflow-hidden rounded-lg border border-pi-border bg-pi-surface/60 transition-smooth hover:bg-pi-surface">
 			<button
-				onClick={() => setOpen((o) => !o)}
+				onClick={() => setOpen(!open)}
 				className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-hover"
 			>
 				{statusGlyph}
@@ -214,6 +229,23 @@ export function RichToolCall({ toolCall, approvalRequest }: RichToolCallProps) {
 									</pre>
 								</div>
 							)}
+							{!output && progress && (progress.stdout || progress.stderr) && (
+								<div>
+									<div className="px-2.5 pt-1.5 text-4xs font-medium uppercase tracking-[0.08em] text-pi-text-faint">
+										{progress.ended ? "Output" : "Live output"}
+									</div>
+									{progress.stdout && (
+										<pre className="max-h-64 overflow-auto px-2.5 py-1.5 font-mono text-2xs leading-relaxed text-pi-text-secondary">
+											{progress.stdout}
+										</pre>
+									)}
+									{progress.stderr && (
+										<pre className="max-h-40 overflow-auto px-2.5 py-1.5 font-mono text-2xs leading-relaxed text-pi-error">
+											{progress.stderr}
+										</pre>
+									)}
+								</div>
+							)}
 							{output && (
 								<div>
 									<div className="px-2.5 pt-1.5 text-4xs font-medium uppercase tracking-[0.08em] text-pi-text-faint">
@@ -235,4 +267,4 @@ export function RichToolCall({ toolCall, approvalRequest }: RichToolCallProps) {
 			{approvalRequest && <ToolApprovalBar request={approvalRequest} surface="inline" />}
 		</div>
 	);
-}
+});

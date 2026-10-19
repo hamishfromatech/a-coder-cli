@@ -202,6 +202,12 @@ export type AgentSessionEvent =
 	| { type: "tool_permission_update"; toolCallId: string; waiting: boolean }
 	| { type: "compaction_start"; reason: "manual" | "threshold" | "overflow" }
 	| { type: "entry_appended"; entry: SessionEntry }
+	| {
+			type: "session_tree_changed";
+			entry: { id: string; parentId: string | null; type: string; messageRole?: string; timestamp: string };
+			leafId: string | null;
+			version: number;
+	  }
 	| { type: "session_info_changed"; name: string | undefined }
 	| { type: "thinking_level_changed"; level: ThinkingLevel }
 	| { type: "plan_mode_changed"; enabled: boolean }
@@ -1402,6 +1408,7 @@ export class AgentSession {
 				this.sessionManager.appendMessage(event.message);
 			}
 			// Other message types (bashExecution, compactionSummary, branchSummary) are persisted elsewhere
+			this._emitTreeChanged();
 
 			// Track assistant message for auto-compaction (checked on agent_end)
 			if (event.message.role === "assistant") {
@@ -1426,6 +1433,27 @@ export class AgentSession {
 			}
 		}
 	};
+
+	/** Notify clients that the persisted tree gained an entry. Slim payload; the
+	 *  RPC stream turns it into a `tree_delta`. */
+	private _emitTreeChanged(): void {
+		const leafId = this.sessionManager.getLeafId();
+		if (!leafId) return;
+		const entry = this.sessionManager.getEntry(leafId);
+		if (!entry) return;
+		this._emit({
+			type: "session_tree_changed",
+			entry: {
+				id: entry.id,
+				parentId: entry.parentId,
+				type: entry.type,
+				messageRole: entry.type === "message" ? entry.message.role : undefined,
+				timestamp: entry.timestamp,
+			},
+			leafId,
+			version: this.sessionManager.getEntryCount(),
+		});
+	}
 
 	private _willRetryAfterAgentEnd(event: Extract<AgentEvent, { type: "agent_end" }>): boolean {
 		const settings = this.settingsManager.getRetrySettings();
@@ -2959,6 +2987,7 @@ export class AgentSession {
 			}
 
 			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromExtension);
+			this._emitTreeChanged();
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();
 			this.agent.state.messages = sessionContext.messages;
@@ -3276,6 +3305,7 @@ export class AgentSession {
 			}
 
 			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromExtension);
+			this._emitTreeChanged();
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();
 			this.agent.state.messages = sessionContext.messages;

@@ -20,6 +20,7 @@ import type { TreeNode } from "../stores/session-tree-store";
 import { useSettingsStore } from "../stores/settings-store";
 import type { TreeFilterMode } from "../lib/settings.types";
 import { IconButton } from "./ui/Button";
+import { useShallow } from "zustand/react/shallow";
 
 const FILTER_MODES: { value: TreeFilterMode; label: string }[] = [
 	{ value: "default", label: "All" },
@@ -62,8 +63,19 @@ export function SessionTree() {
 		setFocused,
 		collapseAll,
 		expandAll,
-	} = useSessionTreeStore();
-	const { messages } = useSessionStore();
+	} = useSessionTreeStore(
+		useShallow((s) => ({
+			tree: s.tree,
+			leafId: s.leafId,
+			expanded: s.expanded,
+			toggleExpanded: s.toggleExpanded,
+			focusedId: s.focusedId,
+			setFocused: s.setFocused,
+			collapseAll: s.collapseAll,
+			expandAll: s.expandAll,
+		})),
+	);
+	const messageCount = useSessionStore((s) => s.messages.length);
 	const { cliGlobalSettings, patchCliSettings } = useSettingsStore();
 	const filterMode = cliGlobalSettings.treeFilterMode ?? "default";
 	const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -112,7 +124,7 @@ export function SessionTree() {
 		}
 	};
 
-	const filteredTree = applyFilter(tree, filterMode);
+	const filteredTree = useMemo(() => applyFilter(tree, filterMode), [tree, filterMode]);
 	const flat = useMemo(() => flattenVisible(filteredTree, expanded), [filteredTree, expanded]);
 
 	const scrollRowIntoView = (id: string) => {
@@ -216,7 +228,7 @@ export function SessionTree() {
 			<div className="flex items-center justify-between px-2.5 py-0.5">
 				<div className="flex items-center gap-2 text-3xs uppercase tracking-wide text-pi-text-faint">
 					<span>
-						{messages.length} msg{messages.length === 1 ? "" : "s"}
+						{messageCount} msg{messageCount === 1 ? "" : "s"}
 					</span>
 					{leafId && (
 						<>

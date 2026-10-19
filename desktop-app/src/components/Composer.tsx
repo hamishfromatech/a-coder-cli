@@ -43,6 +43,7 @@ import { ExtensionWidgets } from "./ExtensionWidgets";
 import { Autocomplete } from "./Autocomplete";
 import { ComposerBreadcrumb } from "./ComposerBreadcrumb";
 import { Button, IconButton } from "./ui/Button";
+import { useShallow } from "zustand/react/shallow";
 
 export function Composer() {
 	const [text, setText] = useState("");
@@ -65,7 +66,18 @@ export function Composer() {
 		steering,
 		followUp,
 		streamingVerb,
-	} = useSessionStore();
+	} = useSessionStore(
+		useShallow((s) => ({
+			status: s.status,
+			isStreaming: s.isStreaming,
+			setIsStreaming: s.setIsStreaming,
+			availableCommands: s.availableCommands,
+			cwd: s.cwd,
+			steering: s.steering,
+			followUp: s.followUp,
+			streamingVerb: s.streamingVerb,
+		})),
+	);
 	const connected = status === "connected";
 	const canSend = text.trim().length > 0 && connected;
 

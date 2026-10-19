@@ -296,7 +296,9 @@ describe("bridge conformance (server + engine over the wire)", () => {
 		const got = await collectUntil(ws, (frames) =>
 			frames.some((f) => (f as { event?: string }).event === "connected"),
 		);
-		const connected = got.find((f) => (f as { type?: string }).type === "bridge") as { event?: string } | undefined;
+		const connected = got.find((f) => (f as { event?: string }).event === "connected") as
+			| { event?: string }
+			| undefined;
 		expect(connected?.event).toBe("connected");
 		expect(isBridgeFrame(connected)).toBe(true);
 

@@ -1,19 +1,24 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type {
 	AssistantMessage,
-	ImageContent,
 	ToolResultMessage,
 	UserMessage,
 } from "@earendil-works/pi-ai";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { useSessionStore, type UiRequest } from "../stores/session-store";
 import { pickLoadingVerb } from "../lib/loading-verbs";
+import { loadOlderHistory } from "../lib/history";
+import { useSessionViewStore } from "../stores/session-view-store";
+import { messageKey } from "../lib/message-key";
+import { inlineDataUrl, loadAttachmentDataUrl } from "../lib/attachment-cache";
+import { toast } from "../stores/toast-store";
 import { Loader } from "./ui/Loader";
 import { useSettingsStore } from "../stores/settings-store";
 import { ModalBackdrop } from "./ui/Modal";
 import {
 	Bot,
 	Check,
+	Loader2,
 	ChevronRight,
 	ChevronUp,
 	AlertCircle,
@@ -22,6 +27,8 @@ import {
 	Pencil,
 	RotateCcw,
 	Sparkles,
+	GitBranch,
+	Scissors,
 } from "lucide-react";
 import * as rpc from "../lib/rpc";
 import { MarkdownTextContent } from "./markdown/MarkdownText";
@@ -29,13 +36,34 @@ import { AskUserQuestionCard } from "./tool-renderers/AskUserQuestionCard";
 import { RichToolCall } from "./tool-renderers";
 import { ErrorBoundary } from "./ErrorBoundary";
 
+/** Index tool results by toolCallId, built ONCE per `messages` change.
+ *
+ * Previously every tool row (and the approval lookup) subscribed to the whole
+ * `messages` array and scanned it backwards on each render, so a streaming
+ * flush cost O(rows x messages). One pass per messages change turns that into
+ * a single O(messages) walk plus O(1) lookups. Last result for an id wins,
+ * matching the old backwards scan (which returned the newest match). */
+function useToolResultsById(messages: AgentMessage[]): Map<string, ToolResultMessage> {
+	return useMemo(() => {
+		const index = new Map<string, ToolResultMessage>();
+		for (const message of messages) {
+			if (message.role !== "toolResult") continue;
+			const result = message as ToolResultMessage;
+			if (result.toolCallId) index.set(result.toolCallId, result);
+		}
+		return index;
+	}, [messages]);
+}
+
 /** Find the id of the tool call currently awaiting approval: the last tool call
  * in the transcript that has no result yet and whose name matches the pending
  * permission request. Returns undefined when no approval is pending or no
  * matching pending row exists (the floating fallback covers that case). */
-function usePendingApprovalToolCallId(): string | undefined {
+function usePendingApprovalToolCallId(
+	messages: AgentMessage[],
+	toolResults: Map<string, ToolResultMessage>,
+): string | undefined {
 	const uiRequests = useSessionStore((s) => s.uiRequests);
-	const messages = useSessionStore((s) => s.messages);
 	return useMemo(() => {
 		const req = uiRequests.find((r) => r.kind === "permission");
 		if (!req || !req.toolName) return undefined;
@@ -52,29 +80,35 @@ function usePendingApprovalToolCallId(): string | undefined {
 			for (let j = calls.length - 1; j >= 0; j--) {
 				const c = calls[j];
 				if (!c.id || c.name !== req.toolName) continue;
-				const hasResult = messages.some(
-					(mm) =>
-						mm.role === "toolResult" &&
-						(mm as ToolResultMessage).toolCallId === c.id,
-				);
-				if (!hasResult) return c.id;
+				if (!toolResults.has(c.id)) return c.id;
 			}
 		}
 		return undefined;
-	}, [uiRequests, messages]);
+	}, [uiRequests, messages, toolResults]);
 }
 
 export function MessageList() {
 	const messages = useSessionStore((s) => s.messages);
+	const streamingMessage = useSessionStore((s) => s.streamingMessage);
 	const isStreaming = useSessionStore((s) => s.isStreaming);
 	const sessionLoading = useSessionStore((s) => s.sessionLoading);
 	const hideThinkingBlock = useSettingsStore((s) => s.cliGlobalSettings?.hideThinkingBlock ?? false);
-	const approvalToolCallId = usePendingApprovalToolCallId();
+	const toolResults = useToolResultsById(messages);
+	const approvalToolCallId = usePendingApprovalToolCallId(messages, toolResults);
 	const approvalRequest = useSessionStore((s) =>
 		s.uiRequests.find((r) => r.kind === "permission"),
 	);
+	const sessionFile = useSessionStore((s) => s.sessionFile);
+	const hasMoreOlder = useSessionStore((s) => s.hasMoreOlder);
+	const loadingOlder = useSessionStore((s) => s.loadingOlder);
 	const listRef = useRef<HTMLDivElement>(null);
+	const suppressAutoScrollRef = useRef(false);
 	const [autoScroll, setAutoScroll] = useState(true);
+	const [transcriptMode, setTranscriptMode] = useState(false);
+	const [transcriptEntries, setTranscriptEntries] = useState<rpc.TranscriptEntry[]>([]);
+	const [transcriptStart, setTranscriptStart] = useState(0);
+	const [transcriptHasMore, setTranscriptHasMore] = useState(false);
+	const [transcriptLoading, setTranscriptLoading] = useState(false);
 
 	useEffect(() => {
 		const el = listRef.current;
@@ -82,40 +116,336 @@ export function MessageList() {
 		const onScroll = () => {
 			const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
 			setAutoScroll(distance < 80);
+			const file = useSessionStore.getState().sessionFile;
+			if (file) useSessionViewStore.getState().setScroll(file, el.scrollTop);
 		};
 		el.addEventListener("scroll", onScroll);
 		return () => el.removeEventListener("scroll", onScroll);
 	}, []);
 
 	useEffect(() => {
-		const el = listRef.current;
-		if (!el || !autoScroll) return;
-		el.scrollTop = el.scrollHeight;
-	}, [messages.length, JSON.stringify(messages[messages.length - 1] ?? null), isStreaming, autoScroll]);
+		if (!transcriptMode) return;
+		let cancelled = false;
+		setTranscriptLoading(true);
+		void rpc
+			.getTranscriptPage({ limit: 500 })
+			.then((page) => {
+				if (cancelled) return;
+				setTranscriptEntries(page.entries);
+				setTranscriptStart(page.start);
+				setTranscriptHasMore(page.hasMore);
+			})
+			.catch((error) => {
+				if (!cancelled) {
+					toast.error(
+						"Failed to load transcript",
+						error instanceof Error ? error.message : String(error),
+					);
+				}
+			})
+			.finally(() => {
+				if (!cancelled) setTranscriptLoading(false);
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [transcriptMode, sessionFile]);
 
-	if (messages.length === 0) {
+	const loadOlderTranscript = async () => {
+		setTranscriptLoading(true);
+		try {
+			const page = await rpc.getTranscriptPage({ limit: 200, before: transcriptStart });
+			setTranscriptEntries((previous) => [...page.entries, ...previous]);
+			setTranscriptStart(page.start);
+			setTranscriptHasMore(page.hasMore);
+		} catch (error) {
+			toast.error("Failed to load older transcript", error instanceof Error ? error.message : String(error));
+		} finally {
+			setTranscriptLoading(false);
+		}
+	};
+
+	const lastMessage = streamingMessage ?? messages[messages.length - 1];
+	useEffect(() => {
+		const el = listRef.current;
+		if (!el || !autoScroll || suppressAutoScrollRef.current) return;
+		el.scrollTop = el.scrollHeight;
+	}, [messages.length, lastMessage, isStreaming, autoScroll]);
+
+	// Restore the previous scroll anchor for this session (and recompute whether
+	// the view is pinned to the bottom) when the transcript changes identity.
+	useEffect(() => {
+		const el = listRef.current;
+		if (!el) return;
+		const saved = sessionFile ? useSessionViewStore.getState().scroll[sessionFile] : undefined;
+		if (saved === undefined) return;
+		suppressAutoScrollRef.current = true;
+		const restore = () => {
+			el.scrollTop = saved;
+			setAutoScroll(el.scrollHeight - el.scrollTop - el.clientHeight < 80);
+			suppressAutoScrollRef.current = false;
+		};
+		if (typeof requestAnimationFrame === "function") requestAnimationFrame(restore);
+		else setTimeout(restore, 0);
+	}, [sessionFile]);
+
+	const handleLoadOlder = async () => {
+		const el = listRef.current;
+		const previousTop = el?.scrollTop ?? 0;
+		const previousHeight = el?.scrollHeight ?? 0;
+		suppressAutoScrollRef.current = true;
+		try {
+			await loadOlderHistory();
+		} catch (error) {
+			toast.error("Failed to load older messages", error instanceof Error ? error.message : String(error));
+		} finally {
+			const restore = () => {
+				if (el) el.scrollTop = previousTop + (el.scrollHeight - previousHeight);
+				suppressAutoScrollRef.current = false;
+			};
+			if (typeof requestAnimationFrame === "function") requestAnimationFrame(restore);
+			else setTimeout(restore, 0);
+		}
+	};
+
+	if (messages.length === 0 && !streamingMessage) {
 		return sessionLoading ? <SessionLoadingState /> : <EmptyState />;
 	}
 
 	return (
 		<div ref={listRef} className="chat-surface flex-1 overflow-y-auto">
+			<div className="sticky top-0 z-20 flex justify-end px-4 pt-2">
+				<button
+					type="button"
+					onClick={() => setTranscriptMode((value) => !value)}
+					aria-pressed={transcriptMode}
+					className="rounded-full border border-pi-border bg-pi-surface-overlay/90 px-3 py-1 text-[11px] tracking-tight text-pi-text-muted shadow-ring backdrop-blur-sm transition-colors hover:text-pi-text"
+				>
+					{transcriptMode ? "Context view" : "Full transcript"}
+				</button>
+			</div>
+			{transcriptMode ? (
+				<div className="chat-column mx-auto flex flex-col gap-6 py-6">
+					{transcriptHasMore && (
+						<div className="flex justify-center">
+							<button
+								type="button"
+								onClick={() => void loadOlderTranscript()}
+								disabled={transcriptLoading}
+								className="rounded-full border border-pi-border px-3 py-1 text-[11px] tracking-tight text-pi-text-muted transition-colors hover:text-pi-text disabled:opacity-50"
+							>
+								{transcriptLoading ? "Loading transcript…" : "Load older transcript"}
+							</button>
+						</div>
+					)}
+					<TranscriptEntries
+						entries={transcriptEntries}
+						hideThinkingBlock={hideThinkingBlock}
+						approvalRequest={approvalRequest}
+					/>
+				</div>
+			) : (
 			<div className="chat-column mx-auto flex flex-col gap-6 py-8">
+				{sessionLoading && messages.length > 0 && (
+					<div className="sticky top-0 z-10 mx-auto flex items-center gap-2 rounded-full border border-pi-border bg-pi-surface-overlay/90 px-3 py-1 text-2xs text-pi-text-muted shadow-ring backdrop-blur-sm">
+						<Loader2 className="h-3 w-3 animate-spin" />
+						Loading {useSessionStore.getState().sessionName ?? "session"}…
+					</div>
+				)}
+				{hasMoreOlder && (
+					<div className="flex justify-center">
+						<button
+							type="button"
+							onClick={() => void handleLoadOlder()}
+							disabled={loadingOlder}
+							className="rounded-full border border-pi-border px-3 py-1 text-[11px] tracking-tight text-pi-text-muted transition-colors hover:text-pi-text disabled:opacity-50"
+						>
+							{loadingOlder ? "Loading older messages…" : "Load older messages"}
+						</button>
+					</div>
+				)}
 				{messages.map((msg, index) => (
-					<ErrorBoundary key={index} label="message">
-						<MessageItem
-							key={index}
-							message={msg}
-							index={index}
-							hideThinkingBlock={hideThinkingBlock}
-							approvalToolCallId={approvalToolCallId}
-							approvalRequest={approvalRequest}
-						/>
-					</ErrorBoundary>
+					<div key={messageKey(msg)} className="chat-row">
+						<ErrorBoundary label="message">
+							<MessageItem
+								message={msg}
+								index={index}
+								hideThinkingBlock={hideThinkingBlock}
+								approvalToolCallId={approvalToolCallId}
+								approvalRequest={approvalRequest}
+								toolResults={toolResults}
+								isStreaming={isStreaming}
+								isLast={!streamingMessage && index === messages.length - 1}
+							/>
+						</ErrorBoundary>
+					</div>
 				))}
+				{streamingMessage && (
+					<div key={messageKey(streamingMessage)} className="chat-row">
+						<ErrorBoundary label="message">
+							<MessageItem
+								message={streamingMessage}
+								index={messages.length}
+								hideThinkingBlock={hideThinkingBlock}
+								approvalToolCallId={approvalToolCallId}
+								approvalRequest={approvalRequest}
+								toolResults={toolResults}
+								isStreaming={isStreaming}
+								isLast
+							/>
+						</ErrorBoundary>
+					</div>
+				)}
+			</div>
+			)}
+		</div>
+	);
+}
+
+function TranscriptEntries({
+	entries,
+	hideThinkingBlock,
+	approvalRequest,
+}: {
+	entries: rpc.TranscriptEntry[];
+	hideThinkingBlock: boolean;
+	approvalRequest: UiRequest | undefined;
+}) {
+	const messages = useMemo(
+		() => entries.filter((entry) => entry.type === "message" && entry.message).map((entry) => entry.message as AgentMessage),
+		[entries],
+	);
+	const toolResults = useToolResultsById(messages);
+	let messageIndex = 0;
+
+	return (
+		<>
+			{entries.map((entry) => {
+				if (entry.type === "message" && entry.message) {
+					const index = messageIndex++;
+					return (
+						<div key={entry.id} className="chat-row">
+							<ErrorBoundary label="transcript message">
+								<MessageItem
+									message={entry.message}
+									index={index}
+									hideThinkingBlock={hideThinkingBlock}
+									approvalToolCallId={undefined}
+									approvalRequest={approvalRequest}
+									toolResults={toolResults}
+									readOnly
+								/>
+							</ErrorBoundary>
+						</div>
+					);
+				}
+				if (entry.type === "compaction") {
+					return (
+						<TranscriptBoundary
+							key={entry.id}
+							kind="compaction"
+							summary={entry.summary ?? ""}
+							tokensBefore={entry.tokensBefore}
+							firstKeptEntryId={entry.firstKeptEntryId}
+						/>
+					);
+				}
+				if (entry.type === "branch_summary") {
+					return (
+						<TranscriptBoundary
+							key={entry.id}
+							kind="branch"
+							summary={entry.summary ?? ""}
+							fromId={entry.fromId}
+						/>
+					);
+				}
+				return null;
+			})}
+		</>
+	);
+}
+
+function TranscriptBoundary({
+	kind,
+	summary,
+	tokensBefore,
+	firstKeptEntryId,
+	fromId,
+}: {
+	kind: "compaction" | "branch";
+	summary: string;
+	tokensBefore?: number;
+	firstKeptEntryId?: string;
+	fromId?: string;
+}) {
+	const Icon = kind === "compaction" ? Scissors : GitBranch;
+	return (
+		<div className="rounded-xl border border-dashed border-pi-border bg-pi-surface/40 p-3.5">
+			<div className="flex items-center gap-2 text-3xs font-medium uppercase tracking-[0.08em] text-pi-text-faint">
+				<Icon className="h-3 w-3" />
+				{kind === "compaction" ? "Compaction boundary" : "Branch summary"}
+				{tokensBefore !== undefined && (
+					<span className="ml-auto normal-case tracking-normal">
+						{tokensBefore.toLocaleString()} tokens before
+					</span>
+				)}
+			</div>
+			{summary && (
+				<div className="mt-2 text-[12px] leading-relaxed text-pi-text-secondary">
+					<MarkdownTextContent text={summary} isRunning={false} />
+				</div>
+			)}
+			<div className="mt-2 text-4xs text-pi-text-faint">
+				{kind === "compaction"
+					? `Earlier turns remain available above this boundary${firstKeptEntryId ? `; context kept from ${firstKeptEntryId}` : ""}.`
+					: `Summarized branch${fromId ? ` from ${fromId}` : ""}.`}
 			</div>
 		</div>
 	);
 }
+
+function toolCallIds(message: AgentMessage): string[] {
+	if (message.role !== "assistant" || !Array.isArray(message.content)) return [];
+	return message.content
+		.filter((part) => part.type === "toolCall")
+		.map((part) => (part as { id?: string }).id)
+		.filter((id): id is string => Boolean(id));
+}
+
+function sameMessageItem(
+	previous: {
+		message: AgentMessage;
+		index: number;
+		hideThinkingBlock: boolean;
+		approvalToolCallId: string | undefined;
+		approvalRequest: UiRequest | undefined;
+		toolResults: Map<string, ToolResultMessage>;
+		readOnly?: boolean;
+		isStreaming?: boolean;
+		isLast?: boolean;
+	},
+	next: typeof previous,
+): boolean {
+	if (
+		previous.message !== next.message ||
+		previous.index !== next.index ||
+		previous.hideThinkingBlock !== next.hideThinkingBlock ||
+		previous.approvalToolCallId !== next.approvalToolCallId ||
+		previous.approvalRequest !== next.approvalRequest ||
+		previous.readOnly !== next.readOnly ||
+		previous.isStreaming !== next.isStreaming ||
+		previous.isLast !== next.isLast
+	) {
+		return false;
+	}
+	if (previous.toolResults === next.toolResults) return true;
+	return toolCallIds(previous.message).every(
+		(id) => previous.toolResults.get(id) === next.toolResults.get(id),
+	);
+}
+
+const MessageItem = memo(MessageItemImpl, sameMessageItem);
 
 function SessionLoadingState() {
 	const sessionFile = useSessionStore((s) => s.sessionFile);
@@ -172,35 +502,52 @@ function EmptyState() {
 	);
 }
 
-function MessageItem({
+function MessageItemImpl({
 	message,
 	index,
 	hideThinkingBlock,
 	approvalToolCallId,
 	approvalRequest,
+	toolResults,
+	readOnly = false,
+	isStreaming = false,
+	isLast = false,
 }: {
 	message: AgentMessage;
 	index: number;
 	hideThinkingBlock: boolean;
 	approvalToolCallId: string | undefined;
 	approvalRequest: UiRequest | undefined;
+	toolResults: Map<string, ToolResultMessage>;
+	readOnly?: boolean;
+	isStreaming?: boolean;
+	isLast?: boolean;
 }) {
 	if (message.role === "user") {
-		return <UserMessageItem message={message as UserMessage} index={index} />;
+		return (
+			<UserMessageItem
+				message={message as UserMessage}
+				index={index}
+				readOnly={readOnly}
+				streaming={isStreaming}
+			/>
+		);
 	}
 	if (message.role === "assistant") {
 		return (
 			<AssistantMessageItem
 				message={message as AssistantMessage}
-				index={index}
 				hideThinkingBlock={hideThinkingBlock}
 				approvalToolCallId={approvalToolCallId}
 				approvalRequest={approvalRequest}
+				toolResults={toolResults}
+				isStreaming={isStreaming}
+				isLast={isLast}
 			/>
 		);
 	}
 	// Tool results render inside their matching tool-call row (RichToolCall),
-	// which looks the result up by toolCallId, so they have no standalone row.
+	// which receives the prebuilt result index, so they have no standalone row.
 	if (message.role === "toolResult") return null;
 	return null;
 }
@@ -213,25 +560,42 @@ function extractUserMessageText(message: UserMessage): string {
 	return "";
 }
 
-function extractUserImages(message: UserMessage): ImageContent[] {
+interface DisplayImage {
+	type: "image";
+	data?: string;
+	mimeType?: string;
+	bytes?: number;
+	attachment?: { id: string; mimeType: string; bytes: number };
+}
+
+function extractUserImages(message: UserMessage): DisplayImage[] {
 	if (Array.isArray(message.content)) {
-		return message.content.filter((c): c is ImageContent => c.type === "image");
+		return message.content.filter((c) => c.type === "image") as unknown as DisplayImage[];
 	}
 	return [];
 }
 
-function UserMessageItem({ message, index }: { message: UserMessage; index: number }) {
+function UserMessageItem({
+	message,
+	index,
+	readOnly = false,
+	streaming = false,
+}: {
+	message: UserMessage;
+	index: number;
+	readOnly?: boolean;
+	streaming?: boolean;
+}) {
 	const text = extractUserMessageText(message);
 	const images = extractUserImages(message);
-	const isStreaming = useSessionStore((s) => s.isStreaming);
 
 	return (
 		<div className="group/msg flex items-start justify-end gap-2">
-			{text.length > 0 && (
+			{text.length > 0 && !readOnly && (
 				<UserMessageActions
 					text={text}
 					messageIndex={index}
-					disabled={isStreaming}
+					disabled={streaming}
 				/>
 			)}
 			<div className="pi-glass max-w-[min(88%,42rem)] min-w-0 space-y-2 break-words rounded-xl border border-pi-border px-3.5 py-2.5 text-[13px] leading-relaxed text-pi-text">
@@ -371,25 +735,47 @@ function UserMessageActions({
 	);
 }
 
-function ImageBlock({ image }: { image: ImageContent }) {
+function ImageBlock({ image }: { image: DisplayImage }) {
 	const [open, setOpen] = useState(false);
-	const src = `data:${image.mimeType};base64,${image.data}`;
+	const [src, setSrc] = useState<string | undefined>(() =>
+		image.data ? inlineDataUrl(image.mimeType ?? "image/png", image.data) : undefined,
+	);
+
+	useEffect(() => {
+		if (src || !image.attachment) return;
+		let cancelled = false;
+		void loadAttachmentDataUrl(image.attachment)
+			.then((url) => {
+				if (!cancelled) setSrc(url);
+			})
+			.catch(() => {
+				// Leave the placeholder; the transcript stays readable without the image.
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [src, image.attachment]);
+
 	return (
 		<>
 			<button
-				onClick={() => setOpen(true)}
+				onClick={() => src && setOpen(true)}
 				className="group relative overflow-hidden rounded-lg"
 			>
-				<img
-					src={src}
-					alt="Attached"
-					className="max-h-40 max-w-full rounded-lg border border-white/10 object-cover transition-smooth group-hover:brightness-110"
-				/>
+				{src ? (
+					<img
+						src={src}
+						alt="Attached"
+						className="max-h-40 max-w-full rounded-lg border border-white/10 object-cover transition-smooth group-hover:brightness-110"
+					/>
+				) : (
+					<div className="h-24 w-32 animate-pulse rounded-lg border border-pi-border bg-pi-surface-overlay" />
+				)}
 				<div className="absolute bottom-1 right-1 rounded bg-black/50 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100">
 					<ImageIcon className="h-3 w-3" />
 				</div>
 			</button>
-			{open && (
+			{open && src && (
 				<ModalBackdrop
 					aria-label="Image preview"
 					className="bg-black/80"
@@ -409,16 +795,20 @@ function ImageBlock({ image }: { image: ImageContent }) {
 
 function AssistantMessageItem({
 	message,
-	index,
 	hideThinkingBlock,
 	approvalToolCallId,
 	approvalRequest,
+	toolResults,
+	isStreaming,
+	isLast,
 }: {
 	message: AssistantMessage;
-	index: number;
 	hideThinkingBlock: boolean;
 	approvalToolCallId: string | undefined;
 	approvalRequest: UiRequest | undefined;
+	toolResults: Map<string, ToolResultMessage>;
+	isStreaming: boolean;
+	isLast: boolean;
 }) {
 	const parts = Array.isArray(message.content) ? message.content : [];
 	const thinking = parts.filter(
@@ -435,8 +825,6 @@ function AssistantMessageItem({
 		name: string;
 		arguments: Record<string, unknown>;
 	}>;
-	const isStreaming = useSessionStore((s) => s.isStreaming);
-	const totalMessages = useSessionStore((s) => s.messages.length);
 
 	return (
 		<div className="group/msg flex justify-start gap-3">
@@ -452,7 +840,7 @@ function AssistantMessageItem({
 
 					{text.length > 0 && (
 						<div className="min-w-0 break-words px-1 py-1 text-[13px] leading-relaxed text-pi-text">
-							<MarkdownTextContent text={text} isRunning={isStreaming && index === totalMessages - 1} />
+							<MarkdownTextContent text={text} isRunning={isStreaming && isLast} />
 						</div>
 					)}
 				</div>
@@ -461,11 +849,16 @@ function AssistantMessageItem({
 					toolCall.name === "ask_user_question" ? (
 						// Structured questions render as an interactive inline card
 						// (hermes-style) instead of the generic collapsed tool row.
-						<AskUserQuestionCard key={i} toolCall={toolCall} />
+						<AskUserQuestionCard
+							key={i}
+							toolCall={toolCall}
+							result={toolCall.id ? toolResults.get(toolCall.id) : undefined}
+						/>
 					) : (
 						<RichToolCall
 							key={i}
 							toolCall={toolCall}
+							result={toolCall.id ? toolResults.get(toolCall.id) : undefined}
 							approvalRequest={
 								approvalToolCallId && toolCall.id === approvalToolCallId
 									? approvalRequest

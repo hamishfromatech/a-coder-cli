@@ -93,6 +93,9 @@ export interface SettingsState {
 	/** Call mode: keep the mic armed while the reply speaks; loud speech barges. */
 	voiceBargeIn: boolean;
 	setVoiceBargeIn: (enabled: boolean) => void;
+	/** Call mode: mic sensitivity (0..1). Higher opens on quieter speech. */
+	voiceMicSensitivity: number;
+	setVoiceMicSensitivity: (sensitivity: number) => void;
 	/** How replies are prepared for speech: strip markdown/URLs/paths
 	 *  ("concise", default) or read the text exactly as written ("verbatim"). */
 	voiceSpeechMode: "concise" | "verbatim";
@@ -227,6 +230,9 @@ export const useSettingsStore = create<SettingsState>()(
 			setVoiceCallMaxUtteranceMs: (voiceCallMaxUtteranceMs) => set({ voiceCallMaxUtteranceMs }),
 			voiceBargeIn: false,
 			setVoiceBargeIn: (voiceBargeIn) => set({ voiceBargeIn }),
+			voiceMicSensitivity: 0.5,
+			setVoiceMicSensitivity: (voiceMicSensitivity) =>
+				set({ voiceMicSensitivity: Math.max(0, Math.min(1, voiceMicSensitivity)) }),
 			voiceSpeechMode: "concise",
 			setVoiceSpeechMode: (voiceSpeechMode) => set({ voiceSpeechMode }),
 			voiceMaxSpokenChars: 1200,
@@ -288,6 +294,7 @@ export const useSettingsStore = create<SettingsState>()(
 			voiceCallSilenceMs: state.voiceCallSilenceMs,
 			voiceCallMaxUtteranceMs: state.voiceCallMaxUtteranceMs,
 			voiceBargeIn: state.voiceBargeIn,
+			voiceMicSensitivity: state.voiceMicSensitivity,
 			voiceSpeechMode: state.voiceSpeechMode,
 			voiceMaxSpokenChars: state.voiceMaxSpokenChars,
 			voiceCallCues: state.voiceCallCues,

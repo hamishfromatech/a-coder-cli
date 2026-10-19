@@ -64,16 +64,45 @@ pub async fn disconnect(state: State<'_, AppState>) -> Result<String, String> {
 }
 
 #[command]
-pub async fn send_command(state: State<'_, AppState>, command: Value) -> Result<Value, String> {
+pub async fn send_command(state: State<'_, AppState>, command: Value) -> Result<Value, Value> {
 	// Lock only long enough to clone the send handles, then drop the guard so a
 	// slow/lost response can't block other invoke calls (Tauri/Tokio: don't hold a
 	// MutexGuard across a long await). send_with bounds the wait with a timeout.
 	let (stdin_tx, pending) = {
 		let guard = state.client.lock().await;
-		let client = guard.as_ref().ok_or("Not connected to engine")?;
+		let client = guard
+			.as_ref()
+			.ok_or_else(|| crate::rpc::client::rpc_error("not_connected", "Not connected to engine", false))?;
 		client.handles()
 	};
 	crate::rpc::client::RpcClient::send_with(stdin_tx, pending, command).await
+}
+
+/// Drop a pending request (matched by the client-supplied id) and resolve it as
+/// cancelled. The engine may still finish the work; the client stops waiting.
+/// Called after the frontend registers `rpc://event`; replays buffered frames.
+#[command]
+pub async fn rpc_ready(state: State<'_, AppState>) -> Result<usize, String> {
+	let guard = state.client.lock().await;
+	let client = guard.as_ref().ok_or("Not connected to engine")?;
+	Ok(client.mark_ready().await)
+}
+
+#[command]
+pub async fn cancel_command(state: State<'_, AppState>, id: String) -> Result<Value, String> {
+	let pending = {
+		let guard = state.client.lock().await;
+		let client = guard.as_ref().ok_or("Not connected to engine")?;
+		client.handles().1
+	};
+	let mut guard = pending.lock().await;
+	let Some(request) = guard.remove(&id) else {
+		return Ok(json!({ "cancelled": false }));
+	};
+	let _ = request
+		.resolve
+		.send(Err(crate::rpc::client::rpc_error("cancelled", "Request cancelled", false)));
+	Ok(json!({ "cancelled": true }))
 }
 
 #[command]

@@ -43,7 +43,7 @@ Type `/` in the editor to open command completion. Extensions can register custo
 | `/settings` | Full settings list: thinking level, theme, TUI mode, message delivery, transport, computer use, and more |
 | `/resume` | Pick from previous sessions |
 | `/search <text>` | Search stored sessions by transcript text, name, or folder; selecting a hit resumes it |
-| `/sessions [archive]` | Session-store stats (count, size, largest); `archive` moves a session to the recoverable `.trash` |
+| `/sessions [archive\|compact]` | Session-store stats; `archive` moves one to `.trash`; `compact [apply]` drops redundant metadata entries |
 | `/new` | Start a new session |
 | `/name <name>` | Set session display name |
 | `/session` | Show session file, ID, messages, tokens, and cost |
@@ -158,7 +158,7 @@ Useful session commands:
 - `/clone` duplicates the current active branch into a new session file.
 - `/compact` summarizes older messages to free context.
 - `/search <text>` finds sessions by what was said in them, not just the title.
-- `/sessions` reports store size; `/sessions archive` moves a session into the recoverable `.trash` folder.
+- `/sessions` reports store size; `/sessions archive` moves a session into the recoverable `.trash` folder; `/sessions compact [apply]` rewrites oversized files while keeping branch/context entries.
 
 See [Sessions](sessions.md) and [Compaction](compaction.md) for details.
 
@@ -386,3 +386,12 @@ a-coder-cli --exclude-tools ask_user_question
 A-Coder CLI keeps the core small and pushes workflow-specific behavior into extensions, skills, prompt templates, packages, and workflows.
 
 By default it ships a strong-but-boring core: a durable default toolset (including a persistent task graph, cross-session memory, agent teams, plan mode, and MCP servers), permission modes with policy rules, and session management. Anything opinionated stays replaceable: run in `--permission-mode allow` or containerize for isolation, build your own confirmation flows and compaction with extensions, and drive multi-agent runs with workflows you author in JavaScript.
+
+
+## First-run and tray (desktop)
+
+The desktop app starts with the same engine settings as the CLI. The tray menu shows the active-session status (Idle / Working / Needs input), exposes **New Session** and **Toggle HUD**, and keeps the **Keep Running in Tray** check in sync with `minimizeToTray`. Tray actions work while the main window is hidden.
+
+Approvals queued from extensions render as one floating card stack with position, previous/next, and same-tool **Allow all / Deny all**; inline approval rows still anchor the current request to its tool call.
+
+Call mode calibrates the microphone noise floor at call start. The **Mic sensitivity** slider lowers or raises the speech gate above that floor; quiet and loud microphones both open without the orb clipping (mic and TTS levels use square-root normalization). Huddle calls use the same calibration.

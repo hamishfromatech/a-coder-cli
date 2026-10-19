@@ -78,6 +78,42 @@ describe("session-tree-store", () => {
 		expect(leafId).toBe("child");
 	});
 
+	it("builds the same tree from flat nodes", () => {
+		useSessionTreeStore.getState().setFlatTree(
+			[
+				{ id: "root", parentId: null, type: "message", messageRole: "user", label: "Root" },
+				{ id: "child", parentId: "root", type: "message", messageRole: "assistant" },
+				{ id: "tool1", parentId: "child", type: "message", messageRole: "tool" },
+			],
+			"tool1",
+		);
+		const { tree, leafId } = useSessionTreeStore.getState();
+		expect(tree).toHaveLength(1);
+		expect(tree[0].id).toBe("root");
+		expect(tree[0].label).toBe("Root");
+		expect(tree[0].children[0].id).toBe("child");
+		expect(tree[0].children[0].children[0].role).toBe("toolResult");
+		expect(leafId).toBe("tool1");
+	});
+
+	it("applies tree deltas without a refetch", () => {
+		useSessionTreeStore.getState().setFlatTree(
+			[{ id: "root", parentId: null, type: "message", messageRole: "user" }],
+			"root",
+		);
+		useSessionTreeStore.getState().applyTreeDelta({
+			leafId: "child",
+			added: [{ id: "child", parentId: "root", type: "message", messageRole: "assistant" }],
+		});
+		useSessionTreeStore.getState().applyTreeDelta({
+			updated: [{ id: "root", parentId: null, type: "message", messageRole: "user", label: "Start" }],
+		});
+		const { tree, leafId } = useSessionTreeStore.getState();
+		expect(tree[0].children[0].id).toBe("child");
+		expect(tree[0].label).toBe("Start");
+		expect(leafId).toBe("child");
+	});
+
 	it("carries the entry type through to tree nodes", () => {
 		useSessionTreeStore.getState().setTree(
 			[

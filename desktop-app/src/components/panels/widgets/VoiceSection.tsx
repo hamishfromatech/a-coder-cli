@@ -455,6 +455,29 @@ export function VoiceSection() {
 					</div>
 					<Toggle checked={s.voiceCallCues} onChange={s.setVoiceCallCues} />
 				</div>
+				<div className="flex items-center justify-between gap-4">
+					<div className="pr-4">
+						<p className="text-xs font-medium text-pi-text">Mic sensitivity</p>
+						<p className="text-2xs text-pi-text-muted">
+							Higher opens on quieter speech. Calibrated against the room's noise floor when a call starts.
+						</p>
+					</div>
+					<div className="flex shrink-0 items-center gap-2">
+						<input
+							type="range"
+							min={0}
+							max={1}
+							step={0.05}
+							value={s.voiceMicSensitivity}
+							onChange={(event) => s.setVoiceMicSensitivity(Number(event.target.value))}
+							aria-label="Mic sensitivity"
+							className="w-24 accent-pi-accent"
+						/>
+						<span className="w-8 text-right font-mono text-2xs text-pi-text-muted">
+							{Math.round(s.voiceMicSensitivity * 100)}%
+						</span>
+					</div>
+				</div>
 				<div className="grid grid-cols-3 gap-3">
 					<LabeledInput
 						label="Silence (ms)"

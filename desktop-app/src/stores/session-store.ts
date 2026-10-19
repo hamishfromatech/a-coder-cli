@@ -51,6 +51,8 @@ export interface SessionState {
 	sessionName: string | null;
 	sessionId: string | null;
 	sessionFile: string | null;
+	/** Engine session activation id; frames from earlier activations are stale. */
+	activationId: number;
 	model: AnyModel | null;
 	thinkingLevel: string | null;
 	permissionMode: PermissionMode;
@@ -67,6 +69,15 @@ export interface SessionState {
 	pendingMessageCount: number;
 	contextUsage: ContextUsage | null;
 	messages: AgentMessage[];
+	/** In-flight assistant message. Kept out of `messages` so the committed
+	 *  transcript stays immutable and its array identity stable during a turn. */
+	streamingMessage: AssistantMessage | null;
+	/** Index of the first loaded message in the engine's context array. */
+	messagesStart: number;
+	/** Total context messages at the last history fetch. */
+	messagesTotal: number;
+	hasMoreOlder: boolean;
+	loadingOlder: boolean;
 	steering: string[];
 	followUp: string[];
 	/** Live snapshot of in-process background sub-agents (from subagents_update events). */
@@ -98,6 +109,7 @@ export interface SessionState {
 	setSessionName: (name: string | null) => void;
 	setSessionId: (id: string | null) => void;
 	setSessionFile: (file: string | null) => void;
+	setActivationId: (id: number) => void;
 	setModel: (model: AnyModel | null) => void;
 	setThinkingLevel: (level: string | null) => void;
 	setPermissionMode: (mode: PermissionMode) => void;
@@ -112,8 +124,12 @@ export interface SessionState {
 	setPendingMessageCount: (n: number) => void;
 	setContextUsage: (usage: ContextUsage | null) => void;
 	appendMessage: (message: AgentMessage) => void;
+	setStreamingMessage: (message: AssistantMessage | null) => void;
+	commitAssistantMessage: (message: AssistantMessage) => void;
 	setMessages: (messages: AgentMessage[]) => void;
-	updateLastAssistantMessage: (message: AssistantMessage) => void;
+	setHistoryPage: (messages: AgentMessage[], total: number, start: number) => void;
+	prependHistoryPage: (messages: AgentMessage[], start: number, total?: number) => void;
+	setLoadingOlder: (loading: boolean) => void;
 	updateQueue: (steering: string[], followUp: string[]) => void;
 	resetSession: () => void;
 
@@ -142,6 +158,7 @@ export const useSessionStore = create<SessionState>((set) => ({
 	sessionName: null,
 	sessionId: null,
 	sessionFile: null,
+	activationId: 0,
 	model: null,
 	thinkingLevel: null,
 	permissionMode: "allow",
@@ -155,6 +172,11 @@ export const useSessionStore = create<SessionState>((set) => ({
 	pendingMessageCount: 0,
 	contextUsage: null,
 	messages: [],
+	streamingMessage: null,
+	messagesStart: 0,
+	messagesTotal: 0,
+	hasMoreOlder: false,
+	loadingOlder: false,
 	steering: [],
 	followUp: [],
 	subAgents: [],
@@ -173,6 +195,7 @@ export const useSessionStore = create<SessionState>((set) => ({
 	setSessionName: (sessionName) => set({ sessionName }),
 	setSessionId: (sessionId) => set({ sessionId }),
 	setSessionFile: (sessionFile) => set({ sessionFile }),
+	setActivationId: (activationId) => set({ activationId }),
 	setModel: (model) => set({ model }),
 	setThinkingLevel: (thinkingLevel) => set({ thinkingLevel }),
 	setPermissionMode: (permissionMode) => set({ permissionMode }),
@@ -187,22 +210,38 @@ export const useSessionStore = create<SessionState>((set) => ({
 	setPendingMessageCount: (pendingMessageCount) => set({ pendingMessageCount }),
 	setContextUsage: (contextUsage) => set({ contextUsage }),
 	appendMessage: (message) => set((state) => ({ messages: [...state.messages, message] })),
-	setMessages: (messages) => set({ messages }),
-	updateLastAssistantMessage: (message) => {
+	setStreamingMessage: (streamingMessage) => set({ streamingMessage }),
+	commitAssistantMessage: (message) =>
 		set((state) => {
-			if (state.messages.length === 0) return state;
 			const last = state.messages[state.messages.length - 1];
-			if (last.role !== "assistant") return state;
-			const updated = { ...last, content: message.content };
-			return {
-				messages: [...state.messages.slice(0, -1), updated as AgentMessage],
-			};
-		});
-	},
+			if (last?.role === "assistant" && last.timestamp === message.timestamp) {
+				return {
+					messages: [...state.messages.slice(0, -1), message],
+					streamingMessage: null,
+				};
+			}
+			return { messages: [...state.messages, message], streamingMessage: null };
+		}),
+	setMessages: (messages) => set({ messages }),
+	setHistoryPage: (messages, total, start) =>
+		set({ messages, messagesTotal: total, messagesStart: start, hasMoreOlder: start > 0 }),
+	prependHistoryPage: (messages, start, total) =>
+		set((state) => ({
+			messages: [...messages, ...state.messages],
+			messagesStart: start,
+			messagesTotal: total ?? state.messagesTotal,
+			hasMoreOlder: start > 0,
+		})),
+	setLoadingOlder: (loadingOlder) => set({ loadingOlder }),
 	updateQueue: (steering, followUp) => set({ steering, followUp }),
 	resetSession: () =>
 		set({
 			messages: [],
+			streamingMessage: null,
+			messagesStart: 0,
+			messagesTotal: 0,
+			hasMoreOlder: false,
+			loadingOlder: false,
 			steering: [],
 			followUp: [],
 			subAgents: [],

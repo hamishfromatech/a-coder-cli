@@ -7,6 +7,7 @@ import { rendererLog } from "../../lib/renderer-log";
 type ResizeDirection = "East" | "North" | "NorthEast" | "NorthWest" | "South" | "SouthEast" | "SouthWest" | "West";
 import * as rpc from "../../lib/rpc";
 import { processAgentEvent, mergeUserEchoes } from "../../lib/agent-event-pipeline";
+import { applyHistoryPage, HISTORY_PAGE_SIZE } from "../../lib/history";
 import { MessageList } from "../MessageList";
 import { Composer } from "../Composer";
 import { useSessionStore, type QuestionUiRequest } from "../../stores/session-store";
@@ -19,15 +20,14 @@ import { useSessionStore, type QuestionUiRequest } from "../../stores/session-st
  *  window never runs App, so without it the composer stays "not connected". */
 async function hudSyncEngineState(): Promise<void> {
 	try {
-		const s = (await rpc.sendCommand({ type: "get_state" })) as {
-			model?: { provider: string; id: string; name?: string };
-			thinkingLevel?: string;
-			permissionMode?: import("../../stores/session-store").PermissionMode;
-			sessionName?: string;
-			sessionFile?: string;
-			messageCount?: number;
-			pendingMessageCount?: number;
-		};
+		// One round trip when the engine supports the activation snapshot.
+		const snapshot = await Promise.race([
+			rpc.getSessionSnapshot(),
+			new Promise<null>((resolve) => setTimeout(() => resolve(null), 500)),
+		]);
+		const s = snapshot
+			? snapshot.state
+			: ((await rpc.sendCommand({ type: "get_state" })) as rpc.EngineSessionState);
 		const store = useSessionStore.getState();
 		store.setStatus("connected");
 		if (s?.model) store.setModel(s.model as never);
@@ -35,6 +35,8 @@ async function hudSyncEngineState(): Promise<void> {
 		if (s?.permissionMode) store.setPermissionMode(s.permissionMode);
 		store.setSessionName(s?.sessionName ?? null);
 		store.setSessionFile(s?.sessionFile ?? null);
+		store.setActivationId(s?.activationId ?? 0);
+		if (s?.sessionId) store.setSessionId(s.sessionId);
 		if (typeof s?.messageCount === "number") store.setMessageCount(s.messageCount);
 		if (typeof s?.pendingMessageCount === "number") store.setPendingMessageCount(s.pendingMessageCount);
 		try {
@@ -86,10 +88,11 @@ export function HudShell() {
 			await hudSyncEngineState();
 			let fetchedMessages: import("@earendil-works/pi-agent-core").AgentMessage[] | undefined;
 			try {
-				const msgsRes = (await rpc.sendCommand({ type: "get_messages" })) as {
-					messages: import("@earendil-works/pi-agent-core").AgentMessage[];
-				};
-				fetchedMessages = msgsRes?.messages;
+				const msgsRes = await rpc.getMessages({ limit: HISTORY_PAGE_SIZE });
+				if (msgsRes?.messages) {
+					applyHistoryPage(msgsRes, "replace");
+					fetchedMessages = msgsRes.messages;
+				}
 			} catch (e) {
 				console.warn("[hud] history load failed", e);
 			} finally {

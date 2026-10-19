@@ -10,6 +10,7 @@
  */
 
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 
 import * as rpc from "./rpc";
 import { openExternalLink } from "./external-link";
@@ -19,6 +20,9 @@ import { speechify } from "./speech-text";
 import { triggerHaptic } from "./haptics";
 import { pickLoadingVerb } from "./loading-verbs";
 import { getCachedSessionMessages, setCachedSessionMessages } from "./session-cache";
+import { applyHistoryPage, HISTORY_PAGE_SIZE } from "./history";
+import { applyBackgroundSessionEvent } from "./background-session-events";
+import { dropBackgroundSubscription, syncBackgroundSubscriptions } from "./background-sessions";
 import { toast } from "../stores/toast-store";
 import { notice } from "../stores/notice-store";
 import { voiceCall, useVoiceCallStore } from "./voice-call";
@@ -37,6 +41,8 @@ import { useSessionTreeStore } from "../stores/session-tree-store";
 import { useOfficeStore } from "../stores/office-store";
 import { useCronStore } from "../stores/cron-store";
 import { useActivityStore } from "../stores/activity-store";
+import { useSessionTranscriptsStore } from "../stores/session-transcripts-store";
+import { useToolProgressStore } from "../stores/tool-progress-store";
 import { useWidgetStore } from "../stores/widget-store";
 
 /** Per-window state the pipeline drives through (refs live in the window). */
@@ -72,6 +78,12 @@ function playOfficeTurnCompletionSound() {
 }
 
 /** Extract the text of the last assistant message in a run (for voice mode). */
+function agentEndText(event: { messages?: AgentMessage[]; summary?: { lastAssistantText?: string } }): string {
+	if (event.summary) return event.summary.lastAssistantText ?? "";
+	if (Array.isArray(event.messages)) return lastAssistantText(event.messages);
+	return "";
+}
+
 function lastAssistantText(messages: AgentMessage[]): string {
 	for (let i = messages.length - 1; i >= 0; i -= 1) {
 		const m = messages[i];
@@ -145,7 +157,100 @@ export function mergeUserEchoes(fetched: AgentMessage[], local: AgentMessage[]):
  *  the fetch — a visible stale-then-fresh flash. */
 function cacheCurrentTranscript(): void {
 	const store = useSessionStore.getState();
-	if (store.sessionFile) setCachedSessionMessages(store.sessionFile, store.messages);
+	if (!store.sessionFile) return;
+	const messages = store.streamingMessage
+		? [...store.messages, store.streamingMessage]
+		: store.messages;
+	setCachedSessionMessages(store.sessionFile, messages);
+}
+
+// ── Contract-2 streaming accumulator ────────────────────────────────────────
+// Compact deltas mutate a draft message; the store is written at most once per
+// ~16ms instead of once per token (and the draft avoids an O(n) transcript copy
+// per delta). The final `message_end` remains authoritative.
+
+let assistantStream: { messageId: string; message: AssistantMessage } | null = null;
+let assistantStreamTimer: ReturnType<typeof setTimeout> | null = null;
+
+function cloneAssistantMessage(message: AssistantMessage): AssistantMessage {
+	const content = Array.isArray(message.content)
+		? message.content.map((block) => ({ ...block }))
+		: message.content;
+	return { ...message, content } as AssistantMessage;
+}
+
+function commitAssistantStream(): void {
+	assistantStreamTimer = null;
+	if (!assistantStream) return;
+	if (!hasAssistantContent(assistantStream.message)) return;
+	// Clone so the streaming store slice gets a new reference; the draft itself
+	// keeps mutating between frames and the committed transcript is untouched.
+	useSessionStore.getState().setStreamingMessage(cloneAssistantMessage(assistantStream.message));
+}
+
+function finalizeAssistantStream(): void {
+	commitAssistantStream();
+	if (assistantStream && hasAssistantContent(assistantStream.message)) {
+		useSessionStore.getState().commitAssistantMessage(cloneAssistantMessage(assistantStream.message));
+	}
+	resetAssistantStream();
+	useSessionStore.getState().setStreamingMessage(null);
+}
+
+function scheduleAssistantCommit(): void {
+	if (assistantStreamTimer !== null) return;
+	assistantStreamTimer = setTimeout(commitAssistantStream, 16);
+}
+
+export function resetStreamingAccumulator(): void {
+	resetAssistantStream();
+}
+
+function resetAssistantStream(): void {
+	if (assistantStreamTimer !== null) {
+		clearTimeout(assistantStreamTimer);
+		assistantStreamTimer = null;
+	}
+	assistantStream = null;
+}
+
+function startAssistantStream(message: AssistantMessage, messageId: string): void {
+	assistantStream = { messageId, message: cloneAssistantMessage(message) };
+	useSessionStore.getState().setStreamingMessage(null);
+}
+
+function applyAssistantDelta(event: {
+	messageId: string;
+	contentIndex: number;
+	kind: "text" | "thinking";
+	delta: string;
+}): void {
+	if (!event.delta) return;
+	if (!assistantStream || assistantStream.messageId !== event.messageId) {
+		// The stream start was dropped (e.g. it landed during a history fetch).
+		// Continue from the in-flight slice, if one is already painted.
+		const streaming = useSessionStore.getState().streamingMessage;
+		if (!streaming) return;
+		assistantStream = { messageId: event.messageId, message: cloneAssistantMessage(streaming) };
+	}
+	const content = assistantStream.message.content;
+	if (!Array.isArray(content)) return;
+	const index = Math.max(0, event.contentIndex);
+	const block = content[index] as { type?: string; text?: string; thinking?: string } | undefined;
+	if (event.kind === "text") {
+		if (block?.type === "text") block.text = (block.text ?? "") + event.delta;
+		else content[index] = { type: "text", text: event.delta } as never;
+	} else {
+		if (block?.type === "thinking") block.thinking = (block.thinking ?? "") + event.delta;
+		else content[index] = { type: "thinking", thinking: event.delta } as never;
+	}
+	scheduleAssistantCommit();
+}
+
+function applyAssistantSnapshot(event: { messageId: string; message: AssistantMessage }): void {
+	if (!event.message) return;
+	assistantStream = { messageId: event.messageId, message: cloneAssistantMessage(event.message) };
+	scheduleAssistantCommit();
 }
 
 /** Generate a concise session name from the first user message. */
@@ -167,22 +272,28 @@ function hasAssistantContent(message: import("@earendil-works/pi-ai").AssistantM
 	);
 }
 
-/** Pull stats and paint them — mirrors App's old applySessionStats exactly
- *  (stats store + the footer context-usage bar). */
+type StatsPayload = SessionStats & {
+	contextUsage?: { tokens: number | null; contextWindow: number; percent: number | null };
+};
+
+function applySessionStats(stats: StatsPayload): void {
+	useStatsStore.getState().setStats(stats);
+	if (stats.contextUsage && stats.contextUsage.contextWindow > 0) {
+		useSessionStore.getState().setContextUsage({
+			tokens: stats.contextUsage.tokens ?? null,
+			contextWindow: stats.contextUsage.contextWindow,
+			percent: stats.contextUsage.percent ?? null,
+		});
+	}
+}
+
+/** Pull stats and paint them (fallback for engines without push). */
 async function refreshSessionStats(): Promise<void> {
 	try {
 		const statsRes = (await rpc.sendCommand({ type: "get_session_stats" })) as SessionStats & {
 			contextUsage?: { tokens: number | null; contextWindow: number; percent: number | null };
 		};
-		if (!statsRes) return;
-		useStatsStore.getState().setStats(statsRes);
-		if (statsRes.contextUsage && statsRes.contextUsage.contextWindow > 0) {
-			useSessionStore.getState().setContextUsage({
-				tokens: statsRes.contextUsage.tokens ?? null,
-				contextWindow: statsRes.contextUsage.contextWindow,
-				percent: statsRes.contextUsage.percent ?? null,
-			});
-		}
+		if (statsRes) applySessionStats(statsRes);
 	} catch (e) {
 		console.error("Failed to refresh stats", e);
 	}
@@ -266,8 +377,44 @@ function noticeForToolError(message: AgentMessage): void {
 }
 
 export function processAgentEvent(event: rpc.RpcEvent, deps: AgentEventDeps): void {
-const { loadingHistoryRef, sessionStartGenerationRef, parkedQuestionsRef, deferredUserEchoesRef, syncEngineState } = deps;
-	const session = useSessionStore.getState();
+	if (event.type === "event_batch") {
+		for (const inner of event.events) processAgentEvent(inner, deps);
+		return;
+	}
+
+	// Frames from a subscribed background runtime never touch the active
+	// transcript; route them into the per-session cache instead.
+	const eventFile = (event as { sessionFile?: string }).sessionFile;
+	if (event.type !== "session_start" && eventFile) {
+		const activeFile = useSessionStore.getState().sessionFile;
+		if (eventFile !== activeFile && useSessionTranscriptsStore.getState().subscribed[eventFile]) {
+			applyBackgroundSessionEvent(eventFile, event);
+			return;
+		}
+	}
+
+	const { loadingHistoryRef, sessionStartGenerationRef, parkedQuestionsRef, deferredUserEchoesRef, syncEngineState } = deps;
+	const isSessionStart = event.type === "session_start";
+	const active = useSessionStore.getState();
+	if (isSessionStart) {
+		// A delayed start from an older activation must not reset a newer session.
+		const incoming = (event as rpc.SessionStartEvent).activationId;
+		if (typeof incoming === "number" && active.activationId > 0 && incoming < active.activationId) return;
+	} else {
+		// Frames are tagged with the session/activation that produced them; drop
+		// late frames from the session we just switched away from.
+		const eventSession = (event as { sessionFile?: string }).sessionFile;
+		if (eventSession && active.sessionFile && eventSession !== active.sessionFile) return;
+		const eventActivation = (event as { activationId?: number }).activationId;
+		if (
+			typeof eventActivation === "number" &&
+			active.activationId > 0 &&
+			eventActivation !== active.activationId
+		) {
+			return;
+		}
+	}
+	const session = active;
 
 	switch (event.type) {
 		case "engine_info": {
@@ -288,6 +435,7 @@ const { loadingHistoryRef, sessionStartGenerationRef, parkedQuestionsRef, deferr
 			break;
 		}
 		case "agent_start":
+			useToolProgressStore.getState().clear();
 			session.setIsStreaming(true);
 			session.setStreamingVerb(pickLoadingVerb());
 			// A new turn started — forget any abort the user requested
@@ -297,6 +445,10 @@ const { loadingHistoryRef, sessionStartGenerationRef, parkedQuestionsRef, deferr
 			voiceCall.notifyAgentStart();
 			break;
 		case "agent_end":
+			// Commit a partial stream that ended without message_end (error/abort),
+			// then drop the draft so the next turn starts clean.
+			finalizeAssistantStream();
+			cacheCurrentTranscript();
 			// A retryable failure re-enters the loop; stay streaming and suppress the
 			// completion cue until the retry resolves.
 			if ("willRetry" in event && event.willRetry) {
@@ -314,17 +466,28 @@ const { loadingHistoryRef, sessionStartGenerationRef, parkedQuestionsRef, deferr
 			if (useVoiceCallStore.getState().active) {
 				// Voice call: the spoken reply is the turn-end signal — the
 				// chime is suppressed and speaking is owned by the controller.
-				const text = "messages" in event ? lastAssistantText((event as { messages: AgentMessage[] }).messages) : "";
+				const text = agentEndText(event);
 				voiceCall.notifyAgentEnd(text);
 			} else {
 				playCompletionSound();
 				// Voice mode: read the final assistant reply aloud.
 				const voice = useSettingsStore.getState();
-				if (voice.voiceEnabled && voice.voiceAutoSpeak && "messages" in event) {
-					const text = lastAssistantText((event as { messages: AgentMessage[] }).messages);
+				if (voice.voiceEnabled && voice.voiceAutoSpeak) {
+					const text = agentEndText(event);
 					if (text) void speakReply(text);
 				}
 			}
+			break;
+		case "tool_start":
+			useToolProgressStore.getState().start(event.toolCallId, event.toolName);
+			break;
+		case "tool_delta":
+			useToolProgressStore
+				.getState()
+				.append(event.toolCallId, event.stream, event.delta, event.reset);
+			break;
+		case "tool_end":
+			useToolProgressStore.getState().end(event.toolCallId, event.isError);
 			break;
 		case "auto_retry_start":
 			toast.warning(
@@ -343,11 +506,13 @@ const { loadingHistoryRef, sessionStartGenerationRef, parkedQuestionsRef, deferr
 			// "ultrathink"). Keep the status bar in sync.
 			session.setThinkingLevel(event.level);
 			break;
-		case "sessions_update":
+		case "sessions_update": {
 			// Runtime registry changed (background session detaching,
 			// background turn started/finished, or reaped).
 			useRuntimeStatusStore.getState().update(event.sessions, useTabsStore.getState().activePath);
+			syncBackgroundSubscriptions(event.sessions, useSessionStore.getState().sessionFile);
 			break;
+		}
 		case "office_update":
 			// Your Office roster changed.
 			useOfficeStore.getState().applySnapshot(
@@ -453,6 +618,7 @@ const { loadingHistoryRef, sessionStartGenerationRef, parkedQuestionsRef, deferr
 			// fetch history, ignore live message events so a streaming response
 			// cannot race ahead and create an empty duplicate ahead of the
 			// authoritative snapshot.
+			resetAssistantStream();
 			loadingHistoryRef.current = true;
 			const generation = ++sessionStartGenerationRef.current;
 			// Echoes deferred by an older switch belonged to that session. Clear
@@ -460,7 +626,20 @@ const { loadingHistoryRef, sessionStartGenerationRef, parkedQuestionsRef, deferr
 			// an abandoned session's send into the session now being loaded
 			// (the superseded chain drops its own share on exit).
 			deferredUserEchoesRef.current = [];
+			// Keep the previous transcript on screen under the loading state until
+			// the target paints. `resetSession` clears it; restore it for the gap.
+			const previousMessages = session.messages;
 			session.resetSession();
+			if (previousMessages.length > 0) session.setMessages(previousMessages);
+			// Adopt identity from the event before the fetch resolves so frames for
+			// this activation are not filtered and stale frames are.
+			if (typeof event.activationId === "number") session.setActivationId(event.activationId);
+			if (event.sessionFile) {
+				session.setSessionFile(event.sessionFile);
+				useSessionTranscriptsStore.getState().markRead(event.sessionFile);
+				void dropBackgroundSubscription(event.sessionFile);
+			}
+			if (event.sessionId) session.setSessionId(event.sessionId);
 			// History is loading — swap the EmptyState for a loading screen
 			// until get_messages paints (or fails).
 			session.setSessionLoading(true);
@@ -478,8 +657,10 @@ const { loadingHistoryRef, sessionStartGenerationRef, parkedQuestionsRef, deferr
 					// visited session doesn't flash blank while history loads.
 					const newSessionFile = useSessionStore.getState().sessionFile;
 					const cached = newSessionFile ? getCachedSessionMessages(newSessionFile) : undefined;
-					if (cached && cached.length > 0 && useSessionStore.getState().messages.length === 0) {
+					let painted = false;
+					if (cached && cached.length > 0) {
 						useSessionStore.getState().setMessages(cached);
+						painted = true;
 					}
 					// Tree + history in flight together: the transcript is what the
 					// user is waiting for, so it must never queue behind the tree
@@ -489,11 +670,8 @@ const { loadingHistoryRef, sessionStartGenerationRef, parkedQuestionsRef, deferr
 					const treePromise = (async () => {
 						for (let attempt = 0; attempt < 3; attempt++) {
 							try {
-								const treeRes = (await rpc.sendCommand({ type: "get_tree" })) as {
-									tree: rpc.SessionTreeNode[];
-									leafId: string | null;
-								};
-								if (treeRes?.tree) return treeRes;
+								const treeRes = (await rpc.getTree(true)) as rpc.GetTreeResult;
+								if (treeRes?.nodes || treeRes?.tree) return treeRes;
 								return null;
 							} catch (e) {
 								console.warn("session_start get_tree attempt failed", attempt, e);
@@ -504,17 +682,19 @@ const { loadingHistoryRef, sessionStartGenerationRef, parkedQuestionsRef, deferr
 					})();
 					try {
 						try {
-							const msgsRes = (await rpc.sendCommand({ type: "get_messages" })) as {
-								messages: import("@earendil-works/pi-agent-core").AgentMessage[];
-							};
+							const msgsRes = (await rpc.getMessages({ limit: HISTORY_PAGE_SIZE })) as rpc.GetMessagesResult;
 							if (!isCurrent()) return;
 							if (msgsRes?.messages) {
-								useSessionStore.getState().setMessages(msgsRes.messages);
+								applyHistoryPage(msgsRes, "replace");
+								painted = true;
 								const sessionFile = useSessionStore.getState().sessionFile;
 								if (sessionFile) setCachedSessionMessages(sessionFile, msgsRes.messages);
 							}
 						} catch (e) {
 							if (isCurrent()) {
+								// Never leave the previous session's transcript under a new
+								// session's identity; the cache (if any) is the safe paint.
+								if (!painted) useSessionStore.getState().setMessages([]);
 								toast.error(
 									"Failed to load messages after session start",
 									e instanceof Error ? e.message : String(e),
@@ -547,7 +727,9 @@ const { loadingHistoryRef, sessionStartGenerationRef, parkedQuestionsRef, deferr
 					if (!isCurrent()) return;
 					// A failed tree clears the previous session's structure rather
 					// than showing it against the new session's messages.
-					if (treeRes?.tree) {
+					if (treeRes?.nodes) {
+						useSessionTreeStore.getState().setFlatTree(treeRes.nodes, treeRes.leafId);
+					} else if (treeRes?.tree) {
 						useSessionTreeStore.getState().setTree(treeRes.tree, treeRes.leafId);
 					} else {
 						useSessionTreeStore.getState().setTree([], null);
@@ -567,6 +749,23 @@ const { loadingHistoryRef, sessionStartGenerationRef, parkedQuestionsRef, deferr
 		}
 		case "session_info_changed":
 			session.setSessionName(event.name ?? null);
+			break;
+		case "tree_delta":
+			useSessionTreeStore.getState().applyTreeDelta(event);
+			break;
+		case "session_stats":
+			applySessionStats(event.stats as unknown as StatsPayload);
+			break;
+		case "session_changed":
+			window.dispatchEvent(new CustomEvent("a-coder:sessions-changed", { detail: event }));
+			break;
+		case "message_delta":
+			if (loadingHistoryRef.current) break;
+			applyAssistantDelta(event);
+			break;
+		case "message_snapshot":
+			if (loadingHistoryRef.current) break;
+			applyAssistantSnapshot(event);
 			break;
 		case "message_start":
 			if (loadingHistoryRef.current) {
@@ -602,21 +801,31 @@ const { loadingHistoryRef, sessionStartGenerationRef, parkedQuestionsRef, deferr
 			}
 			// Assistant messages are created on the first content update so we
 			// don't show an empty avatar-only row before the model starts streaming.
+			// Contract 2: seed the delta draft now; commits are frame-coalesced.
+			if (event.message.role === "assistant") {
+				const messageId = (event as { messageId?: string }).messageId;
+				if (messageId) startAssistantStream(event.message, messageId);
+			}
 			break;
 		case "message_update":
 		case "message_end":
 			if (loadingHistoryRef.current) break;
 			if (event.message.role === "assistant") {
 				voiceCall.notifyAssistantMessage(event.message);
-				if (event.type === "message_end") noticeForRunError(event.message);
-				maybeRevealBrowserPanel(event.message);
-				const messages = useSessionStore.getState().messages;
-				const hasAssistantRow = messages.length > 0 && messages[messages.length - 1].role === "assistant";
-				if (hasAssistantRow) {
-					session.updateLastAssistantMessage(event.message);
-				} else if (hasAssistantContent(event.message)) {
-					session.appendMessage(event.message);
+				if (event.type === "message_end") {
+					noticeForRunError(event.message);
+					resetAssistantStream();
+					session.commitAssistantMessage(event.message);
+				} else {
+					// Contract-1 full snapshots: keep them in the streaming slice so
+					// the committed transcript is only written on message_end.
+					assistantStream = {
+						messageId: (event as { messageId?: string }).messageId ?? "legacy",
+						message: cloneAssistantMessage(event.message),
+					};
+					session.setStreamingMessage(cloneAssistantMessage(event.message));
 				}
+				maybeRevealBrowserPanel(event.message);
 			} else if (event.message.role === "toolResult") {
 				if (event.type === "message_end") noticeForToolError(event.message);
 				// Append or replace an existing tool result with the same id so streaming

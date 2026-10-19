@@ -30,13 +30,32 @@ const mathPlugin = createMemoizedMathPlugin({ singleDollarTextMath: true });
 
 // Replaces Streamdown's full-text incomplete-markdown repair with a
 // tail-bounded repair over our preprocessed text. Module-scope so the prop
-// identity is stable across renders.
+// identity is stable across renders. The 320-line regex pipeline is cached by
+// input text: a streaming flush repeats preprocessing for every unchanged
+// message, and a settled message is re-rendered many times.
+const PREPROCESS_CACHE_MAX = 32;
+const preprocessCache = new Map<string, string>();
+
 function preprocessWithTailRepair(text: string): string {
-	try {
-		return tailBoundedRemend(preprocessMarkdown(text));
-	} catch {
-		return text;
+	const hit = preprocessCache.get(text);
+	if (hit !== undefined) {
+		preprocessCache.delete(text);
+		preprocessCache.set(text, hit);
+		return hit;
 	}
+	let result = text;
+	try {
+		result = tailBoundedRemend(preprocessMarkdown(text));
+	} catch {
+		// Keep the raw text on a malformed input.
+	}
+	preprocessCache.set(text, result);
+	while (preprocessCache.size > PREPROCESS_CACHE_MAX) {
+		const oldest = preprocessCache.keys().next().value;
+		if (oldest === undefined) break;
+		preprocessCache.delete(oldest);
+	}
+	return result;
 }
 
 function childrenToText(children: unknown): string {

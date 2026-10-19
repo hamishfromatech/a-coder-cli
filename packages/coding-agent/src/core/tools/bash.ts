@@ -539,6 +539,8 @@ export function createBashToolDefinition(
 				};
 			}
 
+			const stderrChunks: Buffer[] = [];
+
 			const emitOutputUpdate = () => {
 				if (!onUpdate || !updateDirty) return;
 				updateDirty = false;
@@ -549,6 +551,7 @@ export function createBashToolDefinition(
 					details: {
 						truncation: snapshot.truncation.truncated ? snapshot.truncation : undefined,
 						fullOutputPath: snapshot.fullOutputPath,
+						stderr: stderrChunks.length > 0 ? Buffer.concat(stderrChunks).toString("utf8").trimEnd() : undefined,
 					},
 				});
 			};
@@ -587,10 +590,10 @@ export function createBashToolDefinition(
 			};
 
 			// Accumulate stderr separately for layered rendering (stdout muted, stderr red).
-			const stderrChunks: Buffer[] = [];
 			const handleStderrData = (data: Buffer) => {
 				if (!acceptingOutput) return;
 				stderrChunks.push(data);
+				scheduleOutputUpdate();
 			};
 
 			const finishOutput = async () => {

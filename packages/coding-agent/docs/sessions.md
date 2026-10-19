@@ -32,7 +32,7 @@ For the JSONL file format and SessionManager API, see [Session Format](session-f
 | `/clone` | Duplicate the current active branch into a new session |
 | `/compact [prompt]` | Summarize older context; see [Compaction](compaction.md) |
 | `/search <text>` | Search transcripts across stored sessions; selecting a hit resumes it |
-| `/sessions [archive]` | Store stats (count, size, largest files); `archive` moves one session to `.trash` |
+| `/sessions [archive\|compact]` | Store stats; `archive` moves a session to `.trash`; `compact` drops redundant metadata entries (`compact apply` writes) |
 | `/export [file]` | Export session to HTML (credentials are redacted) |
 | `/share` | Upload as private GitHub gist with shareable HTML link |
 
@@ -61,6 +61,12 @@ result resumes that session.
 largest. `/sessions archive` moves a session into `<sessions>/.trash` — a
 recoverable move, not a delete; restore it by moving the file back. The open
 session cannot be archived.
+
+`/sessions compact` is a dry run that finds oversized files whose only
+removable entries are superseded labels, session names, or file-history
+snapshots; `/sessions compact apply` rewrites them atomically after copying the
+original into `.trash`. Branching, context, compaction, and extension entries
+are never dropped.
 
 For a machine-readable health report (version, config paths, auth, MCP, store
 size), run `a-coder-cli doctor --json`.

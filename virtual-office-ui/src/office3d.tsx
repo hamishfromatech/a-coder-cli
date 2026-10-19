@@ -138,28 +138,50 @@ function themeColorOf(kind: ZoneTextureKind, palette: Palette): string {
 	}
 }
 
-function labelTexture(text: string, palette: Palette): THREE.CanvasTexture {
+function fitLabel(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
+	if (ctx.measureText(text).width <= maxWidth) return text;
+	let out = text;
+	while (out.length > 1 && ctx.measureText(`${out}…`).width > maxWidth) {
+		out = out.slice(0, -1);
+	}
+	return `${out}…`;
+}
+
+function labelTexture(name: string, title: string | undefined, palette: Palette): THREE.CanvasTexture {
 	const canvas = document.createElement("canvas");
-	canvas.width = 256;
-	canvas.height = 72;
+	canvas.width = 512;
+	canvas.height = 144;
 	const ctx = canvas.getContext("2d");
 	if (ctx) {
-		ctx.clearRect(0, 0, 256, 72);
+		ctx.clearRect(0, 0, 512, 144);
 		ctx.fillStyle = palette.bubbleBg;
 		ctx.beginPath();
-		ctx.roundRect(0, 0, 256, 72, 18);
+		ctx.roundRect(4, 4, 504, 136, 32);
 		ctx.fill();
 		ctx.strokeStyle = palette.rugRing;
-		ctx.lineWidth = 3;
+		ctx.lineWidth = 4;
 		ctx.stroke();
-		ctx.fillStyle = palette.label;
-		ctx.font = "600 34px system-ui, sans-serif";
 		ctx.textAlign = "center";
 		ctx.textBaseline = "middle";
-		ctx.fillText(text.length > 12 ? `${text.slice(0, 11)}…` : text, 128, 38);
+		ctx.fillStyle = palette.label;
+		ctx.font = "600 46px system-ui, -apple-system, sans-serif";
+		ctx.fillText(
+			fitLabel(ctx, name, 440),
+			256,
+			title ? 58 : 72,
+		);
+		if (title) {
+			ctx.globalAlpha = 0.68;
+			ctx.font = "500 24px system-ui, -apple-system, sans-serif";
+			ctx.fillText(fitLabel(ctx, title, 440), 256, 102);
+			ctx.globalAlpha = 1;
+		}
 	}
 	const texture = new THREE.CanvasTexture(canvas);
 	texture.colorSpace = THREE.SRGBColorSpace;
+	texture.minFilter = THREE.LinearFilter;
+	texture.magFilter = THREE.LinearFilter;
+	texture.anisotropy = 8;
 	return texture;
 }
 
@@ -657,7 +679,28 @@ function Character({
 	const rightFoot = useRef<THREE.Mesh>(null);
 	const aura = useRef<THREE.Mesh>(null);
 	const bubbleSprite = useRef<THREE.Sprite>(null);
-	const labelTex = useMemo(() => labelTexture(visual.name, theme), [visual.name, theme]);
+	const labelTex = useMemo(
+		() => labelTexture(visual.name, visual.title, theme),
+		[visual.name, visual.title, theme],
+	);
+	const [faceTexture, setFaceTexture] = useState<THREE.Texture | null>(null);
+
+	useEffect(() => {
+		if (!visual.image) {
+			setFaceTexture(null);
+			return;
+		}
+		let disposed = false;
+		const texture = new THREE.TextureLoader().load(visual.image, (loaded) => {
+			loaded.colorSpace = THREE.SRGBColorSpace;
+			loaded.anisotropy = 8;
+			if (!disposed) setFaceTexture(loaded);
+		});
+		return () => {
+			disposed = true;
+			texture.dispose();
+		};
+	}, [visual.image]);
 	const [worldX, , worldZ] = to3d(visual.pos.x, visual.pos.y);
 
 	useEffect(() => () => labelTex.dispose(), [labelTex]);
@@ -781,15 +824,24 @@ function Character({
 						<sphereGeometry args={[0.33, 24, 16]} />
 						<meshStandardMaterial color={visual.color} roughness={0.4} />
 					</mesh>
-					{/* eyes with the blink rig */}
-					<mesh ref={leftEye} position={[-0.12, 0.05, 0.29]}>
-						<sphereGeometry args={[0.05, 10, 8]} />
-						<meshBasicMaterial color="#ffffff" />
-					</mesh>
-					<mesh ref={rightEye} position={[0.12, 0.05, 0.29]}>
-						<sphereGeometry args={[0.05, 10, 8]} />
-						<meshBasicMaterial color="#ffffff" />
-					</mesh>
+					{faceTexture ? (
+						<mesh position={[0, 0, 0.335]}>
+							<circleGeometry args={[0.27, 32]} />
+							<meshBasicMaterial map={faceTexture} transparent />
+						</mesh>
+					) : (
+						<>
+							{/* eyes with the blink rig */}
+							<mesh ref={leftEye} position={[-0.12, 0.05, 0.29]}>
+								<sphereGeometry args={[0.05, 10, 8]} />
+								<meshBasicMaterial color="#ffffff" />
+							</mesh>
+							<mesh ref={rightEye} position={[0.12, 0.05, 0.29]}>
+								<sphereGeometry args={[0.05, 10, 8]} />
+								<meshBasicMaterial color="#ffffff" />
+							</mesh>
+						</>
+					)}
 				</group>
 				{/* status aura ring */}
 				<mesh ref={aura} position={[0, 1.85, 0]} rotation={[Math.PI / 2.6, 0, 0]}>
@@ -798,7 +850,7 @@ function Character({
 				</mesh>
 			</group>
 			{/* name label */}
-			<sprite position={[0, 2.35, 0]} scale={[1.5, 0.42, 1]}>
+			<sprite position={[0, 2.5, 0]} scale={[2.35, 0.66, 1]}>
 				<spriteMaterial map={labelTex} transparent depthTest={false} />
 			</sprite>
 			{bubbleTex && (

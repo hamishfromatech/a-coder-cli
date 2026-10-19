@@ -115,6 +115,7 @@ import type { ResourceDiagnostic } from "../../core/resource-loader.ts";
 import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.ts";
 import {
 	archiveSessionFile,
+	compactSessionStore,
 	formatBytes,
 	getSessionStoreStats,
 	searchSessions,
@@ -7487,8 +7488,42 @@ export class InteractiveMode {
 		});
 	}
 
-	/** `/sessions` — store stats; `/sessions archive` — recoverable archiving. */
+	/** `/sessions` — store stats; archive/compact maintenance. */
 	private async handleSessionsCommand(arg: string): Promise<void> {
+		if (arg === "compact" || arg === "compact apply") {
+			const apply = arg.endsWith(" apply");
+			if (apply) {
+				const confirmed = await this.showExtensionConfirm(
+					"Compact session files?",
+					"Rewrites oversized files, dropping only redundant metadata entries. Originals are copied to .trash first.",
+				);
+				if (!confirmed) return;
+			}
+			try {
+				const report = compactSessionStore({
+					activePath: this.sessionManager.getSessionFile(),
+					apply,
+				});
+				const lines = [
+					theme.bold(apply ? "Sessions compacted" : "Session compaction (dry run)"),
+					"",
+					`Scanned: ${report.scanned}`,
+					`Candidates: ${report.candidates}`,
+					`Entries: -${report.entriesDropped}`,
+					`Size: ${formatBytes(report.bytesBefore)} → ${formatBytes(report.bytesAfter)} (saved ${formatBytes(report.bytesSaved)})`,
+				];
+				if (apply) {
+					lines.push(`Originals: ${report.trashPaths.length} copied to ${report.dir}/.trash`);
+				} else {
+					lines.push("", theme.fg("dim", "Apply with: /sessions compact apply"));
+				}
+				this.printInfoBlock(lines.join("\n"));
+			} catch (e) {
+				this.printInfoBlock(`Compaction failed: ${e instanceof Error ? e.message : String(e)}`);
+			}
+			return;
+		}
+
 		if (arg === "archive") {
 			let sessions: Awaited<ReturnType<typeof SessionManager.listAll>> = [];
 			try {

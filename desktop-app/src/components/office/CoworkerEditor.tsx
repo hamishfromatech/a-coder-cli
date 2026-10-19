@@ -3,15 +3,48 @@
  * override, autonomy.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ModalBackdrop, ModalPanel } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { useOfficeStore } from "../../stores/office-store";
 import { getAvailableModels, officeDeleteCoworker, officeSaveCoworker, type OfficeCoworker } from "../../lib/rpc";
 import { FACE_PALETTE, Face, type FaceShapeName } from "./Face";
+import { COWORKER_TEMPLATES, type CoworkerTemplate } from "../../lib/coworker-templates";
 
 const SHAPES: FaceShapeName[] = ["circle", "hexagon", "squircle", "triangle", "drop", "cloud"];
+
+const MAX_FACE_BYTES = 8 * 1024 * 1024;
+const FACE_IMAGE_SIZE = 256;
+
+/** Center-crop to a square and downscale before persisting the data URL. */
+async function setFaceImage(file: File): Promise<string> {
+	if (!file.type.startsWith("image/")) throw new Error("Choose an image file");
+	if (file.size > MAX_FACE_BYTES) throw new Error("Image is larger than 8 MB");
+	const bitmap = await createImageBitmap(file);
+	try {
+		const side = Math.min(bitmap.width, bitmap.height);
+		const canvas = document.createElement("canvas");
+		canvas.width = FACE_IMAGE_SIZE;
+		canvas.height = FACE_IMAGE_SIZE;
+		const ctx = canvas.getContext("2d");
+		if (!ctx) throw new Error("Could not prepare the image");
+		ctx.drawImage(
+			bitmap,
+			(bitmap.width - side) / 2,
+			(bitmap.height - side) / 2,
+			side,
+			side,
+			0,
+			0,
+			FACE_IMAGE_SIZE,
+			FACE_IMAGE_SIZE,
+		);
+		return canvas.toDataURL("image/jpeg", 0.86);
+	} finally {
+		bitmap.close();
+	}
+}
 
 interface Props {
 	editing?: OfficeCoworker | undefined;
@@ -27,6 +60,8 @@ export function CoworkerEditor({ editing, onClose }: Props) {
 	const [keepSoul, setKeepSoul] = useState(Boolean(editing));
 	const [color, setColor] = useState<string | undefined>(editing?.face.color);
 	const [shape, setShape] = useState<FaceShapeName>(editing?.face.shape ?? "circle");
+	const [image, setImage] = useState<string | undefined>(editing?.face.image);
+	const fileRef = useRef<HTMLInputElement>(null);
 	const [model, setModel] = useState(editing?.model ?? "");
 	const [voice, setVoice] = useState(editing?.voice ?? "");
 	const [models, setModels] = useState<Array<{ value: string; label: string }>>([]);
@@ -54,6 +89,17 @@ export function CoworkerEditor({ editing, onClose }: Props) {
 			.catch(() => {});
 	}, []);
 
+	const applyTemplate = (template: CoworkerTemplate) => {
+		setName(template.name);
+		setTitle(template.title);
+		setDescription(template.description);
+		setSoul(template.soul);
+		setColor(template.face.color);
+		setShape((template.face.shape as FaceShapeName | undefined) ?? "circle");
+		setImage(undefined);
+		setAutonomy(template.autonomy);
+	};
+
 	const handle = name
 		.toLowerCase()
 		.trim()
@@ -73,7 +119,7 @@ export function CoworkerEditor({ editing, onClose }: Props) {
 				description: description.trim() || undefined,
 				soul: soul.trim() || undefined,
 				keepSoul: editing ? keepSoul && !soul.trim() : undefined,
-				face: { shape, color },
+				face: { shape, color, image },
 				model: model.trim() || undefined,
 				voice: voice.trim() || undefined,
 				autonomy,
@@ -100,8 +146,32 @@ export function CoworkerEditor({ editing, onClose }: Props) {
 				</div>
 
 				<div className="max-h-[70vh] space-y-3 overflow-y-auto px-4 py-3">
+					{!editing && (
+						<div>
+							<div className="mb-1 text-2xs font-semibold uppercase tracking-wide text-pi-text-muted">
+								Start from a template
+							</div>
+							<div className="flex flex-wrap gap-1">
+								{COWORKER_TEMPLATES.map((template) => (
+									<button
+										key={template.id}
+										type="button"
+										onClick={() => applyTemplate(template)}
+										className="rounded-full border border-pi-border px-2 py-0.5 text-2xs text-pi-text-muted transition-colors hover:border-pi-border-strong hover:text-pi-text"
+									>
+										{template.label}
+									</button>
+								))}
+							</div>
+						</div>
+					)}
 					<div className="flex items-center gap-3">
-						<Face handle={handle || "coworker"} name={name || "?"} face={{ shape: previewShape, color: color }} size={44} />
+						<Face
+							handle={handle || "coworker"}
+							name={name || "?"}
+							face={{ shape: previewShape, color, image }}
+							size={44}
+						/>
 						<div className="flex-1 space-y-2">
 							<Input placeholder="Name (e.g. Atlas)" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
 							<Input placeholder="Role (e.g. Scout)" value={title} onChange={(e) => setTitle(e.target.value)} />
@@ -141,6 +211,38 @@ export function CoworkerEditor({ editing, onClose }: Props) {
 								/>
 							))}
 							<span className="mx-1 h-4 w-px bg-pi-border" />
+							<button
+								type="button"
+								onClick={() => fileRef.current?.click()}
+								className="rounded px-1.5 py-0.5 text-2xs text-pi-text-muted transition-smooth hover:bg-pi-surface-raised"
+							>
+								{image ? "Replace photo" : "Upload photo"}
+							</button>
+							{image && (
+								<button
+									type="button"
+									onClick={() => setImage(undefined)}
+									className="rounded px-1.5 py-0.5 text-2xs text-pi-text-muted transition-smooth hover:bg-pi-surface-raised"
+								>
+									Remove
+								</button>
+							)}
+							<input
+								ref={fileRef}
+								type="file"
+								accept="image/*"
+								className="hidden"
+								onChange={(event) => {
+									const file = event.target.files?.[0];
+									event.target.value = "";
+									if (!file) return;
+									void setFaceImage(file)
+										.then((dataUrl) => setImage(dataUrl))
+										.catch((error) =>
+											setError(error instanceof Error ? error.message : String(error)),
+										);
+								}}
+							/>
 							{SHAPES.map((shapeName) => (
 								<button
 									key={shapeName}

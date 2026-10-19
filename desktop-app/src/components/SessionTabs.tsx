@@ -6,8 +6,15 @@ import { useSessionStore } from "../stores/session-store";
 import { adoptSwitchResult } from "../lib/adopt-session";
 import { runSwitch } from "../lib/session-switch";
 import { useRuntimeStatusStore } from "../stores/runtime-status-store";
+import { useSessionTranscriptsStore } from "../stores/session-transcripts-store";
 import { toast } from "../stores/toast-store";
 import { pickLoadingVerb } from "../lib/loading-verbs";
+
+function TabUnreadDot({ path, active }: { path: string; active: boolean }) {
+	const unread = useSessionTranscriptsStore((s) => s.transcripts[path]?.unread ?? 0);
+	if (active || unread === 0) return null;
+	return <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-pi-accent" aria-label={`${unread} unread background updates`} />;
+}
 
 /** Top-of-main session tab strip — the OpenCode-style "open sessions" row.
  *  Each tab is a session file; clicking switches the engine, the "+" starts a
@@ -104,7 +111,10 @@ export function SessionTabs() {
 										<span className="truncate">{tab.name || "Untitled session"}</span>
 									</span>
 								) : (
-									<span className="truncate">{tab.name || "Untitled session"}</span>
+									<span className="flex min-w-0 items-center gap-1.5">
+										<span className="truncate">{tab.name || "Untitled session"}</span>
+										<TabUnreadDot path={tab.path} active={active} />
+									</span>
 								)}
 							</button>
 							<button

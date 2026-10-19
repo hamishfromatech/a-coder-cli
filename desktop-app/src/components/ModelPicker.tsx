@@ -27,7 +27,7 @@ export function ModelPicker({
 	const inputRef = useRef<HTMLInputElement>(null);
 	const listRef = useRef<HTMLDivElement>(null);
 	const modalRef = useRef<HTMLDivElement>(null);
-	const { model: currentModel } = useSessionStore();
+	const currentModel = useSessionStore((s) => s.model);
 	useModalA11y(modalRef, true, onClose);
 
 	async function loadModels(reload = false) {

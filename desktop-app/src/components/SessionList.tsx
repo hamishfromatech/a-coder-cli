@@ -131,7 +131,7 @@ export function SessionList() {
 
 	const refetch = async () => {
 		try {
-			const res = await rpc.listSessions();
+			const res = await rpc.listSessions(50);
 			setSessions(res.sessions ?? []);
 		} catch {
 			/* engine restarting or unreachable — keep the stale list */
@@ -150,10 +150,13 @@ export function SessionList() {
 
 	useEffect(() => {
 		const onFocus = () => void refetch();
+		const onChanged = () => void refetch();
 		window.addEventListener("focus", onFocus);
-		const interval = window.setInterval(() => void refetch(), 30_000);
+		window.addEventListener("a-coder:sessions-changed", onChanged);
+		const interval = window.setInterval(() => void refetch(), 120_000);
 		return () => {
 			window.removeEventListener("focus", onFocus);
+			window.removeEventListener("a-coder:sessions-changed", onChanged);
 			window.clearInterval(interval);
 		};
 	}, []);

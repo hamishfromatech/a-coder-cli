@@ -301,7 +301,46 @@ function normalizeFenceBlocks(text: string): string {
 	return out.join("\n");
 }
 
+// Preprocess cache. `preprocessMarkdown` runs on every markdown commit, and
+// during streaming each flush re-runs it for every *settled* block whose text
+// has not changed (block-level memoization only skips the re-lex). The work is
+// a chain of regex passes over the whole block, so an exact-string LRU removes
+// the repeat cost. Bounded on both entry count and total retained characters so
+// a long reply's intermediate flush strings cannot pin unbounded memory.
+const PREPROCESS_CACHE_MAX = 128;
+const PREPROCESS_CACHE_MAX_CHARS = 1_000_000;
+const preprocessCache = new Map<string, string>();
+let preprocessCacheChars = 0;
+
+function rememberPreprocess(text: string, output: string): void {
+	preprocessCache.set(text, output);
+	preprocessCacheChars += text.length;
+	while (
+		preprocessCache.size > PREPROCESS_CACHE_MAX ||
+		(preprocessCacheChars > PREPROCESS_CACHE_MAX_CHARS && preprocessCache.size > 1)
+	) {
+		const oldest = preprocessCache.keys().next().value;
+		if (oldest === undefined) break;
+		preprocessCache.delete(oldest);
+		preprocessCacheChars -= oldest.length;
+	}
+}
+
 export function preprocessMarkdown(text: string): string {
+	const hit = preprocessCache.get(text);
+	if (hit !== undefined) {
+		// Refresh recency; the entry's size does not change, so the character
+		// budget stays accurate.
+		preprocessCache.delete(text);
+		preprocessCache.set(text, hit);
+		return hit;
+	}
+	const output = preprocessMarkdownUncached(text);
+	rememberPreprocess(text, output);
+	return output;
+}
+
+function preprocessMarkdownUncached(text: string): string {
 	const cleaned = text.replace(REASONING_BLOCK_RE, "").replace(PREVIEW_MARKER_RE, "");
 	const scrubbed = scrubBacktickNoise(cleaned);
 	const normalizedFences = normalizeFenceBlocks(scrubbed);

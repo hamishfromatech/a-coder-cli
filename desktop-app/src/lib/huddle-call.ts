@@ -20,6 +20,7 @@ import { speechify } from "./speech-text";
 import { toast } from "../stores/toast-store";
 import { useOfficeStore } from "../stores/office-store";
 import { useSettingsStore } from "../stores/settings-store";
+import { micThreshold, normalizeMicLevel } from "./voice-level";
 import {
 	micAudioConstraints,
 	splitForSpeech,
@@ -35,9 +36,8 @@ const CUE_CALL_CONNECTED = 7;
 const CUE_CALL_HANGUP = 5;
 
 /** RMS level the mic must hold before an utterance is considered begun. */
-const OPEN_THRESHOLD = 0.05;
-/** RMS level that arms + fires an open-mic barge while the room speaks. */
-const BARGE_THRESHOLD = 0.09;
+/** Fallback until the first meter tick calibrates the room. */
+const DEFAULT_OPEN_THRESHOLD = 0.05;
 /** Sustained loud time before a barge fires (ms) — rejects clicks/thuds. */
 const BARGE_HOLD_MS = 300;
 /** If a barge never turns into an utterance, the room gets the floor back. */
@@ -131,6 +131,10 @@ class HuddleCallController {
 	private recorder: MicRecorder | null = null;
 	private ctx: AudioContext | null = null;
 	private analyser: AnalyserNode | null = null;
+	private noiseFloor = 0.004;
+	private calibrationSamples: number[] = [];
+	private calibratingUntil = 0;
+	private openThreshold = DEFAULT_OPEN_THRESHOLD;
 	private meterTimer: number | null = null;
 
 	private huddleId: string | null = null;
@@ -447,6 +451,8 @@ class HuddleCallController {
 			analyser.fftSize = 512;
 			source.connect(analyser); // not to destination: no feedback
 			this.analyser = analyser;
+			this.calibrationSamples = [];
+			this.calibratingUntil = Date.now() + 600;
 		} catch (e) {
 			console.warn("[huddle-call] analyser unavailable", e);
 			this.ctx = null;
@@ -523,9 +529,22 @@ class HuddleCallController {
 			let sum = 0;
 			for (let i = 0; i < buffer.length; i += 1) sum += buffer[i] * buffer[i];
 			const rms = Math.sqrt(sum / buffer.length);
+			const sensitivity = useSettingsStore.getState().voiceMicSensitivity;
+			const now = Date.now();
+			if (now < this.calibratingUntil) {
+				this.calibrationSamples.push(rms);
+				if (this.calibrationSamples.length >= 8) {
+					const sorted = [...this.calibrationSamples].sort((a, b) => a - b);
+					this.noiseFloor = Math.max(0.002, Math.min(0.06, sorted[Math.floor(sorted.length * 0.3)] ?? 0.004));
+				}
+			}
+			this.openThreshold = micThreshold(this.noiseFloor, sensitivity);
+			if (now >= this.calibratingUntil && rms < this.openThreshold) {
+				this.noiseFloor = this.noiseFloor * 0.97 + Math.min(rms, 0.05) * 0.03;
+			}
 			// While the room talks the orb belongs to playback (playBlob).
 			if (useHuddleCallStore.getState().phase !== "speaking") {
-				const level = Math.min(1, rms * 12);
+				const level = normalizeMicLevel(rms, this.noiseFloor, this.openThreshold);
 				const prev = useHuddleCallStore.getState().level;
 				setCall({ level: prev + (level - prev) * LEVEL_SMOOTHING });
 			}
@@ -549,7 +568,7 @@ class HuddleCallController {
 			if (now >= this.bargeSettleUntil) this.discardTurn = false;
 			else return;
 		}
-		if (rms >= OPEN_THRESHOLD) {
+		if (rms >= this.openThreshold) {
 			if (!this.utteranceActive) {
 				this.utteranceActive = true;
 				this.utteranceStartAt = now;
@@ -571,7 +590,8 @@ class HuddleCallController {
 	/** Open-mic barge while a coworker is being voiced. */
 	private onSpeechLevel(rms: number, now: number): void {
 		if (!useSettingsStore.getState().voiceBargeIn) return;
-		if (rms < BARGE_THRESHOLD) {
+		const bargeThreshold = Math.max(0.035, this.openThreshold * 1.7);
+		if (rms < bargeThreshold) {
 			this.bargeLoudSince = 0;
 			return;
 		}

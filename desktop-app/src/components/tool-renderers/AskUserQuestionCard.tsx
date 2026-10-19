@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, CornerDownRight, Loader2 } from "lucide-react";
 import type { ToolResultMessage } from "@earendil-works/pi-ai";
 import * as rpc from "../../lib/rpc";
@@ -78,23 +78,20 @@ export interface AskUserQuestionCardProps {
 		name: string;
 		arguments: Record<string, unknown>;
 	};
+	/** This call's tool result, resolved once per `messages` change by the
+	 * transcript's result index — the card no longer subscribes to (and scans)
+	 * the whole message array itself. */
+	result?: ToolResultMessage;
 }
 
-export function AskUserQuestionCard({ toolCall }: AskUserQuestionCardProps) {
-	const messages = useSessionStore((s) => s.messages);
+// Memoized for the same reason as RichToolCall: only the row whose result or
+// request actually changed should re-render during streaming.
+export const AskUserQuestionCard = memo(function AskUserQuestionCard({
+	toolCall,
+	result,
+}: AskUserQuestionCardProps) {
 	const request = useSessionStore((s) => s.questionRequest);
 	const questions = useMemo(() => parseQuestions(toolCall.arguments), [toolCall.arguments]);
-
-	const result = useMemo<ToolResultMessage | undefined>(() => {
-		if (!toolCall.id) return undefined;
-		for (let i = messages.length - 1; i >= 0; i--) {
-			const m = messages[i];
-			if (m.role !== "toolResult") continue;
-			const r = m as ToolResultMessage;
-			if (r.toolCallId === toolCall.id) return r;
-		}
-		return undefined;
-	}, [messages, toolCall.id]);
 
 	if (result) {
 		return <SettledCard details={readSettledDetails(result)} questions={questions} />;
@@ -110,7 +107,7 @@ export function AskUserQuestionCard({ toolCall }: AskUserQuestionCardProps) {
 			: null;
 
 	return <PendingCard questions={questions} request={active} />;
-}
+});
 
 function letterFor(index: number): string {
 	return String.fromCharCode(65 + index);

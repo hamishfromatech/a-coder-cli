@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bot, Building2, CalendarClock, Loader2, Mic, MicOff, Pencil, PhoneCall, PhoneOff, Plus, Send, SkipForward, Square, Users } from "lucide-react";
+import { BarChart3, Bot, Building2, CalendarClock, Loader2, Mic, MicOff, Pencil, PhoneCall, PhoneOff, Pin, PinOff, Plus, Send, SkipForward, Square, Users } from "lucide-react";
 import { Button } from "../ui/Button";
 import { officeDeleteErrand, officeRunErrand } from "../../lib/rpc";
 import { useOfficeStore } from "../../stores/office-store";
@@ -16,9 +16,12 @@ import { MarkdownTextContent } from "../markdown/MarkdownText";
 import { Face } from "./Face";
 import { FloorView } from "./FloorView";
 import { CoworkerEditor } from "./CoworkerEditor";
+import { CoworkerDetails } from "./CoworkerDetails";
 import { HuddleEditor } from "./HuddleEditor";
 import { ErrandEditor } from "./ErrandEditor";
 import { huddleCall, useHuddleCallStore } from "../../lib/huddle-call";
+import { searchOffice, sortCoworkers, sortOfficeRooms } from "../../lib/office-search";
+import { SearchField } from "../ui/SearchField";
 import { voiceCall } from "../../lib/voice-call";
 
 function relativeTime(ms: number | undefined): string {
@@ -453,9 +456,14 @@ export function OfficePanel() {
 	const openHuddle = useOfficeStore((s) => s.openHuddle);
 	const refresh = useOfficeStore((s) => s.refresh);
 	const callHuddleId = useHuddleCallStore((s) => (s.active ? s.huddleId : null));
+	const pinned = useOfficeStore((s) => s.pinned);
+	const togglePinned = useOfficeStore((s) => s.togglePinned);
+	const liveHuddles = useOfficeStore((s) => s.huddles);
+	const [query, setQuery] = useState("");
 	const readAt = useOfficeReadStore((s) => s.readAt);
 	const initializedAt = useOfficeReadStore((s) => s.initializedAt);
 	const [coworkerEditor, setCoworkerEditor] = useState<{ open: boolean; editing?: OfficeCoworker }>({ open: false });
+	const [detailsCoworker, setDetailsCoworker] = useState<OfficeCoworker | null>(null);
 	const [huddleEditor, setHuddleEditor] = useState<{ open: boolean; editing?: OfficeHuddleSummary }>({ open: false });
 	const [errandEditor, setErrandEditor] = useState(false);
 	const [floorView, setFloorView] = useState(() => {
@@ -488,7 +496,17 @@ export function OfficePanel() {
 	const coworkers = snapshot?.coworkers ?? [];
 	const statuses = snapshot?.statuses ?? {};
 	const huddles = snapshot?.huddles ?? [];
-	const groupHuddles = huddles.filter((h) => !h.id.startsWith("dm:"));
+	const pinnedSet = useMemo(() => new Set(pinned), [pinned]);
+	const lastActiveFor = useMemo(() => {
+		const byId = new Map(huddles.map((h) => [h.id, h.lastActive]));
+		return (id: string) => byId.get(id);
+	}, [huddles]);
+	const groupHuddles = sortOfficeRooms(
+		huddles.filter((h) => !h.id.startsWith("dm:")),
+		pinnedSet,
+	);
+	const sortedCoworkers = sortCoworkers(coworkers, (id) => lastActiveFor(`dm:${id}`), pinnedSet);
+	const searchHits = useMemo(() => searchOffice(snapshot, liveHuddles, query), [snapshot, liveHuddles, query]);
 	const errands = snapshot?.errands ?? [];
 	const prompts = snapshot?.pendingPrompts ?? [];
 	const coworkerById = useMemo(() => new Map(coworkers.map((c) => [c.id, c])), [coworkers]);
@@ -567,13 +585,41 @@ export function OfficePanel() {
 					</>
 				)}
 
+				<SearchField
+					value={query}
+					onChange={setQuery}
+					placeholder="Search rooms and messages…"
+					ariaLabel="Search the office"
+					visible={huddles.length > 0 || coworkers.length > 0}
+					className="mx-1.5"
+				/>
+				{query.trim().length > 0 && (
+					<>
+						<SectionHeader label={`Search results (${searchHits.length})`} />
+						{searchHits.length === 0 && (
+							<div className="px-1.5 py-2 text-2xs text-pi-text-faint">No matches in room names or recent messages.</div>
+						)}
+						{searchHits.map((hit) => (
+							<button
+								key={`${hit.huddleId}:${hit.at}:${hit.snippet}`}
+								type="button"
+								onClick={() => void openHuddle(hit.huddleId)}
+								className="flex w-full flex-col gap-0.5 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-pi-surface-raised"
+							>
+								<span className="truncate text-xs text-pi-text">{hit.title}</span>
+								<span className="truncate text-2xs text-pi-text-muted">{hit.snippet}</span>
+							</button>
+						))}
+					</>
+				)}
+
 				<SectionHeader label="Coworkers" />
 				{coworkers.length === 0 && (
 					<div className="px-1.5 py-2 text-2xs leading-relaxed text-pi-text-faint">
 						No coworkers yet. Hire one — give it a name, a role, and a face.
 					</div>
 				)}
-				{coworkers.map((coworker) => {
+				{sortedCoworkers.map((coworker) => {
 					const dmId = `dm:${coworker.id}`;
 					const summary = huddles.find((h) => h.id === dmId);
 					const status = statuses[coworker.id];
@@ -599,13 +645,32 @@ export function OfficePanel() {
 								}
 								onClick={() => void openHuddle(dmId)}
 								actions={
-									<Button
-										variant="ghost"
-										size="icon-sm"
-										aria-label={`Edit ${coworker.name}`}
-										icon={Pencil}
-										onClick={() => setCoworkerEditor({ open: true, editing: coworker })}
-									/>
+									<>
+										<Button
+											variant="ghost"
+											size="icon-sm"
+											aria-label={pinned.includes(dmId) ? `Unpin ${coworker.name}` : `Pin ${coworker.name}`}
+											icon={pinned.includes(dmId) ? PinOff : Pin}
+											onClick={(event) => {
+												event.stopPropagation();
+												togglePinned(dmId);
+											}}
+										/>
+										<Button
+											variant="ghost"
+											size="icon-sm"
+											aria-label={`Stats for ${coworker.name}`}
+											icon={BarChart3}
+											onClick={() => setDetailsCoworker(coworker)}
+										/>
+										<Button
+											variant="ghost"
+											size="icon-sm"
+											aria-label={`Edit ${coworker.name}`}
+											icon={Pencil}
+											onClick={() => setCoworkerEditor({ open: true, editing: coworker })}
+										/>
+									</>
 								}
 							/>
 						</div>
@@ -643,13 +708,25 @@ export function OfficePanel() {
 						}
 						onClick={() => void openHuddle(huddle.id)}
 						actions={
-							<Button
-								variant="ghost"
-								size="icon-sm"
-								aria-label={`Edit ${huddle.name}`}
-								icon={Pencil}
-								onClick={() => setHuddleEditor({ open: true, editing: huddle })}
-							/>
+							<>
+								<Button
+									variant="ghost"
+									size="icon-sm"
+									aria-label={pinned.includes(huddle.id) ? `Unpin ${huddle.name}` : `Pin ${huddle.name}`}
+									icon={pinned.includes(huddle.id) ? PinOff : Pin}
+									onClick={(event) => {
+										event.stopPropagation();
+										togglePinned(huddle.id);
+									}}
+								/>
+								<Button
+									variant="ghost"
+									size="icon-sm"
+									aria-label={`Edit ${huddle.name}`}
+									icon={Pencil}
+									onClick={() => setHuddleEditor({ open: true, editing: huddle })}
+								/>
+							</>
 						}
 					/>
 				))}
@@ -720,6 +797,9 @@ export function OfficePanel() {
 				<HuddleEditor editing={huddleEditor.editing} onClose={() => setHuddleEditor({ open: false })} />
 			)}
 			{errandEditor && <ErrandEditor onClose={() => setErrandEditor(false)} />}
+			{detailsCoworker && (
+				<CoworkerDetails coworker={detailsCoworker} onClose={() => setDetailsCoworker(null)} />
+			)}
 		</div>
 	);
 }

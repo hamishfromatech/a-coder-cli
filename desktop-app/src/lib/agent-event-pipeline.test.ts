@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
 	sendCommand: vi.fn(),
@@ -10,6 +10,9 @@ const h = vi.hoisted(() => ({
 vi.mock("./rpc", () => ({
 	ENGINE_RPC_CONTRACT: 1,
 	sendCommand: h.sendCommand,
+	getMessages: (options?: { limit?: number; before?: number }) =>
+		h.sendCommand({ type: "get_messages", ...options }),
+	getTree: (flat?: boolean) => h.sendCommand({ type: "get_tree", flat }),
 	setSessionName: h.setSessionName,
 	reloadAuth: vi.fn(async () => {}),
 	sendUiResponse: vi.fn(async () => {}),
@@ -32,9 +35,15 @@ vi.mock("./voice-call", () => ({
 	useVoiceCallStore: { getState: () => ({ active: false }) },
 }));
 
-import { processAgentEvent, mergeUserEchoes, type AgentEventDeps } from "./agent-event-pipeline";
+import {
+	processAgentEvent,
+	mergeUserEchoes,
+	resetStreamingAccumulator,
+	type AgentEventDeps,
+} from "./agent-event-pipeline";
 import { useSessionStore } from "../stores/session-store";
 import { clearSessionCache, getCachedSessionMessages, setCachedSessionMessages } from "./session-cache";
+import { useSessionTranscriptsStore } from "../stores/session-transcripts-store";
 import type * as rpc from "./rpc";
 
 // ---------------------------------------------------------------------------
@@ -99,6 +108,7 @@ beforeEach(() => {
 	h.setSessionName.mockReset();
 	clearSessionCache();
 	useSessionStore.getState().resetSession();
+	useSessionTranscriptsStore.setState({ transcripts: {}, subscribed: {} });
 });
 
 // ---------------------------------------------------------------------------
@@ -150,7 +160,11 @@ describe("session_start history load", () => {
 		expect(useSessionStore.getState().messages.map((m) => m.role)).toEqual(["user"]);
 
 		processAgentEvent(messageUpdate(assistant("hi there")), deps);
-		expect(useSessionStore.getState().messages.map((m) => m.role)).toEqual(["user", "assistant"]);
+		expect(useSessionStore.getState().messages.map((m) => m.role)).toEqual(["user"]);
+		expect(
+			(useSessionStore.getState().streamingMessage as { content: Array<{ text?: string }> }).content[0]
+				?.text,
+		).toBe("hi there");
 	});
 
 	it("defers an echo sent while history is in flight and merges it once", async () => {
@@ -282,5 +296,163 @@ describe("session_start history load", () => {
 		gate.resolve({ messages: [user("fresh")] });
 		await vi.waitFor(() => expect(deps.loadingHistoryRef.current).toBe(false));
 		expect(useSessionStore.getState().messages).toHaveLength(1);
+	});
+});
+
+
+// ---------------------------------------------------------------------------
+// Contract-2 streaming deltas
+// ---------------------------------------------------------------------------
+
+describe("contract-2 streaming deltas", () => {
+	const SESSION = "/sessions/s1.jsonl";
+	const activation = 7;
+
+	beforeEach(() => {
+		vi.useFakeTimers();
+		const store = useSessionStore.getState();
+		store.setSessionFile(SESSION);
+		store.setActivationId(activation);
+	});
+
+	afterEach(() => {
+		resetStreamingAccumulator();
+		vi.useRealTimers();
+	});
+
+	const start = (messageId = "m1") =>
+		({
+			type: "message_start",
+			message: { role: "assistant", content: [] },
+			messageId,
+			sessionFile: SESSION,
+			activationId: activation,
+		}) as unknown as rpc.RpcEvent;
+
+	const delta = (text: string, overrides: Record<string, unknown> = {}) =>
+		({
+			type: "message_delta",
+			messageId: "m1",
+			contentIndex: 0,
+			kind: "text",
+			delta: text,
+			sessionFile: SESSION,
+			activationId: activation,
+			...overrides,
+		}) as unknown as rpc.RpcEvent;
+
+	it("coalesces text deltas into one store commit", () => {
+		const deps = makeDeps();
+		processAgentEvent(start(), deps);
+		processAgentEvent(delta("Hel"), deps);
+		processAgentEvent(delta("lo"), deps);
+
+		// The committed transcript stays untouched; the draft lands in its own
+		// slice once the frame timer fires.
+		expect(useSessionStore.getState().messages).toHaveLength(0);
+		vi.advanceTimersByTime(16);
+		expect(useSessionStore.getState().messages).toHaveLength(0);
+		const streaming = useSessionStore.getState().streamingMessage;
+		expect((streaming as { content: Array<{ text?: string }> }).content[0]?.text).toBe("Hello");
+	});
+
+	it("keeps the committed transcript array identity stable while streaming", () => {
+		const deps = makeDeps();
+		useSessionStore.getState().appendMessage(user("hello"));
+		const committed = useSessionStore.getState().messages;
+		processAgentEvent(start(), deps);
+		processAgentEvent(delta("Hel"), deps);
+		processAgentEvent(delta("lo"), deps);
+		vi.advanceTimersByTime(16);
+		expect(useSessionStore.getState().messages).toBe(committed);
+		expect(useSessionStore.getState().streamingMessage).not.toBeNull();
+	});
+
+	it("writes the authoritative message_end over the draft", () => {
+		const deps = makeDeps();
+		processAgentEvent(start(), deps);
+		processAgentEvent(delta("partial"), deps);
+		processAgentEvent(
+			{
+				type: "message_end",
+				message: { role: "assistant", content: [{ type: "text", text: "final" }] },
+				messageId: "m1",
+				sessionFile: SESSION,
+				activationId: activation,
+			} as unknown as rpc.RpcEvent,
+			deps,
+		);
+		const messages = useSessionStore.getState().messages;
+		expect(messages).toHaveLength(1);
+		expect((messages[0] as { content: Array<{ text?: string }> }).content[0]?.text).toBe("final");
+	});
+
+	it("ignores frames from another session or activation", () => {
+		const deps = makeDeps();
+		processAgentEvent(start(), deps);
+		processAgentEvent(delta("wrong session", { sessionFile: "/sessions/other.jsonl" }), deps);
+		processAgentEvent(delta("wrong activation", { activationId: activation - 1 }), deps);
+		vi.advanceTimersByTime(20);
+		expect(useSessionStore.getState().messages).toHaveLength(0);
+		expect(useSessionStore.getState().streamingMessage).toBeNull();
+	});
+
+	it("applies deltas inside an event_batch", () => {
+		const deps = makeDeps();
+		processAgentEvent(start(), deps);
+		processAgentEvent(
+			{
+				type: "event_batch",
+				seq: 10,
+				events: [delta("a"), delta("b")],
+			} as unknown as rpc.RpcEvent,
+			deps,
+		);
+		vi.advanceTimersByTime(16);
+		const streaming = useSessionStore.getState().streamingMessage;
+		expect((streaming as { content: Array<{ text?: string }> }).content[0]?.text).toBe("ab");
+	});
+
+	it("replaces the draft from a message_snapshot", () => {
+		const deps = makeDeps();
+		processAgentEvent(start(), deps);
+		processAgentEvent(delta("old"), deps);
+		processAgentEvent(
+			{
+				type: "message_snapshot",
+				messageId: "m1",
+				message: { role: "assistant", content: [{ type: "text", text: "snapshot" }] },
+				sessionFile: SESSION,
+				activationId: activation,
+			} as unknown as rpc.RpcEvent,
+			deps,
+		);
+		vi.advanceTimersByTime(16);
+		const streaming = useSessionStore.getState().streamingMessage;
+		expect((streaming as { content: Array<{ text?: string }> }).content[0]?.text).toBe("snapshot");
+	});
+});
+
+
+describe("background session routing", () => {
+	it("routes subscribed background frames away from the active transcript", () => {
+		useSessionStore.getState().setSessionFile("/sessions/active.jsonl");
+		useSessionTranscriptsStore.setState({
+			transcripts: {},
+			subscribed: { "/sessions/bg.jsonl": true },
+		});
+		processAgentEvent(
+			{
+				type: "message_start",
+				message: user("background hello"),
+				sessionFile: "/sessions/bg.jsonl",
+				activationId: 99,
+			} as unknown as rpc.RpcEvent,
+			makeDeps(),
+		);
+		expect(useSessionStore.getState().messages).toHaveLength(0);
+		expect(
+			useSessionTranscriptsStore.getState().transcripts["/sessions/bg.jsonl"]?.messages,
+		).toHaveLength(1);
 	});
 });

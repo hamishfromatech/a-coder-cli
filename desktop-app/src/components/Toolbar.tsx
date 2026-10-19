@@ -4,6 +4,7 @@ import { triggerHaptic } from "../lib/haptics";
 import { useSessionStore } from "../stores/session-store";
 import { Button } from "./ui/Button";
 import { SegmentedControl } from "./ui/SegmentedControl";
+import { useShallow } from "zustand/react/shallow";
 
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
 
@@ -31,7 +32,17 @@ export function Toolbar({ onShowModelPicker, onShowMemory, onToggleBrowser, brow
 		setThinkingLevel,
 		setModel,
 		setIsCompacting,
-	} = useSessionStore();
+	} = useSessionStore(
+		useShallow((s) => ({
+			model: s.model,
+			thinkingLevel: s.thinkingLevel,
+			isStreaming: s.isStreaming,
+			isCompacting: s.isCompacting,
+			setThinkingLevel: s.setThinkingLevel,
+			setModel: s.setModel,
+			setIsCompacting: s.setIsCompacting,
+		})),
+	);
 
 	const handleNewSession = async () => {
 		triggerHaptic("crisp");

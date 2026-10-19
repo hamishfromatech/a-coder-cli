@@ -53,7 +53,7 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "doctor", description: "Diagnose version, config, auth, MCP, and the session store" },
 	{ name: "debug", description: "Show the current debug/status dump" },
 	{ name: "search", description: "Search stored sessions by transcript text, name, or folder" },
-	{ name: "sessions", description: "Session store stats; /sessions archive to recoverably archive one" },
+	{ name: "sessions", description: "Session store stats; /sessions archive or /sessions compact [apply]" },
 	{ name: "todos", description: "Show the current task list (from the todo tool)" },
 	{ name: "tasks", description: "Show the persistent task graph (from the task tools)" },
 	{ name: "rewind", description: "Restore tracked files to a previous turn (undo file edits)" },

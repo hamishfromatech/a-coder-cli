@@ -25,6 +25,7 @@ import type {
 	ExtensionWidgetOptions,
 	WorkingIndicatorOptions,
 } from "../../core/extensions/index.ts";
+import { summarizeCoworkerSession } from "../../core/office/coworker-stats.ts";
 import { OfficeService } from "../../core/office/service.ts";
 import type { Errand } from "../../core/office/types.ts";
 import {
@@ -41,7 +42,11 @@ import { getWorkflowRunSummaries, stopWorkflowRun, subscribeWorkflowRuns } from 
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { type Theme, theme } from "../interactive/theme/theme.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
+import { externalizeAttachments, type RpcAttachmentData } from "./rpc-attachments.ts";
+import { flattenSessionTree, pageMessages, pageTranscriptEntries, toTranscriptEntries } from "./rpc-history.ts";
+import { RpcSessionEventStream } from "./rpc-stream.ts";
 import type {
+	RpcCapability,
 	RpcCommand,
 	RpcCronRunEvent,
 	RpcCronUpdateEvent,
@@ -54,6 +59,7 @@ import type {
 	RpcOfficeUpdateEvent,
 	RpcResponse,
 	RpcSessionState,
+	RpcSessionStatsEvent,
 	RpcSlashCommand,
 } from "./rpc-types.ts";
 import { RPC_CONTRACT } from "./rpc-types.ts";
@@ -84,21 +90,80 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 		logStream.write(`${JSON.stringify({ ts: new Date().toISOString(), dir, payload })}\n`);
 	};
 	let session = runtimeHost.session;
+	/** Monotonic activation id: changes when the bound session object changes. */
+	let activationId = 0;
+	let boundSession: typeof session | undefined;
 	let cronService: import("../../core/cron/service.ts").CronService | undefined;
+	/** Live event subscriptions for detached (background) sessions. */
+	const attachments = new Map<string, RpcAttachmentData>();
+	const MAX_ATTACHMENTS = 256;
+
+	const registerAttachment = (mimeType: string, data: string, _bytes: number) => {
+		const id = crypto.createHash("sha256").update(mimeType).update(data).digest("hex").slice(0, 24);
+		const bytes = Buffer.byteLength(data, "base64");
+		if (!attachments.has(id)) {
+			attachments.set(id, { id, mimeType, data, bytes });
+			if (attachments.size > MAX_ATTACHMENTS) {
+				const oldest = attachments.keys().next().value;
+				if (oldest) attachments.delete(oldest);
+			}
+		}
+		return { id, mimeType, bytes };
+	};
+
+	const backgroundSubscriptions = new Map<string, () => void>();
+	const backgroundActivations = new Map<string, number>();
+	let nextBackgroundActivation = 1_000_000;
+	const MAX_BACKGROUND_SUBSCRIPTIONS = 4;
+
+	const stopBackgroundSubscription = (path: string): boolean => {
+		const unsubscribe = backgroundSubscriptions.get(path);
+		if (!unsubscribe) return false;
+		unsubscribe();
+		backgroundSubscriptions.delete(path);
+		backgroundActivations.delete(path);
+		return true;
+	};
+
+	const pruneBackgroundSubscriptions = (): void => {
+		for (const path of [...backgroundSubscriptions.keys()]) {
+			if (!runtimeHost.getSessionForPath(path) || path === session.sessionFile) {
+				stopBackgroundSubscription(path);
+			}
+		}
+	};
 	let unsubscribe: (() => void) | undefined;
 	let unsubscribeBackpressure: (() => void) | undefined;
 	let unsubscribeBackgroundProcesses: (() => void) | undefined;
 	let unsubscribeWorkflowRuns: (() => void) | undefined;
 
+	const writeFrame = (frame: Record<string, unknown>) => {
+		trace("out", frame);
+		writeRawStdout(serializeJsonLine(frame));
+	};
+	// Session frames are shaped here: sequence numbers, session identity, and
+	// (for opted-in clients) compact deltas + batches. Responses and global
+	// events bypass batching but flush pending session frames first.
+	const eventStream = new RpcSessionEventStream(writeFrame, () => ({
+		sessionId: session.sessionId,
+		sessionFile: session.sessionFile,
+		activationId,
+	}));
 	const output = (obj: RpcResponse | RpcExtensionUIRequest | object) => {
-		trace("out", obj);
-		writeRawStdout(serializeJsonLine(obj));
+		const frame = obj as Record<string, unknown>;
+		if (frame.type === "response") eventStream.pushResponse(frame);
+		else eventStream.pushImmediate(frame);
 	};
 
 	// Handshake: the first frame identifies the engine and its protocol
 	// contract so embedded clients (desktop, mobile bridge) can detect
 	// engine/client skew early instead of failing cryptically downstream.
-	output({ type: "engine_info", version: VERSION, contract: RPC_CONTRACT } satisfies RpcEngineInfoEvent);
+	output({
+		type: "engine_info",
+		version: VERSION,
+		contract: RPC_CONTRACT,
+		capabilities: ["delta", "batch", "tool-progress", "attachments"] satisfies RpcCapability[],
+	} satisfies RpcEngineInfoEvent);
 
 	const success = <T extends RpcCommand["type"]>(
 		id: string | undefined,
@@ -111,8 +176,23 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 		return { id, type: "response", command, success: true, data } as RpcResponse;
 	};
 
-	const error = (id: string | undefined, command: string, message: string): RpcResponse => {
-		return { id, type: "response", command, success: false, error: message };
+	const error = (
+		id: string | undefined,
+		command: string,
+		message: string,
+		code = "command_failed",
+		options?: { retryable?: boolean; details?: Record<string, unknown> },
+	): RpcResponse => {
+		return {
+			id,
+			type: "response",
+			command,
+			success: false,
+			error: message,
+			code,
+			...(options?.retryable !== undefined ? { retryable: options.retryable } : {}),
+			...(options?.details ? { details: options.details } : {}),
+		};
 	};
 
 	// Pending extension UI requests waiting for response
@@ -483,7 +563,14 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 
 	const rebindSession = async (): Promise<void> => {
 		session = runtimeHost.session;
+		if (boundSession !== session) {
+			boundSession = session;
+			activationId++;
+		}
 		const boundSessionFile = session.sessionFile;
+		// The active session's events flow through the main subscription; drop a
+		// background subscription for the same file to avoid duplicate frames.
+		if (boundSessionFile) stopBackgroundSubscription(boundSessionFile);
 		await session.bindExtensions({
 			uiContext: createExtensionUIContext(boundSessionFile),
 			mode: "rpc",
@@ -568,7 +655,17 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 		unsubscribeBackpressure?.();
 		unsubscribeBackgroundProcesses?.();
 		unsubscribe = session.subscribe((event) => {
-			output(event);
+			eventStream.push(event as unknown as Record<string, unknown>);
+			// Push stats at natural boundaries instead of making every client poll.
+			if (
+				(event.type === "agent_end" && event.willRetry !== true) ||
+				(event.type === "compaction_end" && event.willRetry !== true)
+			) {
+				eventStream.pushImmediate({
+					type: "session_stats",
+					stats: session.getSessionStats(),
+				} satisfies RpcSessionStatsEvent);
+			}
 			// Session events double as cron event triggers: a finished turn
 			// (natural end, not a retry-in-progress) may fire `on:turn-end` jobs
 			// for this project. CronService coalesces via cooldowns.
@@ -613,6 +710,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 	// Push runtime-registry changes (background sessions detaching, turns
 	// finishing while detached, reaping) so the client can badge session tabs.
 	runtimeHost.subscribeRuntimes?.(() => {
+		pruneBackgroundSubscriptions();
 		output({ type: "sessions_update", sessions: runtimeHost.getSessionsStatus?.() ?? [] });
 	});
 	output({ type: "sessions_update", sessions: runtimeHost.getSessionsStatus?.() ?? [] });
@@ -682,6 +780,26 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 	void session.modelRegistry.refreshDynamicModels().catch(() => {});
 
 	// Handle a single command
+	const currentSessionState = (): RpcSessionState => ({
+		model: session.model,
+		thinkingLevel: session.thinkingLevel,
+		permissionMode: session.permissionMode,
+		planMode: session.planMode,
+		isStreaming: session.isStreaming,
+		isCompacting: session.isCompacting,
+		steeringMode: session.steeringMode,
+		followUpMode: session.followUpMode,
+		cwd: session.sessionManager.getCwd(),
+		sessionFile: session.sessionFile,
+		sessionId: session.sessionId,
+		sessionName: session.sessionName,
+		activationId,
+		autoCompactionEnabled: session.autoCompactionEnabled,
+		compactionAutoContinue: session.compactionAutoContinue,
+		messageCount: session.messages.length,
+		pendingMessageCount: session.pendingMessageCount,
+	});
+
 	const handleCommand = async (command: RpcCommand): Promise<RpcResponse | undefined> => {
 		const id = command.id;
 
@@ -831,8 +949,16 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 				const result = await runtimeHost.newSession(options.parentSession || options.cwd ? options : undefined);
 				if (!result.cancelled) {
 					await rebindSession();
+					if (session.sessionFile) {
+						output({
+							type: "session_changed",
+							event: "created",
+							sessionPath: session.sessionFile,
+							name: session.sessionName,
+						});
+					}
 				}
-				return success(id, "new_session", result);
+				return success(id, "new_session", { ...result, activationId });
 			}
 
 			case "clear_conversation": {
@@ -847,26 +973,25 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 			// State
 			// =================================================================
 
+			case "client_info": {
+				const allowed: RpcCapability[] = ["delta", "batch", "tool-progress", "attachments"];
+				const capabilities = (command.capabilities ?? []).filter((capability): capability is RpcCapability =>
+					allowed.includes(capability),
+				);
+				eventStream.setCapabilities(capabilities);
+				return success(id, "client_info", { contract: RPC_CONTRACT, capabilities });
+			}
+
 			case "get_state": {
-				const state: RpcSessionState = {
-					model: session.model,
-					thinkingLevel: session.thinkingLevel,
-					permissionMode: session.permissionMode,
-					planMode: session.planMode,
-					isStreaming: session.isStreaming,
-					isCompacting: session.isCompacting,
-					steeringMode: session.steeringMode,
-					followUpMode: session.followUpMode,
-					cwd: session.sessionManager.getCwd(),
-					sessionFile: session.sessionFile,
-					sessionId: session.sessionId,
-					sessionName: session.sessionName,
-					autoCompactionEnabled: session.autoCompactionEnabled,
-					compactionAutoContinue: session.compactionAutoContinue,
-					messageCount: session.messages.length,
-					pendingMessageCount: session.pendingMessageCount,
-				};
-				return success(id, "get_state", state);
+				return success(id, "get_state", currentSessionState());
+			}
+
+			case "get_session_snapshot": {
+				// One round trip for activation: state + stats (context usage) together.
+				return success(id, "get_session_snapshot", {
+					state: currentSessionState(),
+					stats: session.getSessionStats(),
+				});
 			}
 
 			// =================================================================
@@ -1102,6 +1227,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 								sessionId: session.sessionId,
 								sessionName: session.sessionName,
 								cwd: session.sessionManager.getCwd(),
+								activationId,
 							},
 				);
 			}
@@ -1115,12 +1241,64 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 				return success(id, "abort_session", { found });
 			}
 
+			case "subscribe_session": {
+				const target = runtimeHost.getSessionForPath(command.sessionPath);
+				if (!target) {
+					return error(id, "subscribe_session", `Unknown session: ${command.sessionPath}`, "unknown_session");
+				}
+				if (target === session) {
+					return success(id, "subscribe_session", { subscribed: false, active: true });
+				}
+				if (backgroundSubscriptions.has(command.sessionPath)) {
+					return success(id, "subscribe_session", {
+						subscribed: true,
+						sessionFile: command.sessionPath,
+						sessionId: target.sessionId,
+						activationId: backgroundActivations.get(command.sessionPath),
+					});
+				}
+				if (backgroundSubscriptions.size >= MAX_BACKGROUND_SUBSCRIPTIONS) {
+					return error(
+						id,
+						"subscribe_session",
+						`Too many background subscriptions (max ${MAX_BACKGROUND_SUBSCRIPTIONS})`,
+						"subscription_limit",
+					);
+				}
+				let activationId = backgroundActivations.get(command.sessionPath);
+				if (activationId === undefined) {
+					activationId = ++nextBackgroundActivation;
+					backgroundActivations.set(command.sessionPath, activationId);
+				}
+				const info = {
+					sessionId: target.sessionId,
+					sessionFile: command.sessionPath,
+					activationId,
+				};
+				const unsubscribe = target.subscribe((event) => {
+					eventStream.push(event as unknown as Record<string, unknown>, info);
+				});
+				backgroundSubscriptions.set(command.sessionPath, unsubscribe);
+				return success(id, "subscribe_session", {
+					subscribed: true,
+					sessionFile: command.sessionPath,
+					sessionId: target.sessionId,
+					activationId,
+				});
+			}
+
+			case "unsubscribe_session": {
+				return success(id, "unsubscribe_session", {
+					unsubscribed: stopBackgroundSubscription(command.sessionPath),
+				});
+			}
+
 			case "fork": {
 				const result = await runtimeHost.fork(command.entryId);
 				if (!result.cancelled) {
 					await rebindSession();
 				}
-				return success(id, "fork", { text: result.selectedText, cancelled: result.cancelled });
+				return success(id, "fork", { text: result.selectedText, cancelled: result.cancelled, activationId });
 			}
 
 			case "clone": {
@@ -1132,7 +1310,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 				if (!result.cancelled) {
 					await rebindSession();
 				}
-				return success(id, "clone", { cancelled: result.cancelled });
+				return success(id, "clone", { cancelled: result.cancelled, activationId });
 			}
 
 			case "get_fork_messages": {
@@ -1178,13 +1356,26 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 							labelTimestamp: n.labelTimestamp,
 						};
 					});
+				if (command.flat) {
+					return success(id, "get_tree", {
+						nodes: flattenSessionTree(fullTree),
+						leafId: sessionManager.getLeafId(),
+						version: sessionManager.getEntries().length,
+					});
+				}
 				return success(id, "get_tree", { tree: strip(fullTree), leafId: sessionManager.getLeafId() });
 			}
 
 			case "list_sessions": {
-				const sessions = await SessionManager.listAll();
+				const sessions = (await SessionManager.listAll()).sort(
+					(a, b) => b.modified.getTime() - a.modified.getTime(),
+				);
+				const limited =
+					typeof command.limit === "number" && command.limit > 0
+						? sessions.slice(0, Math.min(command.limit, 500))
+						: sessions;
 				return success(id, "list_sessions", {
-					sessions: sessions.map((s: SessionInfo) => ({
+					sessions: limited.map((s: SessionInfo) => ({
 						path: s.path,
 						id: s.id,
 						cwd: s.cwd,
@@ -1227,6 +1418,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 				const live = runtimeHost.getSessionForPath(command.sessionPath);
 				if (live) {
 					live.setSessionName(name);
+					output({ type: "session_changed", event: "updated", sessionPath: command.sessionPath, name });
 					return success(id, "rename_session");
 				}
 				if (!existsSync(command.sessionPath)) {
@@ -1237,6 +1429,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 				} catch (e) {
 					return error(id, "rename_session", e instanceof Error ? e.message : String(e));
 				}
+				output({ type: "session_changed", event: "updated", sessionPath: command.sessionPath, name });
 				return success(id, "rename_session");
 			}
 
@@ -1260,7 +1453,37 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 
 			case "set_entry_label": {
 				try {
-					session.sessionManager.appendLabelChange(command.entryId, command.label);
+					const sessionManager = session.sessionManager;
+					const labelEntryId = sessionManager.appendLabelChange(command.entryId, command.label);
+					const labelEntry = sessionManager.getEntry(labelEntryId);
+					const target = sessionManager.getEntry(command.entryId);
+					if (labelEntry) {
+						eventStream.push({
+							type: "tree_delta",
+							version: sessionManager.getEntryCount(),
+							leafId: sessionManager.getLeafId(),
+							added: [
+								{
+									id: labelEntry.id,
+									parentId: labelEntry.parentId,
+									type: labelEntry.type,
+									timestamp: labelEntry.timestamp,
+								},
+							],
+							updated: target
+								? [
+										{
+											id: target.id,
+											parentId: target.parentId,
+											type: target.type,
+											messageRole: target.type === "message" ? target.message.role : undefined,
+											timestamp: target.timestamp,
+											label: command.label,
+										},
+									]
+								: undefined,
+						});
+					}
 					return success(id, "set_entry_label");
 				} catch (e) {
 					return error(id, "set_entry_label", e instanceof Error ? e.message : String(e));
@@ -1272,7 +1495,41 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 			// =================================================================
 
 			case "get_messages": {
-				return success(id, "get_messages", { messages: session.messages });
+				const target = command.sessionPath ? runtimeHost.getSessionForPath(command.sessionPath) : session;
+				if (!target) {
+					return error(id, "get_messages", `Unknown session: ${command.sessionPath}`, "unknown_session");
+				}
+				const page = pageMessages(target.messages, { limit: command.limit, before: command.before });
+				if (eventStream.has("attachments")) {
+					return success(id, "get_messages", {
+						...page,
+						messages: externalizeAttachments(page.messages, registerAttachment),
+					});
+				}
+				return success(id, "get_messages", page);
+			}
+
+			case "get_transcript_page": {
+				const target = command.sessionPath ? runtimeHost.getSessionForPath(command.sessionPath) : session;
+				if (!target) {
+					return error(id, "get_transcript_page", `Unknown session: ${command.sessionPath}`, "unknown_session");
+				}
+				const page = pageTranscriptEntries(toTranscriptEntries(target.sessionManager.getTranscriptEntries()), {
+					limit: command.limit,
+					before: command.before,
+				});
+				if (eventStream.has("attachments")) {
+					page.entries = externalizeAttachments(page.entries, registerAttachment) as typeof page.entries;
+				}
+				return success(id, "get_transcript_page", page);
+			}
+
+			case "get_attachment": {
+				const attachment = attachments.get(command.attachmentId);
+				if (!attachment) {
+					return error(id, "get_attachment", `Unknown attachment: ${command.attachmentId}`, "unknown_attachment");
+				}
+				return success(id, "get_attachment", attachment);
 			}
 
 			// =================================================================
@@ -1354,7 +1611,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 					return officeResponse;
 				}
 				const unknownCommand = command as { type: string };
-				return error(id, unknownCommand.type, `Unknown command: ${unknownCommand.type}`);
+				return error(id, unknownCommand.type, `Unknown command: ${unknownCommand.type}`, "unknown_command");
 			}
 		}
 	};
@@ -1374,6 +1631,39 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 					: await office.createCoworker(input);
 				if (!coworker) return error(id, command.type, "Coworker not found");
 				return success(id, "office_coworker_save", { coworker });
+			}
+			case "office_coworker_details": {
+				const snapshot = await office.snapshot();
+				const coworker = snapshot.coworkers.find((entry) => entry.id === command.coworkerId);
+				if (!coworker) return error(id, command.type, "Coworker not found", "unknown_coworker");
+				const sessions = Object.entries(coworker.sessions)
+					.filter(([, sessionPath]) => existsSync(sessionPath))
+					.map(([cwd, sessionPath]) => {
+						try {
+							const manager = SessionManager.open(sessionPath);
+							return summarizeCoworkerSession(manager.getTranscriptEntries(), sessionPath, cwd);
+						} catch {
+							return null;
+						}
+					})
+					.filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+					.sort((a, b) => b.lastActivity - a.lastActivity);
+				const totals = sessions.reduce(
+					(acc, entry) => ({
+						sessions: acc.sessions + 1,
+						turns: acc.turns + entry.turns,
+						tokens: acc.tokens + entry.tokens,
+						lastActivity: Math.max(acc.lastActivity, entry.lastActivity),
+					}),
+					{ sessions: 0, turns: 0, tokens: 0, lastActivity: 0 },
+				);
+				return success(id, command.type, {
+					coworkerId: coworker.id,
+					name: coworker.name,
+					handle: coworker.handle,
+					sessions,
+					totals,
+				});
 			}
 			case "office_coworker_delete": {
 				await office.deleteCoworker(command.coworkerId);
@@ -1498,6 +1788,8 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 		unsubscribeBackpressure?.();
 		unsubscribeBackgroundProcesses?.();
 		unsubscribeWorkflowRuns?.();
+		for (const path of [...backgroundSubscriptions.keys()]) stopBackgroundSubscription(path);
+		eventStream.dispose();
 		await office.dispose();
 		await runtimeHost.dispose();
 		await captureCliSessionEnd(runtimeHost.session, runtimeHost.services.settingsManager).catch(() => undefined);
@@ -1529,6 +1821,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 					undefined,
 					"parse",
 					`Failed to parse command: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+					"parse_error",
 				),
 			);
 			await waitForRawStdoutBackpressure();
@@ -1560,11 +1853,15 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 			}
 			await checkShutdownRequested();
 		} catch (commandError: unknown) {
+			const message = commandError instanceof Error ? commandError.message : String(commandError);
+			const missingCwd = message.includes("Stored session working directory does not exist");
 			output(
 				error(
 					command.id,
 					command.type,
-					commandError instanceof Error ? commandError.message : String(commandError),
+					message,
+					missingCwd ? "missing_session_cwd" : "command_failed",
+					missingCwd ? { retryable: true } : undefined,
 				),
 			);
 			await waitForRawStdoutBackpressure();

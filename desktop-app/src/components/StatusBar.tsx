@@ -26,6 +26,7 @@ import { useSettingsStore } from "../stores/settings-store";
 import { useStatsStore } from "../stores/stats-store";
 import type { PermissionMode } from "../lib/settings.types";
 import { Badge, type BadgeVariant } from "./ui/Badge";
+import { useShallow } from "zustand/react/shallow";
 
 export interface StatusBarProps {
 	projectPath: string | null;
@@ -65,7 +66,19 @@ const MODE_META: Record<
 };
 
 export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
-	const { status, error, isStreaming, isCompacting, thinkingLevel, permissionMode, contextUsage, streamingVerb } = useSessionStore();
+	const { status, error, isStreaming, isCompacting, thinkingLevel, permissionMode, contextUsage, streamingVerb } =
+		useSessionStore(
+			useShallow((s) => ({
+				status: s.status,
+				error: s.error,
+				isStreaming: s.isStreaming,
+				isCompacting: s.isCompacting,
+				thinkingLevel: s.thinkingLevel,
+				permissionMode: s.permissionMode,
+				contextUsage: s.contextUsage,
+				streamingVerb: s.streamingVerb,
+			})),
+		);
 	const subAgents = useSessionStore((s) => s.subAgents);
 	// Hermes-parity awaiting-input state: when the turn is parked on a tool
 	// approval for THIS session, it is paused on the user, not working — the
@@ -252,8 +265,8 @@ function ContextUsageBar({
 
 function PermissionModePicker({ mode }: { mode: PermissionMode }) {
 	const [open, setOpen] = useState(false);
-	const { setPermissionMode: setSessionPermissionMode } = useSessionStore();
-	const { setPermissionMode: savePermissionMode } = useSettingsStore();
+	const setSessionPermissionMode = useSessionStore((s) => s.setPermissionMode);
+	const savePermissionMode = useSettingsStore((s) => s.setPermissionMode);
 	const triggerRef = useRef<HTMLButtonElement>(null);
 	const menuRef = useRef<HTMLDivElement>(null);
 

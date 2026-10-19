@@ -27,6 +27,7 @@ import { playCueVariant } from "./completion-sound";
 import { assetPath } from "./asset-path";
 import { useSessionStore } from "../stores/session-store";
 import { useSettingsStore } from "../stores/settings-store";
+import { micThreshold, normalizeMicLevel } from "./voice-level";
 import { speechify } from "./speech-text";
 import { toast } from "../stores/toast-store";
 import {
@@ -75,8 +76,6 @@ const THINKING_CUE_VOLUME = 0.4;
 
 /** RMS level the mic must hold before an utterance is considered begun. */
 const OPEN_THRESHOLD = 0.05;
-/** RMS level (higher than open) that arms + fires an open-mic barge. */
-const BARGE_THRESHOLD = 0.09;
 /** Sustained loud time before a barge fires (ms) — rejects clicks/thuds. */
 const BARGE_HOLD_MS = 300;
 /** Speech must be confirmed this long before endpointing is active (ms). */
@@ -294,6 +293,9 @@ class VoiceCallController {
 	private recorder: MicRecorder | null = null;
 	private ctx: AudioContext | null = null;
 	private analyser: AnalyserNode | null = null;
+	private noiseFloor = 0.004;
+	private calibrationSamples: number[] = [];
+	private calibratingUntil = 0;
 	private meterTimer: number | null = null;
 	/** The user's mp3 thinking cue, playing while the model starts up. */
 	private thinkingAudio: HTMLAudioElement | null = null;
@@ -407,6 +409,8 @@ class VoiceCallController {
 			analyser.fftSize = 512;
 			source.connect(analyser); // deliberately not to destination: no feedback
 			this.analyser = analyser;
+			this.calibrationSamples = [];
+			this.calibratingUntil = Date.now() + 600;
 		} catch (e) {
 			// Meter unavailable; the manual stop path (end buttons) still works.
 			console.warn("[voice-call] analyser unavailable", e);
@@ -481,20 +485,33 @@ class VoiceCallController {
 				sum += buffer[i] * buffer[i];
 			}
 			const rms = Math.sqrt(sum / buffer.length);
+			const sensitivity = useSettingsStore.getState().voiceMicSensitivity;
+			const now = Date.now();
+			if (now < this.calibratingUntil) {
+				this.calibrationSamples.push(rms);
+				if (this.calibrationSamples.length >= 8) {
+					const sorted = [...this.calibrationSamples].sort((a, b) => a - b);
+					this.noiseFloor = Math.max(0.002, Math.min(0.06, sorted[Math.floor(sorted.length * 0.3)] ?? 0.004));
+				}
+			}
+			const threshold = micThreshold(this.noiseFloor, sensitivity);
+			if (now >= this.calibratingUntil && rms < threshold) {
+				this.noiseFloor = this.noiseFloor * 0.97 + Math.min(rms, 0.05) * 0.03;
+			}
 			// While the reply is speaking the orb belongs to the playback
 			// meter (real TTS amplitude, wired in playBlob); the mic keeps
 			// running only to hear a barge-in.
 			if (useVoiceCallStore.getState().phase !== "speaking") {
-				const level = Math.min(1, rms * 12);
+				const level = normalizeMicLevel(rms, this.noiseFloor, threshold);
 				const prev = useVoiceCallStore.getState().level;
 				setCall({ level: prev + (level - prev) * LEVEL_SMOOTHING });
 			}
-			this.onLevel(rms);
+			this.onLevel(rms, threshold);
 		}, METER_INTERVAL_MS);
 	}
 
 	/** Endpoint + barge state machine — called on every meter tick. */
-	private onLevel(rms: number): void {
+	private onLevel(rms: number, openThreshold: number = OPEN_THRESHOLD): void {
 		const state = useVoiceCallStore.getState();
 		if (!state.active) return;
 		const now = Date.now();
@@ -504,7 +521,8 @@ class VoiceCallController {
 		// ---- open-mic barge (opt-in) while the reply is speaking ----
 		if (state.phase === "speaking") {
 			if (!useSettingsStore.getState().voiceBargeIn) return;
-			if (rms < BARGE_THRESHOLD) {
+			const bargeThreshold = Math.max(0.035, openThreshold * 1.7);
+			if (rms < bargeThreshold) {
 				this.bargeLoudSince = 0;
 				return;
 			}
@@ -527,7 +545,7 @@ class VoiceCallController {
 			}
 		}
 
-		if (rms >= OPEN_THRESHOLD) {
+		if (rms >= openThreshold) {
 			if (!this.utteranceActive) {
 				this.utteranceActive = true;
 				this.utteranceStartAt = now;

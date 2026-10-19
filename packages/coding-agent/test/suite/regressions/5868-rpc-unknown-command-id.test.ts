@@ -97,13 +97,16 @@ describe("RPC unknown command responses (#5868)", () => {
 			rpcIo.lineHandler?.(JSON.stringify({ id: "test", type: "foobar" }));
 
 			await vi.waitFor(() => {
-				expect(parseOutputLines()).toContainEqual({
-					id: "test",
-					type: "response",
-					command: "foobar",
-					success: false,
-					error: "Unknown command: foobar",
-				});
+				expect(parseOutputLines()).toContainEqual(
+					expect.objectContaining({
+						id: "test",
+						type: "response",
+						command: "foobar",
+						success: false,
+						error: "Unknown command: foobar",
+						code: "unknown_command",
+					}),
+				);
 			});
 		} finally {
 			harness.cleanup();

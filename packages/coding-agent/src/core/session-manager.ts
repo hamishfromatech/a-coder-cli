@@ -213,6 +213,7 @@ export type ReadonlySessionManager = Pick<
 	| "buildContextEntries"
 	| "getHeader"
 	| "getEntries"
+	| "getEntryCount"
 	| "getTree"
 	| "getSessionName"
 >;
@@ -1273,6 +1274,15 @@ export class SessionManager {
 	}
 
 	/**
+	 * Full active-branch path, including entries hidden by compaction.
+	 * Transcript views use this; context construction must still use
+	 * `buildContextEntries()`.
+	 */
+	getTranscriptEntries(): SessionEntry[] {
+		return buildSessionPath(this.getEntries(), this.leafId, this.byId);
+	}
+
+	/**
 	 * Build the active, compaction-aware entry list for context/rendering.
 	 * Uses tree traversal from current leaf.
 	 */
@@ -1303,6 +1313,11 @@ export class SessionManager {
 	 */
 	getEntries(): SessionEntry[] {
 		return this.fileEntries.filter((e): e is SessionEntry => e.type !== "session");
+	}
+
+	/** Number of session entries (excludes the header). */
+	getEntryCount(): number {
+		return this.byId.size;
 	}
 
 	/**

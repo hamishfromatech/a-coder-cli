@@ -4,11 +4,13 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	archiveSessionFile,
+	compactSessionFile,
 	formatBytes,
 	getSessionStoreStats,
 	searchSessions,
+	selectCompactionEntries,
 } from "../src/core/session-maintenance.ts";
-import type { SessionInfo } from "../src/core/session-manager.ts";
+import { parseSessionEntries, type SessionInfo } from "../src/core/session-manager.ts";
 
 function session(overrides: Partial<SessionInfo> & { path: string }): SessionInfo {
 	return {
@@ -119,6 +121,53 @@ describe("session store maintenance", () => {
 
 		const { trashPath } = archiveSessionFile(path, { sessionsDir: dir });
 		expect(() => archiveSessionFile(trashPath, { sessionsDir: dir })).toThrow(/already archived/);
+	});
+
+	it("drops superseded labels and session_info entries, then rewrites atomically", () => {
+		const timestamp = "2026-10-01T10:00:00.000Z";
+		const entries = [
+			{ type: "session", version: 3, id: "s1", timestamp, cwd: "/work/proj" },
+			{ type: "message", id: "m1", parentId: null, timestamp, message: { role: "user", content: [] } },
+			{ type: "label", id: "l1", parentId: "m1", timestamp, targetId: "m1", label: "First" },
+			{ type: "label", id: "l2", parentId: "l1", timestamp, targetId: "m1", label: "Final" },
+			{ type: "session_info", id: "i1", parentId: "l2", timestamp, name: "Old" },
+			{ type: "session_info", id: "i2", parentId: "i1", timestamp, name: "New" },
+		];
+		const path = join(dir, "proj", "compact.jsonl");
+		writeFileSync(path, entries.map((entry) => `${JSON.stringify(entry)}\n`).join(""));
+
+		const selection = selectCompactionEntries(entries as never);
+		expect(selection.dropped.map((drop) => drop.id).sort()).toEqual(["i1", "l1"]);
+		expect(selection.kept.map((entry) => entry.id)).toEqual(["s1", "m1", "l2", "i2"]);
+
+		const result = compactSessionFile(path, { sessionsDir: dir, minBytes: 0, apply: true });
+		expect(result.applied).toBe(true);
+		expect(result.droppedLines).toBe(2);
+		expect(result.trashPath && existsSync(result.trashPath)).toBe(true);
+		const kept = parseSessionEntries(readFileSync(path, "utf8"));
+		expect(kept.map((entry) => entry.id)).toEqual(["s1", "m1", "l2", "i2"]);
+	});
+
+	it("is a dry run by default and refuses the active session", () => {
+		const timestamp = "2026-10-01T10:00:00.000Z";
+		const entries = [
+			{ type: "session", version: 3, id: "s1", timestamp, cwd: "/work/proj" },
+			{ type: "message", id: "m1", parentId: null, timestamp, message: { role: "user", content: [] } },
+			{ type: "label", id: "l1", parentId: "m1", timestamp, targetId: "m1", label: "First" },
+			{ type: "label", id: "l2", parentId: "l1", timestamp, targetId: "m1", label: "Final" },
+		];
+		const path = join(dir, "proj", "dry.jsonl");
+		const original = entries.map((entry) => `${JSON.stringify(entry)}\n`).join("");
+		writeFileSync(path, original);
+
+		const dry = compactSessionFile(path, { sessionsDir: dir, minBytes: 0 });
+		expect(dry.applied).toBe(false);
+		expect(dry.dropped).toHaveLength(1);
+		expect(readFileSync(path, "utf8")).toBe(original);
+
+		const skipped = compactSessionFile(path, { sessionsDir: dir, minBytes: 0, activePath: path, apply: true });
+		expect(skipped.skipped).toBe("active-session");
+		expect(readFileSync(path, "utf8")).toBe(original);
 	});
 
 	it("formats byte sizes compactly", () => {

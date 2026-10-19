@@ -91,3 +91,11 @@ The engine exposes the office to embedded clients (the desktop is one):
 - Events: `office_update` (roster snapshot: coworkers, statuses, huddle summaries, errands, pending prompts), `office_huddle` (full room log on first contact / after trimming), and `office_huddle_delta` (appended messages + live drive state)
 
 See `docs/rpc.md` for the transport.
+
+## Faces
+
+Coworkers use a procedural face (shape + color) by default. The editor's **Upload photo** action center-crops to a square, downscales to 256px, and stores the data URL in `coworker.face.image`. Both floor views prefer the image: the 2D SVG face clips it to the shape and the 3D scene maps it onto the head. Removing the photo falls back to the procedural face. The image lives in the office store, so it survives restarts and project switches.
+
+## Coworker details
+
+The roster's stats button opens per-coworker details: turns, tokens, session count, last activity, and every canonical session for that coworker (per project cwd). **Open** routes through the normal session switch, so the transcript tab takes over. Stats are computed from the session entries (user messages = turns; assistant usage = tokens), not from a separate counter.

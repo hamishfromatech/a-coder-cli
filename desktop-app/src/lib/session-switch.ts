@@ -21,7 +21,8 @@ export async function runSwitch(sessionPath: string): Promise<SwitchSessionResul
 		return await switchSession(sessionPath);
 	} catch (e) {
 		const message = e instanceof Error ? e.message : String(e);
-		if (!message.includes(MISSING_CWD_PREFIX)) throw e;
+		const code = (e as { code?: string }).code;
+		if (code !== "missing_session_cwd" && !message.includes(MISSING_CWD_PREFIX)) throw e;
 		const cwd = useWorkspaceStore.getState().current;
 		if (!cwd) throw e;
 		const result = await switchSession(sessionPath, cwd);

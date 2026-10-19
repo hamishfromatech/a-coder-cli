@@ -23,6 +23,20 @@ export function isHudWindow(): boolean {
 	return new URLSearchParams(window.location.search).get("win") === "hud";
 }
 
+/** Toggle the HUD from the tray/menu. */
+export async function toggleHud(): Promise<void> {
+	try {
+		const existing = await WebviewWindow.getByLabel(HUD_WINDOW_LABEL);
+		if (existing) {
+			await existing.close().catch(() => undefined);
+			return;
+		}
+		await openHud();
+	} catch (e) {
+		toast.error("HUD failed", e instanceof Error ? e.message : String(e));
+	}
+}
+
 /** Open the HUD floating-chat window, or focus it when it is already up. */
 export async function openHud(): Promise<void> {
 	try {

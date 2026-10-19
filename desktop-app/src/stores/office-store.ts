@@ -10,6 +10,26 @@ import type { OfficeActivityItem, OfficeHuddleDelta, OfficeHuddlePayload, Office
 
 /** Ring-buffer cap for live activity feeding the floor view. */
 const ACTIVITY_LIMIT = 300;
+const PINNED_KEY = "a-coder.office.pinned";
+
+function loadPinned(): string[] {
+	if (typeof window === "undefined") return [];
+	try {
+		const parsed = JSON.parse(window.localStorage.getItem(PINNED_KEY) ?? "[]");
+		return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : [];
+	} catch {
+		return [];
+	}
+}
+
+function savePinned(ids: string[]): void {
+	if (typeof window === "undefined") return;
+	try {
+		window.localStorage.setItem(PINNED_KEY, JSON.stringify(ids));
+	} catch {
+		// Storage can be disabled; the in-memory pin still works.
+	}
+}
 
 interface OfficeState {
 	/** Latest roster snapshot (null until the engine pushes or a fetch lands). */
@@ -22,6 +42,9 @@ interface OfficeState {
 	error: string | null;
 	/** Live coworker activity ring buffer (oldest first), for the floor view. */
 	activity: OfficeActivityItem[];
+	/** Pinned huddles/DMs (client-local, sorted first in the roster). */
+	pinned: string[];
+	togglePinned: (id: string) => void;
 
 	refresh: () => Promise<void>;
 	applySnapshot: (snapshot: OfficeSnapshot) => void;
@@ -40,6 +63,15 @@ export const useOfficeStore = create<OfficeState>((set, get) => ({
 	openHuddleId: null,
 	error: null,
 	activity: [],
+	pinned: loadPinned(),
+	togglePinned: (id) =>
+		set((state) => {
+			const pinned = state.pinned.includes(id)
+				? state.pinned.filter((entry) => entry !== id)
+				: [...state.pinned, id];
+			savePinned(pinned);
+			return { pinned };
+		}),
 
 	refresh: async () => {
 		try {

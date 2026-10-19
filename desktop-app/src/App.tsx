@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bell, ChevronsUpDown, FolderGit2, MessageSquare, Plus, Settings, X } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
 import { initDesktopAnalytics } from "./lib/analytics";
+import { toggleHud } from "./lib/hud";
 import * as rpc from "./lib/rpc";
 import { processAgentEvent, mergeUserEchoes } from "./lib/agent-event-pipeline";
 import { useVoiceCallStore, voiceCall } from "./lib/voice-call";
@@ -11,7 +13,6 @@ import { abortRun } from "./lib/session-abort";
 import { triggerHaptic } from "./lib/haptics";
 import { rafCoalesce } from "./lib/raf-coalesce";
 import { pickLoadingVerb } from "./lib/loading-verbs";
-import { setCachedSessionMessages } from "./lib/session-cache";
 import { adoptSwitchResult } from "./lib/adopt-session";
 import { runSwitch } from "./lib/session-switch";
 import { isAuthoritativeSession, setAuthoritativeSession } from "./lib/session-authority";
@@ -46,8 +47,9 @@ import { HomeDashboard } from "./components/HomeDashboard";
 import { MessageList } from "./components/MessageList";
 import { MemoryModal } from "./components/MemoryModal";
 import { ModelPicker } from "./components/ModelPicker";
-import { REPLAY_ONBOARDING_EVENT, isOnboardingComplete } from "./lib/onboarding";
+import { REPLAY_ONBOARDING_EVENT, isFirstRunSetupComplete, isOnboardingComplete } from "./lib/onboarding";
 import { OnboardingModal } from "./components/OnboardingModal";
+import { FirstRunSetup } from "./components/FirstRunSetup";
 import { ProjectPicker } from "./components/ProjectPicker";
 import { RightSidebar } from "./components/RightSidebar";
 import { SettingsPanel } from "./components/SettingsPanel";
@@ -69,8 +71,11 @@ import { Toaster } from "./components/Toaster";
 import { ConfirmHost } from "./components/ui/ConfirmDialog";
 import { UpdateModal } from "./components/UpdateModal";
 import { ApprovalModal } from "./components/panels/ApprovalModal";
-import { ToolApprovalBar } from "./components/ToolApprovalBar";
+import { ApprovalCardStack } from "./components/ApprovalCardStack";
 import { ConnectingOverlay } from "./components/ConnectingOverlay";
+import { useShallow } from "zustand/react/shallow";
+import { HISTORY_PAGE_SIZE } from "./lib/history";
+import { setCachedSessionMessages } from "./lib/session-cache";
 
 const FALLBACK_CWD = "";
 
@@ -97,6 +102,7 @@ export default function App() {
 	const [showChangelog, setShowChangelog] = useState(false);
 	const [showMemory, setShowMemory] = useState(false);
 	const [showOnboarding, setShowOnboarding] = useState(() => !isOnboardingComplete());
+	const [showFirstRunSetup, setShowFirstRunSetup] = useState(false);
 
 	// Settings > General > Welcome tour re-opens the onboarding overlay.
 	useEffect(() => {
@@ -147,14 +153,69 @@ export default function App() {
 		setAvailableCommands,
 		appendMessage,
 		setMessages,
+		setHistoryPage,
 		setSessionLoading,
-		updateLastAssistantMessage,
 		updateQueue,
 		resetSession,
 		uiRequests,
 		resolveUiRequest,
 		approvalInlineMounted,
-	} = useSessionStore();
+		setActivationId,
+	} = useSessionStore(
+		useShallow((s) => ({
+			status: s.status,
+			error: s.error,
+			cwd: s.cwd,
+			sessionName: s.sessionName,
+			sessionId: s.sessionId,
+			sessionFile: s.sessionFile,
+			model: s.model,
+			thinkingLevel: s.thinkingLevel,
+			permissionMode: s.permissionMode,
+			isStreaming: s.isStreaming,
+			isCompacting: s.isCompacting,
+			autoCompactionEnabled: s.autoCompactionEnabled,
+			steeringMode: s.steeringMode,
+			followUpMode: s.followUpMode,
+			messageCount: s.messageCount,
+			pendingMessageCount: s.pendingMessageCount,
+			contextUsage: s.contextUsage,
+			steering: s.steering,
+			followUp: s.followUp,
+			streamingVerb: s.streamingVerb,
+			sessionLoading: s.sessionLoading,
+			availableCommands: s.availableCommands,
+			questionRequest: s.questionRequest,
+			uiRequests: s.uiRequests,
+			approvalInlineMounted: s.approvalInlineMounted,
+			setStatus: s.setStatus,
+			setCwd: s.setCwd,
+			setModel: s.setModel,
+			setThinkingLevel: s.setThinkingLevel,
+			setPermissionMode: s.setPermissionMode,
+			setSessionName: s.setSessionName,
+			setSessionId: s.setSessionId,
+			setSessionFile: s.setSessionFile,
+			setActivationId: s.setActivationId,
+			setIsStreaming: s.setIsStreaming,
+			setIsCompacting: s.setIsCompacting,
+			setAutoCompactionEnabled: s.setAutoCompactionEnabled,
+			setSteeringMode: s.setSteeringMode,
+			setFollowUpMode: s.setFollowUpMode,
+			setStreamingVerb: s.setStreamingVerb,
+			setMessageCount: s.setMessageCount,
+			setPendingMessageCount: s.setPendingMessageCount,
+			setContextUsage: s.setContextUsage,
+			setAvailableCommands: s.setAvailableCommands,
+			appendMessage: s.appendMessage,
+			setMessages: s.setMessages,
+			setHistoryPage: s.setHistoryPage,
+			setSessionLoading: s.setSessionLoading,
+			updateQueue: s.updateQueue,
+			resetSession: s.resetSession,
+			resolveUiRequest: s.resolveUiRequest,
+		})),
+	);
 	// Tool approvals (kind === "permission") render as an inline bar in the
 	// transcript (with a floating fallback above the composer when that row is
 	// scrolled out of view). Everything else (select/input/editor and generic
@@ -172,9 +233,36 @@ export default function App() {
 	// inline in the transcript; full-screen modal backdrops black out on this
 	// system's WKWebView (backdrop-filter compositing), so they must never be
 	// used for approvals. select/input/editor keep the modal (richer input UI).
-	const permissionRequest = uiRequests.find(
-		(r) => (r.kind === "permission" || r.method === "confirm") && requestIsForCurrentSession(r),
+	const permissionRequests = uiRequests.filter(
+		(request) =>
+			(request.kind === "permission" || request.method === "confirm") &&
+			requestIsForCurrentSession(request),
 	);
+	const engineReady = useSessionStore((s) => Boolean(s.sessionFile || s.sessionId));
+	const trayWorking = useSessionStore((s) => s.isStreaming);
+	const trayNeedsInput = permissionRequests.length > 0;
+	useEffect(() => {
+		void rpc
+			.setTrayStatus(trayNeedsInput ? "needs-input" : trayWorking ? "working" : "idle")
+			.catch(() => {});
+	}, [trayWorking, trayNeedsInput]);
+
+	useEffect(() => {
+		let dispose: (() => void) | undefined;
+		void listen<string>("tray-action", (event) => {
+			if (event.payload === "new-session") {
+				void rpc.sendCommand({ type: "new_session" });
+			} else if (event.payload === "toggle-hud") {
+				void toggleHud();
+			}
+		})
+			.then((unlisten) => {
+				dispose = unlisten;
+			})
+			.catch(() => {});
+		return () => dispose?.();
+	}, []);
+
 	const modalRequest = uiRequests.find(
 		(r) => r.kind !== "permission" && r.method !== "confirm" && requestIsForCurrentSession(r),
 	);
@@ -282,21 +370,25 @@ export default function App() {
 	// session identity. Also derives a context-usage estimate from stats.
 	const syncEngineState = useCallback(async () => {
 		try {
-			const s = (await rpc.sendCommand({ type: "get_state" })) as {
-				model?: { provider: string; id: string; name?: string };
-				thinkingLevel?: string;
-				permissionMode?: import("./stores/session-store").PermissionMode;
-				sessionName?: string;
-				sessionId?: string;
-				sessionFile?: string;
-				cwd?: string;
-				isCompacting?: boolean;
-				autoCompactionEnabled?: boolean;
-				steeringMode?: import("./lib/settings.types").MessageDeliveryMode;
-				followUpMode?: import("./lib/settings.types").MessageDeliveryMode;
-				messageCount?: number;
-				pendingMessageCount?: number;
-			};
+			// One activation round trip (state + stats). Fall back to the two
+			// separate reads on an engine that predates `get_session_snapshot`.
+			const snapshot = await Promise.race([
+				rpc.getSessionSnapshot(),
+				new Promise<null>((resolve) => setTimeout(() => resolve(null), 500)),
+			]);
+			let s: rpc.EngineSessionState | undefined;
+			let stats: import("./stores/stats-store").SessionStats | undefined;
+			if (snapshot) {
+				s = snapshot.state;
+				stats = snapshot.stats as unknown as import("./stores/stats-store").SessionStats;
+			} else {
+				s = (await rpc.sendCommand({ type: "get_state" })) as rpc.EngineSessionState;
+				try {
+					stats = (await rpc.sendCommand({ type: "get_session_stats" })) as import("./stores/stats-store").SessionStats;
+				} catch {
+					// stats are best-effort
+				}
+			}
 			if (s?.model) setModel(s.model as never);
 			if (s?.thinkingLevel) setThinkingLevel(s.thinkingLevel);
 			if (s?.permissionMode) setPermissionMode(s.permissionMode);
@@ -308,6 +400,7 @@ export default function App() {
 			// different session.
 			setSessionName(s?.sessionName ?? null);
 			setAuthoritativeSession(s?.sessionFile ?? null);
+			setActivationId(s?.activationId ?? 0);
 			if (s?.sessionId) setSessionId(s.sessionId);
 			setSessionFile(s?.sessionFile ?? null);
 			if (s?.cwd) setCwd(s.cwd);
@@ -318,18 +411,9 @@ export default function App() {
 			if (typeof s?.messageCount === "number") setMessageCount(s.messageCount);
 			if (typeof s?.pendingMessageCount === "number")
 				setPendingMessageCount(s.pendingMessageCount);
-			// Derive context usage from the latest stats. The engine computes
-			// contextUsage (tokens / contextWindow / percent) from the active
-			// model's real context window — which for Ollama is discovered from
-			// /api/show rather than the 128k catalog default.
-			try {
-				const stats = (await rpc.sendCommand({ type: "get_session_stats" })) as SessionStats & {
-					contextUsage?: { tokens: number | null; contextWindow: number; percent: number | null };
-				};
-				if (stats) applySessionStats(stats);
-			} catch {
-				// stats are best-effort
-			}
+			// The engine computes contextUsage from the active model's real
+			// context window (Ollama discovers it from /api/show).
+			if (stats) applySessionStats(stats);
 		} catch (e) {
 			toast.warning("Failed to sync engine state", e instanceof Error ? e.message : String(e));
 		}
@@ -340,6 +424,7 @@ export default function App() {
 		setSessionName,
 		setSessionId,
 		setSessionFile,
+		setActivationId,
 		setCwd,
 		setIsCompacting,
 		setAutoCompactionEnabled,
@@ -381,6 +466,22 @@ export default function App() {
 				});
 				unlistenRef.current?.();
 				unlistenRef.current = unlistenEarly;
+				// Flush frames the engine emitted during spawn (engine_info, initial
+				// registry/office snapshots) now that a listener exists.
+				await rpc.markRpcReady().catch(() => 0);
+
+				// Opt into compact deltas + coalesced batches when the engine
+				// supports them; older engines keep contract-1 full events.
+				try {
+					// Bound the wait: an older engine ignores unknown commands and
+					// would otherwise hold boot for the full 60s RPC timeout.
+					await Promise.race([
+						rpc.clientInfo(["delta", "batch", "tool-progress", "attachments"]),
+						new Promise<void>((resolve) => setTimeout(resolve, 500)),
+					]);
+				} catch {
+					// Legacy engine: keep contract-1 full events.
+				}
 
 				// Sync the full engine state and prompt for trust if needed.
 				// Theme is applied by a dedicated effect (see resolvedTheme) — not here,
@@ -394,13 +495,11 @@ export default function App() {
 					// trust check is best-effort
 				}
 
-				// Load session tree.
+				// Load session tree (flat transfer; the store builds the structure).
 				try {
-					const treeRes = (await rpc.sendCommand({ type: "get_tree" })) as {
-						tree: rpc.SessionTreeNode[];
-						leafId: string | null;
-					};
-					if (treeRes?.tree) setTree(treeRes.tree, treeRes.leafId);
+					const treeRes = await rpc.getTree(true);
+					if (treeRes?.nodes) useSessionTreeStore.getState().setFlatTree(treeRes.nodes, treeRes.leafId);
+					else if (treeRes?.tree) setTree(treeRes.tree, treeRes.leafId);
 				} catch (e) {
 					toast.error("Failed to load session tree", e instanceof Error ? e.message : String(e));
 				}
@@ -415,11 +514,13 @@ export default function App() {
 				// loading state instead of flashing the new-conversation EmptyState.
 				if (options?.continueSession) setSessionLoading(true);
 				let fetchedMessages: import("@earendil-works/pi-agent-core").AgentMessage[] | undefined;
+				let fetchedPage: rpc.GetMessagesResult | undefined;
 				try {
-					const msgsRes = (await rpc.sendCommand({ type: "get_messages" })) as {
-						messages: import("@earendil-works/pi-agent-core").AgentMessage[];
-					};
-					if (msgsRes?.messages) fetchedMessages = msgsRes.messages;
+					const msgsRes = await rpc.getMessages({ limit: HISTORY_PAGE_SIZE });
+					if (msgsRes?.messages) {
+						fetchedMessages = msgsRes.messages;
+						fetchedPage = msgsRes;
+					}
 				} catch (e) {
 					toast.error("Failed to load session history", e instanceof Error ? e.message : String(e));
 				} finally {
@@ -431,9 +532,14 @@ export default function App() {
 					const deferred = deferredUserEchoesRef.current;
 					deferredUserEchoesRef.current = [];
 					if (fetchedMessages || deferred.length > 0) {
-						setMessages(
-							fetchedMessages ? mergeUserEchoes(fetchedMessages, deferred) : deferred,
+						const snapshot = fetchedMessages ? mergeUserEchoes(fetchedMessages, deferred) : deferred;
+						setHistoryPage(
+							snapshot,
+							fetchedPage?.total ?? snapshot.length,
+							fetchedPage?.start ?? 0,
 						);
+						const bootSessionFile = useSessionStore.getState().sessionFile;
+						if (bootSessionFile) setCachedSessionMessages(bootSessionFile, snapshot);
 					}
 					setSessionLoading(false);
 				}
@@ -446,7 +552,8 @@ export default function App() {
 					toast.error("Failed to load slash commands", e instanceof Error ? e.message : String(e));
 				}
 
-				// Refresh stats periodically.
+				// Stats are pushed as session_stats at turn/compaction boundaries.
+				// Keep a slow fallback for engines that predate the push.
 				const statsInterval = setInterval(async () => {
 					try {
 						const statsRes = (await rpc.sendCommand({ type: "get_session_stats" })) as SessionStats & {
@@ -456,7 +563,7 @@ export default function App() {
 					} catch (e) {
 						console.error("Failed to refresh stats", e);
 					}
-				}, 5000);
+				}, 30_000);
 				unlistenRef.current = () => {
 					unlistenEarly();
 					clearInterval(statsInterval);
@@ -481,8 +588,7 @@ export default function App() {
 			appendMessage,
 			setMessages,
 			setSessionLoading,
-			updateLastAssistantMessage,
-			updateQueue,
+				updateQueue,
 			resetSession,
 			syncEngineState,
 			setWidgetStatus,
@@ -912,18 +1018,6 @@ export default function App() {
 		shownQuestionSessionRef.current = sessionFile;
 	}, [sessionFile]);
 
-	// Keep the warm per-session transcript cache in sync with the live store so
-	// switching back to a recently visited session paints instantly. Skipped
-	// while a history load is in flight — resetSession() briefly pairs the old
-	// session file with an empty message list, and the authoritative fetch
-	// re-populates the cache once it lands.
-	const liveMessages = useSessionStore((s) => s.messages);
-	useEffect(() => {
-		if (sessionFile && !loadingHistoryRef.current) {
-			setCachedSessionMessages(sessionFile, liveMessages);
-		}
-	}, [sessionFile, liveMessages]);
-
 	const handleTrustAccept = async () => {
 		if (!trustPrompt) return;
 		const resuming = pendingProjectRef.current;
@@ -1117,9 +1211,10 @@ export default function App() {
 						<TodoPanel />
 						<TaskPanel />
 						<RuntimePanel />
-						{permissionRequest && !approvalInlineMounted && (
-							<ToolApprovalBar request={permissionRequest} surface="floating" />
-						)}
+						{permissionRequests.length > 0 &&
+							(!approvalInlineMounted || permissionRequests.length > 1) && (
+								<ApprovalCardStack requests={permissionRequests} />
+							)}
 						<Composer />
 					</ChatContainer>
 					<Butterbar />
@@ -1144,7 +1239,15 @@ export default function App() {
 					onComplete={(path) => {
 						if (path) setProjectPath(path);
 						setShowOnboarding(false);
+						if (!isFirstRunSetupComplete()) setShowFirstRunSetup(true);
 					}}
+				/>
+			)}
+
+			{showFirstRunSetup && !showOnboarding && engineReady && !trustPrompt && (
+				<FirstRunSetup
+					onClose={() => setShowFirstRunSetup(false)}
+					onOpenSettings={() => setShowSettings(true)}
 				/>
 			)}
 

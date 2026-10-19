@@ -3,6 +3,7 @@ import { FolderOpen, SkipForward, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { assetPath } from "../lib/asset-path";
 import { markOnboardingComplete } from "../lib/onboarding";
+import * as rpc from "../lib/rpc";
 import { useModalA11y } from "../hooks/useModalA11y";
 import { Button } from "./ui/Button";
 import { ModalBackdrop, ModalPanel } from "./ui/Modal";
@@ -13,7 +14,7 @@ export interface OnboardingModalProps {
 	replay?: boolean;
 }
 
-type Step = "tour" | "folder";
+type Step = "tour" | "folder" | "trust";
 
 export function OnboardingModal({ onComplete, replay = false }: OnboardingModalProps) {
 	const modalRef = useRef<HTMLDivElement>(null);
@@ -22,6 +23,8 @@ export function OnboardingModal({ onComplete, replay = false }: OnboardingModalP
 	const [videoFailed, setVideoFailed] = useState(false);
 	const [selectedPath, setSelectedPath] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [trustProject, setTrustProject] = useState(true);
+	const [finishing, setFinishing] = useState(false);
 	useModalA11y(modalRef, true, () => {}); // No close on background click
 
 	// If the bundled video is missing (odd install), fall straight to setup.
@@ -50,7 +53,19 @@ export function OnboardingModal({ onComplete, replay = false }: OnboardingModalP
 		}
 	};
 
-	const handleContinue = () => {
+	const handleContinue = async () => {
+		if (finishing) return;
+		setFinishing(true);
+		setError(null);
+		if (!replay && selectedPath) {
+			try {
+				if (trustProject) await rpc.setProjectTrust(selectedPath, true);
+			} catch (e) {
+				setError(e instanceof Error ? e.message : String(e));
+				setFinishing(false);
+				return;
+			}
+		}
 		markOnboardingComplete();
 		onComplete(selectedPath);
 	};
@@ -109,7 +124,7 @@ export function OnboardingModal({ onComplete, replay = false }: OnboardingModalP
 							</Button>
 						</div>
 					</>
-				) : (
+				) : step === "folder" ? (
 					<>
 						{/* Folder step (existing first-run flow; replay keeps it skippable) */}
 						<div className="flex flex-col items-center border-b border-pi-border px-6 py-8">
@@ -175,12 +190,42 @@ export function OnboardingModal({ onComplete, replay = false }: OnboardingModalP
 								<Button
 									variant="primary"
 									size="md"
-									onClick={handleContinue}
+									onClick={() => setStep("trust")}
 									disabled={!selectedPath}
 								>
-									Get started
+									Next: trust this folder
 								</Button>
 							)}
+						</div>
+					</>
+				) : (
+					<>
+						<div className="flex flex-col items-center border-b border-pi-border px-6 py-8">
+							<div className="flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-pi-accent to-pi-accent-hover text-white shadow-lg">
+								<Sparkles className="h-7 w-7" />
+							</div>
+							<h2 className="mt-4 text-lg font-semibold tracking-tight text-pi-text">Trust this project?</h2>
+							<p className="mt-2 text-center text-[13px] leading-relaxed text-pi-text-secondary">
+								A-Coder can read and edit files here and run commands you approve. Trust this folder to skip the reminder on every switch.
+							</p>
+							</div>
+						<div className="p-5">
+							<div className="truncate rounded-lg bg-pi-surface-raised px-3 py-2 font-mono text-2xs text-pi-text-muted">
+								{selectedPath}
+							</div>
+							<label className="mt-3 flex items-center gap-2 text-xs text-pi-text-secondary">
+								<input type="checkbox" checked={trustProject} onChange={(e) => setTrustProject(e.target.checked)} />
+								Trust this folder
+							</label>
+							{error && <p className="mt-3 text-xs text-pi-error">{error}</p>}
+						</div>
+						<div className="flex items-center justify-between border-t border-pi-border px-5 py-4">
+							<Button variant="ghost" size="md" onClick={() => setStep("folder")}>
+								Back
+							</Button>
+							<Button variant="primary" size="md" loading={finishing} onClick={() => void handleContinue()}>
+								Get started
+							</Button>
 						</div>
 					</>
 				)}

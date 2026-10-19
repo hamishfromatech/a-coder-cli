@@ -15,6 +15,7 @@ import type { CronJob, CronRun, CronSchedule, CronSnapshot } from "../../core/cr
 import type { InProcessSubAgentRecord } from "../../core/extensions/types.ts";
 import type {
 	Coworker,
+	CoworkerDetails,
 	Errand,
 	ErrandSchedule,
 	Face,
@@ -32,6 +33,14 @@ import type { SourceInfo } from "../../core/source-info.ts";
 // ============================================================================
 
 export type RpcCommand =
+	// Protocol negotiation (sent once after connect; defaults to contract 1)
+	| {
+			id?: string;
+			type: "client_info";
+			contract?: number;
+			capabilities?: RpcCapability[];
+	  }
+
 	// Prompting
 	| {
 			id?: string;
@@ -111,16 +120,34 @@ export type RpcCommand =
 	| { id?: string; type: "clone" }
 	| { id?: string; type: "get_fork_messages" }
 	| { id?: string; type: "get_entries"; since?: string }
-	| { id?: string; type: "get_tree" }
-	| { id?: string; type: "list_sessions" }
+	| { id?: string; type: "get_tree"; flat?: boolean }
+	| { id?: string; type: "list_sessions"; limit?: number }
 	| { id?: string; type: "get_last_assistant_text" }
 	| { id?: string; type: "set_session_name"; name: string; sessionPath?: string }
 	| { id?: string; type: "rename_session"; sessionPath: string; name: string }
 	| { id?: string; type: "delete_session"; sessionPath: string }
 	| { id?: string; type: "set_entry_label"; entryId: string; label: string | undefined }
 
-	// Messages
-	| { id?: string; type: "get_messages" }
+	// Messages (paginated when limit/before is supplied; full otherwise)
+	| {
+			id?: string;
+			type: "get_messages";
+			limit?: number;
+			before?: number;
+			/** Read a detached (background) runtime instead of the active session. */
+			sessionPath?: string;
+	  }
+	| { id?: string; type: "get_attachment"; attachmentId: string }
+	| {
+			id?: string;
+			type: "get_transcript_page";
+			limit?: number;
+			before?: number;
+			sessionPath?: string;
+	  }
+
+	// Combined state + stats for session activation
+	| { id?: string; type: "get_session_snapshot" }
 
 	// File history
 	| { id?: string; type: "rewind"; steps?: number }
@@ -128,9 +155,12 @@ export type RpcCommand =
 	// Runtime registry (background sessions)
 	| { id?: string; type: "get_sessions_status" }
 	| { id?: string; type: "abort_session"; sessionPath: string }
+	| { id?: string; type: "subscribe_session"; sessionPath: string }
+	| { id?: string; type: "unsubscribe_session"; sessionPath: string }
 
 	// Your Office (coworkers, huddles, errands)
 	| { id?: string; type: "office_list" }
+	| { id?: string; type: "office_coworker_details"; coworkerId: string }
 	| { id?: string; type: "office_coworker_save"; coworker: OfficeRpcCoworkerInput }
 	| { id?: string; type: "office_coworker_delete"; coworkerId: string }
 	| { id?: string; type: "office_huddle_save"; huddle: OfficeRpcHuddleInput }
@@ -228,6 +258,43 @@ export interface RpcSessionInfo {
 	firstMessage: string;
 }
 
+/** Incremental tree change for contract-2 clients. */
+export interface RpcTreeDeltaEvent {
+	type: "tree_delta";
+	version?: number;
+	leafId?: string | null;
+	added?: RpcSessionTreeFlatNode[];
+	updated?: RpcSessionTreeFlatNode[];
+	removed?: string[];
+}
+
+/** One entry in the full transcript view (pre-compaction history included). */
+export interface RpcTranscriptEntry {
+	id: string;
+	parentId: string | null;
+	type: string;
+	timestamp: string;
+	message?: AgentMessage;
+	summary?: string;
+	fromId?: string;
+	firstKeptEntryId?: string;
+	tokensBefore?: number;
+	customType?: string;
+	content?: unknown;
+	display?: boolean;
+}
+
+/** Flat session-tree node (message bodies omitted). */
+export interface RpcSessionTreeFlatNode {
+	id: string;
+	parentId: string | null;
+	type: string;
+	messageRole?: string;
+	timestamp?: string;
+	label?: string;
+	labelTimestamp?: string;
+}
+
 // ============================================================================
 // RPC State
 // ============================================================================
@@ -246,6 +313,9 @@ export interface RpcSessionState {
 	sessionFile?: string;
 	sessionId: string;
 	sessionName?: string;
+	/** Monotonic id for the current engine session activation. Events carry
+	 *  the same value so a client can discard frames from a prior activation. */
+	activationId?: number;
 	autoCompactionEnabled: boolean;
 	compactionAutoContinue: boolean;
 	messageCount: number;
@@ -258,6 +328,15 @@ export interface RpcSessionState {
 
 // Success responses with data
 export type RpcResponse =
+	// Protocol negotiation
+	| {
+			id?: string;
+			type: "response";
+			command: "client_info";
+			success: true;
+			data: { contract: number; capabilities: RpcCapability[] };
+	  }
+
 	// Prompting (async - events follow)
 	| { id?: string; type: "response"; command: "prompt"; success: true }
 	| { id?: string; type: "response"; command: "steer"; success: true }
@@ -277,7 +356,13 @@ export type RpcResponse =
 			success: true;
 			data: { removed: boolean };
 	  }
-	| { id?: string; type: "response"; command: "new_session"; success: true; data: { cancelled: boolean } }
+	| {
+			id?: string;
+			type: "response";
+			command: "new_session";
+			success: true;
+			data: { cancelled: boolean; activationId?: number };
+	  }
 
 	// State
 	| { id?: string; type: "response"; command: "get_state"; success: true; data: RpcSessionState }
@@ -362,10 +447,27 @@ export type RpcResponse =
 				cancelled: boolean;
 				reattached?: boolean;
 				snapshot?: { running: boolean; needsInput: boolean; pendingMessageCount: number };
+				activationId?: number;
+				sessionFile?: string;
+				sessionId?: string;
+				sessionName?: string;
+				cwd?: string;
 			};
 	  }
-	| { id?: string; type: "response"; command: "fork"; success: true; data: { text: string; cancelled: boolean } }
-	| { id?: string; type: "response"; command: "clone"; success: true; data: { cancelled: boolean } }
+	| {
+			id?: string;
+			type: "response";
+			command: "fork";
+			success: true;
+			data: { text: string; cancelled: boolean; activationId?: number };
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "clone";
+			success: true;
+			data: { cancelled: boolean; activationId?: number };
+	  }
 	| {
 			id?: string;
 			type: "response";
@@ -385,7 +487,12 @@ export type RpcResponse =
 			type: "response";
 			command: "get_tree";
 			success: true;
-			data: { tree: SessionTreeNode[]; leafId: string | null };
+			data: {
+				tree?: SessionTreeNode[];
+				nodes?: RpcSessionTreeFlatNode[];
+				leafId: string | null;
+				version?: number;
+			};
 	  }
 	| {
 			id?: string;
@@ -415,6 +522,26 @@ export type RpcResponse =
 			data: { sessions: RuntimeSessionStatus[] };
 	  }
 	| { id?: string; type: "response"; command: "abort_session"; success: true; data: { found: boolean } }
+	| {
+			id?: string;
+			type: "response";
+			command: "subscribe_session";
+			success: true;
+			data: {
+				subscribed: boolean;
+				sessionFile?: string;
+				sessionId?: string;
+				activationId?: number;
+				active?: boolean;
+			};
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "unsubscribe_session";
+			success: true;
+			data: { unsubscribed: boolean };
+	  }
 
 	// Sub-agents (running-tasks viewer / desktop manager)
 	| {
@@ -427,7 +554,46 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "rerun_subagent"; success: true; data: { id: string } }
 
 	// Messages
-	| { id?: string; type: "response"; command: "get_messages"; success: true; data: { messages: AgentMessage[] } }
+	| {
+			id?: string;
+			type: "response";
+			command: "get_messages";
+			success: true;
+			data: {
+				messages: AgentMessage[];
+				total?: number;
+				start?: number;
+				end?: number;
+				hasMore?: boolean;
+			};
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "get_attachment";
+			success: true;
+			data: { id: string; mimeType: string; bytes: number; data: string };
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "get_transcript_page";
+			success: true;
+			data: {
+				entries: RpcTranscriptEntry[];
+				total: number;
+				start: number;
+				end: number;
+				hasMore: boolean;
+			};
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "get_session_snapshot";
+			success: true;
+			data: { state: RpcSessionState; stats: SessionStats };
+	  }
 
 	// Commands
 	| {
@@ -440,6 +606,13 @@ export type RpcResponse =
 
 	// Your Office
 	| { id?: string; type: "response"; command: "office_list"; success: true; data: OfficeSnapshot }
+	| {
+			id?: string;
+			type: "response";
+			command: "office_coworker_details";
+			success: true;
+			data: CoworkerDetails;
+	  }
 	| { id?: string; type: "response"; command: "office_coworker_save"; success: true; data: { coworker: Coworker } }
 	| { id?: string; type: "response"; command: "office_coworker_delete"; success: true }
 	| { id?: string; type: "response"; command: "office_huddle_save"; success: true; data: { huddleId: string } }
@@ -466,8 +639,18 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "cron_run_now"; success: true }
 	| { id?: string; type: "response"; command: "cron_runs"; success: true; data: { runs: CronRun[] } }
 
-	// Error response (any command can fail)
-	| { id?: string; type: "response"; command: string; success: false; error: string };
+	// Error response (any command can fail). `error` stays the human-readable
+	// message for older clients; code/retryable/details are additive.
+	| {
+			id?: string;
+			type: "response";
+			command: string;
+			success: false;
+			error: string;
+			code?: string;
+			retryable?: boolean;
+			details?: Record<string, unknown>;
+	  };
 
 // ============================================================================
 // Extension UI Events (stdout)
@@ -572,12 +755,26 @@ export interface RpcUserQuestion {
  */
 export const RPC_CONTRACT = 1;
 
+/** Optional protocol features a client can opt into. All are additive; a
+ *  client that sends none keeps the contract-1 event stream. */
+export type RpcCapability =
+	/** Compact `message_delta` streaming instead of full `message_update` snapshots. */
+	| "delta"
+	/** Coalesce events into `event_batch` frames at ~30Hz. */
+	| "batch"
+	/** Live `tool_execution_*` progress events (not emitted by default). */
+	| "tool-progress"
+	/** History pages replace inline image data with `attachment` refs. */
+	| "attachments";
+
 /** First event on the stdout stream: identifies the engine and its protocol
  *  contract so clients can detect engine/client skew early. */
 export interface RpcEngineInfoEvent {
 	type: "engine_info";
 	version: string;
 	contract: number;
+	/** Features this engine can serve; pair with `client_info` to negotiate. */
+	capabilities?: RpcCapability[];
 }
 
 /** Emitted whenever the runtime registry changes: a session detaches (switched
@@ -586,6 +783,76 @@ export interface RpcEngineInfoEvent {
 export interface RpcSessionsUpdateEvent {
 	type: "sessions_update";
 	sessions: RuntimeSessionStatus[];
+}
+
+/** Compact streaming delta (contract 2). Only text/thinking content is
+ *  streamed this way; tool-call blocks arrive as a `message_snapshot` at
+ *  `toolcall_end` and the authoritative full message arrives at `message_end`. */
+export interface RpcMessageDeltaEvent {
+	type: "message_delta";
+	sessionId: string;
+	sessionFile?: string;
+	activationId?: number;
+	messageId: string;
+	contentIndex: number;
+	kind: "text" | "thinking";
+	delta: string;
+}
+
+/** Full partial assistant message, sent at block boundaries (tool-call end)
+ *  for contract-2 clients so they can resync without per-token snapshots. */
+export interface RpcMessageSnapshotEvent {
+	type: "message_snapshot";
+	sessionId: string;
+	sessionFile?: string;
+	activationId?: number;
+	messageId: string;
+	message: unknown;
+}
+
+/** Tool call started (contract 2 with `tool-progress`). */
+export interface RpcToolStartEvent {
+	type: "tool_start";
+	toolCallId: string;
+	toolName: string;
+	args?: unknown;
+}
+
+/** Incremental tool output (contract 2 with `tool-progress`). The client
+ *  appends `delta` unless `reset` is true, in which case it replaces the
+ *  stream (the producer's window shifted). */
+export interface RpcToolDeltaEvent {
+	type: "tool_delta";
+	toolCallId: string;
+	toolName: string;
+	stream: "stdout" | "stderr";
+	delta: string;
+	reset?: boolean;
+}
+
+/** Tool call finished; the authoritative result still arrives as a
+ *  `toolResult` message. */
+export interface RpcToolEndEvent {
+	type: "tool_end";
+	toolCallId: string;
+	toolName: string;
+	isError: boolean;
+}
+
+/** Compact `agent_end` summary for contract-2 clients (the full run messages
+ *  are already on the transcript). */
+export interface RpcAgentEndSummary {
+	messageCount: number;
+	lastAssistantText: string;
+	stopReason?: string;
+	usage?: unknown;
+}
+
+/** Coalesced event frame (contract 2). Events inside are already sequenced. */
+export interface RpcEventBatch {
+	type: "event_batch";
+	seq: number;
+	events: Array<Record<string, unknown>>;
 }
 
 /** Your Office roster changed (coworkers, statuses, huddle summaries, errands,
@@ -618,6 +885,21 @@ export interface RpcOfficeActivityEvent {
 export interface RpcCronUpdateEvent {
 	type: "cron_update";
 	jobs: CronJob[];
+}
+
+/** A stored session was created, renamed, updated, or deleted. */
+export interface RpcSessionChangedEvent {
+	type: "session_changed";
+	event: "created" | "updated" | "deleted";
+	sessionPath: string;
+	name?: string;
+}
+
+/** Session statistics changed (turn end, compaction). Pushed so clients do not
+ *  need a polling timer. */
+export interface RpcSessionStatsEvent {
+	type: "session_stats";
+	stats: SessionStats;
 }
 
 /** A cron run started or finished — the activity inbox consumes these. */
