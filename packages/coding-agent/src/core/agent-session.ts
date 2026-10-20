@@ -43,6 +43,7 @@ import {
 	resetApiProviders,
 	streamSimple,
 } from "@earendil-works/pi-ai/compat";
+import { fetchLlamaCppServerInfo, resolveLlamaCppBaseUrl } from "@earendil-works/pi-ai/providers/llama-cpp";
 import ignore from "ignore";
 import { getAgentDir, getMemoryPath, getWorkspaceMemoryPath } from "../config.ts";
 import { getThemeByName, theme } from "../modes/interactive/theme/theme.ts";
@@ -65,6 +66,12 @@ import {
 	prepareCompaction,
 	shouldCompact,
 } from "./compaction/index.ts";
+import {
+	type AutoContinueCheckpoint,
+	type AutoContinueDecision,
+	type AutoContinueState,
+	decideAutoContinue,
+} from "./decision-policy.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import { exportSessionToHtml, type ToolHtmlRenderer } from "./export-html/index.ts";
 import { createToolHtmlRenderer } from "./export-html/tool-renderer.ts";
@@ -131,7 +138,13 @@ import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.t
 import { redactSecrets } from "./secret-redaction.ts";
 import type { BranchSummaryEntry, CompactionEntry, SessionEntry, SessionManager } from "./session-manager.ts";
 import { CURRENT_SESSION_VERSION, getLatestCompactionEntry, type SessionHeader } from "./session-manager.ts";
-import type { PermissionMode, PermissionPolicyConfig, PermissionRule, SettingsManager } from "./settings-manager.ts";
+import type {
+	PermissionMode,
+	PermissionPolicyConfig,
+	PermissionRule,
+	ResolvedAutoContinueSettings,
+	SettingsManager,
+} from "./settings-manager.ts";
 import type { Skill } from "./skills.ts";
 import type { SlashCommandInfo } from "./slash-commands.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
@@ -221,6 +234,17 @@ export type AgentSessionEvent =
 	  }
 	| { type: "auto_retry_start"; attempt: number; maxAttempts: number; delayMs: number; errorMessage: string }
 	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string }
+	| {
+			type: "auto_continue_decision";
+			checkpoint: AutoContinueCheckpoint;
+			action: AutoContinueDecision["action"];
+			probabilities: Record<string, number>;
+			progress: number;
+			confidence?: number;
+			model?: string;
+			latencyMs: number;
+			reason: string;
+	  }
 	| SessionStartEvent;
 
 /** Listener function for agent session events */
@@ -229,6 +253,34 @@ export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
 // ============================================================================
 // Types
 // ============================================================================
+
+export interface LlamaCppModelStatus {
+	id: string;
+	name: string;
+	contextWindow: number;
+	maxTokens: number;
+	reasoning: boolean;
+	vision: boolean;
+	thinkingLevels: string[];
+	samplingParams?: Record<string, unknown>;
+}
+
+export interface LlamaCppStatus {
+	baseUrl: string;
+	reachable: boolean;
+	error?: string;
+	buildInfo?: string;
+	modelPath?: string;
+	contextWindow?: number;
+	vision: boolean;
+	reasoning: boolean;
+	reasoningFormat: "effort" | "enable-thinking" | "thinking" | "none";
+	thinkingFormat?: "llama-cpp" | "chat-template";
+	supportsReasoningEffort: boolean;
+	supportsTools: boolean;
+	supportsPreserveReasoning: boolean;
+	models: LlamaCppModelStatus[];
+}
 
 export interface AgentSessionConfig {
 	agent: Agent;
@@ -522,6 +574,171 @@ export class AgentSession {
 		}
 		return this._decisionsModels;
 	}
+
+	/** Installed decision models for settings UIs. Refreshes local providers
+	 * (notably Ollama's `/api/tags` decision capability) before listing. */
+	async listDecisionModels(): Promise<
+		Array<{ provider: string; id: string; name: string; input: ("text" | "image")[]; contextWindow: number }>
+	> {
+		const models = this._decisionModels();
+		if (!models) return [];
+		await models.refresh().catch(() => {});
+		return models.getModels().map((model) => ({
+			provider: model.provider,
+			id: model.id,
+			name: model.name,
+			input: [...model.input],
+			contextWindow: model.contextWindow,
+		}));
+	}
+
+	getAutoContinueSettings(): ReturnType<SettingsManager["getAutoContinueSettings"]> {
+		return this.settingsManager.getAutoContinueSettings();
+	}
+
+	setAutoContinueSettings(settings: Parameters<SettingsManager["setAutoContinueSettings"]>[0]): void {
+		this.settingsManager.setAutoContinueSettings(settings);
+		// A provider/model change must not keep the previously resolved model.
+		this._autoContinueModel = undefined;
+		this._decisionsModel = undefined;
+	}
+
+	/** Resolve the decision model used for auto-continue. Uses the explicit
+	 * autoContinue provider/model when set, otherwise the shared `decisions`
+	 * target resolved by the permission gate. */
+	private async _autoContinueDecisionModel(
+		settings: ResolvedAutoContinueSettings,
+	): Promise<DecisionsModel<any> | undefined> {
+		if (!settings.provider && !settings.model) return this._decisionGateModel();
+		if (this._autoContinueModel === "unavailable") return undefined;
+		if (this._autoContinueModel) return this._autoContinueModel;
+		try {
+			this._decisionsModels ??= builtinDecisionsModels();
+			this._autoContinueModel = await resolveDecideModel(
+				this._decisionsModels,
+				{
+					state: "probe",
+					questions: { probe: { type: "noul", instructions: "probe" } },
+					...(settings.provider ? { provider: settings.provider } : {}),
+					...(settings.model ? { model: settings.model } : {}),
+				},
+				{ settings: { provider: settings.provider, model: settings.model } },
+			);
+			return this._autoContinueModel;
+		} catch {
+			this._autoContinueModel = "unavailable";
+			return undefined;
+		}
+	}
+
+	/** Build the compact state a decision model can judge. Long transcripts are
+	 * deliberately reduced to the goal, the last reply, and a few recent lines:
+	 * System One requests have a small local payload/context budget. */
+	private _buildAutoContinueState(
+		checkpoint: AutoContinueCheckpoint,
+		assistantMessage: AssistantMessage | undefined,
+	): AutoContinueState {
+		const messages = this.agent.state.messages;
+		let goal = "";
+		for (let i = messages.length - 1; i >= 0; i--) {
+			const message = messages[i];
+			if (message.role !== "user") continue;
+			const text = this._getUserMessageText(message as Message).trim();
+			if (text) {
+				goal = text;
+				break;
+			}
+		}
+
+		const recent = messages
+			.slice(-8)
+			.map((message) => this._summarizeMessageForDecision(message))
+			.filter((line) => line.length > 0);
+		const estimate = estimateContextTokens(messages);
+		const contextWindow = this.model?.contextWindow ?? 0;
+
+		return {
+			checkpoint,
+			goal,
+			lastAssistant: this._extractAssistantText(assistantMessage ?? this._findLastAssistantMessage()),
+			recent,
+			consecutive: this._smartContinuationsForCurrentPrompt,
+			...(assistantMessage?.stopReason ? { stopReason: assistantMessage.stopReason } : {}),
+			context: { used: estimate.tokens, window: contextWindow },
+		};
+	}
+
+	private _summarizeMessageForDecision(message: AgentMessage): string {
+		const record = message as {
+			role?: string;
+			toolName?: string;
+			isError?: boolean;
+			content?: unknown;
+		};
+		const content = record.content;
+		const text =
+			typeof content === "string"
+				? content
+				: Array.isArray(content)
+					? content
+							.map((part) =>
+								typeof part === "string"
+									? part
+									: typeof part === "object" && part !== null && "text" in part
+										? String((part as { text?: unknown }).text ?? "")
+										: "",
+							)
+							.join("")
+					: "";
+		const label =
+			record.role === "toolResult"
+				? `tool ${record.toolName ?? "unknown"}${record.isError ? " ERROR" : ""}`
+				: (record.role ?? "message");
+		const trimmed = text.replace(/\s+/g, " ").trim();
+		return trimmed ? `${label}: ${trimmed.slice(0, 500)}` : "";
+	}
+
+	private async _maybeSmartAutoContinue(
+		checkpoint: AutoContinueCheckpoint,
+		assistantMessage?: AssistantMessage,
+	): Promise<AutoContinueDecision | undefined> {
+		const settings = this.settingsManager.getAutoContinueSettings();
+		if (settings.mode === "off") return undefined;
+		if (checkpoint !== "compaction" && settings.mode !== "smart") return undefined;
+
+		const model = await this._autoContinueDecisionModel(settings);
+		if (!model) return undefined;
+		const decisions = this._decisionModels();
+		if (!decisions) return undefined;
+
+		const decision = await decideAutoContinue(
+			decisions,
+			model,
+			this._buildAutoContinueState(checkpoint, assistantMessage),
+			settings,
+		).catch(() => undefined);
+		if (!decision) return undefined;
+
+		this._emit({
+			type: "auto_continue_decision",
+			checkpoint: decision.checkpoint,
+			action: decision.action,
+			probabilities: decision.probabilities,
+			progress: decision.progress,
+			...(decision.confidence !== undefined ? { confidence: decision.confidence } : {}),
+			...(decision.model ? { model: decision.model } : {}),
+			latencyMs: decision.latencyMs,
+			reason: decision.reason,
+		});
+		return decision;
+	}
+
+	private async _queueSmartContinuation(text: string): Promise<void> {
+		this._smartContinuationsForCurrentPrompt++;
+		this._autoContinuedForCurrentPrompt = true;
+		await this._queueFollowUp(text);
+	}
+
 	private _recentAutoModeToolCalls: string[] = [];
 
 	// Compaction state
@@ -545,6 +762,8 @@ export class AgentSession {
 	// Auto-continue state: prevents the harness from idling after the assistant
 	// describes a plan but fails to emit tool calls (e.g., 'Let me build that now').
 	private _autoContinuedForCurrentPrompt = false;
+	private _smartContinuationsForCurrentPrompt = 0;
+	private _autoContinueModel: DecisionsModel<any> | "unavailable" | undefined;
 
 	// Bash execution state
 	private _bashAbortController: AbortController | undefined = undefined;
@@ -838,7 +1057,7 @@ export class AgentSession {
 				}
 				return {
 					decision: this._permissionPromptHandler ? "prompt" : "deny",
-					reason: `Auto-mode classifier (${outcome.verdict.model ?? "decision model"} p=${outcome.verdict.topProbability ?? "?"}): ${outcome.verdict.reason}`,
+					reason: `Auto-mode classifier (${outcome.verdict.model ?? "decision model"} p=${outcome.verdict.topProbability ?? "?"}${outcome.verdict.risk !== undefined ? ` risk=${outcome.verdict.risk.toFixed(1)}` : ""}): ${outcome.verdict.reason}`,
 				};
 			}
 		}
@@ -1479,23 +1698,6 @@ export class AgentSession {
 		return textBlocks.map((c) => (c as TextContent).text).join("");
 	}
 
-	/**
-	 * Detect when the model hit the output token limit mid-generation.
-	 * This happens with local/small models that have constrained output windows.
-	 * We auto-continue with a nudge to complete the truncated response.
-	 */
-	private _shouldAutoContinueAfterLengthStop(message: AssistantMessage): boolean {
-		// Only trigger on length stops
-		if (message.stopReason !== "length") {
-			return false;
-		}
-		// Don't double-continue
-		if (this._autoContinuedForCurrentPrompt) {
-			return false;
-		}
-		return true;
-	}
-
 	/** Whether the user message implies they want the agent to take action. */
 	private _findLastAssistantMessage(): AssistantMessage | undefined {
 		const messages = this.agent.state.messages;
@@ -2041,12 +2243,30 @@ export class AgentSession {
 
 		// If the model hit the output token limit, auto-continue to finish the response.
 		// This is common with local/small models that have constrained output windows.
-		if (this._shouldAutoContinueAfterLengthStop(msg)) {
-			this._autoContinuedForCurrentPrompt = true;
-			await this._queueFollowUp(
-				"You were cut off due to the output token limit. Please continue exactly where you left off. Do not repeat what you already wrote.",
-			);
-			return true;
+		if (msg.stopReason === "length") {
+			const smart = await this._maybeSmartAutoContinue("length", msg);
+			if (smart?.action === "continue") {
+				await this._queueSmartContinuation(
+					"You were cut off due to the output token limit. Please continue exactly where you left off. Do not repeat what you already wrote.",
+				);
+				return true;
+			}
+			// Smart mode may deliberately stop/ask after a length stop. Otherwise,
+			// keep the legacy one-nudge behavior for a fresh prompt.
+			if (!smart && !this._autoContinuedForCurrentPrompt) {
+				await this._queueSmartContinuation(
+					"You were cut off due to the output token limit. Please continue exactly where you left off. Do not repeat what you already wrote.",
+				);
+				return true;
+			}
+		}
+
+		if (msg.stopReason === "stop") {
+			const smart = await this._maybeSmartAutoContinue("agent_end", msg);
+			if (smart?.action === "continue") {
+				await this._queueSmartContinuation("Continue working on the user's request. Do not repeat completed work.");
+				return true;
+			}
 		}
 
 		// The agent loop drains both queues before emitting agent_end. Any messages
@@ -2066,6 +2286,7 @@ export class AgentSession {
 	async prompt(text: string, options?: PromptOptions): Promise<void> {
 		// Reset per-prompt auto-continue state so a fresh user request can be nudged once.
 		this._autoContinuedForCurrentPrompt = false;
+		this._smartContinuationsForCurrentPrompt = 0;
 
 		const expandPromptTemplates = options?.expandPromptTemplates ?? true;
 		const preflightResult = options?.preflightResult;
@@ -2760,6 +2981,59 @@ export class AgentSession {
 	}
 
 	// =========================================================================
+	/** Live llama.cpp server capabilities plus the currently registered models. */
+	async getLlamaCppStatus(refreshModels = true): Promise<LlamaCppStatus> {
+		const baseUrl = resolveLlamaCppBaseUrl();
+		if (refreshModels) {
+			await this.modelRegistry.refreshLlamaCppModels(true).catch(() => {});
+		}
+		const models = this.modelRegistry
+			.getAvailable()
+			.filter((model) => model.provider === "llama-cpp")
+			.map((model) => ({
+				id: model.id,
+				name: model.name,
+				contextWindow: model.contextWindow,
+				maxTokens: model.maxTokens,
+				reasoning: model.reasoning,
+				vision: model.input.includes("image"),
+				thinkingLevels: getSupportedThinkingLevels(model) as string[],
+				samplingParams: model.samplingParams,
+			}));
+
+		try {
+			const info = await fetchLlamaCppServerInfo(baseUrl);
+			return {
+				baseUrl: info.baseUrl,
+				reachable: true,
+				buildInfo: info.props.build_info,
+				modelPath: info.props.model_path,
+				contextWindow: info.capabilities.contextWindow,
+				vision: info.capabilities.vision,
+				reasoning: info.capabilities.reasoning,
+				reasoningFormat: info.capabilities.reasoningFormat,
+				thinkingFormat: info.capabilities.thinkingFormat,
+				supportsReasoningEffort: info.capabilities.supportsReasoningEffort,
+				supportsTools: info.capabilities.supportsTools,
+				supportsPreserveReasoning: info.capabilities.supportsPreserveReasoning,
+				models,
+			};
+		} catch (error) {
+			return {
+				baseUrl,
+				reachable: false,
+				error: error instanceof Error ? error.message : String(error),
+				vision: false,
+				reasoning: false,
+				reasoningFormat: "none",
+				supportsReasoningEffort: false,
+				supportsTools: false,
+				supportsPreserveReasoning: false,
+				models,
+			};
+		}
+	}
+
 	// Thinking Level Management
 	// =========================================================================
 
@@ -3354,6 +3628,22 @@ export class AgentSession {
 			// Continue once so queued messages are delivered.
 			if (this.agent.hasQueuedMessages()) {
 				return true;
+			}
+
+			// Smart continuation asks a decision model whether the task still needs
+			// work after the summary. A stop/ask verdict overrides the legacy
+			// boolean; an unavailable model falls through to it.
+			if (!willRetry) {
+				const smart = await this._maybeSmartAutoContinue("compaction", this._findLastAssistantMessage());
+				if (smart) {
+					if (smart.action === "continue") {
+						await this._queueSmartContinuation(
+							"Continue working on the user's request. Do not repeat completed work.",
+						);
+						return true;
+					}
+					if (smart.action === "ask_user" || smart.action === "stop") return false;
+				}
 			}
 
 			// When enabled, automatically continue after threshold/successful-overflow compaction

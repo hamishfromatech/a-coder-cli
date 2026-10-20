@@ -46,6 +46,7 @@ type CapturedParams = {
 	thinking_budget?: number;
 	thinking_budget_tokens?: number;
 	thinking?: unknown;
+	reasoning_effort?: string;
 	chat_template_kwargs?: Record<string, unknown>;
 };
 
@@ -67,6 +68,36 @@ function vllmModel(
 		contextWindow: 262144,
 		maxTokens: 16384,
 		compat,
+	};
+}
+
+function llamaCppModel(): Model<"openai-completions"> {
+	return {
+		id: "qwen3-32b",
+		name: "llama.cpp: qwen3-32b",
+		api: "openai-completions",
+		provider: "llama-cpp",
+		baseUrl: "http://localhost:8080/v1",
+		reasoning: true,
+		thinkingLevelMap: {
+			off: "none",
+			minimal: "minimal",
+			low: "low",
+			medium: "medium",
+			high: "high",
+			xhigh: "xhigh",
+			max: "max",
+		},
+		input: ["text"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 32768,
+		maxTokens: 16384,
+		compat: {
+			thinkingFormat: "llama-cpp",
+			supportsReasoningEffort: true,
+			thinkingTokenBudgetField: "thinking_budget_tokens",
+			chatTemplateKwargs: { enable_thinking: { $var: "thinking.enabled" } },
+		},
 	};
 }
 
@@ -184,6 +215,31 @@ describe("openai-completions thinking token budget", () => {
 			thinking_budget: 16384 - 1024,
 		});
 		expect(params.thinking_token_budget).toBeUndefined();
+	});
+
+	it("sends llama.cpp reasoning_effort none and disables enable_thinking when off", async () => {
+		const params = await capture(llamaCppModel(), { reasoning: undefined });
+		expect(params.reasoning_effort).toBe("none");
+		expect(params.chat_template_kwargs).toEqual({ enable_thinking: false });
+		expect(params.thinking_budget_tokens).toBeUndefined();
+	});
+
+	it("sends llama.cpp reasoning_effort, enable_thinking, and the token budget when on", async () => {
+		const params = await capture(llamaCppModel(), {
+			reasoning: "high",
+			thinkingBudgets: { high: 4096 },
+		});
+		expect(params.reasoning_effort).toBe("high");
+		expect(params.chat_template_kwargs).toEqual({ enable_thinking: true });
+		expect(params.thinking_budget_tokens).toBe(4096);
+	});
+
+	it("keeps llama.cpp xhigh/max efforts and clamps the budget to answer room", async () => {
+		const xhigh = await capture(llamaCppModel(), { reasoning: "xhigh" });
+		const max = await capture(llamaCppModel(), { reasoning: "max", maxTokens: 4096 });
+		expect(xhigh.reasoning_effort).toBe("xhigh");
+		expect(max.reasoning_effort).toBe("max");
+		expect(max.thinking_budget_tokens).toBe(4096 - 1024);
 	});
 
 	it("omits thinking.budget from chat_template_kwargs when thinking is off", async () => {

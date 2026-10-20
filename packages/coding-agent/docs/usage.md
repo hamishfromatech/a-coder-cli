@@ -59,6 +59,7 @@ Type `/` in the editor to open command completion. Extensions can register custo
 | `/workflows` | List saved workflows and runs; drill into agents, stop/pause runs, save a run's script as a command |
 | `/cron` | Scheduled tasks: `/cron add <name> every:30m\|daily:HH:MM\|once:<ISO> <prompt>`, plus run/pause/resume/remove |
 | `/mcp [reconnect [server]]` | Show connected MCP servers, tool counts, and errors; `reconnect` re-connects and re-discovers |
+| `/llama` | Show llama.cpp server build, context, vision, thinking support, and loaded model controls |
 | `/memory` | Open the persistent `MEMORY.md` notes file |
 | `/office` | The virtual office: AI coworkers, errands, huddles (2D/3D) |
 | `/output-style` | Set the assistant's output style |

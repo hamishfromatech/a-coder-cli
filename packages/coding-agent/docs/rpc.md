@@ -536,6 +536,31 @@ Response:
 {"type": "response", "command": "set_auto_compaction", "success": true}
 ```
 
+#### get_llama_cpp_status
+
+Return live llama-server capabilities from `/props` plus the registered llama.cpp models, their context windows, vision/thinking support, and current sampling defaults.
+
+```json
+{"type": "get_llama_cpp_status"}
+```
+
+#### get_decision_models
+
+List installed/configured System One models and the resolved smart auto-continue settings. Refreshes local providers first (Ollama decision models are discovered from `/api/tags`).
+
+```json
+{"type": "get_decision_models"}
+```
+
+#### get_auto_continue_settings / set_auto_continue_settings
+
+```json
+{"type": "get_auto_continue_settings"}
+{"type": "set_auto_continue_settings", "settings": {"mode": "smart", "maxConsecutive": 2}}
+```
+
+`mode` is `off`, `compaction`, or `smart`. See [settings.md](settings.md#smart-auto-continue).
+
 #### set_compaction_auto_continue
 
 Enable or disable automatic continuation after auto-compaction completes. When enabled, the agent queues a follow-up "continue" message after threshold compaction so it resumes without waiting for user input. Overflow recovery always retries regardless of this setting.
@@ -1240,6 +1265,7 @@ Events are streamed to stdout as JSON lines during agent operation. Events do NO
 | `compaction_end` | Compaction completes |
 | `auto_retry_start` | Auto-retry begins (after transient error) |
 | `auto_retry_end` | Auto-retry completes (success or final failure) |
+| `auto_continue_decision` | Smart auto-continue evaluated: checkpoint, action, probabilities, progress, model, latency |
 | `extension_error` | Extension threw an error |
 | `sessions_update` | Runtime registry changed (background sessions) |
 | `session_stats` | Token/cost/context stats after a turn or compaction (no polling needed) |
@@ -1447,6 +1473,26 @@ If `reason` was `"overflow"` and compaction succeeds, `willRetry` is `true` and 
 If compaction was aborted, `result` is `null` and `aborted` is `true`.
 
 If compaction failed (e.g., API quota exceeded), `result` is `null`, `aborted` is `false`, and `errorMessage` contains the error description.
+
+### auto_continue_decision
+
+Emitted when smart auto-continue evaluates a checkpoint. The model is advisory; the event records what it saw.
+
+```json
+{
+  "type": "auto_continue_decision",
+  "checkpoint": "compaction",
+  "action": "continue",
+  "probabilities": {"done": 0.06, "ask_user": 0.08, "blocked": 0.04, "continue": 0.82},
+  "progress": 0.74,
+  "confidence": 0.61,
+  "model": "nimble-v3",
+  "latencyMs": 180,
+  "reason": "next=continue p=0.82 progress=0.74"
+}
+```
+
+`checkpoint` is `length`, `compaction`, or `agent_end`; `action` is `continue`, `ask_user`, or `stop`. `confidence` is distribution concentration, not correctness.
 
 ### auto_retry_start / auto_retry_end
 

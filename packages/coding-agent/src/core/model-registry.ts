@@ -27,6 +27,7 @@ import { fetchOllamaModels } from "@earendil-works/pi-ai/providers/ollama";
 import { fetchOllamaCloudModels } from "@earendil-works/pi-ai/providers/ollama-cloud";
 import { fetchOllamaContextWindow, looksLikeOllama } from "@earendil-works/pi-ai/providers/ollama-context";
 import { fetchOpenAdapterModels } from "@earendil-works/pi-ai/providers/openadapter";
+import { fetchOpenRouterModels } from "@earendil-works/pi-ai/providers/openrouter";
 import { fetchSgLangModels } from "@earendil-works/pi-ai/providers/sglang";
 import { fetchUnslothModels } from "@earendil-works/pi-ai/providers/unsloth";
 import { fetchVllmModels } from "@earendil-works/pi-ai/providers/vllm";
@@ -111,7 +112,11 @@ const ThinkingLevelMapSchema = Type.Object({
 
 const ChatTemplateKwargScalarSchema = Type.Union([Type.String(), Type.Number(), Type.Boolean(), Type.Null()]);
 const ChatTemplateKwargVariableSchema = Type.Object({
-	$var: Type.Union([Type.Literal("thinking.enabled"), Type.Literal("thinking.effort")]),
+	$var: Type.Union([
+		Type.Literal("thinking.enabled"),
+		Type.Literal("thinking.effort"),
+		Type.Literal("thinking.budget"),
+	]),
 	omitWhenOff: Type.Optional(Type.Boolean()),
 });
 const ChatTemplateKwargSchema = Type.Union([ChatTemplateKwargScalarSchema, ChatTemplateKwargVariableSchema]);
@@ -136,11 +141,20 @@ const OpenAICompletionsCompatSchema = Type.Object({
 			Type.Literal("qwen"),
 			Type.Literal("chat-template"),
 			Type.Literal("qwen-chat-template"),
+			Type.Literal("llama-cpp"),
 			Type.Literal("string-thinking"),
 			Type.Literal("ant-ling"),
 		]),
 	),
 	chatTemplateKwargs: Type.Optional(Type.Record(Type.String(), ChatTemplateKwargSchema)),
+	thinkingTokenBudgetField: Type.Optional(
+		Type.Union([
+			Type.Literal("thinking_token_budget"),
+			Type.Literal("thinking_budget"),
+			Type.Literal("thinking_budget_tokens"),
+		]),
+	),
+	supportsThinkingTokenBudget: Type.Optional(Type.Boolean()),
 	cacheControlFormat: Type.Optional(Type.Literal("anthropic")),
 	openRouterRouting: Type.Optional(OpenRouterRoutingSchema),
 	vercelGatewayRouting: Type.Optional(VercelGatewayRoutingSchema),
@@ -190,6 +204,7 @@ const ModelDefinitionSchema = Type.Object({
 	maxTokens: Type.Optional(Type.Number()),
 	headers: Type.Optional(Type.Record(Type.String(), Type.String())),
 	compat: Type.Optional(ProviderCompatSchema),
+	samplingParams: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
 });
 
 // Schema for per-model overrides (all fields optional, merged with built-in model)
@@ -210,6 +225,7 @@ const ModelOverrideSchema = Type.Object({
 	maxTokens: Type.Optional(Type.Number()),
 	headers: Type.Optional(Type.Record(Type.String(), Type.String())),
 	compat: Type.Optional(ProviderCompatSchema),
+	samplingParams: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
 });
 
 type ModelOverride = Static<typeof ModelOverrideSchema>;
@@ -221,6 +237,7 @@ const ProviderConfigSchema = Type.Object({
 	api: Type.Optional(Type.String({ minLength: 1 })),
 	headers: Type.Optional(Type.Record(Type.String(), Type.String())),
 	compat: Type.Optional(ProviderCompatSchema),
+	samplingParams: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
 	authHeader: Type.Optional(Type.Boolean()),
 	models: Type.Optional(Type.Array(ModelDefinitionSchema)),
 	modelOverrides: Type.Optional(Type.Record(Type.String(), ModelOverrideSchema)),
@@ -251,6 +268,7 @@ function formatValidationPath(error: TLocalizedValidationError): string {
 interface ProviderOverride {
 	baseUrl?: string;
 	compat?: Model<Api>["compat"];
+	samplingParams?: Record<string, unknown>;
 }
 
 interface ProviderRequestConfig {
@@ -283,6 +301,14 @@ interface CustomModelsResult {
 
 function emptyCustomModelsResult(error?: string): CustomModelsResult {
 	return { models: [], overrides: new Map(), modelOverrides: new Map(), error };
+}
+
+function mergeSamplingParams(
+	base: Record<string, unknown> | undefined,
+	override: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+	if (!base && !override) return undefined;
+	return { ...base, ...override };
 }
 
 function mergeCompat(
@@ -353,6 +379,9 @@ function applyModelOverride(model: Model<Api>, override: ModelOverride): Model<A
 	// Deep merge compat
 	result.compat = mergeCompat(model.compat, override.compat);
 
+	// Merge sampling defaults, with per-model keys winning.
+	result.samplingParams = mergeSamplingParams(result.samplingParams, override.samplingParams);
+
 	return result;
 }
 
@@ -397,6 +426,8 @@ export class ModelRegistry {
 	private loadError: string | undefined = undefined;
 	readonly authStorage: AuthStorage;
 	private modelsJsonPath: string | undefined;
+	private providerOverrides = new Map<string, ProviderOverride>();
+	private modelOverrides = new Map<string, Map<string, ModelOverride>>();
 	private ollamaCloudRefreshPromise: Promise<void> | undefined;
 	private ollamaCloudLastSuccess = 0;
 	/** Last refresh failure message, surfaced only for forced (explicit) refreshes. */
@@ -409,6 +440,12 @@ export class ModelRegistry {
 	private openadapterLastAttempt = 0;
 	private static readonly OPENADAPTER_REFRESH_MS = 5 * 60 * 1000;
 	private static readonly OPENADAPTER_FAILURE_RETRY_MS = 30 * 1000;
+	private openrouterRefreshPromise: Promise<void> | undefined;
+	private openrouterLastSuccess = 0;
+	private openrouterLastAttempt = 0;
+	private openrouterLastError: string | undefined = undefined;
+	private static readonly OPENROUTER_REFRESH_MS = 5 * 60 * 1000;
+	private static readonly OPENROUTER_FAILURE_RETRY_MS = 30 * 1000;
 	private lmStudioRefreshPromise: Promise<void> | undefined;
 	private lmStudioLastSuccess = 0;
 	private lmStudioLastAttempt = 0;
@@ -487,6 +524,10 @@ export class ModelRegistry {
 		this.openadapterLastSuccess = 0;
 		this.openadapterLastAttempt = 0;
 		this.openadapterRefreshPromise = undefined;
+		this.openrouterLastSuccess = 0;
+		this.openrouterLastAttempt = 0;
+		this.openrouterLastError = undefined;
+		this.openrouterRefreshPromise = undefined;
 		this.lmStudioLastSuccess = 0;
 		this.lmStudioLastAttempt = 0;
 		this.lmStudioRefreshPromise = undefined;
@@ -531,7 +572,9 @@ export class ModelRegistry {
 			// Keep built-in models even if custom models failed to load
 		}
 
-		const builtInModels = this.loadBuiltInModels(overrides, modelOverrides);
+		this.providerOverrides = overrides;
+		this.modelOverrides = modelOverrides;
+		const builtInModels = this.loadBuiltInModels();
 		let combined = this.mergeCustomModels(builtInModels, customModels);
 
 		// Let OAuth providers modify their models (e.g., update baseUrl)
@@ -545,36 +588,31 @@ export class ModelRegistry {
 		this.models = combined;
 	}
 
+	/** Apply models.json provider/model overrides to a built-in or dynamically discovered model. */
+	private applyStoredOverrides(model: Model<Api>, provider: string): Model<Api> {
+		let result = model;
+		const providerOverride = this.providerOverrides.get(provider);
+		if (providerOverride) {
+			result = {
+				...result,
+				baseUrl: providerOverride.baseUrl ?? result.baseUrl,
+				compat: mergeCompat(result.compat, providerOverride.compat),
+				samplingParams: mergeSamplingParams(result.samplingParams, providerOverride.samplingParams),
+			};
+		}
+
+		const modelOverride = this.modelOverrides.get(provider)?.get(model.id);
+		if (modelOverride) {
+			result = applyModelOverride(result, modelOverride);
+		}
+		return result;
+	}
+
 	/** Load built-in models and apply provider/model overrides */
-	private loadBuiltInModels(
-		overrides: Map<string, ProviderOverride>,
-		modelOverrides: Map<string, Map<string, ModelOverride>>,
-	): Model<Api>[] {
+	private loadBuiltInModels(): Model<Api>[] {
 		return getProviders().flatMap((provider) => {
 			const models = getModels(provider as Parameters<typeof getModels>[0]) as Model<Api>[];
-			const providerOverride = overrides.get(provider);
-			const perModelOverrides = modelOverrides.get(provider);
-
-			return models.map((m) => {
-				let model = m;
-
-				// Apply provider-level baseUrl/headers/compat override
-				if (providerOverride) {
-					model = {
-						...model,
-						baseUrl: providerOverride.baseUrl ?? model.baseUrl,
-						compat: mergeCompat(model.compat, providerOverride.compat),
-					};
-				}
-
-				// Apply per-model override
-				const modelOverride = perModelOverrides?.get(m.id);
-				if (modelOverride) {
-					model = applyModelOverride(model, modelOverride);
-				}
-
-				return model;
-			});
+			return models.map((model) => this.applyStoredOverrides(model, provider));
 		});
 	}
 
@@ -619,10 +657,11 @@ export class ModelRegistry {
 			const modelOverrides = new Map<string, Map<string, ModelOverride>>();
 
 			for (const [providerName, providerConfig] of Object.entries(config.providers)) {
-				if (providerConfig.baseUrl || providerConfig.compat) {
+				if (providerConfig.baseUrl || providerConfig.compat || providerConfig.samplingParams) {
 					overrides.set(providerName, {
 						baseUrl: providerConfig.baseUrl,
 						compat: providerConfig.compat,
+						samplingParams: providerConfig.samplingParams,
 					});
 				}
 
@@ -659,9 +698,15 @@ export class ModelRegistry {
 
 			if (models.length === 0) {
 				// Override-only config: needs baseUrl, headers, compat, modelOverrides, or some combination.
-				if (!providerConfig.baseUrl && !providerConfig.headers && !providerConfig.compat && !hasModelOverrides) {
+				if (
+					!providerConfig.baseUrl &&
+					!providerConfig.headers &&
+					!providerConfig.compat &&
+					!providerConfig.samplingParams &&
+					!hasModelOverrides
+				) {
 					throw new Error(
-						`Provider ${providerName}: must specify "baseUrl", "headers", "compat", "modelOverrides", or "models".`,
+						`Provider ${providerName}: must specify "baseUrl", "headers", "compat", "samplingParams", "modelOverrides", or "models".`,
 					);
 				}
 			} else if (!isBuiltIn) {
@@ -733,6 +778,7 @@ export class ModelRegistry {
 				if (!baseUrl) continue;
 
 				const compat = mergeCompat(providerConfig.compat, modelDef.compat);
+				const samplingParams = mergeSamplingParams(providerConfig.samplingParams, modelDef.samplingParams);
 				this.storeModelHeaders(providerName, modelDef.id, modelDef.headers);
 
 				const defaultCost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
@@ -750,6 +796,7 @@ export class ModelRegistry {
 					maxTokens: modelDef.maxTokens ?? 16384,
 					headers: undefined,
 					compat,
+					samplingParams,
 				} as Model<Api>);
 			}
 		}
@@ -821,6 +868,8 @@ export class ModelRegistry {
 		if (ollamaError) errors.push(ollamaError);
 		const openadapterError = await this.refreshOpenAdapterModels(force);
 		if (openadapterError) errors.push(openadapterError);
+		const openrouterError = await this.refreshOpenRouterModels(force);
+		if (openrouterError) errors.push(openrouterError);
 		const lmStudioError = await this.refreshLMStudioModels(force);
 		if (lmStudioError) errors.push(lmStudioError);
 		const llamaCppError = await this.refreshLlamaCppModels(force);
@@ -892,6 +941,63 @@ export class ModelRegistry {
 
 		await promise;
 		if (force && this.ollamaCloudLastError) return this.ollamaCloudLastError;
+		return undefined;
+	}
+
+	/**
+	 * Refresh OpenRouter's model list from https://openrouter.ai/api/v1/models.
+	 * Best-effort: on failure the existing (static + previously fetched) models
+	 * remain. Only models missing from the registry are appended, so live
+	 * catalog additions cannot overwrite models.json overrides.
+	 *
+	 * @param force When true, bypass the success/failure caches and fetch
+	 * immediately. Returns an error message if the refresh fails.
+	 */
+	private async refreshOpenRouterModels(force = false): Promise<string | undefined> {
+		if (!this.hasConfiguredAuthForProvider("openrouter")) return;
+
+		const now = Date.now();
+		const recentlySucceeded = now - this.openrouterLastSuccess < ModelRegistry.OPENROUTER_REFRESH_MS;
+		const recentlyAttempted = now - this.openrouterLastAttempt < ModelRegistry.OPENROUTER_FAILURE_RETRY_MS;
+		if (!force && (this.openrouterRefreshPromise || recentlyAttempted)) {
+			return (this.openrouterRefreshPromise ?? Promise.resolve()).then(() => undefined);
+		}
+
+		this.openrouterRefreshPromise = (async () => {
+			this.openrouterLastAttempt = Date.now();
+			this.openrouterLastError = undefined;
+			if (!force && recentlySucceeded && this.models.some((m) => m.provider === "openrouter")) {
+				this.openrouterRefreshPromise = undefined;
+				return;
+			}
+			try {
+				const apiKey = await this.getApiKeyForProvider("openrouter");
+				const refreshed = await fetchOpenRouterModels(apiKey);
+				if (refreshed.length === 0) return;
+
+				// Additive merge: keep the generated catalog and any models.json
+				// overrides/custom entries, and append models OpenRouter added since
+				// the last release.
+				const existingIds = new Set(
+					this.models.filter((model) => model.provider === "openrouter").map((model) => model.id),
+				);
+				const additions = refreshed.filter((model) => !existingIds.has(model.id));
+				if (additions.length > 0) this.models.push(...additions);
+				this.openrouterLastSuccess = Date.now();
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				console.error(
+					`Failed to refresh OpenRouter models — keeping last known models. (${message.split("\n")[0]})`,
+				);
+				this.openrouterLastError = message;
+			} finally {
+				this.openrouterRefreshPromise = undefined;
+			}
+		})();
+		const promise = this.openrouterRefreshPromise;
+
+		await promise;
+		if (force && this.openrouterLastError) return this.openrouterLastError;
 		return undefined;
 	}
 
@@ -998,7 +1104,7 @@ export class ModelRegistry {
 	 * Keyless local provider: always attempts to reach the server. A missing
 	 * server is expected and is silently ignored.
 	 */
-	private async refreshLlamaCppModels(force = false): Promise<string | undefined> {
+	async refreshLlamaCppModels(force = false): Promise<string | undefined> {
 		const now = Date.now();
 		const recentlySucceeded = now - this.llamaCppLastSuccess < ModelRegistry.LLAMA_CPP_REFRESH_MS;
 		const recentlyAttempted = now - this.llamaCppLastAttempt < ModelRegistry.LLAMA_CPP_FAILURE_RETRY_MS;
@@ -1017,7 +1123,7 @@ export class ModelRegistry {
 				const refreshed = await fetchLlamaCppModels(env?.LLAMACPP_BASE_URL);
 				if (refreshed.length === 0) return;
 				this.models = this.models.filter((m) => m.provider !== "llama-cpp");
-				this.models.push(...refreshed);
+				this.models.push(...refreshed.map((model) => this.applyStoredOverrides(model, "llama-cpp")));
 				this.llamaCppLastSuccess = Date.now();
 			} catch {
 				// Server not running is expected for a keyless local provider.
@@ -1578,6 +1684,7 @@ export class ModelRegistry {
 					maxTokens: modelDef.maxTokens,
 					headers: undefined,
 					compat: modelDef.compat,
+					samplingParams: mergeSamplingParams(config.samplingParams, modelDef.samplingParams),
 				} as Model<Api>);
 			}
 
@@ -1612,6 +1719,7 @@ export interface ProviderConfigInput {
 	streamSimple?: (model: Model<Api>, context: Context, options?: SimpleStreamOptions) => AssistantMessageEventStream;
 	headers?: Record<string, string>;
 	authHeader?: boolean;
+	samplingParams?: Record<string, unknown>;
 	/** OAuth provider for /login support */
 	oauth?: Omit<OAuthProviderInterface, "id">;
 	models?: Array<{
@@ -1627,5 +1735,6 @@ export interface ProviderConfigInput {
 		maxTokens: number;
 		headers?: Record<string, string>;
 		compat?: Model<Api>["compat"];
+		samplingParams?: Record<string, unknown>;
 	}>;
 }

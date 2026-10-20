@@ -42,8 +42,9 @@ bench/
 ```
 
 - `instruction` is sent verbatim as the agent prompt.
-- `grade.mjs` is spawned with `cwd` = the run's repo copy and `node grade.mjs`.
-  Exit code 0 = pass. Stdout may be JSON (recorded as `grade.detail`).
+- `grade.mjs` is spawned with a resolved Node/Bun runtime and `cwd` = the run's
+  repo copy. Exit code 0 = pass. Stdout may be JSON (recorded as
+  `grade.detail`).
 - The grader is never copied into the agent's workspace, so hidden tests are free.
 
 ## Running
@@ -64,6 +65,9 @@ node_modules/.bin/tsx bench/runner.ts \
 
 # Subset of tasks
 node_modules/.bin/tsx bench/runner.ts --model ollama/gemma3:1b --tasks 001-fix-crash,004-precise-json-edit
+
+# Two independent runs at a time (hosted providers may rate-limit)
+node_modules/.bin/tsx bench/runner.ts --model ollama-cloud/deepseek-v4.1-flash:1017 --concurrency 2
 ```
 
 When `--endpoint` is given, the runner writes a per-run agent dir with a
@@ -71,15 +75,44 @@ When `--endpoint` is given, the runner writes a per-run agent dir with a
 `A_CODER_CLI_CODING_AGENT_DIR` - the user's real config is never touched.
 Without `--endpoint`, ambient auth is used (whatever `pi` can already use).
 
+Each run gets a scratch agent dir under `bench/runs/<id>/agent/`. Its
+`settings.json` disables MCP servers and global memory injection, while
+`auth.json` and `models.json` are linked in so ambient providers keep working. Children also run with
+`--no-extensions --no-skills --no-prompt-templates --no-themes
+--no-context-files --no-approve`. That keeps a score comparable across machines instead of
+inheriting the local install's tools and prompts; use `--endpoint` to isolate
+the model endpoint as well.
+
+`--concurrency N` (default 1) runs independent (task x run) jobs in parallel.
+The desktop Bench panel exposes the same setting. Start at 1 for rate-limited
+hosted APIs; local models can usually take 2-4.
+
 ## Reporting
 
 ```bash
 node_modules/.bin/tsx bench/report.ts
 ```
 
-Writes `bench/leaderboard.md`: per model x task pass rate, pass@any, tokens,
-turns, tool-error rate, and edit-failure rate (the Aider-polyglot-style signal
-that is the most sensitive early-warning metric for fine-tuned coding models).
+Writes `bench/leaderboard.md`: per model x task pass rate, pass@any, wall time,
+tokens, turns, tool-error rate, edit-failure rate, timeouts, and agent errors.
+Endpoint-qualified runs are reported separately from ambient-auth runs.
+
+## Execution details
+
+- Each run gets a unique, filesystem-safe id (`timestamp_provider_model_task_rN_suffix`),
+  so model ids containing `/` or `:` are safe on Windows and parallel runs never
+  share a directory.
+- Agent stdout is streamed to `events.jsonl` while an incremental NDJSON parser
+  accumulates turns, usage, tool calls, errors, and the final text. A long run
+  does not hold its whole event stream in memory.
+- Timeouts kill the child's process group (SIGTERM, then SIGKILL after 5s), so
+  shell tools cannot survive a timed-out agent.
+- The hidden grader is resolved to a real Node/Bun runtime. In compiled Bun
+  binaries `process.execPath` is the CLI, not a script runner, so the core
+  searches PATH and common nvm/fnm/volta/Bun/Homebrew locations. Set
+  `A_CODER_CLI_NODE_DIR` to add an explicit runtime directory.
+- `results.jsonl` is de-duplicated by run id on read, so rerunning a report and
+  older duplicate appends do not inflate pass rates.
 
 ## What the runner records
 

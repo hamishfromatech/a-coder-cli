@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { AlertCircle, Eye, EyeOff, FlaskConical, Loader2, Play, Square, Trophy } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -86,6 +87,8 @@ function renderEventLine(event: BenchEvent): string {
 			return event.message ?? "";
 		case "bench_stderr":
 			return `stderr: ${event.message ?? ""}`;
+		case "bench_summary":
+			return `complete: ${event.passed ?? 0}/${event.total ?? 0} passed`;
 		default:
 			return JSON.stringify(event);
 	}
@@ -116,7 +119,6 @@ export function BenchRunnerSection() {
 	const [ack, setAck] = useState(false);
 	const [running, setRunning] = useState(false);
 	const [lines, setLines] = useState<BenchEvent[]>([]);
-	const [summary, setSummary] = useState<{ passed: number; total: number; leaderboardPath: string } | null>(null);
 	const [startError, setStartError] = useState<string | null>(null);
 	const [scaffolding, setScaffolding] = useState(false);
 	const logRef = useRef<HTMLDivElement>(null);
@@ -197,7 +199,6 @@ export function BenchRunnerSection() {
 
 	const start = async () => {
 		setStartError(null);
-		setSummary(null);
 		setLines([]);
 		const model = s.benchModel.trim();
 		if (!model.includes("/")) {
@@ -220,6 +221,7 @@ export function BenchRunnerSection() {
 				endpoint: s.benchEndpoint.trim() || undefined,
 				api_key: s.benchApiKey.trim() || undefined,
 				runs: s.benchRuns,
+				concurrency: s.benchConcurrency,
 				tasks: selectedTasks.size > 0 ? [...selectedTasks].join(",") : undefined,
 			});
 		} catch (e) {
@@ -236,16 +238,13 @@ export function BenchRunnerSection() {
 		}
 	};
 
-	const openLeaderboard = () => {
-		if (summary?.leaderboardPath) {
-			void import("@tauri-apps/api/core").then(({ invoke }) =>
-				invoke("open_file_in_editor", { path: summary.leaderboardPath }).catch(() => undefined),
-			);
-		}
-	};
-
 	// Derive the latest summary event from the stream.
 	const streamSummary = [...lines].reverse().find((l) => l.type === "bench_summary");
+
+	const openLeaderboard = () => {
+		const path = streamSummary?.leaderboardPath;
+		if (path) void invoke("open_file_in_editor", { path }).catch(() => undefined);
+	};
 
 	return (
 		<section className="space-y-3">
@@ -290,7 +289,7 @@ export function BenchRunnerSection() {
 								type="button"
 								disabled={running}
 								onClick={() => s.setBenchRuns(n)}
-								className={`rounded-md px-3 py-1 text-2xs font-medium transition-colors ${
+								className={`rounded-pi-md px-3 py-1 text-2xs font-medium transition-colors ${
 									s.benchRuns === n
 										? "bg-pi-accent text-white"
 										: "bg-pi-surface-raised text-pi-text-muted hover:text-pi-text"
@@ -301,6 +300,29 @@ export function BenchRunnerSection() {
 						))}
 					</div>
 					<span className="text-2xs text-pi-text-muted">More runs give more stable pass rates (and cost more tokens).</span>
+				</label>
+				<label className="block space-y-1">
+					<span className="text-3xs font-semibold uppercase tracking-wider text-pi-text-faint">Parallel runs</span>
+					<div className="flex gap-1.5">
+						{[1, 2, 4].map((n) => (
+							<button
+								key={n}
+								type="button"
+								disabled={running}
+								onClick={() => s.setBenchConcurrency(n)}
+								className={`rounded-pi-md px-3 py-1 text-2xs font-medium transition-colors ${
+									s.benchConcurrency === n
+										? "bg-pi-accent text-white"
+										: "bg-pi-surface-raised text-pi-text-muted hover:text-pi-text"
+								}`}
+							>
+								{n}
+							</button>
+						))}
+					</div>
+					<span className="text-2xs text-pi-text-muted">
+						Run independent tasks at the same time. Hosted providers may rate-limit; start at 1.
+					</span>
 				</label>
 				<LabeledInput
 					label="Bench directory"

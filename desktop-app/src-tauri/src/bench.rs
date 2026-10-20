@@ -38,6 +38,7 @@ pub struct BenchRunConfig {
 	pub api: Option<String>,
 	pub api_key: Option<String>,
 	pub runs: u32,
+	pub concurrency: Option<u32>,
 	pub tasks: Option<String>,
 }
 
@@ -129,6 +130,10 @@ pub async fn bench_start(
 		"--bench-dir".into(),
 		config.bench_dir.clone(),
 	];
+	if let Some(concurrency) = config.concurrency.filter(|value| *value > 1) {
+		args.push("--concurrency".into());
+		args.push(concurrency.min(8).to_string());
+	}
 	if let Some(endpoint) = config
 		.endpoint
 		.as_ref()

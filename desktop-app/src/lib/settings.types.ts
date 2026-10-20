@@ -42,6 +42,30 @@ export interface CompactionSettings {
 	keepRecentTokens?: number;
 }
 
+export type AutoContinueMode = "off" | "compaction" | "smart";
+
+export interface AutoContinueSettings {
+	mode?: AutoContinueMode;
+	provider?: string;
+	model?: string;
+	minContinueProbability?: number;
+	minProgressProbability?: number;
+	maxConsecutive?: number;
+}
+
+export interface ResolvedAutoContinueSettings extends Required<Omit<AutoContinueSettings, "provider" | "model">> {
+	provider?: string;
+	model?: string;
+}
+
+export interface DecisionModelInfo {
+	provider: string;
+	id: string;
+	name: string;
+	input: ("text" | "image")[];
+	contextWindow: number;
+}
+
 export interface BranchSummarySettings {
 	reserveTokens?: number;
 	skipPrompt?: boolean;
@@ -133,6 +157,7 @@ export interface CliSettings {
 	};
 	theme?: string;
 	compaction?: CompactionSettings;
+	autoContinue?: AutoContinueSettings;
 	branchSummary?: BranchSummarySettings;
 	retry?: RetrySettings;
 	hideThinkingBlock?: boolean;

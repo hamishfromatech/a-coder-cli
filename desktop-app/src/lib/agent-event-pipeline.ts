@@ -500,6 +500,19 @@ export function processAgentEvent(event: rpc.RpcEvent, deps: AgentEventDeps): vo
 				toast.error("Model request failed", event.finalError);
 			}
 			break;
+		case "auto_continue_decision": {
+			const decision = event as rpc.AutoContinueDecisionEvent;
+			const continueP = Math.round((decision.probabilities.continue ?? 0) * 100);
+			const detail = `${decision.reason} · progress ${Math.round(decision.progress * 100)}% · ${decision.latencyMs}ms${decision.model ? ` · ${decision.model}` : ""}`;
+			if (decision.action === "continue") {
+				toast.info(`Auto-continuing (${continueP}%)`, detail);
+			} else if (decision.action === "ask_user") {
+				toast.warning("Agent paused", detail);
+			} else {
+				toast.info("Auto-continue stopped", detail);
+			}
+			break;
+		}
 		case "thinking_level_changed":
 			// The engine can change the thinking level itself (the `/think`
 			// command, /think cycling, or thinking-keyword escalation like

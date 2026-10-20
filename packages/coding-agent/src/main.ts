@@ -403,15 +403,15 @@ async function buildSessionOptions(
 				modelRegistry,
 			});
 		let resolved = resolve();
-		if (resolved.error) {
-			// The spec may name a dynamic local provider (ollama, LM Studio,
-			// llama.cpp) whose models are only discovered by probing the local
-			// server. Headless paths never ran that discovery, so retry once
-			// after a refresh before reporting the failure.
+		if (resolved.error || resolved.warning?.includes("Using custom model id")) {
+			// The spec may name a dynamic provider model (Ollama Cloud, OpenRouter,
+			// local servers) that is not in the generated catalog yet. The sync
+			// resolver falls back to a custom model id; refresh once and retry so
+			// the live catalog entry (with its real context/output limits) wins.
 			try {
 				await modelRegistry.refreshDynamicModels();
 			} catch {
-				// best-effort: fall through to the original resolution error
+				// best-effort: fall through to the original resolution
 			}
 			resolved = resolve();
 		}

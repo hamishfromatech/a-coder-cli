@@ -3,6 +3,11 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { AgentEvent } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { PermissionMode } from "../stores/session-store";
+import type {
+	AutoContinueSettings,
+	DecisionModelInfo,
+	ResolvedAutoContinueSettings,
+} from "./settings.types";
 
 // Events emitted by the engine include standard AgentEvents plus extension UI requests and queue updates.
 export interface SessionStartEvent {
@@ -314,6 +319,7 @@ export type RpcEvent =
 	| ToolEndEvent
 	| AutoRetryStartEvent
 	| AutoRetryEndEvent
+	| AutoContinueDecisionEvent
 	| CompactionStartEvent
 	| OAuthLoginEvent
 	| CompactionEndEvent
@@ -461,6 +467,18 @@ export interface AutoRetryEndEvent {
 	success: boolean;
 	attempt: number;
 	finalError?: string;
+}
+
+export interface AutoContinueDecisionEvent {
+	type: "auto_continue_decision";
+	checkpoint: "length" | "compaction" | "agent_end";
+	action: "continue" | "ask_user" | "stop";
+	probabilities: Record<string, number>;
+	progress: number;
+	confidence?: number;
+	model?: string;
+	latencyMs: number;
+	reason: string;
 }
 
 export interface CompactionStartEvent {
@@ -897,6 +915,34 @@ export interface EngineSessionState {
 	pendingMessageCount?: number;
 }
 
+export interface LlamaCppModelStatus {
+	id: string;
+	name: string;
+	contextWindow: number;
+	maxTokens: number;
+	reasoning: boolean;
+	vision: boolean;
+	thinkingLevels: string[];
+	samplingParams?: Record<string, unknown>;
+}
+
+export interface LlamaCppStatus {
+	baseUrl: string;
+	reachable: boolean;
+	error?: string;
+	buildInfo?: string;
+	modelPath?: string;
+	contextWindow?: number;
+	vision: boolean;
+	reasoning: boolean;
+	reasoningFormat: "effort" | "enable-thinking" | "thinking" | "none";
+	thinkingFormat?: "llama-cpp" | "chat-template";
+	supportsReasoningEffort: boolean;
+	supportsTools: boolean;
+	supportsPreserveReasoning: boolean;
+	models: LlamaCppModelStatus[];
+}
+
 export interface CompactionResult {
 	summary?: string;
 	tokensBefore?: number;
@@ -1054,6 +1100,21 @@ export const cycleModel = () => sendCommand({ type: "cycle_model" });
 export const getAvailableModels = () =>
 	sendCommand({ type: "get_available_models" }) as Promise<{ models: Model<any>[] }>;
 export const refreshModels = () => sendCommand({ type: "refresh_models" });
+
+export const getLlamaCppStatus = () =>
+	sendCommand({ type: "get_llama_cpp_status" }) as Promise<LlamaCppStatus>;
+
+export const getDecisionModels = () =>
+	sendCommand({ type: "get_decision_models" }) as Promise<{
+		models: DecisionModelInfo[];
+		autoContinue: ResolvedAutoContinueSettings;
+	}>;
+
+export const getAutoContinueSettings = () =>
+	sendCommand({ type: "get_auto_continue_settings" }) as Promise<ResolvedAutoContinueSettings>;
+
+export const setAutoContinueSettings = (settings: AutoContinueSettings) =>
+	sendCommand({ type: "set_auto_continue_settings", settings });
 
 // ---- thinking ----
 export const setThinkingLevel = (level: ThinkingLevel) =>

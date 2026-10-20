@@ -4,6 +4,19 @@
 
 ### Added
 
+- Full llama.cpp support: discovered models read `/props` for vision, context, tools, and thinking capability; `/thinking`, the Desktop thinking pill, and thinking budgets now work for llama.cpp templates that support reasoning effort or a boolean thinking switch. `/llama` shows the live build, model, context, capabilities, and model list.
+- `models.json` now supports provider- and model-level `samplingParams`, plus `thinkingTokenBudgetField` / `supportsThinkingTokenBudget` in `compat`, and reapplies llama.cpp provider/model overrides after dynamic model refresh. The Desktop Local models panel edits llama.cpp sampling defaults and per-model overrides.
+
+- Smart auto-continue: an optional System One policy (`autoContinue.mode`) asks `next` (done/ask_user/blocked/continue) and `progress` (noul) at length stops, after compaction, and at normal agent pauses. It continues only above configurable probability/progress thresholds, caps consecutive continuations, and stops on `done`, `blocked`, or no progress. Every decision emits `auto_continue_decision` with probabilities, progress, model, and latency; `compaction.autoContinue` remains as the legacy fallback.
+
+- Permission classifier v2: the existing `risk` score now participates in the verdict, alongside a new `reversible` noul. A high-risk irreversible call can prompt even when the allow/block choice is uncertain, while a low-confidence block on harmless arguments no longer creates approval noise. Hard-deny policy still wins.
+
+- Desktop Settings → Conversation gains Smart auto-continue: mode (off/after compaction/smart), installed decision-model picker, and probability/continuation thresholds. Decision traces surface as toasts; the CLI shows a status line.
+
+- OpenRouter models now refresh from the live catalog on model-picker open and `--list-models`, so newly published models (for example Mercury 3) appear without a release. The refresh is additive and preserves `models.json` overrides. Explicit `--provider/--model` runs retry after the refresh instead of pinning a custom-id fallback.
+
+- A-Coder Bench performance: bounded parallel runs (`--concurrency`, desktop selector, wizard briefing) over a shared queue, incremental event parsing streamed straight to `events.jsonl` instead of buffering a whole run in memory, process-group teardown on timeout, filesystem-safe unique run ids, de-duplicated result loading, and endpoint-qualified leaderboard rows. Bench children run in an isolated agent dir: MCP servers and global memory injection are disabled (the largest hidden prompt/latency costs), while auth and custom models are linked in; extensions, skills, prompt templates, themes, and context files are also disabled so a score measures the harness rather than the local install.
+
 - Model picker: recent models (persisted, six max), provider-grouped sections, compact context/cost hints, and listbox semantics with a live highlight.
 - Session title menu: the titlebar name opens rename, pin, copy last reply, clone, fork, export, and delete (delete starts a fresh session first so the engine allows it).
 - Session rows: Shift-click or Shift+Enter pins, Cmd/Ctrl-click and middle-click open a background tab, drag reorders with a persisted manual order, and the list can group by recent activity or project.
@@ -118,6 +131,8 @@
 - The `@composio/core` + `@composio/experimental` SDK integration: the bespoke session-tools/custom-tools wiring, the Composio system-prompt section, and the `composio.*` settings (`enabled`, `apiKey`, `toolkits`, `sandbox`, `includeWorkbenchTools`, `callbackUrl`; leftovers in old settings files are ignored). App discovery/connect moved entirely into the MCP meta tools (the agent lists and connects apps for the user), so the `/apps` CLI command, the `composio_list_apps` / `composio_connect_app` / `composio_disconnect_app` RPC commands, and the desktop Apps panel were removed with it, and the desktop `Composio` settings card is empty by design pointing at the MCP servers editor.
 
 ### Fixed
+
+- A-Coder Bench: graders were never executed in compiled Bun builds because `process.execPath` is the CLI itself — running `process.execPath grade.mjs` booted another agent, whose final text was recorded as the grade detail. Graders now resolve an actual Node/Bun runtime (PATH plus nvm/fnm/volta/homebrew fallbacks), verify that the agent's repo copy and grader exist, and fail the run when no runtime can be found. The standalone runner no longer appends each result twice.
 
 - Desktop browser: explicit user navigation to loopback hosts (`localhost`, `*.localhost`, `127/8`, `::1`) now loads local dev servers. A bare `localhost:3000` address defaults to `http://`; the proxy and gateway allow only the loopback host the user visited, while public pages and private LAN ranges stay blocked.
 

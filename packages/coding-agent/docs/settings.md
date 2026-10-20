@@ -120,6 +120,8 @@ MCP server lists merge across scopes: the union of the global agent settings and
 
 Each keyless local provider ignores API keys: if a base URL is set in settings, it is exported for the session as the provider's `*_BASE_URL` environment variable before custom-provider resolution. See [providers.md](providers.md#keyless-local-model-servers).
 
+For llama.cpp, the engine reads `/props` and enables the thinking controls only when the loaded chat template advertises reasoning support. Thinking levels then use llama-server's `reasoning_effort` (`none` disables) and `thinking_budget_tokens`. Sampling defaults and per-model overrides are stored in `models.json` under the `llama-cpp` provider rather than `settings.json`; the Desktop Local models panel edits them, and `/llama` shows the live state.
+
 ### Updates
 
 | Setting | Type | Default | Description |
@@ -204,6 +206,30 @@ Set `A_CODER_CLI_SKIP_VERSION_CHECK=1` to disable the version update check. Use 
   }
 }
 ```
+
+### Smart auto-continue
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `autoContinue.mode` | `"off"` \| `"compaction"` \| `"smart"` | `"off"` | Off, decision-gated after compaction only, or decision-gated after length stops, compaction, and a normal pause |
+| `autoContinue.provider` | string | - | Decision provider override; defaults to `decisions.provider` |
+| `autoContinue.model` | string | - | Decision model override; defaults to `decisions.model` |
+| `autoContinue.minContinueProbability` | number | `0.70` | Minimum probability for the `continue` choice |
+| `autoContinue.minProgressProbability` | number | `0.55` | Minimum probability that the last turns made progress |
+| `autoContinue.maxConsecutive` | number | `2` | Maximum smart continuations per prompt |
+
+```json
+{
+  "autoContinue": {
+    "mode": "smart",
+    "minContinueProbability": 0.7,
+    "minProgressProbability": 0.55,
+    "maxConsecutive": 2
+  }
+}
+```
+
+Smart auto-continue needs a reachable System One model (see [decision-models.md](decision-models.md)). The model only gates the continuation; the main model still does the work. `compaction.autoContinue` remains as the legacy boolean for post-compaction continuation.
 
 ### Branch Summary
 

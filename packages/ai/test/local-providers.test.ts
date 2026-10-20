@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
 	createLlamaCppModel,
+	detectLlamaCppCapabilities,
 	fetchLlamaCppModels,
+	fetchLlamaCppServerInfo,
 	llamaCppContextWindow,
 	llamaCppProvider,
 	resolveLlamaCppBaseUrl,
+	resolveLlamaCppPropsUrl,
 } from "../src/providers/llama-cpp.ts";
 import { createLMStudioModel, fetchLMStudioModels, lmStudioProvider } from "../src/providers/lm-studio.ts";
 import { createOllamaModel, fetchOllamaModels, ollamaProvider, resolveOllamaBaseUrl } from "../src/providers/ollama.ts";
@@ -210,7 +213,170 @@ describe("llama.cpp provider", () => {
 		expect(createLlamaCppModel("m", undefined, 262144).contextWindow).toBe(262144);
 		expect(createLlamaCppModel("m", undefined, 0).contextWindow).toBe(128000);
 		expect(llamaCppContextWindow({ id: "x", meta: { n_ctx_train: 4096 } })).toBe(4096);
+		expect(
+			llamaCppContextWindow(
+				{ id: "x", meta: { n_ctx_train: 40960 } },
+				{ default_generation_settings: { n_ctx: 4096 } },
+			),
+		).toBe(4096);
 		expect(llamaCppContextWindow({ id: "x" })).toBeUndefined();
+	});
+
+	it("resolves /props at the server root rather than under /v1", () => {
+		expect(resolveLlamaCppPropsUrl("http://localhost:8080/v1")).toBe("http://localhost:8080/props");
+		expect(resolveLlamaCppPropsUrl("http://localhost:8080/v1/")).toBe("http://localhost:8080/props");
+		expect(resolveLlamaCppPropsUrl("http://localhost:8080")).toBe("http://localhost:8080/props");
+	});
+
+	it("detects reasoning-effort templates and vision from /props", async () => {
+		const fetchMock = vi.fn(async (input: unknown): Promise<Response> => {
+			const url = typeof input === "string" ? input : (input as Request).url;
+			if (url === "http://localhost:8080/v1/models") {
+				return new Response(
+					JSON.stringify({ object: "list", data: [{ id: "qwen3-32b", meta: { n_ctx: 32768 } }] }),
+					{
+						status: 200,
+						headers: { "content-type": "application/json" },
+					},
+				);
+			}
+			if (url === "http://localhost:8080/props") {
+				return new Response(
+					JSON.stringify({
+						build_info: "b9999-test",
+						model_path: "/models/qwen3-32b.gguf",
+						chat_template: "{% if reasoning_effort %}...{% endif %}{% if enable_thinking %}...{% endif %}",
+						chat_template_caps: { supports_reasoning_effort: true, supports_tools: true },
+						modalities: { vision: true },
+						default_generation_settings: { n_ctx: 32768 },
+					}),
+					{ status: 200, headers: { "content-type": "application/json" } },
+				);
+			}
+			throw new Error(`Unexpected fetch: ${url}`);
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		const models = await fetchLlamaCppModels();
+		expect(models).toHaveLength(1);
+		const model = models[0]!;
+		expect(model.reasoning).toBe(true);
+		expect(model.input).toEqual(["text", "image"]);
+		expect(model.contextWindow).toBe(32768);
+		expect(model.maxTokens).toBe(32768);
+		expect(model.compat?.thinkingFormat).toBe("llama-cpp");
+		expect(model.compat?.supportsReasoningEffort).toBe(true);
+		expect(model.compat?.thinkingTokenBudgetField).toBe("thinking_budget_tokens");
+		expect(model.compat?.chatTemplateKwargs).toEqual({
+			enable_thinking: { $var: "thinking.enabled" },
+		});
+		expect(model.thinkingLevelMap?.off).toBe("none");
+		expect(model.thinkingLevelMap?.high).toBe("high");
+
+		vi.unstubAllGlobals();
+	});
+
+	it("uses a boolean thinking switch when the template only exposes enable_thinking", async () => {
+		const fetchMock = vi.fn(async (input: unknown): Promise<Response> => {
+			const url = typeof input === "string" ? input : (input as Request).url;
+			if (url === "http://localhost:8080/v1/models") {
+				return new Response(JSON.stringify({ object: "list", data: [{ id: "qwen3-8b" }] }), {
+					status: 200,
+					headers: { "content-type": "application/json" },
+				});
+			}
+			if (url === "http://localhost:8080/props") {
+				return new Response(
+					JSON.stringify({
+						chat_template: "{% if enable_thinking %}think{% endif %}",
+						chat_template_caps: {},
+						modalities: { vision: false },
+					}),
+					{ status: 200, headers: { "content-type": "application/json" } },
+				);
+			}
+			throw new Error(`Unexpected fetch: ${url}`);
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		const [model] = await fetchLlamaCppModels();
+		expect(model?.reasoning).toBe(true);
+		expect(model?.input).toEqual(["text"]);
+		expect(model?.compat?.thinkingFormat).toBe("chat-template");
+		expect(model?.compat?.supportsReasoningEffort).toBe(false);
+		expect(model?.compat?.chatTemplateKwargs).toEqual({ enable_thinking: { $var: "thinking.enabled" } });
+		expect(model?.thinkingLevelMap?.low).toBe("low");
+		expect(model?.thinkingLevelMap?.high).toBeNull();
+
+		vi.unstubAllGlobals();
+	});
+
+	it("falls back cleanly when /props is unavailable", async () => {
+		const fetchMock = vi.fn(async (input: unknown): Promise<Response> => {
+			const url = typeof input === "string" ? input : (input as Request).url;
+			if (url === "http://localhost:8080/v1/models") {
+				return new Response(JSON.stringify({ object: "list", data: [{ id: "legacy" }] }), {
+					status: 200,
+					headers: { "content-type": "application/json" },
+				});
+			}
+			return new Response("not found", { status: 404 });
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		const [model] = await fetchLlamaCppModels();
+		expect(model?.reasoning).toBe(false);
+		expect(model?.input).toEqual(["text"]);
+		expect(model?.compat?.thinkingFormat).toBeUndefined();
+
+		vi.unstubAllGlobals();
+	});
+
+	it("returns server capabilities from /props", async () => {
+		const fetchMock = vi.fn(async () => {
+			return new Response(
+				JSON.stringify({
+					build_info: "b1234",
+					chat_template: "{{ reasoning_effort }}",
+					chat_template_caps: { supports_reasoning_effort: true },
+					modalities: { vision: true },
+					default_generation_settings: { n_ctx: 8192 },
+				}),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			);
+		});
+		vi.stubGlobal("fetch", fetchMock);
+		const info = await fetchLlamaCppServerInfo();
+		expect(info.baseUrl).toBe("http://localhost:8080/v1");
+		expect(info.props.build_info).toBe("b1234");
+		expect(info.capabilities).toMatchObject({
+			vision: true,
+			reasoning: true,
+			reasoningFormat: "effort",
+			thinkingFormat: "llama-cpp",
+			supportsReasoningEffort: true,
+			contextWindow: 8192,
+		});
+		vi.unstubAllGlobals();
+	});
+
+	it("detects effort, boolean, and no-thinking templates", () => {
+		expect(detectLlamaCppCapabilities({ chat_template: "{{ reasoning_effort }}" })).toMatchObject({
+			reasoning: true,
+			reasoningFormat: "effort",
+		});
+		expect(detectLlamaCppCapabilities({ chat_template: "{{ enable_thinking }}" })).toMatchObject({
+			reasoning: true,
+			reasoningFormat: "enable-thinking",
+		});
+		expect(detectLlamaCppCapabilities({ chat_template: "{{ thinking }}" })).toMatchObject({
+			reasoning: true,
+			reasoningFormat: "thinking",
+		});
+		expect(detectLlamaCppCapabilities({ chat_template: "plain chat" })).toMatchObject({
+			reasoning: false,
+			reasoningFormat: "none",
+		});
 	});
 
 	it("provider exposes the placeholder model and dynamic refresh", () => {

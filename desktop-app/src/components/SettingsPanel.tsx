@@ -29,7 +29,7 @@ import {
 	setByPath,
 	useSettingsStore,
 } from "../stores/settings-store";
-import type { CliSettings, ThinkingLevel } from "../lib/settings.types";
+import type { AutoContinueSettings, CliSettings, ThinkingLevel } from "../lib/settings.types";
 import {
 	applyRuntimeSync,
 	listNavItems,
@@ -46,11 +46,13 @@ import * as rpc from "../lib/rpc";
 import { ThemePicker } from "./panels/widgets/ThemePicker";
 import { ChatTextSizeSection } from "./panels/widgets/ChatTextSizeSection";
 import { InterfaceModeSection } from "./panels/widgets/InterfaceModeSection";
+import { AutoContinueSection } from "./panels/widgets/AutoContinueSection";
 import { ThinkingPresetPicker } from "./panels/widgets/ThinkingPresetPicker";
 import { ModelsPicker } from "./panels/widgets/ModelsPicker";
 import { DefaultModelPicker } from "./panels/widgets/DefaultModelPicker";
 import { AccountSection } from "./panels/widgets/AccountSection";
 import { CustomProvidersSection } from "./panels/widgets/CustomProvidersSection";
+import { LlamaCppSection } from "./panels/widgets/LlamaCppSection";
 import { KeybindingsSection } from "./panels/widgets/KeybindingsSection";
 import { McpServersEditor } from "./panels/widgets/McpServersEditor";
 import { PackagesEditor } from "./panels/widgets/PackagesEditor";
@@ -439,6 +441,12 @@ function renderCustom(
 			return <ChatTextSizeSection />;
 		case "interfaceMode":
 			return <InterfaceModeSection />;
+		case "autoContinue":
+			return (
+				<AutoContinueSection value={value as AutoContinueSettings | undefined} />
+			);
+		case "llamaCpp":
+			return <LlamaCppSection />;
 		case "thinking":
 			return (
 				<ThinkingPresetPicker

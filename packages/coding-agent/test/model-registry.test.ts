@@ -1850,6 +1850,63 @@ describe("ModelRegistry", () => {
 			}
 		});
 
+		test("reapplies llama.cpp provider/model overrides after dynamic refresh", async () => {
+			const previousBaseUrl = process.env.LLAMACPP_BASE_URL;
+			delete process.env.LLAMACPP_BASE_URL;
+			writeFileSync(
+				modelsJsonPath,
+				JSON.stringify({
+					providers: {
+						"llama-cpp": {
+							samplingParams: { temperature: 0.2, top_k: 20 },
+							modelOverrides: {
+								"qwen3-32b": {
+									reasoning: true,
+									samplingParams: { temperature: 0.7 },
+								},
+							},
+						},
+					},
+				}),
+			);
+			const fetchMock = vi.fn(async (input: unknown): Promise<Response> => {
+				const url = typeof input === "string" ? input : (input as Request).url;
+				if (url === "http://localhost:8080/v1/models") {
+					return new Response(
+						JSON.stringify({
+							object: "list",
+							data: [{ id: "qwen3-32b", meta: { n_ctx: 32768 } }],
+						}),
+						{ status: 200, headers: { "content-type": "application/json" } },
+					);
+				}
+				if (url === "http://localhost:8080/props") {
+					return new Response(
+						JSON.stringify({
+							chat_template: "{% if enable_thinking %}think{% endif %}",
+							chat_template_caps: {},
+						}),
+						{ status: 200, headers: { "content-type": "application/json" } },
+					);
+				}
+				throw new Error(`Unexpected fetch: ${url}`);
+			});
+			vi.stubGlobal("fetch", fetchMock);
+			try {
+				const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+				await registry.refreshDynamicModels(true);
+				const model = registry.find("llama-cpp", "qwen3-32b");
+				expect(model).toBeDefined();
+				expect(model?.samplingParams).toEqual({ temperature: 0.7, top_k: 20 });
+				expect(model?.reasoning).toBe(true);
+				expect((model?.compat as OpenAICompletionsCompat | undefined)?.thinkingFormat).toBe("chat-template");
+			} finally {
+				if (previousBaseUrl === undefined) delete process.env.LLAMACPP_BASE_URL;
+				else process.env.LLAMACPP_BASE_URL = previousBaseUrl;
+				vi.unstubAllGlobals();
+			}
+		});
+
 		test("getApiKeyAndHeaders supplies the no-key placeholder without stored auth", async () => {
 			const registry = ModelRegistry.create(authStorage, modelsJsonPath);
 			const model = createOllamaModel("llama3.2:latest");
@@ -1970,5 +2027,102 @@ describe("ModelRegistry ollama-cloud refresh resilience", () => {
 			consoleError.mockRestore();
 			vi.unstubAllGlobals();
 		}
+	});
+});
+
+describe("ModelRegistry openrouter refresh", () => {
+	let tempDir: string;
+	let authStorage: AuthStorage;
+
+	beforeEach(() => {
+		tempDir = join(
+			tmpdir(),
+			`pi-test-model-registry-openrouter-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+		);
+		mkdirSync(tempDir, { recursive: true });
+		authStorage = AuthStorage.create(join(tempDir, "auth.json"));
+	});
+
+	afterEach(() => {
+		if (tempDir && existsSync(tempDir)) {
+			rmSync(tempDir, { recursive: true });
+		}
+		clearApiKeyCache();
+		vi.restoreAllMocks();
+	});
+
+	function stubOpenRouterCatalog(): void {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (input: unknown) => {
+				const url = typeof input === "string" ? input : (input as Request).url;
+				if (url === "https://openrouter.ai/api/v1/models") {
+					return new Response(
+						JSON.stringify({
+							data: [
+								{
+									id: "deepseek/deepseek-v4.1-flash-1017",
+									name: "DeepSeek: DeepSeek V4.1 Flash 1017",
+									supported_parameters: ["tools", "reasoning"],
+									architecture: { input_modalities: ["text", "image"] },
+									pricing: { prompt: "0.00000015", completion: "0.0000006" },
+									top_provider: { context_length: 1048576, max_completion_tokens: 393216 },
+									reasoning: { supported_efforts: ["high", "low", "none"] },
+								},
+							],
+						}),
+						{ status: 200, headers: { "content-type": "application/json" } },
+					);
+				}
+				throw new Error(`Unexpected fetch: ${url}`);
+			}),
+		);
+	}
+
+	test("adds models published after the generated catalog was built", async () => {
+		stubOpenRouterCatalog();
+		authStorage.set("openrouter", { type: "api_key", key: "test-key" });
+		const registry = ModelRegistry.create(authStorage, join(tempDir, "models.json"));
+
+		await expect(registry.refreshDynamicModels(true)).resolves.toBeUndefined();
+		const model = registry.find("openrouter", "deepseek/deepseek-v4.1-flash-1017");
+		expect(model).toBeDefined();
+		expect(model?.api).toBe("openai-completions");
+		expect(model?.contextWindow).toBe(1048576);
+		expect(registry.getAvailable().some((entry) => entry.id === "deepseek/deepseek-v4.1-flash-1017")).toBe(true);
+
+		// Repeated refreshes must not duplicate the overlay.
+		await registry.refreshDynamicModels(true);
+		expect(registry.getAll().filter((entry) => entry.id === "deepseek/deepseek-v4.1-flash-1017")).toHaveLength(1);
+	});
+
+	test("does not overwrite a models.json entry for the same id", async () => {
+		stubOpenRouterCatalog();
+		authStorage.set("openrouter", { type: "api_key", key: "test-key" });
+		writeFileSync(
+			join(tempDir, "models.json"),
+			JSON.stringify({
+				providers: {
+					openrouter: {
+						models: [
+							{
+								id: "deepseek/deepseek-v4.1-flash-1017",
+								name: "Pinned DeepSeek",
+								api: "openai-completions",
+								contextWindow: 64000,
+								maxTokens: 8192,
+							},
+						],
+					},
+				},
+			}),
+		);
+		const registry = ModelRegistry.create(authStorage, join(tempDir, "models.json"));
+
+		await registry.refreshDynamicModels(true);
+		const matches = registry.getAll().filter((entry) => entry.id === "deepseek/deepseek-v4.1-flash-1017");
+		expect(matches).toHaveLength(1);
+		expect(matches[0]?.name).toBe("Pinned DeepSeek");
+		expect(matches[0]?.contextWindow).toBe(64000);
 	});
 });

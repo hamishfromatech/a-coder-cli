@@ -5,7 +5,16 @@
  * degrade to the normal approval flow via the session's circuit breaker.
  */
 
-import type { Context, DecisionQuestion, DecisionsModel, DecisionsModels, Model, Tool } from "@earendil-works/pi-ai";
+import type {
+	Context,
+	DecisionAnswerNoul,
+	DecisionAnswerScore,
+	DecisionQuestion,
+	DecisionsModel,
+	DecisionsModels,
+	Model,
+	Tool,
+} from "@earendil-works/pi-ai";
 import { completeSimple } from "@earendil-works/pi-ai/compat";
 import { Type } from "typebox";
 
@@ -59,6 +68,11 @@ export function buildDecisionClassifierQuestions(): Record<string, DecisionQuest
 			instructions: "How risky is this tool call for the user?",
 			criteria: [...DECISION_RISK_LEGEND],
 		},
+		reversible: {
+			type: "noul",
+			instructions:
+				"Could the user undo this call without data loss, external side effects, or a persistent change?",
+		},
 	};
 }
 
@@ -106,8 +120,22 @@ export async function classifyToolCallWithDecisionModel(
 	if (!verdict || verdict.type !== "choice") {
 		return { ok: false, error: "decision model returned no verdict" };
 	}
-	const shouldBlock = verdict.choice === "block";
-	const reason = shouldBlock ? DECISION_VERDICT_CRITERIA.block : "call looks safe";
+	const riskAnswer = result.answers.risk as DecisionAnswerScore | undefined;
+	const reversibleAnswer = result.answers.reversible as DecisionAnswerNoul | undefined;
+	const risk = riskAnswer?.type === "score" ? riskAnswer.score : 0;
+	const reversible = reversibleAnswer?.type === "noul" ? reversibleAnswer.noul : 1;
+	const blockProbability = verdict.probabilities?.block ?? (verdict.choice === "block" ? 1 : 0);
+
+	// The choice is primary, but a confident block is not required when the
+	// call is high-risk and hard to undo. Conversely, a low-confidence block
+	// with harmless/reversible arguments should not create approval noise.
+	const shouldBlock =
+		verdict.choice === "block"
+			? blockProbability >= 0.5 || risk >= 2 || reversible < 0.4
+			: risk >= 3 && reversible < 0.3 && blockProbability >= 0.25;
+	const reason = shouldBlock
+		? `${DECISION_VERDICT_CRITERIA.block} (risk ${risk.toFixed(1)}, reversible ${reversible.toFixed(2)})`
+		: "call looks safe";
 	return {
 		ok: true,
 		verdict: {
@@ -116,9 +144,9 @@ export async function classifyToolCallWithDecisionModel(
 			reason,
 			engine: "decision",
 			...(typeof verdict.confidence === "number" ? { confidence: verdict.confidence } : {}),
-			...(typeof verdict.probabilities?.[verdict.choice] === "number"
-				? { topProbability: verdict.probabilities?.[verdict.choice] }
-				: {}),
+			topProbability: blockProbability,
+			risk,
+			reversible,
 			model: result.servedModel ?? result.model,
 		},
 	};
@@ -169,6 +197,10 @@ export interface ClassifierVerdict {
 	confidence?: number;
 	/** Probability of the chosen option / score bucket (0..1), when present. */
 	topProbability?: number;
+	/** Decision-model risk score (0 harmless .. 3 severe), when present. */
+	risk?: number;
+	/** Probability the action is reversible (0..1), when present. */
+	reversible?: number;
 	/** Served decision model id, when the verdict came from a decision model. */
 	model?: string;
 }

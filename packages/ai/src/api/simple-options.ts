@@ -14,7 +14,14 @@ const MIN_MAX_TOKENS = 1;
 
 export function clampMaxTokensToContext(model: Model<Api>, context: Context, maxTokens: number): number {
 	if (model.contextWindow <= 0) return Math.max(MIN_MAX_TOKENS, maxTokens);
-	const available = model.contextWindow - estimateContextTokens(context).tokens - CONTEXT_SAFETY_TOKENS;
+	// Fixed 4096-token headroom would starve a 4K local model down to one token.
+	// Keep the established headroom for normal windows; scale it down only for
+	// genuinely tiny contexts.
+	const safetyTokens =
+		model.contextWindow < CONTEXT_SAFETY_TOKENS * 2
+			? Math.max(1, Math.floor(model.contextWindow * 0.25))
+			: CONTEXT_SAFETY_TOKENS;
+	const available = model.contextWindow - estimateContextTokens(context).tokens - safetyTokens;
 	return Math.min(maxTokens, Math.max(MIN_MAX_TOKENS, available));
 }
 

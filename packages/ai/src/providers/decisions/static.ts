@@ -15,9 +15,26 @@ import { envApiKeyAuth } from "../../auth/helpers.ts";
 import type { ProviderAuth } from "../../auth/types.ts";
 import { createDecisionsProvider, type DecisionsProvider } from "../../decisions-models.ts";
 import type { DecisionsModel } from "../../types.ts";
+import { resolveOllamaBaseUrl } from "../ollama.ts";
+import {
+	type OllamaTagsModel,
+	type OllamaTagsResponse,
+	ollamaNativeOrigin,
+	parseContextLengthFromModelInfo,
+} from "../ollama-context.ts";
 
 /** Local decision-model families currently shipped across the keyless hosts. */
-export const LOCAL_DECISION_MODELS = ["clef-flash", "clef", "nimble"] as const;
+export const LOCAL_DECISION_MODELS = [
+	"clef-flash",
+	"clef",
+	"nimble",
+	"nimble-v3",
+	"tev1",
+	"pplx-decider",
+	"strands-decider",
+	"kev",
+	"laya",
+] as const;
 
 function localModels(providerId: string, defaultBaseUrl: string): DecisionsModel<"systemone">[] {
 	const vision: ("text" | "image")[] = ["text", "image"];
@@ -53,6 +70,61 @@ function localModels(providerId: string, defaultBaseUrl: string): DecisionsModel
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 		},
 	];
+}
+
+const DEFAULT_DECISION_CONTEXT = 32768;
+
+function createLocalDecisionModel(
+	providerId: string,
+	baseUrl: string,
+	tag: OllamaTagsModel,
+): DecisionsModel<"systemone"> {
+	const id = tag.name.replace(/:latest$/, "");
+	const caps = tag.capabilities ?? [];
+	const contextWindow =
+		parseContextLengthFromModelInfo(tag.model_info) ??
+		(tag.details as { context_length?: number }).context_length ??
+		(id.startsWith("clef") ? 64000 : DEFAULT_DECISION_CONTEXT);
+	return {
+		id,
+		name: `${tag.name} (decision${caps.includes("vision") ? ", vision" : ""})`,
+		api: "systemone",
+		provider: providerId,
+		baseUrl,
+		contextWindow,
+		input: caps.includes("vision") ? ["text", "image"] : ["text"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+	};
+}
+
+/**
+ * Discover decision-capable models actually installed on an Ollama server.
+ * `/api/tags` is the only local endpoint that advertises capabilities before a
+ * model is loaded, so it is the source of truth for which pulled models can
+ * serve `/v1/systemone`.
+ */
+export async function fetchOllamaDecisionModels(
+	baseUrl = resolveOllamaBaseUrl(),
+	signal?: AbortSignal,
+): Promise<DecisionsModel<"systemone">[]> {
+	const origin = ollamaNativeOrigin(baseUrl);
+	if (!origin) return [];
+	const res = await fetch(`${origin}/api/tags`, {
+		headers: { accept: "application/json" },
+		signal: signal ?? AbortSignal.timeout(3000),
+	});
+	if (!res.ok) throw new Error(`Ollama decision model refresh failed: ${res.status} ${res.statusText}`);
+	const json = (await res.json()) as OllamaTagsResponse;
+	const seen = new Set<string>();
+	const models: DecisionsModel<"systemone">[] = [];
+	for (const tag of json.models ?? []) {
+		if (!tag.name || !tag.capabilities?.includes("decision")) continue;
+		const model = createLocalDecisionModel("ollama", baseUrl, tag);
+		if (seen.has(model.id)) continue;
+		seen.add(model.id);
+		models.push(model);
+	}
+	return models;
 }
 
 function jevModel(
@@ -154,6 +226,16 @@ export function localDecisionsProviders(): DecisionsProvider[] {
 			auth: keylessLocalAuth(server),
 			models: localModels(server.id, server.defaultBaseUrl),
 			api: systemoneDecisionsApi(),
+			...(server.id === "ollama"
+				? {
+						refreshModels: async () => {
+							const refreshed = await fetchOllamaDecisionModels(resolveOllamaBaseUrl());
+							// Keep the static rows when the server is reachable but has no
+							// decision models installed; a later refresh can still find one.
+							return refreshed.length > 0 ? refreshed : localModels(server.id, server.defaultBaseUrl);
+						},
+					}
+				: {}),
 		}),
 	);
 }

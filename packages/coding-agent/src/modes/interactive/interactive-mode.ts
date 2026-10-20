@@ -73,7 +73,12 @@ import {
 	getWorkspaceMemoryPath,
 	VERSION,
 } from "../../config.ts";
-import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.ts";
+import {
+	type AgentSession,
+	type AgentSessionEvent,
+	type LlamaCppStatus,
+	parseSkillBlock,
+} from "../../core/agent-session.ts";
 import { type AgentSessionRuntime, SessionImportFileNotFoundError } from "../../core/agent-session-runtime.ts";
 import { captureCliInstall, captureCliSessionEnd } from "../../core/analytics.ts";
 import { DEFAULT_THINKING_LEVEL } from "../../core/defaults.ts";
@@ -3568,6 +3573,11 @@ export class InteractiveMode {
 				void this.handleMcpCommand(arg);
 				return;
 			}
+			if (text === "/llama") {
+				this.editor.setText("");
+				void this.handleLlamaCommand();
+				return;
+			}
 			if (text === "/doctor") {
 				this.editor.setText("");
 				// Strip ANSI: the CLI formatter uses chalk, the TUI renders its own.
@@ -4155,6 +4165,22 @@ export class InteractiveMode {
 				if (!event.success) {
 					this.showError(`Retry failed after ${event.attempt} attempts: ${event.finalError || "Unknown error"}`);
 				}
+				this.ui.requestRender();
+				break;
+			}
+
+			case "auto_continue_decision": {
+				const p = event.probabilities.continue;
+				const probability = typeof p === "number" ? ` p=${p.toFixed(2)}` : "";
+				const progress = ` progress=${event.progress.toFixed(2)}`;
+				const model = event.model ? ` ${event.model}` : "";
+				const label =
+					event.action === "continue"
+						? "Auto-continuing"
+						: event.action === "ask_user"
+							? "Auto-continue paused for input"
+							: "Auto-continue stopped";
+				this.showStatus(`${label}${probability}${progress}${model}`);
 				this.ui.requestRender();
 				break;
 			}
@@ -7443,6 +7469,69 @@ export class InteractiveMode {
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(text, 1, 0));
 		this.ui.requestRender();
+	}
+
+	/** `/llama`: live llama.cpp server capabilities and loaded model controls. */
+	private async handleLlamaCommand(): Promise<void> {
+		this.showStatus("Inspecting llama.cpp server…");
+		let status: LlamaCppStatus;
+		try {
+			status = await this.session.getLlamaCppStatus();
+		} catch (error) {
+			this.clearStatusIndicator();
+			this.showError(`llama.cpp status failed: ${error instanceof Error ? error.message : String(error)}`);
+			return;
+		}
+		this.clearStatusIndicator();
+
+		if (!status.reachable) {
+			this.printInfoBlock(
+				`${theme.bold("llama.cpp")}  ${theme.fg("dim", status.baseUrl)}\n\n` +
+					`${theme.fg("error", "Not reachable")}: ${status.error ?? "connection failed"}\n\n` +
+					`Start llama-server or set Settings → Local models → llama.cpp address.`,
+			);
+			return;
+		}
+
+		const lines = [`${theme.bold("llama.cpp")}  ${theme.fg("dim", status.baseUrl)}`, ""];
+		if (status.buildInfo) lines.push(`${theme.fg("muted", "Build")}      ${status.buildInfo}`);
+		if (status.modelPath) lines.push(`${theme.fg("muted", "Model")}      ${status.modelPath}`);
+		if (status.contextWindow)
+			lines.push(`${theme.fg("muted", "Context")}    ${status.contextWindow.toLocaleString()} tokens`);
+		lines.push(`${theme.fg("muted", "Vision")}     ${status.vision ? "yes" : "no"}`);
+		lines.push(
+			`${theme.fg("muted", "Thinking")}   ${
+				status.reasoning
+					? `yes (${status.reasoningFormat}${status.thinkingFormat ? `, ${status.thinkingFormat}` : ""})`
+					: "no"
+			}`,
+		);
+		lines.push(`${theme.fg("muted", "Tools")}      ${status.supportsTools ? "yes" : "no"}`);
+		lines.push(`${theme.fg("muted", "Effort")}     ${status.supportsReasoningEffort ? "yes" : "no"}`);
+		lines.push("");
+
+		if (status.models.length === 0) {
+			lines.push(theme.fg("dim", "No llama.cpp models registered yet. Run /reload or refresh models."));
+		} else {
+			lines.push(theme.bold("Models"));
+			for (const model of status.models) {
+				const thinking = model.reasoning ? model.thinkingLevels.join(", ") : "off";
+				const sampling = model.samplingParams
+					? `  ${theme.fg(
+							"dim",
+							Object.entries(model.samplingParams)
+								.map(([key, value]) => `${key}=${String(value)}`)
+								.join(" "),
+						)}`
+					: "";
+				lines.push(
+					`  ${model.id}  ${theme.fg("dim", `${model.contextWindow.toLocaleString()} ctx`)}  ` +
+						`${theme.fg("muted", `thinking: ${thinking}`)}${sampling}`,
+				);
+			}
+		}
+
+		this.printInfoBlock(lines.join("\n"));
 	}
 
 	/** `/search <text>` — content search across stored session transcripts. */

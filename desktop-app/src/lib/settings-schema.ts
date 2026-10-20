@@ -63,7 +63,7 @@ export interface CliSettingsFieldSpec {
 	/** Number-only: step */
 	step?: number;
 	/** Custom-widget name when kind === "custom" */
-	widget?: "theme" | "thinking" | "models" | "defaultModel" | "mcpServers" | "permissionPolicies" | "packages" | "resources" | "completionSound" | "benchRunner" | "onboardingTour" | "computerUse" | "browserSettings" | "chatTextSize" | "interfaceMode";
+	widget?: "theme" | "thinking" | "models" | "defaultModel" | "mcpServers" | "permissionPolicies" | "packages" | "resources" | "completionSound" | "benchRunner" | "onboardingTour" | "computerUse" | "browserSettings" | "chatTextSize" | "interfaceMode" | "autoContinue" | "llamaCpp";
 	/** If true, change is also pushed to the engine at runtime (not just persisted) */
 	runtimeSync?:
 		| "thinkingLevel"
@@ -283,6 +283,13 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 				kind: "text",
 			},
 			{
+				path: "llamaCppControls",
+				label: "llama.cpp controls",
+				hint: "Live server capabilities, thinking support, and sampling controls.",
+				kind: "custom",
+				widget: "llamaCpp",
+			},
+			{
 				path: "localProviders.ollamaBaseUrl",
 				label: "Ollama address",
 				hint: "Leave blank to use the default http://localhost:11434/v1.",
@@ -464,6 +471,19 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 						kind: "select",
 						options: deliveryOptions,
 						runtimeSync: "followUpMode",
+					},
+				],
+			},
+			{
+				title: "Smart auto-continue",
+				description: "Use a fast System One decision model to decide when the agent should keep working after a length stop, compaction, or a normal pause.",
+				fields: [
+					{
+						path: "autoContinue",
+						label: "Continue automatically",
+						hint: "Off is the safest default. Smart lets a local decision model judge whether another turn will make progress.",
+						kind: "custom",
+						widget: "autoContinue",
 					},
 				],
 			},

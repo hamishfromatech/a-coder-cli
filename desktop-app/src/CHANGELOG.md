@@ -7,6 +7,10 @@
 - Composio integration moved into the engine's built-in **Composio MCP server** (`https://connect.composio.dev/mcp`, seeded on fresh installs next to chrome-devtools; auth = dashboard consumer API key via `COMPOSIO_API_KEY` or the MCP servers editor). The desktop **Apps panel** (browse/connect apps) and the empty `Composio` settings card are gone — app discovery and connection now happen in the chat through the server's manage-connections meta tools, and old `#composio` settings deep links still land on Integrations.
 ### Added
 
+- Settings → Models → Local models now includes a live **llama.cpp** card: server build/model/context, vision and thinking detection, tool support, global sampling controls (temperature, top_p, top_k, min_p, repeat/presence/frequency penalties, seed), and per-model sampling overrides. Thinking levels use the existing composer pill; budgets use Conversation → Custom thinking budgets.
+
+- Settings → Conversation → Smart auto-continue: choose Off, After compaction, or Smart; pick an installed System One decision model (Ollama models are discovered live), and tune continue/progress probabilities and the continuation cap. Decision-model traces appear as toasts, including the continue probability, progress, model, and latency.
+
 - Browser diagnostics: every run writes a line-flushed `browser-debug.log` into the app data dir (proxy connections, routing decisions, refusals, the agent MCP server's startup), and the agent MCP server now starts with the app instead of waiting for the settings page to be opened.
 
 - Fixed: websites never loaded in the browser panel — the page-view placement gate only opened via the agent path, so user-typed addresses created a tab but never a view. The panel now opens the gate itself, and a proxy-routing failure toasts instead of leaving a silently blank tab.

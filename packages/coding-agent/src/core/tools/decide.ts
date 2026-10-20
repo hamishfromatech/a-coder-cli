@@ -131,6 +131,11 @@ export async function resolveDecideModel(
 	const wantedProvider = input.provider ?? options?.settings?.provider;
 	const wantedModel = input.model ?? options?.settings?.model;
 
+	// Local decision models can be added at any time (`ollama pull nimble-v3`);
+	// refresh the target before resolving so a newly installed model is found
+	// even when it is not in the static catalog yet.
+	await models.refresh(wantedProvider ?? "ollama").catch(() => {});
+
 	if (wantedProvider && wantedModel) {
 		const model = models.getModel(wantedProvider, wantedModel);
 		if (!model) {

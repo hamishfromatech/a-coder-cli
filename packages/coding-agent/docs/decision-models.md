@@ -2,10 +2,13 @@
 
 Decision models answer typed questions — they do not chat, reason in prose, or generate text. One non-autoregressive scoring pass turns a `state` (text or JSON) plus 1–64 named questions into answers with probabilities: `choice` (pick among described options), `noul` (bare true/false), and `score` (an index on an ordered legend). They are very fast (~150–270 ms typically) and nearly free to run, which makes them the right tool for offloading judgments the agent or the product needs constantly.
 
-a-coder-cli uses them in two places:
+a-coder-cli uses them in three places:
 
 1. The `decide` tool — the agent can route a judgment through a decision model instead of burning a full LLM call.
-2. The auto-mode permission classifier — when a decision model is available, every ambiguous tool call is gated on a `verdict` (allow/block) + `risk` question pair scored locally, instead of the LLM classifier. The static-policy heuristics stay first in line; the decision model replaces the LLM classifier only for calls the static rules neither allow nor deny.
+2. The auto-mode permission classifier — when a decision model is available, ambiguous tool calls are gated on `verdict` (allow/block), `risk` (ordinal), and `reversible` (noul). The static-policy heuristics stay first in line; the decision model replaces the LLM classifier only for calls the static rules neither allow nor deny.
+3. Smart auto-continue — at a length stop, after compaction, or at a normal pause, a decision model answers `next` (done / ask_user / blocked / continue) and `progress` (noul). The policy continues only when the unfinished-work and progress probabilities clear the configured thresholds, with a consecutive-continuation cap. The model never writes the continuation; it only gates the action.
+
+Local Ollama decision models are discovered from `/api/tags` (`capabilities` includes `decision`), so pulling `nimble-v3`, `tev1`, `pplx-decider`, `strands-decider`, or another decision model makes it available without a catalog release.
 
 ## Wire
 
@@ -13,7 +16,7 @@ All hosts speak the System One wire (same request/response shape, `POST` JSON):
 
 | Host | Endpoint | Auth | Models |
 |------|----------|------|--------|
-| Ollama (local) | `POST {base}/systemone` | none | `clef-flash` (9B, vision, 64K), `clef` (27B, vision), `nimble` |
+| Ollama (local) | `POST {base}/systemone` | none | Discovered from `/api/tags` `capabilities: ["decision"]`: `clef-flash` (9B, vision), `clef`, `nimble`, `nimble-v3`, `tev1`, `pplx-decider`, `strands-decider`, `kev`, `laya` |
 | LM Studio (local) | `POST {base}/systemone` | none | local decision models |
 | llama.cpp server (local) | `POST {base}/systemone` | none | local decision models |
 | Unsloth (local) | `POST {base}/systemone` | none | local decision models |
@@ -36,7 +39,7 @@ Explicit pick (optional, settings.json):
 }
 ```
 
-`settings.decisions.provider/model` pins the decision model used by both the `decide` tool and auto-mode gating; `decide` arguments can override per call.
+`settings.decisions.provider/model` pins the decision model used by the `decide` tool, auto-mode gating, and smart auto-continue unless `autoContinue.provider/model` overrides it. `decide` arguments can override per call.
 
 ## The `decide` tool
 
@@ -54,6 +57,37 @@ The result card shows each question's answer with the probability bar and confid
 `confidence` is how concentrated the answer distribution is — **not** the chance the answer is right. It is displayed but never used to threshold decisions; the classifier gates on the chosen option's probability and the conservative policy instead.
 
 Example questions the model may be asked: "Which route applies to this request?" (choice over your destinations), "Does this error look transient?" (noul), "How far along is the task?" (score with `["not started", "started", "almost", "done"]`).
+
+## Smart auto-continue
+
+Settings:
+
+```json
+{
+  "decisions": { "provider": "ollama", "model": "nimble-v3" },
+  "autoContinue": {
+    "mode": "smart",
+    "minContinueProbability": 0.7,
+    "minProgressProbability": 0.55,
+    "maxConsecutive": 2
+  }
+}
+```
+
+Modes:
+
+- `off` — no decision-gated continuation (the legacy one-shot length nudge remains).
+- `compaction` — decide after compaction; `compaction.autoContinue` remains the fallback when no model is reachable.
+- `smart` — decide after length stops, compaction, and a normal agent pause.
+
+Safety rules:
+
+- A `done` or `blocked` answer stops.
+- Low progress stops even if the model is not confident enough to pick `done`.
+- The cap and a no-progress gate prevent continuation loops.
+- An explicit user abort, pending approval, authentication failure, and failed overflow recovery are never auto-continued.
+
+Every decision emits `auto_continue_decision` with the question probabilities, progress, model, and latency. The CLI shows a status line; the desktop shows a toast and the settings panel exposes the mode/model.
 
 ## Auto-mode classifier
 

@@ -191,6 +191,8 @@ Seven built-in entries talk to OpenAI-compatible servers on your own machine wit
 | vLLM | `http://localhost:8000/v1` | `VLLM_BASE_URL` | `localProviders.vllmBaseUrl` |
 | SGLang | `http://localhost:30000/v1` | `SGLANG_BASE_URL` | `localProviders.sglangBaseUrl` |
 
+For llama.cpp, the engine also reads `/props` to detect the loaded context window, vision modality, tool support, and whether the chat template accepts `reasoning_effort`, `enable_thinking`, or a `thinking` switch. Thinking controls appear automatically when supported, and `/llama` shows the live server state.
+
 Start a server (`vllm serve <model>`, `sglang.launch_server`, `lmstudio`, ...) and the models appear in `/model` within two minutes, or run `/login <provider>` to set a custom base URL (no key needed) and refresh immediately. The desktop Settings "Local models" section edits the same `localProviders.*` settings. Model IDs match the server's served names, for example `--model "vllm/meta-llama/Llama-3.1-8B-Instruct"`.
 
 ## Decision Models

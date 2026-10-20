@@ -13,8 +13,14 @@
 import path from "node:path";
 import process from "node:process";
 import { parseArgs } from "node:util";
-import { appendResult, findBenchDir, loadTasks, parseBenchModelSpec, resolveBenchChildCommand, runTaskOnce } from "../packages/coding-agent/src/bench/core.ts";
-import type { BenchRunResult } from "../packages/coding-agent/src/bench/types.ts";
+import {
+	findBenchDir,
+	loadTasks,
+	parseBenchModelSpec,
+	resolveBenchChildCommand,
+	runBenchQueue,
+} from "../packages/coding-agent/src/bench/core.ts";
+import type { BenchQueueJob } from "../packages/coding-agent/src/bench/types.ts";
 
 async function main(): Promise<void> {
 	const { values } = parseArgs({
@@ -31,7 +37,9 @@ async function main(): Promise<void> {
 	});
 
 	if (!values.model) {
-		console.error("usage: tsx bench/runner.ts --model <provider>/<model-id> [--endpoint url] [--runs N] [--tasks id,id|all]");
+		console.error(
+			"usage: tsx bench/runner.ts --model <provider>/<model-id> [--endpoint url] [--runs N] [--tasks id,id|all] [--concurrency N]",
+		);
 		process.exit(2);
 	}
 	const benchDir = findBenchDir();
@@ -53,44 +61,43 @@ async function main(): Promise<void> {
 		process.exit(2);
 	}
 
-	console.log(`A-Coder Bench: model=${values.model} tasks=${tasks.map((t) => t.id).join(",")} runs=${runCount}`);
+	console.log(
+		`A-Coder Bench: model=${values.model} tasks=${tasks.map((t) => t.id).join(",")} runs=${runCount} concurrency=${concurrency}`,
+	);
 	const child = resolveBenchChildCommand();
 
-	const jobList: Array<{ taskId: string; runIndex: number }> = [];
+	const jobs: BenchQueueJob[] = [];
 	for (const task of tasks) {
-		for (let i = 1; i <= runCount; i++) jobList.push({ taskId: task.id, runIndex: i });
+		for (let i = 1; i <= runCount; i++) jobs.push({ task, runIndex: i });
 	}
 
-	let cursor = 0;
-	const results: BenchRunResult[] = [];
-	async function worker(): Promise<void> {
-		while (cursor < jobList.length) {
-			const job = jobList[cursor++];
-			const task = tasks.find((t) => t.id === job.taskId);
-			if (!task) continue;
-			process.stdout.write(`  [${task.id} r${job.runIndex}] running... `);
-			const result = await runTaskOnce({
-				benchDir,
-				task,
-				provider: spec.provider,
-				modelId: spec.modelId,
-				runIndex: job.runIndex,
-				endpoint: values.endpoint,
-				apiKey: values["api-key"] ?? "bench",
-				api: values.api ?? "openai-completions",
-				child,
-			});
-			appendResult(benchDir, result);
+	const results = await runBenchQueue({
+		benchDir,
+		jobs,
+		concurrency,
+		provider: spec.provider,
+		modelId: spec.modelId,
+		endpoint: values.endpoint,
+		apiKey: values["api-key"] ?? "bench",
+		api: values.api ?? "openai-completions",
+		child,
+		onStart: (job) => {
+			console.log(`  [${job.task.id} r${job.runIndex}] running...`);
+		},
+		onResult: (_job, result) => {
 			const icon = result.pass ? "PASS" : result.timedOut ? "TIMEOUT" : "FAIL";
-			console.log(`${icon} (${Math.round(result.durationMs / 1000)}s, ${result.stats.usage.totalTokens} tok)`);
-			results.push(result);
-		}
-	}
-	await Promise.all(Array.from({ length: concurrency }, () => worker()));
+			console.log(
+				`${icon} (${Math.round(result.durationMs / 1000)}s, ${result.stats.usage.totalTokens} tok)` +
+					(result.error ? ` — ${result.error}` : ""),
+			);
+		},
+	});
 
 	const passed = results.filter((r) => r.pass).length;
 	console.log(`done: ${passed}/${results.length} passed`);
-	console.log(`leaderboard: ${path.join(path.relative(process.cwd(), benchDir), "..", "leaderboard.md")} (run tsx bench/report.ts)`);
+	console.log(
+		`leaderboard: ${path.join(path.relative(process.cwd(), benchDir), "..", "leaderboard.md")} (run tsx bench/report.ts)`,
+	);
 }
 
 main().catch((err: unknown) => {

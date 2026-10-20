@@ -184,6 +184,12 @@ export type PermissionMode = "ask" | "allow" | "read-only" | "auto";
 /** Rule matching a tool name. Supports exact names, "namespace:*" globs, and "$defaults". */
 export type PermissionRule = string;
 
+function clampProbability(value: unknown, fallback: number): number {
+	const parsed = typeof value === "number" ? value : Number.NaN;
+	if (!Number.isFinite(parsed)) return fallback;
+	return Math.min(1, Math.max(0, parsed));
+}
+
 function positiveIntOr(value: number | undefined, fallback: number): number {
 	return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
 }
@@ -219,6 +225,30 @@ export interface DecisionsSettings {
 	provider?: string;
 	/** Preferred decision model id: e.g. "clef-flash", "~typesafe/jev-latest". */
 	model?: string;
+}
+
+export type AutoContinueMode = "off" | "compaction" | "smart";
+
+/** Decision-model-assisted continuation. Off by default; `compaction` keeps
+ * the legacy post-compaction behavior, `smart` also gates length stops and
+ * normal agent-end checkpoints. */
+export interface ResolvedAutoContinueSettings extends Required<Omit<AutoContinueSettings, "provider" | "model">> {
+	provider?: string;
+	model?: string;
+}
+
+export interface AutoContinueSettings {
+	mode?: AutoContinueMode;
+	/** Decision provider override; defaults to settings.decisions.provider. */
+	provider?: string;
+	/** Decision model override; defaults to settings.decisions.model. */
+	model?: string;
+	/** Minimum probability for the `continue` choice. Default: 0.70. */
+	minContinueProbability?: number;
+	/** Minimum probability for the `progress` noul. Default: 0.55. */
+	minProgressProbability?: number;
+	/** Consecutive smart continuations allowed per prompt. Default: 2. */
+	maxConsecutive?: number;
 }
 
 /**
@@ -318,6 +348,7 @@ export interface Settings {
 	permissionPolicies?: PermissionPolicyConfig; // policy rules for "auto" mode
 	autoMode?: AutoModeSettings; // LLM classifier for "auto" mode (opt-in)
 	decisions?: DecisionsSettings; // System One decision model target for the `decide` tool + auto-mode classifier
+	autoContinue?: AutoContinueSettings; // Decision-model-assisted auto-continue (off by default)
 	memory?: MemoryInjectionSettings; // inject MEMORY.md contents into the system prompt
 	httpProxy?: string; // Proxy URL applied as HTTP_PROXY and HTTPS_PROXY for Pi-managed HTTP clients
 	httpIdleTimeoutMs?: number; // HTTP header/body idle timeout in milliseconds; 0 disables it
@@ -1431,6 +1462,28 @@ export class SettingsManager {
 			provider: this.settings.decisions?.provider,
 			model: this.settings.decisions?.model,
 		};
+	}
+
+	getAutoContinueSettings(): ResolvedAutoContinueSettings {
+		const configured = this.settings.autoContinue;
+		const mode: AutoContinueMode =
+			configured?.mode === "smart" || configured?.mode === "compaction" || configured?.mode === "off"
+				? configured.mode
+				: "off";
+		return {
+			mode,
+			...(configured?.provider ? { provider: configured.provider } : {}),
+			...(configured?.model ? { model: configured.model } : {}),
+			minContinueProbability: clampProbability(configured?.minContinueProbability, 0.7),
+			minProgressProbability: clampProbability(configured?.minProgressProbability, 0.55),
+			maxConsecutive: Math.max(0, Math.min(10, Math.trunc(configured?.maxConsecutive ?? 2))),
+		};
+	}
+
+	setAutoContinueSettings(settings: AutoContinueSettings): void {
+		this.globalSettings.autoContinue = { ...this.globalSettings.autoContinue, ...settings };
+		this.markModified("autoContinue");
+		this.save();
 	}
 
 	setPermissionMode(mode: PermissionMode): void {

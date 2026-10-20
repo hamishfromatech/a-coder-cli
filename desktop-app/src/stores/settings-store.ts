@@ -120,6 +120,9 @@ export interface SettingsState {
 	/** Runs per task. */
 	benchRuns: number;
 	setBenchRuns: (runs: number) => void;
+	/** Parallel runs (1 = sequential). */
+	benchConcurrency: number;
+	setBenchConcurrency: (concurrency: number) => void;
 	/** Bench directory; empty = auto-detect from the open project. */
 	benchDir: string;
 	setBenchDir: (dir: string) => void;
@@ -249,6 +252,9 @@ export const useSettingsStore = create<SettingsState>()(
 			setBenchApiKey: (benchApiKey) => set({ benchApiKey }),
 			benchRuns: 1,
 			setBenchRuns: (benchRuns) => set({ benchRuns }),
+			benchConcurrency: 1,
+			setBenchConcurrency: (benchConcurrency) =>
+				set({ benchConcurrency: Math.max(1, Math.min(8, benchConcurrency)) }),
 			benchDir: "",
 			setBenchDir: (benchDir) => set({ benchDir }),
 
@@ -302,6 +308,7 @@ export const useSettingsStore = create<SettingsState>()(
 			benchEndpoint: state.benchEndpoint,
 			benchApiKey: state.benchApiKey,
 			benchRuns: state.benchRuns,
+			benchConcurrency: state.benchConcurrency,
 			benchDir: state.benchDir,
 			chatBackdrop: state.chatBackdrop,
 			}),

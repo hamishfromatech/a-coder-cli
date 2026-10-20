@@ -229,7 +229,7 @@ models: [{
 }]
 ```
 
-Use `openrouter` for OpenRouter-style `reasoning: { effort }` controls. Use `together` for Together-style `reasoning: { enabled }` controls; with `supportsReasoningEffort`, it also sends `reasoning_effort`. Use `qwen-chat-template` for local Qwen-compatible servers that read `chat_template_kwargs.enable_thinking` and need `preserve_thinking`.
+Use `openrouter` for OpenRouter-style `reasoning: { effort }` controls. Use `together` for Together-style `reasoning: { enabled }` controls; with `supportsReasoningEffort`, it also sends `reasoning_effort`. Use `qwen-chat-template` for local Qwen-compatible servers that read `chat_template_kwargs.enable_thinking` and need `preserve_thinking`. Use `llama-cpp` for llama-server so off sends `reasoning_effort: "none"` and the selected level is sent when on.
 Use `cacheControlFormat: "anthropic"` for OpenAI-compatible providers that expose Anthropic-style prompt caching via `cache_control` on the system prompt, last tool definition, and last user/assistant text content.
 
 For Anthropic-compatible providers using `api: "anthropic-messages"`, set `compat.forceAdaptiveThinking: true` on models or providers whose upstream model requires adaptive thinking (`thinking.type: "adaptive"` plus `output_config.effort`). Built-in adaptive Claude models set this automatically. Set `compat.allowEmptySignature: true` only for providers that emit empty thinking signatures and expect `signature: ""` on replay.
@@ -655,6 +655,9 @@ interface ProviderConfig {
   /** If true, adds Authorization: Bearer header with the resolved API key. */
   authHeader?: boolean;
 
+  /** Default sampling/request fields applied to all models from this provider. */
+  samplingParams?: Record<string, unknown>;
+
   /** Models to register. If provided, replaces all existing models for this provider. */
   models?: ProviderModelConfig[];
 
@@ -711,6 +714,9 @@ interface ProviderModelConfig {
   /** Custom headers for this specific model. */
   headers?: Record<string, string>;
 
+  /** Default request fields for this model (OpenAI-compatible APIs). */
+  samplingParams?: Record<string, unknown>;
+
   /** Compatibility settings for the selected API. */
   compat?: {
     // openai-completions
@@ -725,8 +731,10 @@ interface ProviderModelConfig {
     requiresAssistantAfterToolResult?: boolean;
     requiresThinkingAsText?: boolean;
     requiresReasoningContentOnAssistantMessages?: boolean;
-    thinkingFormat?: "openai" | "openrouter" | "deepseek" | "together" | "zai" | "qwen" | "chat-template" | "qwen-chat-template" | "string-thinking" | "ant-ling";
-    chatTemplateKwargs?: Record<string, string | number | boolean | null | { "$var": "thinking.enabled" | "thinking.effort"; omitWhenOff?: boolean }>;
+    thinkingFormat?: "openai" | "openrouter" | "deepseek" | "together" | "zai" | "qwen" | "chat-template" | "qwen-chat-template" | "llama-cpp" | "string-thinking" | "ant-ling";
+    chatTemplateKwargs?: Record<string, string | number | boolean | null | { "$var": "thinking.enabled" | "thinking.effort" | "thinking.budget"; omitWhenOff?: boolean }>;
+    thinkingTokenBudgetField?: "thinking_token_budget" | "thinking_budget" | "thinking_budget_tokens";
+    supportsThinkingTokenBudget?: boolean;
     cacheControlFormat?: "anthropic";
 
     // anthropic-messages
@@ -741,5 +749,6 @@ interface ProviderModelConfig {
 }
 ```
 
-`openrouter` sends `reasoning: { effort }`. `deepseek` sends `thinking: { type: "enabled" | "disabled" }` and `reasoning_effort` when enabled. `together` sends `reasoning: { enabled }` and also `reasoning_effort` when `supportsReasoningEffort` is enabled. `qwen` is for DashScope-style top-level `enable_thinking`. Use `qwen-chat-template` for local Qwen-compatible servers that read `chat_template_kwargs.enable_thinking` and need `preserve_thinking`. Use `chat-template` for configurable `chat_template_kwargs`, for example DeepSeek V3.x behind vLLM with `chatTemplateKwargs: { "thinking": { "$var": "thinking.enabled" } }`.
+`openrouter` sends `reasoning: { effort }`. `deepseek` sends `thinking: { type: "enabled" | "disabled" }` and `reasoning_effort` when enabled. `together` sends `reasoning: { enabled }` and also `reasoning_effort` when `supportsReasoningEffort` is enabled. `qwen` is for DashScope-style top-level `enable_thinking`. Use `qwen-chat-template` for local Qwen-compatible servers that read `chat_template_kwargs.enable_thinking` and need `preserve_thinking`. Use `chat-template` for configurable `chat_template_kwargs`, for example DeepSeek V3.x behind vLLM with `chatTemplateKwargs: { "thinking": { "$var": "thinking.enabled" } }`. Use `llama-cpp` for llama-server: off sends `reasoning_effort: "none"`, the selected level is sent when on, and `chat_template_kwargs` can be merged. Set `thinkingTokenBudgetField: "thinking_budget_tokens"` to use the thinking-budget settings.
+`samplingParams` is merged into every OpenAI-compatible request after the named fields, so it can carry server-specific controls such as `top_p`, `top_k`, `min_p`, and `repeat_penalty`.
 `cacheControlFormat: "anthropic"` applies Anthropic-style `cache_control` markers to the system prompt, last tool definition, and last user/assistant text content.

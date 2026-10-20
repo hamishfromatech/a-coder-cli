@@ -582,11 +582,26 @@ export async function findInitialModel(options: {
 
 	// 1. CLI args take priority
 	if (cliProvider && cliModel) {
-		const resolved = resolveCliModel({
+		let resolved = resolveCliModel({
 			cliProvider,
 			cliModel,
 			modelRegistry,
 		});
+		if (resolved.error || resolved.warning?.includes("Using custom model id")) {
+			// Dynamic-only models (OpenRouter/Mercury 3, Ollama Cloud, local
+			// servers) are not in the generated catalog until refreshDynamicModels
+			// runs. Retry after discovery instead of pinning a fallback model.
+			try {
+				await modelRegistry.refreshDynamicModels();
+			} catch {
+				// best-effort: keep the original resolution
+			}
+			resolved = resolveCliModel({
+				cliProvider,
+				cliModel,
+				modelRegistry,
+			});
+		}
 		if (resolved.error) {
 			console.error(chalk.red(resolved.error));
 			process.exit(1);

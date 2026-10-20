@@ -7,7 +7,7 @@
 
 import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { ImageContent, Model } from "@earendil-works/pi-ai";
-import type { SessionStats } from "../../core/agent-session.ts";
+import type { LlamaCppStatus, SessionStats } from "../../core/agent-session.ts";
 import type { RuntimeSessionStatus } from "../../core/agent-session-runtime.ts";
 import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
@@ -25,7 +25,11 @@ import type {
 	OfficeSnapshot,
 } from "../../core/office/types.ts";
 import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.ts";
-import type { PermissionMode } from "../../core/settings-manager.ts";
+import type {
+	AutoContinueSettings,
+	PermissionMode,
+	ResolvedAutoContinueSettings,
+} from "../../core/settings-manager.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
 
 // ============================================================================
@@ -101,6 +105,12 @@ export type RpcCommand =
 	| { id?: string; type: "compact"; customInstructions?: string }
 	| { id?: string; type: "set_auto_compaction"; enabled: boolean }
 	| { id?: string; type: "set_compaction_auto_continue"; enabled: boolean }
+
+	// Decision models / smart auto-continue
+	| { id?: string; type: "get_decision_models" }
+	| { id?: string; type: "get_llama_cpp_status" }
+	| { id?: string; type: "get_auto_continue_settings" }
+	| { id?: string; type: "set_auto_continue_settings"; settings: AutoContinueSettings }
 
 	// Retry
 	| { id?: string; type: "set_auto_retry"; enabled: boolean }
@@ -371,6 +381,30 @@ export type RpcResponse =
 
 	// State
 	| { id?: string; type: "response"; command: "get_state"; success: true; data: RpcSessionState }
+	| {
+			id?: string;
+			type: "response";
+			command: "get_decision_models";
+			success: true;
+			data: {
+				models: Array<{
+					provider: string;
+					id: string;
+					name: string;
+					input: ("text" | "image")[];
+					contextWindow: number;
+				}>;
+				autoContinue: ResolvedAutoContinueSettings;
+			};
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "get_auto_continue_settings";
+			success: true;
+			data: ResolvedAutoContinueSettings;
+	  }
+	| { id?: string; type: "response"; command: "set_auto_continue_settings"; success: true }
 
 	// Model
 	| {
@@ -395,6 +429,13 @@ export type RpcResponse =
 			data: { models: Model<any>[] };
 	  }
 	| { id?: string; type: "response"; command: "refresh_models"; success: true }
+	| {
+			id?: string;
+			type: "response";
+			command: "get_llama_cpp_status";
+			success: true;
+			data: LlamaCppStatus;
+	  }
 
 	// Thinking
 	| { id?: string; type: "response"; command: "set_thinking_level"; success: true }

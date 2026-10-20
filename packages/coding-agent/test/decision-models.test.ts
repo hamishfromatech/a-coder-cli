@@ -110,11 +110,29 @@ describe("auto-mode decision-model classifier", () => {
 		if (!outcome.ok) expect(outcome.error).toContain("server absent");
 	});
 
-	it("builds the verdict + risk question set", () => {
+	it("builds the verdict, risk, and reversibility question set", () => {
 		const questions = buildDecisionClassifierQuestions();
 		expect(questions.verdict.type).toBe("choice");
 		expect(questions.risk.type).toBe("score");
+		expect(questions.reversible.type).toBe("noul");
 		expect(Object.keys(questions.verdict.criteria ?? {})).toEqual(["allow", "block"]);
+	});
+
+	it("prompts on a high-risk irreversible allow verdict", async () => {
+		const models = createDecisionsModels();
+		models.setProvider(
+			fakeProvider("fake", "fake-model", {
+				verdict: { type: "choice", choice: "allow", probabilities: { allow: 0.6, block: 0.4 }, confidence: 0.2 },
+				risk: { type: "score", score: 3, legend: {} },
+				reversible: { type: "noul", noul: 0.1 },
+			}),
+		);
+		const outcome = await classifyToolCallWithDecisionModel(models, models.getModels()[0], {
+			toolName: "bash",
+			args: { command: "rm -rf /tmp/data" },
+		});
+		expect(outcome.ok && outcome.verdict.shouldBlock).toBe(true);
+		if (outcome.ok) expect(outcome.verdict.risk).toBe(3);
 	});
 
 	it("builtin decisions providers carry the jev rows and local family", () => {

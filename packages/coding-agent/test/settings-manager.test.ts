@@ -10,6 +10,42 @@ describe("SettingsManager", () => {
 	const agentDir = join(testDir, "agent");
 	const projectDir = join(testDir, "project");
 
+	describe("autoContinue", () => {
+		it("defaults off and clamps probabilities and the continuation cap", () => {
+			const defaults = SettingsManager.inMemory().getAutoContinueSettings();
+			expect(defaults).toEqual({
+				mode: "off",
+				minContinueProbability: 0.7,
+				minProgressProbability: 0.55,
+				maxConsecutive: 2,
+			});
+
+			const clamped = SettingsManager.inMemory({
+				autoContinue: {
+					mode: "smart",
+					provider: "ollama",
+					model: "nimble-v3",
+					minContinueProbability: 2,
+					minProgressProbability: -1,
+					maxConsecutive: 99,
+				},
+			}).getAutoContinueSettings();
+			expect(clamped.mode).toBe("smart");
+			expect(clamped.provider).toBe("ollama");
+			expect(clamped.model).toBe("nimble-v3");
+			expect(clamped.minContinueProbability).toBe(1);
+			expect(clamped.minProgressProbability).toBe(0);
+			expect(clamped.maxConsecutive).toBe(10);
+		});
+
+		it("persists auto-continue settings", () => {
+			const manager = SettingsManager.inMemory();
+			manager.setAutoContinueSettings({ mode: "compaction", maxConsecutive: 1 });
+			expect(manager.getAutoContinueSettings().mode).toBe("compaction");
+			expect(manager.getAutoContinueSettings().maxConsecutive).toBe(1);
+		});
+	});
+
 	describe("computerUse", () => {
 		const SAVED_ENV = process.env.A_CODER_CLI_COMPUTER_USE;
 

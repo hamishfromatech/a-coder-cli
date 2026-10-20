@@ -945,6 +945,20 @@ function buildParams(
 		if (chatTemplateKwargs) {
 			(params as any).chat_template_kwargs = chatTemplateKwargs;
 		}
+	} else if (compat.thinkingFormat === "llama-cpp" && model.reasoning) {
+		// llama-server accepts OpenAI's reasoning_effort directly and treats
+		// "none" as disable. Some templates additionally need a boolean
+		// enable_thinking kwarg, which is merged below.
+		const effort = options?.reasoningEffort
+			? (model.thinkingLevelMap?.[options.reasoningEffort] ?? options.reasoningEffort)
+			: (model.thinkingLevelMap?.off ?? "none");
+		if (typeof effort === "string") {
+			(params as any).reasoning_effort = effort;
+		}
+		const chatTemplateKwargs = buildChatTemplateValues(model, options, compat.chatTemplateKwargs, thinkingBudget);
+		if (chatTemplateKwargs) {
+			(params as any).chat_template_kwargs = chatTemplateKwargs;
+		}
 	} else if (compat.thinkingFormat === "baseten" && model.reasoning) {
 		const basetenParams = params as Omit<typeof params, "reasoning_effort"> & {
 			chat_template_args?: Record<string, ResolvedChatTemplateKwargValue>;

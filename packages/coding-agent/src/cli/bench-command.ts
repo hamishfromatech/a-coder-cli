@@ -32,7 +32,7 @@ import {
 	materializeStarterTasks,
 	parseBenchModelSpec,
 	resolveBenchChildCommand,
-	runTaskOnce,
+	runBenchQueue,
 } from "../bench/core.ts";
 import { buildLeaderboard } from "../bench/report-core.ts";
 import type { BenchChildCommand, BenchRunResult, BenchTask } from "../bench/types.ts";
@@ -53,14 +53,30 @@ interface BenchFlags {
 	api: string;
 	apiKey: string;
 	runs?: number;
+	concurrency: number;
 	tasks?: string;
 	benchDir?: string;
 	json: boolean;
 }
 
 function parseBenchFlags(args: string[]): BenchFlags {
-	const flags: BenchFlags = { help: false, api: "openai-completions", apiKey: "bench", json: false };
-	const valueFlags = new Set(["--model", "--endpoint", "--api", "--api-key", "--runs", "--tasks", "--bench-dir"]);
+	const flags: BenchFlags = {
+		help: false,
+		api: "openai-completions",
+		apiKey: "bench",
+		concurrency: 1,
+		json: false,
+	};
+	const valueFlags = new Set([
+		"--model",
+		"--endpoint",
+		"--api",
+		"--api-key",
+		"--runs",
+		"--concurrency",
+		"--tasks",
+		"--bench-dir",
+	]);
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
 		if (arg === "--help" || arg === "-h") {
@@ -75,6 +91,7 @@ function parseBenchFlags(args: string[]): BenchFlags {
 			else if (arg === "--api") flags.api = value;
 			else if (arg === "--api-key") flags.apiKey = value;
 			else if (arg === "--runs") flags.runs = Math.max(1, Number.parseInt(value, 10) || 1);
+			else if (arg === "--concurrency") flags.concurrency = Math.max(1, Number.parseInt(value, 10) || 1);
 			else if (arg === "--tasks") flags.tasks = value;
 			else if (arg === "--bench-dir") flags.benchDir = value;
 		}
@@ -95,6 +112,7 @@ Usage:
       [--api <api>]                        openai-completions | openai-responses | anthropic-messages
       [--api-key <key>]                    Written into a per-run models.json (default: "bench")
   a-coder bench --runs <n>                 Runs per task (default: 1)
+  a-coder bench --concurrency <n>          Parallel runs (default: 1)
 
 Run-mode flags:
   --tasks <id,id|all>    Task subset (default: all)
@@ -418,6 +436,7 @@ class BenchWizardComponent extends Container implements Focusable {
 			`  Model:      ${modelLine}`,
 			`  Tasks:      ${this.allTasks ? `all ${this.tasks.length} tasks` : (this.chosenTask?.id ?? "?")}`,
 			`  Runs:       ${this.runs} per task → ${jobCount} total agent run${jobCount === 1 ? "" : "s"}`,
+			`  Parallel:   ${this.flags.concurrency}`,
 			"",
 			"  1. Each run copies the task repo into a fresh sandbox under bench/runs/",
 			"  2. The agent runs headless with tools (read, write, edit, bash) in that copy only",
@@ -515,64 +534,38 @@ class BenchWizardComponent extends Container implements Focusable {
 	}
 
 	private async executeJobs(jobs: Array<{ task: BenchTask; runIndex: number }>): Promise<void> {
-		for (let i = 0; i < jobs.length; i++) {
-			const job = jobs[i];
-			if (!job) break;
-			this.progress[i] = { label: `${job.task.id} · run ${job.runIndex}`, state: "running", detail: "" };
-			const spec = this.chosenModel ?? { provider: "", modelId: "" };
-			let result: BenchRunResult;
-			try {
-				result = await runTaskOnce({
-					benchDir: this.benchDir,
-					task: job.task,
-					provider: spec.provider,
-					modelId: spec.modelId,
-					runIndex: job.runIndex,
-					endpoint: this.flags.endpoint,
-					apiKey: this.flags.apiKey,
-					api: this.flags.api,
-					child: this.child,
-				});
-			} catch (error) {
-				// e.g. child spawn failure - record a failed run so the loop
-				// continues and the UI shows the reason instead of hanging.
-				result = {
-					runId: `error_${job.task.id}_r${job.runIndex}`,
-					timestamp: new Date().toISOString(),
-					model: `${spec.provider}/${spec.modelId}`,
-					taskId: job.task.id,
-					taskTags: job.task.tags,
-					runIndex: job.runIndex,
-					pass: false,
-					timedOut: false,
-					agentExitCode: null,
-					graderExitCode: null,
-					gradeDetail: null,
-					durationMs: 0,
-					stats: {
-						toolCalls: 0,
-						toolErrors: 0,
-						editFailures: 0,
-						turns: 0,
-						usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-						finalText: "",
-					},
-					error: error instanceof Error ? error.message : String(error),
+		const spec = this.chosenModel ?? { provider: "", modelId: "" };
+		this.results = await runBenchQueue({
+			benchDir: this.benchDir,
+			jobs,
+			concurrency: this.flags.concurrency,
+			provider: spec.provider,
+			modelId: spec.modelId,
+			endpoint: this.flags.endpoint,
+			apiKey: this.flags.apiKey,
+			api: this.flags.api,
+			child: this.child,
+			onStart: (job, index) => {
+				this.progress[index] = {
+					label: `${job.task.id} · run ${job.runIndex}`,
+					state: "running",
+					detail: "",
 				};
-			}
-			this.results.push(result);
-			const state: JobState = result.pass ? "pass" : result.timedOut ? "timeout" : "fail";
-			this.progress[i] = {
-				label: `${job.task.id} · run ${job.runIndex}`,
-				state,
-				detail: `${Math.round(result.durationMs / 1000)}s · ${result.stats.usage.totalTokens} tok · ${result.stats.turns} turns`,
-			};
-			this.ui.requestRender();
-		}
+				this.ui.requestRender();
+			},
+			onResult: (job, result, index) => {
+				const state: JobState = result.pass ? "pass" : result.timedOut ? "timeout" : "fail";
+				this.progress[index] = {
+					label: `${job.task.id} · run ${job.runIndex}`,
+					state,
+					detail: `${Math.round(result.durationMs / 1000)}s · ${result.stats.usage.totalTokens} tok · ${result.stats.turns} turns`,
+				};
+				this.ui.requestRender();
+			},
+		});
 		this.stopSpinner();
 		this.resultsToSummary();
 	}
-
 	private resultsToSummary(): void {
 		this.results.sort((a, b) => a.taskId.localeCompare(b.taskId) || a.runIndex - b.runIndex);
 		const leaderboard = buildLeaderboard(loadResults(this.benchDir));
@@ -681,63 +674,36 @@ async function runBenchHeadless(
 	};
 
 	log(
-		`A-Coder Bench: model=${spec.provider}/${spec.modelId} tasks=${tasks.map((t) => t.id).join(",")} runs=${runs}` +
+		`A-Coder Bench: model=${spec.provider}/${spec.modelId} tasks=${tasks.map((t) => t.id).join(",")} runs=${runs} concurrency=${flags.concurrency}` +
 			(flags.endpoint ? ` endpoint=${flags.endpoint}` : ""),
 	);
-	const child = resolveBenchChildCommand();
-	const results: BenchRunResult[] = [];
-	for (const job of jobs) {
-		if (flags.json) {
-			emit({ type: "bench_progress", taskId: job.task.id, runIndex: job.runIndex, state: "running" });
-		}
-		let result: BenchRunResult;
-		try {
-			result = await runTaskOnce({
-				benchDir,
-				task: job.task,
-				provider: spec.provider,
-				modelId: spec.modelId,
-				runIndex: job.runIndex,
-				endpoint: flags.endpoint,
-				apiKey: flags.apiKey,
-				api: flags.api,
-				child,
-			});
-		} catch (error) {
-			result = {
-				runId: `error_${job.task.id}_r${job.runIndex}`,
-				timestamp: new Date().toISOString(),
-				model: `${spec.provider}/${spec.modelId}`,
-				taskId: job.task.id,
-				taskTags: job.task.tags,
-				runIndex: job.runIndex,
-				pass: false,
-				timedOut: false,
-				agentExitCode: null,
-				graderExitCode: null,
-				gradeDetail: null,
-				durationMs: 0,
-				stats: {
-					toolCalls: 0,
-					toolErrors: 0,
-					editFailures: 0,
-					turns: 0,
-					usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-					finalText: "",
-				},
-				error: error instanceof Error ? error.message : String(error),
-			};
-		}
-		results.push(result);
-		const state = result.pass ? "pass" : result.timedOut ? "timeout" : "fail";
-		const detail = `${Math.round(result.durationMs / 1000)}s · ${result.stats.usage.totalTokens} tok · ${result.stats.turns} turns`;
-		if (flags.json) {
-			emit({ type: "bench_progress", taskId: job.task.id, runIndex: job.runIndex, state, detail });
-		} else {
-			log(`  [${job.task.id} r${job.runIndex}] ${state.toUpperCase()} (${detail})`);
-		}
-	}
-	const passed = results.filter((r) => r.pass).length;
+	const results = await runBenchQueue({
+		benchDir,
+		jobs,
+		concurrency: flags.concurrency,
+		provider: spec.provider,
+		modelId: spec.modelId,
+		endpoint: flags.endpoint,
+		apiKey: flags.apiKey,
+		api: flags.api,
+		child: resolveBenchChildCommand(),
+		onStart: (job) => {
+			if (flags.json) {
+				emit({ type: "bench_progress", taskId: job.task.id, runIndex: job.runIndex, state: "running" });
+			}
+		},
+		onResult: (job, result) => {
+			const state = result.pass ? "pass" : result.timedOut ? "timeout" : "fail";
+			const detail = `${Math.round(result.durationMs / 1000)}s · ${result.stats.usage.totalTokens} tok · ${result.stats.turns} turns`;
+			if (flags.json) {
+				emit({ type: "bench_progress", taskId: job.task.id, runIndex: job.runIndex, state, detail });
+			} else {
+				log(`  [${job.task.id} r${job.runIndex}] ${state.toUpperCase()} (${detail})`);
+			}
+		},
+	});
+
+	const passed = results.filter((result) => result.pass).length;
 	const leaderboardPath = join(benchDir, "leaderboard.md");
 	try {
 		const leaderboard = buildLeaderboard(loadResults(benchDir));

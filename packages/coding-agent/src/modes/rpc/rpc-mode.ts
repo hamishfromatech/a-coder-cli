@@ -1036,6 +1036,34 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 				return success(id, "refresh_models");
 			}
 
+			case "get_llama_cpp_status": {
+				return success(id, "get_llama_cpp_status", await session.getLlamaCppStatus(false));
+			}
+
+			case "get_decision_models": {
+				const models = await session.listDecisionModels();
+				return success(id, "get_decision_models", {
+					models,
+					autoContinue: session.getAutoContinueSettings(),
+				});
+			}
+
+			case "get_auto_continue_settings": {
+				return success(id, "get_auto_continue_settings", session.getAutoContinueSettings());
+			}
+
+			case "set_auto_continue_settings": {
+				if (!command.settings || typeof command.settings !== "object") {
+					return error(id, "set_auto_continue_settings", "settings must be an object");
+				}
+				const mode = command.settings.mode;
+				if (mode !== undefined && mode !== "off" && mode !== "compaction" && mode !== "smart") {
+					return error(id, "set_auto_continue_settings", `Unknown auto-continue mode: ${String(mode)}`);
+				}
+				session.setAutoContinueSettings(command.settings);
+				return success(id, "set_auto_continue_settings");
+			}
+
 			// =================================================================
 			// Thinking
 			// =================================================================

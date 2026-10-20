@@ -18,6 +18,7 @@ export interface BenchRunConfig {
 	api?: string;
 	api_key?: string;
 	runs: number;
+	concurrency?: number;
 	tasks?: string;
 }
 

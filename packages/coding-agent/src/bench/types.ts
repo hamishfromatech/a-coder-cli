@@ -41,6 +41,8 @@ export interface BenchRunResult {
 	runIndex: number;
 	pass: boolean;
 	timedOut: boolean;
+	/** The hidden grader exceeded GRADER_TIMEOUT_MS. */
+	graderTimedOut?: boolean;
 	agentExitCode: number | null;
 	graderExitCode: number | null;
 	gradeDetail: unknown;
@@ -66,6 +68,25 @@ export interface RunTaskOptions {
 	apiKey: string;
 	api: string;
 	child: BenchChildCommand;
+}
+
+export interface BenchQueueJob {
+	task: BenchTask;
+	runIndex: number;
+}
+
+export interface BenchQueueOptions {
+	benchDir: string;
+	jobs: BenchQueueJob[];
+	concurrency?: number;
+	provider: string;
+	modelId: string;
+	endpoint?: string;
+	apiKey: string;
+	api: string;
+	child: BenchChildCommand;
+	onStart?: (job: BenchQueueJob, index: number) => void;
+	onResult?: (job: BenchQueueJob, result: BenchRunResult, index: number) => void;
 }
 
 export interface SpawnOutcome {
