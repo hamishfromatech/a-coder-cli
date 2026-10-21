@@ -1,19 +1,22 @@
 //! First-launch CLI bootstrap.
 //!
 //! When the desktop app can't find `a-coder-cli` on PATH (a fresh install with
-//! only the desktop app, not the CLI), this downloads the matching
-//! `pi-<platform>-<arch>` archive from the GitHub release and installs it into
-//! `~/.a-coder/cli/lib/a-coder-cli/` + a `a-coder-cli` command in
-//! `~/.a-coder/cli/bin/`, mirroring `install-a-coder.sh`. A shim is also kept
-//! in the legacy `~/.a-coder/bin/` (when it exists) so older PATH entries keep
-//! working. The frontend boot-failure card exposes a one-click "Install the
-//! A-Coder CLI engine" button that calls this command and retries the connect.
+//! only the desktop app, not the CLI), this extracts the engine archive
+//! bundled in the app into `~/.a-coder/cli/lib/a-coder-cli/` and writes an
+//! `a-coder-cli` command in `~/.a-coder/cli/bin/`, mirroring
+//! `install-a-coder.sh`. If the app has no bundled archive (a source build
+//! without one), it downloads the matching `pi-<platform>-<arch>` archive from
+//! the GitHub release instead. A shim is also kept in the legacy
+//! `~/.a-coder/bin/` (when it exists) so older PATH entries keep working. The
+//! frontend boot-failure card exposes a one-click "Install the A-Coder CLI
+//! engine" button that calls this command and retries the connect.
 
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
+use tauri::{AppHandle, Manager};
 
-const REPO: &str = "hamishfromatech/pi-mono";
+const REPO: &str = "hamishfromatech/a-coder-cli";
 
 #[derive(Deserialize)]
 struct Release {
@@ -33,49 +36,93 @@ pub struct CliResolution {
 	pub newer_engine: Option<String>,
 }
 
-pub async fn ensure_cli_version_matches() -> Result<CliResolution, String> {
-	let installed = crate::cli::resolve_cli_path(None)?;
+pub async fn ensure_cli_version_matches(app: &AppHandle) -> Result<CliResolution, String> {
+	let desktop_version = strip_v_prefix(env!("CARGO_PKG_VERSION"));
+	let bundled_archive = bundled_engine_archive(app);
 
-	let installed_version = get_cli_version(&installed).await?;
-	let desktop_version = env!("CARGO_PKG_VERSION");
-	let normalized_desktop = strip_v_prefix(desktop_version);
-
-	// Already matches? Use it.
-	if installed_version == normalized_desktop {
-		return Ok(CliResolution {
-			path: installed,
-			newer_engine: None,
-		});
+	// A current or newer user-managed install always wins. This preserves the
+	// existing skew policy and avoids overwriting an engine the user chose.
+	if let Ok(installed) = crate::cli::resolve_cli_path(None) {
+		match get_cli_version(&installed).await {
+			Ok(version) if version == desktop_version => {
+				return Ok(CliResolution {
+					path: installed,
+					newer_engine: None,
+				});
+			}
+			Ok(version)
+				if compare_dotted_versions(&version, &desktop_version)
+					== Some(std::cmp::Ordering::Greater) =>
+			{
+				tracing::info!(
+					"CLI {} is newer than desktop {}; using it as-is",
+					version,
+					desktop_version
+				);
+				return Ok(CliResolution {
+					path: installed,
+					newer_engine: Some(version),
+				});
+			}
+			_ => {
+				// Older or unreadable: fall through to the engine carried by
+				// this app, then to the network.
+			}
+		}
 	}
 
-	// A newer engine is fine — use it and let the caller surface the skew.
-	if compare_dotted_versions(&installed_version, &normalized_desktop)
-		== Some(std::cmp::Ordering::Greater)
-	{
-		tracing::info!(
-			"CLI {} is newer than desktop {}; using it as-is",
-			installed_version,
-			normalized_desktop
-		);
-		return Ok(CliResolution {
-			path: installed,
-			newer_engine: Some(installed_version),
-		});
+	// Fresh desktop-only install (or an older engine): extract the archive
+	// bundled in the app. This is the offline-first path.
+	if bundled_archive.is_some() {
+		match install_bundled_engine(app, &desktop_version) {
+			Ok(path) => {
+				let version = get_cli_version(&path).await?;
+				if version == desktop_version {
+					tracing::info!("Using bundled engine at {}", path.display());
+					return Ok(CliResolution {
+						path,
+						newer_engine: None,
+					});
+				}
+				// A desktop-only build may carry the latest CLI engine, which can
+				// be newer; keep it and report the skew.
+				if compare_dotted_versions(&version, &desktop_version)
+					== Some(std::cmp::Ordering::Greater)
+				{
+					tracing::info!(
+						"Bundled engine {} is newer than desktop {}; using it",
+						version,
+						desktop_version
+					);
+					return Ok(CliResolution {
+						path,
+						newer_engine: Some(version),
+					});
+				}
+				tracing::warn!(
+					"Bundled engine reports {}, expected {}; falling back to download",
+					version,
+					desktop_version
+				);
+			}
+			Err(error) => {
+				tracing::warn!("Could not install bundled engine: {}", error);
+			}
+		}
 	}
 
-	// Older (or incomparable): download the CLI release matching the desktop
-	// version. We can't rely on `latest` because the user may be on a
-	// pre-release or the GitHub latest pointer may have moved ahead of this
-	// desktop build.
-	let tag = format!("v{}", normalized_desktop);
+	// Older (or missing) installed engine: download the release matching the
+	// desktop version. We can't use `latest` because the GitHub pointer may
+	// have moved ahead of this build.
+	let tag = format!("v{}", desktop_version);
 	let updated_path = install_cli_release(&tag).await?;
 
 	// Double-check the new binary reports the expected version.
 	let updated_version = get_cli_version(&updated_path).await?;
-	if updated_version != normalized_desktop {
+	if updated_version != desktop_version {
 		return Err(format!(
 			"CLI bootstrap version mismatch after update: expected {}, got {}",
-			normalized_desktop, updated_version
+			desktop_version, updated_version
 		));
 	}
 
@@ -83,6 +130,51 @@ pub async fn ensure_cli_version_matches() -> Result<CliResolution, String> {
 		path: updated_path,
 		newer_engine: None,
 	})
+}
+
+/// Locate the engine archive bundled into the app's resources (staged by
+/// scripts/stage-desktop-engine.mjs). The resource map in tauri.conf.json
+/// places it at `$RESOURCE/bundle/engine.tar.gz`. An archive is used instead of
+/// an extracted tree so the app bundle carries no unsigned nested executables.
+pub fn bundled_engine_archive(app: &AppHandle) -> Option<PathBuf> {
+	let resource_dir = app.path().resource_dir().ok()?;
+	bundled_engine_archive_in(&resource_dir)
+}
+
+fn bundled_engine_archive_in(resource_dir: &Path) -> Option<PathBuf> {
+	let path = resource_dir.join("bundle").join("engine.tar.gz");
+	if path.is_file() { Some(path) } else { None }
+}
+
+/// Extract the app's engine archive into the writable CLI install directory,
+/// then write the usual command shims. The installed copy is what runs, so
+/// npx/npm caches and MCP server global installs land under the user's home.
+fn install_bundled_engine(app: &AppHandle, desktop_version: &str) -> Result<PathBuf, String> {
+	let archive =
+		bundled_engine_archive(app).ok_or_else(|| "No bundled engine archive".to_string())?;
+	let install_dir = cli_install_dir();
+	let lib_dir = install_dir.join("lib").join("a-coder-cli");
+	let bin_dir = install_dir.join("bin");
+
+	stage_and_swap_archive(&archive, &lib_dir, false)?;
+
+	let (platform, _arch) = platform_arch();
+	let bin_name = if platform == "windows" { "pi.exe" } else { "pi" };
+	let binary = lib_dir.join(bin_name);
+	if !binary.is_file() {
+		return Err(format!(
+			"Bundled engine archive did not contain {}",
+			binary.display()
+		));
+	}
+	#[cfg(unix)]
+	{
+		use std::os::unix::fs::PermissionsExt;
+		let _ = std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755));
+	}
+	write_command_shims(&bin_dir, Some(&a_coder_dir().join("bin")), &platform)?;
+	let _ = std::fs::write(install_dir.join("VERSION"), format!("v{}", desktop_version));
+	Ok(binary)
 }
 
 /// Compare two dotted numeric versions ("0.80.113"). Returns None when either
@@ -255,10 +347,20 @@ async fn install_cli_release(tag: &str) -> Result<PathBuf, String> {
 /// desktop app can't find it on PATH. Returns the resolved path to the `pi`
 /// binary so the frontend can immediately retry the connect with it.
 #[tauri::command]
-pub async fn bootstrap_cli() -> Result<String, String> {
+pub async fn bootstrap_cli(app: AppHandle) -> Result<String, String> {
 	// Already resolvable? Nothing to do — return the existing path.
 	if let Ok(p) = crate::cli::resolve_cli_path(None) {
 		return Ok(p.display().to_string());
+	}
+
+	// Fresh desktop-only install with no network: extract the matching engine
+	// carried by the app instead of downloading it.
+	if bundled_engine_archive(&app).is_some() {
+		let desktop_version = strip_v_prefix(env!("CARGO_PKG_VERSION"));
+		match install_bundled_engine(&app, &desktop_version) {
+			Ok(path) => return Ok(path.display().to_string()),
+			Err(error) => tracing::warn!("Could not install bundled engine: {}", error),
+		}
 	}
 
 	let install_dir = cli_install_dir();
@@ -608,6 +710,29 @@ mod tests {
 			"newer engine"
 		);
 
+		let _ = std::fs::remove_dir_all(&root);
+	}
+
+	#[test]
+	fn bundled_engine_archive_uses_resource_engine_archive() {
+		let root =
+			std::env::temp_dir().join(format!("ac-bundled-engine-{}", std::process::id()));
+		let _ = std::fs::remove_dir_all(&root);
+		std::fs::create_dir_all(&root).unwrap();
+		std::fs::create_dir_all(root.join("bundle")).unwrap();
+		let archive = root.join("bundle").join("engine.tar.gz");
+		std::fs::write(&archive, b"archive").unwrap();
+		assert_eq!(bundled_engine_archive_in(&root), Some(archive));
+		let _ = std::fs::remove_dir_all(&root);
+	}
+
+	#[test]
+	fn bundled_engine_archive_missing_returns_none() {
+		let root =
+			std::env::temp_dir().join(format!("ac-bundled-engine-missing-{}", std::process::id()));
+		let _ = std::fs::remove_dir_all(&root);
+		std::fs::create_dir_all(&root).unwrap();
+		assert_eq!(bundled_engine_archive_in(&root), None);
 		let _ = std::fs::remove_dir_all(&root);
 	}
 

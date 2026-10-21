@@ -1,6 +1,6 @@
 {
 	"name": "@earendil-works/a-coder-desktop",
-	"version": "0.80.170",
+	"version": "0.80.171",
 	"private": true,
 	"author": "The A-Tech Corporation PTY LTD",
 	"type": "module",
@@ -9,6 +9,9 @@
 		"build": "tsc && vite build",
 		"preview": "vite preview",
 		"tauri": "tauri",
+		"bundle:engine": "node ../scripts/stage-desktop-engine.mjs",
+		"pretauri:build": "npm run bundle:engine",
+		"pretauri:build:local": "npm run bundle:engine",
 		"tauri:dev": "tauri dev",
 		"tauri:build": "tauri build",
 		"tauri:build:local": "tauri build --config src-tauri/tauri.local.json",

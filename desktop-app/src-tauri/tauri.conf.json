@@ -1,7 +1,7 @@
 {
 	"$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
 	"productName": "A-Coder Desktop",
-	"version": "0.80.170",
+	"version": "0.80.171",
 	"identifier": "works.earendil.a-coder-desktop",
 	"build": {
 		"beforeDevCommand": "npm run dev",
@@ -53,6 +53,9 @@
 		"targets": "all",
 		"publisher": "The A-Tech Corporation PTY LTD",
 		"createUpdaterArtifacts": true,
+		"resources": {
+			"resources/bundle": "bundle"
+		},
 		"icon": [
 			"icons/32x32.png",
 			"icons/128x128.png",

@@ -69,6 +69,8 @@ One-line install (self-contained binary):
 curl -sSf https://raw.githubusercontent.com/hamishfromatech/a-coder-cli/feat/desktop-unified-release/install-a-coder.sh | bash
 ```
 
+The release archive includes a private Node runtime next to the Bun engine, so `npx`/`node`/`npm`-based MCP servers work without a system Node install. Source and npm installs still require Node 22+ (or Bun).
+
 Windows (PowerShell):
 
 ```powershell

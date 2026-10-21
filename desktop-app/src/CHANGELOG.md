@@ -4,10 +4,12 @@
 
 ### Changed
 
+- The desktop engine bootstrap now downloads from `hamishfromatech/a-coder-cli` directly instead of relying on GitHub's `pi-mono` rename redirect.
 - Settings got a UI/UX pass: the sidebar is grouped (App / Assistant / Workspace / System) with proper icons and an active marker, the search box now searches every settings page and jumps straight to the matching control (or merged sub-section) with a brief highlight, cards honor their `defaultCollapsed` state, advanced fields auto-expand for search hits, and the footer shows live Saving / Saved / error status instead of a static note. The raw JSON editor gains a saved/unsaved state, Reload, a confirmed reset, and opens the correct project-scoped settings file.
 - Composio integration moved into the engine's built-in **Composio MCP server** (`https://connect.composio.dev/mcp`, seeded on fresh installs next to chrome-devtools; auth = dashboard consumer API key via `COMPOSIO_API_KEY` or the MCP servers editor). The desktop **Apps panel** (browse/connect apps) and the empty `Composio` settings card are gone — app discovery and connection now happen in the chat through the server's manage-connections meta tools, and old `#composio` settings deep links still land on Integrations.
 ### Added
 
+- Desktop installers now bundle the matching CLI engine (including its private Node runtime) as an `engine.tar.gz` Tauri resource and extract it into the writable CLI install directory on first launch, so a fresh install starts offline instead of downloading the engine. A current or newer user-installed CLI still wins; an older one falls back to the bundled engine when the network is unavailable.
 - Settings → Models → Local models now includes a live **llama.cpp** card: server build/model/context, vision and thinking detection, tool support, global sampling controls (temperature, top_p, top_k, min_p, repeat/presence/frequency penalties, seed), and per-model sampling overrides. Thinking levels use the existing composer pill; budgets use Conversation → Custom thinking budgets.
 
 - Settings → Conversation → Smart auto-continue: choose Off, After compaction, or Smart; pick an installed System One decision model (Ollama models are discovered live), and tune continue/progress probabilities and the continuation cap. Decision-model traces appear as toasts, including the continue probability, progress, model, and latency.

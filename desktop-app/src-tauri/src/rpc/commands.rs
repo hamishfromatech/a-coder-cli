@@ -34,7 +34,7 @@ pub async fn connect(
 			newer_engine: None,
 		}
 	} else {
-		crate::bootstrap::ensure_cli_version_matches().await?
+		crate::bootstrap::ensure_cli_version_matches(&app_handle).await?
 	};
 	if let Some(cli_version) = &resolution.newer_engine {
 		let _ = app_handle.emit(

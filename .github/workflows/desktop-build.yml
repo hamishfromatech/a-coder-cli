@@ -17,7 +17,14 @@ on:
   # Called by build-binaries.yml on `v*` tags so desktop installers are staged
   # into the same unified GitHub Release as the CLI binaries. When called this
   # way the `release` job below is skipped (it only fires on `desktop-v*`).
+  # engine_artifact is the build job's release-assets artifact containing the
+  # platform pi archives; staging them into the app makes first launch offline.
   workflow_call:
+    inputs:
+      engine_artifact:
+        description: 'Artifact name containing pi-<platform>-<arch> archives'
+        required: false
+        type: string
 
 concurrency:
   group: desktop-${{ github.ref }}
@@ -27,6 +34,7 @@ concurrency:
 # upload assets via the GitHub API.
 permissions:
   contents: write
+  actions: read
 
 env:
   ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
@@ -44,18 +52,26 @@ jobs:
           - platform: macos-latest
             target: aarch64-apple-darwin
             args: --target aarch64-apple-darwin
+            engine_platform: darwin
+            engine_arch: arm64
           # macOS Intel
           - platform: macos-latest
             target: x86_64-apple-darwin
             args: --target x86_64-apple-darwin
+            engine_platform: darwin
+            engine_arch: x64
           # Linux
           - platform: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             args: --target x86_64-unknown-linux-gnu
+            engine_platform: linux
+            engine_arch: x64
           # Windows
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
             args: --target x86_64-pc-windows-msvc
+            engine_platform: windows
+            engine_arch: x64
 
     runs-on: ${{ matrix.platform }}
     defaults:
@@ -96,6 +112,30 @@ jobs:
         # committed lockfile pins them exactly.
         working-directory: virtual-office-ui
         run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Download CLI engine artifact
+        if: ${{ inputs.engine_artifact != '' }}
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ inputs.engine_artifact }}
+          path: ${{ runner.temp }}/cli-engine
+
+      - name: Stage CLI engine into app resources
+        # Unified releases get the exact engine artifact from the build job.
+        # Standalone desktop builds fall back to the matching GitHub release
+        # (best-effort; a missing engine leaves the first-launch download path).
+        shell: bash
+        working-directory: desktop-app
+        env:
+          ENGINE_ARTIFACT_DIR: ${{ runner.temp }}/cli-engine
+          ENGINE_ARTIFACT: ${{ inputs.engine_artifact }}
+        run: |
+          set -euo pipefail
+          args=(--platform "${{ matrix.engine_platform }}" --arch "${{ matrix.engine_arch }}" --dest src-tauri/resources/bundle/engine.tar.gz)
+          if [[ -n "$ENGINE_ARTIFACT" ]]; then
+            args+=(--artifact-dir "$ENGINE_ARTIFACT_DIR" --require)
+          fi
+          node ../scripts/stage-desktop-engine.mjs "${args[@]}"
 
       # ──────────────────────────────────────────────────────────────────────
       # macOS: import Developer ID certificate into a temporary keychain.

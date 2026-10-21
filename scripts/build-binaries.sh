@@ -21,6 +21,10 @@
 #     pi-linux-arm64.tar.gz
 #     pi-windows-x64.zip
 #     pi-windows-arm64.zip
+#
+# Each archive carries the compiled engine plus a pinned portable Node runtime
+# under node/ so npx/node/npm-based stdio MCP servers work without a system
+# Node install.
 
 set -euo pipefail
 
@@ -134,6 +138,140 @@ bun_for_platform() {
 	esac
 }
 
+## Portable Node runtime shipped next to the engine.
+##
+## Bun is the engine runtime, but stdio MCP servers are commonly launched with
+## `npx`/`npm`/`node`. Bundling the official Node distribution means those
+## servers work without a system Node install (and the desktop engine bundle
+## carries the same tree). Pin the version + checksums so release artifacts are
+## reproducible and the download is verified.
+NODE_VERSION="24.22.1"
+NODE_CACHE_DIR="${NODE_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/a-coder-node}"
+
+node_platform() {
+	case "$1" in
+		darwin-*) echo "darwin" ;;
+		linux-*) echo "linux" ;;
+		windows-*) echo "win" ;;
+	esac
+}
+
+node_arch() {
+	case "$1" in
+		*-arm64) echo "arm64" ;;
+		*-x64) echo "x64" ;;
+	esac
+}
+
+node_archive_name() {
+	local platform="$1"
+	local ext="tar.gz"
+	[[ "$platform" == windows-* ]] && ext="zip"
+	echo "node-v${NODE_VERSION}-$(node_platform "$platform")-$(node_arch "$platform").${ext}"
+}
+
+node_archive_sha256() {
+	case "$1" in
+		darwin-arm64) echo "89c682593d76cd44233fa53b1563264e7de9cbb189cad169135c5b4fadfbc0a7" ;;
+		darwin-x64)   echo "d132557e7ee2b85af08b0c8c34338e65c6430f2238d01f727728ef42dc83b035" ;;
+		linux-arm64)  echo "33c37be234ba8bee041961047b19160f4d7d0f164e8e246f78bdd10feff148b3" ;;
+		linux-x64)    echo "eb6728e77c576a35162c122c45ccadf224d89ff00abc8dae46cc2897c6002d7c" ;;
+		windows-arm64) echo "a0c807319fede24c4a0d8f84564c82a619bd313b16b10c007c383c2609e99171" ;;
+		windows-x64)  echo "d2046d28c2c3dcd211ac5145c0bf30e2047ef9dfb306693c8c6e2eccd8b95fa5" ;;
+		*) return 1 ;;
+	esac
+}
+
+sha256_verify() {
+	local expected="$1" file="$2" actual
+	if command -v sha256sum >/dev/null 2>&1; then
+		actual="$(sha256sum "$file" | awk '{print $1}')"
+	elif command -v shasum >/dev/null 2>&1; then
+		actual="$(shasum -a 256 "$file" | awk '{print $1}')"
+	else
+		echo "Error: sha256sum or shasum is required to verify the Node runtime." >&2
+		return 1
+	fi
+	if [[ "$actual" != "$expected" ]]; then
+		echo "Error: checksum mismatch for $file" >&2
+		echo "  expected: $expected" >&2
+		echo "  actual:   $actual" >&2
+		return 1
+	fi
+}
+
+stage_node_runtime() {
+	local platform="$1" dest="$2"
+	local archive_name archive expected tmp
+	archive_name="$(node_archive_name "$platform")"
+	expected="$(node_archive_sha256 "$platform")" || {
+		echo "Error: no pinned Node checksum for $platform" >&2
+		return 1
+	}
+	mkdir -p "$NODE_CACHE_DIR"
+	archive="$NODE_CACHE_DIR/$archive_name"
+	if [[ ! -f "$archive" ]]; then
+		echo "  Downloading Node v${NODE_VERSION} runtime ($archive_name)..."
+		local url="https://nodejs.org/dist/v${NODE_VERSION}/${archive_name}"
+		if command -v curl >/dev/null 2>&1; then
+			curl -fsSL --retry 3 --connect-timeout 15 "$url" -o "$archive.part"
+		elif command -v wget >/dev/null 2>&1; then
+			wget -q "$url" -O "$archive.part"
+		else
+			echo "Error: curl or wget is required to download Node." >&2
+			return 1
+		fi
+		mv "$archive.part" "$archive"
+	fi
+	sha256_verify "$expected" "$archive"
+	echo "  Bundling Node v${NODE_VERSION} ($platform)..."
+	rm -rf "$dest"
+	mkdir -p "$dest"
+	if [[ "$platform" == windows-* ]]; then
+		if ! command -v unzip >/dev/null 2>&1; then
+			echo "Error: unzip is required to stage the Windows Node runtime." >&2
+			return 1
+		fi
+		tmp="$dest/.unpack"
+		mkdir -p "$tmp"
+		unzip -q "$archive" -d "$tmp"
+		local root
+		root="$(find "$tmp" -mindepth 1 -maxdepth 1 -type d -name 'node-v*' | head -1)"
+		if [[ -z "$root" ]]; then
+			echo "Error: unexpected Node zip layout: $archive_name" >&2
+			return 1
+		fi
+		(cd "$root" && tar -cf - .) | (cd "$dest" && tar -xf -)
+		rm -rf "$tmp"
+	else
+		tar -xzf "$archive" -C "$dest" --strip-components=1
+	fi
+	# Trim docs and corepack; npm/npx/node are all that MCP servers need.
+	rm -rf "$dest/include" "$dest/share" "$dest/CHANGELOG.md" "$dest/LICENSE" "$dest/README.md"
+	rm -rf "$dest/lib/node_modules/corepack" "$dest/bin/corepack" 2>/dev/null || true
+	rm -rf "$dest/node_modules/corepack" "$dest/corepack" "$dest/corepack.cmd" 2>/dev/null || true
+
+	# Node ships bin/npm and bin/npx as relative symlinks. Some packagers and
+	# app-resource copiers dereference them, which breaks `require('../lib/...')`
+	# from the new location. Use small wrappers instead.
+	if [[ "$platform" != windows-* ]]; then
+		# rm first: bin/npm and bin/npx are symlinks. A plain redirection would
+		# follow the link and overwrite npm-cli.js itself.
+		rm -f "$dest/bin/npm" "$dest/bin/npx"
+		cat > "$dest/bin/npm" <<'WRAPPER'
+#!/bin/sh
+dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec "$dir/node" "$dir/../lib/node_modules/npm/bin/npm-cli.js" "$@"
+WRAPPER
+		cat > "$dest/bin/npx" <<'WRAPPER'
+#!/bin/sh
+dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec "$dir/node" "$dir/../lib/node_modules/npm/bin/npx-cli.js" "$@"
+WRAPPER
+		chmod +x "$dest/bin/npm" "$dest/bin/npx"
+	fi
+}
+
 # Validate platform if specified
 if [[ -n "$PLATFORM" ]]; then
     case "$PLATFORM" in
@@ -223,6 +361,10 @@ for platform in "${PLATFORMS[@]}"; do
     cp -r docs "$OUTPUT_DIR/$platform/"
     cp -r examples "$OUTPUT_DIR/$platform/"
     cp -r skills "$OUTPUT_DIR/$platform/"
+
+    # Node for npx/npm/node-based stdio MCP servers. The engine prepends
+    # node/bin (node/ on Windows) to PATH at startup.
+    stage_node_runtime "$platform" "$OUTPUT_DIR/$platform/node"
 
     # Copy pi-tui's native platform helper (clipboard, native modifier probes, Windows
     # virtual-terminal input) next to the compiled binary — the runtime probes these

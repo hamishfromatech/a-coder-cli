@@ -45,6 +45,7 @@ import type { ExtensionFactory } from "./core/extensions/types.ts";
 import { applyHttpProxySettings, configureHttpDispatcher } from "./core/http-dispatcher.ts";
 import { ModelRegistry, type ResolvedRequestAuth } from "./core/model-registry.ts";
 import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/model-resolver.ts";
+import { ensureBundledNodeOnPath } from "./core/node-runtime.ts";
 import { restoreStdout, takeOverStdout } from "./core/output-guard.ts";
 import { type AppMode, resolveProjectTrusted } from "./core/project-trust.ts";
 import type { CreateAgentSessionOptions } from "./core/sdk.ts";
@@ -583,6 +584,10 @@ function emitAuthCredential(model: Model<Api>, auth: ResolvedRequestAuth): void 
 }
 export async function main(args: string[], options?: MainOptions) {
 	resetTimings();
+	// MCP servers commonly use npx/node/npm even though the engine itself is a
+	// Bun binary. Prepend the Node runtime shipped with release archives so
+	// those servers work without a system Node install.
+	ensureBundledNodeOnPath();
 	const offlineMode = args.includes("--offline") || isTruthyEnvFlag(process.env.A_CODER_CLI_OFFLINE);
 	if (offlineMode) {
 		process.env.A_CODER_CLI_OFFLINE = "1";

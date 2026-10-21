@@ -505,7 +505,6 @@ mod tests {
 	#[test]
 	#[cfg(unix)]
 	fn test_resolve_cli_path_prefers_bootstrap_binary() {
-		use std::env;
 		let dir = tempdir().expect("Failed to create temp dir");
 		let home = dir.path().join("home");
 		std::fs::create_dir_all(home.join(".a-coder").join("lib").join("a-coder-cli"))
@@ -534,7 +533,6 @@ mod tests {
 	#[test]
 	#[cfg(unix)]
 	fn test_resolve_cli_path_prefers_nested_layout() {
-		use std::env;
 		let dir = tempdir().expect("Failed to create temp dir");
 		let home = dir.path().join("home");
 		// Both layouts present: the product-nested one must win.

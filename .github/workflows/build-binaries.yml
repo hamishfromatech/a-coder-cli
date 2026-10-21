@@ -166,13 +166,17 @@ jobs:
 
   # Desktop installers (macOS dmg, Linux deb/AppImage, Windows nsis/msi) are
   # built by the reusable desktop-build workflow and staged into the same
-  # unified GitHub Release as the CLI binaries below. Runs in parallel with
-  # the CLI build.
+  # unified GitHub Release as the CLI binaries below. Needs the CLI build so
+  # each desktop installer can bundle its platform engine (offline first launch).
   desktop-build:
+    needs: build
     permissions:
       contents: write
+      actions: read
     if: ${{ inputs.npm_publish_only != true }}
     uses: ./.github/workflows/desktop-build.yml
+    with:
+      engine_artifact: ${{ (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && format('release-assets-{0}', github.event.inputs.tag || github.ref_name) || '' }}
     # Reusable workflows don't inherit secrets by default; forward them so
     # desktop-build gets TAURI_SIGNING_PRIVATE_KEY(_PASSWORD) for signing the
     # updater artifacts (and any Apple/Windows signing secrets).

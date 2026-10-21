@@ -4,6 +4,7 @@
 
 ### Added
 
+- Release archives now bundle a pinned Node v24.22.1 runtime next to the Bun-compiled engine, and the CLI prepends its `node/bin` directory to `PATH` at startup. `npx`/`node`/`npm`-based stdio MCP servers (including the seeded chrome-devtools server) now work without a system Node install. Downloads are SHA-256 verified at build time.
 - Full llama.cpp support: discovered models read `/props` for vision, context, tools, and thinking capability; `/thinking`, the Desktop thinking pill, and thinking budgets now work for llama.cpp templates that support reasoning effort or a boolean thinking switch. `/llama` shows the live build, model, context, capabilities, and model list.
 - `models.json` now supports provider- and model-level `samplingParams`, plus `thinkingTokenBudgetField` / `supportsThinkingTokenBudget` in `compat`, and reapplies llama.cpp provider/model overrides after dynamic model refresh. The Desktop Local models panel edits llama.cpp sampling defaults and per-model overrides.
 

@@ -16,7 +16,7 @@
 
 A self-extensible AI coding agent by [The A-Tech Corporation PTY LTD](https://github.com/hamishfromatech), available two ways:
 
-- **A-Coder CLI** (`a-coder-cli`) — the terminal coding agent. Runs anywhere Node 22+ or Bun does.
+- **A-Coder CLI** (`a-coder-cli`) — the terminal coding agent. Release installers ship a self-contained Bun engine; npm/source installs need Node 22+ or Bun.
 - **A-Coder Desktop** — a native Tauri desktop app (macOS, Windows, Linux) with project workspaces, a session tree, a model picker, a virtual-office team view, scheduled tasks with run history, an activity inbox, and voice mode (speech-to-text / text-to-speech).
 
 Both share the same engine — the agent runtime, tools, and unified multi-provider LLM API — so providers, models, and sessions work identically across the CLI and the desktop app.
@@ -73,6 +73,8 @@ powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/ham
 
 This installs the `a-coder-cli` command (symlinked onto your `PATH`). Run `a-coder-cli` in any project folder to start chatting; `a-coder-cli --help` lists all flags.
 
+The release archive is self-contained: it carries the Bun-compiled engine plus a private Node runtime used by `npx`/`node`/`npm`-based MCP servers. You do not need a system Node install.
+
 > **Launch the desktop app from the terminal:** `a-coder-cli --desktop` (or `-d`) opens A-Coder Desktop in the current folder, so you can start the GUI right where you're working. Set `A_CODER_DESKTOP_BINARY` to point at a custom build, or `A_CODER_DESKTOP_DEV=1` to run it via `npm run tauri:dev` from a monorepo checkout.
 
 ### A-Coder Desktop
@@ -85,7 +87,7 @@ This installs the `a-coder-cli` command (symlinked onto your `PATH`). Run `a-cod
 | Windows | `A-Coder Desktop_<version>_x64-setup.exe` (NSIS) or `..._x64_en-US.msi` |
 | Linux | `A-Coder Desktop_<version>_amd64.deb`, `..._x64.AppImage`, or `..._amd64.rpm` |
 
-Drag the `.app` to `/Applications` (macOS), run the `.exe`/`.msi` (Windows), or install the `.deb`/`.AppImage` (Linux). On first launch the app asks you to pick a workspace folder.
+Drag the `.app` to `/Applications` (macOS), run the `.exe`/`.msi` (Windows), or install the `.deb`/`.AppImage` (Linux). Each installer bundles the matching engine and its Node runtime, so first launch works offline; the app asks you to pick a workspace folder.
 
 **Option B — Build from source** (needs Node 22+, Rust, and the [Tauri v2 prerequisites](https://v2.tauri.app/start/prerequisites/)):
 
