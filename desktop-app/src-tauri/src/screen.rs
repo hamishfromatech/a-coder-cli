@@ -41,7 +41,7 @@ pub struct ScreenShareState {
 
 struct Session {
 	source: ScreenSource,
-	target: Target,
+	target: TargetSpec,
 	last_signature: Option<Vec<u8>>,
 	latest: Option<RgbaImage>,
 	version: u64,
@@ -51,16 +51,37 @@ struct Session {
 	last_ratio: f32,
 }
 
-enum Target {
-	Window(Window),
-	Monitor(Monitor),
+/// A source by id, not a platform capture handle. xcap's Windows monitor
+/// handle is a raw `HMONITOR`, which is not `Send`; keeping the id here lets the
+/// Tauri state stay `Send + Sync`, and resolves the handle on the capture
+/// thread instead.
+#[derive(Clone, Debug)]
+enum TargetSpec {
+	Window(u32),
+	Monitor(u32),
 }
 
-impl Target {
+impl TargetSpec {
 	fn capture(&self) -> Result<RgbaImage, String> {
 		match self {
-			Target::Window(window) => window.capture_image().map_err(|e| e.to_string()),
-			Target::Monitor(monitor) => monitor.capture_image().map_err(|e| e.to_string()),
+			TargetSpec::Window(id) => {
+				let windows =
+					Window::all().map_err(|e| format!("Could not list windows: {}", e))?;
+				let window = windows
+					.into_iter()
+					.find(|window| window.id().ok() == Some(*id))
+					.ok_or_else(|| "That window is no longer open".to_string())?;
+				window.capture_image().map_err(|e| e.to_string())
+			}
+			TargetSpec::Monitor(id) => {
+				let monitors =
+					Monitor::all().map_err(|e| format!("Could not list displays: {}", e))?;
+				let monitor = monitors
+					.into_iter()
+					.find(|monitor| monitor.id().ok() == Some(*id))
+					.ok_or_else(|| "That display is no longer available".to_string())?;
+				monitor.capture_image().map_err(|e| e.to_string())
+			}
 		}
 	}
 }
@@ -268,7 +289,7 @@ fn source_from_monitor(monitor: &Monitor) -> ScreenSource {
 	}
 }
 
-fn resolve_source(source_id: &str) -> Result<(ScreenSource, Target), String> {
+fn resolve_source(source_id: &str) -> Result<(ScreenSource, TargetSpec), String> {
 	let (kind, raw_id) = source_id
 		.split_once(':')
 		.ok_or_else(|| "Invalid screen source".to_string())?;
@@ -283,7 +304,7 @@ fn resolve_source(source_id: &str) -> Result<(ScreenSource, Target), String> {
 				.find(|window| window.id().ok() == Some(id))
 				.ok_or_else(|| "That window is no longer open".to_string())?;
 			let source = source_from_window(&window);
-			Ok((source, Target::Window(window)))
+			Ok((source, TargetSpec::Window(id)))
 		}
 		"display" => {
 			let monitors = Monitor::all().map_err(|e| format!("Could not list displays: {}", e))?;
@@ -292,7 +313,7 @@ fn resolve_source(source_id: &str) -> Result<(ScreenSource, Target), String> {
 				.find(|monitor| monitor.id().ok() == Some(id))
 				.ok_or_else(|| "That display is no longer available".to_string())?;
 			let source = source_from_monitor(&monitor);
-			Ok((source, Target::Monitor(monitor)))
+			Ok((source, TargetSpec::Monitor(id)))
 		}
 		_ => Err("Unknown screen source kind".to_string()),
 	}
