@@ -10,6 +10,7 @@ mod git;
 mod menu;
 mod resources;
 mod rpc;
+mod screen;
 mod serve;
 mod settings;
 mod share;
@@ -60,6 +61,7 @@ fn main() {
 		.manage(browser::tabs::TabsState::default())
 		.manage(browser::downloads::DownloadsState::default())
 		.manage(browser::agentserver::AgentGateState::default())
+		.manage(screen::ScreenShareState::default())
 		.plugin(tauri_plugin_opener::init())
 		.invoke_handler(tauri::generate_handler![
 			browser::tabs::browser_supported,
@@ -104,6 +106,13 @@ fn main() {
 			voice::voice_transcribe,
 			voice::voice_synthesize,
 			voice::voice_fetch_json,
+			screen::screen_share_sources,
+			screen::screen_share_status,
+			screen::screen_share_start,
+			screen::screen_share_stop,
+			screen::screen_share_capture,
+			screen::screen_share_latest,
+			screen::screen_share_request_permission,
 			rpc_commands::connect,
 			rpc_commands::disconnect,
 			rpc_commands::send_command,

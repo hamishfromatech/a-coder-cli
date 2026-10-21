@@ -106,6 +106,8 @@ npm run tauri:dev
 
 A-Coder Desktop supports voice I/O through your own OpenAI-compatible endpoints. Open **Settings → Voice**, enter your speech-to-text and text-to-speech base URLs (STT uses `/v1/audio/transcriptions`, TTS uses `/v1/audio/speech`), enable voice mode, and use the mic button in the composer. Any OpenAI-compatible provider works.
 
+During a call, **Share screen** attaches the current display or window to spoken turns. The desktop captures locally at ~2 Hz, ignores unchanged frames via a small luma signature, and sends one downscaled JPEG only when the screen materially changed (plus a slow refresh). The model gets a still image, not a video stream, so any image-capable model works. macOS asks for Screen Recording permission the first time; sharing stops when the call ends.
+
 ## Composio integration
 
 A-Coder ships an optional [Composio](https://composio.dev) integration that gives the agent access to ~1,000 external apps (GitHub, Gmail, Slack, Linear, Notion, …) via the native `PiProvider` from `@composio/experimental` — built against this package's own `createAgentSession`, so the tools are first-class `ToolDefinition`s, not MCP-proxied.

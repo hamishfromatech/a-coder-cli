@@ -1,6 +1,6 @@
 [package]
 name = "a-coder-desktop"
-version = "0.80.171"
+version = "0.80.172"
 description = "Desktop wrapper for a-coder-cli"
 authors = ["The A-Tech Corporation PTY LTD"]
 edition = "2021"
@@ -25,6 +25,9 @@ tracing = "0.1"
 walkdir = "2"
 which = "7"
 base64 = "0.22"
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
+# Cross-platform display/window enumeration and capture for screen share.
+xcap = "0.9.8"
 reqwest = { version = "0.13", features = ["json", "multipart"] }
 flate2 = "1"
 url = "2"
@@ -43,6 +46,9 @@ log = { version = "0.4", features = ["std"] }
 objc = "0.2"
 objc2 = "0.6"
 block2 = "0.6"
+objc2-core-graphics = { version = "0.3", default-features = false, features = [
+	"std", "CGWindow",
+] }
 objc2-app-kit = { version = "0.3", default-features = false, features = [
 	"std", "objc2-core-foundation", "NSApplication", "NSButton", "NSControl", "NSEvent", "NSGraphics",
 	"NSResponder", "NSView", "NSWindow", "NSImage", "NSImageRep", "NSBitmapImageRep", "NSScreen",

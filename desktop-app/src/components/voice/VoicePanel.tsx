@@ -1,6 +1,21 @@
 import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
-import { AudioLines, Mic, MicOff, PhoneOff, SkipForward, Volume2 } from "lucide-react";
+import {
+	AppWindow,
+	AudioLines,
+	Loader2,
+	Mic,
+	MicOff,
+	Monitor,
+	PhoneOff,
+	RefreshCw,
+	ScreenShare,
+	ScreenShareOff,
+	SkipForward,
+	Volume2,
+} from "lucide-react";
 import { useVoiceCallStore, voiceCall, setMicDeviceId, type VoiceCallPhase } from "../../lib/voice-call";
+import { screenShare, useScreenShareStore, type ScreenSource } from "../../lib/screen-share";
+import { useSessionStore } from "../../stores/session-store";
 import { IconButton } from "../ui/Button";
 import { Orb, type AgentState } from "../ui/orb";
 import { ShimmeringText } from "../ui/shimmering-text";
@@ -43,6 +58,228 @@ function OrbWell({ size, children }: { size: string; children: ReactNode }) {
 				{children}
 			</div>
 		</div>
+	);
+}
+
+
+/** Screen share for the active call: pick a display/window, show a live
+ *  preview, and stop cleanly with the call. Only changed frames are attached
+ *  to voice turns, so this is not a video stream. */
+function ScreenShareControl() {
+	const s = useScreenShareStore();
+	const [pickerOpen, setPickerOpen] = useState(false);
+	const [picking, setPicking] = useState(false);
+	const [localError, setLocalError] = useState("");
+	const [requesting, setRequesting] = useState(false);
+	const canSeeImages = useSessionStore((s) => s.model?.input?.includes("image") ?? true);
+
+	const openPicker = async () => {
+		setPickerOpen(true);
+		setPicking(true);
+		setLocalError("");
+		try {
+			const result = await screenShare.listSources();
+			if (!result.sources.length) {
+				setLocalError("No shareable displays or windows found.");
+			}
+		} catch (e) {
+			setLocalError(e instanceof Error ? e.message : String(e));
+		} finally {
+			setPicking(false);
+		}
+	};
+
+	const requestAccess = async () => {
+		setRequesting(true);
+		setLocalError("");
+		try {
+			const granted = await screenShare.requestPermission();
+			if (!granted) {
+				setLocalError(
+					"Enable A-Coder Desktop in System Settings → Privacy & Security → Screen Recording, then restart the app.",
+				);
+			}
+		} finally {
+			setRequesting(false);
+		}
+	};
+
+	const start = async (source: ScreenSource) => {
+		const started = await screenShare.start(source.id);
+		if (started) setPickerOpen(false);
+	};
+
+	const displays = s.sources.filter((source) => source.kind === "display");
+	const windows = s.sources.filter((source) => source.kind === "window");
+
+	if (s.active) {
+		return (
+			<div className="rounded-lg border border-pi-border bg-pi-surface-raised p-2">
+				<div className="flex items-center justify-between gap-2">
+					<div className="flex min-w-0 items-center gap-1.5">
+						<ScreenShare className="h-3.5 w-3.5 shrink-0 text-pi-accent" />
+						<div className="min-w-0">
+							<p className="text-2xs font-medium leading-4 text-pi-text">Sharing screen</p>
+							<p className="truncate text-3xs leading-3 text-pi-text-faint" title={s.sourceName}>
+								{s.sourceName || "Selected source"}
+							</p>
+						</div>
+					</div>
+					<button
+						type="button"
+						onClick={() => void screenShare.stop()}
+						className="flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-full border border-pi-border px-2 text-3xs text-pi-text-muted transition-hover hover:border-rose-400/50 hover:text-rose-400"
+						aria-label="Stop sharing screen"
+					>
+						<ScreenShareOff className="h-3 w-3" />
+						Stop
+					</button>
+				</div>
+				{s.preview ? (
+					<img
+						src={s.preview}
+						alt="Shared screen preview"
+						className="mt-2 max-h-40 w-full rounded-md border border-pi-border object-contain"
+					/>
+				) : (
+					<div className="mt-2 flex h-20 items-center justify-center rounded-md border border-dashed border-pi-border text-3xs text-pi-text-faint">
+						<Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+						Waiting for the first frame…
+					</div>
+				)}
+				<p className="mt-1.5 text-3xs leading-3 text-pi-text-faint">
+					Only changed frames are attached to voice turns — the model gets a still, not a video. Frames go to your current model provider.
+				</p>
+				{!canSeeImages && (
+					<p className="mt-1 text-3xs leading-3 text-amber-500">
+						This model is text-only. Switch to a vision-capable model to attach frames.
+					</p>
+				)}
+				{s.error && (
+					<p className="mt-1 text-3xs leading-3 text-pi-danger" title={s.error}>
+						{s.error}
+					</p>
+				)}
+			</div>
+		);
+	}
+
+	return (
+		<div className="space-y-2">
+			<button
+				type="button"
+				onClick={() => void openPicker()}
+				className="flex h-8 w-full cursor-pointer items-center justify-center gap-1.5 rounded-full border border-pi-border bg-pi-surface-raised text-2xs text-pi-text transition-hover hover:border-pi-text-muted/40"
+			>
+				<ScreenShare className="h-3.5 w-3.5 text-pi-text-muted" />
+				Share screen
+			</button>
+
+			{s.error && !pickerOpen && (
+				<p className="text-3xs leading-4 text-pi-danger" title={s.error}>
+					{s.error}
+				</p>
+			)}
+
+			{pickerOpen && (
+				<div className="rounded-lg border border-pi-border bg-pi-surface-raised p-2">
+					<div className="mb-1.5 flex items-center justify-between gap-2">
+						<p className="text-2xs font-medium text-pi-text">Share a display or window</p>
+						<button
+							type="button"
+							onClick={() => void openPicker()}
+							disabled={picking}
+							className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-full text-pi-text-faint transition-hover hover:bg-pi-surface hover:text-pi-text disabled:opacity-50"
+							aria-label="Refresh screen sources"
+							title="Refresh screen sources"
+						>
+							<RefreshCw className={`h-3 w-3 ${picking ? "animate-spin" : ""}`} />
+						</button>
+					</div>
+
+					{s.permission === false && (
+						<div className="mb-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-2">
+							<p className="text-3xs leading-4 text-pi-text">
+								Screen Recording access is off. Enable it, then restart the app.
+							</p>
+							<button
+								type="button"
+								onClick={() => void requestAccess()}
+								disabled={requesting}
+								className="mt-1.5 flex h-6 cursor-pointer items-center gap-1 rounded-full bg-pi-surface px-2 text-3xs text-pi-text transition-hover hover:bg-pi-surface-raised disabled:opacity-50"
+							>
+								{requesting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Monitor className="h-3 w-3" />}
+								Request access
+							</button>
+						</div>
+					)}
+
+					{(localError || s.error) && (
+						<p className="mb-2 text-3xs leading-4 text-pi-danger">{localError || s.error}</p>
+					)}
+
+					{picking ? (
+						<p className="flex items-center gap-1.5 py-2 text-3xs text-pi-text-faint">
+							<Loader2 className="h-3 w-3 animate-spin" />
+							Looking for screens…
+						</p>
+					) : s.sources.length === 0 ? (
+						<p className="py-2 text-3xs leading-4 text-pi-text-faint">
+							No shareable screens found. Try refreshing, or grant Screen Recording access first.
+						</p>
+					) : (
+						<div className="max-h-48 space-y-2 overflow-y-auto overscroll-contain">
+							{displays.length > 0 && (
+								<div className="space-y-0.5">
+									<p className="px-1 text-3xs font-semibold uppercase tracking-wider text-pi-text-faint">Displays</p>
+									{displays.map((source) => (
+										<SourceButton key={source.id} source={source} onPick={start} disabled={s.busy || s.permission === false} />
+									))}
+								</div>
+							)}
+							{windows.length > 0 && (
+								<div className="space-y-0.5">
+									<p className="px-1 text-3xs font-semibold uppercase tracking-wider text-pi-text-faint">Windows</p>
+									{windows.map((source) => (
+										<SourceButton key={source.id} source={source} onPick={start} disabled={s.busy || s.permission === false} />
+									))}
+								</div>
+							)}
+						</div>
+					)}
+				</div>
+			)}
+		</div>
+	);
+}
+
+function SourceButton({
+	source,
+	onPick,
+	disabled,
+}: {
+	source: ScreenSource;
+	onPick: (source: ScreenSource) => Promise<void>;
+	disabled: boolean;
+}) {
+	const Icon = source.kind === "display" ? Monitor : AppWindow;
+	return (
+		<button
+			type="button"
+			onClick={() => void onPick(source)}
+			disabled={disabled}
+			className="flex w-full cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-hover hover:bg-pi-surface disabled:opacity-50"
+		>
+			<Icon className="h-3.5 w-3.5 shrink-0 text-pi-text-faint" />
+			<span className="min-w-0 flex-1">
+				<span className="block truncate text-2xs text-pi-text">{source.name}</span>
+				<span className="block truncate text-3xs text-pi-text-faint">
+					{source.kind === "window" && source.appName ? `${source.appName} · ` : ""}
+					{source.width}×{source.height}
+					{source.primary ? " · primary" : ""}
+				</span>
+			</span>
+		</button>
 	);
 }
 
@@ -129,6 +366,8 @@ function CallCard() {
 					</ul>
 				</div>
 			)}
+
+			<ScreenShareControl />
 
 			{s.spokenTotal > 0 && (
 				<div className="flex items-center justify-center gap-1.5">

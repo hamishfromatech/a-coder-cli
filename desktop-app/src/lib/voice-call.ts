@@ -25,6 +25,7 @@
 import * as rpc from "./rpc";
 import { playCueVariant } from "./completion-sound";
 import { assetPath } from "./asset-path";
+import { screenShare, useScreenShareStore } from "./screen-share";
 import { useSessionStore } from "../stores/session-store";
 import { useSettingsStore } from "../stores/settings-store";
 import { micThreshold, normalizeMicLevel } from "./voice-level";
@@ -43,6 +44,7 @@ import {
 } from "./voice";
 import { huddleCall } from "./huddle-call";
 import { create } from "zustand";
+import type { ImageContent } from "@earendil-works/pi-ai";
 
 // ---------------------------------------------------------------------------
 // The phone-call style system prompt: composed onto the engine's system prompt
@@ -56,6 +58,7 @@ export const VOICE_CALL_ADDENDUM = [
 	"- No markdown, lists, code fences, headings, or emoji; write anything you would say out loud.",
 	"- Numbers, paths and identifiers: say them in words a listener can follow, then follow up in text if asked.",
 	"- You may still perform coding work; describe what you did in words and keep long output in the text session, not in your spoken reply.",
+	"- If a screenshot of the user's shared screen is attached, treat it as their current view and answer from it. It is a still frame, not a live video; say when a detail is too small to read.",
 	"- If the request is ambiguous, ask one short clarifying question instead of guessing.",
 ].join("\n");
 
@@ -313,6 +316,7 @@ class VoiceCallController {
 	/** How long the mic has been loud during an armed barge attempt. */
 	private bargeLoudSince = 0;
 	private lastToolCallId = "";
+	private warnedNoVision = false;
 
 	/** Whether a call is live (read by App.tsx to gate its chime). */
 	get active(): boolean {
@@ -348,6 +352,7 @@ class VoiceCallController {
 		try {
 			await this.openMic();
 			this.lastToolCallId = "";
+			this.warnedNoVision = false;
 			// Phone-call conversation style while the call is live.
 			await rpc.setSystemPromptAddendum(VOICE_CALL_ADDENDUM).catch(() => undefined);
 			if (s.voiceCallCues) {
@@ -356,6 +361,7 @@ class VoiceCallController {
 			await this.enterListening();
 		} catch (e) {
 			this.teardownMic();
+			await screenShare.stop();
 			setCall({
 				active: false,
 				phase: "listening",
@@ -374,6 +380,7 @@ class VoiceCallController {
 		if (!this.active) return;
 		this.abortSpeech();
 		this.teardownMic();
+		await screenShare.stop();
 		// The transient addendum only belongs to this call.
 		await rpc.setSystemPromptAddendum(null).catch(() => undefined);
 		if (useSettingsStore.getState().voiceCallCues) {
@@ -612,7 +619,19 @@ class VoiceCallController {
 		// follow-up on the engine's queue.
 		// Voice turns carry the flag so the engine can bind the auxiliary
 		// voice model for this turn only (typed turns keep the user's model).
-		const send = busy ? rpc.followUp : (message: string) => rpc.prompt(message, undefined, undefined, { voiceTurn: true });
+		const canSeeImages = useSessionStore.getState().model?.input?.includes("image") ?? true;
+		if (!canSeeImages && useScreenShareStore.getState().active && !this.warnedNoVision) {
+			this.warnedNoVision = true;
+			toast.warning(
+				"This model can't see the screen",
+				"Switch to a vision-capable model to attach screen frames to voice turns.",
+			);
+		}
+		const screen = canSeeImages ? await screenShare.captureForTurn() : null;
+		const images: ImageContent[] | undefined = screen ? [screen] : undefined;
+		const send = busy
+			? (message: string) => rpc.followUp(message, images, undefined)
+			: (message: string) => rpc.prompt(message, images, undefined, { voiceTurn: true });
 		try {
 			await send(text);
 			pushCallLog(`You: ${text}`);
