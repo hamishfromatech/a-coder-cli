@@ -1426,6 +1426,7 @@ export default function App() {
 						setSettingsNavId(null);
 					}}
 					initialNavId={settingsNavId ?? undefined}
+					cwd={cwd ?? projectPath ?? undefined}
 				/>
 			)}
 

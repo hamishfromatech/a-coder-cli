@@ -897,24 +897,21 @@ export function findSection(navId: string): SettingsSection | undefined {
 	return SETTINGS_SECTIONS.find((s) => s.navId === navId);
 }
 
-/** Nav display order after consolidation. Sections sharing a navId merge into one page. */
-const NAV_ORDER: string[] = [
-	"account",
-	"ai-model",
-	"look-and-feel",
-	"chat-behaviour",
-	"tools-and-permissions",
-	"external-tools",
-	"browser",
-	"resources",
-	"voice",
-	"mobile",
-	"privacy",
-	"keybindings",
-	"bench",
-	"advanced",
-	"general",
-	"updates",
+/** Nav grouping after consolidation. Sections sharing a navId merge into one page. */
+const NAV_GROUPS: { label: string; ids: string[] }[] = [
+	{ label: "App", ids: ["general", "account"] },
+	{
+		label: "Assistant",
+		ids: ["ai-model", "tools-and-permissions", "external-tools", "resources"],
+	},
+	{
+		label: "Workspace",
+		ids: ["look-and-feel", "chat-behaviour", "browser", "voice", "mobile"],
+	},
+	{
+		label: "System",
+		ids: ["privacy", "keybindings", "bench", "updates", "advanced"],
+	},
 ];
 
 /** Legacy section ids that now live on a merged page (deep-link compatibility). */
@@ -935,16 +932,35 @@ export function sectionsForNavId(navId: string): SettingsSection[] {
 	return SETTINGS_SECTIONS.filter((s) => s.navId === id);
 }
 
-export function listNavItems(): { id: string; label: string }[] {
+export interface SettingsNavGroup {
+	label: string;
+	items: { id: string; label: string }[];
+}
+
+function navItemMap(): Map<string, { id: string; label: string }> {
 	const firstByNav = new Map<string, { id: string; label: string }>();
 	for (const s of SETTINGS_SECTIONS) {
 		if (!firstByNav.has(s.navId)) {
 			firstByNav.set(s.navId, { id: s.navId, label: s.label });
 		}
 	}
-	return NAV_ORDER.map((navId) => firstByNav.get(navId)).filter(
-		(item): item is { id: string; label: string } => item !== undefined,
-	);
+	return firstByNav;
+}
+
+/** Grouped navigation for the settings sidebar. */
+export function listNavGroups(): SettingsNavGroup[] {
+	const firstByNav = navItemMap();
+	return NAV_GROUPS.map((group) => ({
+		label: group.label,
+		items: group.ids
+			.map((navId) => firstByNav.get(navId))
+			.filter((item): item is { id: string; label: string } => item !== undefined),
+	})).filter((group) => group.items.length > 0);
+}
+
+/** Flat navigation order (used by the command palette and settings search). */
+export function listNavItems(): { id: string; label: string }[] {
+	return listNavGroups().flatMap((group) => group.items);
 }
 
 // ============================================================================

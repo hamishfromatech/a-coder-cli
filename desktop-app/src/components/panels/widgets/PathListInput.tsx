@@ -3,6 +3,8 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useCallback, useState } from "react";
 
 interface Props {
+	id?: string;
+	ariaLabelledBy?: string;
 	value: string[];
 	onChange: (next: string[]) => void;
 	disabled?: boolean;
@@ -16,6 +18,8 @@ interface Props {
  * extensions, skills, prompts, and themes in settings.json.
  */
 export function PathListInput({
+	id,
+	ariaLabelledBy,
 	value,
 	onChange,
 	disabled,
@@ -91,6 +95,8 @@ export function PathListInput({
 				className="flex gap-2"
 			>
 				<textarea
+					id={id}
+					aria-labelledby={ariaLabelledBy}
 					value={draft}
 					onChange={(e) => setDraft(e.target.value)}
 					placeholder={placeholder ?? "Type a path, or use the picker"}

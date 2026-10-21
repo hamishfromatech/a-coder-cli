@@ -4,6 +4,7 @@
 
 ### Changed
 
+- Settings got a UI/UX pass: the sidebar is grouped (App / Assistant / Workspace / System) with proper icons and an active marker, the search box now searches every settings page and jumps straight to the matching control (or merged sub-section) with a brief highlight, cards honor their `defaultCollapsed` state, advanced fields auto-expand for search hits, and the footer shows live Saving / Saved / error status instead of a static note. The raw JSON editor gains a saved/unsaved state, Reload, a confirmed reset, and opens the correct project-scoped settings file.
 - Composio integration moved into the engine's built-in **Composio MCP server** (`https://connect.composio.dev/mcp`, seeded on fresh installs next to chrome-devtools; auth = dashboard consumer API key via `COMPOSIO_API_KEY` or the MCP servers editor). The desktop **Apps panel** (browse/connect apps) and the empty `Composio` settings card are gone — app discovery and connection now happen in the chat through the server's manage-connections meta tools, and old `#composio` settings deep links still land on Integrations.
 ### Added
 
@@ -68,6 +69,7 @@
 
 ### Fixed
 
+- Settings → Project scope now works: project settings are loaded and written against the active session's workspace `cwd` instead of being skipped, so project overrides no longer appear empty. Debounced auto-saves are also flushed when the Settings panel closes or the scope changes, so the last edit inside the 400ms window is not lost.
 - File explorer HTML previews now render CDN-based pages (Tailwind CDN, web fonts, remote images): real files stream through the asset protocol, whose responses carry no Content-Security-Policy — blob previews inherit the app window's CSP and blocked external scripts. Relative resources next to the viewed file resolve too. Content-only artifacts keep the blob fallback with an explanatory banner.
 
 - Fixed the workspace breadcrumb showing a stale project when switching between conversations that live in different workspaces: the desktop never learned the active session's workspace (the RPC `get_state` payload had no `cwd`). The engine now reports `cwd` in `get_state` and the authoritative session identity (`sessionFile`/`sessionId`/`sessionName`/`cwd`) in the `switch_session` response; the desktop syncs its workspace indicator (and git-branch chip) to the session's own workspace on every switch — tab clicks, the session list, resume, background-session focus, and project switches.
