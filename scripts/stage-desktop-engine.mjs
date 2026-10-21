@@ -53,6 +53,9 @@ const explicitSource = arg("--source");
 const allowDownload = !process.argv.includes("--no-download");
 const required = process.argv.includes("--require");
 const asset = `pi-${platform}-${arch}.${platform === "windows" ? "zip" : "tar.gz"}`;
+// Git Bash's GNU tar misreads `D:\...` as a remote host and cannot read zip.
+// Use the Windows bsdtar (Windows 10 1803+) on Windows runners.
+const tarCommand = process.platform === "win32" ? "C:\\Windows\\System32\\tar.exe" : "tar";
 
 function log(message) {
 	console.log(`[engine] ${message}`);
@@ -90,7 +93,7 @@ function extractArchive(archive, target) {
 	const lower = archive.toLowerCase();
 	if (lower.endsWith(".zip")) {
 		if (process.platform === "win32") {
-			execFileSync("tar", ["-xf", archive, "-C", target], { stdio: "inherit" });
+			execFileSync(tarCommand, ["-xf", archive, "-C", target], { stdio: "inherit" });
 		} else {
 			execFileSync("unzip", ["-q", archive, "-d", target], { stdio: "inherit" });
 		}
@@ -104,7 +107,7 @@ function extractArchive(archive, target) {
 		}
 		return;
 	}
-	execFileSync("tar", ["-xzf", archive, "-C", target, "--strip-components=1"], {
+	execFileSync(tarCommand, ["-xzf", archive, "-C", target, "--strip-components=1"], {
 		stdio: "inherit",
 	});
 }
@@ -139,7 +142,7 @@ function createEngineArchive(source, target) {
 		writeFileSync(join(packaged, "ENGINE_VERSION"), `${version}\n`);
 		mkdirSync(resolve(target, ".."), { recursive: true });
 		rmSync(target, { force: true });
-		execFileSync("tar", ["-czf", target, "-C", temp, "pi"], { stdio: "inherit" });
+		execFileSync(tarCommand, ["-czf", target, "-C", temp, "pi"], { stdio: "inherit" });
 		return version;
 	} finally {
 		rmSync(temp, { recursive: true, force: true });
