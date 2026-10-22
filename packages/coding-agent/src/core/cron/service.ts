@@ -4,12 +4,13 @@
  * A per-process ticker (like the office's errand ticker) checks due jobs and
  * delivers each job's prompt:
  *
- *   - active session matches the job's project (cwd): the prompt is sent via
- *     `sendUserMessage` — it starts a turn, or queues as a follow-up when one
- *     is already running. The reply lands in the live conversation.
- *   - otherwise: a continuity side session for that project (one per job,
- *     reused across fires, auto permission mode) so scheduled work runs
- *     headless and lands in the session tree.
+ *   - by default, a detached in-process subagent — its own context and turn
+ *     budget, a live progress card in the target session, and a final
+ *     notification back through the normal parent-session wake. Runs do not
+ *     pollute the parent context with the full transcript.
+ *   - jobs with `isolated: false` keep the live-turn path: the active session
+ *     starts/queues a turn via `sendUserMessage`, or a continuity side session
+ *     (one per job, reused, auto permission mode) runs it headless.
  *
  * Schedule math is shared with office errands (every / daily / once).
  */
@@ -97,6 +98,7 @@ export interface CronJobInput {
 	concurrencyPolicy?: CronConcurrencyPolicy;
 	catchUpPolicy?: CronCatchUpPolicy;
 	variables?: CronVariable[];
+	isolated?: boolean;
 }
 
 /** The slice of CronService the schedule tool needs. CronService implements it. */
@@ -107,7 +109,17 @@ export interface CronToolService {
 	update(
 		id: string,
 		patch: Partial<
-			Pick<CronJob, "name" | "prompt" | "schedule" | "enabled" | "concurrencyPolicy" | "catchUpPolicy" | "variables">
+			Pick<
+				CronJob,
+				| "name"
+				| "prompt"
+				| "schedule"
+				| "enabled"
+				| "concurrencyPolicy"
+				| "catchUpPolicy"
+				| "variables"
+				| "isolated"
+			>
 		>,
 	): Promise<CronJob>;
 	remove(id: string): Promise<void>;
@@ -210,6 +222,7 @@ export function cronJobConfig(job: CronJob): CronJobConfig {
 		concurrencyPolicy: job.concurrencyPolicy ?? DEFAULT_CRON_CONCURRENCY,
 		catchUpPolicy: job.catchUpPolicy ?? DEFAULT_CRON_CATCH_UP,
 		variables: job.variables ?? [],
+		isolated: job.isolated ?? true,
 	};
 }
 
@@ -327,6 +340,7 @@ export class CronService {
 			concurrencyPolicy: input.concurrencyPolicy ?? DEFAULT_CRON_CONCURRENCY,
 			catchUpPolicy: input.catchUpPolicy ?? DEFAULT_CRON_CATCH_UP,
 			variables: normalizeCronVariables(input.variables),
+			isolated: input.isolated ?? true,
 			revision: 1,
 		};
 		await store.saveJob(job);
@@ -339,7 +353,17 @@ export class CronService {
 	async update(
 		id: string,
 		patch: Partial<
-			Pick<CronJob, "name" | "prompt" | "schedule" | "enabled" | "concurrencyPolicy" | "catchUpPolicy" | "variables">
+			Pick<
+				CronJob,
+				| "name"
+				| "prompt"
+				| "schedule"
+				| "enabled"
+				| "concurrencyPolicy"
+				| "catchUpPolicy"
+				| "variables"
+				| "isolated"
+			>
 		>,
 	): Promise<CronJob> {
 		const variablesError = validateCronVariables(patch.variables);
@@ -355,7 +379,8 @@ export class CronService {
 			patch.enabled !== undefined ||
 			patch.concurrencyPolicy !== undefined ||
 			patch.catchUpPolicy !== undefined ||
-			patch.variables !== undefined;
+			patch.variables !== undefined ||
+			patch.isolated !== undefined;
 		const updated = await store.updateJob(id, (job) => {
 			if (patch.name !== undefined) {
 				const name = patch.name.trim();
@@ -391,6 +416,7 @@ export class CronService {
 			if (patch.concurrencyPolicy !== undefined) job.concurrencyPolicy = patch.concurrencyPolicy;
 			if (patch.catchUpPolicy !== undefined) job.catchUpPolicy = patch.catchUpPolicy;
 			if (patch.variables !== undefined) job.variables = normalizeCronVariables(patch.variables);
+			if (patch.isolated !== undefined) job.isolated = patch.isolated;
 			if (changed) job.revision = (job.revision ?? 1) + 1;
 		});
 		if (!updated) throw new Error("Cron job not found");
@@ -416,6 +442,7 @@ export class CronService {
 			job.concurrencyPolicy = revision.config.concurrencyPolicy;
 			job.catchUpPolicy = revision.config.catchUpPolicy;
 			job.variables = normalizeCronVariables(revision.config.variables);
+			job.isolated = revision.config.isolated ?? true;
 			job.revision = (job.revision ?? 1) + 1;
 			job.nextRunAt = undefined;
 			if (job.enabled) {
@@ -612,6 +639,7 @@ export class CronService {
 			jobName: fresh.name,
 			trigger,
 			delivery: this.runtime.cwd === fresh.cwd && Boolean(this.runtime.session) ? "session" : "background",
+			execution: fresh.isolated === false ? "session" : "subagent",
 			startedAt: Date.now(),
 			status: "running",
 			...(Object.keys(variables).length > 0 ? { variables } : {}),
@@ -622,20 +650,82 @@ export class CronService {
 		let status: "ok" | "error" | "timeout" = "ok";
 		let lastError: string | undefined;
 		let summary: string | undefined;
+		let execution: "session" | "subagent" = "session";
+		let subagentId: string | undefined;
+		let outputFile: string | undefined;
+		let worktreePath: string | undefined;
 		try {
 			const target = await this.resolveDelivery(fresh);
 			run.sessionFile = target.sessionFile;
-			const messageStart = messageCount(target.session);
+			const canIsolate =
+				fresh.isolated !== false &&
+				typeof target.session.runSubAgentBackground === "function" &&
+				typeof target.session.waitSubAgent === "function";
 			if (run.sessionFile) {
 				await store.updateRun(run.jobId, run.id, (r) => {
 					r.sessionFile = run.sessionFile;
 				});
 			}
-			await this.runPrompt(target.session, prompt);
-			summary = summarizeAssistantOutput(target.session, messageStart);
+			if (canIsolate) {
+				execution = "subagent";
+				subagentId = `cron-${run.id}`;
+				run.execution = execution;
+				run.subagentId = subagentId;
+				await store.updateRun(run.jobId, run.id, (r) => {
+					r.execution = "subagent";
+					r.subagentId = subagentId;
+				});
+				target.session.runSubAgentBackground({
+					id: subagentId,
+					prompt,
+					detached: true,
+					notifyOnComplete: run.delivery === "session",
+				});
+				const record = await target.session.waitSubAgent(subagentId, RUN_TIMEOUT_MS);
+				if (!record) throw new Error("Scheduled sub-agent record disappeared");
+				if (record.status === "running") {
+					target.session.killSubAgent(subagentId, "timeout");
+					throw new CronTimeoutError();
+				}
+				outputFile = record.outputFile;
+				worktreePath = record.worktreePath;
+				if (record.status === "completed") {
+					summary = (record.finalText ?? "").trim().slice(0, MAX_RUN_SUMMARY_CHARS);
+				} else {
+					status = "error";
+					lastError = record.error ?? `Sub-agent ${record.status}`;
+					summary = (record.finalText ?? "").trim().slice(0, MAX_RUN_SUMMARY_CHARS);
+				}
+			} else {
+				execution = "session";
+				run.execution = execution;
+				const messageStart = messageCount(target.session);
+				await this.runPrompt(target.session, prompt);
+				summary = summarizeAssistantOutput(target.session, messageStart);
+			}
+			run.execution = execution;
+			run.subagentId = subagentId;
+			run.outputFile = outputFile;
+			run.worktreePath = worktreePath;
+			await store.updateRun(run.jobId, run.id, (r) => {
+				r.execution = execution;
+				r.subagentId = subagentId;
+				r.outputFile = outputFile;
+				r.worktreePath = worktreePath;
+			});
 		} catch (error_) {
 			status = error_ instanceof CronTimeoutError ? "timeout" : "error";
 			lastError = error_ instanceof Error ? error_.message : String(error_);
+			run.execution = execution;
+			run.subagentId = subagentId;
+			run.outputFile = outputFile;
+			run.worktreePath = worktreePath;
+			await store.updateRun(run.jobId, run.id, (r) => {
+				r.execution = execution;
+				r.subagentId = subagentId;
+				r.outputFile = outputFile;
+				r.worktreePath = worktreePath;
+			});
 		}
 
 		run.finishedAt = Date.now();

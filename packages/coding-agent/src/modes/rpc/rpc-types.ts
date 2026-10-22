@@ -76,6 +76,7 @@ export type RpcCommand =
 	| { id?: string; type: "stop_workflow_run"; runId: string }
 	| { id?: string; type: "kill_subagent"; subagentId: string }
 	| { id?: string; type: "rerun_subagent"; subagentId: string }
+	| { id?: string; type: "remove_subagent"; subagentId: string }
 	| { id?: string; type: "new_session"; parentSession?: string; cwd?: string }
 	| { id?: string; type: "clear_conversation" }
 
@@ -631,6 +632,13 @@ export type RpcResponse =
 			data: { subagent: InProcessSubAgentRecord };
 	  }
 	| { id?: string; type: "response"; command: "rerun_subagent"; success: true; data: { id: string } }
+	| {
+			id?: string;
+			type: "response";
+			command: "remove_subagent";
+			success: true;
+			data: { removed: boolean };
+	  }
 
 	// Messages
 	| {
@@ -1022,11 +1030,15 @@ export interface CronRpcJobInput {
 	concurrencyPolicy?: CronConcurrencyPolicy;
 	catchUpPolicy?: CronCatchUpPolicy;
 	variables?: CronVariable[];
+	isolated?: boolean;
 }
 
 /** Cron job update patch. */
 export type CronRpcJobPatch = Partial<
-	Pick<CronJob, "name" | "prompt" | "schedule" | "enabled" | "concurrencyPolicy" | "catchUpPolicy" | "variables">
+	Pick<
+		CronJob,
+		"name" | "prompt" | "schedule" | "enabled" | "concurrencyPolicy" | "catchUpPolicy" | "variables" | "isolated"
+	>
 >;
 
 // ============================================================================

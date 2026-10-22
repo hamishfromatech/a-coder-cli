@@ -4,9 +4,11 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { open as openPath } from "@tauri-apps/plugin-shell";
 import {
 	Bot,
 	CalendarClock,
+	FileText,
 	Check,
 	History,
 	Loader2,
@@ -256,6 +258,7 @@ export function CronDetail({
 									<Property label="Project" value={job.cwd} mono />
 									<Property label="Overlap" value={job.concurrencyPolicy ?? "coalesce_if_active"} />
 									<Property label="Missed windows" value={job.catchUpPolicy ?? "run_once"} />
+									<Property label="Execution" value={job.isolated === false ? "Live session" : "Isolated subagent"} />
 									<Property label="Last run" value={job.lastRunAt ? `${relativeTime(job.lastRunAt)}${job.lastStatus ? ` · ${job.lastStatus}` : ""}` : "never"} />
 									<Property label="Last triage" value={triageLabel(job.lastTriage) ?? "none"} />
 								</div>
@@ -375,13 +378,23 @@ function RunList({ runs, loading }: { runs: CronRun[]; loading: boolean }) {
 					<div className="min-w-0 flex-1">
 						<div className="flex flex-wrap items-center gap-1.5 text-xs text-pi-text">
 							<span className={statusClass(run.status)}>{run.status}</span>
-							<span className="text-2xs text-pi-text-faint">{run.trigger} · {run.delivery} · {duration(run)}</span>
+							<span className="text-2xs text-pi-text-faint">{run.trigger} · {run.execution ?? "session"} · {run.delivery} · {duration(run)}</span>
 							{triageLabel(run.triage) && <span className="text-2xs text-pi-accent">{triageLabel(run.triage)}</span>}
 						</div>
 						{run.summary && <div className="mt-0.5 line-clamp-2 text-2xs leading-relaxed text-pi-text-muted">{run.summary}</div>}
 						{run.error && <div className="mt-0.5 truncate text-2xs text-pi-error">{run.error}</div>}
 					</div>
 					<span className="shrink-0 text-2xs text-pi-text-faint">{relativeTime(run.startedAt)}</span>
+					{run.outputFile && (
+						<Button
+							variant="ghost"
+							size="icon-sm"
+							icon={FileText}
+							aria-label="Open subagent log"
+							title="Open subagent log"
+							onClick={() => void openPath(run.outputFile!).catch(() => {})}
+						/>
+					)}
 					{run.sessionFile && run.status !== "running" && (
 						<Button variant="ghost" size="icon-sm" icon={History} aria-label="Continue run" onClick={() => void openSessionFile(run.sessionFile!)} />
 					)}

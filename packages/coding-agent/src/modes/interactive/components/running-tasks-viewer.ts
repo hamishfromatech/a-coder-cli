@@ -44,6 +44,8 @@ export interface RunningTasksActions {
 	diffStat?: (worktreePath: string) => string;
 	/** Re-run a finished sub-agent; returns the new record id or a user-facing error. */
 	rerunAgent?: (record: InProcessSubAgentRecord) => { id: string } | { error: string };
+	/** Dismiss a finished sub-agent record. */
+	removeAgent?: (record: InProcessSubAgentRecord) => boolean;
 }
 
 interface AgentItem {
@@ -152,10 +154,12 @@ function itemMeta(item: TaskItem): string {
 	if (item.kind === "agent") {
 		const r = item.record;
 		if (r.model) meta.push(r.model);
+		if (r.turnCount > 0) meta.push(`${r.turnCount} turns`);
 		if (r.toolUseCount > 0) meta.push(`${r.toolUseCount} tools`);
+		if (r.lastToolName) meta.push(`last ${r.lastToolName}`);
 		const tokens = formatTokens(r.totalTokens);
 		if (tokens) meta.push(tokens);
-		meta.push(formatDuration(Date.now() - r.startedAt));
+		meta.push(formatDuration((r.status === "running" ? Date.now() : r.updatedAt) - r.startedAt));
 	} else {
 		const r = item.record;
 		if (r.totalBytes > 0) meta.push(formatBytes(r.totalBytes));
@@ -295,7 +299,10 @@ export class RunningTasksViewerComponent extends Container {
 			...subagents.map((record): TaskItem => ({ kind: "agent", record })),
 			...backgrounds.map((record): TaskItem => ({ kind: "bash", record })),
 		];
-		items.sort((a, b) => itemStartedAt(a) - itemStartedAt(b));
+		items.sort((a, b) => {
+			const active = Number(isTaskRunning(b)) - Number(isTaskRunning(a));
+			return active !== 0 ? active : itemStartedAt(b) - itemStartedAt(a);
+		});
 		this.allItems = items;
 		this.rebuildVisibleItems();
 	}
@@ -371,6 +378,8 @@ export class RunningTasksViewerComponent extends Container {
 				"  " +
 				rawKeyHint("h", this.showFinished ? "hide done" : "show done") +
 				"  " +
+				rawKeyHint("x", "dismiss") +
+				"  " +
 				keyHint("tui.select.cancel", "close"),
 		);
 	}
@@ -423,9 +432,10 @@ export class RunningTasksViewerComponent extends Container {
 		if (record.model) meta.push(record.model);
 		if (record.toolUseCount > 0) meta.push(`${record.toolUseCount} tools`);
 		if (record.turnCount > 0) meta.push(`${record.turnCount} turns`);
+		if (record.lastToolName) meta.push(`last ${record.lastToolName}`);
 		const tokens = formatTokens(record.totalTokens);
 		if (tokens) meta.push(tokens);
-		meta.push(formatDuration(Date.now() - record.startedAt));
+		meta.push(formatDuration((record.status === "running" ? Date.now() : record.updatedAt) - record.startedAt));
 		this.bodyContainer.addChild(new Text(theme.fg("muted", meta.join(" · ")), 1, 1));
 		if (record.outputFile) this.bodyContainer.addChild(new Text(theme.fg("dim", `log: ${record.outputFile}`), 1, 1));
 		if (record.worktreePath)
@@ -662,6 +672,26 @@ export class RunningTasksViewerComponent extends Container {
 		}
 	}
 
+	private dismissSelected(): void {
+		const item = this.mode === "viewing" ? this.viewItem() : this.selectedItem();
+		if (!item) return;
+		if (item.kind !== "agent" || item.record.status === "running") {
+			this.notice = "Only finished sub-agents can be dismissed.";
+			this.rerender();
+			return;
+		}
+		const removed = this.actions.removeAgent?.(item.record) ?? false;
+		this.notice = removed
+			? `Dismissed sub-agent "${truncateText(itemLabel(item), 30)}".`
+			: "Could not dismiss this sub-agent.";
+		if (removed && this.mode === "viewing") {
+			this.mode = "picking";
+			this.viewingId = undefined;
+			this.viewScroll = 0;
+		}
+		this.rerender();
+	}
+
 	handleInput(keyData: string): void {
 		const kb = getKeybindings();
 		const back = kb.matches(keyData, "tui.select.cancel") || kb.matches(keyData, "tui.editor.cursorLeft");
@@ -679,6 +709,9 @@ export class RunningTasksViewerComponent extends Container {
 					this.onKill(item);
 					this.notice = `Kill requested for ${item.kind} "${truncateText(itemLabel(item), 30)}".`;
 				}
+				return;
+			} else if (keyData === "x" && this.items.length > 0) {
+				this.dismissSelected();
 				return;
 			}
 			if (kb.matches(keyData, "tui.select.up")) {
@@ -731,6 +764,8 @@ export class RunningTasksViewerComponent extends Container {
 			this.showDiff();
 		} else if (keyData === "r") {
 			this.rerun();
+		} else if (keyData === "x") {
+			this.dismissSelected();
 		} else if (keyData === "k") {
 			const item = this.viewItem();
 			if (item) {

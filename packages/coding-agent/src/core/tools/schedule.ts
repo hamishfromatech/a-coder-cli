@@ -122,6 +122,12 @@ const scheduleTaskSchema = Type.Object(
 					"Non-secret values substituted into the task as {{name}}. On run, these override the stored defaults.",
 			}),
 		),
+		isolated: Type.Optional(
+			Type.Boolean({
+				description:
+					"Run each fire in an isolated background subagent (default true). Set false to run a normal live-session turn.",
+			}),
+		),
 	},
 	{ additionalProperties: false },
 );
@@ -163,6 +169,7 @@ function formatJob(job: CronJob): string {
 		job.variables && job.variables.length > 0
 			? `variables: ${job.variables.map((variable) => variable.name).join(", ")}`
 			: undefined,
+		job.isolated === false ? "execution: live session" : "execution: isolated subagent",
 		job.lastStatus === "error" || job.lastStatus === "timeout"
 			? `last: ${job.lastStatus}${job.lastError ? ` (${job.lastError.slice(0, 120)})` : ""}`
 			: undefined,
@@ -253,6 +260,7 @@ export function createScheduleTaskToolDefinition(
 					...(params.concurrencyPolicy ? { concurrencyPolicy: params.concurrencyPolicy } : {}),
 					...(params.catchUpPolicy ? { catchUpPolicy: params.catchUpPolicy } : {}),
 					...(variables ? { variables } : {}),
+					...(params.isolated !== undefined ? { isolated: params.isolated } : {}),
 				};
 				const job = await service.create(input);
 				return textResult(
@@ -266,7 +274,14 @@ export function createScheduleTaskToolDefinition(
 				const patch: Partial<
 					Pick<
 						CronJob,
-						"name" | "prompt" | "schedule" | "enabled" | "concurrencyPolicy" | "catchUpPolicy" | "variables"
+						| "name"
+						| "prompt"
+						| "schedule"
+						| "enabled"
+						| "concurrencyPolicy"
+						| "catchUpPolicy"
+						| "variables"
+						| "isolated"
 					>
 				> = {};
 				if (params.name !== undefined) patch.name = params.name.trim();
@@ -278,6 +293,7 @@ export function createScheduleTaskToolDefinition(
 				if (params.concurrencyPolicy !== undefined) patch.concurrencyPolicy = params.concurrencyPolicy;
 				if (params.catchUpPolicy !== undefined) patch.catchUpPolicy = params.catchUpPolicy;
 				if (params.variables !== undefined) patch.variables = variablesToInput(params.variables);
+				if (params.isolated !== undefined) patch.isolated = params.isolated;
 				const updated = await service.update(job.id, patch);
 				return textResult(
 					`Updated scheduled task "${targetLabel(updated)}" [${updated.id}].\nSchedule: ${describeSchedule(updated.schedule)}\nNext run: ${formatNextRun(updated)}`,

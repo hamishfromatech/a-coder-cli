@@ -185,7 +185,8 @@ describe("RunningTasksViewerComponent", () => {
 			() => {},
 		);
 		ensureTheme();
-		// Select the finished agent (first in sort order) and drill in.
+		// Running tasks sort first; move down to the finished agent and drill in.
+		component.handleInput("\u001b[B");
 		component.handleInput("\r");
 		expect(renderComponent(component).join("\n")).toContain("finished goal");
 		// 'h' in viewing mode does nothing: the open transcript stays readable.
@@ -200,7 +201,7 @@ describe("RunningTasksViewerComponent", () => {
 		ensureTheme();
 		const killed: string[] = [];
 		const component = new RunningTasksViewerComponent(
-			[makeAgent({ id: "agent-1" })],
+			[makeAgent({ id: "agent-1", startedAt: Date.now() - 5_000 })],
 			[makeBash({ id: "bash-1" })],
 			() => {},
 			(item) => killed.push(`${item.kind}:${item.record.id}`),
@@ -212,7 +213,7 @@ describe("RunningTasksViewerComponent", () => {
 		expect(lines).toContain("fix the bug");
 		expect(lines).toContain("$ npm test");
 
-		// Kill the selected item (agents sort first by startedAt).
+		// Kill the selected item (active tasks sort newest first).
 		component.handleInput("k");
 		expect(killed).toEqual(["agent:agent-1"]);
 	});

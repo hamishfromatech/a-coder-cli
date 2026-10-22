@@ -9,6 +9,7 @@ import {
 	FolderOpen,
 	Image as ImageIcon,
 	Loader2,
+	Paperclip,
 	RefreshCw,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -16,6 +17,7 @@ import { listDirectory, type DirEntry } from "../../lib/rpc";
 import { getDefaultViewMode, getFileKind } from "../../lib/files";
 import { useUiStore } from "../../stores/ui-store";
 import { triggerHaptic } from "../../lib/haptics";
+import { FILE_ATTACHMENT_MIME } from "../../lib/composer-attachments";
 
 function fileIcon(path: string) {
 	const kind = getFileKind(path);
@@ -94,6 +96,24 @@ export function FileExplorer({ projectPath }: Props) {
 		setRightSidebarOpen(true);
 	};
 
+	const resolvePath = useCallback(
+		(path: string) => {
+			if (!projectPath) return path;
+			if (path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path)) return path;
+			return `${projectPath.replace(/[\\/]$/, "")}/${path}`;
+		},
+		[projectPath],
+	);
+
+	const attachToChat = (path: string) => {
+		triggerHaptic("selection");
+		window.dispatchEvent(
+			new CustomEvent("a-coder:attach-files", {
+				detail: { paths: [resolvePath(path)] },
+			}),
+		);
+	};
+
 	if (!projectPath) {
 		return (
 			<div className="flex flex-1 items-center justify-center p-6 text-center text-2xs text-pi-text-faint">
@@ -153,6 +173,8 @@ aria-label="Refresh"
 							expanded={expanded}
 							toggle={toggle}
 							onFileClick={handleFileClick}
+							onAttach={attachToChat}
+							resolvePath={resolvePath}
 						/>
 					))}
 				</div>
@@ -167,9 +189,19 @@ interface TreeItemProps {
 	expanded: Set<string>;
 	toggle: (path: string) => void;
 	onFileClick: (path: string) => void;
+	onAttach: (path: string) => void;
+	resolvePath: (path: string) => string;
 }
 
-function TreeItem({ entry, depth, expanded, toggle, onFileClick }: TreeItemProps) {
+function TreeItem({
+	entry,
+	depth,
+	expanded,
+	toggle,
+	onFileClick,
+	onAttach,
+	resolvePath,
+}: TreeItemProps) {
 	const isExpanded = expanded.has(entry.path);
 	const paddingLeft = depth * 12 + 4;
 
@@ -206,6 +238,8 @@ function TreeItem({ entry, depth, expanded, toggle, onFileClick }: TreeItemProps
 								expanded={expanded}
 								toggle={toggle}
 								onFileClick={onFileClick}
+								onAttach={onAttach}
+								resolvePath={resolvePath}
 							/>
 						))}
 					</div>
@@ -216,15 +250,35 @@ function TreeItem({ entry, depth, expanded, toggle, onFileClick }: TreeItemProps
 
 	const Icon = fileIcon(entry.path);
 	return (
-		<button
-			onClick={() => onFileClick(entry.path)}
-			className="group flex h-7 w-full items-center gap-1.5 rounded-md px-1.5 text-left text-xs text-pi-text-secondary transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+		<div
+			className="group flex h-7 items-center rounded-md pr-0.5 transition-hover hover:bg-pi-surface-raised"
 			style={{ paddingLeft }}
-
 		>
-			<span className="w-3.5 shrink-0" />
-			<Icon className="h-3.5 w-3.5 shrink-0 text-pi-text-muted" />
-			<span className="truncate">{entry.name}</span>
-		</button>
+			<button
+				onClick={() => onFileClick(entry.path)}
+				draggable
+				onDragStart={(event) => {
+					const absolute = resolvePath(entry.path);
+					event.dataTransfer.setData(FILE_ATTACHMENT_MIME, absolute);
+					event.dataTransfer.setData("text/plain", absolute);
+					event.dataTransfer.effectAllowed = "copy";
+					triggerHaptic("selection");
+				}}
+				className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md py-1 text-left text-xs text-pi-text-secondary transition-hover hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+				title={`${resolvePath(entry.path)} — drag to chat or use the paperclip`}
+			>
+				<span className="w-3.5 shrink-0" />
+				<Icon className="h-3.5 w-3.5 shrink-0 text-pi-text-muted" />
+				<span className="truncate">{entry.name}</span>
+			</button>
+			<button
+				onClick={() => onAttach(entry.path)}
+				className="shrink-0 rounded p-1 text-pi-text-muted opacity-0 transition-hover group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-pi-surface-overlay hover:text-pi-text focus-visible:opacity-100 focus-visible:shadow-focus focus-visible:outline-none"
+				aria-label={`Attach ${entry.name} to chat`}
+				title="Attach to chat"
+			>
+				<Paperclip className="h-3 w-3" />
+			</button>
+		</div>
 	);
 }

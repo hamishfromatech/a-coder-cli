@@ -479,6 +479,12 @@ function getBashCommandArg(args?: Record<string, unknown>): string {
  * characters plus a first-line preview, so live views can show what a tool
  * returned without keeping the full output in the timeline.
  */
+/** Keep live sub-agent snapshots bounded; final results live outside the timeline. */
+const MAX_SUBAGENT_TIMELINE_EVENTS = 200;
+const MAX_SUBAGENT_TIMELINE_TEXT = 4_000;
+/** Coalesce progress snapshots so a burst of tool/text events cannot flood RPC. */
+const SUBAGENT_NOTIFY_INTERVAL_MS = 50;
+
 function summarizeToolResult(result: unknown): { resultChars?: number; resultPreview?: string } {
 	if (!result || typeof result !== "object") return {};
 	const content = (result as { content?: unknown }).content;
@@ -1908,6 +1914,18 @@ export class AgentSession {
 		this._unsubscribeBackgroundProcesses?.();
 		this._unsubscribeBackgroundProcesses = undefined;
 		this._stopWakeLoop();
+		// A disposed session must not leave nested agent loops running.
+		for (const [id, handle] of this._subAgentHandles) {
+			if (this._subAgents.get(id)?.status === "running") {
+				handle.abort();
+			}
+		}
+		this._subAgentHandles.clear();
+		this._subAgents.clear();
+		if (this._subAgentNotifyTimer) {
+			clearTimeout(this._subAgentNotifyTimer);
+			this._subAgentNotifyTimer = undefined;
+		}
 
 		this._extensionRunner.invalidate(
 			"This extension ctx is stale after session replacement or reload. Do not use a captured extension or command ctx after ctx.newSession(), ctx.fork(), ctx.switchSession(), or ctx.reload(). For newSession, fork, and switchSession, move post-replacement work into withSession and use the ctx passed to withSession. For reload, do not use the old ctx after await ctx.reload().",
@@ -4935,6 +4953,7 @@ export class AgentSession {
 	private _subAgents = new Map<string, InProcessSubAgentRecord>();
 	private _subAgentHandles = new Map<string, { abort: () => void; done: Promise<void> }>();
 	private _subAgentListeners = new Set<(records: InProcessSubAgentRecord[]) => void>();
+	private _subAgentNotifyTimer?: ReturnType<typeof setTimeout>;
 	/** Turn-bound file-history checkpoints backing `/rewind`. */
 	private _fileHistory = new FileHistory();
 	/** Runs stale task-list GC at most once per process (see _gcTaskLists). */
@@ -5001,6 +5020,9 @@ export class AgentSession {
 			updatedAt: now,
 			goal: deriveSubAgentGoal(params.prompt),
 			prompt: params.prompt,
+			systemPrompt: params.systemPrompt,
+			tools: params.tools ?? def?.tools,
+			disallowedTools: params.disallowedTools ?? def?.disallowedTools,
 			finalText: undefined,
 			toolUseCount: 0,
 			turnCount: 0,
@@ -5075,15 +5097,37 @@ export class AgentSession {
 		}
 
 		const maxTurns = params.maxTurns ?? def?.maxTurns ?? 25;
+		record.maxTurns = maxTurns;
 		const parent = this.agent;
 		this._subAgents.set(id, record);
 		this._notifySubAgents();
 
 		const onProgress = params.onProgress;
 		const pushEvent = (ev: SubAgentProgressEvent) => {
-			record.timeline.push(ev);
+			const compact: SubAgentProgressEvent =
+				ev.type === "text"
+					? {
+							...ev,
+							text:
+								ev.text.length > MAX_SUBAGENT_TIMELINE_TEXT
+									? `${ev.text.slice(0, MAX_SUBAGENT_TIMELINE_TEXT)}…`
+									: ev.text,
+						}
+					: ev.type === "completed"
+						? {
+								...ev,
+								finalText:
+									ev.finalText.length > MAX_SUBAGENT_TIMELINE_TEXT
+										? `${ev.finalText.slice(0, MAX_SUBAGENT_TIMELINE_TEXT)}…`
+										: ev.finalText,
+							}
+						: ev;
+			record.timeline.push(compact);
+			if (record.timeline.length > MAX_SUBAGENT_TIMELINE_EVENTS) {
+				record.timeline.splice(0, record.timeline.length - MAX_SUBAGENT_TIMELINE_EVENTS);
+			}
 			record.updatedAt = Date.now();
-			this._notifySubAgents();
+			this._scheduleSubAgentsNotify();
 		};
 		let turnCount = 0;
 		let toolUseCount = 0;
@@ -5336,7 +5380,16 @@ export class AgentSession {
 					turnCount,
 				};
 				onProgress?.(completedEvent);
-				record.timeline.push(completedEvent);
+				record.timeline.push({
+					...completedEvent,
+					finalText:
+						completedEvent.finalText.length > MAX_SUBAGENT_TIMELINE_TEXT
+							? `${completedEvent.finalText.slice(0, MAX_SUBAGENT_TIMELINE_TEXT)}…`
+							: completedEvent.finalText,
+				});
+				if (record.timeline.length > MAX_SUBAGENT_TIMELINE_EVENTS) {
+					record.timeline.splice(0, record.timeline.length - MAX_SUBAGENT_TIMELINE_EVENTS);
+				}
 				if (outputFile)
 					void appendTaskOutput(outputFile, {
 						type: "completed",
@@ -5393,6 +5446,16 @@ export class AgentSession {
 		return [...this._subAgents.values()].map((record) => ({ ...record }));
 	}
 
+	/** Remove a settled sub-agent record from the live store. */
+	removeSubAgent(id: string): boolean {
+		const record = this._subAgents.get(id);
+		if (!record || record.status === "running") return false;
+		this._subAgents.delete(id);
+		this._subAgentHandles.delete(id);
+		this._notifySubAgents();
+		return true;
+	}
+
 	/** Block until a background sub-agent settles (or timeout), then return its snapshot. */
 	async waitSubAgent(id: string, timeoutMs?: number): Promise<InProcessSubAgentRecord | undefined> {
 		const handle = this._subAgentHandles.get(id);
@@ -5444,7 +5507,20 @@ export class AgentSession {
 		};
 	}
 
+	private _scheduleSubAgentsNotify(): void {
+		if (this._subAgentNotifyTimer) return;
+		this._subAgentNotifyTimer = setTimeout(() => {
+			this._subAgentNotifyTimer = undefined;
+			this._notifySubAgents();
+		}, SUBAGENT_NOTIFY_INTERVAL_MS);
+		this._subAgentNotifyTimer.unref?.();
+	}
+
 	private _notifySubAgents(): void {
+		if (this._subAgentNotifyTimer) {
+			clearTimeout(this._subAgentNotifyTimer);
+			this._subAgentNotifyTimer = undefined;
+		}
 		const records = [...this._subAgents.values()].map((record) => ({
 			...record,
 			timeline: [...record.timeline],

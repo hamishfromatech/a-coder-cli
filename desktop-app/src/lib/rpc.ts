@@ -234,6 +234,7 @@ export interface CronJobConfig {
 	concurrencyPolicy: CronConcurrencyPolicy;
 	catchUpPolicy: CronCatchUpPolicy;
 	variables: CronVariable[];
+	isolated: boolean;
 }
 
 export interface CronJobRevision {
@@ -281,6 +282,8 @@ export interface CronJob {
 	concurrencyPolicy?: CronConcurrencyPolicy;
 	catchUpPolicy?: CronCatchUpPolicy;
 	variables?: CronVariable[];
+	/** Run each fire in an isolated background subagent (default true). */
+	isolated?: boolean;
 	revision?: number;
 }
 
@@ -293,6 +296,7 @@ export interface CronJobInput {
 	concurrencyPolicy?: CronConcurrencyPolicy;
 	catchUpPolicy?: CronCatchUpPolicy;
 	variables?: CronVariable[];
+	isolated?: boolean;
 }
 
 export interface CronSnapshot {
@@ -327,6 +331,10 @@ export interface CronRun {
 	triage?: CronTriageDecision;
 	/** Resolved variable values for this run (manual overrides included). */
 	variables?: Record<string, string>;
+	execution?: "session" | "subagent";
+	subagentId?: string;
+	outputFile?: string;
+	worktreePath?: string;
 }
 
 export interface CronRunEvent {
@@ -682,6 +690,11 @@ export interface SubAgentRecord {
 	goal?: string;
 	/** Full spawn prompt (reruns use this; the goal is a derived one-liner). */
 	prompt?: string;
+	systemPrompt?: string;
+	maxTurns?: number;
+	tools?: string[];
+	disallowedTools?: string[];
+	detached?: boolean;
 	/** The model id the sub-agent is running with. */
 	model?: string;
 	/** Provider of the model above (so a rerun resolves the same model). */
@@ -1305,6 +1318,8 @@ export const killSubagent = (subagentId: string) =>
 	sendCommand({ type: "kill_subagent", subagentId }) as Promise<{ subagent: SubAgentRecord }>;
 export const rerunSubagent = (subagentId: string) =>
 	sendCommand({ type: "rerun_subagent", subagentId }) as Promise<{ id: string }>;
+export const removeSubagent = (subagentId: string) =>
+	sendCommand({ type: "remove_subagent", subagentId }) as Promise<{ removed: boolean }>;
 export const fork = (entryId: string) =>
 	sendCommand({ type: "fork", entryId }) as Promise<ForkResult>;
 export const clone = () => sendCommand({ type: "clone" }) as Promise<CloneResult>;
@@ -1431,6 +1446,16 @@ export async function listDirectory(
 	maxDepth = 8,
 ): Promise<DirEntry[]> {
 	return await invoke<DirEntry[]>("list_directory", { cwd, maxDepth });
+}
+
+export interface FileInfo {
+	size: number;
+	mimeType: string;
+}
+
+export async function fileInfo(path: string): Promise<FileInfo> {
+	const res = await invoke<{ size: number; mime_type: string }>("file_info", { path });
+	return { size: res.size, mimeType: res.mime_type };
 }
 
 export async function readFileBase64(
@@ -1904,7 +1929,7 @@ export const cronUpdate = (
 	patch: Partial<
 		Pick<
 			CronJob,
-			"name" | "prompt" | "schedule" | "enabled" | "concurrencyPolicy" | "catchUpPolicy" | "variables"
+			"name" | "prompt" | "schedule" | "enabled" | "concurrencyPolicy" | "catchUpPolicy" | "variables" | "isolated"
 		>
 	>,
 ) => sendCommand({ type: "cron_update", jobId, patch }) as Promise<{ job: CronJob }>;

@@ -267,6 +267,30 @@ pub fn list_directory(cwd: String, max_depth: Option<usize>) -> Result<Vec<DirEn
 	)
 }
 
+/// Lightweight metadata for a file before reading it into the composer.
+#[derive(serde::Serialize, Debug)]
+pub struct FileInfo {
+	size: u64,
+	mime_type: String,
+}
+
+#[tauri::command]
+pub fn file_info(path: String) -> Result<FileInfo, String> {
+	let path = PathBuf::from(&path);
+	if !path.exists() {
+		return Err(format!("File does not exist: {}", path.display()));
+	}
+	if !path.is_file() {
+		return Err(format!("Not a file: {}", path.display()));
+	}
+	let metadata =
+		fs::metadata(&path).map_err(|e| format!("Failed to stat {}: {e}", path.display()))?;
+	Ok(FileInfo {
+		size: metadata.len(),
+		mime_type: mime_type_from_path(&path),
+	})
+}
+
 /// Read a binary file and return it as a base64 string plus a guessed MIME type.
 /// Capped at 8 MiB to keep UI memory reasonable.
 #[derive(serde::Serialize, Debug)]
@@ -563,4 +587,19 @@ mod tests {
 		assert!(result.is_err());
 		assert!(result.unwrap_err().contains("File does not exist"));
 	}
+	#[test]
+	fn test_file_info_reports_size_and_mime() {
+		let dir = tempdir().expect("Failed to create temp dir");
+		let file_path = dir.path().join("photo.png");
+		fs::write(&file_path, b"png-bytes").expect("Failed to write test file");
+		let info = file_info(file_path.to_string_lossy().to_string()).expect("file_info failed");
+		assert_eq!(info.size, 9);
+		assert_eq!(info.mime_type, "image/png");
+	}
+
+	#[test]
+	fn test_file_info_missing_file() {
+		assert!(file_info("/nonexistent/file.txt".to_string()).is_err());
+	}
+
 }

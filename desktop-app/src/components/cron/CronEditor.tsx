@@ -40,6 +40,7 @@ export function CronEditor({ job, onClose }: { job?: CronJob; onClose: () => voi
 	);
 	const [catchUpPolicy, setCatchUpPolicy] = useState<CronCatchUpPolicy>(job?.catchUpPolicy ?? "run_once");
 	const [variables, setVariables] = useState<CronVariable[]>(job?.variables ?? []);
+	const [isolated, setIsolated] = useState(job?.isolated ?? true);
 	const [kind, setKind] = useState<CronJob["schedule"]["kind"]>(job?.schedule.kind ?? "every");
 	const [minutes, setMinutes] = useState(job?.schedule.kind === "every" ? String(job.schedule.minutes) : "60");
 	const [dailyTime, setDailyTime] = useState(job?.schedule.kind === "daily" ? job.schedule.time : "09:00");
@@ -88,6 +89,7 @@ export function CronEditor({ job, onClose }: { job?: CronJob; onClose: () => voi
 					concurrencyPolicy,
 					catchUpPolicy,
 					variables: cleanVariables,
+					isolated,
 				});
 			} else {
 				await cronCreate({
@@ -97,6 +99,7 @@ export function CronEditor({ job, onClose }: { job?: CronJob; onClose: () => voi
 					concurrencyPolicy,
 					catchUpPolicy,
 					variables: cleanVariables,
+					isolated,
 				});
 			}
 			await refresh();
@@ -158,6 +161,21 @@ export function CronEditor({ job, onClose }: { job?: CronJob; onClose: () => voi
 							</select>
 						</label>
 					</div>
+
+					<label className="flex items-start gap-2 rounded-md border border-pi-border/70 px-2.5 py-2">
+						<input
+							type="checkbox"
+							checked={isolated}
+							onChange={(event) => setIsolated(event.target.checked)}
+							className="mt-0.5"
+						/>
+						<span>
+							<span className="block text-xs text-pi-text">Run in an isolated subagent</span>
+							<span className="block text-2xs leading-relaxed text-pi-text-faint">
+								Each fire gets a separate context and turn budget. Progress appears in the session card; the final result returns to the chat.
+							</span>
+						</span>
+					</label>
 
 					<div className="space-y-1.5 rounded-md border border-pi-border/70 px-2.5 py-2">
 						<div className="flex items-center justify-between gap-2">

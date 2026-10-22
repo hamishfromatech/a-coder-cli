@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { useModalA11y } from "../hooks/useModalA11y";
 import { useSessionStore } from "../stores/session-store";
-import { killSubagent, rerunSubagent, stopWorkflowRun } from "../lib/rpc";
+import { killSubagent, removeSubagent, rerunSubagent, stopWorkflowRun } from "../lib/rpc";
 import type { BackgroundProcessRecord, SubAgentRecord, SubAgentTimelineEvent, WorkflowRunSummary } from "../lib/rpc";
 import { Button, IconButton } from "./ui/Button";
 import { ModalBackdrop, ModalPanel } from "./ui/Modal";
@@ -137,7 +137,15 @@ function RowAction({
 	);
 }
 
-function SubagentRow({ record, now }: { record: SubAgentRecord; now: number }) {
+function SubagentRow({
+	record,
+	now,
+	onDismiss,
+}: {
+	record: SubAgentRecord;
+	now: number;
+	onDismiss: (id: string) => Promise<unknown>;
+}) {
 	const [open, setOpen] = useState(record.status === "running");
 	const [busy, setBusy] = useState<string | undefined>();
 	const [notice, setNotice] = useState<string | undefined>();
@@ -148,9 +156,11 @@ function SubagentRow({ record, now }: { record: SubAgentRecord; now: number }) {
 	const worktreePath = record.worktreePath;
 	const subtitle = [
 		record.model,
+		record.turnCount > 0 ? `${record.turnCount} turns` : "",
 		record.toolUseCount > 0 ? `${record.toolUseCount} tools` : "",
+		record.lastToolName ? `last ${record.lastToolName}` : "",
 		formatTokens(record.totalTokens),
-		formatDuration(now - record.startedAt),
+		formatDuration((record.status === "running" ? now : record.updatedAt) - record.startedAt),
 	]
 		.filter(Boolean)
 		.join(" · ");
@@ -231,17 +241,25 @@ function SubagentRow({ record, now }: { record: SubAgentRecord; now: number }) {
 								onClick={() => void run("stop", () => killSubagent(record.id), "Stop requested.")}
 							/>
 						) : (
-							<RowAction
-								label="Rerun"
-								icon={RotateCcw}
-								disabled={busy !== undefined || !record.prompt}
-								onClick={() =>
-									void run("rerun", async () => {
-										const { id } = await rerunSubagent(record.id);
-										setNotice(`Rerunning as ${id}`);
-									})
-								}
-							/>
+							<>
+								<RowAction
+									label="Rerun"
+									icon={RotateCcw}
+									disabled={busy !== undefined || !record.prompt}
+									onClick={() =>
+										void run("rerun", async () => {
+											const { id } = await rerunSubagent(record.id);
+											setNotice(`Rerunning as ${id}`);
+										})
+									}
+								/>
+								<RowAction
+									label="Dismiss"
+									icon={X}
+									disabled={busy !== undefined}
+									onClick={() => void run("dismiss", () => onDismiss(record.id), "Dismissed.")}
+								/>
+							</>
 						)}
 						{logPath ? (
 							<RowAction
@@ -452,6 +470,8 @@ export function SubagentPanel({ open, onClose }: SubagentPanelProps) {
 	const workflowRuns = useSessionStore((s) => s.workflowRuns);
 	// Tick elapsed times every second while any sub-agent or process is running.
 	const [now, setNow] = useState(() => Date.now());
+	const [filter, setFilter] = useState<"active" | "all">("all");
+	const [clearing, setClearing] = useState(false);
 	useEffect(() => {
 		if (!open) return;
 		const anyRunning =
@@ -464,15 +484,30 @@ export function SubagentPanel({ open, onClose }: SubagentPanelProps) {
 	}, [open, subAgents, backgroundProcesses, workflowRuns]);
 
 	const sortedAgents = useMemo(
-		() => [...subAgents].sort((a, b) => a.startedAt - b.startedAt),
+		() =>
+			[...subAgents].sort(
+				(a, b) =>
+					Number(b.status === "running") - Number(a.status === "running") ||
+					b.startedAt - a.startedAt,
+			),
 		[subAgents],
 	);
 	const sortedProcesses = useMemo(
-		() => [...backgroundProcesses].sort((a, b) => a.startedAt - b.startedAt),
+		() =>
+			[...backgroundProcesses].sort(
+				(a, b) =>
+					Number(b.status === "running") - Number(a.status === "running") ||
+					b.startedAt - a.startedAt,
+			),
 		[backgroundProcesses],
 	);
 	const sortedRuns = useMemo(
-		() => [...workflowRuns].sort((a, b) => b.startedAt - a.startedAt),
+		() =>
+			[...workflowRuns].sort(
+				(a, b) =>
+					Number(b.status === "running") - Number(a.status === "running") ||
+					b.startedAt - a.startedAt,
+			),
 		[workflowRuns],
 	);
 	const active =
@@ -480,6 +515,30 @@ export function SubagentPanel({ open, onClose }: SubagentPanelProps) {
 		sortedProcesses.filter((p) => p.status === "running").length +
 		sortedRuns.filter((r) => r.status === "running").length;
 	const total = sortedAgents.length + sortedProcesses.length + sortedRuns.length;
+	const finishedAgents = sortedAgents.filter((agent) => agent.status !== "running");
+	const visibleAgents = filter === "active" ? sortedAgents.filter((agent) => agent.status === "running") : sortedAgents;
+	const visibleProcesses =
+		filter === "active"
+			? sortedProcesses.filter((process) => process.status === "running")
+			: sortedProcesses;
+	const visibleRuns =
+		filter === "active" ? sortedRuns.filter((run) => run.status === "running") : sortedRuns;
+	const visibleTotal = visibleAgents.length + visibleProcesses.length + visibleRuns.length;
+	const dismissAgent = async (id: string): Promise<void> => {
+		try {
+			await removeSubagent(id);
+		} catch {
+			// Older engines do not have remove_subagent; leave the record in place.
+		}
+	};
+	const clearFinished = async (): Promise<void> => {
+		setClearing(true);
+		try {
+			await Promise.all(finishedAgents.map((agent) => dismissAgent(agent.id)));
+		} finally {
+			setClearing(false);
+		}
+	};
 
 	if (!open) return null;
 
@@ -497,30 +556,62 @@ export function SubagentPanel({ open, onClose }: SubagentPanelProps) {
 					<IconButton variant="ghost" size="sm" icon={X} onClick={onClose} aria-label="Close" />
 				</div>
 
+				<div className="flex items-center gap-1 border-b border-pi-border px-4 py-1.5">
+					<button
+						type="button"
+						aria-pressed={filter === "active"}
+						className={filter === "active" ? "rounded bg-pi-surface-raised px-2 py-0.5 text-2xs text-pi-text" : "rounded px-2 py-0.5 text-2xs text-pi-text-muted hover:text-pi-text"}
+						onClick={() => setFilter("active")}
+					>
+						Active {active}
+					</button>
+					<button
+						type="button"
+						aria-pressed={filter === "all"}
+						className={filter === "all" ? "rounded bg-pi-surface-raised px-2 py-0.5 text-2xs text-pi-text" : "rounded px-2 py-0.5 text-2xs text-pi-text-muted hover:text-pi-text"}
+						onClick={() => setFilter("all")}
+					>
+						All {total}
+					</button>
+					{finishedAgents.length > 0 && (
+						<Button
+							variant="ghost"
+							size="xs"
+							className="ml-auto"
+							disabled={clearing}
+							loading={clearing}
+							onClick={() => void clearFinished()}
+						>
+							Clear finished
+						</Button>
+					)}
+				</div>
+
 				<div className="flex-1 overflow-auto px-4 py-3">
-					{total === 0 ? (
+					{visibleTotal === 0 ? (
 						<div className="py-10 text-center">
-							<p className="text-[13px] font-medium text-pi-text-secondary">No running tasks</p>
+							<p className="text-[13px] font-medium text-pi-text-secondary">{filter === "active" ? "No active tasks" : "No tasks"}</p>
 							<p className="mt-2 text-2xs leading-relaxed text-pi-text-muted">
-								Background bash processes, delegated sub-agents, and workflow runs show up here while
-								they run. Ask the assistant to delegate a task, background a command, or run a workflow.
+								{filter === "active"
+									? "Finished tasks are hidden. Switch to All to inspect earlier runs."
+									: "Background bash processes, delegated sub-agents, and workflow runs show up here while they run. Ask the assistant to delegate a task, background a command, or run a workflow."}
 							</p>
 						</div>
 					) : (
 						<div className="flex flex-col gap-2">
-							{sortedRuns.map((run) => (
+							{visibleRuns.map((run) => (
 								<WorkflowRunRow key={run.id} run={run} />
 							))}
-							{sortedRuns.length > 0 && sortedAgents.length + sortedProcesses.length > 0 ? (
+							{visibleRuns.length > 0 && visibleAgents.length + visibleProcesses.length > 0 ? (
 								<div className="my-1 border-t border-pi-border" />
 							) : null}
-							{sortedAgents.map((agent) => (
-								<SubagentRow key={agent.id} record={agent} now={now} />
+							{visibleAgents.map((agent) => (
+								<SubagentRow key={agent.id} record={agent} now={now} onDismiss={dismissAgent} />
 							))}
-							{sortedAgents.length > 0 && sortedProcesses.length > 0 ? (
+							{visibleAgents.length > 0 && visibleProcesses.length > 0 ? (
 								<div className="my-1 border-t border-pi-border" />
 							) : null}
-							{sortedProcesses.map((proc) => (
+							{visibleProcesses.map((proc) => (
 								<BgProcessRow key={proc.id} record={proc} now={now} />
 							))}
 						</div>

@@ -226,6 +226,46 @@ describe("CronService", () => {
 		await service.dispose();
 	});
 
+	it("runs due jobs in an isolated subagent when the session supports it", async () => {
+		const record = {
+			id: "cron-run-isolated",
+			agentType: "general-purpose",
+			status: "completed",
+			createdAt: Date.now(),
+			startedAt: Date.now(),
+			updatedAt: Date.now(),
+			finalText: "isolated result",
+			toolUseCount: 2,
+			turnCount: 1,
+			timeline: [],
+			detached: true,
+			outputFile: "/tmp/subagent.output",
+		};
+		const session = makeFakeSession({
+			runSubAgentBackground: vi.fn(() => ({ id: "cron-run-isolated" })),
+			waitSubAgent: vi.fn(async () => record),
+			killSubAgent: vi.fn(),
+		});
+		const service = new CronService({ runtime: makeRuntime("/proj", session) });
+		const job = await service.create({
+			name: "Isolated",
+			prompt: "do isolated work",
+			schedule: { kind: "every", minutes: 30 },
+		});
+		await service.runNow(job.id);
+		const runs = await service.listRuns(job.id);
+		expect(runs[0]).toMatchObject({
+			execution: "subagent",
+			subagentId: `cron-${runs[0]?.id}`,
+			status: "ok",
+			summary: "isolated result",
+			outputFile: "/tmp/subagent.output",
+		});
+		const sent = (session as unknown as { __sent: unknown[] }).__sent;
+		expect(sent).toHaveLength(0);
+		await service.dispose();
+	});
+
 	it("records run history with lifecycle events and continue handles", async () => {
 		const events: Array<{ type: string; run: { id: string; status: string; sessionFile?: string } }> = [];
 		const service = new CronService({

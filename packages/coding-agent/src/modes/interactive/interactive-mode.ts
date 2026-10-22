@@ -7018,6 +7018,7 @@ export class InteractiveMode {
 				copyText: (text) => copyToClipboard(text),
 				diffStat: (worktreePath) => this.worktreeDiffStat(worktreePath),
 				rerunAgent: (record) => this.rerunSubAgent(record),
+				removeAgent: (record) => this.session.removeSubAgent(record.id),
 			},
 		);
 		this.editorContainer.clear();

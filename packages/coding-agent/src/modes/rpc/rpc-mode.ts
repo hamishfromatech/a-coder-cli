@@ -921,6 +921,9 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 				return success(id, "kill_subagent", { subagent: record });
 			}
 
+			case "remove_subagent":
+				return success(id, "remove_subagent", { removed: session.removeSubAgent(command.subagentId) });
+
 			case "rerun_subagent": {
 				const record = session.listSubAgents().find((r) => r.id === command.subagentId);
 				if (!record) {
@@ -938,13 +941,17 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 						? session.modelRegistry.find(record.modelProvider, record.model)
 						: session.modelRegistry.getAll().find((m) => m.id === record.model)
 					: undefined;
-				const rerunId = `${record.agentType}-rerun-${Date.now().toString(36)}`;
+				const rerunId = `${record.agentType}-rerun-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 				session.runSubAgentBackground({
 					id: rerunId,
 					agentType: record.agentType,
 					prompt,
+					systemPrompt: record.systemPrompt,
+					tools: record.tools,
+					disallowedTools: record.disallowedTools,
+					maxTurns: record.maxTurns,
 					model,
-					detached: true,
+					detached: record.detached,
 					isolation: record.isolation,
 					name: record.teammateName,
 					teamName: record.teamName,

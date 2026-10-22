@@ -160,6 +160,18 @@ describe("AgentSession background sub-agents (in-process store)", () => {
 		expect(record?.status).toBe("killed");
 	});
 
+	it("removes a finished sub-agent record but refuses while running", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+
+		harness.setResponses([fauxAssistantMessage("done")]);
+		const { id } = harness.session.runSubAgentBackground({ id: "bg-remove", prompt: "x", maxTurns: 5 });
+		expect(harness.session.removeSubAgent(id)).toBe(false);
+		await harness.session.waitSubAgent(id);
+		expect(harness.session.removeSubAgent(id)).toBe(true);
+		expect(harness.session.listSubAgents().some((record) => record.id === id)).toBe(false);
+	});
+
 	it("streams live progress via subscribeSubAgents with a populated timeline", async () => {
 		const harness = await createHarness();
 		harnesses.push(harness);

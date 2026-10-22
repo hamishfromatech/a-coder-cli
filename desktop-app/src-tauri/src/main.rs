@@ -128,6 +128,7 @@ fn main() {
 			fs::debug_log,
 			fs::canonicalize_path,
 			fs::read_text_file,
+			fs::file_info,
 			fs::read_file_base64,
 			fs::list_files,
 			fs::list_directory,

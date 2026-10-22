@@ -4,6 +4,9 @@
 
 ### Added
 
+- Scheduled tasks now run in isolated background subagents by default (per-job opt-out). Each run gets its own context/turn budget, a live progress card in the target session, and final output returned through the existing task-notification wake. Run records gain `execution`, `subagentId`, `outputFile`, and `worktreePath`; the desktop exposes the subagent log and marks the execution mode.
+- Subagent runtime hardening: live timelines are capped at 200 events with 4k-character text/report entries, `subagents_update` frames are coalesced at 50 ms with immediate status flushes, finished records can be removed, reruns preserve system prompt/tool filters/max turns/model/isolation, and a subagent's live duration now freezes at completion.
+
 - Office chat gains `office_message_delete` (user messages only), which removes the log entry and shifts watermarks/stranded pointers so in-flight and late replies stay aligned. `office_search` hits now include the matching `messageId` for jump-to-message.
 
 - Office search is now a backend RPC command (`office_search`), searching every stored huddle/DM log rather than only the rooms a client has loaded. Results include room name, author, time, and a snippet; the desktop uses it with a local fallback for older engines.

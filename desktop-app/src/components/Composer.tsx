@@ -1,10 +1,15 @@
 import {
 	CornerDownLeft,
+	File as FileIcon,
+	FileText,
+	FolderOpen,
+	Image as ImageIcon,
 	Loader2,
 	Mic,
+	Paperclip,
 	PhoneCall,
 	Square,
-	Image as ImageIcon,
+	UploadCloud,
 	X,
 } from "lucide-react";
 import { toast } from "../stores/toast-store";
@@ -29,7 +34,18 @@ import { useVoiceCallStore, voiceCall } from "../lib/voice-call";
 import * as rpc from "../lib/rpc";
 import { triggerHaptic } from "../lib/haptics";
 import { abortRun } from "../lib/session-abort";
-import type { ImageContent } from "@earendil-works/pi-ai";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getFileKind } from "../lib/files";
+import {
+	attachmentBudgetError,
+	attachmentFromFile,
+	attachmentFromPath,
+	buildAttachmentPrompt,
+	FILE_ATTACHMENT_MIME,
+	formatAttachmentBytes,
+	type ComposerAttachment,
+} from "../lib/composer-attachments";
 import {
 	BUILTIN_COMMANDS,
 	filterSlashEntries,
@@ -50,8 +66,13 @@ export function Composer() {
 	const [text, setText] = useState("");
 	const [focused, setFocused] = useState(false);
 	const [paletteHighlight, setPaletteHighlight] = useState(0);
-	const [attachedImages, setAttachedImages] = useState<ImageContent[]>([]);
+	const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
+	const [attachBusy, setAttachBusy] = useState(false);
+	const [dragActive, setDragActive] = useState(false);
 	const [cursor, setCursor] = useState(0);
+	const attachmentsRef = useRef<ComposerAttachment[]>([]);
+	const composerRef = useRef<HTMLDivElement>(null);
+	const fileInputRef = useRef<HTMLInputElement>(null);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	const micRef = useRef<MicRecorder | null>(null);
 	const [recording, setRecording] = useState(false);
@@ -80,7 +101,82 @@ export function Composer() {
 		})),
 	);
 	const connected = status === "connected";
-	const canSend = text.trim().length > 0 && connected;
+	const canSend = (text.trim().length > 0 || attachments.length > 0) && connected;
+
+	const setAttachmentState = useCallback((next: ComposerAttachment[]) => {
+		attachmentsRef.current = next;
+		setAttachments(next);
+	}, []);
+
+	const loadAttachments = useCallback(
+		async (loads: Array<() => Promise<ComposerAttachment>>) => {
+			if (loads.length === 0) return;
+			setAttachBusy(true);
+			const next = [...attachmentsRef.current];
+			try {
+				for (const load of loads) {
+					try {
+						const candidate = await load();
+						if (
+							next.some(
+								(item) =>
+									(item.path && item.path === candidate.path) ||
+									(!candidate.path &&
+										item.name === candidate.name &&
+										item.bytes === candidate.bytes),
+							)
+						) {
+							continue;
+						}
+						const error = attachmentBudgetError(next, candidate);
+						if (error) {
+							toast.warning("Attachment not added", error);
+							continue;
+						}
+						next.push(candidate);
+					} catch (e) {
+						toast.error("Could not attach file", e instanceof Error ? e.message : String(e));
+					}
+				}
+				if (next.length !== attachmentsRef.current.length) setAttachmentState(next);
+			} finally {
+				setAttachBusy(false);
+			}
+		},
+		[setAttachmentState],
+	);
+
+	const attachPaths = useCallback(
+		async (paths: string[]) => {
+			await loadAttachments(paths.map((path) => () => attachmentFromPath(path)));
+		},
+		[loadAttachments],
+	);
+
+	const attachFiles = useCallback(
+		async (files: File[]) => {
+			await loadAttachments(files.map((file) => () => attachmentFromFile(file)));
+		},
+		[loadAttachments],
+	);
+
+	const pickFiles = useCallback(async () => {
+		if (!("__TAURI_INTERNALS__" in window)) {
+			fileInputRef.current?.click();
+			return;
+		}
+		try {
+			const selected = await openDialog({
+				multiple: true,
+				directory: false,
+				title: "Attach files or images",
+			});
+			if (!selected) return;
+			await attachPaths(Array.isArray(selected) ? selected : [selected]);
+		} catch (e) {
+			toast.error("Could not open file picker", e instanceof Error ? e.message : String(e));
+		}
+	}, [attachPaths]);
 
 	// ---- Per-session draft isolation ----
 	// Switching sessions stashes the current composer text under the old
@@ -101,7 +197,8 @@ export function Composer() {
 		}
 		const restored = sessionFile ? takeDraft(sessionFile) : undefined;
 		setText(restored ?? "");
-	}, [sessionFile, saveDraft, takeDraft]);
+		setAttachmentState([]);
+	}, [sessionFile, saveDraft, takeDraft, setAttachmentState]);
 
 	// ---- Auto-grow textarea ----
 	useLayoutEffect(() => {
@@ -197,11 +294,12 @@ export function Composer() {
 
 	// ---- Send / abort ----
 	const handleSend = async () => {
-		if (!text.trim() || !connected) return;
+		if ((!text.trim() && attachments.length === 0) || !connected) return;
 		const trimmed = text.trim();
-		const images = attachedImages;
+		const pending = attachments;
+		const payload = buildAttachmentPrompt(text, pending);
 		setText("");
-		setAttachedImages([]);
+		setAttachmentState([]);
 
 		// Slash commands typed directly (no palette selection) get the same
 		// routing as picking them from the popover: built-ins like /compact,
@@ -232,9 +330,14 @@ export function Composer() {
 		setIsStreaming(true);
 		triggerHaptic("submit");
 		try {
-			await rpc.prompt(trimmed, images.length > 0 ? images : undefined);
+			await rpc.prompt(
+				payload.text || "Please review the attached file(s).",
+				payload.images.length > 0 ? payload.images : undefined,
+			);
 		} catch (e) {
 			setIsStreaming(false);
+			setText(trimmed);
+			setAttachmentState(pending);
 			toast.error("Failed to send message", e instanceof Error ? e.message : String(e));
 		}
 	};
@@ -276,10 +379,16 @@ export function Composer() {
 				return;
 			}
 			if (voiceAutoSubmit && connected) {
+				const payload = buildAttachmentPrompt(transcribed, attachmentsRef.current);
+				setAttachmentState([]);
+				setText("");
 				setIsStreaming(true);
 				triggerHaptic("submit");
 				try {
-					await rpc.prompt(transcribed);
+					await rpc.prompt(
+						payload.text || transcribed,
+						payload.images.length > 0 ? payload.images : undefined,
+					);
 				} catch (e) {
 					setIsStreaming(false);
 					toast.error("Failed to send message", e instanceof Error ? e.message : String(e));
@@ -368,10 +477,15 @@ export function Composer() {
 		if (e.key === "Enter" && !e.shiftKey) {
 			e.preventDefault();
 			if (isStreaming) {
-				const trimmed = text.trim();
-				if (!trimmed) return;
+				if (!text.trim() && attachmentsRef.current.length === 0) return;
+				const payload = buildAttachmentPrompt(text, attachmentsRef.current);
 				setText("");
-				void rpc.steer(trimmed);
+				setAttachmentState([]);
+				triggerHaptic("submit");
+				void rpc.steer(
+					payload.text || "Please review the attached file(s).",
+					payload.images.length > 0 ? payload.images : undefined,
+				);
 			} else {
 				void handleSend();
 			}
@@ -398,56 +512,118 @@ export function Composer() {
 		}
 	};
 
-	// ---- Image paste/drop ----
-	const readImageFile = async (file: File): Promise<ImageContent | null> => {
-		if (!file.type.startsWith("image/")) return null;
-		return new Promise((resolve) => {
-			const reader = new FileReader();
-			reader.onload = () => {
-				const result = reader.result as string;
-				const base64 = result.split(",")[1] ?? "";
-				resolve({
-					type: "image",
-					mimeType: file.type,
-					data: base64,
-				});
-			};
-			reader.readAsDataURL(file);
-		});
-	};
-
+	// ---- Attachments: paste, native drop, explorer drop, event bridge ----
 	const handlePaste = useCallback(
-		async (e: ClipboardEvent) => {
+		(e: ClipboardEvent) => {
 			const files = Array.from(e.clipboardData?.files ?? []);
-			const images = await Promise.all(files.map(readImageFile));
-			const valid = images.filter((img): img is ImageContent => img !== null);
-			if (valid.length > 0) {
-				e.preventDefault();
-				setAttachedImages((prev) => [...prev, ...valid]);
-			}
-		},
-		[],
-	);
-
-	const handleDrop = useCallback(
-		async (e: React.DragEvent<HTMLTextAreaElement>) => {
+			if (files.length === 0) return;
 			e.preventDefault();
-			const files = Array.from(e.dataTransfer.files);
-			const images = await Promise.all(files.map(readImageFile));
-			const valid = images.filter((img): img is ImageContent => img !== null);
-			if (valid.length > 0) {
-				setAttachedImages((prev) => [...prev, ...valid]);
-			}
+			void attachFiles(files);
 		},
-		[],
+		[attachFiles],
 	);
 
 	useEffect(() => {
-		const el = textareaRef.current;
+		const el = composerRef.current;
 		if (!el) return;
 		el.addEventListener("paste", handlePaste);
 		return () => el.removeEventListener("paste", handlePaste);
 	}, [handlePaste]);
+
+	// Tauri intercepts drags of OS files before the webview sees a DOM drop.
+	// Its event carries real paths, so the composer can read them and still
+	// show the drop target while the pointer is over the window.
+	useEffect(() => {
+		if (!("__TAURI_INTERNALS__" in window)) return;
+		let unlisten: (() => void) | undefined;
+		let disposed = false;
+		void getCurrentWebview()
+			.onDragDropEvent((event) => {
+				const payload = event.payload;
+				if (payload.type === "enter" || payload.type === "over") {
+					setDragActive(true);
+					return;
+				}
+				if (payload.type === "drop") {
+					setDragActive(false);
+					if (payload.paths.length > 0) void attachPaths(payload.paths);
+					return;
+				}
+				setDragActive(false);
+			})
+			.then((fn) => {
+				if (disposed) fn();
+				else unlisten = fn;
+			})
+			.catch(() => {});
+		return () => {
+			disposed = true;
+			unlisten?.();
+		};
+	}, [attachPaths]);
+
+	// Browser/dev fallback and drags started inside the File Explorer panel.
+	useEffect(() => {
+		const hasAttachments = (event: DragEvent) => {
+			const types = Array.from(event.dataTransfer?.types ?? []);
+			return types.includes("Files") || types.includes(FILE_ATTACHMENT_MIME);
+		};
+		const onDragEnter = (event: DragEvent) => {
+			if (!hasAttachments(event)) return;
+			event.preventDefault();
+			setDragActive(true);
+		};
+		const onDragOver = (event: DragEvent) => {
+			if (!hasAttachments(event)) return;
+			event.preventDefault();
+			if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+			setDragActive(true);
+		};
+		const onDragLeave = (event: DragEvent) => {
+			if (event.relatedTarget === null) setDragActive(false);
+		};
+		const onDrop = (event: DragEvent) => {
+			if (!hasAttachments(event)) return;
+			event.preventDefault();
+			setDragActive(false);
+			const path = event.dataTransfer?.getData(FILE_ATTACHMENT_MIME);
+			if (path) void attachPaths([path]);
+			const files = Array.from(event.dataTransfer?.files ?? []);
+			if (files.length > 0) void attachFiles(files);
+		};
+		window.addEventListener("dragenter", onDragEnter);
+		window.addEventListener("dragover", onDragOver);
+		window.addEventListener("dragleave", onDragLeave);
+		window.addEventListener("drop", onDrop);
+		return () => {
+			window.removeEventListener("dragenter", onDragEnter);
+			window.removeEventListener("dragover", onDragOver);
+			window.removeEventListener("dragleave", onDragLeave);
+			window.removeEventListener("drop", onDrop);
+		};
+	}, [attachPaths, attachFiles]);
+
+	useEffect(() => {
+		const handler = (event: Event) => {
+			const detail = (event as CustomEvent<{ paths?: unknown }>).detail;
+			if (!Array.isArray(detail?.paths)) return;
+			const paths = detail.paths.filter((path): path is string => typeof path === "string");
+			if (paths.length > 0) void attachPaths(paths);
+		};
+		window.addEventListener("a-coder:attach-files", handler);
+		return () => window.removeEventListener("a-coder:attach-files", handler);
+	}, [attachPaths]);
+
+	const removeAttachment = (id: string) => {
+		setAttachmentState(attachmentsRef.current.filter((attachment) => attachment.id !== id));
+	};
+
+	const revealAttachment = (attachment: ComposerAttachment) => {
+		if (!attachment.path) return;
+		void rpc
+			.revealInFileManager(attachment.path)
+			.catch((e) => toast.error("Could not reveal file", e instanceof Error ? e.message : String(e)));
+	};
 
 	// ---- Double-escape ----
 	useEffect(() => {
@@ -464,12 +640,32 @@ export function Composer() {
 		return () => window.removeEventListener("keydown", handler);
 	}, []);
 
-	const removeImage = (idx: number) => {
-		setAttachedImages((prev) => prev.filter((_, i) => i !== idx));
-	};
-
 	return (
-		<div className="chat-composer relative shrink-0 pt-1 pb-3">
+		<div ref={composerRef} className="chat-composer relative shrink-0 pt-1 pb-3">
+			<input
+				ref={fileInputRef}
+				type="file"
+				multiple
+				className="hidden"
+				onChange={(event) => {
+					const files = Array.from(event.target.files ?? []);
+					event.target.value = "";
+					if (files.length > 0) void attachFiles(files);
+				}}
+			/>
+			{dragActive && (
+				<div className="pointer-events-none fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-pi-bg/55 p-8 backdrop-blur-sm">
+					<div className="flex max-w-sm flex-col items-center gap-3 rounded-pi-2xl border border-pi-accent/40 bg-pi-surface-overlay px-8 py-7 text-center shadow-overlay">
+						<span className="flex h-12 w-12 items-center justify-center rounded-full bg-pi-accent/15 text-pi-accent">
+							<UploadCloud className="h-6 w-6" />
+						</span>
+						<div className="text-sm font-medium text-pi-text">Drop files to attach</div>
+						<div className="text-2xs leading-relaxed text-pi-text-muted">
+							Images, code, text, and PDFs. Up to 8 files; text is inlined, images are sent to the model.
+						</div>
+					</div>
+				</div>
+			)}
 			<ExtensionWidgets placement="aboveEditor" />
 			<QueuePanel
 				onSend={(t) => {
@@ -527,12 +723,21 @@ export function Composer() {
 						onKeyDown={handleKeyDown}
 						onFocus={() => setFocused(true)}
 						onBlur={() => setFocused(false)}
-						onDrop={handleDrop}
 						disabled={!connected}
 						rows={1}
 					/>
 				</div>
 
+				<Button
+					variant="secondary"
+					size="icon"
+					icon={attachBusy ? Loader2 : Paperclip}
+					loading={attachBusy}
+					onClick={() => void pickFiles()}
+					disabled={!connected || attachBusy}
+					aria-label="Attach files or images"
+					title="Attach files or images — or drag them into the chat"
+				/>
 				{voiceEnabled && !isStreaming && !callActive && (
 					<>
 						<Button
@@ -562,27 +767,76 @@ export function Composer() {
 				)}
 			</div>
 
-			{/* Image attachments */}
-			{attachedImages.length > 0 && (
-				<div className="flex flex-wrap gap-2 px-1 pt-2">
-					{attachedImages.map((_, idx) => (
-						<div
-							key={idx}
-							className="group flex items-center gap-2 rounded-pi-md border border-pi-border bg-pi-surface px-2 py-1"
-						>
-							<ImageIcon className="h-3.5 w-3.5 text-pi-text-muted" />
-							<span className="max-w-32 truncate text-2xs text-pi-text-secondary">
-								Image {idx + 1}
-							</span>
-							<IconButton
-								variant="ghost"
-								size="sm"
-								icon={X}
-								onClick={() => removeImage(idx)}
-								aria-label="Remove image"
-							/>
-						</div>
-					))}
+			{/* Attachments: image thumbnails and file chips. */}
+			{attachments.length > 0 && (
+				<div role="list" className="flex flex-wrap gap-2 px-1 pt-2">
+					{attachments.map((attachment) => {
+						const kind = getFileKind(attachment.path ?? attachment.name);
+						const FileTypeIcon =
+							attachment.kind === "image"
+								? ImageIcon
+								: kind === "code" ||
+									  kind === "markdown" ||
+									  kind === "mermaid" ||
+									  kind === "html" ||
+									  kind === "csv" ||
+									  kind === "svg"
+									? FileText
+									: FileIcon;
+						return (
+							<div
+								key={attachment.id}
+								role="listitem"
+								className="group flex max-w-64 items-center gap-2 rounded-pi-md border border-pi-border bg-pi-surface px-2 py-1.5"
+								title={attachment.path ?? attachment.name}
+							>
+								{attachment.kind === "image" && attachment.data ? (
+									<button
+										type="button"
+										onClick={() => revealAttachment(attachment)}
+										disabled={!attachment.path}
+										className="shrink-0 overflow-hidden rounded-pi-sm focus-visible:shadow-focus focus-visible:outline-none disabled:cursor-default"
+										aria-label={`Attached image ${attachment.name}`}
+									>
+										<img
+											src={`data:${attachment.mimeType ?? "image/png"};base64,${attachment.data}`}
+											alt=""
+											className="h-9 w-9 object-cover"
+										/>
+									</button>
+								) : (
+									<span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-pi-sm bg-pi-surface-raised text-pi-text-muted">
+										<FileTypeIcon className="h-4 w-4" />
+									</span>
+								)}
+								<div className="min-w-0 flex-1">
+									<div className="truncate text-2xs text-pi-text-secondary">{attachment.name}</div>
+									<div className="mt-0.5 flex items-center gap-1.5 text-3xs text-pi-text-faint">
+										<span>{attachment.kind === "image" ? "Image" : attachment.kind === "text" ? "Text" : "File"}</span>
+										{attachment.bytes > 0 && <span>· {formatAttachmentBytes(attachment.bytes)}</span>}
+									</div>
+								</div>
+								{attachment.path && (
+									<IconButton
+										variant="ghost"
+										size="sm"
+										icon={FolderOpen}
+										onClick={() => revealAttachment(attachment)}
+										aria-label={`Reveal ${attachment.name}`}
+										title="Reveal in file manager"
+									/>
+								)}
+								<IconButton
+									variant="ghost"
+									size="sm"
+									icon={X}
+									onClick={() => removeAttachment(attachment.id)}
+									aria-label={`Remove ${attachment.name}`}
+									title="Remove attachment"
+								/>
+							</div>
+						);
+					})}
 				</div>
 			)}
 

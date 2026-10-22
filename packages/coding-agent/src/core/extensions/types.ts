@@ -386,6 +386,13 @@ export interface InProcessSubAgentRecord {
 	goal?: string;
 	/** Full spawn prompt. The goal is a derived one-liner; reruns use this. */
 	prompt?: string;
+	/** Explicit system prompt, preserved so a rerun is identical. */
+	systemPrompt?: string;
+	/** Turn cap used by this run (reruns keep it). */
+	maxTurns?: number;
+	/** Explicit tool allow/deny lists used by this run (reruns keep them). */
+	tools?: string[];
+	disallowedTools?: string[];
 	/** The model id the sub-agent is running with. */
 	model?: string;
 	/** Provider of the model above, so a rerun resolves the same model. */

@@ -91,6 +91,8 @@ export interface CronJob {
 	catchUpPolicy?: CronCatchUpPolicy;
 	/** Non-secret values substituted into `prompt` at fire time. */
 	variables?: CronVariable[];
+	/** Run each fire in an isolated background subagent (default true). */
+	isolated?: boolean;
 	/** Monotonic configuration revision; starts at 1. */
 	revision?: number;
 }
@@ -104,6 +106,7 @@ export interface CronJobConfig {
 	concurrencyPolicy: CronConcurrencyPolicy;
 	catchUpPolicy: CronCatchUpPolicy;
 	variables: CronVariable[];
+	isolated: boolean;
 }
 
 export type CronRevisionReason = "create" | "update" | "restore";
@@ -150,6 +153,14 @@ export interface CronRun {
 	triage?: CronTriageDecision;
 	/** Resolved variable values for this run (manual overrides included). */
 	variables?: Record<string, string>;
+	/** How the prompt was executed. Missing on old runs means "session". */
+	execution?: "session" | "subagent";
+	/** Background subagent id, when execution is subagent. */
+	subagentId?: string;
+	/** Subagent JSONL progress/result log. */
+	outputFile?: string;
+	/** Kept worktree when isolation was used. */
+	worktreePath?: string;
 }
 
 /** Run lifecycle events pushed to hosts (the desktop activity inbox). */
