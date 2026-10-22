@@ -773,8 +773,10 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 		},
 	});
 	cronService = cron;
+	runtimeHost.setScheduleService?.(cron);
 	cron.start();
 	signalCleanupHandlers.push(() => {
+		runtimeHost.setScheduleService?.(undefined);
 		void cron.dispose();
 	});
 	void cron
@@ -1813,13 +1815,23 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 			}
 
 			case "cron_run_now": {
-				await cron.runNow(command.jobId);
+				await cron.runNow(command.jobId, command.variables);
 				return success(id, "cron_run_now");
 			}
 
 			case "cron_runs": {
 				const runs = await cron.listRuns(command.jobId);
 				return success(id, "cron_runs", { runs });
+			}
+
+			case "cron_revisions": {
+				const revisions = await cron.listRevisions(command.jobId);
+				return success(id, "cron_revisions", { revisions });
+			}
+
+			case "cron_restore_revision": {
+				const job = await cron.restoreRevision(command.jobId, command.revisionId);
+				return success(id, "cron_restore_revision", { job });
 			}
 			default:
 				return undefined;

@@ -650,7 +650,18 @@ export class InteractiveMode {
 		// Notices auto-expire after a few seconds; re-render when they do.
 		this.notices.onExpire = () => this.ui.requestRender();
 		this.officeTui = new OfficeTui(runtimeHost, (text) => this.printOfficeText(text));
-		this.cronTui = new CronTui(runtimeHost, (text) => this.printCronText(text));
+		this.cronTui = new CronTui(
+			runtimeHost,
+			(text) => this.printCronText(text),
+			async (text) => {
+				const prompt = `Set up this scheduled task using the schedule_task tool. User request: ${text}`;
+				if (runtimeHost.session.isStreaming) {
+					await runtimeHost.session.prompt(prompt, { streamingBehavior: "followUp" });
+				} else {
+					await runtimeHost.session.prompt(prompt);
+				}
+			},
+		);
 		this.ui.setClearOnShrink(this.settingsManager.getClearOnShrink());
 		setReducedMotion(this.settingsManager.getReducedMotion());
 		this.headerContainer = new Container();
@@ -848,7 +859,8 @@ export class InteractiveMode {
 			const cronVerbs: Array<{ value: string; description: string }> = [
 				{
 					value: "add",
-					description: "Schedule a task (/cron add <name> every:30m|daily:HH:MM|once:<ISO> <prompt>)",
+					description:
+						"Schedule a task (/cron add <name> every:30m|daily:HH:MM|weekly:mon,wed@HH:MM|once:<ISO> <prompt>)",
 				},
 				{ value: "run", description: "Run a task now (/cron run <name>)" },
 				{ value: "pause", description: "Pause a task (/cron pause <name>)" },
@@ -1149,6 +1161,7 @@ export class InteractiveMode {
 
 		// Start the UI before initializing extensions so session_start handlers can use interactive dialogs
 		this.ui.start();
+		this.cronTui.start();
 		this.isInitialized = true;
 
 		// Subscribe to task store updates so the spinner label reflects the
@@ -3497,6 +3510,14 @@ export class InteractiveMode {
 				this.editor.setText("");
 				this.editor.addToHistory?.(text);
 				await this.officeTui.handle(arg);
+				return;
+			}
+			if (text === "/schedule" || text.startsWith("/schedule ")) {
+				const arg = text.startsWith("/schedule ") ? text.slice("/schedule ".length).trim() : undefined;
+				this.editor.setText("");
+				this.editor.addToHistory?.(text);
+				if (!arg) await this.cronTui.handle(undefined);
+				else if (!(await this.cronTui.handleNatural(arg))) await this.cronTui.handle(arg);
 				return;
 			}
 			if (text === "/cron" || text.startsWith("/cron ")) {

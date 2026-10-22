@@ -2,10 +2,12 @@
  * Errand schedule math — pure next-fire computation for the office's
  * scheduled jobs.
  *
- * Three schedule kinds:
+ * Three errand schedule kinds:
  *   every:  interval of N minutes (minimum 5, clamped)
  *   daily:  once per day at a local HH:MM
  *   once:   a single fire at an epoch-ms timestamp
+ *
+ * The shared math also accepts weekly (cron jobs) and event schedules.
  */
 
 import type { ErrandSchedule } from "./types.ts";
@@ -25,7 +27,35 @@ export interface EventScheduleLike {
 	cooldownMinutes?: number;
 }
 
-export type ScheduleLike = ErrandSchedule | EventScheduleLike;
+/** Weekly schedules (cron jobs) use JavaScript day numbers: 0 = Sunday. */
+export interface WeeklyScheduleLike {
+	kind: "weekly";
+	days: number[];
+	time: string;
+}
+
+export type ScheduleLike = ErrandSchedule | EventScheduleLike | WeeklyScheduleLike;
+
+export const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
+export const DAY_NAMES_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+
+/** Human-readable day list (Sunday first, then Monday...). */
+export function describeWeekdays(days: number[]): string {
+	const unique = Array.from(new Set(days.filter((day) => Number.isInteger(day) && day >= 0 && day <= 6))).sort();
+	if (unique.length === 7) return "every day";
+	if (unique.length === 5 && unique.every((day) => day >= 1 && day <= 5)) return "weekdays";
+	if (unique.length === 2 && unique.includes(0) && unique.includes(6)) return "weekends";
+	return unique.map((day) => DAY_NAMES_SHORT[day]).join(", ");
+}
+
+/** Validate weekly day numbers. */
+export function isValidWeekdays(days: unknown): days is number[] {
+	return (
+		Array.isArray(days) &&
+		days.length > 0 &&
+		days.every((day) => typeof day === "number" && Number.isInteger(day) && day >= 0 && day <= 6)
+	);
+}
 
 /** Validate a "HH:MM" local-time string. */
 export function isValidDailyTime(time: string): boolean {
@@ -45,6 +75,26 @@ export function nextRunAt(schedule: ScheduleLike, from: number): number | undefi
 	if (schedule.kind === "every") {
 		const minutes = Math.max(MIN_INTERVAL_MINUTES, Math.floor(schedule.minutes));
 		return from + minutes * 60_000;
+	}
+
+	if (schedule.kind === "weekly") {
+		if (!isValidDailyTime(schedule.time) || !isValidWeekdays(schedule.days)) return undefined;
+		const [hourStr, minuteStr] = schedule.time.split(":");
+		const hour = Number.parseInt(hourStr, 10);
+		const minute = Number.parseInt(minuteStr, 10);
+		const start = new Date(from);
+		let best: number | undefined;
+		for (const day of new Set(schedule.days)) {
+			for (let offset = 0; offset <= 7; offset++) {
+				const candidate = new Date(start);
+				candidate.setDate(start.getDate() + offset);
+				candidate.setHours(hour, minute, 0, 0);
+				if (candidate.getDay() !== day || candidate.getTime() <= from) continue;
+				if (best === undefined || candidate.getTime() < best) best = candidate.getTime();
+				break;
+			}
+		}
+		return best;
 	}
 
 	// daily: next occurrence of HH:MM local time after `from`.
@@ -77,6 +127,9 @@ export function describeSchedule(schedule: ScheduleLike): string {
 		if (minutes % (60 * 24) === 0) return `every ${minutes / (60 * 24)}d`;
 		if (minutes % 60 === 0) return `every ${minutes / 60}h`;
 		return `every ${minutes}m`;
+	}
+	if (schedule.kind === "weekly") {
+		return `weekly on ${describeWeekdays(schedule.days)} at ${schedule.time}`;
 	}
 	return `daily at ${schedule.time}`;
 }

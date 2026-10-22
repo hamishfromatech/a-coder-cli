@@ -3,6 +3,7 @@ import { basename, join, resolve } from "node:path";
 import { resolvePath } from "../utils/paths.ts";
 import type { AgentSession } from "./agent-session.ts";
 import type { AgentSessionRuntimeDiagnostic, AgentSessionServices } from "./agent-session-services.ts";
+import type { CronToolService } from "./cron/service.ts";
 import type {
 	ProjectTrustContext,
 	ReplacedSessionContext,
@@ -138,6 +139,7 @@ export class AgentSessionRuntime {
 	private current: RuntimeInstance;
 	private readonly createRuntime: CreateAgentSessionRuntimeFactory;
 	private detached: Map<string, RuntimeInstance> = new Map();
+	private scheduleService?: CronToolService;
 	private runtimeListeners = new Set<() => void>();
 	private detachedIdleTimeoutMs?: number;
 
@@ -154,6 +156,7 @@ export class AgentSessionRuntime {
 			diagnostics: _diagnostics,
 			modelFallbackMessage: _modelFallbackMessage,
 		};
+		this.current.session.setScheduleService(this.scheduleService);
 		this.createRuntime = createRuntime;
 	}
 
@@ -179,6 +182,16 @@ export class AgentSessionRuntime {
 
 	setRebindSession(rebindSession?: (session: AgentSession) => Promise<void>): void {
 		this.rebindSession = rebindSession;
+	}
+
+	/** Share the host-owned CronService with the schedule_task tool in every
+	 *  current and future session, including detached and side runtimes. */
+	setScheduleService(service?: CronToolService): void {
+		this.scheduleService = service;
+		this.current.session.setScheduleService(service);
+		for (const instance of this.detached.values()) {
+			instance.session.setScheduleService(service);
+		}
 	}
 
 	/**
@@ -244,6 +257,7 @@ export class AgentSessionRuntime {
 			diagnostics: result.diagnostics,
 			modelFallbackMessage: result.modelFallbackMessage,
 		};
+		this.current.session.setScheduleService(this.scheduleService);
 	}
 
 	/**
@@ -435,12 +449,14 @@ export class AgentSessionRuntime {
 		sessionManager: SessionManager;
 		sessionStartEvent?: SessionStartEvent;
 	}): Promise<CreateAgentSessionRuntimeResult> {
-		return this.createRuntime({
+		const result = await this.createRuntime({
 			cwd: options.cwd,
 			agentDir: this.services.agentDir,
 			sessionManager: options.sessionManager,
 			sessionStartEvent: options.sessionStartEvent,
 		});
+		result.session.setScheduleService(this.scheduleService);
+		return result;
 	}
 
 	/**
@@ -556,6 +572,7 @@ export class AgentSessionRuntime {
 			detached.detachedAt = undefined;
 			await this.detachOrTeardownCurrent("resume", sessionPath, options);
 			this.current = detached;
+			this.current.session.setScheduleService(this.scheduleService);
 			this.emitRuntimesChanged();
 			await this.finishSessionReplacement(options?.withSession, {
 				type: "session_start",

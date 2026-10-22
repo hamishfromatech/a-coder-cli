@@ -256,6 +256,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		"task_list",
 		"task_update",
 		"memory",
+		"schedule_task",
 		...(settingsManager.getComputerUseEnabled() ? (["computer"] as ToolName[]) : []),
 	];
 	const allowedToolNames = options.tools ?? (options.noTools === "all" ? [] : undefined);

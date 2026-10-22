@@ -1,6 +1,6 @@
 /**
  * Cron calendar — a month grid over the scheduled-tasks system so the
- * rhythm is visible at a glance: upcoming firings (daily/once jobs) and
+ * rhythm is visible at a glance: upcoming firings (daily/weekly/once jobs) and
  * past runs (status-colored dots) per day, with a selected-day detail
  * listing both. Interval and event-trigger jobs have no natural calendar
  * day, so they render in an "ongoing" strip under the grid; their past
@@ -26,9 +26,9 @@ function timeOfDay(ms: number): string {
 	return new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
-/** "daily 09:30" firing time as local {h, m}, or null. */
-function dailyTime(job: CronJob): { h: number; m: number } | null {
-	if (job.schedule.kind !== "daily") return null;
+/** "daily 09:30" or "weekly 09:30" firing time as local {h, m}, or null. */
+function scheduledTime(job: CronJob): { h: number; m: number } | null {
+	if (job.schedule.kind !== "daily" && job.schedule.kind !== "weekly") return null;
 	const [h, m] = String(job.schedule.time).split(":").map(Number);
 	if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
 	return { h, m: m ?? 0 };
@@ -42,6 +42,10 @@ function scheduleLabel(job: CronJob): string {
 		return `every ${minutes}m`;
 	}
 	if (job.schedule.kind === "daily") return `daily ${job.schedule.time}`;
+	if (job.schedule.kind === "weekly") {
+		const names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+		return `weekly ${job.schedule.days.map((day) => names[day] ?? String(day)).join(", ")} ${job.schedule.time}`;
+	}
 	if (job.schedule.kind === "event") return job.schedule.trigger === "turn_end" ? "on turn end" : "on commit";
 	return "once";
 }
@@ -115,7 +119,15 @@ export function CronCalendar({ jobs }: { jobs: CronJob[] }) {
 				for (const job of jobs) {
 					if (!job.enabled) continue;
 					if (job.schedule.kind === "daily") {
-						const t = dailyTime(job);
+						const t = scheduledTime(job);
+						if (t) {
+							entry.fires.push({
+								job,
+								at: new Date(cell.getFullYear(), cell.getMonth(), cell.getDate(), t.h, t.m).getTime(),
+							});
+						}
+					} else if (job.schedule.kind === "weekly" && job.schedule.days.includes(cell.getDay())) {
+						const t = scheduledTime(job);
 						if (t) {
 							entry.fires.push({
 								job,
@@ -280,6 +292,9 @@ export function CronCalendar({ jobs }: { jobs: CronJob[] }) {
 							{run.jobName}
 							{run.status === "error" && <span className="text-pi-error"> · failed</span>}
 							{run.status === "timeout" && <span className="text-pi-warning"> · timeout</span>}
+							{run.triage && triageLabel(run) !== "quiet" && (
+								<span className="text-pi-text-faint"> · {triageLabel(run)}</span>
+							)}
 						</span>
 						{run.sessionFile && run.status !== "running" && (
 							<Button
@@ -309,6 +324,15 @@ const RUN_DOT: Record<CronRun["status"], string> = {
 	error: "bg-pi-error",
 	timeout: "bg-pi-warning",
 };
+
+function triageLabel(run: CronRun): string | undefined {
+	const triage = run.triage;
+	if (!triage) return undefined;
+	if (triage.outcome === "unavailable") return "triage unavailable";
+	if (triage.recommendedAction === "notify") return "needs attention";
+	if (triage.recommendedAction === "quiet") return "quiet";
+	return `${triage.recommendedAction} suggested`;
+}
 
 function scheduleTriggerLabel(trigger: CronRun["trigger"]): string {
 	return trigger === "manual" ? "manually" : trigger === "event" ? "by event" : "on schedule";

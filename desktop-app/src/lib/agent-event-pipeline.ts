@@ -550,13 +550,34 @@ export function processAgentEvent(event: rpc.RpcEvent, deps: AgentEventDeps): vo
 			// A scheduled-task run started or finished — feed the inbox.
 			const cronRun = (event as import("./rpc").CronRunEvent).run;
 			const started = (event as import("./rpc").CronRunEvent).event === "started";
+			const triage = cronRun.triage;
+			const triageNeedsAttention =
+				triage?.outcome === "needs_user" || triage?.recommendedAction === "notify" || triage?.recommendedAction === "pause";
+			const triageDetail = triage
+				? triage.outcome === "unavailable"
+					? `Triage unavailable${triage.error ? `: ${triage.error}` : ""}`
+					: `Triage: ${triage.outcome} · ${triage.recommendedAction}`
+				: undefined;
 			useActivityStore.getState().add({
+				key: `cron:run:${cronRun.id}`,
 				kind: "cron",
-				severity: started ? "info" : cronRun.status === "ok" ? "success" : "error",
-				title: started ? `${cronRun.jobName}: run started` : `${cronRun.jobName}: run ${cronRun.status}`,
+				origin: "automation",
+				action: { kind: "open", label: "Open run" },
+				severity: started
+					? "info"
+					: triageNeedsAttention
+						? "action"
+						: cronRun.status === "ok"
+							? "success"
+							: "error",
+				title: started
+					? `${cronRun.jobName}: run started`
+					: triageNeedsAttention
+						? `${cronRun.jobName}: needs attention`
+						: `${cronRun.jobName}: run ${cronRun.status}`,
 				detail: started
 					? undefined
-					: cronRun.error ?? (cronRun.delivery === "background" ? "Ran in a background session" : undefined),
+					: cronRun.error ?? triageDetail ?? (cronRun.delivery === "background" ? "Ran in a background session" : undefined),
 				at: cronRun.startedAt,
 				sessionFile: cronRun.sessionFile,
 				jobId: cronRun.jobId,
@@ -894,12 +915,16 @@ export function processAgentEvent(event: rpc.RpcEvent, deps: AgentEventDeps): vo
 			if (req.method === "confirm" && "kind" in req && req.kind === "permission") {
 				const approvalSession = "sessionFile" in req ? req.sessionFile : undefined;
 				useActivityStore.getState().add({
+					key: `approval:request:${req.id}`,
+					requestId: req.id,
 					kind: "approval",
+					origin: "automation",
 					severity: "action",
 					title: req.toolName ? `Approval needed: ${req.toolName}` : "Approval needed",
 					detail: "title" in req ? req.title : undefined,
 					at: Date.now(),
 					sessionFile: approvalSession ?? useSessionStore.getState().sessionFile ?? undefined,
+					action: { kind: "approve", label: "Review approval" },
 				});
 			}
 

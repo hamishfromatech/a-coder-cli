@@ -57,7 +57,8 @@ Type `/` in the editor to open command completion. Extensions can register custo
 | `/import <file>` | Import and resume a session from a JSONL file |
 | `/share` | Upload as private GitHub gist with shareable HTML link |
 | `/workflows` | List saved workflows and runs; drill into agents, stop/pause runs, save a run's script as a command |
-| `/cron` | Scheduled tasks: `/cron add <name> every:30m\|daily:HH:MM\|once:<ISO> <prompt>`, plus run/pause/resume/remove |
+| `/schedule [request]` | Schedule a task in plain English (`/schedule every weekday at 9am review CI`); no argument lists tasks |
+| `/cron` | Scheduled tasks: `/cron` lists, `/cron add <name> every:30m\|daily:HH:MM\|weekly:mon,wed@HH:MM\|once:<ISO> <prompt>`, plus run/pause/resume/remove |
 | `/mcp [reconnect [server]]` | Show connected MCP servers, tool counts, and errors; `reconnect` re-connects and re-discovers |
 | `/llama` | Show llama.cpp server build, context, vision, thinking support, and loaded model controls |
 | `/memory` | Open the persistent `MEMORY.md` notes file |
@@ -120,23 +121,39 @@ Terminals vary in mouse input, keyboard shortcuts, and inline image support. See
 
 The terminal tab title tracks activity: `◐` while the agent is running, `●` while it is waiting on you (approval, question, permission), and no glyph when idle — useful when the terminal is in the background.
 
-## Scheduled Tasks (Cron)
+## Scheduled Tasks
 
-Cron jobs run a prompt on a schedule in a project, without you typing it. Create one from the desktop's **Scheduled** sidebar panel, or from the terminal:
+Scheduled tasks run a prompt on a schedule in a project, without you typing it. You do not need to learn cron syntax: ask the agent in plain English and it creates the task with the `schedule_task` tool.
+
+```
+Schedule a task every weekday at 9am to review overnight CI failures and summarize what needs attention.
+Schedule a task every 30 minutes to run the test suite and report new failures.
+Schedule a task on commit to summarize the latest commit and flag follow-ups.
+Schedule a task tomorrow at 2pm to check the deploy.
+```
+
+From the terminal you can also use `/schedule <request>` as a shortcut, or create one from the desktop's **Scheduled** sidebar panel.
+
+The agent parses common phrases such as "every 30 minutes", "daily at 6pm", "every weekday at 9am", "Monday and Friday at 10:00", "tomorrow at 2pm", "in 2 hours", "after each turn", and "when a commit lands". Times use the local timezone. If the timing is ambiguous, the agent asks rather than guessing.
+
+The structured form remains available for scripts and power users:
 
 ```
 /cron add "Morning CI triage" daily:09:00 Review overnight CI failures and summarize what needs attention.
 /cron add "Test loop" every:30m Run the test suite; fix or report failures.
+/cron add "Weekday review" weekly:mon,wed,fri@09:00 Review the previous day's changes.
 /cron add "Commit watch" on:commit Summarize the latest commit and flag anything that needs a follow-up issue.
 ```
 
-Schedules are `every:<n>m|h|d` (minimum 5 minutes), `daily:HH:MM` local time, `once:<ISO date>` (one-shot; disables itself after firing), or an **event trigger**: `on:turn-end` (fires after the agent finishes a turn in the project — coalesced by a quiet period, default 30 minutes, so the task's own runs don't loop) or `on:commit` (fires once per new commit in the project; several commits between checks coalesce into one run). Jobs are scoped to the project (cwd) they were created in and persist in `~/.a-coder/cli/agent/cron/jobs.json`.
+Schedules are `every:<n>m|h|d` (minimum 5 minutes), `daily:HH:MM` local time, `weekly:<days>@HH:MM` using `mon,wed,fri` or `1,3,5` (0 = Sunday), `once:<ISO date>` (one-shot; disables itself after firing), or an **event trigger**: `on:turn-end` (fires after the agent finishes a turn in the project — coalesced by a quiet period, default 30 minutes, so the task's own runs don't loop) or `on:commit` (fires once per new commit in the project; several commits between checks coalesce into one run). Jobs are scoped to the project (cwd) they were created in and persist in `~/.a-coder/cli/agent/cron/jobs.json`.
 
-When a job fires, its prompt is delivered to the project's active session — queued behind a running turn — so the work and its report land right in your conversation. If the project has no open session, the run executes in a background session for that project (continuity: repeat runs reuse the same session) and lands in the session tree. Fires are bounded (15-minute abort) and run unattended with automatic tool permissions — only schedule work you trust the agent to do.
+Each routine also has an overlap policy (`skip_if_active`, `coalesce_if_active`, or `always_enqueue`), a missed-window policy (`run_once` or `skip_missed`), optional non-secret inputs, and revision history. Inputs are substituted into the task as `{{name}}`; `/cron run <name> key=value` overrides them for one manual run. `/cron history <name>` lists revisions and `/cron restore <name> <revision-id|vN>` restores a configuration snapshot. Runtime state (project, session pointer, run history) is not part of the snapshot.
 
-Manage: `/cron` lists jobs, `/cron run|pause|resume|remove <name>`. The engine pushes live `cron_update` snapshots to RPC clients (the desktop panel stays in sync automatically).
+When a job fires, the agent receives the task as an instruction to execute now, not a reminder to ask about. Its prompt is delivered to the project's active session — queued behind a running turn — so the work and its report land right in your conversation. If the project has no open session, the run executes in a background session for that project (continuity: repeat runs reuse the same session) and lands in the session tree. Fires are bounded (15-minute abort) and run unattended with automatic tool permissions — only schedule work you trust the agent to do. Tasks fire while A-Coder is running; a missed time fires on the first tick after the app starts again.
 
-Every fire is recorded as a run (trigger, delivery, status, error, session file) in `~/.a-coder/cli/agent/cron/runs.json`. In the desktop, each task expands to its run history, and **Continue** reopens a run's session to pick that conversation back up. Run outcomes and pending approvals also surface in the desktop **Activity** inbox, which badges anything that needs you.
+Manage: `/cron` or `/schedule` lists jobs; `/cron run|pause|resume|remove <name>` manages them; `/cron history <name>` and `/cron restore <name> <revision-id|vN>` inspect and roll back configuration. The agent can also list, edit, pause, resume, delete, run, inspect revisions, or restore a task through `schedule_task`. The engine pushes live `cron_update` snapshots to RPC clients (the desktop panel stays in sync automatically).
+
+Every fire is recorded as a run (trigger, delivery, status, error, session file, and a truncated result summary) in `~/.a-coder/cli/agent/cron/runs.json`. If a System One decision model is available, A-Coder also triages the finished run: outcome, whether to notify, whether a retry looks worthwhile, and whether the schedule should be paused. The recommendation is advisory — it is stored on the run and shown in `/cron` and the desktop; nothing retries or pauses automatically. Triage is local-first and falls back to a cloud decision model only when `settings.decisions` is explicitly configured. Set `cron.triage` to `false` to turn it off. In the desktop, each task opens a detail view with runs, activity, and configuration history, and **Continue** reopens a run's session to pick that conversation back up. Run outcomes, triage recommendations, and pending approvals surface in the desktop **Decisions** inbox, which badges anything that needs you. Use `j`/`k` to move, Enter to open, `x` to dismiss, `s` to snooze, `a` to resolve, and `u` to restore an item from History.
 
 ## Sessions
 

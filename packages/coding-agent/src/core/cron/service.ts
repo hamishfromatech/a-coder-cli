@@ -17,21 +17,37 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { withKeyedLock } from "../../utils/async-mutex.ts";
+import type { AgentSession } from "../agent-session.ts";
 import { noOpUIContext } from "../extensions/runner.ts";
-import { describeSchedule, isDue, nextRunAt } from "../office/errands.ts";
+import { describeSchedule, isDue, isValidDailyTime, isValidWeekdays, nextRunAt } from "../office/errands.ts";
 import { getDefaultSessionDir, SessionManager } from "../session-manager.ts";
+import * as revisions from "./revisions.ts";
 import * as store from "./store.ts";
+import type { CronTriageInput } from "./triage.ts";
 import type {
+	CronCatchUpPolicy,
+	CronConcurrencyPolicy,
 	CronEventTrigger,
 	CronJob,
+	CronJobConfig,
+	CronJobRevision,
+	CronRevisionReason,
 	CronRun,
 	CronRunTrigger,
 	CronSchedule,
 	CronServiceEvent,
 	CronSnapshot,
+	CronTriageDecision,
+	CronVariable,
 } from "./types.ts";
 
+export const DEFAULT_CRON_CONCURRENCY: CronConcurrencyPolicy = "coalesce_if_active";
+export const DEFAULT_CRON_CATCH_UP: CronCatchUpPolicy = "run_once";
+
 const TICK_MS = 30_000;
+/** A scheduled window missed by more than this is skipped when the routine
+ *  uses `skip_missed`; a slightly late tick still runs normally. */
+export const CRON_MISSED_GRACE_MS = 5 * 60_000;
 /** Unattended side-session runs are bounded; stalled turns abort. */
 const RUN_TIMEOUT_MS = 15 * 60_000;
 
@@ -58,17 +74,17 @@ export interface CronServiceOptions {
 	onRunEvent?: (event: CronServiceEvent) => void;
 	/** Git head resolver for `git_commit` jobs (overridable in tests). */
 	resolveGitHead?: (cwd: string) => Promise<string | null>;
+	/** Optional post-run triage. Defaults to the active session's
+	 *  triageScheduledRun method when it exists. */
+	triage?: (input: CronTriageInput) => Promise<CronTriageDecision | undefined>;
 }
 
 /** The slice of AgentSessionRuntime the cron service touches. */
 export interface AgentRuntimeLike {
 	readonly cwd: string;
-	readonly session: import("../agent-session.ts").AgentSession;
+	readonly session: AgentSession;
 	readonly services: { agentDir: string };
-	createSideRuntime(options: {
-		cwd: string;
-		sessionManager: SessionManager;
-	}): Promise<{ session: import("../agent-session.ts").AgentSession }>;
+	createSideRuntime(options: { cwd: string; sessionManager: SessionManager }): Promise<{ session: AgentSession }>;
 }
 
 export interface CronJobInput {
@@ -78,6 +94,26 @@ export interface CronJobInput {
 	enabled?: boolean;
 	/** Project scope; defaults to the runtime's cwd. */
 	cwd?: string;
+	concurrencyPolicy?: CronConcurrencyPolicy;
+	catchUpPolicy?: CronCatchUpPolicy;
+	variables?: CronVariable[];
+}
+
+/** The slice of CronService the schedule tool needs. CronService implements it. */
+export interface CronToolService {
+	snapshot(): Promise<CronSnapshot>;
+	listForCwd(cwd: string): Promise<CronJob[]>;
+	create(input: CronJobInput): Promise<CronJob>;
+	update(
+		id: string,
+		patch: Partial<
+			Pick<CronJob, "name" | "prompt" | "schedule" | "enabled" | "concurrencyPolicy" | "catchUpPolicy" | "variables">
+		>,
+	): Promise<CronJob>;
+	remove(id: string): Promise<void>;
+	runNow(id: string, variables?: Record<string, string>): Promise<void>;
+	listRevisions(id: string): Promise<CronJobRevision[]>;
+	restoreRevision(id: string, revisionId: string): Promise<CronJob>;
 }
 /** Exported for tests. */
 export function mintJobId(): string {
@@ -102,6 +138,10 @@ export function validateSchedule(schedule: CronSchedule): string | null {
 			? null
 			: "Daily time must be HH:MM";
 	}
+	if (schedule.kind === "weekly") {
+		if (typeof schedule.time !== "string" || !isValidDailyTime(schedule.time)) return "Weekly time must be HH:MM";
+		return isValidWeekdays(schedule.days) ? null : "Weekly days must be 0-6 (Sunday-Saturday)";
+	}
 	if (schedule.kind === "once") {
 		return typeof schedule.at === "number" && Number.isFinite(schedule.at) ? null : "Once requires a timestamp";
 	}
@@ -120,20 +160,110 @@ export function validateSchedule(schedule: CronSchedule): string | null {
 	return "Unknown schedule kind";
 }
 
+/** Validate routine variables; `undefined` means "leave unchanged". */
+export function validateCronVariables(variables: CronVariable[] | undefined): string | null {
+	if (variables === undefined) return null;
+	if (!Array.isArray(variables)) return "Variables must be an array";
+	if (variables.length > 32) return "A routine can have at most 32 variables";
+	const names = new Set<string>();
+	for (const variable of variables) {
+		if (!variable || typeof variable.name !== "string" || typeof variable.value !== "string") {
+			return "Each variable needs a name and a string value";
+		}
+		const name = variable.name.trim();
+		if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+			return `Invalid variable name "${variable.name}"`;
+		}
+		if (name.length > 64) return `Variable name "${name}" is too long`;
+		if (variable.value.length > 4_000) return `Variable "${name}" is too long`;
+		if (names.has(name)) return `Duplicate variable "${name}"`;
+		names.add(name);
+	}
+	return null;
+}
+
+function normalizeCronVariables(variables: CronVariable[] | undefined): CronVariable[] {
+	return (variables ?? []).map((variable) => ({ name: variable.name.trim(), value: variable.value }));
+}
+
+function validateConcurrencyPolicy(policy: CronConcurrencyPolicy | undefined): string | null {
+	if (policy !== undefined && !["skip_if_active", "coalesce_if_active", "always_enqueue"].includes(policy)) {
+		return "Unknown concurrency policy";
+	}
+	return null;
+}
+
+function validateCatchUpPolicy(policy: CronCatchUpPolicy | undefined): string | null {
+	if (policy !== undefined && policy !== "run_once" && policy !== "skip_missed") {
+		return "Unknown catch-up policy";
+	}
+	return null;
+}
+
+/** The user-editable snapshot stored in revision history. */
+export function cronJobConfig(job: CronJob): CronJobConfig {
+	return {
+		name: job.name,
+		prompt: job.prompt,
+		schedule: job.schedule,
+		enabled: job.enabled,
+		concurrencyPolicy: job.concurrencyPolicy ?? DEFAULT_CRON_CONCURRENCY,
+		catchUpPolicy: job.catchUpPolicy ?? DEFAULT_CRON_CATCH_UP,
+		variables: job.variables ?? [],
+	};
+}
+
+/** Merge stored defaults with a manual run's overrides. */
+export function resolveCronVariables(job: CronJob, overrides?: Record<string, string>): Record<string, string> {
+	const values: Record<string, string> = {};
+	for (const variable of job.variables ?? []) values[variable.name] = variable.value;
+	if (overrides) {
+		for (const [name, value] of Object.entries(overrides)) {
+			if (typeof value === "string") values[name] = value;
+		}
+	}
+	return values;
+}
+
+/** Replace `{{name}}` (whitespace tolerated) with routine variable values. */
+export function interpolateCronPrompt(prompt: string, variables: Record<string, string>): string {
+	return prompt.replace(/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g, (match, name: string) =>
+		Object.hasOwn(variables, name) ? variables[name]! : match,
+	);
+}
+
+async function recordRevision(job: CronJob, reason: CronRevisionReason): Promise<void> {
+	await revisions.appendRevision({
+		id: revisions.mintRevisionId(),
+		jobId: job.id,
+		revision: job.revision ?? 1,
+		createdAt: Date.now(),
+		reason,
+		config: cronJobConfig(job),
+	});
+}
+
 export class CronService {
 	private readonly runtime: AgentRuntimeLike;
 	private readonly onUpdate?: (snapshot: CronSnapshot) => void;
 	private readonly onRunEvent?: (event: CronServiceEvent) => void;
 	private readonly resolveGitHead: (cwd: string) => Promise<string | null>;
+	private readonly triage?: (input: CronTriageInput) => Promise<CronTriageDecision | undefined>;
 	private ticker: ReturnType<typeof setInterval> | undefined;
 	private disposed = false;
 	/** Live continuity sessions for off-session delivery, keyed by job id. */
-	private readonly sideSessions = new Map<string, import("../agent-session.ts").AgentSession>();
+	private readonly sideSessions = new Map<string, AgentSession>();
+	/** Jobs currently executing or reserved by a non-queueing trigger. */
+	private readonly runningJobs = new Set<string>();
+	/** At most one follow-up trigger per routine for `coalesce_if_active`. */
+	private readonly coalescedJobs = new Map<string, { trigger: CronRunTrigger; variables?: Record<string, string> }>();
 	constructor(options: CronServiceOptions) {
 		this.runtime = options.runtime;
 		this.onUpdate = options.onUpdate;
 		this.onRunEvent = options.onRunEvent;
 		this.resolveGitHead = options.resolveGitHead ?? defaultGitHead;
+		this.triage =
+			options.triage ?? ((input) => this.runtime.session.triageScheduledRun?.(input) ?? Promise.resolve(undefined));
 	}
 
 	start(): void {
@@ -157,6 +287,8 @@ export class CronService {
 			session.dispose();
 		}
 		this.sideSessions.clear();
+		this.runningJobs.clear();
+		this.coalescedJobs.clear();
 	}
 
 	async snapshot(): Promise<CronSnapshot> {
@@ -175,6 +307,12 @@ export class CronService {
 		if (!input.prompt?.trim()) throw new Error("Cron job needs a prompt");
 		const scheduleError = validateSchedule(input.schedule);
 		if (scheduleError) throw new Error(scheduleError);
+		const variablesError = validateCronVariables(input.variables);
+		if (variablesError) throw new Error(variablesError);
+		const concurrencyError = validateConcurrencyPolicy(input.concurrencyPolicy);
+		if (concurrencyError) throw new Error(concurrencyError);
+		const catchUpError = validateCatchUpPolicy(input.catchUpPolicy);
+		if (catchUpError) throw new Error(catchUpError);
 
 		const now = Date.now();
 		const job: CronJob = {
@@ -186,17 +324,38 @@ export class CronService {
 			cwd: input.cwd?.trim() || this.runtime.cwd,
 			createdAt: now,
 			nextRunAt: input.enabled === false ? undefined : nextRunAt(input.schedule, now),
+			concurrencyPolicy: input.concurrencyPolicy ?? DEFAULT_CRON_CONCURRENCY,
+			catchUpPolicy: input.catchUpPolicy ?? DEFAULT_CRON_CATCH_UP,
+			variables: normalizeCronVariables(input.variables),
+			revision: 1,
 		};
 		await store.saveJob(job);
+		await recordRevision(job, "create").catch(() => {});
 		await this.emitUpdate();
 		return job;
 	}
 
-	/** Update name/prompt/schedule/enabled. Re-arms the timer when relevant. */
+	/** Update editable routine config. Re-arms the timer when relevant. */
 	async update(
 		id: string,
-		patch: Partial<Pick<CronJob, "name" | "prompt" | "schedule" | "enabled">>,
+		patch: Partial<
+			Pick<CronJob, "name" | "prompt" | "schedule" | "enabled" | "concurrencyPolicy" | "catchUpPolicy" | "variables">
+		>,
 	): Promise<CronJob> {
+		const variablesError = validateCronVariables(patch.variables);
+		if (variablesError) throw new Error(variablesError);
+		const concurrencyError = validateConcurrencyPolicy(patch.concurrencyPolicy);
+		if (concurrencyError) throw new Error(concurrencyError);
+		const catchUpError = validateCatchUpPolicy(patch.catchUpPolicy);
+		if (catchUpError) throw new Error(catchUpError);
+		const changed =
+			patch.name !== undefined ||
+			patch.prompt !== undefined ||
+			patch.schedule !== undefined ||
+			patch.enabled !== undefined ||
+			patch.concurrencyPolicy !== undefined ||
+			patch.catchUpPolicy !== undefined ||
+			patch.variables !== undefined;
 		const updated = await store.updateJob(id, (job) => {
 			if (patch.name !== undefined) {
 				const name = patch.name.trim();
@@ -212,6 +371,11 @@ export class CronService {
 				const scheduleError = validateSchedule(patch.schedule);
 				if (scheduleError) throw new Error(scheduleError);
 				job.schedule = patch.schedule;
+				if (job.enabled) {
+					const next = nextRunAt(job.schedule, Date.now());
+					job.nextRunAt = next;
+					if (next === undefined && job.schedule.kind === "once") job.enabled = false;
+				}
 			}
 			if (patch.enabled !== undefined) {
 				job.enabled = patch.enabled;
@@ -224,8 +388,44 @@ export class CronService {
 					if (next === undefined && job.schedule.kind === "once") job.enabled = false;
 				}
 			}
+			if (patch.concurrencyPolicy !== undefined) job.concurrencyPolicy = patch.concurrencyPolicy;
+			if (patch.catchUpPolicy !== undefined) job.catchUpPolicy = patch.catchUpPolicy;
+			if (patch.variables !== undefined) job.variables = normalizeCronVariables(patch.variables);
+			if (changed) job.revision = (job.revision ?? 1) + 1;
 		});
 		if (!updated) throw new Error("Cron job not found");
+		if (changed) await recordRevision(updated, "update").catch(() => {});
+		await this.emitUpdate();
+		return updated;
+	}
+
+	async listRevisions(id: string): Promise<CronJobRevision[]> {
+		return revisions.listRevisions(id);
+	}
+
+	/** Restore the editable config from a history snapshot. Runtime state
+	 *  (cwd, session pointer, run times) is intentionally left untouched. */
+	async restoreRevision(id: string, revisionId: string): Promise<CronJob> {
+		const revision = await revisions.getRevision(id, revisionId);
+		if (!revision) throw new Error("Cron revision not found");
+		const updated = await store.updateJob(id, (job) => {
+			job.name = revision.config.name;
+			job.prompt = revision.config.prompt;
+			job.schedule = revision.config.schedule;
+			job.enabled = revision.config.enabled;
+			job.concurrencyPolicy = revision.config.concurrencyPolicy;
+			job.catchUpPolicy = revision.config.catchUpPolicy;
+			job.variables = normalizeCronVariables(revision.config.variables);
+			job.revision = (job.revision ?? 1) + 1;
+			job.nextRunAt = undefined;
+			if (job.enabled) {
+				const next = nextRunAt(job.schedule, Date.now());
+				job.nextRunAt = next;
+				if (next === undefined && job.schedule.kind === "once") job.enabled = false;
+			}
+		});
+		if (!updated) throw new Error("Cron job not found");
+		await recordRevision(updated, "restore").catch(() => {});
 		await this.emitUpdate();
 		return updated;
 	}
@@ -247,10 +447,10 @@ export class CronService {
 	}
 
 	/** Fire one job immediately (the client "run now" action). */
-	async runNow(id: string): Promise<void> {
+	async runNow(id: string, variables?: Record<string, string>): Promise<void> {
 		const job = (await store.listJobs()).find((j) => j.id === id);
 		if (!job) throw new Error("Cron job not found");
-		await this.fireJob(job, "manual");
+		await this.fireJob(job, "manual", { variables });
 	}
 
 	// ── internals ───────────────────────────────────────────────────────────
@@ -327,67 +527,167 @@ export class CronService {
 		}
 	}
 
-	private async fireJob(job: CronJob, trigger: CronRunTrigger = "schedule"): Promise<void> {
-		// One fire at a time per job.
-		await withKeyedLock(`cron-fire:${job.id}`, async () => {
-			const fresh = (await store.listJobs()).find((j) => j.id === job.id);
-			if (!fresh || !fresh.enabled) return;
+	private queueCoalesced(id: string, trigger: CronRunTrigger, variables?: Record<string, string>): void {
+		const existing = this.coalescedJobs.get(id);
+		if (!existing || (existing.trigger === "schedule" && trigger === "manual")) {
+			this.coalescedJobs.set(id, { trigger, ...(variables ? { variables } : {}) });
+		} else if (variables && existing.trigger === trigger) {
+			existing.variables = { ...(existing.variables ?? {}), ...variables };
+		}
+	}
 
-			const head = `[Cron: ${fresh.name}] ${fresh.schedule.kind === "event" ? "Event-triggered task" : "Scheduled task"} (${describeSchedule(fresh.schedule)}) from the user's cron schedule. Work in the current project context and report the result plainly.`;
-			const prompt = `${head}\n\n${fresh.prompt}`;
+	private async fireJob(
+		job: CronJob,
+		trigger: CronRunTrigger = "schedule",
+		options?: { variables?: Record<string, string> },
+	): Promise<void> {
+		const policy = job.concurrencyPolicy ?? DEFAULT_CRON_CONCURRENCY;
 
-			const run: CronRun = {
-				id: mintRunId(),
-				jobId: fresh.id,
-				jobName: fresh.name,
-				trigger,
-				delivery: this.runtime.cwd === fresh.cwd && Boolean(this.runtime.session) ? "session" : "background",
-				startedAt: Date.now(),
-				status: "running",
-			};
-			await store.appendRun(run);
-			this.emitRunEvent({ type: "run_started", run: { ...run } });
-
-			let status: "ok" | "error" | "timeout" = "ok";
-			let lastError: string | undefined;
-			try {
-				const target = await this.resolveDelivery(fresh);
-				run.sessionFile = target.sessionFile;
-				if (run.sessionFile) {
-					await store.updateRun(run.jobId, run.id, (r) => {
-						r.sessionFile = run.sessionFile;
-					});
-				}
-				await this.runPrompt(target.session, prompt);
-			} catch (error_) {
-				status = error_ instanceof CronTimeoutError ? "timeout" : "error";
-				lastError = error_ instanceof Error ? error_.message : String(error_);
+		// Reserve the job before waiting on the lock so a racing trigger cannot
+		// slip past `skip_if_active` while the first turn is starting.
+		if (policy !== "always_enqueue") {
+			if (this.runningJobs.has(job.id)) {
+				if (policy === "coalesce_if_active") this.queueCoalesced(job.id, trigger, options?.variables);
+				return;
 			}
+			this.runningJobs.add(job.id);
+		}
 
-			run.finishedAt = Date.now();
-			run.status = status;
-			run.error = lastError;
-			await store.updateRun(run.jobId, run.id, (r) => {
-				r.finishedAt = run.finishedAt;
-				r.status = status;
-				r.error = lastError;
-			});
-			this.emitRunEvent({ type: "run_finished", run: { ...run } });
+		try {
+			await withKeyedLock(`cron-fire:${job.id}`, async () => {
+				const fresh = (await store.listJobs()).find((j) => j.id === job.id);
+				if (!fresh || !fresh.enabled) return;
+				if (policy === "always_enqueue") this.runningJobs.add(fresh.id);
 
-			await store.updateJob(fresh.id, (j) => {
-				j.lastRunAt = Date.now();
-				j.lastStatus = status;
-				j.lastError = lastError;
-				if (j.schedule.kind === "once") {
-					// One-shot done: no next fire, stays off.
-					j.enabled = false;
-					j.nextRunAt = undefined;
-				} else {
-					j.nextRunAt = nextRunAt(j.schedule, Date.now());
+				try {
+					if (trigger === "schedule") {
+						const now = Date.now();
+						// A prior fire may have advanced the window while this trigger
+						// waited on the lock. Never run the same window twice.
+						if (!isDue(fresh, now)) return;
+						if (
+							(fresh.catchUpPolicy ?? DEFAULT_CRON_CATCH_UP) === "skip_missed" &&
+							fresh.nextRunAt !== undefined &&
+							now - fresh.nextRunAt > CRON_MISSED_GRACE_MS
+						) {
+							await store.updateJob(fresh.id, (j) => {
+								j.nextRunAt = nextRunAt(j.schedule, now);
+								if (j.nextRunAt === undefined && j.schedule.kind === "once") j.enabled = false;
+							});
+							await this.emitUpdate();
+							return;
+						}
+					}
+
+					await this.executeJob(fresh, trigger, options);
+				} finally {
+					if (policy === "always_enqueue") this.runningJobs.delete(fresh.id);
 				}
 			});
-			await this.emitUpdate();
+		} finally {
+			if (policy !== "always_enqueue") {
+				this.runningJobs.delete(job.id);
+				const queued = this.coalescedJobs.get(job.id);
+				if (queued) {
+					this.coalescedJobs.delete(job.id);
+					const latest = (await store.listJobs()).find((j) => j.id === job.id);
+					if (latest?.enabled) void this.fireJob(latest, queued.trigger, { variables: queued.variables });
+				}
+			}
+		}
+	}
+
+	private async executeJob(
+		fresh: CronJob,
+		trigger: CronRunTrigger,
+		options?: { variables?: Record<string, string> },
+	): Promise<void> {
+		const variables = resolveCronVariables(fresh, options?.variables);
+		const head = `[Scheduled task: ${fresh.name}] This work was scheduled by the user (${describeSchedule(fresh.schedule)}). Execute the task below now in the current project context. Do not ask the user to confirm or to restate the schedule; make reasonable assumptions and carry it through. Report what you did and found plainly.`;
+		const prompt = `${head}\n\n${interpolateCronPrompt(fresh.prompt, variables)}`;
+
+		const run: CronRun = {
+			id: mintRunId(),
+			jobId: fresh.id,
+			jobName: fresh.name,
+			trigger,
+			delivery: this.runtime.cwd === fresh.cwd && Boolean(this.runtime.session) ? "session" : "background",
+			startedAt: Date.now(),
+			status: "running",
+			...(Object.keys(variables).length > 0 ? { variables } : {}),
+		};
+		await store.appendRun(run);
+		this.emitRunEvent({ type: "run_started", run: { ...run } });
+
+		let status: "ok" | "error" | "timeout" = "ok";
+		let lastError: string | undefined;
+		let summary: string | undefined;
+		try {
+			const target = await this.resolveDelivery(fresh);
+			run.sessionFile = target.sessionFile;
+			const messageStart = messageCount(target.session);
+			if (run.sessionFile) {
+				await store.updateRun(run.jobId, run.id, (r) => {
+					r.sessionFile = run.sessionFile;
+				});
+			}
+			await this.runPrompt(target.session, prompt);
+			summary = summarizeAssistantOutput(target.session, messageStart);
+		} catch (error_) {
+			status = error_ instanceof CronTimeoutError ? "timeout" : "error";
+			lastError = error_ instanceof Error ? error_.message : String(error_);
+		}
+
+		run.finishedAt = Date.now();
+		run.status = status;
+		run.error = lastError;
+		run.summary = summary;
+
+		const priorRuns = (await store.listRuns(fresh.id)).filter((prior) => prior.id !== run.id);
+		const triage = await this.triageRun(fresh, run, priorRuns);
+		if (triage) run.triage = triage;
+
+		await store.updateRun(run.jobId, run.id, (r) => {
+			r.finishedAt = run.finishedAt;
+			r.status = status;
+			r.error = lastError;
+			r.summary = summary;
+			if (triage) r.triage = triage;
 		});
+		this.emitRunEvent({ type: "run_finished", run: { ...run } });
+
+		await store.updateJob(fresh.id, (j) => {
+			j.lastRunAt = Date.now();
+			j.lastStatus = status;
+			j.lastError = lastError;
+			j.lastTriage = triage;
+			if (j.schedule.kind === "once") {
+				// One-shot done: no next fire, stays off.
+				j.enabled = false;
+				j.nextRunAt = undefined;
+			} else {
+				j.nextRunAt = nextRunAt(j.schedule, Date.now());
+			}
+		});
+		await this.emitUpdate();
+	}
+
+	/** Persist an advisory post-run recommendation; failures become an
+	 *  `unavailable` decision so the UI can show that triage did not run. */
+	private async triageRun(job: CronJob, run: CronRun, priorRuns: CronRun[]): Promise<CronTriageDecision | undefined> {
+		if (!this.triage) return undefined;
+		try {
+			return await this.triage({ job, run, priorRuns });
+		} catch (error) {
+			return {
+				outcome: "unavailable",
+				recommendedAction: "quiet",
+				notify: 0,
+				retry: 0,
+				pause: 0,
+				error: error instanceof Error ? error.message : String(error),
+			};
+		}
 	}
 
 	/**
@@ -396,9 +696,7 @@ export class CronService {
 	 * continuity side session. Returns the session file either way so the run
 	 * record can link to it ("continue any run").
 	 */
-	private async resolveDelivery(
-		job: CronJob,
-	): Promise<{ session: import("../agent-session.ts").AgentSession; sessionFile?: string }> {
+	private async resolveDelivery(job: CronJob): Promise<{ session: AgentSession; sessionFile?: string }> {
 		if (this.runtime.cwd === job.cwd && this.runtime.session) {
 			return { session: this.runtime.session, sessionFile: this.runtime.session.sessionFile };
 		}
@@ -407,7 +705,7 @@ export class CronService {
 	}
 
 	/** Continuity side session for off-hours delivery, one per job. */
-	private async ensureSideSession(job: CronJob): Promise<import("../agent-session.ts").AgentSession> {
+	private async ensureSideSession(job: CronJob): Promise<AgentSession> {
 		const live = this.sideSessions.get(job.id);
 		if (live) return live;
 
@@ -441,7 +739,7 @@ export class CronService {
 	}
 
 	/** Run one prompt with the unattended timeout; aborts a stalled turn. */
-	private async runPrompt(session: import("../agent-session.ts").AgentSession, prompt: string): Promise<void> {
+	private async runPrompt(session: AgentSession, prompt: string): Promise<void> {
 		const turn = session.sendUserMessage(prompt, { deliverAs: "followUp" });
 		let timedOut = false;
 		await Promise.race([
@@ -474,6 +772,39 @@ export class CronService {
 			// UI push is best-effort
 		}
 	}
+}
+
+const MAX_RUN_SUMMARY_CHARS = 4_000;
+
+function messageCount(session: AgentSession): number {
+	const messages = (session as { messages?: unknown }).messages;
+	return Array.isArray(messages) ? messages.length : 0;
+}
+
+/** Final assistant text added during this run, capped for history/triage. */
+function summarizeAssistantOutput(session: AgentSession, fromIndex: number): string | undefined {
+	const messages = (session as { messages?: unknown }).messages;
+	if (!Array.isArray(messages)) return undefined;
+	const parts: string[] = [];
+	for (const message of messages.slice(fromIndex)) {
+		if (!message || typeof message !== "object") continue;
+		if ((message as { role?: unknown }).role !== "assistant") continue;
+		const content = (message as { content?: unknown }).content;
+		if (typeof content === "string") {
+			parts.push(content);
+			continue;
+		}
+		if (!Array.isArray(content)) continue;
+		for (const block of content) {
+			if (!block || typeof block !== "object") continue;
+			if ((block as { type?: unknown }).type !== "text") continue;
+			const text = (block as { text?: unknown }).text;
+			if (typeof text === "string") parts.push(text);
+		}
+	}
+	const joined = parts.join("\n\n").trim();
+	if (!joined) return undefined;
+	return joined.length > MAX_RUN_SUMMARY_CHARS ? `${joined.slice(0, MAX_RUN_SUMMARY_CHARS)}\n[truncated]` : joined;
 }
 
 class CronTimeoutError extends Error {

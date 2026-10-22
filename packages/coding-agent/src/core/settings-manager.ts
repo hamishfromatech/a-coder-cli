@@ -227,6 +227,12 @@ export interface DecisionsSettings {
 	model?: string;
 }
 
+/** Scheduled-task settings. */
+export interface CronSettings {
+	/** Triage finished scheduled runs with a System One model. Default: true. */
+	triage?: boolean;
+}
+
 export type AutoContinueMode = "off" | "compaction" | "smart";
 
 /** Decision-model-assisted continuation. Off by default; `compaction` keeps
@@ -353,6 +359,7 @@ export interface Settings {
 	autoMode?: AutoModeSettings; // LLM classifier for "auto" mode (opt-in)
 	decisions?: DecisionsSettings; // System One decision model target for the `decide` tool + auto-mode classifier
 	autoContinue?: AutoContinueSettings; // Decision-model-assisted auto-continue (off by default)
+	cron?: CronSettings; // Scheduled-task policy, including post-run triage
 	memory?: MemoryInjectionSettings; // inject MEMORY.md contents into the system prompt
 	httpProxy?: string; // Proxy URL applied as HTTP_PROXY and HTTPS_PROXY for Pi-managed HTTP clients
 	httpIdleTimeoutMs?: number; // HTTP header/body idle timeout in milliseconds; 0 disables it
@@ -1486,6 +1493,10 @@ export class SettingsManager {
 			provider: this.settings.decisions?.provider,
 			model: this.settings.decisions?.model,
 		};
+	}
+
+	getCronTriageEnabled(): boolean {
+		return this.settings.cron?.triage !== false;
 	}
 
 	getAutoContinueSettings(): ResolvedAutoContinueSettings {

@@ -86,6 +86,12 @@ export {
 	type ReadToolOptions,
 } from "./read.ts";
 export {
+	createScheduleTaskTool,
+	createScheduleTaskToolDefinition,
+	type ScheduleTaskDetails,
+	type ScheduleTaskInput,
+} from "./schedule.ts";
+export {
 	DEFAULT_MAX_BYTES,
 	DEFAULT_MAX_LINES,
 	formatSize,
@@ -104,6 +110,7 @@ export {
 } from "./write.ts";
 
 import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { CronToolService } from "../cron/service.ts";
 import type { ToolDefinition } from "../extensions/types.ts";
 import { type BashToolOptions, createBashTool, createBashToolDefinition } from "./bash.ts";
 import { createDecideTool, createDecideToolDefinition, type DecideToolDefinitionContext } from "./decide.ts";
@@ -114,6 +121,7 @@ import { createLsTool, createLsToolDefinition, type LsToolOptions } from "./ls.t
 import { createMemoryTool, createMemoryToolDefinition } from "./memory.ts";
 import { createPlanModeTool, createPlanModeToolDefinition, type PlanModeToolCallbacks } from "./plan-mode.ts";
 import { createReadTool, createReadToolDefinition, type ReadToolOptions } from "./read.ts";
+import { createScheduleTaskTool, createScheduleTaskToolDefinition } from "./schedule.ts";
 import { createSkillTool, createSkillToolDefinition, type SkillToolOptions } from "./skill.ts";
 import { createWriteTool, createWriteToolDefinition, type WriteToolOptions } from "./write.ts";
 
@@ -135,6 +143,7 @@ export type ToolName =
 	| "task_list"
 	| "task_update"
 	| "memory"
+	| "schedule_task"
 	| "decide"
 	| "plan_mode"
 	| "computer"
@@ -158,6 +167,7 @@ export const allToolNames: Set<ToolName> = new Set([
 	"task_list",
 	"task_update",
 	"memory",
+	"schedule_task",
 	"decide",
 	"plan_mode",
 	"team_create",
@@ -175,6 +185,7 @@ export interface ToolsOptions {
 	ls?: LsToolOptions;
 	planMode?: { callbacks: PlanModeToolCallbacks };
 	memory?: { sessionDir: string; sessionId: string };
+	schedule?: { getService: () => CronToolService | undefined };
 	skill?: SkillToolOptions;
 	decide?: DecideToolDefinitionContext;
 }
@@ -199,6 +210,8 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			return createLsToolDefinition(cwd, options?.ls);
 		case "memory":
 			return createMemoryToolDefinition(options?.memory);
+		case "schedule_task":
+			return createScheduleTaskToolDefinition(options?.schedule);
 		case "decide":
 			return createDecideToolDefinition(options?.decide);
 		case "plan_mode":
@@ -252,6 +265,8 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 			return createLsTool(cwd, options?.ls);
 		case "memory":
 			return createMemoryTool(options?.memory);
+		case "schedule_task":
+			return createScheduleTaskTool(options?.schedule);
 		case "decide":
 			return createDecideTool(options?.decide);
 		case "plan_mode":
@@ -319,6 +334,7 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 		task_list: createTaskListToolDefinition(),
 		task_update: createTaskUpdateToolDefinition(),
 		memory: createMemoryToolDefinition(options?.memory),
+		schedule_task: createScheduleTaskToolDefinition(options?.schedule),
 		decide: createDecideToolDefinition(options?.decide),
 		team_create: createTeamCreateToolDefinition(),
 		team_delete: createTeamDeleteToolDefinition(),
@@ -342,6 +358,7 @@ export function createCodingTools(cwd: string, options?: ToolsOptions): Tool[] {
 		createTaskListTool(),
 		createTaskUpdateTool(),
 		createMemoryTool(options?.memory),
+		createScheduleTaskTool(options?.schedule),
 		createDecideTool(options?.decide),
 		createTeamCreateTool(),
 		createTeamDeleteTool(),
@@ -380,6 +397,7 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		task_list: createTaskListTool(),
 		task_update: createTaskUpdateTool(),
 		memory: createMemoryTool(options?.memory),
+		schedule_task: createScheduleTaskTool(options?.schedule),
 		decide: createDecideTool(options?.decide),
 		skill: createSkillTool(options?.skill ?? { getSkills: () => [] }),
 		team_create: createTeamCreateTool(),

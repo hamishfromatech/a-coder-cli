@@ -58,6 +58,11 @@ export interface ResolvedAutoContinueSettings extends Required<Omit<AutoContinue
 	model?: string;
 }
 
+export interface CronSettings {
+	/** Triage finished scheduled runs with a System One model. Default: true. */
+	triage?: boolean;
+}
+
 export interface DecisionModelInfo {
 	provider: string;
 	id: string;
@@ -161,6 +166,7 @@ export interface CliSettings {
 	theme?: string;
 	compaction?: CompactionSettings;
 	autoContinue?: AutoContinueSettings;
+	cron?: CronSettings;
 	branchSummary?: BranchSummarySettings;
 	retry?: RetrySettings;
 	hideThinkingBlock?: boolean;

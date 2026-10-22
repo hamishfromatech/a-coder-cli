@@ -18,6 +18,9 @@ export type PermissionDecisionResult =
 /** Built-in tools that can mutate the filesystem or execute arbitrary code. */
 export const DEFAULT_MUTATING_TOOL_NAMES = new Set<string>(["bash", "edit", "write"]);
 
+/** Tools denied in read-only mode even though auto mode may run them without a prompt. */
+export const READ_ONLY_DENIED_TOOL_NAMES = new Set<string>([...DEFAULT_MUTATING_TOOL_NAMES, "schedule_task"]);
+
 /**
  * Tools the auto-mode classifier never needs to be invoked for: pure reads,
  * status, or user-interactive surfaces. Anything else (mcp, extension tools,
@@ -191,7 +194,7 @@ export function resolvePermissionDecision(
 				? { decision: "prompt", reason: `Permission mode is "ask"` }
 				: { decision: "deny", reason: `Permission mode is "ask" but no TTY is available` };
 		case "read-only":
-			return DEFAULT_MUTATING_TOOL_NAMES.has(toolName)
+			return READ_ONLY_DENIED_TOOL_NAMES.has(toolName)
 				? { decision: "deny", reason: `Tool "${toolName}" is blocked in read-only mode` }
 				: { decision: "approve" };
 		case "auto": {

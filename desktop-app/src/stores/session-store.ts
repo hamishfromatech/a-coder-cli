@@ -3,6 +3,7 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, Api, Model } from "@earendil-works/pi-ai";
 import type { MessageDeliveryMode } from "../lib/settings.types";
 import { pickLoadingVerb } from "../lib/loading-verbs";
+import { useActivityStore } from "./activity-store";
 
 export type PermissionMode = "ask" | "allow" | "read-only" | "auto";
 
@@ -275,6 +276,7 @@ export const useSessionStore = create<SessionState>((set) => ({
 			const request = state.uiRequests.find((r) => r.id === id);
 			if (!request) return state;
 			request.resolve(response);
+			useActivityStore.getState().resolve(`approval:request:${id}`);
 			return { uiRequests: state.uiRequests.filter((r) => r.id !== id) };
 		}),
 	questionRequest: null,

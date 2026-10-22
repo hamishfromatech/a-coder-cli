@@ -11,7 +11,16 @@ import type { LlamaCppStatus, SessionStats } from "../../core/agent-session.ts";
 import type { RuntimeSessionStatus } from "../../core/agent-session-runtime.ts";
 import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
-import type { CronJob, CronRun, CronSchedule, CronSnapshot } from "../../core/cron/types.ts";
+import type {
+	CronCatchUpPolicy,
+	CronConcurrencyPolicy,
+	CronJob,
+	CronJobRevision,
+	CronRun,
+	CronSchedule,
+	CronSnapshot,
+	CronVariable,
+} from "../../core/cron/types.ts";
 import type { InProcessSubAgentRecord } from "../../core/extensions/types.ts";
 import type { McpServerState } from "../../core/mcp/status-store.ts";
 import type {
@@ -193,8 +202,10 @@ export type RpcCommand =
 	| { id?: string; type: "cron_create"; job: CronRpcJobInput }
 	| { id?: string; type: "cron_update"; jobId: string; patch: CronRpcJobPatch }
 	| { id?: string; type: "cron_delete"; jobId: string }
-	| { id?: string; type: "cron_run_now"; jobId: string }
+	| { id?: string; type: "cron_run_now"; jobId: string; variables?: Record<string, string> }
 	| { id?: string; type: "cron_runs"; jobId?: string }
+	| { id?: string; type: "cron_revisions"; jobId: string }
+	| { id?: string; type: "cron_restore_revision"; jobId: string; revisionId: string }
 
 	// Commands (available for invocation via prompt)
 	| { id?: string; type: "get_commands" };
@@ -703,6 +714,8 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "cron_delete"; success: true }
 	| { id?: string; type: "response"; command: "cron_run_now"; success: true }
 	| { id?: string; type: "response"; command: "cron_runs"; success: true; data: { runs: CronRun[] } }
+	| { id?: string; type: "response"; command: "cron_revisions"; success: true; data: { revisions: CronJobRevision[] } }
+	| { id?: string; type: "response"; command: "cron_restore_revision"; success: true; data: { job: CronJob } }
 
 	// Error response (any command can fail). `error` stays the human-readable
 	// message for older clients; code/retryable/details are additive.
@@ -995,10 +1008,15 @@ export interface CronRpcJobInput {
 	enabled?: boolean;
 	/** Project scope; defaults to the engine's cwd. */
 	cwd?: string;
+	concurrencyPolicy?: CronConcurrencyPolicy;
+	catchUpPolicy?: CronCatchUpPolicy;
+	variables?: CronVariable[];
 }
 
 /** Cron job update patch. */
-export type CronRpcJobPatch = Partial<Pick<CronJob, "name" | "prompt" | "schedule" | "enabled">>;
+export type CronRpcJobPatch = Partial<
+	Pick<CronJob, "name" | "prompt" | "schedule" | "enabled" | "concurrencyPolicy" | "catchUpPolicy" | "variables">
+>;
 
 // ============================================================================
 // Helper type for extracting command types

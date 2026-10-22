@@ -8,6 +8,7 @@
 
 import type { AssistantMessage, ImageContent } from "@earendil-works/pi-ai";
 import type { AgentSessionRuntime } from "../core/agent-session-runtime.ts";
+import { CronService } from "../core/cron/service.ts";
 import { flushRawStdout, writeRawStdout } from "../core/output-guard.ts";
 import { killTrackedDetachedChildren } from "../utils/shell.ts";
 import { buildStreamJsonInit, buildStreamJsonResult, emptyUsageState, mapEventToStreamJson } from "./stream-json.ts";
@@ -38,11 +39,16 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 	let disposed = false;
 	const signalCleanupHandlers: Array<() => void> = [];
 	const streamJson = mode === "stream-json" ? { state: emptyUsageState(), startedAt: Date.now() } : undefined;
+	// Print mode can create and manage schedules; it does not run a ticker.
+	const cron = new CronService({ runtime: runtimeHost });
+	runtimeHost.setScheduleService?.(cron);
 
 	const disposeRuntime = async (): Promise<void> => {
 		if (disposed) return;
 		disposed = true;
 		unsubscribe?.();
+		runtimeHost.setScheduleService?.(undefined);
+		await cron.dispose();
 		await runtimeHost.dispose();
 	};
 

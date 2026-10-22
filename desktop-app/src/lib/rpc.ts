@@ -206,8 +206,50 @@ export type CronEventTrigger = "turn_end" | "git_commit";
 export type CronSchedule =
 	| { kind: "every"; minutes: number }
 	| { kind: "daily"; time: string }
+	| { kind: "weekly"; days: number[]; time: string }
 	| { kind: "once"; at: number }
 	| { kind: "event"; trigger: CronEventTrigger; cooldownMinutes?: number };
+
+export type CronConcurrencyPolicy = "skip_if_active" | "coalesce_if_active" | "always_enqueue";
+export type CronCatchUpPolicy = "run_once" | "skip_missed";
+export interface CronVariable {
+	name: string;
+	value: string;
+}
+
+export interface CronJobConfig {
+	name: string;
+	prompt: string;
+	schedule: CronSchedule;
+	enabled: boolean;
+	concurrencyPolicy: CronConcurrencyPolicy;
+	catchUpPolicy: CronCatchUpPolicy;
+	variables: CronVariable[];
+}
+
+export interface CronJobRevision {
+	id: string;
+	jobId: string;
+	revision: number;
+	createdAt: number;
+	reason: "create" | "update" | "restore";
+	config: CronJobConfig;
+}
+
+export type CronTriageOutcome = "ok" | "no_work" | "needs_user" | "failed" | "unavailable";
+export type CronTriageAction = "notify" | "quiet" | "retry" | "pause";
+
+export interface CronTriageDecision {
+	outcome: CronTriageOutcome;
+	recommendedAction: CronTriageAction;
+	notify: number;
+	retry: number;
+	pause: number;
+	probabilities?: Record<string, number>;
+	model?: string;
+	latencyMs?: number;
+	error?: string;
+}
 
 export interface CronJob {
 	id: string;
@@ -225,6 +267,12 @@ export interface CronJob {
 	sessionFile?: string;
 	/** Watermark for `git_commit` event jobs: the last commit head fired on. */
 	lastGitHead?: string;
+	/** Most recent post-run triage recommendation. */
+	lastTriage?: CronTriageDecision;
+	concurrencyPolicy?: CronConcurrencyPolicy;
+	catchUpPolicy?: CronCatchUpPolicy;
+	variables?: CronVariable[];
+	revision?: number;
 }
 
 export interface CronJobInput {
@@ -233,6 +281,9 @@ export interface CronJobInput {
 	schedule: CronSchedule;
 	enabled?: boolean;
 	cwd?: string;
+	concurrencyPolicy?: CronConcurrencyPolicy;
+	catchUpPolicy?: CronCatchUpPolicy;
+	variables?: CronVariable[];
 }
 
 export interface CronSnapshot {
@@ -261,6 +312,12 @@ export interface CronRun {
 	error?: string;
 	/** Session the prompt ran in — switch here to continue the run. */
 	sessionFile?: string;
+	/** Final assistant text, truncated for history and triage. */
+	summary?: string;
+	/** Advisory post-run triage, when a System One model was available. */
+	triage?: CronTriageDecision;
+	/** Resolved variable values for this run (manual overrides included). */
+	variables?: Record<string, string>;
 }
 
 export interface CronRunEvent {
@@ -1827,15 +1884,29 @@ export const cronList = () => sendCommand({ type: "cron_list" }) as Promise<Cron
 export const cronCreate = (job: CronJobInput) =>
 	sendCommand({ type: "cron_create", job }) as Promise<{ job: CronJob }>;
 
-export const cronUpdate = (jobId: string, patch: Partial<Pick<CronJob, "name" | "prompt" | "schedule" | "enabled">>) =>
-	sendCommand({ type: "cron_update", jobId, patch }) as Promise<{ job: CronJob }>;
+export const cronUpdate = (
+	jobId: string,
+	patch: Partial<
+		Pick<
+			CronJob,
+			"name" | "prompt" | "schedule" | "enabled" | "concurrencyPolicy" | "catchUpPolicy" | "variables"
+		>
+	>,
+) => sendCommand({ type: "cron_update", jobId, patch }) as Promise<{ job: CronJob }>;
 
 export const cronDelete = (jobId: string) => sendCommand({ type: "cron_delete", jobId });
 
-export const cronRunNow = (jobId: string) => sendCommand({ type: "cron_run_now", jobId });
+export const cronRunNow = (jobId: string, variables?: Record<string, string>) =>
+	sendCommand({ type: "cron_run_now", jobId, variables });
 
 export const cronRuns = (jobId?: string) =>
-	sendCommand({ type: "cron_runs", jobId }) as Promise<{ runs: CronRun[] }>
+	sendCommand({ type: "cron_runs", jobId }) as Promise<{ runs: CronRun[] }>;
+
+export const cronRevisions = (jobId: string) =>
+	sendCommand({ type: "cron_revisions", jobId }) as Promise<{ revisions: CronJobRevision[] }>;
+
+export const cronRestoreRevision = (jobId: string, revisionId: string) =>
+	sendCommand({ type: "cron_restore_revision", jobId, revisionId }) as Promise<{ job: CronJob }>;
 
 
 

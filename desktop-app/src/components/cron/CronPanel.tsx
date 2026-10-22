@@ -12,8 +12,10 @@ import { cronDelete, cronRunNow, cronRuns, cronUpdate, type CronJob, type CronRu
 import { useCronStore } from "../../stores/cron-store";
 import { useSessionStore } from "../../stores/session-store";
 import { openSessionFile } from "../../lib/open-session";
-import { CronEditor } from "./CronEditor";
 import { CronCalendar } from "./CronCalendar";
+import { CronDetail } from "./CronDetail";
+import { CronEditor } from "./CronEditor";
+import { CronRunDialog } from "./CronRunDialog";
 
 function relativeTime(ms: number | undefined): string {
 	if (!ms) return "";
@@ -32,6 +34,10 @@ function scheduleLabel(schedule: CronJob["schedule"]): string {
 		return `every ${minutes}m`;
 	}
 	if (schedule.kind === "daily") return `daily ${schedule.time}`;
+	if (schedule.kind === "weekly") {
+		const names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+		return `weekly ${schedule.days.map((day) => names[day] ?? String(day)).join(", ")} ${schedule.time}`;
+	}
 	if (schedule.kind === "event") return schedule.trigger === "turn_end" ? "on turn end" : "on commit";
 	return "once";
 }
@@ -42,6 +48,7 @@ export function CronPanel() {
 	const refresh = useCronStore((s) => s.refresh);
 	const cwd = useSessionStore((s) => s.cwd);
 	const [editor, setEditor] = useState<{ open: boolean; job?: CronJob }>({ open: false });
+	const [detail, setDetail] = useState<CronJob | null>(null);
 	const [view, setView] = useState<"list" | "calendar">("list");
 
 	useEffect(() => {
@@ -97,6 +104,7 @@ export function CronPanel() {
 						<CronRow
 							key={job.id}
 							job={job}
+							onOpen={() => setDetail(job)}
 							onEdit={() => setEditor({ open: true, job })}
 						/>
 					))}
@@ -104,13 +112,24 @@ export function CronPanel() {
 			)}
 
 			{editor.open && <CronEditor job={editor.job} onClose={() => setEditor({ open: false })} />}
+			{detail && (
+				<CronDetail
+					job={detail}
+					onClose={() => setDetail(null)}
+					onEdit={(job) => {
+						setDetail(null);
+						setEditor({ open: true, job });
+					}}
+				/>
+			)}
 		</div>
 	);
 }
 
-function CronRow({ job, onEdit }: { job: CronJob; onEdit: () => void }) {
+function CronRow({ job, onOpen, onEdit }: { job: CronJob; onOpen: () => void; onEdit: () => void }) {
 	const [busy, setBusy] = useState(false);
 	const [expanded, setExpanded] = useState(false);
+	const [runDialog, setRunDialog] = useState(false);
 	const [runs, setRuns] = useState<CronRun[] | null>(null);
 	const [runsLoading, setRunsLoading] = useState(false);
 
@@ -128,6 +147,10 @@ function CronRow({ job, onEdit }: { job: CronJob; onEdit: () => void }) {
 
 	const runNow = async () => {
 		if (busy) return;
+		if ((job.variables ?? []).length > 0) {
+			setRunDialog(true);
+			return;
+		}
 		setBusy(true);
 		try {
 			await cronRunNow(job.id);
@@ -159,6 +182,7 @@ function CronRow({ job, onEdit }: { job: CronJob; onEdit: () => void }) {
 	const nextRun = job.enabled && job.nextRunAt ? new Date(job.nextRunAt).toLocaleString() : undefined;
 	const failed = job.lastStatus === "error" || job.lastStatus === "timeout";
 	const isEvent = job.schedule.kind === "event";
+	const lastTriage = triageLabel(job.lastTriage);
 
 	return (
 		<div className="flex w-full flex-col rounded-md transition-hover hover:bg-pi-surface-raised">
@@ -174,7 +198,9 @@ function CronRow({ job, onEdit }: { job: CronJob; onEdit: () => void }) {
 				</button>
 				<div className="flex min-w-0 flex-1 flex-col gap-0.5 pt-0.5">
 					<div className="flex items-center gap-1.5 text-xs font-medium text-pi-text">
-						<span className="truncate">{job.name}</span>
+						<button type="button" className="truncate text-left hover:underline" onClick={onOpen}>
+							{job.name}
+						</button>
 						{!job.enabled && <span className="shrink-0 text-2xs text-pi-text-faint">(paused)</span>}
 						{failed && (
 							<span
@@ -187,6 +213,7 @@ function CronRow({ job, onEdit }: { job: CronJob; onEdit: () => void }) {
 						{scheduleLabel(job.schedule)}
 						{nextRun ? ` · next ${nextRun}` : isEvent ? " · awaiting event" : ""}
 						{job.lastRunAt ? ` · last ${relativeTime(job.lastRunAt)}` : ""}
+						{lastTriage ? ` · ${lastTriage}` : ""}
 						{failed ? ` · ${job.lastError?.slice(0, 60) ?? "failed"}` : ""}
 					</div>
 					<div className="mt-0.5 line-clamp-2 text-2xs leading-relaxed text-pi-text-faint">{job.prompt}</div>
@@ -218,9 +245,26 @@ function CronRow({ job, onEdit }: { job: CronJob; onEdit: () => void }) {
 				</div>
 			</div>
 			{expanded && <RunHistory runs={runs} loading={runsLoading} />}
+			{runDialog && <CronRunDialog job={job} onClose={() => setRunDialog(false)} />}
 		</div>
 	);
 }
+
+function triageLabel(triage: CronRun["triage"]): string | undefined {
+	if (!triage) return undefined;
+	if (triage.outcome === "unavailable") return "triage unavailable";
+	if (triage.recommendedAction === "notify") return "needs attention";
+	if (triage.recommendedAction === "quiet") return "quiet";
+	return `${triage.recommendedAction} suggested`;
+}
+
+const TRIAGE_CLASS: Record<string, string> = {
+	"needs attention": "text-pi-accent",
+	quiet: "text-pi-text-faint",
+	"retry suggested": "text-pi-warning",
+	"pause suggested": "text-pi-error",
+	"triage unavailable": "text-pi-text-faint",
+};
 
 const RUN_STATUS_DOT: Record<CronRun["status"], string> = {
 	running: "bg-pi-accent animate-pulse",
@@ -249,6 +293,17 @@ function RunHistory({ runs, loading }: { runs: CronRun[] | null; loading: boolea
 					<span className="shrink-0 text-2xs text-pi-text-faint">
 						{run.trigger === "manual" ? "manual" : "schedule"} · {run.delivery === "session" ? "session" : "background"}
 					</span>
+					{(() => {
+						const label = triageLabel(run.triage);
+						return label ? (
+							<span
+								className={`shrink-0 text-2xs ${TRIAGE_CLASS[label] ?? "text-pi-text-faint"}`}
+								title={run.triage?.error ?? run.summary}
+							>
+								· {label}
+							</span>
+						) : null;
+					})()}
 					{run.error && (
 						<span className="min-w-0 flex-1 truncate text-2xs text-pi-error" title={run.error}>
 							{run.error}

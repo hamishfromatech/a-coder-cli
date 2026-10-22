@@ -69,6 +69,7 @@ Use `/trust` in interactive mode to save a project trust decision for future ses
 | `permissionPolicies` | object | - | Extra rules used by `"auto"` mode's classifier (see [extensions.md](extensions.md) and `A_CODER` policy docs) |
 | `autoMode` | object | - | Opt-in classifier configuration for `"auto"` mode (`enabled`, `maxConsecutiveFailures`, `maxConsecutiveBlocks`) |
 | `decisions` | object | - | System One decision-model target for the `decide` tool and the auto-mode classifier gate: `{provider, model}` (e.g. `{"ollama","clef-flash"}`). Unset: first reachable keyless local server, then OpenRouter when keyed. See [decision-models.md](decision-models.md) |
+| `cron` | object | - | Scheduled-task policy. `cron.triage` (default `true`) classifies finished runs with a System One model and records an advisory action. |
 
 
 ### Computer Use
@@ -232,6 +233,14 @@ Set `A_CODER_CLI_SKIP_VERSION_CHECK=1` to disable the version update check. Use 
 ```
 
 Smart auto-continue needs a reachable System One model (see [decision-models.md](decision-models.md)). The model only gates the continuation; the main model still does the work. `compaction.autoContinue` remains as the legacy boolean for post-compaction continuation.
+
+### Scheduled-task triage
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `cron.triage` | boolean | `true` | After a scheduled task finishes, ask the decision model to classify the outcome and recommend notify, stay quiet, retry, or pause. |
+
+Triage is local-first: without an explicit `decisions.provider/model`, it only uses a keyless local System One server. The recommendation is stored on the run and shown in the CLI and desktop; it never retries or pauses a schedule automatically.
 
 ### Branch Summary
 

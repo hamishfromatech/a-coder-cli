@@ -9,6 +9,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { CronTriageInput } from "../src/core/cron/triage.ts";
 
 const originalAgentDir = process.env.A_CODER_CLI_CODING_AGENT_DIR;
 
@@ -30,14 +31,17 @@ const { nextRunAt, describeSchedule, isDue } = await import("../src/core/office/
 type AgentSession = import("../src/core/agent-session.ts").AgentSession;
 type SessionManagerRef = import("../src/core/session-manager.ts").SessionManager;
 
-function makeFakeSession(overrides?: Partial<Record<string, unknown>>): AgentSession {
+function makeFakeSession(overrides?: Partial<Record<string, unknown>>, reply?: string): AgentSession {
 	const sent: Array<{ text: string; deliverAs?: string }> = [];
+	const messages: unknown[] = [];
 	const session = {
 		isStreaming: false,
 		sessionFile: "/tmp/fake-session.jsonl",
+		messages,
 		prompt: vi.fn(async () => {}),
 		sendUserMessage: vi.fn(async (text: string, options?: { deliverAs?: string }) => {
 			sent.push({ text, deliverAs: options?.deliverAs });
+			if (reply) messages.push({ role: "assistant", content: [{ type: "text", text: reply }] });
 		}),
 		bindExtensions: vi.fn(async () => {}),
 		setPermissionMode: vi.fn(),
@@ -115,6 +119,9 @@ describe("cron schedules", () => {
 		expect(validateSchedule({ kind: "every", minutes: Number.NaN })).toMatch(/minutes/);
 		expect(validateSchedule({ kind: "daily", time: "09:00" })).toBeNull();
 		expect(validateSchedule({ kind: "daily", time: "25:00" })).toMatch(/HH:MM/);
+		expect(validateSchedule({ kind: "weekly", days: [1, 3, 5], time: "09:00" })).toBeNull();
+		expect(validateSchedule({ kind: "weekly", days: [], time: "09:00" })).toMatch(/days/);
+		expect(validateSchedule({ kind: "weekly", days: [1, 7], time: "09:00" })).toMatch(/days/);
 		expect(validateSchedule({ kind: "once", at: Date.now() + 1 })).toBeNull();
 		expect(validateSchedule({ kind: "bogus" } as never)).toMatch(/Unknown/);
 	});
@@ -129,9 +136,21 @@ describe("cron schedules", () => {
 		expect(nextDate.getMinutes()).toBe(0);
 	});
 
+	it("computes weekly next fires on selected local days", () => {
+		const wednesday = new Date(2026, 9, 21, 8, 0, 0, 0).getTime();
+		const next = nextRunAt({ kind: "weekly", days: [1, 3, 5], time: "09:00" }, wednesday);
+		expect(next).toBe(new Date(2026, 9, 21, 9, 0, 0, 0).getTime());
+		const after = nextRunAt({ kind: "weekly", days: [1], time: "10:00" }, wednesday);
+		expect(new Date(after!).getDay()).toBe(1);
+		expect(after).toBeGreaterThan(wednesday);
+	});
+
 	it("describes schedules compactly", () => {
 		expect(describeSchedule({ kind: "every", minutes: 60 })).toBe("every 1h");
 		expect(describeSchedule({ kind: "daily", time: "09:00" })).toBe("daily at 09:00");
+		expect(describeSchedule({ kind: "weekly", days: [1, 3, 5], time: "09:00" })).toBe(
+			"weekly on Mon, Wed, Fri at 09:00",
+		);
 		expect(describeSchedule({ kind: "once", at: 1_700_000_000_000 })).toContain(
 			new Date(1_700_000_000_000).getFullYear().toString(),
 		);
@@ -165,6 +184,20 @@ describe("CronService", () => {
 		await service.dispose();
 	});
 
+	it("re-arms nextRunAt when only the schedule changes", async () => {
+		const service = new CronService({ runtime: makeRuntime("/proj", makeFakeSession()) });
+		const job = await service.create({
+			name: "Reschedule me",
+			prompt: "check",
+			schedule: { kind: "every", minutes: 30 },
+		});
+		const updated = await service.update(job.id, { schedule: { kind: "weekly", days: [1, 3, 5], time: "09:00" } });
+		expect(updated.schedule).toEqual({ kind: "weekly", days: [1, 3, 5], time: "09:00" });
+		expect(updated.nextRunAt).toBeDefined();
+		expect(new Date(updated.nextRunAt!).getHours()).toBe(9);
+		await service.dispose();
+	});
+
 	it("delivers due jobs into the active session via sendUserMessage", async () => {
 		const session = makeFakeSession();
 		const service = new CronService({ runtime: makeRuntime("/proj", session) });
@@ -183,7 +216,8 @@ describe("CronService", () => {
 		const sent = (session as unknown as { __sent: Array<{ text: string; deliverAs?: string }> }).__sent;
 		expect(sent).toHaveLength(1);
 		expect(sent[0]?.text).toContain("check the build");
-		expect(sent[0]?.text).toContain("[Cron: Sweep]");
+		expect(sent[0]?.text).toContain("[Scheduled task: Sweep]");
+		expect(sent[0]?.text).toContain("Execute the task below now");
 		expect(sent[0]?.deliverAs).toBe("followUp");
 
 		const fresh = (await store.listJobs()).find((j) => j.id === job.id);
@@ -225,6 +259,86 @@ describe("CronService", () => {
 		// History survives job deletion (names are snapshotted on the run).
 		await service.remove(job.id);
 		expect(await service.listRuns(job.id)).toHaveLength(1);
+		await service.dispose();
+	});
+
+	it("interpolates routine variables and applies manual run overrides", async () => {
+		const session = makeFakeSession();
+		const service = new CronService({ runtime: makeRuntime("/proj", session) });
+		const job = await service.create({
+			name: "Deploy",
+			prompt: "Deploy {{target}} from {{ branch }}; unknown {{missing}}",
+			schedule: { kind: "every", minutes: 30 },
+			variables: [
+				{ name: "target", value: "staging" },
+				{ name: "branch", value: "main" },
+			],
+		});
+		await service.runNow(job.id, { target: "prod" });
+		const sent = (session as unknown as { __sent: Array<{ text: string }> }).__sent;
+		expect(sent[0]?.text).toContain("Deploy prod from main; unknown {{missing}}");
+		const run = (await service.listRuns(job.id))[0];
+		expect(run?.variables).toEqual({ target: "prod", branch: "main" });
+
+		await service.runNow(job.id);
+		expect(sent[1]?.text).toContain("Deploy staging from main");
+		await service.dispose();
+	});
+
+	it("captures a result summary and persists advisory triage", async () => {
+		const session = makeFakeSession(undefined, "CI is green; nothing to do.");
+		const triage = vi.fn(async (_input: CronTriageInput) => ({
+			outcome: "no_work" as const,
+			recommendedAction: "quiet" as const,
+			notify: 0.12,
+			retry: 0.04,
+			pause: 0.08,
+			model: "clef-flash",
+			latencyMs: 180,
+		}));
+		const service = new CronService({ runtime: makeRuntime("/proj", session), triage });
+		const job = await service.create({
+			name: "CI triage",
+			prompt: "Review CI",
+			schedule: { kind: "every", minutes: 30 },
+		});
+
+		await service.runNow(job.id);
+
+		expect(triage).toHaveBeenCalledTimes(1);
+		expect(triage.mock.calls[0]?.[0]).toMatchObject({
+			job: { id: job.id, name: "CI triage" },
+			run: { status: "ok", summary: "CI is green; nothing to do." },
+		});
+		const runs = await service.listRuns(job.id);
+		expect(runs[0]?.summary).toBe("CI is green; nothing to do.");
+		expect(runs[0]?.triage).toMatchObject({
+			outcome: "no_work",
+			recommendedAction: "quiet",
+			notify: 0.12,
+			model: "clef-flash",
+		});
+		const fresh = (await store.listJobs()).find((entry) => entry.id === job.id);
+		expect(fresh?.lastTriage?.recommendedAction).toBe("quiet");
+		await service.dispose();
+	});
+
+	it("turns a throwing triage callback into an unavailable decision", async () => {
+		const service = new CronService({
+			runtime: makeRuntime("/proj", makeFakeSession()),
+			triage: vi.fn(async () => {
+				throw new Error("decision model offline");
+			}),
+		});
+		const job = await service.create({
+			name: "Triage failure",
+			prompt: "x",
+			schedule: { kind: "every", minutes: 30 },
+		});
+		await service.runNow(job.id);
+		const run = (await service.listRuns(job.id))[0];
+		expect(run?.triage?.outcome).toBe("unavailable");
+		expect(run?.triage?.error).toContain("offline");
 		await service.dispose();
 	});
 
@@ -305,6 +419,119 @@ describe("CronService", () => {
 		expect(side).toBeDefined();
 		await service.remove(job.id);
 		expect((side as unknown as { dispose: ReturnType<typeof vi.fn> }).dispose).toHaveBeenCalled();
+	});
+});
+
+describe("cron concurrency and catch-up", () => {
+	function makeBlockingSession() {
+		const sent: string[] = [];
+		const releases: Array<() => void> = [];
+		const session = {
+			isStreaming: false,
+			sessionFile: "/tmp/blocking-session.jsonl",
+			messages: [],
+			prompt: vi.fn(async () => {}),
+			sendUserMessage: vi.fn((text: string) => {
+				sent.push(text);
+				return new Promise<void>((resolve) => releases.push(resolve));
+			}),
+			bindExtensions: vi.fn(async () => {}),
+			setPermissionMode: vi.fn(),
+			abort: vi.fn(async () => {}),
+			dispose: vi.fn(),
+		} as unknown as AgentSession;
+		return { session, sent, releases };
+	}
+
+	async function createPolicyJob(
+		service: InstanceType<typeof CronService>,
+		concurrencyPolicy: "skip_if_active" | "coalesce_if_active" | "always_enqueue",
+	) {
+		return service.create({
+			name: `${concurrencyPolicy} job`,
+			prompt: "do work",
+			schedule: { kind: "every", minutes: 30 },
+			concurrencyPolicy,
+		});
+	}
+
+	it("skips overlapping triggers with skip_if_active", async () => {
+		const { session, sent, releases } = makeBlockingSession();
+		const service = new CronService({ runtime: makeRuntime("/proj", session) });
+		const job = await createPolicyJob(service, "skip_if_active");
+		const first = service.runNow(job.id);
+		await vi.waitFor(() => expect(sent).toHaveLength(1));
+		await service.runNow(job.id);
+		releases.shift()?.();
+		await first;
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		expect(sent).toHaveLength(1);
+		await service.dispose();
+	});
+
+	it("coalesces overlapping triggers into one follow-up", async () => {
+		const { session, sent, releases } = makeBlockingSession();
+		const service = new CronService({ runtime: makeRuntime("/proj", session) });
+		const job = await createPolicyJob(service, "coalesce_if_active");
+		const first = service.runNow(job.id);
+		await vi.waitFor(() => expect(sent).toHaveLength(1));
+		await service.runNow(job.id);
+		releases.shift()?.();
+		await first;
+		await vi.waitFor(() => expect(sent).toHaveLength(2));
+		releases.shift()?.();
+		await vi.waitFor(async () => expect((await service.listRuns(job.id)).length).toBe(2));
+		await service.dispose();
+	});
+
+	it("queues every trigger with always_enqueue", async () => {
+		const { session, sent, releases } = makeBlockingSession();
+		const service = new CronService({ runtime: makeRuntime("/proj", session) });
+		const job = await createPolicyJob(service, "always_enqueue");
+		const first = service.runNow(job.id);
+		await vi.waitFor(() => expect(sent).toHaveLength(1));
+		const second = service.runNow(job.id);
+		releases.shift()?.();
+		await first;
+		await vi.waitFor(() => expect(sent).toHaveLength(2));
+		releases.shift()?.();
+		await second;
+		expect((await service.listRuns(job.id)).length).toBe(2);
+		await service.dispose();
+	});
+
+	it("skips a missed window with skip_missed and runs once otherwise", async () => {
+		const session = makeFakeSession(undefined, "ran");
+		const service = new CronService({ runtime: makeRuntime("/proj", session) });
+		const skipJob = await service.create({
+			name: "Skip missed",
+			prompt: "check",
+			schedule: { kind: "every", minutes: 30 },
+			catchUpPolicy: "skip_missed",
+		});
+		await store.updateJob(skipJob.id, (job) => {
+			job.nextRunAt = Date.now() - 10 * 60_000;
+		});
+		const fire = (
+			service as unknown as { fireJob: (job: typeof skipJob, trigger: "schedule") => Promise<void> }
+		).fireJob.bind(service);
+		await fire(skipJob, "schedule");
+		expect(await service.listRuns(skipJob.id)).toHaveLength(0);
+		const skipped = (await store.listJobs()).find((job) => job.id === skipJob.id);
+		expect(skipped?.nextRunAt).toBeGreaterThan(Date.now());
+
+		const runJob = await service.create({
+			name: "Run once",
+			prompt: "check",
+			schedule: { kind: "every", minutes: 30 },
+			catchUpPolicy: "run_once",
+		});
+		await store.updateJob(runJob.id, (job) => {
+			job.nextRunAt = Date.now() - 10 * 60_000;
+		});
+		await fire(runJob, "schedule");
+		expect(await service.listRuns(runJob.id)).toHaveLength(1);
+		await service.dispose();
 	});
 });
 

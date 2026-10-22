@@ -90,6 +90,8 @@ export interface DecideToolOptions {
 	models?: DecisionsModels;
 	/** settings.decisions provider/model pick. */
 	settings?: { provider?: string; model?: string };
+	/** Allow the OpenRouter cloud fallback when no local server answers. Default: true. */
+	allowRemoteFallback?: boolean;
 }
 
 /** Probe keyless local servers cheaply for a decision model to use. */
@@ -162,6 +164,12 @@ export async function resolveDecideModel(
 	// Prefer the keyless local server that is actually running.
 	const local = await resolveLocalModel(models, signal);
 	if (local) return local;
+
+	if (options?.allowRemoteFallback === false) {
+		throw new Error(
+			"No local decision model is reachable. Start a local System One server or configure settings.decisions to allow a cloud provider.",
+		);
+	}
 
 	// Fall back to OpenRouter when a key is configured.
 	const openrouterModel = models.getModel("openrouter", "~typesafe/jev-latest") ?? models.getModels("openrouter")[0];

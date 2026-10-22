@@ -13,6 +13,7 @@ vi.mock("@earendil-works/pi-ai", () => ({
 
 // Now import the store
 import { useSessionStore } from "./session-store";
+import { activityStatus, useActivityStore } from "./activity-store";
 
 describe("session-store", () => {
 	describe("initial state", () => {
@@ -191,6 +192,26 @@ describe("session-store", () => {
 			store.resolveUiRequest("test-request", { confirmed: true });
 			const result = await promise;
 			expect(result.confirmed).toBe(true);
+		});
+
+		it("resolving a permission request resolves its decision item", async () => {
+			const store = useSessionStore.getState();
+			store.resetSession();
+			useActivityStore.getState().clear();
+			useActivityStore.getState().add({
+				key: "approval:request:req2",
+				requestId: "req2",
+				kind: "approval",
+				origin: "automation",
+				severity: "action",
+				title: "Approval needed",
+				at: Date.now(),
+			});
+			store.addUiRequest({ id: "req2", method: "confirm", title: "Test" });
+			store.resolveUiRequest("req2", { confirmed: true });
+			const item = useActivityStore.getState().items.find((entry) => entry.key === "approval:request:req2");
+			expect(item).toBeDefined();
+			expect(activityStatus(item!)).toBe("resolved");
 		});
 
 		it("resolveUiRequest removes the request", async () => {

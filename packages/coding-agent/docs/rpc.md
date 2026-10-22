@@ -1255,13 +1255,15 @@ Response `data`: `{ jobs }` — every job with schedule, `nextRunAt`, `lastRunAt
 #### cron_create / cron_update / cron_delete / cron_run_now
 
 ```json
-{"type": "cron_create", "job": {"name": "Morning CI triage", "prompt": "Review overnight CI failures", "schedule": {"kind": "daily", "time": "09:00"}}}
+{"type": "cron_create", "job": {"name": "Morning CI triage", "prompt": "Review overnight CI failures", "schedule": {"kind": "daily", "time": "09:00"}, "concurrencyPolicy": "coalesce_if_active", "catchUpPolicy": "run_once", "variables": [{"name": "target", "value": "main"}]}}
 {"type": "cron_update", "jobId": "<id>", "patch": {"enabled": false}}
 {"type": "cron_delete", "jobId": "<id>"}
-{"type": "cron_run_now", "jobId": "<id>"}
+{"type": "cron_run_now", "jobId": "<id>", "variables": {"target": "prod"}}
+{"type": "cron_revisions", "jobId": "<id>"}
+{"type": "cron_restore_revision", "jobId": "<id>", "revisionId": "<revision-id>"}
 ```
 
-Schedules: `{"kind": "every", "minutes": N}` (min 5), `{"kind": "daily", "time": "HH:MM"}` local, `{"kind": "once", "at": <epoch ms>}`, or event triggers — `{"kind": "event", "trigger": "turn_end"}` (fires after the agent finishes a turn in the job's project; default 30-minute quiet period, set `cooldownMinutes` to override, min 5) and `{"kind": "git_commit"}` jobs use `{"kind": "event", "trigger": "git_commit"}` (fires once per new commit; the `lastGitHead` watermark coalesces). `cron_run_now` awaits the fire (prompt delivery or the bounded background run).
+Schedules: `{"kind": "every", "minutes": N}` (min 5), `{"kind": "daily", "time": "HH:MM"}` local, `{"kind": "weekly", "days": [1,3,5], "time": "HH:MM"}` (`0` = Sunday, `1` = Monday), `{"kind": "once", "at": <epoch ms>}`, or event triggers — `{"kind": "event", "trigger": "turn_end"}` (fires after the agent finishes a turn in the job's project; default 30-minute quiet period, set `cooldownMinutes` to override, min 5) and `{"kind": "git_commit"}` jobs use `{"kind": "event", "trigger": "git_commit"}` (fires once per new commit; the `lastGitHead` watermark coalesces). `concurrencyPolicy` is `skip_if_active`, `coalesce_if_active`, or `always_enqueue`; `catchUpPolicy` is `run_once` or `skip_missed`. `variables` are non-secret values substituted into the task as `{{name}}`; `cron_run_now` accepts per-run overrides. `cron_run_now` awaits the fire (prompt delivery or the bounded background run). `cron_revisions` returns the capped configuration history, and `cron_restore_revision` applies one snapshot while preserving project/session/run state. Clients can also ask the engine's agent to create a task with the `schedule_task` tool, which accepts natural-language timing.
 
 #### cron_runs
 

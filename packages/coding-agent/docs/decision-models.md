@@ -2,11 +2,12 @@
 
 Decision models answer typed questions — they do not chat, reason in prose, or generate text. One non-autoregressive scoring pass turns a `state` (text or JSON) plus 1–64 named questions into answers with probabilities: `choice` (pick among described options), `noul` (bare true/false), and `score` (an index on an ordered legend). They are very fast (~150–270 ms typically) and nearly free to run, which makes them the right tool for offloading judgments the agent or the product needs constantly.
 
-a-coder-cli uses them in three places:
+a-coder-cli uses them in four places:
 
 1. The `decide` tool — the agent can route a judgment through a decision model instead of burning a full LLM call.
 2. The auto-mode permission classifier — when a decision model is available, ambiguous tool calls are gated on `verdict` (allow/block), `risk` (ordinal), and `reversible` (noul). The static-policy heuristics stay first in line; the decision model replaces the LLM classifier only for calls the static rules neither allow nor deny.
 3. Smart auto-continue — at a length stop, after compaction, or at a normal pause, a decision model answers `next` (done / ask_user / blocked / continue) and `progress` (noul). The policy continues only when the unfinished-work and progress probabilities clear the configured thresholds, with a consecutive-continuation cap. The model never writes the continuation; it only gates the action.
+4. Scheduled-run triage — after a scheduled task finishes, a decision model answers `outcome` (ok / no_work / needs_user / failed), `notify`, `retry`, and `pause`. The recommendation is stored on the run and shown in the CLI/Desktop; it does not silently change the schedule. Set `cron.triage: false` to turn it off.
 
 Local Ollama decision models are discovered from `/api/tags` (`capabilities` includes `decision`), so pulling `nimble-v3`, `tev1`, `pplx-decider`, `strands-decider`, or another decision model makes it available without a catalog release.
 
@@ -39,7 +40,7 @@ Explicit pick (optional, settings.json):
 }
 ```
 
-`settings.decisions.provider/model` pins the decision model used by the `decide` tool, auto-mode gating, and smart auto-continue unless `autoContinue.provider/model` overrides it. `decide` arguments can override per call.
+`settings.decisions.provider/model` pins the decision model used by the `decide` tool, auto-mode gating, and smart auto-continue unless `autoContinue.provider/model` overrides it. `decide` arguments can override per call. Scheduled-run triage is local-first: without an explicit `decisions` target it only uses a keyless local System One server, so task summaries are not sent to a cloud model by default.
 
 ## The `decide` tool
 

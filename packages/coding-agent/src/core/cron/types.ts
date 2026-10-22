@@ -18,10 +18,46 @@ export type CronEventTrigger = "turn_end" | "git_commit";
 export type CronSchedule =
 	| { kind: "every"; minutes: number }
 	| { kind: "daily"; time: string }
+	/** Weekly at local `time`; `days` uses JavaScript day numbers (0 = Sunday). */
+	| { kind: "weekly"; days: number[]; time: string }
 	| { kind: "once"; at: number }
 	| { kind: "event"; trigger: CronEventTrigger; cooldownMinutes?: number };
 
 export type CronJobStatus = "ok" | "error" | "timeout";
+
+/** How overlapping triggers for one routine are handled. */
+export type CronConcurrencyPolicy = "skip_if_active" | "coalesce_if_active" | "always_enqueue";
+
+/** What to do when the process was not running for one or more scheduled windows. */
+export type CronCatchUpPolicy = "run_once" | "skip_missed";
+
+/** A non-secret input substituted into the routine prompt as `{{name}}`. */
+export interface CronVariable {
+	name: string;
+	value: string;
+}
+
+export type CronTriageOutcome = "ok" | "no_work" | "needs_user" | "failed";
+export type CronTriageAction = "notify" | "quiet" | "retry" | "pause";
+
+/** Post-run triage from a System One decision model. This is advisory: the
+ * service records the recommendation, but never silently retries or pauses a
+ * user's schedule in this slice. */
+export interface CronTriageDecision {
+	/** Unavailable means the decision model could not be reached or failed. */
+	outcome: CronTriageOutcome | "unavailable";
+	recommendedAction: CronTriageAction;
+	/** Probability that the user should be notified. */
+	notify: number;
+	/** Probability that another attempt is worth making. */
+	retry: number;
+	/** Probability that the recurring task should be paused. */
+	pause: number;
+	probabilities?: Record<string, number>;
+	model?: string;
+	latencyMs?: number;
+	error?: string;
+}
 
 export interface CronJob {
 	id: string;
@@ -47,6 +83,39 @@ export interface CronJob {
 	sessionFile?: string;
 	/** Watermark for `git_commit` event jobs: the last commit head fired on. */
 	lastGitHead?: string;
+	/** Most recent post-run triage, for the task list. */
+	lastTriage?: CronTriageDecision;
+	/** Overlap policy. Missing values use the service default. */
+	concurrencyPolicy?: CronConcurrencyPolicy;
+	/** Missed-window policy. Missing values use `run_once`. */
+	catchUpPolicy?: CronCatchUpPolicy;
+	/** Non-secret values substituted into `prompt` at fire time. */
+	variables?: CronVariable[];
+	/** Monotonic configuration revision; starts at 1. */
+	revision?: number;
+}
+
+/** The user-editable part of a routine, snapshotted into revision history. */
+export interface CronJobConfig {
+	name: string;
+	prompt: string;
+	schedule: CronSchedule;
+	enabled: boolean;
+	concurrencyPolicy: CronConcurrencyPolicy;
+	catchUpPolicy: CronCatchUpPolicy;
+	variables: CronVariable[];
+}
+
+export type CronRevisionReason = "create" | "update" | "restore";
+
+export interface CronJobRevision {
+	id: string;
+	jobId: string;
+	/** Revision number after this snapshot was saved. */
+	revision: number;
+	createdAt: number;
+	reason: CronRevisionReason;
+	config: CronJobConfig;
 }
 
 export interface CronSnapshot {
@@ -75,6 +144,12 @@ export interface CronRun {
 	error?: string;
 	/** Session the prompt ran in — the active conversation or the job's side session. */
 	sessionFile?: string;
+	/** Final assistant text, truncated for run history and triage. */
+	summary?: string;
+	/** Advisory post-run triage, when a System One model was available. */
+	triage?: CronTriageDecision;
+	/** Resolved variable values for this run (manual overrides included). */
+	variables?: Record<string, string>;
 }
 
 /** Run lifecycle events pushed to hosts (the desktop activity inbox). */

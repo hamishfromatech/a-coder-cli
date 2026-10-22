@@ -29,7 +29,7 @@ const TABS: {
 	{ id: "office", label: "Office", icon: CalendarClock },
 	{ id: "voice", label: "Voice call", icon: PhoneCall },
 	{ id: "cron", label: "Scheduled", icon: AlarmClock },
-	{ id: "activity", label: "Activity", icon: Inbox },
+	{ id: "activity", label: "Decisions", icon: Inbox },
 ];
 
 export function RightSidebar({ projectPath }: Props) {

@@ -66,6 +66,9 @@ import {
 	prepareCompaction,
 	shouldCompact,
 } from "./compaction/index.ts";
+import type { CronToolService } from "./cron/service.ts";
+import { type CronTriageInput, decideCronRunTriage } from "./cron/triage.ts";
+import type { CronTriageDecision } from "./cron/types.ts";
 import {
 	type AutoContinueCheckpoint,
 	type AutoContinueDecision,
@@ -601,6 +604,45 @@ export class AgentSession {
 		// A provider/model change must not keep the previously resolved model.
 		this._autoContinueModel = undefined;
 		this._decisionsModel = undefined;
+		this._cronTriageModel = undefined;
+	}
+
+	/** Resolve a local-first decision model for scheduled-run triage. Unlike the
+	 * auto-mode gate, this does not fall back to a cloud provider unless the
+	 * user explicitly configured one in settings.decisions. */
+	private async _cronTriageDecisionModel(): Promise<DecisionsModel<any> | undefined> {
+		if (this._cronTriageModel === "unavailable") return undefined;
+		if (this._cronTriageModel) return this._cronTriageModel;
+		const configured = this.settingsManager.getDecisionsSettings();
+		const explicit = Boolean(configured.provider || configured.model);
+		try {
+			this._decisionsModels ??= builtinDecisionsModels();
+			this._cronTriageModel = await resolveDecideModel(
+				this._decisionsModels,
+				{
+					state: "probe",
+					questions: { probe: { type: "noul", instructions: "probe" } },
+					...(configured.provider ? { provider: configured.provider } : {}),
+					...(configured.model ? { model: configured.model } : {}),
+				},
+				{ settings: configured, allowRemoteFallback: explicit },
+			);
+			return this._cronTriageModel;
+		} catch {
+			this._cronTriageModel = "unavailable";
+			return undefined;
+		}
+	}
+
+	/** Classify a finished scheduled run with System One. Advisory only: the
+	 * recommendation is persisted on the run for CLI/Desktop display. */
+	async triageScheduledRun(input: CronTriageInput): Promise<CronTriageDecision | undefined> {
+		if (!this.settingsManager.getCronTriageEnabled()) return undefined;
+		const model = await this._cronTriageDecisionModel();
+		if (!model) return undefined;
+		const models = this._decisionsModels;
+		if (!models) return undefined;
+		return decideCronRunTriage(models, model, input);
 	}
 
 	/** Resolve the decision model used for auto-continue. Uses the explicit
@@ -764,6 +806,7 @@ export class AgentSession {
 	private _autoContinuedForCurrentPrompt = false;
 	private _smartContinuationsForCurrentPrompt = 0;
 	private _autoContinueModel: DecisionsModel<any> | "unavailable" | undefined;
+	private _cronTriageModel: DecisionsModel<any> | "unavailable" | undefined;
 
 	// Bash execution state
 	private _bashAbortController: AbortController | undefined = undefined;
@@ -815,6 +858,7 @@ export class AgentSession {
 	private _toolDefinitions: Map<string, ToolDefinitionEntry> = new Map();
 	private _toolPromptSnippets: Map<string, string> = new Map();
 	private _toolPromptGuidelines: Map<string, string[]> = new Map();
+	private _scheduleService?: CronToolService;
 
 	// Base system prompt (without extension appends) - used to apply fresh appends each turn
 	private _baseSystemPrompt = "";
@@ -1941,6 +1985,15 @@ export class AgentSession {
 
 	getToolDefinition(name: string): ToolDefinition | undefined {
 		return this._toolDefinitions.get(name)?.definition;
+	}
+
+	/**
+	 * Attach the host-owned CronService to this session's schedule_task tool.
+	 * Hosts call this after creating the service; runtimes carry it across
+	 * session switches so the tool remains available.
+	 */
+	setScheduleService(service?: CronToolService): void {
+		this._scheduleService = service;
 	}
 
 	/**
@@ -4135,6 +4188,9 @@ export class AgentSession {
 						sessionDir: this.sessionManager.getSessionDir(),
 						sessionId: this.sessionManager.getSessionId(),
 					},
+					schedule: {
+						getService: () => this._scheduleService,
+					},
 					skill: {
 						// The skill tool resolves against ALL loaded skills (easy-agent: conditional
 						// `paths` skills stay invocable by name even before activation).
@@ -4993,7 +5049,9 @@ export class AgentSession {
 					}
 					if (worktree && allToolNames.has(name as ToolName)) {
 						try {
-							return createTool(name as ToolName, cwd);
+							return createTool(name as ToolName, cwd, {
+								schedule: { getService: () => this._scheduleService },
+							});
 						} catch {
 							// Fall back to the registry tool below.
 						}

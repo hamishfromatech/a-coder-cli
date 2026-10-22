@@ -1195,6 +1195,16 @@ export default function App() {
 				],
 			},
 			{ id: "command-center", label: "Open command center", group: "navigate", action: () => setShowCommandCenter(true) },
+			{
+				id: "decisions",
+				label: "Open decisions",
+				keywords: ["inbox", "attention", "approvals", "scheduled", "triage"],
+				group: "navigate",
+				action: () => {
+					setRightSidebarTab("activity");
+					setRightSidebarOpen(true);
+				},
+			},
 			{ id: "toggle-left-sidebar", label: leftSidebarOpen ? "Hide left sidebar" : "Show left sidebar", group: "view", action: () => setLeftSidebarOpen(!leftSidebarOpen) },
 			{ id: "toggle-right-sidebar", label: rightSidebarOpen ? "Hide right sidebar" : "Show right sidebar", group: "view", action: () => setRightSidebarOpen(!rightSidebarOpen) },
 			{
