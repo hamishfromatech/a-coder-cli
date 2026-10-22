@@ -319,17 +319,52 @@ export class RpcSessionEventStream {
 		const key = `${sessionKey}:${toolCallId}`;
 		const previous = this.toolStreams.get(key) ?? { stdout: "", stderr: "" };
 		const partial = event.partialResult as
-			| { content?: Array<{ type?: string; text?: unknown }>; details?: { stderr?: unknown } }
+			| {
+					content?: Array<{ type?: string; text?: unknown }>;
+					details?: {
+						stderr?: unknown;
+						progress?: unknown;
+						total?: unknown;
+						percent?: unknown;
+						message?: unknown;
+					};
+			  }
 			| undefined;
+		// A progress-only update carries no content; keep the live stream intact.
 		const stdout = Array.isArray(partial?.content)
 			? partial.content
 					.filter((block) => block?.type === "text")
 					.map((block) => (typeof block.text === "string" ? block.text : ""))
 					.join("")
-			: "";
+			: previous.stdout;
 		const stderr = typeof partial?.details?.stderr === "string" ? partial.details.stderr : previous.stderr;
 		const frames: Frame[] = [];
 		const next = { stdout, stderr };
+
+		const details = partial?.details;
+		if (typeof details?.progress === "number" && Number.isFinite(details.progress)) {
+			const total = typeof details.total === "number" && Number.isFinite(details.total) ? details.total : undefined;
+			const percent =
+				typeof details.percent === "number" && Number.isFinite(details.percent)
+					? details.percent
+					: typeof total === "number" && total > 0
+						? Math.round(Math.min(1, Math.max(0, details.progress / total)) * 100)
+						: undefined;
+			frames.push(
+				this.envelope(
+					{
+						type: "tool_progress",
+						toolCallId,
+						toolName: event.toolName,
+						progress: details.progress,
+						...(total !== undefined ? { total } : {}),
+						...(percent !== undefined ? { percent } : {}),
+						...(typeof details.message === "string" && details.message ? { message: details.message } : {}),
+					},
+					override,
+				),
+			);
+		}
 		for (const stream of ["stdout", "stderr"] as const) {
 			const before = previous[stream];
 			const after = next[stream];

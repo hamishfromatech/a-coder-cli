@@ -388,7 +388,12 @@ export class DefaultResourceLoader implements ResourceLoader {
 			...(mcpServers.length > 0
 				? [createMcpExtensionFactory({ servers: mcpServers, workspaceRoots: [this.cwd] })]
 				: []),
-			createSubagentExtensionFactory({}),
+			createSubagentExtensionFactory({
+				getDefaults: () => ({
+					provider: this.settingsManager.getSubagentProvider(),
+					model: this.settingsManager.getSubagentModel(),
+				}),
+			}),
 			createWorkflowExtensionFactory({
 				getMaxConcurrent: () => this.settingsManager.getWorkflowMaxConcurrentAgents(),
 				getStaggerMs: () => this.settingsManager.getWorkflowPrefixStaggerMs(),

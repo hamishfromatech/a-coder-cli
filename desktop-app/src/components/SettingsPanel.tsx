@@ -61,10 +61,12 @@ import * as rpc from "../lib/rpc";
 import { ThemePicker } from "./panels/widgets/ThemePicker";
 import { ChatTextSizeSection } from "./panels/widgets/ChatTextSizeSection";
 import { InterfaceModeSection } from "./panels/widgets/InterfaceModeSection";
+import { KeepAwakeSection } from "./panels/widgets/KeepAwakeSection";
 import { AutoContinueSection } from "./panels/widgets/AutoContinueSection";
 import { ThinkingPresetPicker } from "./panels/widgets/ThinkingPresetPicker";
 import { ModelsPicker } from "./panels/widgets/ModelsPicker";
 import { DefaultModelPicker } from "./panels/widgets/DefaultModelPicker";
+import { SubagentModelPicker } from "./panels/widgets/SubagentModelPicker";
 import { AccountSection } from "./panels/widgets/AccountSection";
 import { CustomProvidersSection } from "./panels/widgets/CustomProvidersSection";
 import { LlamaCppSection } from "./panels/widgets/LlamaCppSection";
@@ -561,6 +563,8 @@ function renderCustom(
 			return <ChatTextSizeSection />;
 		case "interfaceMode":
 			return <InterfaceModeSection />;
+		case "keepAwake":
+			return <KeepAwakeSection />;
 		case "autoContinue":
 			return (
 				<AutoContinueSection value={value as AutoContinueSettings | undefined} />
@@ -586,6 +590,14 @@ function renderCustom(
 				<DefaultModelPicker
 					provider={readPath(settings, "defaultProvider") as string | undefined}
 					modelId={readPath(settings, "defaultModel") as string | undefined}
+					onUpdateField={onUpdateField}
+				/>
+			);
+		case "subagents":
+			return (
+				<SubagentModelPicker
+					provider={settings.subagentProvider}
+					modelId={settings.subagentModel}
 					onUpdateField={onUpdateField}
 				/>
 			);

@@ -1,5 +1,7 @@
-import { Plus, Server, Trash2, X } from "lucide-react";
-import { useCallback, useState } from "react";
+import { AlertTriangle, CheckCircle2, Loader2, Plus, RefreshCw, Server, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import * as rpc from "../../../lib/rpc";
+import { toast } from "../../../stores/toast-store";
 import { Card } from "../../ui/Card";
 import { Switch } from "../../ui/Switch";
 
@@ -127,6 +129,40 @@ function inferTransport(server: McpServerConfig | McpServerUi): McpTransport {
 export function McpServersEditor({ value, onChange, scope = "global" }: Props) {
 	const servers = value?.map(cliToUi) ?? [];
 	const [expanded, setExpanded] = useState<number | null>(servers.length > 0 ? 0 : null);
+	const [states, setStates] = useState<Record<string, rpc.McpServerState>>({});
+	const [reconnecting, setReconnecting] = useState<string | null>(null);
+
+	const refreshStatus = useCallback(async () => {
+		try {
+			const { servers: live } = await rpc.getMcpStatus();
+			setStates(Object.fromEntries(live.map((state) => [state.name, state])));
+		} catch {
+			// Engine not connected yet / older engine: keep the editor usable.
+		}
+	}, []);
+
+	useEffect(() => {
+		void refreshStatus();
+	}, [refreshStatus]);
+
+	const reconnect = useCallback(
+		async (name: string) => {
+			if (!name || reconnecting) return;
+			setReconnecting(name);
+			try {
+				const result = await rpc.reconnectMcp(name);
+				if (result.deferred) toast.info("Reconnect queued", "It will run when the current turn finishes.");
+				else if (!result.ok) toast.error("MCP reconnect failed", result.error ?? name);
+				else toast.success("MCP server reconnected", name);
+				await refreshStatus();
+			} catch (error) {
+				toast.error("MCP reconnect failed", error instanceof Error ? error.message : String(error));
+			} finally {
+				setReconnecting(null);
+			}
+		},
+		[reconnecting, refreshStatus],
+	);
 
 	const emit = useCallback(
 		(nextUi: McpServerUi[]) => {
@@ -165,20 +201,30 @@ export function McpServersEditor({ value, onChange, scope = "global" }: Props) {
 
 	return (
 		<div className="w-full space-y-3">
-			{scope === "project" && (
-				<p className="text-2xs text-pi-text-muted">
-					Project-defined servers. These load alongside your global list;
-					a same-name server here replaces the global one and shows a
-					"(project)" label in the CLI's /mcp view.
-				</p>
-			)}
-			{scope === "global" && (
-				<p className="text-2xs text-pi-text-muted">
-					Global MCP servers. Project workspaces can add more via
-					.a-coder-cli/settings.json — they load together with these
-					(project wins on same-name conflicts).
-				</p>
-			)}
+			<div className="flex items-start justify-between gap-3">
+				{scope === "project" ? (
+					<p className="text-2xs text-pi-text-muted">
+						Project-defined servers. These load alongside your global list;
+						a same-name server here replaces the global one and shows a
+						"(project)" label in the CLI's /mcp view.
+					</p>
+				) : (
+					<p className="text-2xs text-pi-text-muted">
+						Global MCP servers. Project workspaces can add more via
+						.a-coder-cli/settings.json — they load together with these
+						(project wins on same-name conflicts).
+					</p>
+				)}
+				<button
+					type="button"
+					onClick={() => void refreshStatus()}
+					className="flex shrink-0 items-center gap-1 rounded-md border border-pi-border px-2 py-1 text-2xs text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+					title="Refresh MCP status"
+				>
+					<RefreshCw className="h-3 w-3" />
+					Status
+				</button>
+			</div>
 			{servers.length === 0 && (
 				<p className="text-2xs text-pi-text-muted">
 					No MCP servers configured. Add one to let the AI talk to external
@@ -188,20 +234,46 @@ export function McpServersEditor({ value, onChange, scope = "global" }: Props) {
 
 			{servers.map((server, idx) => (
 				<Card key={idx}>
-					<button
-						type="button"
+					<div
+						role="button"
+						tabIndex={0}
 						onClick={() => setExpanded((cur) => (cur === idx ? null : idx))}
-						className="flex w-full items-center gap-3 px-3 py-2 text-left transition-hover hover:bg-pi-surface-overlay"
+						onKeyDown={(event) => {
+							if (event.key === "Enter" || event.key === " ") {
+								event.preventDefault();
+								setExpanded((cur) => (cur === idx ? null : idx));
+							}
+						}}
+						className="flex w-full cursor-pointer items-center gap-3 px-3 py-2 text-left transition-hover hover:bg-pi-surface-overlay focus-visible:shadow-focus focus-visible:outline-none"
 					>
 						<Server className="h-3.5 w-3.5 text-pi-accent" />
 						<span className="min-w-0 flex-1 truncate text-xs font-medium text-pi-text">
 							{server.name || `Server ${idx + 1}`}
 						</span>
-						{server.disabled && (
+						{server.disabled ? (
 							<span className="rounded bg-pi-surface-overlay px-1.5 py-0.5 text-3xs text-pi-text-muted">
 								disabled
 							</span>
+						) : (
+							<StatusBadge state={server.name ? states[server.name] : undefined} />
 						)}
+						<button
+							type="button"
+							disabled={!server.name || server.disabled || reconnecting === server.name}
+							onClick={(e) => {
+								e.stopPropagation();
+								void reconnect(server.name ?? "");
+							}}
+							className="rounded p-1 text-pi-text-muted transition-hover hover:bg-pi-surface-overlay hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none disabled:opacity-30"
+							title={server.name ? `Reconnect ${server.name}` : "Name the server first"}
+							aria-label={server.name ? `Reconnect ${server.name}` : "Reconnect MCP server"}
+						>
+							{reconnecting === server.name ? (
+								<Loader2 className="h-3 w-3 animate-spin" />
+							) : (
+								<RefreshCw className="h-3 w-3" />
+							)}
+						</button>
 						<button
 							type="button"
 							onClick={(e) => {
@@ -214,7 +286,7 @@ export function McpServersEditor({ value, onChange, scope = "global" }: Props) {
 						>
 								<Trash2 className="h-3 w-3" />
 							</button>
-					</button>
+					</div>
 
 					{expanded === idx && (
 						<div className="space-y-3 border-t border-pi-border px-3 py-3">
@@ -557,4 +629,43 @@ function safeStringify(value: unknown): string {
 	} catch {
 		return "";
 	}
+}
+
+function StatusBadge({ state }: { state: rpc.McpServerState | undefined }) {
+	if (!state) {
+		return <span className="rounded bg-pi-surface-overlay px-1.5 py-0.5 text-3xs text-pi-text-faint">unknown</span>;
+	}
+
+	if (state.status === "ok") {
+		return (
+			<span className="flex items-center gap-1 rounded bg-pi-success/15 px-1.5 py-0.5 text-3xs text-pi-success">
+				<CheckCircle2 className="h-3 w-3" />
+				{state.toolCount !== undefined ? `${state.toolCount} tools` : "connected"}
+				{state.source === "project" && <span className="text-pi-text-faint">· project</span>}
+			</span>
+		);
+	}
+
+	if (state.status === "error") {
+		return (
+			<span
+				className="flex items-center gap-1 rounded bg-pi-error-soft px-1.5 py-0.5 text-3xs text-pi-error"
+				title={state.error}
+			>
+				<AlertTriangle className="h-3 w-3" />
+				error
+			</span>
+		);
+	}
+
+	if (state.status === "connecting") {
+		return (
+			<span className="flex items-center gap-1 rounded bg-pi-warning/15 px-1.5 py-0.5 text-3xs text-pi-warning">
+				<Loader2 className="h-3 w-3 animate-spin" />
+				connecting
+			</span>
+		);
+	}
+
+	return <span className="rounded bg-pi-surface-overlay px-1.5 py-0.5 text-3xs text-pi-text-muted">disabled</span>;
 }

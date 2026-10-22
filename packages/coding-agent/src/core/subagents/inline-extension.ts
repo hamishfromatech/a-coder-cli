@@ -8,6 +8,52 @@ export interface SubagentToolOptions {
 	cliPath?: string;
 	defaultProvider?: string;
 	defaultModel?: string;
+	/** Live defaults from settings.json, read at spawn time. */
+	getDefaults?: () => { provider?: string; model?: string };
+}
+
+/** Split a `provider/model` reference. A bare id keeps its provider implicit. */
+function splitModelReference(reference: string | undefined): { provider?: string; model?: string } {
+	const trimmed = reference?.trim();
+	if (!trimmed) return {};
+	const slash = trimmed.indexOf("/");
+	if (slash > 0 && slash < trimmed.length - 1) {
+		return { provider: trimmed.slice(0, slash), model: trimmed.slice(slash + 1) };
+	}
+	return { model: trimmed };
+}
+
+/**
+ * Resolve a subagent's model. Precedence: explicit tool call → agent
+ * definition → global subagent setting → undefined (the caller then inherits
+ * the parent session's model). A provider is part of the identity because
+ * model ids are not unique across providers.
+ */
+export function resolveSubagentModel<T extends { provider: string; id: string }>(
+	available: readonly T[],
+	explicitProvider: string | undefined,
+	explicitModel: string | undefined,
+	definitionModel: string | undefined,
+	defaults: { provider?: string; model?: string },
+): T | undefined {
+	const explicit = splitModelReference(explicitModel);
+	const definition = splitModelReference(definitionModel);
+	const fallback = splitModelReference(defaults.model);
+	const provider =
+		explicitProvider?.trim() ||
+		explicit.provider ||
+		definition.provider ||
+		fallback.provider ||
+		defaults.provider?.trim() ||
+		undefined;
+	const modelId = explicit.model || definition.model || fallback.model;
+	if (modelId) {
+		const exact = provider
+			? available.find((model) => model.provider === provider && model.id === modelId)
+			: undefined;
+		return exact ?? available.find((model) => model.id === modelId);
+	}
+	return provider ? available.find((model) => model.provider === provider) : undefined;
 }
 
 /**
@@ -17,7 +63,7 @@ export interface SubagentToolOptions {
  * sub-agents are managed via the session's in-process store
  * (getSubAgent / listSubAgents / waitSubAgent / killSubAgent).
  */
-export function createSubagentExtensionFactory(_options: SubagentToolOptions = {}): ExtensionFactory {
+export function createSubagentExtensionFactory(options: SubagentToolOptions = {}): ExtensionFactory {
 	return async (pi) => {
 		pi.registerTool({
 			name: "spawn_subagent",
@@ -99,9 +145,21 @@ export function createSubagentExtensionFactory(_options: SubagentToolOptions = {
 				}
 				const task = params.task as string;
 				const detached = (params.detached as boolean | undefined) ?? false;
-				const modelObj = params.model
-					? ctx.modelRegistry.getAvailable().find((m) => m.id === (params.model as string))
-					: undefined;
+
+				// Precedence: explicit tool call → agent definition → global
+				// subagent setting → parent session. The provider is part of the
+				// identity: model ids are not unique across providers.
+				const defaults = options.getDefaults?.() ?? {
+					provider: options.defaultProvider,
+					model: options.defaultModel,
+				};
+				const modelObj = resolveSubagentModel(
+					ctx.modelRegistry.getAvailable(),
+					params.provider as string | undefined,
+					params.model as string | undefined,
+					def?.model,
+					defaults,
+				);
 
 				if (!detached) {
 					// Foreground: run in-process via the background machinery so the

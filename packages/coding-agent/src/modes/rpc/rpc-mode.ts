@@ -25,6 +25,8 @@ import type {
 	ExtensionWidgetOptions,
 	WorkingIndicatorOptions,
 } from "../../core/extensions/index.ts";
+import { reconnectMcpServer } from "../../core/mcp/inline-extension.ts";
+import { getMcpServerStates } from "../../core/mcp/status-store.ts";
 import { summarizeCoworkerSession } from "../../core/office/coworker-stats.ts";
 import { OfficeService } from "../../core/office/service.ts";
 import type { Errand } from "../../core/office/types.ts";
@@ -134,6 +136,8 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 	};
 	let unsubscribe: (() => void) | undefined;
 	let unsubscribeBackpressure: (() => void) | undefined;
+	/** A reconnect requested while a turn was running; applied at agent_end. */
+	let pendingMcpReconnect: string | null | undefined;
 	let unsubscribeBackgroundProcesses: (() => void) | undefined;
 	let unsubscribeWorkflowRuns: (() => void) | undefined;
 
@@ -671,6 +675,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 			// for this project. CronService coalesces via cooldowns.
 			if (event.type === "agent_end" && event.willRetry !== true) {
 				cronService?.notifyEvent({ type: "turn_end", cwd: session.sessionManager.getCwd() });
+				if (pendingMcpReconnect !== undefined) {
+					const requested = pendingMcpReconnect;
+					pendingMcpReconnect = undefined;
+					void reconnectMcpServer(requested ?? undefined).catch(() => {});
+				}
 			}
 		});
 		unsubscribeBackpressure = session.agent.subscribe(async () => {
@@ -1137,6 +1146,22 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 				}
 				void runOAuthLogin(providerId);
 				return success(id, "oauth_login", { started: true });
+			}
+
+			case "mcp_status": {
+				return success(id, "mcp_status", { servers: getMcpServerStates() });
+			}
+
+			case "mcp_reconnect": {
+				const name = typeof command.name === "string" && command.name.trim() ? command.name.trim() : undefined;
+				if (session.isStreaming) {
+					// Never yank a server out from under the tool call that is using it.
+					// Remember the request and apply it at the next natural turn end.
+					pendingMcpReconnect = name ?? null;
+					return success(id, "mcp_reconnect", { ok: true, deferred: true, name });
+				}
+				const result = await reconnectMcpServer(name);
+				return success(id, "mcp_reconnect", { ...result, deferred: false, name });
 			}
 
 			// =================================================================

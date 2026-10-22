@@ -4,7 +4,7 @@ version = 3
 
 [[package]]
 name = "a-coder-desktop"
-version = "0.80.172"
+version = "0.80.173"
 dependencies = [
  "base64 0.22.1",
  "block2",
@@ -42,6 +42,7 @@ dependencies = [
  "webview2-com",
  "which",
  "windows-core 0.62.2",
+ "windows-sys 0.61.2",
  "xcap",
 ]
 

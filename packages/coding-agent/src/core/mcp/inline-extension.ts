@@ -1,4 +1,4 @@
-import type { AgentToolResult } from "@earendil-works/pi-agent-core";
+import type { AgentToolResult, AgentToolUpdateCallback } from "@earendil-works/pi-agent-core";
 import type { CallToolResult, ContentBlock, ReadResourceResult } from "@modelcontextprotocol/sdk/types.js";
 import type { ExtensionFactory, ExtensionUIContext } from "../extensions/types.ts";
 import type { McpDiscoveredTool } from "./client.ts";
@@ -120,8 +120,8 @@ export function createMcpExtensionFactory(options: McpExtensionFactoryOptions): 
 						label: `MCP ${client.serverName}: ${tool.name}`,
 						description: tool.description ?? `Tool "${tool.name}" on MCP server "${client.serverName}".`,
 						parameters: jsonSchemaToTypeBox(tool.inputSchema),
-						async execute(_toolCallId, params, signal): Promise<AgentToolResult<unknown>> {
-							return runMcpTool(client, tool.name, params as Record<string, unknown>, signal);
+						async execute(_toolCallId, params, signal, onUpdate): Promise<AgentToolResult<unknown>> {
+							return runMcpTool(client, tool.name, params as Record<string, unknown>, signal, onUpdate);
 						},
 					});
 				} catch {
@@ -307,7 +307,7 @@ export function createMcpExtensionFactory(options: McpExtensionFactoryOptions): 
 							},
 							required: ["tool"],
 						}),
-						async execute(_toolCallId, rawParams, signal): Promise<AgentToolResult<unknown>> {
+						async execute(_toolCallId, rawParams, signal, onUpdate): Promise<AgentToolResult<unknown>> {
 							const params = rawParams as { tool?: unknown; arguments?: unknown };
 							let { tools, error } = await discover();
 							if (error) {
@@ -369,7 +369,7 @@ export function createMcpExtensionFactory(options: McpExtensionFactoryOptions): 
 									);
 								}
 							}
-							return runMcpTool(client, tool.name, toolArgs as Record<string, unknown>, signal);
+							return runMcpTool(client, tool.name, toolArgs as Record<string, unknown>, signal, onUpdate);
 						},
 					});
 				} catch {
@@ -474,6 +474,7 @@ async function runMcpTool(
 	toolName: string,
 	toolArgs: Record<string, unknown>,
 	signal: AbortSignal | undefined,
+	onUpdate?: AgentToolUpdateCallback<unknown>,
 ): Promise<AgentToolResult<unknown>> {
 	try {
 		// Memoized connect: a no-op when connected, a fresh handshake after a drop.
@@ -488,9 +489,34 @@ async function runMcpTool(
 	// Propagate the agent's abort signal so cancelling the tool call in
 	// the UI also cancels the in-flight MCP request, and apply the
 	// server's configured timeout (SDK default: 60s).
+	let lastProgressAt = 0;
 	const result = await client.callTool(toolName, toolArgs, {
 		signal,
 		timeoutMs: client.config.timeoutMs,
+		onProgress: onUpdate
+			? (progress) => {
+					const total = progress.total;
+					const done = typeof total === "number" && total > 0 && progress.progress >= total;
+					const now = Date.now();
+					// A chatty server must not flood the event stream; the final
+					// update always passes.
+					if (lastProgressAt && !done && now - lastProgressAt < 500) return;
+					lastProgressAt = now;
+					const percent =
+						typeof total === "number" && total > 0
+							? Math.round(Math.min(1, Math.max(0, progress.progress / total)) * 100)
+							: undefined;
+					onUpdate({
+						content: [],
+						details: {
+							progress: progress.progress,
+							total,
+							percent,
+							message: progress.message,
+						},
+					});
+				}
+			: undefined,
 	});
 	// MCP tool failures resolve as normal results with isError: true,
 	// they do not throw. Surface them as errors so the model sees a

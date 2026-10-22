@@ -486,6 +486,14 @@ export function processAgentEvent(event: rpc.RpcEvent, deps: AgentEventDeps): vo
 				.getState()
 				.append(event.toolCallId, event.stream, event.delta, event.reset);
 			break;
+		case "tool_progress":
+			useToolProgressStore.getState().setProgress(event.toolCallId, event.toolName, {
+				progress: event.progress,
+				total: event.total,
+				percent: event.percent,
+				message: event.message,
+			});
+			break;
 		case "tool_end":
 			useToolProgressStore.getState().end(event.toolCallId, event.isError);
 			break;

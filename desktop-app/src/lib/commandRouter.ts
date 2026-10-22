@@ -335,6 +335,54 @@ export const BUILTIN_COMMANDS: BuiltinCommand[] = [
 		}),
 	},
 	{
+		name: "mcp",
+		description: "Show MCP server status, or reconnect one/all (/mcp [reconnect [name]])",
+		route: (args) => ({
+			kind: "rpc",
+			call: async () => {
+				const words = args.trim().split(/\s+/).filter(Boolean);
+				if (words[0]?.toLowerCase() === "reconnect") {
+					const name = words[1];
+					try {
+						const result = await rpc.reconnectMcp(name);
+						if (result.deferred) {
+							toast.info("/mcp reconnect queued", "It will run when the current turn finishes.");
+						} else if (!result.ok) {
+							toast.error("/mcp reconnect failed", result.error ?? name ?? "unknown server");
+						} else {
+							toast.success("/mcp reconnected", name ?? "all servers");
+						}
+					} catch (error) {
+						toast.error("/mcp reconnect failed", error instanceof Error ? error.message : String(error));
+					}
+					return;
+				}
+				try {
+					const { servers } = await rpc.getMcpStatus();
+					if (servers.length === 0) {
+						toast.info("/mcp", "No MCP servers configured.");
+						return;
+					}
+					const summary = servers
+						.map((server) => {
+							const detail =
+								server.status === "ok"
+									? `${server.toolCount ?? 0} tools`
+									: server.status === "error"
+										? server.error ?? "error"
+										: server.status;
+							return `${server.name}: ${detail}`;
+						})
+						.join(" · ");
+					toast.info("/mcp", summary);
+				} catch (error) {
+					toast.error("/mcp", error instanceof Error ? error.message : String(error));
+				}
+			},
+			label: args.trim() ? "MCP" : "Show MCP status",
+		}),
+	},
+	{
 		name: "subagents",
 		description: "Open subagent manager UI",
 		route: () => ({

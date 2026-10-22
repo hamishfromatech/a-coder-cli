@@ -63,7 +63,7 @@ export interface CliSettingsFieldSpec {
 	/** Number-only: step */
 	step?: number;
 	/** Custom-widget name when kind === "custom" */
-	widget?: "theme" | "thinking" | "models" | "defaultModel" | "mcpServers" | "permissionPolicies" | "packages" | "resources" | "completionSound" | "benchRunner" | "onboardingTour" | "computerUse" | "browserSettings" | "chatTextSize" | "interfaceMode" | "autoContinue" | "llamaCpp";
+	widget?: "theme" | "thinking" | "models" | "defaultModel" | "subagents" | "mcpServers" | "permissionPolicies" | "packages" | "resources" | "completionSound" | "benchRunner" | "onboardingTour" | "computerUse" | "browserSettings" | "chatTextSize" | "interfaceMode" | "keepAwake" | "autoContinue" | "llamaCpp";
 	/** If true, change is also pushed to the engine at runtime (not just persisted) */
 	runtimeSync?:
 		| "thinkingLevel"
@@ -195,6 +195,13 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 				kind: "toggle",
 			},
 			{
+				path: "desktopKeepAwake",
+				label: "Keep computer awake",
+				hint: "Prevent idle sleep while a long turn is running. This is a per-computer setting.",
+				kind: "custom",
+				widget: "keepAwake",
+			},
+			{
 				path: "onboardingTour",
 				label: "Welcome tour",
 				hint: "Replay the guided walkthrough of the app.",
@@ -226,6 +233,13 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 				hint: "Pick the AI you chat with by default.",
 				kind: "custom",
 				widget: "defaultModel",
+			},
+			{
+				path: "subagentModel",
+				label: "Delegated work model",
+				hint: "Model used by subagents and background tasks. Blank inherits the session model; an agent definition can override it.",
+				kind: "custom",
+				widget: "subagents",
 			},
 			{
 				path: "defaultThinkingLevel",

@@ -218,6 +218,36 @@ describe("tool progress and agent_end summary", () => {
 		expect(h.frames[6]).toMatchObject({ type: "tool_end", isError: false });
 	});
 
+	it("forwards MCP progress without clearing the live output stream", () => {
+		const h = makeStream();
+		h.stream.setCapabilities(["tool-progress"]);
+		h.stream.push({ type: "tool_execution_start", toolCallId: "t1", toolName: "mcp__meshy__refine", args: {} });
+		h.stream.push({
+			type: "tool_execution_update",
+			toolCallId: "t1",
+			toolName: "mcp__meshy__refine",
+			partialResult: { content: [{ type: "text", text: "working" }] },
+		});
+		h.stream.push({
+			type: "tool_execution_update",
+			toolCallId: "t1",
+			toolName: "mcp__meshy__refine",
+			partialResult: { content: [], details: { progress: 2, total: 8, percent: 25, message: "half" } },
+		});
+		const progressFrame = h.frames.find((frame) => frame.type === "tool_progress");
+		expect(progressFrame).toMatchObject({
+			type: "tool_progress",
+			toolCallId: "t1",
+			toolName: "mcp__meshy__refine",
+			progress: 2,
+			total: 8,
+			percent: 25,
+			message: "half",
+		});
+		// The progress-only update must not emit a reset that wipes "working".
+		expect(h.frames.filter((frame) => frame.type === "tool_delta")).toHaveLength(1);
+	});
+
 	it("keeps contract-1 clients free of tool execution events", () => {
 		const h = makeStream();
 		h.stream.push({ type: "tool_execution_start", toolCallId: "t1", toolName: "bash", args: {} });

@@ -48,6 +48,12 @@ export interface McpResourceInfo {
 	mimeType?: string;
 }
 
+export interface McpProgress {
+	progress: number;
+	total?: number;
+	message?: string;
+}
+
 export interface McpCallToolOptions {
 	/**
 	 * Abort signal from the calling tool execution. Aborting cancels the
@@ -56,6 +62,11 @@ export interface McpCallToolOptions {
 	signal?: AbortSignal;
 	/** Request timeout in ms. Defaults to the SDK's 60s request timeout. */
 	timeoutMs?: number;
+	/**
+	 * Opt into MCP `notifications/progress` for this call. The SDK attaches a
+	 * progress token only when this callback is present.
+	 */
+	onProgress?: (progress: McpProgress) => void;
 }
 
 export interface McpClientOptions {
@@ -227,6 +238,16 @@ export class McpClient {
 		return (await this.client.callTool({ name, arguments: args }, undefined, {
 			signal: options.signal,
 			timeout: options.timeoutMs,
+			...(options.onProgress
+				? {
+						onprogress: (progress) =>
+							options.onProgress?.({
+								progress: progress.progress,
+								total: progress.total,
+								message: progress.message,
+							}),
+					}
+				: {}),
 		})) as CallToolResult;
 	}
 

@@ -87,6 +87,26 @@ describe("McpClient", () => {
 		await mc.close();
 	});
 
+	it("opts into and forwards MCP progress notifications", async () => {
+		const { mc, server } = await createLinked();
+		server.setRequestHandler(CallToolRequestSchema, async (request) => {
+			const token = request.params._meta?.progressToken;
+			if (token !== undefined) {
+				await server.notification({
+					method: "notifications/progress",
+					params: { progressToken: token, progress: 2, total: 4, message: "halfway" },
+				});
+			}
+			return { content: [{ type: "text", text: "ok" }] };
+		});
+		await mc.connect();
+		const progress: Array<{ progress: number; total?: number; message?: string }> = [];
+		const result = await mc.callTool("work", {}, { onProgress: (update) => progress.push(update) });
+		expect(result.content).toEqual([{ type: "text", text: "ok" }]);
+		expect(progress).toEqual([{ progress: 2, total: 4, message: "halfway" }]);
+		await mc.close();
+	});
+
 	it("propagates abort signals to in-flight calls", async () => {
 		const { mc, server } = await createLinked();
 		let release: (() => void) | undefined;

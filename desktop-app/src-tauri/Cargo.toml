@@ -1,6 +1,6 @@
 [package]
 name = "a-coder-desktop"
-version = "0.80.172"
+version = "0.80.173"
 description = "Desktop wrapper for a-coder-cli"
 authors = ["The A-Tech Corporation PTY LTD"]
 edition = "2021"
@@ -66,6 +66,7 @@ objc2-web-kit = { version = "0.3", default-features = false, features = [
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.39"
 windows-core = "0.62"
+windows-sys = { version = "=0.61.2", features = ["Win32_System_Power"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = { version = "=2.0.2", features = ["v2_38"] }

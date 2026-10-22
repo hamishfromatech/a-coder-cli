@@ -29,6 +29,8 @@ Use `/trust` in interactive mode to save a project trust decision for future ses
 |---------|------|---------|-------------|
 | `defaultProvider` | string | - | Default provider (e.g., `"anthropic"`, `"openai"`) |
 | `defaultModel` | string | - | Default model ID |
+| `subagentProvider` | string | - | Default provider for delegated subagents; blank inherits the session's provider |
+| `subagentModel` | string | - | Default model for delegated subagents; blank inherits the session's model. An agent definition or `spawn_subagent` call can override it |
 | `voiceTurnModel` | string | - | Model (`provider/id`) bound for voice-call turns only; typed turns and background work keep `defaultModel` |
 | `defaultThinkingLevel` | string | - | `"off"`, `"minimal"`, `"low"`, `"medium"`, `"high"`, `"xhigh"` |
 | `modelThinkingLevels` | object | - | Per-model default thinking levels keyed by `"provider/modelId"` (glob wildcards not supported; exact keys) |

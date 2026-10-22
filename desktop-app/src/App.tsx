@@ -13,6 +13,7 @@ import { abortRun } from "./lib/session-abort";
 import { triggerHaptic } from "./lib/haptics";
 import { rafCoalesce } from "./lib/raf-coalesce";
 import { pickLoadingVerb } from "./lib/loading-verbs";
+import { applyKeepAwake, keepAwakeWanted, useKeepAwakeStore } from "./lib/keep-awake";
 import { adoptSwitchResult } from "./lib/adopt-session";
 import { runSwitch } from "./lib/session-switch";
 import { isAuthoritativeSession, setAuthoritativeSession } from "./lib/session-authority";
@@ -249,6 +250,19 @@ export default function App() {
 			.setTrayStatus(trayNeedsInput ? "needs-input" : trayWorking ? "working" : "idle")
 			.catch(() => {});
 	}, [trayWorking, trayNeedsInput]);
+
+	// Keep the machine awake only while work is actually in flight. Background
+	// runtimes count too: a delegated turn should not die because the user
+	// switched tabs and walked away.
+	const keepAwakeMode = useKeepAwakeStore((s) => s.mode);
+	const isStreaming = useSessionStore((s) => s.isStreaming);
+	const isCompacting = useSessionStore((s) => s.isCompacting);
+	const backgroundRunning = useRuntimeStatusStore((s) => Object.values(s.running).some(Boolean));
+	const keepAwakeWorking = isStreaming || isCompacting || backgroundRunning;
+	useEffect(() => {
+		void applyKeepAwake(keepAwakeWanted(keepAwakeMode, keepAwakeWorking));
+	}, [keepAwakeMode, keepAwakeWorking]);
+	useEffect(() => () => void applyKeepAwake(false), []);
 
 	useEffect(() => {
 		let dispose: (() => void) | undefined;

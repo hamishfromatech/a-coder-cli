@@ -17,7 +17,7 @@ use image::codecs::jpeg::JpegEncoder;
 use image::imageops::FilterType;
 use image::{DynamicImage, ExtendedColorType, ImageEncoder, RgbaImage};
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, State};
 use xcap::{Monitor, Window};
 
 /// Long edge of the image sent to the model. Large enough for UI text without
@@ -148,22 +148,39 @@ fn screen_permission() -> bool {
 	true
 }
 
+/// TCC's preflight check is a UI-process query; ask it on the main thread.
+/// Tauri async commands otherwise run it on a worker, where macOS can report
+/// the previous (denied) state even after the user grants access.
+fn main_thread_permission(app: &AppHandle) -> bool {
+	let (tx, rx) = std::sync::mpsc::channel();
+	if app
+		.run_on_main_thread(move || {
+			let _ = tx.send(screen_permission());
+		})
+		.is_err()
+	{
+		return screen_permission();
+	}
+	rx.recv_timeout(Duration::from_secs(1))
+		.unwrap_or_else(|_| screen_permission())
+}
+
 /// Ask macOS for Screen Recording access. The OS shows its own prompt; the
 /// user still has to enable the app in System Settings, and the app may need a
 /// restart before frames are readable.
 #[tauri::command]
-pub async fn screen_share_request_permission() -> bool {
+pub async fn screen_share_request_permission(app: AppHandle) -> bool {
 	#[cfg(target_os = "macos")]
 	{
-		return tauri::async_runtime::spawn_blocking(|| {
+		let _ = tauri::async_runtime::spawn_blocking(|| {
 			let _ = objc2_core_graphics::CGRequestScreenCaptureAccess();
-			screen_permission()
 		})
-		.await
-		.unwrap_or(false);
+		.await;
+		return main_thread_permission(&app);
 	}
 	#[cfg(not(target_os = "macos"))]
 	{
+		let _ = app;
 		true
 	}
 }
@@ -323,8 +340,8 @@ fn resolve_source(source_id: &str) -> Result<(ScreenSource, TargetSpec), String>
 /// (sharing your own call window would recurse); empty and minimized windows
 /// are skipped.
 #[tauri::command]
-pub async fn screen_share_sources() -> Result<ScreenSources, String> {
-	let permission = screen_permission();
+pub async fn screen_share_sources(app: AppHandle) -> Result<ScreenSources, String> {
+	let permission = main_thread_permission(&app);
 	let mut sources = Vec::new();
 
 	if let Ok(monitors) = Monitor::all() {
@@ -374,30 +391,34 @@ pub async fn screen_share_sources() -> Result<ScreenSources, String> {
 	})
 }
 
-fn status_from(session: &Option<Session>) -> ScreenStatus {
+fn status_from(session: &Option<Session>, permission: bool) -> ScreenStatus {
 	ScreenStatus {
 		active: session.is_some(),
 		source_id: session.as_ref().map(|s| s.source.id.clone()),
 		source_name: session.as_ref().map(|s| s.source.name.clone()),
-		permission: screen_permission(),
+		permission,
 		version: session.as_ref().map_or(0, |s| s.version),
 	}
 }
 
 #[tauri::command]
 pub async fn screen_share_status(
+	app: AppHandle,
 	state: State<'_, ScreenShareState>,
 ) -> Result<ScreenStatus, String> {
+	let permission = main_thread_permission(&app);
 	let guard = lock(&state)?;
-	Ok(status_from(&guard))
+	Ok(status_from(&guard, permission))
 }
 
 #[tauri::command]
 pub async fn screen_share_start(
+	app: AppHandle,
 	state: State<'_, ScreenShareState>,
 	source_id: String,
 ) -> Result<ScreenStatus, String> {
-	if !screen_permission() {
+	let permission = main_thread_permission(&app);
+	if !permission {
 		return Err(
 			"Screen Recording permission is required. Enable A-Coder Desktop in System Settings → Privacy & Security → Screen Recording, then restart the app."
 				.to_string(),
@@ -416,7 +437,7 @@ pub async fn screen_share_start(
 		last_capture_at: Instant::now() - FRESH_FRAME,
 		last_ratio: 1.0,
 	});
-	Ok(status_from(&guard))
+	Ok(status_from(&guard, permission))
 }
 
 #[tauri::command]

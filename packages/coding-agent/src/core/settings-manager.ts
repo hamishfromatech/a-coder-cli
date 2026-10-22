@@ -289,6 +289,10 @@ export interface Settings {
 	lastChangelogVersion?: string;
 	defaultProvider?: string;
 	defaultModel?: string;
+	/** Default provider/model for delegated subagents. Blank inherits the
+	 *  session's model; a per-agent definition or tool call can override it. */
+	subagentProvider?: string;
+	subagentModel?: string;
 	/** Model for voice-call turns (`provider/id`): these turns are spoken, so a
 	 *  dedicated fast model keeps latency down without changing the user's
 	 *  model for typed turns or background work. */
@@ -1037,6 +1041,26 @@ export class SettingsManager {
 
 	getDefaultModel(): string | undefined {
 		return this.settings.defaultModel;
+	}
+
+	getSubagentProvider(): string | undefined {
+		return this.settings.subagentProvider?.trim() || undefined;
+	}
+
+	getSubagentModel(): string | undefined {
+		return this.settings.subagentModel?.trim() || undefined;
+	}
+
+	setSubagentProvider(provider: string | undefined): void {
+		this.globalSettings.subagentProvider = provider?.trim() || undefined;
+		this.markModified("subagentProvider");
+		this.save();
+	}
+
+	setSubagentModel(model: string | undefined): void {
+		this.globalSettings.subagentModel = model?.trim() || undefined;
+		this.markModified("subagentModel");
+		this.save();
 	}
 
 	getVoiceTurnModel(): string | undefined {

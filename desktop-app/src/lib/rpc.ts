@@ -316,6 +316,7 @@ export type RpcEvent =
 	| AgentEndSummaryEvent
 	| ToolStartEvent
 	| ToolDeltaEvent
+	| ToolProgressEvent
 	| ToolEndEvent
 	| AutoRetryStartEvent
 	| AutoRetryEndEvent
@@ -440,6 +441,16 @@ export interface ToolDeltaEvent {
 	stream: "stdout" | "stderr";
 	delta: string;
 	reset?: boolean;
+}
+
+export interface ToolProgressEvent {
+	type: "tool_progress";
+	toolCallId: string;
+	toolName: string;
+	progress: number;
+	total?: number;
+	percent?: number;
+	message?: string;
 }
 
 export interface ToolEndEvent {
@@ -1143,6 +1154,28 @@ export const reloadAuth = () => sendCommand({ type: "reload_auth" });
  *  flow's progress arrives as `oauth_status` events. */
 export const oauthLogin = (providerId: string) =>
 	sendCommand({ type: "oauth_login", providerId });
+
+// ---- MCP ----
+export interface McpServerState {
+	name: string;
+	status: "ok" | "error" | "connecting" | "disabled";
+	toolCount?: number;
+	error?: string;
+	source?: "global" | "project";
+}
+
+export const getMcpStatus = () =>
+	sendCommand({ type: "mcp_status" }) as Promise<{ servers: McpServerState[] }>;
+
+/** Reconnect one server, or every server when `name` is omitted. A call made
+ *  during a turn is deferred by the engine and applied at the natural turn end. */
+export const reconnectMcp = (name?: string) =>
+	sendCommand({ type: "mcp_reconnect", ...(name ? { name } : {}) }) as Promise<{
+		ok: boolean;
+		error?: string;
+		deferred: boolean;
+		name?: string;
+	}>;
 
 // ---- queue modes ----
 /** Desktop-browser prefs (settings page): live toggles + persisted file. */

@@ -8,6 +8,7 @@ mod cli;
 mod fs;
 mod git;
 mod menu;
+mod power;
 mod resources;
 mod rpc;
 mod screen;
@@ -62,6 +63,7 @@ fn main() {
 		.manage(browser::downloads::DownloadsState::default())
 		.manage(browser::agentserver::AgentGateState::default())
 		.manage(screen::ScreenShareState::default())
+		.manage(power::KeepAwakeState::default())
 		.plugin(tauri_plugin_opener::init())
 		.invoke_handler(tauri::generate_handler![
 			browser::tabs::browser_supported,
@@ -113,6 +115,8 @@ fn main() {
 			screen::screen_share_capture,
 			screen::screen_share_latest,
 			screen::screen_share_request_permission,
+			power::keep_awake_set,
+			power::keep_awake_status,
 			rpc_commands::connect,
 			rpc_commands::disconnect,
 			rpc_commands::send_command,

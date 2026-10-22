@@ -147,6 +147,9 @@ export interface CliSettings {
 	lastChangelogVersion?: string;
 	defaultProvider?: string;
 	defaultModel?: string;
+	/** Default provider/model for delegated subagents; blank inherits the session. */
+	subagentProvider?: string;
+	subagentModel?: string;
 	defaultThinkingLevel?: ThinkingLevel;
 	transport?: TransportSetting;
 	steeringMode?: "all" | "one-at-a-time";

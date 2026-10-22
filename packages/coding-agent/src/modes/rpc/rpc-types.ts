@@ -13,6 +13,7 @@ import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
 import type { CronJob, CronRun, CronSchedule, CronSnapshot } from "../../core/cron/types.ts";
 import type { InProcessSubAgentRecord } from "../../core/extensions/types.ts";
+import type { McpServerState } from "../../core/mcp/status-store.ts";
 import type {
 	Coworker,
 	CoworkerDetails,
@@ -96,6 +97,10 @@ export type RpcCommand =
 	// Auth
 	| { id?: string; type: "reload_auth" }
 	| { id?: string; type: "oauth_login"; providerId: string }
+
+	// MCP
+	| { id?: string; type: "mcp_status" }
+	| { id?: string; type: "mcp_reconnect"; name?: string }
 
 	// Queue modes
 	| { id?: string; type: "set_steering_mode"; mode: "all" | "one-at-a-time" }
@@ -461,6 +466,20 @@ export type RpcResponse =
 
 	// Auth
 	| { id?: string; type: "response"; command: "reload_auth"; success: true }
+	| {
+			id?: string;
+			type: "response";
+			command: "mcp_status";
+			success: true;
+			data: { servers: McpServerState[] };
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "mcp_reconnect";
+			success: true;
+			data: { ok: boolean; error?: string; deferred: boolean; name?: string };
+	  }
 
 	// Queue modes
 	| { id?: string; type: "response"; command: "set_steering_mode"; success: true }
@@ -874,6 +893,19 @@ export interface RpcToolDeltaEvent {
 	stream: "stdout" | "stderr";
 	delta: string;
 	reset?: boolean;
+}
+
+/** Live progress for a running tool call (contract 2 with `tool-progress`).
+ *  MCP servers emit this through `notifications/progress`; the UI shows the
+ *  percent/message beside the running row and never mutates the transcript. */
+export interface RpcToolProgressEvent {
+	type: "tool_progress";
+	toolCallId: string;
+	toolName: string;
+	progress: number;
+	total?: number;
+	percent?: number;
+	message?: string;
 }
 
 /** Tool call finished; the authoritative result still arrives as a

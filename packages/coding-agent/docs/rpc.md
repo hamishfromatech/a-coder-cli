@@ -215,7 +215,7 @@ Capabilities:
 |---|---|
 | `delta` | Send `message_delta` / `message_snapshot` instead of per-token `message_update`; `tool_execution_*` and duplicate `turn_end` / `entry_appended` frames are suppressed. |
 | `batch` | Coalesce session events into `event_batch` frames (~30Hz). Responses and structural events flush immediately. |
-| `tool-progress` | Keep `tool_execution_*` events (off by default for contract-2 clients). |
+| `tool-progress` | Keep `tool_execution_*` events and receive `tool_progress` frames (off by default for contract-2 clients). |
 
 #### get_state
 
@@ -445,6 +445,39 @@ Start an OAuth login for a provider id (asynchronous):
 ```
 
 The response confirms the start (`data.started`); progress arrives as `oauth_login_status` events until the flow resolves.
+
+### MCP
+
+#### mcp_status
+
+Return the process-wide MCP connection snapshot:
+
+```json
+{"type": "mcp_status"}
+```
+
+```json
+{"type": "response", "command": "mcp_status", "success": true, "data": {"servers": [
+  {"name": "chrome-devtools", "status": "ok", "toolCount": 24, "source": "global"}
+]}}
+```
+
+Status is one of `connecting`, `ok`, `error`, or `disabled`; errors carry `error`, and successful servers carry `toolCount`.
+
+#### mcp_reconnect
+
+Reconnect and re-discover one server, or every server when `name` is omitted:
+
+```json
+{"type": "mcp_reconnect", "name": "chrome-devtools"}
+```
+
+```json
+{"type": "response", "command": "mcp_reconnect", "success": true,
+ "data": {"ok": true, "deferred": false, "name": "chrome-devtools"}}
+```
+
+If a turn is running, the engine sets `deferred: true` and applies the reconnect after the next natural `agent_end`, so a live tool call is never interrupted.
 
 #### refresh_models
 
@@ -1429,6 +1462,15 @@ When complete:
 ```
 
 Use `toolCallId` to correlate events. The `partialResult` in `tool_execution_update` contains the accumulated output so far (not just the delta), allowing clients to simply replace their display on each update.
+
+With the `tool-progress` capability, MCP servers that emit `notifications/progress` also produce `tool_progress` frames. The engine throttles them to one per 500 ms and always sends the final update:
+
+```json
+{"type": "tool_progress", "toolCallId": "call_1", "toolName": "mcp__meshy__refine",
+ "progress": 2, "total": 8, "percent": 25, "message": "refining mesh"}
+```
+
+`progress`/`total` are the server's raw values; `percent` is computed when a positive total is available. `message` is optional. Progress is UI-only: it is cleared on `tool_end` and never changes the transcript.
 
 ### queue_update
 

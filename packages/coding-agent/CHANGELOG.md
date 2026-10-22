@@ -4,6 +4,9 @@
 
 ### Added
 
+- MCP tool calls now opt into `notifications/progress` when the client requests live tool progress, and contract-2 clients receive `tool_progress` frames with `progress`, `total`, `percent`, and `message`. A progress-only update never clears the existing stdout/stderr stream.
+- New RPC commands `mcp_status` (live server states) and `mcp_reconnect { name? }` (reconnect one server or all; deferred while a turn is running and applied at the natural turn end).
+- Subagent model routing: `spawn_subagent` now honors the advertised `provider` parameter and resolves models by provider plus id, with precedence explicit call → agent definition → global `subagentProvider`/`subagentModel` setting → parent session.
 - Release archives now bundle a pinned Node v24.22.1 runtime next to the Bun-compiled engine, and the CLI prepends its `node/bin` directory to `PATH` at startup. `npx`/`node`/`npm`-based stdio MCP servers (including the seeded chrome-devtools server) now work without a system Node install. Downloads are SHA-256 verified at build time.
 - Full llama.cpp support: discovered models read `/props` for vision, context, tools, and thinking capability; `/thinking`, the Desktop thinking pill, and thinking budgets now work for llama.cpp templates that support reasoning effort or a boolean thinking switch. `/llama` shows the live build, model, context, capabilities, and model list.
 - `models.json` now supports provider- and model-level `samplingParams`, plus `thinkingTokenBudgetField` / `supportsThinkingTokenBudget` in `compat`, and reapplies llama.cpp provider/model overrides after dynamic model refresh. The Desktop Local models panel edits llama.cpp sampling defaults and per-model overrides.

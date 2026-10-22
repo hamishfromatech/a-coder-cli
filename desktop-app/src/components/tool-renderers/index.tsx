@@ -1,6 +1,6 @@
 import { memo, useMemo, useState } from "react";
 import { useSessionViewStore } from "../../stores/session-view-store";
-import { useToolProgressStore } from "../../stores/tool-progress-store";
+import { formatToolProgress, useToolProgressStore } from "../../stores/tool-progress-store";
 import {
 	AlertTriangle,
 	Check,
@@ -174,6 +174,14 @@ export const RichToolCall = memo(function RichToolCall({
 					<span className="ml-auto flex shrink-0 items-center gap-1.5 font-mono text-2xs">
 						{stats.added > 0 && <span className="text-pi-success">+{stats.added}</span>}
 						{stats.removed > 0 && <span className="text-pi-error">−{stats.removed}</span>}
+					</span>
+				)}
+				{status === "running" && progress?.progress && (
+					<span
+						className="max-w-48 shrink-0 truncate font-mono text-3xs text-pi-text-faint"
+						title={formatToolProgress(progress.progress)}
+					>
+						{formatToolProgress(progress.progress)}
 					</span>
 				)}
 				<span
