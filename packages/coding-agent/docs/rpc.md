@@ -1211,6 +1211,27 @@ Response `data`: the full office snapshot — `coworkers` (roster records with f
 
 `office_huddle_get` returns the full room payload: `{ huddleId, data: { epoch, log, watermarks, holds, running }, working }` (or `null`).
 
+#### office_search
+
+```json
+{"type": "office_search", "query": "deploy", "limit": 20}
+```
+
+Searches every stored huddle and DM log (not just rooms the client has loaded)
+and returns `{huddleId, title, snippet, author?, messageId?, at}[]` sorted
+newest first. The desktop falls back to its loaded-room search when an older
+engine rejects the command.
+
+#### office_message_delete
+
+```json
+{"type": "office_message_delete", "huddleId": "<id>", "messageId": "<id>"}
+```
+
+Deletes one user message. Coworker/system messages are rejected. Reply is
+`{removed: boolean}`; the engine shifts every watermark and stranded marker so
+later turns stay aligned.
+
 #### office_send / office_stop
 
 ```json

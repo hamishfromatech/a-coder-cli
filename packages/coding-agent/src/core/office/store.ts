@@ -236,8 +236,9 @@ export async function updateHuddleData(
 		const overflow = trimHuddleLog(data);
 
 		await mkdir(join(logPath, ".."), { recursive: true });
-		if (!hadState || overflow > 0 || !existsSync(logPath)) {
-			// First write (including legacy migration) or a trim: rewrite the log.
+		if (!hadState || overflow > 0 || data.log.length < before || !existsSync(logPath)) {
+			// First write (including legacy migration), a trim, or a deletion:
+			// rewrite the log.
 			await writeLog(logPath, data.log);
 		} else if (data.log.length > before) {
 			const appended = data.log.slice(before);

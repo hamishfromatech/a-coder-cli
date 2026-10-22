@@ -218,6 +218,7 @@ export function VirtualOffice({
 	style,
 	store: sharedStore,
 	onCoworkerClick,
+	onHuddleClick,
 }: VirtualOfficeProps) {
 	const ownedStore = useRef<FloorStore | null>(null);
 	if (!sharedStore && ownedStore.current === null) {
@@ -245,6 +246,7 @@ export function VirtualOffice({
 	const byId = useMemo(() => new Map(floor.coworkers.map((c) => [c.id, c])), [floor.coworkers]);
 	const theme = THEMES[themeName];
 	const roomLabel = feed.roomRunning ? feed.roomName : undefined;
+	const roomId = feed.roomRunning ? feed.roomId : undefined;
 	const activeTable = feed.roomRunning
 		? Math.floor((feed.roomMembers.length - 1) / 3) % MEETING_TABLES.length
 		: -1;
@@ -347,8 +349,26 @@ export function VirtualOffice({
 
 	const meetingPods = useMemo(
 		() =>
-			MEETING_TABLES.map((table, i) => (
-				<g key={`table-${i}`}>
+			MEETING_TABLES.map((table, i) => {
+				const openRoom = i === activeTable && roomId && onHuddleClick ? () => onHuddleClick(roomId) : undefined;
+				return (
+				<g
+					key={`table-${i}`}
+					onClick={openRoom}
+					role={openRoom ? "button" : undefined}
+					tabIndex={openRoom ? 0 : undefined}
+					onKeyDown={
+						openRoom
+							? (event) => {
+									if (event.key === "Enter" || event.key === " ") {
+										event.preventDefault();
+										openRoom();
+									}
+								}
+							: undefined
+					}
+					style={openRoom ? { cursor: "pointer" } : undefined}
+				>
 					<Pendant x={table.x} y={table.y - 9.4} theme={theme} on={i === activeTable && feed.roomRunning} />
 					{Array.from({ length: SEATS_PER_TABLE }, (_, seat) => {
 						const pos = meetingSeat(i, seat);
@@ -357,8 +377,9 @@ export function VirtualOffice({
 					})}
 					<MeetingTable x={table.x} y={table.y} theme={theme} active={i === activeTable && feed.roomRunning} />
 				</g>
-			)),
-		[theme, activeTable, feed.roomRunning],
+				);
+			}),
+		[theme, activeTable, feed.roomRunning, roomId, onHuddleClick],
 	);
 
 	const interactive = Boolean(onCoworkerClick);
@@ -366,7 +387,7 @@ export function VirtualOffice({
 		<svg
 			width="100%"
 			height="100%"
-			viewBox="0 -28 160 128"
+			viewBox="0 -28 160 132"
 			preserveAspectRatio="xMidYMid meet"
 			className={className}
 			style={style}
@@ -437,7 +458,22 @@ export function VirtualOffice({
 
 			{/* room banner — a status pill in the corridor, clear of bubbles */}
 			{roomLabel && (
-				<g>
+				<g
+					onClick={roomId && onHuddleClick ? () => onHuddleClick(roomId) : undefined}
+					role={roomId && onHuddleClick ? "button" : undefined}
+					tabIndex={roomId && onHuddleClick ? 0 : undefined}
+					onKeyDown={
+						roomId && onHuddleClick
+							? (event) => {
+									if (event.key === "Enter" || event.key === " ") {
+										event.preventDefault();
+										onHuddleClick(roomId);
+									}
+								}
+							: undefined
+					}
+					style={roomId && onHuddleClick ? { cursor: "pointer" } : undefined}
+				>
 					<rect
 						x={49}
 						y={89.6}

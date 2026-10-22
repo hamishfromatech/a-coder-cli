@@ -40,11 +40,21 @@ The **Office** panel is the third tab in the right sidebar (next to Files and Gi
   call and a huddle call are mutually exclusive (one microphone). Huddles/DMs
   with activity since you last opened them show an unread dot in the roster.
 
+**Huddle chat** stays readable while a room is active: auto-scroll only follows
+the bottom when you are already there, with a New messages divider, day
+separators, long-message expansion, copy/quote actions, image attachments,
+inline @mention completion, per-room drafts, and `/stop` / `/call` shortcuts.
+The roster shows the latest message preview; row actions appear on hover or
+keyboard focus. Search uses the engine-wide `office_search` command and shows
+author/time plus highlighted snippets.
+
 **Floor view** (the building button): the 2D floor is the default and the 3D
 scene is lazy-loaded. Both render the same shared floor state, so switching
 views keeps every coworker where they were and does not replay the walk-in;
-the chosen view is remembered. The legend names the status hues, and clicking
-a face opens that coworker's DM. Errands show their next fire time in the
+the chosen view is remembered. The legend names the status hues; clicking a
+face opens that coworker's DM, while the active room banner or meeting table
+opens the huddle. The floor can expand into a full-window workspace, and the
+3D view has zoom and reset controls. Errands show their next fire time in the
 roster, and a running errand is never double-fired by the ticker.
 
 ## TUI
@@ -70,10 +80,14 @@ A user send triggers at most **3 rounds** over the seated roster (never parallel
 
 Extras:
 
+- **Room questions**: when the user addresses the whole room ("both of you", "everyone", "hey guys"), each seated coworker is told to answer in their own voice rather than passing because a teammate replied first. If one still passes, the room shows "Name had nothing to add."
 - **Holds**: "stop @atlas" holds a coworker (no turns) until a direct mention or `@all` re-addresses them. Conservative by design: "don't stop @atlas" also holds.
-- **Late work**: a turn that outlives its window is marked stranded; the reply is harvested into the room at the next boundary instead of being lost.
-- **Redirects**: a user message landing mid-drive makes in-flight replies yield to you.
-- **Caps**: 3 rounds, 10 messages, 24-line history window per turn, 20-minute hard turn cap.
+- **Late work**: a turn that outlives its window is marked stranded with its turn id; the reply is harvested into the room at the next boundary instead of being lost. Captures come from assistant `message_end` events, so session compaction cannot hide a reply.
+- **Redirects**: a user message landing mid-drive makes in-flight replies yield to you. The interrupted coworker's watermark is rolled back to the dispatch point, so the queued drive answers the new message instead of silently skipping it.
+- **Stop**: published before any file read, aborts only the turn that belongs to that room, and commits through the same transaction as a normal reply. A stopped room cannot receive a late partial answer.
+- **Recovery**: startup clears `running`/`stranded` state left by a crashed process, so a room does not show a typing indicator forever.
+- **Drive coalescing**: sends during a running drive mark the room dirty and share one pending drive instead of stacking a full drive per message. Queued turns re-check epoch, holds, and membership before calling the model.
+- **Caps**: 3 rounds, 10 messages, 24-line history window per turn, 20-minute hard turn cap. Prompts are also capped at 24,000 characters (6,000 per room line) with an explicit omitted-history marker. Attachments are limited to 4 per message, 8 MiB each, 16 MiB total.
 - **Log cap**: 500 stored lines per huddle; older lines drop with every read pointer shifted, so a long-running room cannot grow without bound.
 
 ## Autonomy
@@ -87,7 +101,7 @@ Extras:
 
 The engine exposes the office to embedded clients (the desktop is one):
 
-- Commands: `office_list`, `office_coworker_save` / `office_coworker_delete`, `office_huddle_save` / `office_huddle_delete`, `office_send`, `office_huddle_get`, `office_stop`, `office_respond`, `office_errand_save` / `office_errand_delete` / `office_errand_run`
+- Commands: `office_list`, `office_coworker_save` / `office_coworker_delete`, `office_huddle_save` / `office_huddle_delete`, `office_send`, `office_huddle_get`, `office_search`, `office_message_delete`, `office_stop`, `office_respond`, `office_errand_save` / `office_errand_delete` / `office_errand_run`
 - Events: `office_update` (roster snapshot: coworkers, statuses, huddle summaries, errands, pending prompts), `office_huddle` (full room log on first contact / after trimming), and `office_huddle_delta` (appended messages + live drive state)
 
 See `docs/rpc.md` for the transport.

@@ -15,7 +15,13 @@
 
 import { identityReminder } from "./soul.ts";
 import type { Coworker, HuddleData, OfficeMessage, OfficeMessageAuthor } from "./types.ts";
-import { OFFICE_HISTORY_LIMIT, OFFICE_MAX_MEMBERS, OFFICE_TURN_RULES } from "./types.ts";
+import {
+	OFFICE_HISTORY_LIMIT,
+	OFFICE_MAX_MEMBERS,
+	OFFICE_MAX_PROMPT_CHARS,
+	OFFICE_MAX_PROMPT_MESSAGE_CHARS,
+	OFFICE_TURN_RULES,
+} from "./types.ts";
 
 /** Parse @mentions: @handle, @everyone/@all. Handles match case-insensitively
  *  against coworker handles, collapsed no-space forms, and display names. */
@@ -107,16 +113,50 @@ export function seatMembers(members: Coworker[]): Coworker[] {
 }
 
 /** One room-log line as a coworker sees it: `Name (user): …` / `Name: …` /
- *  `Name (you): …`. */
+ *  `Name (you): …`. Long text is truncated for the prompt; the stored log
+ *  keeps the full message. */
 export function formatRoomLine(entry: OfficeMessage, viewerId?: string): string {
 	const attached = entry.images?.length
 		? ` ${entry.images.map((img) => `[attached ${img.kind}: ${img.name}]`).join(" ")}`
 		: "";
+	const text = truncatePromptText(entry.text, OFFICE_MAX_PROMPT_MESSAGE_CHARS);
 	if (entry.from.kind === "user") {
-		return `${entry.from.name || "User"} (user): ${entry.text}${attached}`;
+		return `${entry.from.name || "User"} (user): ${text}${attached}`;
 	}
 	const suffix = viewerId && entry.from.id === viewerId ? " (you)" : "";
-	return `${entry.from.name}${suffix}: ${entry.text}${attached}`;
+	return `${entry.from.name}${suffix}: ${text}${attached}`;
+}
+
+/** Fit a room delta into one prompt. Keeps the newest lines, truncates one
+ *  oversized line, and marks how many older lines were omitted. */
+export function formatRoomLines(
+	entries: OfficeMessage[],
+	viewerId?: string,
+	maxChars = OFFICE_MAX_PROMPT_CHARS,
+): string[] {
+	const lines = entries.map((entry) => formatRoomLine(entry, viewerId));
+	const kept: string[] = [];
+	let used = 0;
+	for (let i = lines.length - 1; i >= 0; i--) {
+		const line = lines[i];
+		if (!line) continue;
+		const cost = line.length + (kept.length > 0 ? 1 : 0);
+		// Always keep the newest line, even if the caller set a tiny budget.
+		if (kept.length > 0 && used + cost > maxChars) break;
+		kept.unshift(line);
+		used += cost;
+	}
+	const omitted = lines.length - kept.length;
+	if (omitted > 0) {
+		kept.unshift(`… ${omitted} earlier message${omitted === 1 ? "" : "s"} omitted …`);
+	}
+	return kept;
+}
+
+function truncatePromptText(text: string, maxChars: number): string {
+	if (text.length <= maxChars) return text;
+	const cut = text.lastIndexOf(" ", maxChars);
+	return `${text.slice(0, cut > 0 ? cut : maxChars).trimEnd()} …`;
 }
 
 export interface TurnPromptInput {
@@ -124,12 +164,28 @@ export interface TurnPromptInput {
 	groupName: string;
 	members: Coworker[];
 	deltaLines: string[];
+	/** The user addressed the whole room, so a personal answer is expected. */
+	requiresResponse?: boolean;
+}
+
+/** Detect a user message addressed to the whole room rather than one person. */
+export function isRoomAddress(text: string): boolean {
+	const value = String(text || "").toLowerCase();
+	return (
+		/(^|\s)@(everyone|all)\b/.test(value) || /\b(both|everyone|you two|you both|all of you|guys|team)\b/.test(value)
+	);
 }
 
 /** The full per-turn payload for one coworker: identity + participation rules
  *  + the room delta. Rules travel in the turn payload (not the soul) so every
  *  existing coworker can join a huddle without a session migration. */
-export function buildHuddleTurnPrompt({ coworker, groupName, members, deltaLines }: TurnPromptInput): string {
+export function buildHuddleTurnPrompt({
+	coworker,
+	groupName,
+	members,
+	deltaLines,
+	requiresResponse = false,
+}: TurnPromptInput): string {
 	const peers = members
 		.filter((m) => m.id !== coworker.id)
 		.map((m) => `@${m.handle}${m.title ? ` (${m.title})` : ""}`)
@@ -142,6 +198,11 @@ export function buildHuddleTurnPrompt({ coworker, groupName, members, deltaLines
 		...deltaLines.map((line) => `  ${line}`),
 		"",
 		"Rules for this room:",
+		...(requiresResponse
+			? [
+					"- The newest user message addresses the whole room. Answer in your own voice; do not pass just because a teammate already replied.",
+				]
+			: []),
 		OFFICE_TURN_RULES,
 	].join("\n");
 }
@@ -169,7 +230,17 @@ export function isPassText(text: string | null | undefined): boolean {
 export function unaddressedMentions(log: OfficeMessage[], members: Coworker[]): string[] {
 	const citedAt = new Map<string, number>();
 	const lastPostAt = new Map<string, number>();
-	for (let i = 0; i < log.length; i++) {
+	// Only handoffs from the current user turn can still be owed. A mention
+	// from an earlier turn was already settled (or consciously dropped) and
+	// must not pull a coworker back into every future quiet round.
+	let start = 0;
+	for (let i = log.length - 1; i >= 0; i--) {
+		if (log[i]?.from.kind === "user") {
+			start = i;
+			break;
+		}
+	}
+	for (let i = start; i < log.length; i++) {
 		const entry = log[i];
 		if (entry.from.kind !== "coworker" || !entry.from.id) continue;
 		lastPostAt.set(entry.from.id, i);

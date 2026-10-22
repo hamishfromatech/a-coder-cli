@@ -49,7 +49,7 @@ describe("office search", () => {
 		const huddles = { h1: room("h1", "the deploy is blocked on CI", 30) };
 		const hits = searchOffice(snapshot, huddles, "deploy");
 		expect(hits).toHaveLength(1);
-		expect(hits[0]).toMatchObject({ huddleId: "h1", title: "Launch room" });
+		expect(hits[0]).toMatchObject({ huddleId: "h1", title: "Launch room", author: "You", messageId: "h1-30" });
 		expect(hits[0]?.snippet).toContain("deploy");
 		expect(searchOffice(snapshot, huddles, "launch")[0]).toMatchObject({ huddleId: "h1", snippet: "Room name" });
 		expect(searchOffice(snapshot, huddles, "nothing")).toEqual([]);

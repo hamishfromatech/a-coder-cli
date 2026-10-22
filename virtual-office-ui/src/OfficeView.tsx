@@ -117,7 +117,7 @@ function Legend({ theme, interactive }: { theme: "dark" | "light"; interactive: 
 			style={{
 				position: "absolute",
 				left: 8,
-				bottom: 8,
+				top: 8,
 				display: "flex",
 				alignItems: "center",
 				flexWrap: "wrap",
@@ -151,6 +151,48 @@ function Legend({ theme, interactive }: { theme: "dark" | "light"; interactive: 
 				</span>
 			))}
 			{interactive && <span style={{ opacity: 0.7 }}>· click a face to message</span>}
+		</div>
+	);
+}
+
+function CameraControls({ theme }: { theme: "dark" | "light" }) {
+	const dark = theme === "dark";
+	const button: React.CSSProperties = {
+		width: 22,
+		height: 22,
+		border: "none",
+		borderRadius: 4,
+		background: "transparent",
+		color: "inherit",
+		cursor: "pointer",
+		fontSize: 13,
+		lineHeight: 1,
+	};
+	const send = (action: string): void => {
+		window.dispatchEvent(new CustomEvent("a-coder:office-camera", { detail: { action } }));
+	};
+	return (
+		<div
+			role="group"
+			aria-label="3D camera controls"
+			style={{
+				position: "absolute",
+				right: 8,
+				bottom: 8,
+				display: "flex",
+				gap: 1,
+				padding: 2,
+				borderRadius: 6,
+				background: dark ? "rgba(10, 16, 28, 0.72)" : "rgba(255, 255, 255, 0.84)",
+				backdropFilter: "blur(6px)",
+				border: `1px solid ${dark ? "rgba(148, 163, 184, 0.25)" : "rgba(100, 116, 139, 0.28)"}`,
+				color: dark ? "#dbe4f0" : "#26324a",
+				zIndex: 10,
+			}}
+		>
+			<button type="button" style={button} title="Zoom in" aria-label="Zoom in" onClick={() => send("zoom-in")}>+</button>
+			<button type="button" style={button} title="Zoom out" aria-label="Zoom out" onClick={() => send("zoom-out")}>−</button>
+			<button type="button" style={button} title="Reset camera" aria-label="Reset camera" onClick={() => send("reset")}>⟲</button>
 		</div>
 	);
 }
@@ -199,6 +241,7 @@ export function OfficeView({ view: controlled, onViewChange, theme = "dark", ...
 					<Office3D {...props} store={store} theme={theme} style={{ flex: 1 }} />
 				</Suspense>
 			)}
+			{view === "3d" && <CameraControls theme={theme} />}
 			<Legend theme={theme} interactive={Boolean(props.onCoworkerClick)} />
 		</div>
 	);

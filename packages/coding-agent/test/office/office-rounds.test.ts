@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+	buildHuddleTurnPrompt,
 	classifyHoldDirective,
 	deltaFor,
 	formatRoomLine,
+	formatRoomLines,
 	heldWatermarkAdvance,
 	isEchoOfLastEntry,
 	isPassText,
+	isRoomAddress,
 	parseMentions,
 	pickReply,
 	resolveResponders,
@@ -222,6 +225,64 @@ describe("deltaFor", () => {
 	});
 });
 
+describe("formatRoomLines", () => {
+	it("caps a single long message and marks the truncation", () => {
+		const lines = formatRoomLines([userMessage("x".repeat(10_000))]);
+		expect(lines).toHaveLength(1);
+		expect(lines[0]?.length).toBeLessThan(6_100);
+		expect(lines[0]?.endsWith("…")).toBe(true);
+	});
+
+	it("keeps the newest lines within the total budget and marks omitted history", () => {
+		const entries = [1, 2, 3, 4, 5].map((index) => userMessage(`message-${index}`));
+		const lines = formatRoomLines(entries, undefined, 30);
+		expect(lines[0]).toContain("omitted");
+		expect(lines.at(-1)).toContain("message-5");
+		expect(lines.join("\n").length).toBeLessThan(120);
+	});
+
+	it("keeps the newest message even with a tiny budget", () => {
+		const lines = formatRoomLines([userMessage("the only message")], undefined, 1);
+		expect(lines).toEqual(["User (user): the only message"]);
+	});
+});
+
+describe("formatRoomLine", () => {
+	it("truncates prompt text but not short messages", () => {
+		expect(formatRoomLine(userMessage("hello"))).toBe("User (user): hello");
+		const long = formatRoomLine(userMessage("word ".repeat(2_000)));
+		expect(long.endsWith("…")).toBe(true);
+		expect(long.length).toBeLessThan(6_100);
+	});
+});
+
+describe("room address prompt", () => {
+	it("asks a room-addressed coworker to answer in their own voice", () => {
+		const prompt = buildHuddleTurnPrompt({
+			coworker: NOVA,
+			groupName: "Launch",
+			members: [ATLAS, NOVA],
+			deltaLines: ["User (user): are you both there?"],
+			requiresResponse: true,
+		});
+		expect(prompt).toContain("addresses the whole room");
+	});
+});
+
+describe("room address detection", () => {
+	it("detects room-wide questions", () => {
+		expect(isRoomAddress("are you both there?")).toBe(true);
+		expect(isRoomAddress("why aren't you both responding?")).toBe(true);
+		expect(isRoomAddress("hey guys just checking in")).toBe(true);
+		expect(isRoomAddress("@everyone status?")).toBe(true);
+	});
+
+	it("does not treat a single-person mention as a room question", () => {
+		expect(isRoomAddress("@alfred are you there?")).toBe(false);
+		expect(isRoomAddress("the deploy is blocked")).toBe(false);
+	});
+});
+
 describe("unaddressedMentions", () => {
 	it("flags a cited coworker who never answered", () => {
 		const log = [userMessage("kick off"), coworkerMessage("a1", "handing this to @nova")];
@@ -235,6 +296,16 @@ describe("unaddressedMentions", () => {
 
 	it("ignores self-mentions and user sends", () => {
 		const log = [userMessage("@nova do the thing"), coworkerMessage("a1", "@atlas checking in")];
+		expect(unaddressedMentions(log, [ATLAS, NOVA])).toEqual([]);
+	});
+
+	it("does not revive a handoff from before the latest user message", () => {
+		const log = [
+			userMessage("first turn"),
+			coworkerMessage("a1", "handing this to @nova"),
+			userMessage("a later redirect"),
+			coworkerMessage("a1", "new topic"),
+		];
 		expect(unaddressedMentions(log, [ATLAS, NOVA])).toEqual([]);
 	});
 });

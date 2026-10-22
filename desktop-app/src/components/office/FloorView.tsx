@@ -5,7 +5,9 @@
  * huddle; its drive state gathers seated coworkers into the meeting pods.
  */
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { Users } from "lucide-react";
+import { Button } from "../ui/Button";
 import {
 	type OfficeActivityItem,
 	type OfficeCoworker,
@@ -54,6 +56,7 @@ function buildFeed(
 		roomRunning: shown?.payload?.data.running !== undefined,
 		roomMembers: shown?.summary.members ?? [],
 		roomName: shown?.summary.name,
+		roomId: shown?.summary.id,
 	};
 }
 
@@ -70,6 +73,7 @@ export function FloorView() {
 	const huddles = useOfficeStore((s) => s.huddles);
 	const openHuddle = useOfficeStore((s) => s.openHuddle);
 	const theme = useSettingsStore((s) => s.theme);
+	const [roomsOpen, setRoomsOpen] = useState(false);
 
 	const shown = useMemo<ShownRoom | undefined>(() => {
 		const summaries = snapshot?.huddles ?? [];
@@ -89,15 +93,58 @@ export function FloorView() {
 		[snapshot, activity, shown],
 	);
 
+	const groupHuddles = useMemo(
+		() =>
+			[...(snapshot?.huddles ?? [])]
+				.filter((huddle) => !huddle.id.startsWith("dm:"))
+				.sort((a, b) => (b.lastActive ?? 0) - (a.lastActive ?? 0)),
+		[snapshot],
+	);
+
 	return (
-		<div className="flex h-full min-h-0 flex-col">
+		<div className="relative flex h-full min-h-0 flex-col">
 			<OfficeView
 				feed={feed}
 				theme={resolveFloorTheme(theme)}
 				className="min-h-0 w-full flex-1"
 				style={{ display: "flex" }}
 				onCoworkerClick={(coworkerId) => void openHuddle(`dm:${coworkerId}`)}
+				onHuddleClick={(huddleId) => void openHuddle(huddleId)}
 			/>
+			{groupHuddles.length > 0 && (
+				<div className="absolute right-2 top-10 z-20">
+					<Button
+						variant="ghost"
+						size="xs"
+						icon={Users}
+						aria-expanded={roomsOpen}
+						aria-label="Open a huddle"
+						title="Open a huddle"
+						className="bg-pi-surface/80 backdrop-blur-sm"
+						onClick={() => setRoomsOpen((value) => !value)}
+					>
+						Rooms
+					</Button>
+					{roomsOpen && (
+						<div className="absolute right-0 top-full mt-1 max-h-64 w-52 overflow-y-auto rounded-md border border-pi-border bg-pi-surface-overlay p-1 shadow-overlay">
+							{groupHuddles.map((huddle) => (
+								<button
+									key={huddle.id}
+									type="button"
+									onClick={() => {
+										setRoomsOpen(false);
+										void openHuddle(huddle.id);
+									}}
+									className="flex w-full flex-col rounded px-2 py-1 text-left hover:bg-pi-surface-raised"
+								>
+									<span className="truncate text-xs text-pi-text">{huddle.name}</span>
+									<span className="truncate text-2xs text-pi-text-faint">{huddle.preview ?? `${huddle.members.length} members`}</span>
+								</button>
+							))}
+						</div>
+					)}
+				</div>
+			)}
 		</div>
 	);
 }

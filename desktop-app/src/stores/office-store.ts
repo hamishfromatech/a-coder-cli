@@ -6,7 +6,7 @@
 import { create } from "zustand";
 import * as rpc from "../lib/rpc";
 import { useOfficeReadStore } from "./office-read-store";
-import type { OfficeActivityItem, OfficeHuddleDelta, OfficeHuddlePayload, OfficeSnapshot } from "../lib/rpc";
+import type { OfficeActivityItem, OfficeAttachment, OfficeHuddleDelta, OfficeHuddlePayload, OfficeSnapshot } from "../lib/rpc";
 
 /** Ring-buffer cap for live activity feeding the floor view. */
 const ACTIVITY_LIMIT = 300;
@@ -38,6 +38,8 @@ interface OfficeState {
 	huddles: Record<string, OfficeHuddlePayload>;
 	/** The huddle currently open in the panel. */
 	openHuddleId: string | null;
+	/** Message to reveal after opening a huddle from search. */
+	focusMessageId: string | null;
 	/** Last load error, for the panel's error row. */
 	error: string | null;
 	/** Live coworker activity ring buffer (oldest first), for the floor view. */
@@ -51,9 +53,11 @@ interface OfficeState {
 	applyHuddle: (payload: OfficeHuddlePayload) => void;
 	applyHuddleDelta: (delta: OfficeHuddleDelta) => void;
 	applyActivity: (item: OfficeActivityItem) => void;
-	openHuddle: (huddleId: string | null) => Promise<void>;
-	send: (text: string) => Promise<void>;
+	openHuddle: (huddleId: string | null, messageId?: string) => Promise<void>;
+	clearFocusMessage: () => void;
+	send: (text: string, attachments?: OfficeAttachment[]) => Promise<void>;
 	stop: () => Promise<void>;
+	deleteMessage: (messageId: string) => Promise<void>;
 	respond: (requestId: string, choice: string | null) => Promise<void>;
 }
 
@@ -61,6 +65,7 @@ export const useOfficeStore = create<OfficeState>((set, get) => ({
 	snapshot: null,
 	huddles: {},
 	openHuddleId: null,
+	focusMessageId: null,
 	error: null,
 	activity: [],
 	pinned: loadPinned(),
@@ -90,11 +95,16 @@ export const useOfficeStore = create<OfficeState>((set, get) => ({
 	applyHuddleDelta: (delta) =>
 		set((state) => {
 			const previous = state.huddles[delta.huddleId];
+			const seen = previous ? new Set(previous.data.log.map((message) => message.id)) : new Set<string>();
+			const messages = delta.messages.filter((message) => !seen.has(message.id));
+			const coworkerMessages = messages.filter((message) => message.from.kind === "coworker");
+			if (coworkerMessages.length > 0) {
+				const mentioned = coworkerMessages.some((message) => /(^|\s)@user\b/i.test(message.text));
+				useOfficeReadStore.getState().recordActivity(delta.huddleId, coworkerMessages.length, mentioned);
+			}
 			// A delta is only meaningful once the room has been loaded (full
 			// payload or fetch); otherwise the next open fetches it.
 			if (!previous) return state;
-			const seen = new Set(previous.data.log.map((message) => message.id));
-			const messages = delta.messages.filter((message) => !seen.has(message.id));
 			return {
 				huddles: {
 					...state.huddles,
@@ -117,8 +127,8 @@ export const useOfficeStore = create<OfficeState>((set, get) => ({
 			activity: [...state.activity.slice(-(ACTIVITY_LIMIT - 1)), item],
 		})),
 
-	openHuddle: async (huddleId) => {
-		set({ openHuddleId: huddleId });
+	openHuddle: async (huddleId, messageId) => {
+		set({ openHuddleId: huddleId, focusMessageId: huddleId ? (messageId ?? null) : null });
 		if (!huddleId) return;
 		useOfficeReadStore.getState().markRead(huddleId);
 		// Fetch if not warm; events keep it fresh afterwards.
@@ -133,16 +143,24 @@ export const useOfficeStore = create<OfficeState>((set, get) => ({
 		}
 	},
 
-	send: async (text) => {
+	clearFocusMessage: () => set({ focusMessageId: null }),
+
+	send: async (text, attachments) => {
 		const huddleId = get().openHuddleId;
-		if (!huddleId || !text.trim()) return;
-		await rpc.officeSend(huddleId, text.trim());
+		if (!huddleId || (!text.trim() && !attachments?.length)) return;
+		await rpc.officeSend(huddleId, text.trim(), attachments);
 	},
 
 	stop: async () => {
 		const huddleId = get().openHuddleId;
 		if (!huddleId) return;
 		await rpc.officeStop(huddleId);
+	},
+
+	deleteMessage: async (messageId) => {
+		const huddleId = get().openHuddleId;
+		if (!huddleId) return;
+		await rpc.officeDeleteMessage(huddleId, messageId);
 	},
 
 	respond: async (requestId, choice) => {

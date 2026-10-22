@@ -367,12 +367,34 @@ function Desk3D({ x, y, theme, on, flip }: { x: number; y: number; theme: Palett
 	);
 }
 
-function MeetingTable3D({ index, theme, active }: { index: number; theme: Palette; active: boolean }) {
+function MeetingTable3D({
+	index,
+	theme,
+	active,
+	onOpen,
+}: {
+	index: number;
+	theme: Palette;
+	active: boolean;
+	onOpen?: () => void;
+}) {
 	const table = MEETING_TABLES[index];
 	if (!table) return null;
 	const [wx, , wz] = to3d(table.x, table.y);
 	return (
-		<group position={[wx, 0, wz]}>
+		<group
+			position={[wx, 0, wz]}
+			onClick={
+				active && onOpen
+					? (event) => {
+							event.stopPropagation();
+							onOpen();
+						}
+					: undefined
+			}
+			onPointerOver={active && onOpen ? () => { document.body.style.cursor = "pointer"; } : undefined}
+			onPointerOut={active && onOpen ? () => { document.body.style.cursor = "default"; } : undefined}
+		>
 			{active && <pointLight position={[0, 2.3, 0]} color={theme.lightPool} intensity={7} distance={7} decay={2} />}
 			{active && (
 				<mesh position={[0, 0.035, 0]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -864,9 +886,22 @@ function Character({
 
 // ── camera rig ──────────────────────────────────────────────────────────────
 
+const CAMERA_DEFAULTS = { azimuth: 0.66, polar: 1.02, radius: 21 };
+
 function CameraRig({ target = [0, 0, 0] as [number, number, number], idleOrbit = true }: { target?: [number, number, number]; idleOrbit?: boolean }) {
 	const { camera } = useThree();
-	const state = useRef({ azimuth: 0.66, polar: 1.02, radius: 21, dragging: false, lx: 0, ly: 0 });
+	const state = useRef({ ...CAMERA_DEFAULTS, dragging: false, lx: 0, ly: 0 });
+
+	useEffect(() => {
+		const onControl = (event: Event) => {
+			const action = (event as CustomEvent<{ action?: string }>).detail?.action;
+			if (action === "reset") state.current = { ...CAMERA_DEFAULTS, dragging: false, lx: 0, ly: 0 };
+			if (action === "zoom-in") state.current.radius = Math.max(9, state.current.radius - 2);
+			if (action === "zoom-out") state.current.radius = Math.min(34, state.current.radius + 2);
+		};
+		window.addEventListener("a-coder:office-camera", onControl);
+		return () => window.removeEventListener("a-coder:office-camera", onControl);
+	}, []);
 
 	useEffect(() => {
 		const el = camera instanceof THREE.Camera ? (camera as THREE.PerspectiveCamera) : null;
@@ -1075,6 +1110,7 @@ function Scene({
 	activeTable,
 	idleOrbit,
 	onCoworkerClick,
+	onOpenRoom,
 }: {
 	store: FloorStore;
 	theme: Palette;
@@ -1082,6 +1118,7 @@ function Scene({
 	activeTable: number;
 	idleOrbit: boolean;
 	onCoworkerClick?: (coworkerId: string) => void;
+	onOpenRoom?: () => void;
 }) {
 	// Re-render on feed changes only. Walk ticks update positions in the store
 	// every frame, and Character reads them in its own useFrame — subscribing
@@ -1121,7 +1158,13 @@ function Scene({
 				return <Desk3D key={`d${i}`} x={slot.x} y={slot.y} theme={theme} on={on} flip={flip} />;
 			})}
 			{MEETING_TABLES.map((_, i) => (
-				<MeetingTable3D key={`m${i}`} index={i} theme={theme} active={i === activeTable} />
+				<MeetingTable3D
+				key={`m${i}`}
+				index={i}
+				theme={theme}
+				active={i === activeTable}
+				onOpen={i === activeTable ? onOpenRoom : undefined}
+			/>
 			))}
 			<Rug3D x={122} y={83.4} theme={theme} r={2.15} />
 			<FloorLamp3D x={108.4} y={78.6} theme={theme} />
@@ -1155,6 +1198,7 @@ export function Office3D({
 	style,
 	store: sharedStore,
 	onCoworkerClick,
+	onHuddleClick,
 }: VirtualOfficeProps) {
 	const ownedStore = useRef<FloorStore | null>(null);
 	if (!sharedStore && ownedStore.current === null) {
@@ -1191,6 +1235,7 @@ export function Office3D({
 					activeTable={feed.roomRunning ? Math.floor((feed.roomMembers.length - 1) / 3) % MEETING_TABLES.length : -1}
 					idleOrbit={!reducedMotion}
 					onCoworkerClick={onCoworkerClick}
+					onOpenRoom={feed.roomRunning && feed.roomId && onHuddleClick ? () => onHuddleClick(feed.roomId as string) : undefined}
 				/>
 			</Canvas>
 		</div>

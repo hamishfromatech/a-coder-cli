@@ -1,4 +1,4 @@
-import type { OfficeCoworker, OfficeHuddlePayload, OfficeSnapshot } from "./rpc";
+import type { OfficeCoworker, OfficeHuddlePayload, OfficeSearchHit, OfficeSnapshot } from "./rpc";
 
 /** Sort rooms pinned-first, then by most recent activity. */
 export function sortOfficeRooms<T extends { id: string; lastActive?: number }>(
@@ -12,12 +12,7 @@ export function sortOfficeRooms<T extends { id: string; lastActive?: number }>(
 	);
 }
 
-export interface OfficeSearchHit {
-	huddleId: string;
-	title: string;
-	snippet: string;
-	at: number;
-}
+export type { OfficeSearchHit };
 
 function roomTitle(snapshot: OfficeSnapshot | null, huddleId: string): string {
 	if (!snapshot) return huddleId;
@@ -53,6 +48,7 @@ export function searchOffice(
 				huddleId: room.id,
 				title: room.name,
 				snippet: "Room name",
+				author: "Room",
 				at: room.lastActive ?? 0,
 			});
 		}
@@ -68,6 +64,8 @@ export function searchOffice(
 				huddleId,
 				title,
 				snippet: snippetFor(message.text, index, needle.length),
+				author: message.from.kind === "user" ? "You" : message.from.name,
+				messageId: message.id,
 				at: message.at,
 			});
 		}

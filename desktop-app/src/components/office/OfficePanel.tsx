@@ -4,14 +4,42 @@
  * events keep it live.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { BarChart3, Bot, Building2, CalendarClock, Loader2, Mic, MicOff, Pencil, PhoneCall, PhoneOff, Pin, PinOff, Plus, Send, SkipForward, Square, Users } from "lucide-react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+	BarChart3,
+	Bot,
+	Building2,
+	CalendarClock,
+	ChevronLeft,
+	Copy,
+	ImagePlus,
+	Loader2,
+	Maximize2,
+	Mic,
+	MicOff,
+	Minimize2,
+	Pencil,
+	PhoneCall,
+	PhoneOff,
+	Pin,
+	PinOff,
+	Plus,
+	Quote,
+	Send,
+	SkipForward,
+	Square,
+	Trash2,
+	Users,
+	X,
+} from "lucide-react";
 import { Button } from "../ui/Button";
-import { officeDeleteErrand, officeRunErrand } from "../../lib/rpc";
+import { officeDeleteErrand, officeRunErrand, officeSearch } from "../../lib/rpc";
+import { toast } from "../../stores/toast-store";
 import { useOfficeStore } from "../../stores/office-store";
+import { useConfirmStore } from "../../stores/confirm-store";
 import { isHuddleUnread, useOfficeReadStore } from "../../stores/office-read-store";
 import { cn } from "../../lib/cn";
-import type { OfficeCoworker, OfficeHuddleSummary, OfficeMessage, OfficePrompt } from "../../lib/rpc";
+import type { OfficeAttachment, OfficeCoworker, OfficeHuddleSummary, OfficeMessage, OfficePrompt, OfficeSearchHit } from "../../lib/rpc";
 import { MarkdownTextContent } from "../markdown/MarkdownText";
 import { Face } from "./Face";
 import { FloorView } from "./FloorView";
@@ -21,6 +49,15 @@ import { HuddleEditor } from "./HuddleEditor";
 import { ErrandEditor } from "./ErrandEditor";
 import { huddleCall, useHuddleCallStore } from "../../lib/huddle-call";
 import { searchOffice, sortCoworkers, sortOfficeRooms } from "../../lib/office-search";
+import {
+	applyMention,
+	copyOfficeText,
+	dayLabel,
+	filterMentionCandidates,
+	findMentionMatch,
+	loadOfficeDraft,
+	saveOfficeDraft,
+} from "../../lib/office-chat";
 import { SearchField } from "../ui/SearchField";
 import { voiceCall } from "../../lib/voice-call";
 
@@ -31,6 +68,20 @@ function relativeTime(ms: number | undefined): string {
 	if (delta < 3_600_000) return `${Math.floor(delta / 60_000)}m`;
 	if (delta < 86_400_000) return `${Math.floor(delta / 3_600_000)}h`;
 	return `${Math.floor(delta / 86_400_000)}d`;
+}
+
+/** Read an image as the data URL the office RPC accepts. */
+function readImageAttachment(file: File): Promise<OfficeAttachment | null> {
+	if (!file.type.startsWith("image/")) return Promise.resolve(null);
+	return new Promise((resolve) => {
+		const reader = new FileReader();
+		reader.onload = () => {
+			const data = typeof reader.result === "string" ? reader.result : "";
+			resolve(data ? { name: file.name || "image", kind: "image", data } : null);
+		};
+		reader.onerror = () => resolve(null);
+		reader.readAsDataURL(file);
+	});
 }
 
 /** Compact time until a future epoch (errand next run). */
@@ -46,19 +97,22 @@ function untilTime(ms: number | undefined): string {
 interface RosterRowProps {
 	label: string;
 	sublabel?: string;
+	preview?: string;
 	active: boolean;
 	onClick: () => void;
 	face: React.ReactNode;
 	working?: boolean;
 	needsInput?: boolean;
 	unread?: boolean;
+	unreadCount?: number;
+	mentioned?: boolean;
 	age?: string;
 	actions?: React.ReactNode;
 }
 
-function RosterRow({ label, sublabel, active, onClick, face, working, needsInput, unread, age, actions }: RosterRowProps) {
+function RosterRow({ label, sublabel, preview, active, onClick, face, working, needsInput, unread, age, actions }: RosterRowProps) {
 	return (
-		<div className="flex w-full items-center gap-0.5">
+		<div className="group/row flex w-full items-center gap-0.5">
 			<div
 				role="button"
 				tabIndex={0}
@@ -71,34 +125,53 @@ function RosterRow({ label, sublabel, active, onClick, face, working, needsInput
 					active ? "bg-pi-surface-raised shadow-ring" : "hover:bg-pi-surface-raised",
 				)}
 			>
-			{face}
-			<span className="min-w-0 flex-1">
-				<span
-					className={cn(
-						"flex items-center gap-1.5 text-xs font-medium",
-						active ? "text-pi-text" : "text-pi-text-secondary group-hover:text-pi-text",
+				{face}
+				<span className="min-w-0 flex-1">
+					<span
+						className={cn(
+							"flex items-center gap-1.5 text-xs font-medium",
+							active ? "text-pi-text" : "text-pi-text-secondary group-hover:text-pi-text",
+						)}
+					>
+						<span className="truncate">{label}</span>
+						{needsInput && (
+							<span className="h-1.5 w-1.5 shrink-0 rounded-full bg-pi-warning" title="Waiting for you" />
+						)}
+						{unread && (
+							<span className="h-1.5 w-1.5 shrink-0 rounded-full bg-pi-accent" title="Unread messages" />
+						)}
+					</span>
+					{sublabel && (
+						<span className="block truncate text-2xs text-pi-text-muted">{sublabel}</span>
 					)}
-				>
-					<span className="truncate">{label}</span>
-					{needsInput && (
-						<span className="h-1.5 w-1.5 shrink-0 rounded-full bg-pi-warning" title="Waiting for you" />
-					)}
-					{unread && (
-						<span className="h-1.5 w-1.5 shrink-0 rounded-full bg-pi-accent" title="Unread messages" />
+					{preview && (
+						<span className="block truncate text-2xs text-pi-text-faint">{preview}</span>
 					)}
 				</span>
-				{sublabel && (
-					<span className="block truncate text-2xs text-pi-text-muted">{sublabel}</span>
+				{working ? (
+					<Loader2 className="h-3 w-3 shrink-0 animate-spin text-pi-accent" />
+				) : (
+					age && <span className="shrink-0 text-2xs text-pi-text-faint">{age}</span>
 				)}
-			</span>
-			{working ? (
-				<Loader2 className="h-3 w-3 shrink-0 animate-spin text-pi-accent" />
-			) : (
-				age && <span className="shrink-0 text-2xs text-pi-text-faint">{age}</span>
-			)}
 			</div>
-			{actions}
+			<div className="flex shrink-0 items-center opacity-0 transition-opacity group-focus-within/row:opacity-100 group-hover/row:opacity-100">
+				{actions}
+			</div>
 		</div>
+	);
+}
+
+function HighlightedSnippet({ text, query }: { text: string; query: string }) {
+	const needle = query.trim();
+	if (!needle) return <>{text}</>;
+	const index = text.toLowerCase().indexOf(needle.toLowerCase());
+	if (index < 0) return <>{text}</>;
+	return (
+		<>
+			{text.slice(0, index)}
+			<mark className="rounded-sm bg-pi-accent-soft px-0.5 text-pi-text">{text.slice(index, index + needle.length)}</mark>
+			{text.slice(index + needle.length)}
+		</>
 	);
 }
 
@@ -138,16 +211,35 @@ function PromptCard({ prompt }: { prompt: OfficePrompt }) {
 	);
 }
 
-function MessageBubble({ message, coworker }: { message: OfficeMessage; coworker?: OfficeCoworker }) {
+const MessageBubble = memo(function MessageBubble({
+	message,
+	coworker,
+	compact = false,
+	onReply,
+	onDelete,
+}: {
+	message: OfficeMessage;
+	coworker?: OfficeCoworker;
+	compact?: boolean;
+	onReply?: (message: OfficeMessage) => void;
+	onDelete?: (message: OfficeMessage) => void;
+}) {
+	const [expanded, setExpanded] = useState(false);
 	if (message.from.kind === "system") {
-		return (
-			<div className="px-3 py-1 text-center text-2xs text-pi-text-faint">{message.text}</div>
-		);
+		return <div className="px-3 py-1 text-center text-2xs text-pi-text-faint">{message.text}</div>;
 	}
 	const isUser = message.from.kind === "user";
+	const long = message.text.length > 700;
+	const copy = async () => {
+		if (!(await copyOfficeText(message.text))) {
+			toast.error("Could not copy message");
+		}
+	};
 	return (
-		<div className={cn("flex gap-2 px-3 py-1.5", isUser && "flex-row-reverse")}>
-			{coworker ? (
+		<div className={cn("group/message flex gap-2 px-3", compact ? "py-0.5" : "py-1.5", isUser && "flex-row-reverse")}>
+			{compact ? (
+				<span className="w-6 shrink-0" />
+			) : coworker ? (
 				<Face handle={coworker.handle} name={coworker.name} face={coworker.face} size={24} />
 			) : (
 				<span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-pi-surface-raised text-2xs text-pi-text-muted">
@@ -155,14 +247,18 @@ function MessageBubble({ message, coworker }: { message: OfficeMessage; coworker
 				</span>
 			)}
 			<div className={cn("min-w-0 max-w-[85%]", isUser && "text-right")}>
-				<div className="mb-0.5 text-2xs text-pi-text-faint">
-					{isUser ? "You" : message.from.name} · {relativeTime(message.at)}
+				<div
+					className="mb-0.5 text-2xs text-pi-text-faint"
+					title={new Date(message.at).toLocaleString()}
+				>
+					{compact ? relativeTime(message.at) : `${isUser ? "You" : message.from.name} · ${relativeTime(message.at)}`}
 				</div>
 				<div
 					className={cn(
 						// Markdown-rendered (chat scale): the CSS var pins the prose
 						// typography to the bubble's 12px rhythm.
 						"inline-block max-w-full break-words rounded-lg px-2.5 py-1.5 text-xs leading-relaxed [--conversation-text-font-size:0.75rem]",
+						long && !expanded && "max-h-40 overflow-hidden",
 						isUser
 							? "bg-pi-accent-soft text-pi-text"
 							: "bg-pi-surface-raised text-pi-text-secondary shadow-ring",
@@ -170,22 +266,69 @@ function MessageBubble({ message, coworker }: { message: OfficeMessage; coworker
 				>
 					<MarkdownTextContent text={message.text} isRunning={false} />
 				</div>
+				{long && (
+					<button
+						type="button"
+						className="mt-0.5 block text-2xs text-pi-text-faint hover:text-pi-text"
+						onClick={() => setExpanded((value) => !value)}
+					>
+						{expanded ? "Show less" : "Show more"}
+					</button>
+				)}
 				{message.images && message.images.length > 0 && (
-					<div className="mt-1 flex flex-wrap gap-1">
-						{message.images.map((image) => (
-							<span
-								key={image.name}
-								className="rounded border border-pi-border px-1.5 py-0.5 text-2xs text-pi-text-muted"
-							>
-								{image.kind === "image" ? "Image" : "File"}: {image.name}
-							</span>
-						))}
+					<div className={cn("mt-1 flex flex-wrap gap-1", isUser && "justify-end")}>
+						{message.images.map((image) =>
+							image.kind === "image" ? (
+								<img
+									key={image.name}
+									src={image.data}
+									alt={image.name}
+									title={image.name}
+									className="h-16 w-16 rounded-md border border-pi-border object-cover"
+								/>
+							) : (
+								<span
+									key={image.name}
+									className="rounded border border-pi-border px-1.5 py-0.5 text-2xs text-pi-text-muted"
+								>
+									File: {image.name}
+								</span>
+							),
+						)}
 					</div>
 				)}
+				<div
+					className={cn(
+						"mt-0.5 hidden items-center gap-0.5 group-focus-within/message:flex group-hover/message:flex",
+						isUser && "justify-end",
+					)}
+				>
+					<Button variant="ghost" size="icon-sm" icon={Copy} aria-label="Copy message" title="Copy message" onClick={() => void copy()} />
+					{onReply && (
+						<Button
+							variant="ghost"
+							size="icon-sm"
+							icon={Quote}
+							aria-label="Quote message"
+							title="Quote message"
+							onClick={() => onReply(message)}
+						/>
+					)}
+					{onDelete && (
+						<Button
+							variant="ghost"
+							size="icon-sm"
+							icon={Trash2}
+							aria-label="Delete message"
+							title="Delete message"
+							onClick={() => onDelete(message)}
+						/>
+					)}
+				</div>
 			</div>
 		</div>
 	);
-}
+});
 
 function HuddleCallBar({ huddleId }: { huddleId: string }) {
 	const call = useHuddleCallStore();
@@ -272,14 +415,29 @@ function HuddleCallBar({ huddleId }: { huddleId: string }) {
 	);
 }
 
-function HuddleChat({ huddleId }: { huddleId: string }) {
+function HuddleChat({ huddleId, onEdit }: { huddleId: string; onEdit?: () => void }) {
 	const snapshot = useOfficeStore((s) => s.snapshot);
 	const huddle = useOfficeStore((s) => s.huddles[huddleId]);
 	const send = useOfficeStore((s) => s.send);
 	const stop = useOfficeStore((s) => s.stop);
-	const [draft, setDraft] = useState("");
+	const focusMessageId = useOfficeStore((s) => s.focusMessageId);
+	const clearFocusMessage = useOfficeStore((s) => s.clearFocusMessage);
+	const deleteMessage = useOfficeStore((s) => s.deleteMessage);
+	const confirm = useConfirmStore((s) => s.ask);
+	const [draft, setDraft] = useState(() => loadOfficeDraft(huddleId));
+	const [attachments, setAttachments] = useState<OfficeAttachment[]>([]);
 	const [sending, setSending] = useState(false);
+	const [stick, setStick] = useState(true);
+	const [pending, setPending] = useState(0);
+	const [highlighted, setHighlighted] = useState<string | null>(null);
+	const [mention, setMention] = useState<ReturnType<typeof findMentionMatch>>(null);
+	const [mentionIndex, setMentionIndex] = useState(0);
 	const scrollRef = useRef<HTMLDivElement | null>(null);
+	const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+	const fileInputRef = useRef<HTMLInputElement | null>(null);
+	const stickRef = useRef(true);
+	const lastLengthRef = useRef(0);
+	const unreadRef = useRef<{ id: string; at: number }>({ id: "", at: 0 });
 
 	const log = huddle?.data.log ?? [];
 	const logLength = log.length;
@@ -287,55 +445,296 @@ function HuddleChat({ huddleId }: { huddleId: string }) {
 	const coworkers = snapshot?.coworkers ?? [];
 	const byId = useMemo(() => new Map(coworkers.map((c) => [c.id, c])), [coworkers]);
 	const memberIds = snapshot?.huddles.find((h) => h.id === huddleId)?.members ?? [];
+	const memberCoworkers = useMemo(
+		() => memberIds.map((id) => byId.get(id)).filter((c): c is OfficeCoworker => Boolean(c)),
+		[memberIds, byId],
+	);
 	const dmTarget = memberIds.length === 1 ? byId.get(memberIds[0]) : undefined;
 	const huddleSummary = snapshot?.huddles.find((h) => h.id === huddleId);
 	const title = dmTarget ? dmTarget.name : (huddleSummary?.name ?? "Huddle");
+	const subtitle = dmTarget ? "Direct message" : memberCoworkers.map((c) => c.name).join(", ") || "No members";
 	const callActive = useHuddleCallStore((s) => s.active && s.huddleId === huddleId);
-	// The coworker currently generating the reply (running.current is a name).
 	const typingCoworker = working?.current ? coworkers.find((c) => c.name === working.current) : undefined;
+	const mentionCandidates = mention ? filterMentionCandidates(memberCoworkers, mention.query) : [];
+
+	if (unreadRef.current.id !== huddleId) {
+		const read = useOfficeReadStore.getState();
+		unreadRef.current = { id: huddleId, at: read.readAt[huddleId] ?? read.initializedAt };
+	}
+	const firstUnreadIndex = useMemo(
+		() => log.findIndex((message) => message.at > unreadRef.current.at),
+		[log, unreadRef.current.at],
+	);
 
 	useEffect(() => {
+		saveOfficeDraft(huddleId, draft);
+	}, [draft, huddleId]);
+
+	const scrollToBottom = useCallback((smooth = false) => {
 		const node = scrollRef.current;
-		if (node) node.scrollTop = node.scrollHeight;
-	}, [log.length, working?.current]);
+		if (!node) return;
+		node.scrollTo({ top: node.scrollHeight, behavior: smooth ? "smooth" : "auto" });
+	}, []);
 
-	// Reading the room clears its unread dot, including messages that land
-	// while the chat is open.
+	useLayoutEffect(() => {
+		if (stickRef.current) {
+			scrollToBottom();
+			lastLengthRef.current = logLength;
+			setPending(0);
+		}
+	}, [logLength, working?.current, scrollToBottom]);
+
+	useLayoutEffect(() => {
+		if (!focusMessageId) return;
+		const container = scrollRef.current;
+		if (!container) return;
+		const node = container.querySelector<HTMLElement>(`[data-message-id="${focusMessageId}"]`);
+		if (!node) return;
+		stickRef.current = false;
+		setStick(false);
+		setPending(0);
+		const containerRect = container.getBoundingClientRect();
+		const nodeRect = node.getBoundingClientRect();
+		container.scrollTop += nodeRect.top - containerRect.top - container.clientHeight / 2 + nodeRect.height / 2;
+		setHighlighted(focusMessageId);
+		const timer = setTimeout(() => {
+			setHighlighted(null);
+			clearFocusMessage();
+		}, 2_400);
+		return () => clearTimeout(timer);
+	}, [focusMessageId, logLength, clearFocusMessage]);
+
 	useEffect(() => {
+		const added = logLength - lastLengthRef.current;
+		if (added > 0 && !stickRef.current) setPending((current) => current + added);
+		lastLengthRef.current = logLength;
+	}, [logLength]);
+
+	const markRead = useCallback(() => {
 		useOfficeReadStore.getState().markRead(huddleId);
-	}, [huddleId, logLength]);
+	}, [huddleId]);
+
+	useEffect(() => {
+		if (stick) markRead();
+	}, [logLength, stick, markRead]);
+
+	const jumpToLatest = () => {
+		stickRef.current = true;
+		setStick(true);
+		setPending(0);
+		markRead();
+		scrollToBottom(true);
+	};
+
+	const onScroll = () => {
+		const node = scrollRef.current;
+		if (!node) return;
+		const next = node.scrollHeight - node.scrollTop - node.clientHeight < 40;
+		stickRef.current = next;
+		setStick(next);
+		if (next) {
+			setPending(0);
+			markRead();
+		}
+	};
+
+	const updateMention = useCallback(
+		(value: string, cursor: number) => {
+			const match = findMentionMatch(value, cursor, memberCoworkers);
+			setMention(match);
+			setMentionIndex(0);
+		},
+		[memberCoworkers],
+	);
+
+	const chooseMention = useCallback(
+		(member: OfficeCoworker | undefined) => {
+			if (!mention || !member) return;
+			const applied = applyMention(draft, mention, member.handle);
+			setDraft(applied.text);
+			setMention(null);
+			requestAnimationFrame(() => {
+				const node = textareaRef.current;
+				if (!node) return;
+				node.focus();
+				node.setSelectionRange(applied.cursor, applied.cursor);
+			});
+		},
+		[draft, mention],
+	);
+
+	const addFiles = useCallback(
+		async (files: File[]) => {
+			const images = files.filter((file) => file.type.startsWith("image/"));
+			if (images.length === 0) return;
+			const room = 4 - attachments.length;
+			if (room <= 0) {
+				toast.warning("Attachment limit reached", "A huddle message can carry up to 4 attachments.");
+				return;
+			}
+			if (images.length > room) {
+				toast.warning("Some attachments skipped", `A huddle message can carry up to 4 attachments.`);
+			}
+			const parsed = await Promise.all(images.slice(0, room).map(readImageAttachment));
+			setAttachments((current) => [...current, ...parsed.filter((item): item is OfficeAttachment => item !== null)].slice(0, 4));
+		},
+		[attachments.length],
+	);
+
+	const quote = useCallback((message: OfficeMessage) => {
+		const source = message.from.kind === "user" ? "You" : message.from.name;
+		const text = message.text.length > 500 ? `${message.text.slice(0, 500)}…` : message.text;
+		const quoted = text.split("\n").map((line) => `> ${line}`).join("\n");
+		setDraft((current) => `${current}${current.trim() ? "\n\n" : ""}> ${source}:\n${quoted}\n\n`);
+		requestAnimationFrame(() => textareaRef.current?.focus());
+	}, []);
+
+	const requestDelete = useCallback(
+		async (message: OfficeMessage) => {
+			const confirmed = await confirm({
+				title: "Delete this message?",
+				message: "The message is removed from the room log. This cannot be undone.",
+				confirmLabel: "Delete",
+				danger: true,
+			});
+			if (!confirmed) return;
+			try {
+				await deleteMessage(message.id);
+			} catch (error) {
+				toast.error("Could not delete message", error instanceof Error ? error.message : String(error));
+			}
+		},
+		[confirm, deleteMessage],
+	);
 
 	const submit = async () => {
 		const text = draft.trim();
-		if (!text || sending) return;
-		setDraft("");
+		if (sending) return;
+		if (text === "/stop") {
+			setDraft("");
+			await stop();
+			return;
+		}
+		if (text === "/call") {
+			setDraft("");
+			if (voiceCall.active) await voiceCall.stop();
+			await huddleCall.start(huddleId, title);
+			return;
+		}
+		if (text === "/end") {
+			setDraft("");
+			await huddleCall.stop();
+			return;
+		}
+		if (text === "/mute") {
+			setDraft("");
+			huddleCall.toggleMute();
+			return;
+		}
+		if (!text && attachments.length === 0) return;
 		setSending(true);
 		try {
-			await send(text);
+			await send(text, attachments);
+			setDraft("");
+			setAttachments([]);
+			setMention(null);
+		} catch (error) {
+			toast.error("Could not send to the huddle", error instanceof Error ? error.message : String(error));
 		} finally {
 			setSending(false);
 		}
 	};
 
+	const rows: React.ReactNode[] = [];
+	let previous: OfficeMessage | undefined;
+	let lastDay = "";
+	for (let index = 0; index < log.length; index += 1) {
+		const message = log[index];
+		const day = dayLabel(message.at);
+		if (day.key !== lastDay) {
+			lastDay = day.key;
+			previous = undefined;
+			rows.push(
+				<div key={`day-${day.key}-${index}`} className="flex items-center gap-2 px-3 py-2">
+					<span className="h-px flex-1 bg-pi-border/70" />
+					<span className="text-2xs font-medium uppercase tracking-wide text-pi-text-faint">{day.label}</span>
+					<span className="h-px flex-1 bg-pi-border/70" />
+				</div>,
+			);
+		}
+		if (index === firstUnreadIndex) {
+			rows.push(
+				<div key="unread" className="flex items-center gap-2 px-3 py-1">
+					<span className="h-px flex-1 bg-pi-accent/60" />
+					<span className="text-2xs font-medium text-pi-accent">New messages</span>
+					<span className="h-px flex-1 bg-pi-accent/60" />
+				</div>,
+			);
+		}
+		const compact =
+			previous !== undefined &&
+			previous.from.kind === message.from.kind &&
+			previous.from.id === message.from.id &&
+			message.at - previous.at < 5 * 60_000;
+		rows.push(
+			<div
+				key={message.id}
+				data-message-id={message.id}
+				className={cn(
+					"scroll-mt-2 rounded-lg transition-colors duration-500",
+					highlighted === message.id && "bg-pi-accent-soft/35",
+				)}
+			>
+				<MessageBubble
+					message={message}
+					coworker={message.from.id ? byId.get(message.from.id) : undefined}
+					compact={compact}
+					onReply={quote}
+					onDelete={message.from.kind === "user" ? requestDelete : undefined}
+				/>
+			</div>,
+		);
+		previous = message;
+	}
+
 	return (
-		<div className="flex min-h-0 flex-1 flex-col">
-			<div className="flex items-center gap-2 border-b border-pi-border px-3 py-2">
-				<Button variant="ghost" size="xs" onClick={() => useOfficeStore.setState({ openHuddleId: null })}>
-					← Roster
-				</Button>
-				<span className="min-w-0 flex-1 truncate text-xs font-semibold text-pi-text">
-					{title}
-				</span>
+		<div className="relative flex min-h-0 flex-1 flex-col">
+			<div className="flex items-center gap-1.5 border-b border-pi-border px-2 py-1.5">
+				<Button
+					variant="ghost"
+					size="icon-sm"
+					icon={ChevronLeft}
+					aria-label="Back to roster"
+					title="Back to roster"
+					onClick={() => useOfficeStore.setState({ openHuddleId: null })}
+				/>
+				{memberCoworkers.length > 0 && (
+					<span className="flex shrink-0 -space-x-1.5">
+						{memberCoworkers.slice(0, 3).map((member) => (
+							<Face
+								key={member.id}
+								handle={member.handle}
+								name={member.name}
+								face={member.face}
+								size={20}
+							/>
+						))}
+					</span>
+				)}
+				<div className="min-w-0 flex-1">
+					<div className="truncate text-xs font-semibold text-pi-text">{title}</div>
+					<div className="truncate text-2xs text-pi-text-faint">{subtitle}</div>
+				</div>
 				{working && (
-					<span className="flex items-center gap-1 text-2xs text-pi-text-muted">
+					<span className="flex animate-pulse items-center gap-1 text-2xs text-pi-text-muted" title="A turn is running">
 						<Loader2 className="h-3 w-3 animate-spin" />
-						{working.current ? `${working.current} is working…` : "working…"}
 					</span>
 				)}
 				<Button
 					variant="ghost"
-					size="xs"
+					size="icon-sm"
 					icon={callActive ? PhoneOff : PhoneCall}
+					aria-label={callActive ? "End the huddle call" : "Start a voice call"}
 					title={callActive ? "End the huddle call" : "Start a voice call in this huddle"}
 					onClick={() => {
 						void (async () => {
@@ -343,105 +742,241 @@ function HuddleChat({ huddleId }: { huddleId: string }) {
 								await huddleCall.stop();
 								return;
 							}
-							// One mic at a time.
 							if (voiceCall.active) await voiceCall.stop();
 							await huddleCall.start(huddleId, title);
 						})();
 					}}
-				>
-					{callActive ? "End" : "Call"}
-				</Button>
+				/>
 				{working && (
-					<Button variant="ghost" size="xs" icon={Square} onClick={() => void stop()}>
-						Stop
-					</Button>
+					<Button
+						variant="ghost"
+						size="icon-sm"
+						icon={Square}
+						aria-label="Stop the room"
+						title="Stop the room"
+						onClick={() => void stop()}
+					/>
+				)}
+				{onEdit && (
+					<Button
+						variant="ghost"
+						size="icon-sm"
+						icon={Pencil}
+						aria-label="Edit huddle"
+						title="Edit huddle"
+						onClick={onEdit}
+					/>
 				)}
 			</div>
 
 			<HuddleCallBar huddleId={huddleId} />
 
-			<div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto py-2">
-				{log.length === 0 && (
-					<div className="px-4 py-8 text-center text-2xs text-pi-text-faint">
-						{dmTarget
-							? `Message ${dmTarget.name} — your DM history lives in their own session.`
-							: "Say something to get the huddle going."}
-					</div>
-				)}
-				{log.map((message) => (
-					<MessageBubble
-						key={message.id}
-						message={message}
-						coworker={message.from.id ? byId.get(message.from.id) : undefined}
-					/>
-				))}
-				{/* In-chat typing indicator: the working coworker's face beside an
-					animated dots bubble — mirrors the header's working state inside
-					the conversation where the reply will land. */}
-				{working?.current && (
-					<div className="flex gap-2 px-3 py-1.5">
-						{typingCoworker ? (
-							<Face
-								handle={typingCoworker.handle}
-								name={typingCoworker.name}
-								face={typingCoworker.face}
-								size={24}
-							/>
-						) : (
-							<span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-pi-surface-raised text-2xs text-pi-text-muted">
-								·
-							</span>
-						)}
-						<div>
-							<div className="mb-0.5 text-2xs text-pi-text-faint">{working.current} is typing…</div>
-							<div className="inline-flex items-center gap-1 rounded-lg bg-pi-surface-raised px-3 py-2 shadow-ring">
-								<span className="h-1.5 w-1.5 animate-bounce rounded-full bg-pi-text-muted" style={{ animationDelay: "0ms" }} />
-								<span className="h-1.5 w-1.5 animate-bounce rounded-full bg-pi-text-muted/80" style={{ animationDelay: "150ms" }} />
-								<span className="h-1.5 w-1.5 animate-bounce rounded-full bg-pi-text-muted/60" style={{ animationDelay: "300ms" }} />
+			<div className="relative min-h-0 flex-1">
+				<div
+					ref={scrollRef}
+					onScroll={onScroll}
+					className="h-full overflow-y-auto py-2"
+					role="log"
+					aria-live="polite"
+					aria-relevant="additions"
+				>
+					{log.length === 0 && (
+						<div className="px-4 py-8 text-center text-2xs text-pi-text-faint">
+							{dmTarget
+								? `Message ${dmTarget.name} — your DM history lives in their own session.`
+								: "Say something to get the huddle going."}
+						</div>
+					)}
+					{rows}
+					{working?.current && (
+						<div className="flex gap-2 px-3 py-1.5">
+							{typingCoworker ? (
+								<Face
+									handle={typingCoworker.handle}
+									name={typingCoworker.name}
+									face={typingCoworker.face}
+									size={24}
+								/>
+							) : (
+								<span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-pi-surface-raised text-2xs text-pi-text-muted">
+									·
+								</span>
+							)}
+							<div>
+								<div className="mb-0.5 text-2xs text-pi-text-faint">{working.current} is typing…</div>
+								<div className="inline-flex items-center gap-1 rounded-lg bg-pi-surface-raised px-3 py-2 shadow-ring">
+									<span className="h-1.5 w-1.5 animate-bounce rounded-full bg-pi-text-muted" style={{ animationDelay: "0ms" }} />
+									<span className="h-1.5 w-1.5 animate-bounce rounded-full bg-pi-text-muted/80" style={{ animationDelay: "150ms" }} />
+									<span className="h-1.5 w-1.5 animate-bounce rounded-full bg-pi-text-muted/60" style={{ animationDelay: "300ms" }} />
+								</div>
 							</div>
 						</div>
-					</div>
+					)}
+				</div>
+				{(!stick || pending > 0) && (
+					<button
+						type="button"
+						onClick={jumpToLatest}
+						className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full border border-pi-border bg-pi-surface-raised/95 px-2.5 py-1 text-2xs text-pi-text shadow-overlay backdrop-blur-sm"
+					>
+						{pending > 0 ? `New messages (${pending})` : "Jump to latest"} ↓
+					</button>
 				)}
 			</div>
 
 			<div className="border-t border-pi-border p-2">
-				<div className="flex items-end gap-1.5">
-					<textarea
-						value={draft}
-						onChange={(e) => setDraft(e.target.value)}
-						onKeyDown={(e) => {
-							if (e.key === "Enter" && !e.shiftKey) {
-								e.preventDefault();
-								void submit();
-							}
-						}}
-						placeholder={dmTarget ? `Message @${dmTarget.handle}…` : "Message the huddle… (@handle to address someone)"}
-						rows={2}
-						className="max-h-28 w-full resize-none rounded-md bg-pi-surface-raised px-2.5 py-1.5 text-xs text-pi-text shadow-ring transition-smooth placeholder:text-pi-text-faint focus:shadow-focus focus:outline-none"
-					/>
-					<Button
-						variant="primary"
-						size="icon-sm"
-						icon={Send}
-						aria-label="Send"
-						disabled={!draft.trim() || sending}
-						onClick={() => void submit()}
-					/>
-				</div>
-				{coworkers.length > 0 && !dmTarget && (
-					<div className="mt-1.5 flex flex-wrap gap-1">
-						{coworkers
-							.filter((c) => memberIds.includes(c.id))
-							.map((c) => (
+				{attachments.length > 0 && (
+					<div className="mb-1.5 flex flex-wrap gap-1.5">
+						{attachments.map((attachment, index) => (
+							<div
+								key={`${attachment.name}-${index}`}
+								className="group/attachment relative rounded-md border border-pi-border bg-pi-surface-raised p-1"
+							>
+								<img src={attachment.data} alt={attachment.name} className="h-10 w-10 rounded object-cover" />
 								<button
-									key={c.id}
 									type="button"
-									onClick={() => setDraft((d) => `${d}${d.endsWith(" ") || d === "" ? "" : " "}@${c.handle} `)}
-									className="rounded-full bg-pi-surface-raised px-2 py-0.5 text-2xs text-pi-text-muted shadow-ring transition-hover hover:text-pi-text active-press"
+									aria-label={`Remove ${attachment.name}`}
+									title={`Remove ${attachment.name}`}
+									onClick={() => setAttachments((current) => current.filter((_, i) => i !== index))}
+									className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-pi-surface text-pi-text-muted shadow-ring hover:text-pi-text"
 								>
-									@{c.handle}
+									<X className="h-2.5 w-2.5" />
+								</button>
+							</div>
+						))}
+					</div>
+				)}
+				<div className="relative">
+					{mention && mentionCandidates.length > 0 && (
+						<div className="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-48 overflow-y-auto rounded-md border border-pi-border bg-pi-surface-raised p-1 shadow-overlay">
+							{mentionCandidates.map((member, index) => (
+								<button
+									key={member.id}
+									type="button"
+									onMouseDown={(event) => event.preventDefault()}
+									onClick={() => chooseMention(member)}
+									className={cn(
+										"flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs",
+										index === mentionIndex ? "bg-pi-surface text-pi-text" : "text-pi-text-secondary hover:bg-pi-surface",
+									)}
+								>
+									<Face handle={member.handle} name={member.name} face={member.face} size={20} />
+									<span className="min-w-0 flex-1 truncate">{member.name}</span>
+									<span className="text-2xs text-pi-text-faint">@{member.handle}</span>
 								</button>
 							))}
+						</div>
+					)}
+					<div className="flex items-end gap-1.5">
+						<Button
+							variant="ghost"
+							size="icon-sm"
+							icon={ImagePlus}
+							aria-label="Attach image"
+							title="Attach image"
+							onClick={() => fileInputRef.current?.click()}
+						/>
+						<textarea
+							ref={textareaRef}
+							value={draft}
+							onChange={(event) => {
+								setDraft(event.target.value);
+								updateMention(event.target.value, event.target.selectionStart);
+							}}
+							onKeyDown={(event) => {
+								if (mention && mentionCandidates.length > 0) {
+									if (event.key === "ArrowDown") {
+										event.preventDefault();
+										setMentionIndex((index) => (index + 1) % mentionCandidates.length);
+										return;
+									}
+									if (event.key === "ArrowUp") {
+										event.preventDefault();
+										setMentionIndex((index) => (index - 1 + mentionCandidates.length) % mentionCandidates.length);
+										return;
+									}
+									if ((event.key === "Enter" && !event.shiftKey) || event.key === "Tab") {
+										event.preventDefault();
+										chooseMention(mentionCandidates[mentionIndex]);
+										return;
+									}
+									if (event.key === "Escape") {
+										event.preventDefault();
+										setMention(null);
+										return;
+									}
+								}
+								if (event.key === "Enter" && !event.shiftKey) {
+									event.preventDefault();
+									void submit();
+								}
+							}}
+							onPaste={(event) => {
+								const files = Array.from(event.clipboardData.files);
+								if (files.some((file) => file.type.startsWith("image/"))) {
+									event.preventDefault();
+									void addFiles(files);
+								}
+							}}
+							onDrop={(event) => {
+								event.preventDefault();
+								void addFiles(Array.from(event.dataTransfer.files));
+							}}
+							onDragOver={(event) => event.preventDefault()}
+							placeholder={dmTarget ? `Message @${dmTarget.handle}…` : "Message the huddle… (@handle to address someone)"}
+							rows={2}
+							className="max-h-28 w-full resize-none rounded-md bg-pi-surface-raised px-2.5 py-1.5 text-xs text-pi-text shadow-ring transition-smooth placeholder:text-pi-text-faint focus:shadow-focus focus:outline-none"
+						/>
+						<Button
+							variant="primary"
+							size="icon-sm"
+							icon={Send}
+							aria-label="Send"
+							loading={sending}
+							disabled={(!draft.trim() && attachments.length === 0) || sending}
+							onClick={() => void submit()}
+						/>
+					</div>
+					<input
+						ref={fileInputRef}
+						type="file"
+						accept="image/*"
+						multiple
+						className="hidden"
+						onChange={(event) => {
+							const files = Array.from(event.target.files ?? []);
+							event.target.value = "";
+							void addFiles(files);
+						}}
+					/>
+				</div>
+				<div className="mt-1 flex items-center justify-between gap-2">
+					<div className="flex min-w-0 flex-wrap gap-1">
+						{coworkers.length > 0 && !dmTarget &&
+							coworkers
+									.filter((c) => memberIds.includes(c.id))
+									.map((c) => (
+										<button
+											key={c.id}
+											type="button"
+											onClick={() => {
+												const next = `${draft}${draft.endsWith(" ") || draft === "" ? "" : " "}@${c.handle} `;
+												setDraft(next);
+												setMention(null);
+												requestAnimationFrame(() => textareaRef.current?.focus());
+											}}
+											className="rounded-full bg-pi-surface-raised px-2 py-0.5 text-2xs text-pi-text-muted shadow-ring transition-hover hover:text-pi-text active-press"
+										>
+											@{c.handle}
+										</button>
+									))}
+					</div>
+					<span className="shrink-0 text-2xs text-pi-text-faint">/stop · /call</span>
+				</div>
+				{working && (
+					<div className="mt-1 flex items-center gap-1 text-2xs text-pi-text-faint">
+						<Loader2 className="h-2.5 w-2.5 animate-spin" />
+						The room is working{working.current ? ` — ${working.current}` : ""}. Your message will queue.
 					</div>
 				)}
 			</div>
@@ -458,14 +993,23 @@ export function OfficePanel() {
 	const callHuddleId = useHuddleCallStore((s) => (s.active ? s.huddleId : null));
 	const pinned = useOfficeStore((s) => s.pinned);
 	const togglePinned = useOfficeStore((s) => s.togglePinned);
-	const liveHuddles = useOfficeStore((s) => s.huddles);
 	const [query, setQuery] = useState("");
+	const [searchHits, setSearchHits] = useState<OfficeSearchHit[]>([]);
+	const [searching, setSearching] = useState(false);
+	const [, setClock] = useState(0);
+	useEffect(() => {
+		const timer = setInterval(() => setClock((value) => value + 1), 30_000);
+		return () => clearInterval(timer);
+	}, []);
 	const readAt = useOfficeReadStore((s) => s.readAt);
 	const initializedAt = useOfficeReadStore((s) => s.initializedAt);
+	const unread = useOfficeReadStore((s) => s.unread);
+	const mentions = useOfficeReadStore((s) => s.mentions);
 	const [coworkerEditor, setCoworkerEditor] = useState<{ open: boolean; editing?: OfficeCoworker }>({ open: false });
 	const [detailsCoworker, setDetailsCoworker] = useState<OfficeCoworker | null>(null);
 	const [huddleEditor, setHuddleEditor] = useState<{ open: boolean; editing?: OfficeHuddleSummary }>({ open: false });
 	const [errandEditor, setErrandEditor] = useState(false);
+	const [floorExpanded, setFloorExpanded] = useState(false);
 	const [floorView, setFloorView] = useState(() => {
 		if (typeof window === "undefined") return false;
 		try {
@@ -476,16 +1020,24 @@ export function OfficePanel() {
 	});
 
 	const toggleFloor = (): void => {
-		setFloorView((current) => {
-			const next = !current;
-			try {
-				window.localStorage.setItem("a-coder.office.floorOpen", next ? "1" : "0");
-			} catch {
-				// Storage can be disabled; the in-memory toggle still works.
-			}
-			return next;
-		});
+		const next = !floorView;
+		setFloorView(next);
+		if (!next) setFloorExpanded(false);
+		try {
+			window.localStorage.setItem("a-coder.office.floorOpen", next ? "1" : "0");
+		} catch {
+			// Storage can be disabled; the in-memory toggle still works.
+		}
 	};
+
+	useEffect(() => {
+		if (!floorExpanded) return;
+		const onKey = (event: KeyboardEvent) => {
+			if (event.key === "Escape") setFloorExpanded(false);
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, [floorExpanded]);
 
 	useEffect(() => {
 		// The engine pushes office_update snapshots; only fetch when we have
@@ -506,10 +1058,39 @@ export function OfficePanel() {
 		pinnedSet,
 	);
 	const sortedCoworkers = sortCoworkers(coworkers, (id) => lastActiveFor(`dm:${id}`), pinnedSet);
-	const searchHits = useMemo(() => searchOffice(snapshot, liveHuddles, query), [snapshot, liveHuddles, query]);
 	const errands = snapshot?.errands ?? [];
 	const prompts = snapshot?.pendingPrompts ?? [];
 	const coworkerById = useMemo(() => new Map(coworkers.map((c) => [c.id, c])), [coworkers]);
+	const openSummary = openHuddleId ? huddles.find((h) => h.id === openHuddleId) : undefined;
+	useEffect(() => {
+		const value = query.trim();
+		if (!value) {
+			setSearchHits([]);
+			setSearching(false);
+			return;
+		}
+		let cancelled = false;
+		setSearching(true);
+		const timer = setTimeout(() => {
+			void officeSearch(value, 30)
+				.then((hits) => {
+					if (!cancelled) setSearchHits(hits);
+				})
+				.catch(() => {
+					if (!cancelled) {
+						const state = useOfficeStore.getState();
+						setSearchHits(searchOffice(state.snapshot, state.huddles, value));
+					}
+				})
+				.finally(() => {
+					if (!cancelled) setSearching(false);
+				});
+		}, 180);
+		return () => {
+			cancelled = true;
+			clearTimeout(timer);
+		};
+	}, [query]);
 
 	if (openHuddleId) {
 		return (
@@ -517,7 +1098,15 @@ export function OfficePanel() {
 				{prompts.map((prompt) => (
 					<PromptCard key={prompt.requestId} prompt={prompt} />
 				))}
-				<HuddleChat huddleId={openHuddleId} />
+				<HuddleChat
+					key={openHuddleId}
+					huddleId={openHuddleId}
+					onEdit={
+						openSummary && !openHuddleId.startsWith("dm:")
+							? () => setHuddleEditor({ open: true, editing: openSummary })
+							: undefined
+					}
+				/>
 			</div>
 		);
 	}
@@ -571,8 +1160,40 @@ export function OfficePanel() {
 			)}
 
 			{floorView ? (
-				<div className="min-h-0 flex-1">
-					<FloorView />
+				<div
+					className={
+						floorExpanded
+							? "fixed inset-0 z-[var(--z-modal)] flex flex-col gap-2 bg-pi-bg p-3"
+							: "relative min-h-0 flex-1"
+					}
+				>
+					{floorExpanded && (
+						<div className="flex items-center justify-between">
+							<span className="text-xs font-semibold text-pi-text">Virtual office floor</span>
+							<Button
+								variant="ghost"
+								size="icon-sm"
+								icon={Minimize2}
+								aria-label="Close expanded floor"
+								title="Close expanded floor"
+								onClick={() => setFloorExpanded(false)}
+							/>
+						</div>
+					)}
+					<div className="min-h-0 flex-1">
+						<FloorView />
+					</div>
+					{!floorExpanded && (
+						<Button
+							variant="ghost"
+							size="icon-sm"
+							icon={Maximize2}
+							aria-label="Expand floor"
+							title="Expand floor"
+							className="absolute left-2 top-10 z-20 bg-pi-surface/80 backdrop-blur-sm"
+							onClick={() => setFloorExpanded(true)}
+						/>
+					)}
 				</div>
 			) : (
 			<div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-4">
@@ -595,19 +1216,26 @@ export function OfficePanel() {
 				/>
 				{query.trim().length > 0 && (
 					<>
-						<SectionHeader label={`Search results (${searchHits.length})`} />
+						<SectionHeader label={searching ? "Searching rooms…" : `Search results (${searchHits.length})`} />
 						{searchHits.length === 0 && (
-							<div className="px-1.5 py-2 text-2xs text-pi-text-faint">No matches in room names or recent messages.</div>
+							<div className="px-1.5 py-2 text-2xs text-pi-text-faint">No matches in room names or messages.</div>
 						)}
 						{searchHits.map((hit) => (
 							<button
 								key={`${hit.huddleId}:${hit.at}:${hit.snippet}`}
 								type="button"
-								onClick={() => void openHuddle(hit.huddleId)}
+								onClick={() => void openHuddle(hit.huddleId, hit.messageId)}
 								className="flex w-full flex-col gap-0.5 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-pi-surface-raised"
 							>
-								<span className="truncate text-xs text-pi-text">{hit.title}</span>
-								<span className="truncate text-2xs text-pi-text-muted">{hit.snippet}</span>
+								<span className="flex min-w-0 items-center gap-1.5">
+									<span className="truncate text-xs text-pi-text">{hit.title}</span>
+									<span className="shrink-0 text-2xs text-pi-text-faint">
+										{hit.author ?? "Message"} · {relativeTime(hit.at)}
+									</span>
+								</span>
+								<span className="truncate text-2xs text-pi-text-muted">
+									<HighlightedSnippet text={hit.snippet} query={query} />
+								</span>
 							</button>
 						))}
 					</>
@@ -632,6 +1260,9 @@ export function OfficePanel() {
 								working={status?.working}
 								needsInput={status?.needsInput}
 								unread={isHuddleUnread(summary?.lastActive, readAt, initializedAt, dmId)}
+								unreadCount={unread[dmId] ?? 0}
+								mentioned={mentions[dmId] ?? false}
+								preview={summary?.preview}
 								age={relativeTime(summary?.lastActive)}
 								face={
 									<Face
@@ -700,6 +1331,9 @@ export function OfficePanel() {
 							.join(", ")}
 						active={openHuddleId === huddle.id}
 						unread={isHuddleUnread(huddle.lastActive, readAt, initializedAt, huddle.id)}
+						unreadCount={unread[huddle.id] ?? 0}
+						mentioned={mentions[huddle.id] ?? false}
+						preview={huddle.preview}
 						age={relativeTime(huddle.lastActive)}
 						face={
 							<span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full bg-pi-surface-raised">

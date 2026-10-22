@@ -13,6 +13,17 @@ describe("office read pointers", () => {
 		expect(isHuddleUnread(400, {}, 300, "room")).toBe(true);
 	});
 
+	it("tracks unread counts and mention flags, then clears them on read", () => {
+		const id = `test-unread-${Date.now()}`;
+		useOfficeReadStore.getState().recordActivity(id, 2, false);
+		useOfficeReadStore.getState().recordActivity(id, 1, true);
+		expect(useOfficeReadStore.getState().unread[id]).toBe(3);
+		expect(useOfficeReadStore.getState().mentions[id]).toBe(true);
+		useOfficeReadStore.getState().markRead(id, 600);
+		expect(useOfficeReadStore.getState().unread[id]).toBeUndefined();
+		expect(useOfficeReadStore.getState().mentions[id]).toBeUndefined();
+	});
+
 	it("persists read pointers and never moves them backwards", () => {
 		const id = `test-room-${Date.now()}`;
 		useOfficeReadStore.getState().markRead(id, 500);

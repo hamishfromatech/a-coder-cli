@@ -32,16 +32,16 @@ import {
 	classifyHoldDirective,
 	coworkerAuthor,
 	deltaFor,
-	formatRoomLine,
+	formatRoomLines,
 	heldWatermarkAdvance,
 	isEchoOfLastEntry,
 	isPassText,
+	isRoomAddress,
 	mintMessageId,
 	parseMentions,
 	pickReply,
 	resolveResponders,
 	rotateSpeakers,
-	shouldCommitTurn,
 	systemAuthor,
 	unaddressedMentions,
 	userAuthor,
@@ -57,7 +57,11 @@ import {
 	type Huddle,
 	type HuddleData,
 	type HuddleSummary,
+	OFFICE_MAX_ATTACHMENT_CHARS,
+	OFFICE_MAX_ATTACHMENT_TOTAL_CHARS,
+	OFFICE_MAX_ATTACHMENTS,
 	OFFICE_MAX_CONTINUATIONS,
+	OFFICE_MAX_MEMBERS,
 	OFFICE_MAX_MESSAGES,
 	OFFICE_MAX_ROUNDS,
 	OFFICE_PASS_TEXT,
@@ -69,6 +73,7 @@ import {
 	type OfficeHuddlePayload,
 	type OfficeMessage,
 	type OfficePrompt,
+	type OfficeSearchHit,
 	type OfficeSnapshot,
 } from "./types.ts";
 
@@ -135,6 +140,23 @@ export interface OfficeServiceOptions {
 	sink: OfficeEventSink;
 	/** Idle timeout before a coworker side runtime is disposed (tests override). */
 	idleTimeoutMs?: number;
+	/** Wall-clock limit for one coworker turn before abort (tests override). */
+	turnTimeoutMs?: number;
+}
+
+/** One in-flight turn's assistant replies, captured from `message_end` so
+ *  compaction cannot shift an array index under the service. */
+interface TurnCapture {
+	id: string;
+	replies: string[];
+}
+
+interface TurnOutcome {
+	reply: string | null;
+	timedOut: boolean;
+	error?: string;
+	turnId?: string;
+	skipped?: boolean;
 }
 
 /** A pending supervised prompt and its resolver. */
@@ -148,6 +170,7 @@ export class OfficeService {
 	private readonly runtime: AgentSessionRuntime;
 	private readonly sink: OfficeEventSink;
 	private readonly idleTimeoutMs: number;
+	private readonly turnTimeoutMs: number;
 
 	/** Live coworker side runtimes, keyed `<coworkerId>::<cwd>`. */
 	private sessions = new Map<string, AgentSession>();
@@ -155,19 +178,19 @@ export class OfficeService {
 	private queues = new Map<string, Promise<unknown>>();
 	/** Idle reaper timers, keyed like `sessions`. */
 	private idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
-	/** Serialization chains for huddle drives, keyed by huddle id: each new
-	 *  drive runs after the previous one exits (a user send during a long turn
-	 *  bumps the epoch — the running loop bails at its next boundary, then the
-	 *  queued drive takes the room). */
-	private driveChains = new Map<string, Promise<unknown>>();
-	/** Queued + running drive count, keyed by huddle id (idle checks). */
-	private driveCounts = new Map<string, number>();
+	/** Serialization chains for huddle drives, keyed by huddle id. A room has at
+	 *  most one running drive; sends during it set `drivePending` instead of
+	 *  queueing another full drive. */
+	private driveChains = new Map<string, Promise<void>>();
+	private drivePending = new Set<string>();
 	/** Background harvest timers for late stranded replies, keyed by huddle id. */
 	private strandedTimers = new Map<string, ReturnType<typeof setInterval>>();
 	/** Pending supervised prompts by request id. */
 	private pendingPrompts = new Map<string, PendingPrompt>();
 	/** Live coworker statuses (working / needsInput). */
 	private statuses = new Map<string, CoworkerStatus>();
+	/** Current membership per room, used to reject a turn after an edit. */
+	private huddleMembers = new Map<string, Set<string>>();
 	/** Last-known huddle preview/activity, so snapshots do not re-read every
 	 *  huddle log file on each status change. */
 	private summaryCache = new Map<string, { preview?: string; lastActive?: number }>();
@@ -177,6 +200,18 @@ export class OfficeService {
 	private huddlePushState = new Map<string, { count: number; firstId?: string }>();
 	/** Activity unsubscriptions per session key. */
 	private activityUnsubs = new Map<string, () => void>();
+	/** In-flight turn captures, keyed by turn id. A timed-out capture is kept
+	 *  for the late-reply harvest. */
+	private turnCaptures = new Map<string, TurnCapture>();
+	/** The capture receiving message_end events for a session key. */
+	private activeTurn = new Map<string, string>();
+	/** Which room/errand owns the session's current turn, so Stop aborts only
+	 *  the work it owns. */
+	private sessionOwner = new Map<string, string>();
+	/** Monotonic stop generations per room. A stop is visible to an in-flight
+	 *  turn immediately, before the async state write lands. */
+	private stopTokens = new Map<string, number>();
+	private recoveryPromise: Promise<void> | undefined;
 	private ticker: ReturnType<typeof setInterval> | undefined;
 	private disposed = false;
 
@@ -184,20 +219,61 @@ export class OfficeService {
 		this.runtime = options.runtime;
 		this.sink = options.sink;
 		this.idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
+		this.turnTimeoutMs = options.turnTimeoutMs ?? OFFICE_TURN_HARD_CAP_MS;
 	}
 
-	/** Start the errand ticker. */
+	/** Start recovery and the errand ticker. Recovery runs once and is awaited
+	 *  by snapshot/send operations so a crashed drive cannot look live. */
 	start(): void {
-		if (this.ticker) return;
+		if (this.ticker || this.disposed) return;
+		this.recoveryPromise ??= this.recoverInterruptedDrives();
 		this.ticker = setInterval(() => {
 			void this.tickErrands();
 		}, ERRAND_TICK_MS);
 		this.ticker.unref?.();
 	}
 
+	private async ensureRecovered(): Promise<void> {
+		this.recoveryPromise ??= this.recoverInterruptedDrives();
+		await this.recoveryPromise;
+	}
+
+	/** Clear `running`/`stranded` state left behind by a process that stopped
+	 *  mid-drive. There is no live session to harvest after a restart, so the
+	 *  honest state is "settled" rather than a room that types forever. */
+	private async recoverInterruptedDrives(): Promise<void> {
+		if (this.disposed) return;
+		let huddles: Huddle[];
+		try {
+			huddles = await store.listHuddles();
+		} catch {
+			return;
+		}
+		for (const huddle of huddles) {
+			if (this.disposed) return;
+			try {
+				const data = await store.loadHuddleData(huddle.id);
+				const hasStranded = Object.keys(data.stranded ?? {}).length > 0;
+				if (!data.running && !hasStranded) continue;
+				const clean = await store.updateHuddleData(huddle.id, (room) => {
+					room.running = undefined;
+					room.stranded = undefined;
+				});
+				if (!this.disposed) await this.emitHuddle(huddle.id, clean, { full: true });
+			} catch {
+				// One unreadable room must not block the rest of recovery.
+			}
+		}
+	}
+
 	/** Stop the ticker and dispose coworker runtimes. */
 	async dispose(): Promise<void> {
 		this.disposed = true;
+		for (const pending of this.pendingPrompts.values()) {
+			clearTimeout(pending.timer);
+			pending.resolve(null);
+		}
+		this.pendingPrompts.clear();
 		if (this.ticker) {
 			clearInterval(this.ticker);
 			this.ticker = undefined;
@@ -217,6 +293,14 @@ export class OfficeService {
 		this.summaryCache.clear();
 		this.activeErrands.clear();
 		this.huddlePushState.clear();
+		this.drivePending.clear();
+		this.driveChains.clear();
+		this.turnCaptures.clear();
+		this.activeTurn.clear();
+		this.sessionOwner.clear();
+		this.stopTokens.clear();
+		this.huddleMembers.clear();
+		this.queues.clear();
 		const aborts: Promise<void>[] = [];
 		for (const session of this.sessions.values()) {
 			if (session.isStreaming) {
@@ -226,16 +310,19 @@ export class OfficeService {
 		}
 		this.sessions.clear();
 		await Promise.allSettled(aborts);
+		this.statuses.clear();
 	}
 
 	// ── snapshots ─────────────────────────────────────────────────────────────
 
 	async snapshot(): Promise<OfficeSnapshot> {
+		await this.ensureRecovered();
 		const [coworkers, huddles, errands] = await Promise.all([
 			store.listCoworkers(),
 			store.listHuddles(),
 			store.listErrands(),
 		]);
+		this.huddleMembers = new Map(huddles.map((huddle) => [huddle.id, new Set(huddle.members)]));
 		const statuses: Record<string, CoworkerStatus> = {};
 		for (const coworker of coworkers) {
 			statuses[coworker.id] = this.statuses.get(coworker.id) ?? { working: false, needsInput: false };
@@ -443,14 +530,19 @@ export class OfficeService {
 	async createHuddle(name: string, memberIds: string[]): Promise<Huddle> {
 		const trimmed = name.trim();
 		if (!trimmed) throw new Error("Name is required");
-		if (memberIds.length === 0) throw new Error("Pick at least one coworker");
+		const uniqueMembers = [...new Set(memberIds)];
+		if (uniqueMembers.length === 0) throw new Error("Pick at least one coworker");
+		if (uniqueMembers.length > OFFICE_MAX_MEMBERS) {
+			throw new Error(`A huddle can seat at most ${OFFICE_MAX_MEMBERS} coworkers`);
+		}
 		const huddle: Huddle = {
 			id: randomUUID(),
 			name: trimmed,
-			members: memberIds,
+			members: uniqueMembers,
 			createdAt: Date.now(),
 		};
 		await store.saveHuddle(huddle);
+		this.huddleMembers.set(huddle.id, new Set(huddle.members));
 		await this.emitUpdate();
 		return huddle;
 	}
@@ -459,14 +551,22 @@ export class OfficeService {
 		const huddles = await store.listHuddles();
 		const huddle = huddles.find((h) => h.id === id);
 		if (!huddle) return;
-		await store.saveHuddle({ ...huddle, name: name.trim() || huddle.name, members: memberIds });
+		const uniqueMembers = [...new Set(memberIds)];
+		if (uniqueMembers.length === 0) throw new Error("Pick at least one coworker");
+		if (uniqueMembers.length > OFFICE_MAX_MEMBERS) {
+			throw new Error(`A huddle can seat at most ${OFFICE_MAX_MEMBERS} coworkers`);
+		}
+		await store.saveHuddle({ ...huddle, name: name.trim() || huddle.name, members: uniqueMembers });
+		this.huddleMembers.set(id, new Set(uniqueMembers));
 		await this.emitUpdate();
 	}
 
 	async deleteHuddle(id: string): Promise<void> {
 		await store.deleteHuddle(id);
 		this.driveChains.delete(id);
-		this.driveCounts.delete(id);
+		this.drivePending.delete(id);
+		this.stopTokens.delete(id);
+		this.huddleMembers.delete(id);
 		this.summaryCache.delete(id);
 		this.huddlePushState.delete(id);
 		this.clearStrandedTimer(id);
@@ -481,10 +581,25 @@ export class OfficeService {
 	 * message is durably logged. Use `waitForHuddleIdle` to block on the drive.
 	 */
 	async sendToHuddle(huddleId: string, text: string, images?: OfficeAttachment[]): Promise<OfficeMessage> {
+		await this.ensureRecovered();
 		const huddle = (await store.listHuddles()).find((h) => h.id === huddleId);
 		if (!huddle) throw new Error("Huddle not found");
+		this.huddleMembers.set(huddle.id, new Set(huddle.members));
 		const trimmed = text.trim();
 		if (!trimmed && !images?.length) throw new Error("Message is empty");
+		if (images && images.length > OFFICE_MAX_ATTACHMENTS) {
+			throw new Error(`At most ${OFFICE_MAX_ATTACHMENTS} attachments are allowed per message`);
+		}
+		let attachmentChars = 0;
+		for (const attachment of images ?? []) {
+			if (attachment.data.length > OFFICE_MAX_ATTACHMENT_CHARS) {
+				throw new Error(`Attachment "${attachment.name}" is too large`);
+			}
+			attachmentChars += attachment.data.length;
+		}
+		if (attachmentChars > OFFICE_MAX_ATTACHMENT_TOTAL_CHARS) {
+			throw new Error("Attachments are too large for one message");
+		}
 
 		const message: OfficeMessage = {
 			id: mintMessageId(),
@@ -523,12 +638,13 @@ export class OfficeService {
 
 	/** Resolve when the huddle has no queued or running drive (bounded wait). */
 	async waitForHuddleIdle(huddleId: string, timeoutMs: number): Promise<boolean> {
+		await this.ensureRecovered();
 		const deadline = Date.now() + timeoutMs;
 		while (Date.now() < deadline) {
-			if (!(this.driveCounts.get(huddleId) ?? 0)) return true;
-			await new Promise((resolve) => setTimeout(resolve, 300));
+			if (!this.hasActiveDrive(huddleId)) return true;
+			await new Promise((resolve) => setTimeout(resolve, 100));
 		}
-		return !(this.driveCounts.get(huddleId) ?? 0);
+		return !this.hasActiveDrive(huddleId);
 	}
 
 	/** Ensure the DM huddle for a coworker exists (idempotent). */
@@ -543,6 +659,7 @@ export class OfficeService {
 				members: [coworkerId],
 				createdAt: Date.now(),
 			});
+			this.huddleMembers.set(dmId, new Set([coworkerId]));
 			await this.emitUpdate();
 		}
 		return dmId;
@@ -550,6 +667,7 @@ export class OfficeService {
 
 	/** Full huddle payload for a client fetch (null when unknown). */
 	async getHuddle(huddleId: string): Promise<OfficeHuddlePayload | null> {
+		await this.ensureRecovered();
 		const huddles = await store.listHuddles();
 		if (!huddles.some((h) => h.id === huddleId)) return null;
 		const data = await store.loadHuddleData(huddleId);
@@ -558,6 +676,64 @@ export class OfficeService {
 			working[id] = status.working;
 		}
 		return { huddleId, data, working };
+	}
+
+	/** Delete one user message and shift every index-based pointer. */
+	async deleteMessage(huddleId: string, messageId: string): Promise<boolean> {
+		let removed = false;
+		await store.updateHuddleData(huddleId, (room) => {
+			const index = room.log.findIndex((message) => message.id === messageId);
+			if (index < 0) return;
+			if (room.log[index]?.from.kind !== "user") {
+				throw new Error("Only your own messages can be deleted");
+			}
+			room.log.splice(index, 1);
+			removed = true;
+			for (const key of Object.keys(room.watermarks)) {
+				if ((room.watermarks[key] ?? 0) > index) room.watermarks[key] = (room.watermarks[key] ?? 1) - 1;
+			}
+			for (const marker of Object.values(room.stranded ?? {})) {
+				if (marker.before > index) marker.before -= 1;
+			}
+		});
+		if (removed) {
+			await this.emitHuddle(huddleId);
+			await this.emitUpdate();
+		}
+		return removed;
+	}
+
+	/** Search every stored room, not just the rooms a client has loaded. */
+	async searchHuddles(query: string, limit = 20): Promise<OfficeSearchHit[]> {
+		await this.ensureRecovered();
+		const needle = query.trim().toLowerCase();
+		if (!needle) return [];
+		const huddles = await store.listHuddles();
+		const hits: OfficeSearchHit[] = [];
+		for (const huddle of huddles) {
+			const data = await store.loadHuddleData(huddle.id);
+			const lastAt = data.log[data.log.length - 1]?.at ?? huddle.createdAt;
+			if (huddle.name.toLowerCase().includes(needle)) {
+				hits.push({ huddleId: huddle.id, title: huddle.name, snippet: "Room name", author: "Room", at: lastAt });
+			}
+			for (const message of data.log) {
+				const index = message.text.toLowerCase().indexOf(needle);
+				if (index < 0) continue;
+				const start = Math.max(0, index - 36);
+				const end = Math.min(message.text.length, index + needle.length + 60);
+				const snippet = `${start > 0 ? "…" : ""}${message.text.slice(start, end).replace(/\s+/g, " ").trim()}${end < message.text.length ? "…" : ""}`;
+				hits.push({
+					huddleId: huddle.id,
+					title: huddle.name,
+					snippet,
+					author: message.from.kind === "user" ? "You" : message.from.name,
+					messageId: message.id,
+					at: message.at,
+				});
+			}
+		}
+		hits.sort((a, b) => b.at - a.at);
+		return hits.slice(0, limit);
 	}
 
 	/** Append a system line (drive lifecycle notes visible in the room). */
@@ -578,23 +754,25 @@ export class OfficeService {
 	 *  re-addressed, and abort in-flight turns (release = re-mention or
 	 *  "@all resume"). */
 	async stopHuddle(huddleId: string): Promise<void> {
+		// Publish the stop before the first await: a turn can finish while the
+		// room file is being loaded, and it must already see the cancellation.
+		this.stopTokens.set(huddleId, (this.stopTokens.get(huddleId) ?? 0) + 1);
 		const huddle = (await store.listHuddles()).find((h) => h.id === huddleId);
-		if (huddle) {
-			for (const member of huddle.members) {
-				for (const [key, session] of this.sessions) {
-					if (key.startsWith(`${member}::`) && session.isStreaming) {
-						await session.abort().catch(() => {});
-					}
-				}
-			}
-		}
-		await store.updateHuddleData(huddleId, (room) => {
+		// Mark the room cancelled first. A turn that finishes while we are
+		// aborting sessions must see the new epoch/hold in its commit
+		// transaction, not the pre-stop state.
+		const stopped = await store.updateHuddleData(huddleId, (room) => {
 			room.epoch += 1;
 			const at = Date.now();
 			for (const member of huddle?.members ?? []) {
 				room.holds[member] = at;
 			}
 		});
+		await this.emitHuddle(huddleId, stopped);
+		for (const [key, session] of this.sessions) {
+			if (this.sessionOwner.get(key) !== huddleId) continue;
+			if (session.isStreaming) await session.abort().catch(() => {});
+		}
 		await this.appendSystemLine(huddleId, 'Stopped. Re-mention a coworker or say "@all resume" to bring them back.');
 	}
 
@@ -615,30 +793,40 @@ export class OfficeService {
 		return next;
 	}
 
+	private hasActiveDrive(huddleId: string): boolean {
+		return this.driveChains.has(huddleId) || this.drivePending.has(huddleId);
+	}
+
+	/** Start or join the one drive for a room. Sends that arrive while a drive
+	 *  is running only mark the room dirty; the next drive reads the latest
+	 *  epoch/log once instead of stacking a full drive per message. */
 	private startDrive(huddleId: string): Promise<void> {
-		const previous = this.driveChains.get(huddleId) ?? Promise.resolve();
-		this.driveCounts.set(huddleId, (this.driveCounts.get(huddleId) ?? 0) + 1);
-		const drive = previous
+		if (this.disposed) return Promise.resolve();
+		const running = this.driveChains.get(huddleId);
+		if (running) {
+			this.drivePending.add(huddleId);
+			return running;
+		}
+		let drive: Promise<void>;
+		drive = this.runDrive(huddleId)
 			.catch(() => {})
-			.then(() => this.runDrive(huddleId))
 			.finally(() => {
-				const remaining = (this.driveCounts.get(huddleId) ?? 1) - 1;
-				if (remaining <= 0) {
-					this.driveCounts.delete(huddleId);
-				} else {
-					this.driveCounts.set(huddleId, remaining);
+				if (this.driveChains.get(huddleId) === drive) this.driveChains.delete(huddleId);
+				if (this.drivePending.delete(huddleId) && !this.disposed) {
+					void this.startDrive(huddleId);
 				}
 			});
-		this.driveChains.set(
-			huddleId,
-			drive.catch(() => undefined),
-		);
+		this.driveChains.set(huddleId, drive);
 		return drive;
 	}
+
 	private async runDrive(huddleId: string): Promise<void> {
+		if (this.disposed) return;
+		await this.ensureRecovered();
 		const huddle = (await store.listHuddles()).find((h) => h.id === huddleId);
 		if (!huddle) return;
 		const members = await this.membersOf(huddle);
+		this.huddleMembers.set(huddle.id, new Set(huddle.members));
 		if (members.length === 0) return;
 		const isDm = huddle.id === dmHuddleId(members[0].id);
 
@@ -646,12 +834,15 @@ export class OfficeService {
 			room.running = { startedAt: Date.now(), thread: room.epoch };
 		});
 		const startEpoch = start.epoch;
+		const driveStopToken = this.stopTokens.get(huddleId) ?? 0;
 		await this.emitHuddle(huddleId, start);
 
 		let posted = 0;
 		let continuations = 0;
 		try {
 			for (let round = 0; round < OFFICE_MAX_ROUNDS; round++) {
+				if (this.disposed) return;
+				if ((this.stopTokens.get(huddleId) ?? 0) !== driveStopToken) return;
 				await this.harvestStranded(huddleId, members);
 
 				const data = await store.loadHuddleData(huddleId);
@@ -710,11 +901,13 @@ export class OfficeService {
 			});
 			await this.emitHuddle(huddleId, data);
 			await this.emitUpdate();
-			// Late replies that outlived the loop: poll in the background
-			// (bounded) so long work is late, never lost.
-			const leftover = await store.loadHuddleData(huddleId);
-			if (Object.keys(leftover.stranded ?? {}).length > 0) {
-				this.scheduleStrandedHarvest(huddleId, members);
+			if (!this.disposed) {
+				// Late replies that outlived the loop: poll in the background
+				// (bounded) so long work is late, never lost.
+				const leftover = await store.loadHuddleData(huddleId);
+				if (Object.keys(leftover.stranded ?? {}).length > 0) {
+					this.scheduleStrandedHarvest(huddleId, members);
+				}
 			}
 		}
 	}
@@ -749,19 +942,20 @@ export class OfficeService {
 
 		const delta = deltaFor(fresh, member.id);
 		if (delta.length === 0) return { cancelled: false, spoke: false };
+		const lastUser = [...fresh.log].reverse().find((entry) => entry.from.kind === "user");
+		const requiresResponse = Boolean(lastUser && isRoomAddress(lastUser.text));
 		const logLengthAtDispatch = fresh.log.length;
+		const stopToken = this.stopTokens.get(huddleId) ?? 0;
+		const deltaLines = formatRoomLines(delta, member.id);
 
 		const prompt = isDm
-			? buildDmTurnPrompt(
-					member,
-					delta[delta.length - 1]?.from.name ?? "User",
-					delta.map((entry) => formatRoomLine(entry, member.id)).join("\n"),
-				)
+			? buildDmTurnPrompt(member, delta[delta.length - 1]?.from.name ?? "User", deltaLines.join("\n"))
 			: buildHuddleTurnPrompt({
 					coworker: member,
 					groupName: huddleName,
 					members: seatOf(members),
-					deltaLines: delta.map((entry) => formatRoomLine(entry, member.id)),
+					deltaLines,
+					requiresResponse,
 				});
 
 		this.statuses.set(member.id, {
@@ -774,99 +968,286 @@ export class OfficeService {
 		await this.emitUpdate();
 		await this.emitHuddle(huddleId);
 
-		const deltaImages = delta.flatMap((entry) => entry.images ?? []);
-		const outcome = await this.enqueueTurn(member.id, () => this.runCoworkerTurn(member, prompt, deltaImages));
-
-		const currentStatus = this.statuses.get(member.id);
-		if (currentStatus) {
-			this.statuses.set(member.id, { ...currentStatus, working: false });
-		}
-		await this.emitUpdate();
-
-		const commit = await store.updateHuddleData(huddleId, (room) => {
-			room.watermarks[member.id] = room.log.length;
-		});
-
-		if (outcome.timedOut) {
-			await store.updateHuddleData(huddleId, (room) => {
-				room.stranded = {
-					...(room.stranded ?? {}),
-					[member.id]: { before: commit.log.length, thread: startEpoch },
-				};
-			});
-			return { cancelled: false, spoke: false };
-		}
-
-		// A failed turn is a pass, never a room error — but the room should see
-		// why the coworker went silent (a bare "(pass)"-like silence reads as
-		// having nothing to add).
-		if (outcome.error) {
-			const reason = outcome.error.length > 160 ? `${outcome.error.slice(0, 160)}…` : outcome.error;
-			await this.appendSystemLine(huddleId, `${member.name}'s turn failed: ${reason}`);
-			await this.emitHuddle(huddleId);
-			return { cancelled: false, spoke: false };
-		}
-
+		let cancelled = false;
 		let spoke = false;
-		if (outcome.reply && !isPassText(outcome.reply)) {
-			const epochNow = (await store.loadHuddleData(huddleId)).epoch;
-			// Yield the reply to a user redirect: a user message landed in the
-			// room after this turn was dispatched (the newer send's drive covers
-			// it; committing here would double-deliver).
-			const newerUserEntry = commit.log.slice(logLengthAtDispatch).some((entry) => entry.from.kind === "user");
-			if (!shouldCommitTurn(startEpoch, epochNow, newerUserEntry)) {
-				return { cancelled: true, spoke: false };
+		try {
+			const deltaImages = delta.flatMap((entry) => entry.images ?? []);
+			const outcome = await this.enqueueTurn(member.id, async (): Promise<TurnOutcome> => {
+				if (this.disposed) return { reply: null, timedOut: false, skipped: true };
+				// The queue may have waited behind another room/errand. Re-read the
+				// room here so stale work never reaches the model.
+				const latest = await store.loadHuddleData(huddleId);
+				if (latest.epoch !== startEpoch) return { reply: null, timedOut: false, skipped: true };
+				if (latest.holds[member.id]) return { reply: null, timedOut: false, skipped: true };
+				return this.runCoworkerTurn(member, prompt, deltaImages, `huddle:${huddleId}`, async () => {
+					if ((this.stopTokens.get(huddleId) ?? 0) !== stopToken) return false;
+					const currentMembers = this.huddleMembers.get(huddleId);
+					if (currentMembers && !currentMembers.has(member.id)) return false;
+					const current = await store.loadHuddleData(huddleId);
+					return current.epoch === startEpoch && !current.holds[member.id];
+				});
+			});
+
+			if (outcome.skipped) {
+				cancelled = true;
+				return { cancelled, spoke };
 			}
-			if (!isEchoOfLastEntry(commit.log, member.id, outcome.reply)) {
-				const reply: OfficeMessage = {
+			if (this.disposed) {
+				cancelled = true;
+				return { cancelled, spoke };
+			}
+
+			if (outcome.timedOut) {
+				const result = await this.markStranded(
+					huddleId,
+					member.id,
+					member.name,
+					startEpoch,
+					stopToken,
+					logLengthAtDispatch,
+					outcome.turnId,
+				);
+				cancelled = result === "redirected" || result === "stale";
+				if (result !== "stranded" && outcome.turnId) {
+					this.turnCaptures.delete(outcome.turnId);
+					if (this.activeTurn.get(this.sessionKey(member.id)) === outcome.turnId) {
+						this.activeTurn.delete(this.sessionKey(member.id));
+					}
+				}
+				return { cancelled, spoke };
+			}
+
+			if (outcome.error) {
+				const result = await this.finalizeTurn(
+					huddleId,
+					member.id,
+					member.name,
+					startEpoch,
+					stopToken,
+					logLengthAtDispatch,
+					null,
+				);
+				cancelled = result === "redirected" || result === "stale";
+				if (!cancelled) {
+					const reason = outcome.error.length > 160 ? `${outcome.error.slice(0, 160)}…` : outcome.error;
+					await this.appendSystemLine(huddleId, `${member.name}'s turn failed: ${reason}`);
+				}
+				return { cancelled, spoke };
+			}
+
+			const reply = outcome.reply && !isPassText(outcome.reply) ? outcome.reply : null;
+			const result = await this.finalizeTurn(
+				huddleId,
+				member.id,
+				member.name,
+				startEpoch,
+				stopToken,
+				logLengthAtDispatch,
+				reply,
+			);
+			cancelled = result === "redirected" || result === "stale";
+			spoke = result === "committed";
+			if (result === "silent" && requiresResponse) {
+				await this.appendSystemLine(huddleId, `${member.name} had nothing to add.`);
+			}
+			return { cancelled, spoke };
+		} finally {
+			const currentStatus = this.statuses.get(member.id);
+			if (currentStatus) {
+				this.statuses.set(member.id, { ...currentStatus, working: false });
+			}
+			await this.emitUpdate();
+			await this.emitHuddle(huddleId);
+		}
+	}
+
+	/** Commit one finished turn and move the member's watermark. Re-reads the
+	 *  room in the same file-lock transaction that appends, so a redirect or
+	 *  Stop cannot race the decision. */
+	private async finalizeTurn(
+		huddleId: string,
+		memberId: string,
+		memberName: string,
+		startEpoch: number,
+		stopToken: number,
+		logLengthAtDispatch: number,
+		reply: string | null,
+	): Promise<"committed" | "redirected" | "stopped" | "stale" | "silent" | "echo"> {
+		let result: "committed" | "redirected" | "stopped" | "stale" | "silent" | "echo" = "stale";
+		await store.updateHuddleData(huddleId, (room) => {
+			const clearCurrent = () => {
+				if (room.running?.current === memberName) room.running.current = undefined;
+			};
+			if ((this.stopTokens.get(huddleId) ?? 0) !== stopToken) {
+				room.watermarks[memberId] = room.log.length;
+				result = "stopped";
+				clearCurrent();
+				return;
+			}
+			if (room.epoch !== startEpoch) {
+				const newerUser = room.log
+					.slice(Math.min(logLengthAtDispatch, room.log.length))
+					.some((entry) => entry.from.kind === "user");
+				if (newerUser) {
+					// The turn only consumed the log up to dispatch. Leave the newer
+					// user message unread so the queued drive answers it.
+					room.watermarks[memberId] = Math.min(
+						room.watermarks[memberId] ?? logLengthAtDispatch,
+						logLengthAtDispatch,
+					);
+					result = "redirected";
+				} else if (room.holds[memberId]) {
+					room.watermarks[memberId] = room.log.length;
+					result = "stopped";
+				} else {
+					result = "stale";
+				}
+				clearCurrent();
+				return;
+			}
+			if (room.holds[memberId]) {
+				room.watermarks[memberId] = room.log.length;
+				result = "stopped";
+				clearCurrent();
+				return;
+			}
+			if (reply && !isEchoOfLastEntry(room.log, memberId, reply)) {
+				room.log.push({
 					id: mintMessageId(),
 					at: Date.now(),
-					from: coworkerAuthor(member),
-					text: outcome.reply,
-				};
-				await store.updateHuddleData(huddleId, (room) => {
-					room.log.push(reply);
-					// The member has now seen its own reply too.
-					room.watermarks[member.id] = room.log.length;
+					from: { kind: "coworker", id: memberId, name: memberName },
+					text: reply,
 				});
-				spoke = true;
+				room.watermarks[memberId] = room.log.length;
+				result = "committed";
+			} else if (reply) {
+				room.watermarks[memberId] = room.log.length;
+				result = "echo";
+			} else {
+				room.watermarks[memberId] = room.log.length;
+				result = "silent";
 			}
-		}
-		await this.emitHuddle(huddleId);
-		return { cancelled: false, spoke };
+			clearCurrent();
+		});
+		return result;
+	}
+
+	/** Mark a timed-out turn for the late-reply harvest. The marker carries the
+	 *  turn id, not a session-array index (compaction can invalidate those). */
+	private async markStranded(
+		huddleId: string,
+		memberId: string,
+		memberName: string,
+		startEpoch: number,
+		stopToken: number,
+		logLengthAtDispatch: number,
+		turnId: string | undefined,
+	): Promise<"stranded" | "redirected" | "stopped" | "stale"> {
+		let result: "stranded" | "redirected" | "stopped" | "stale" = "stale";
+		await store.updateHuddleData(huddleId, (room) => {
+			if (room.running?.current === memberName) room.running.current = undefined;
+			if ((this.stopTokens.get(huddleId) ?? 0) !== stopToken) {
+				room.watermarks[memberId] = room.log.length;
+				result = "stopped";
+				return;
+			}
+			if (room.epoch !== startEpoch) {
+				const newerUser = room.log
+					.slice(Math.min(logLengthAtDispatch, room.log.length))
+					.some((entry) => entry.from.kind === "user");
+				if (newerUser) {
+					room.watermarks[memberId] = Math.min(
+						room.watermarks[memberId] ?? logLengthAtDispatch,
+						logLengthAtDispatch,
+					);
+					result = "redirected";
+				} else if (room.holds[memberId]) {
+					room.watermarks[memberId] = room.log.length;
+					result = "stopped";
+				} else {
+					result = "stale";
+				}
+				return;
+			}
+			if (room.holds[memberId]) {
+				room.watermarks[memberId] = room.log.length;
+				result = "stopped";
+				return;
+			}
+			room.stranded = {
+				...(room.stranded ?? {}),
+				[memberId]: { before: room.log.length, thread: startEpoch, turnId },
+			};
+			room.watermarks[memberId] = room.log.length;
+			result = "stranded";
+		});
+		return result;
 	}
 
 	/** Deliver late replies that finished after a turn timeout. Runs at the
 	 *  top of each round and from the bounded background poll; sessions still
 	 *  visibly working are left for a later pass. */
 	private async harvestStranded(huddleId: string, members: Coworker[]): Promise<void> {
+		if (this.disposed) return;
 		const data = await store.loadHuddleData(huddleId);
 		const stranded = data.stranded ?? {};
 		for (const member of members) {
 			const marker = stranded[member.id];
 			if (!marker) continue;
-			const session = this.sessions.get(this.sessionKey(member.id));
+			const key = this.sessionKey(member.id);
+			const session = this.sessions.get(key);
 			if (session && (session.isStreaming || session.isCompacting)) continue;
-			const messages = session ? flattenMessages(session.messages) : [];
-			const reply = pickReply(messages, marker.before);
+			const capture = marker.turnId ? this.turnCaptures.get(marker.turnId) : undefined;
+			if (!capture) {
+				// A restart cannot recover a turn capture; drop the marker rather
+				// than leaving the room permanently "late".
+				await this.clearStrandedMarker(huddleId, member.id);
+				continue;
+			}
+			const reply = pickReply(
+				capture.replies.map((text) => ({ role: "assistant", text })),
+				0,
+			);
 			await store.updateHuddleData(huddleId, (room) => {
 				const next = { ...(room.stranded ?? {}) };
 				delete next[member.id];
 				room.stranded = next;
-			});
-			if (reply && !isPassText(reply)) {
-				await store.updateHuddleData(huddleId, (room) => {
-					if (isEchoOfLastEntry(room.log, member.id, reply)) return;
+				if (room.epoch !== marker.thread || room.holds[member.id]) return;
+				if (reply && !isPassText(reply) && !isEchoOfLastEntry(room.log, member.id, reply)) {
 					room.log.push({
 						id: mintMessageId(),
 						at: Date.now(),
 						from: coworkerAuthor(member),
 						text: reply,
 					});
-				});
-				await this.emitHuddle(huddleId);
-			}
+				}
+				room.watermarks[member.id] = room.log.length;
+			});
+			this.turnCaptures.delete(capture.id);
+			if (this.activeTurn.get(key) === capture.id) this.activeTurn.delete(key);
+			await this.emitHuddle(huddleId);
 		}
+	}
+
+	private async clearStrandedMarker(huddleId: string, memberId: string): Promise<void> {
+		await store.updateHuddleData(huddleId, (room) => {
+			if (!room.stranded?.[memberId]) return;
+			const next = { ...room.stranded };
+			delete next[memberId];
+			room.stranded = next;
+		});
+	}
+
+	/** Drop markers and captures when the bounded harvest gives up. */
+	private async clearAllStranded(huddleId: string, members: Coworker[]): Promise<void> {
+		const data = await store.loadHuddleData(huddleId);
+		for (const member of members) {
+			const marker = data.stranded?.[member.id];
+			if (!marker) continue;
+			if (marker.turnId) this.turnCaptures.delete(marker.turnId);
+			await this.clearStrandedMarker(huddleId, member.id);
+		}
+		await this.emitHuddle(huddleId);
 	}
 
 	/** Bounded background harvest for replies that outlived the drive loop:
@@ -879,10 +1260,11 @@ export class OfficeService {
 			attempts += 1;
 			if (this.disposed || attempts > STRANDED_HARVEST_MAX_TRIES) {
 				this.clearStrandedTimer(huddleId);
+				if (!this.disposed) void this.clearAllStranded(huddleId, members);
 				return;
 			}
 			// A live drive harvests at its own round boundaries.
-			if ((this.driveCounts.get(huddleId) ?? 0) > 0) return;
+			if (this.hasActiveDrive(huddleId)) return;
 			void (async () => {
 				try {
 					await this.harvestStranded(huddleId, members);
@@ -976,7 +1358,7 @@ export class OfficeService {
 	/** Translate a coworker session's agent events into office activity:
 	 *  turn lifecycle, tool calls, and completed assistant speech. Streaming
 	 *  deltas are deliberately dropped — speech arrives per message. */
-	private attachActivity(session: AgentSession, coworkerId: string): () => void {
+	private attachActivity(session: AgentSession, coworkerId: string, key: string): () => void {
 		return session.subscribe((event) => {
 			switch (event.type) {
 				case "agent_start":
@@ -995,6 +1377,8 @@ export class OfficeService {
 					const flattened = flattenMessages([event.message])[0];
 					const text = flattened?.role === "assistant" ? (flattened.text ?? "") : "";
 					if (text.trim()) {
+						const turnId = this.activeTurn.get(key);
+						if (turnId) this.turnCaptures.get(turnId)?.replies.push(text);
 						this.emitActivity(coworkerId, { kind: "speaking", text });
 					}
 					break;
@@ -1021,6 +1405,7 @@ export class OfficeService {
 			unsub();
 			this.activityUnsubs.delete(key);
 		}
+		this.activeTurn.delete(key);
 	}
 
 	/**
@@ -1089,7 +1474,7 @@ export class OfficeService {
 			this.sessions.set(key, session);
 			this.armIdleTimer(key);
 			this.detachActivity(key);
-			this.activityUnsubs.set(key, this.attachActivity(session, coworker.id));
+			this.activityUnsubs.set(key, this.attachActivity(session, coworker.id, key));
 			return session;
 		});
 	}
@@ -1202,51 +1587,93 @@ export class OfficeService {
 		coworker: Coworker,
 		prompt: string,
 		images?: OfficeAttachment[],
-	): Promise<{ reply: string | null; timedOut: boolean; error?: string }> {
+		owner?: string,
+		guard?: () => Promise<boolean>,
+	): Promise<TurnOutcome> {
 		let session: AgentSession;
 		try {
 			session = await this.ensureCoworkerSession(coworker);
 		} catch (e) {
 			return { reply: null, timedOut: false, error: e instanceof Error ? e.message : String(e) };
 		}
+		if (guard && !(await guard())) return { reply: null, timedOut: false, skipped: true };
 		if (session.isStreaming || session.isCompacting) {
 			// Defensive: queues should prevent this; treat as busy-pass.
-			return { reply: null, timedOut: false };
+			return { reply: null, timedOut: false, skipped: true };
 		}
+		return this.runSessionTurn(session, coworker.id, this.sessionKey(coworker.id), prompt, images, owner, true);
+	}
 
-		const before = session.messages.length;
+	/** Run one prompt against a session while capturing its assistant
+	 *  `message_end` events. This is stable under compaction: we never index
+	 *  into `session.messages` to find the reply. */
+	private async runSessionTurn(
+		session: AgentSession,
+		_coworkerId: string,
+		key: string,
+		prompt: string,
+		images: OfficeAttachment[] | undefined,
+		owner: string | undefined,
+		retainOnTimeout: boolean,
+	): Promise<TurnOutcome> {
+		const turnId = randomUUID();
+		const capture: TurnCapture = { id: turnId, replies: [] };
+		this.turnCaptures.set(turnId, capture);
+		this.activeTurn.set(key, turnId);
+		if (owner) this.sessionOwner.set(key, owner);
 		let timedOut = false;
 
 		// Image attachments ride the prompt as real vision content; files are
-		// named in the prompt text (the transcript line) only.
+		// named in the prompt text (the transcript line) only. A delta can carry
+		// images from several messages; keep the newest few.
 		const imageContent = (images ?? [])
+			.slice(-OFFICE_MAX_ATTACHMENTS)
 			.map((attachment) => (attachment.kind === "image" ? parseDataUrl(attachment.data) : null))
 			.filter((parsed): parsed is { data: string; mimeType: string } => parsed !== null)
 			.map((parsed): ImageContent => ({ type: "image", data: parsed.data, mimeType: parsed.mimeType }));
 
 		// `prompt` resolves when the whole turn settles (tool loops and retries
-		// included), so it IS the turn — the hard cap aborts a run that outlives
-		// its window, and whatever landed by then is still harvested below.
-		const hardCap = setTimeout(() => {
+		// included), so it IS the turn — the cap aborts a run that outlives its
+		// window, and the capture keeps whatever landed for the late harvest.
+		const timeout = setTimeout(() => {
 			timedOut = true;
 			void session.abort().catch(() => {});
-		}, OFFICE_TURN_HARD_CAP_MS);
+		}, this.turnTimeoutMs);
 		try {
 			await session.prompt(prompt, imageContent.length ? { images: imageContent } : undefined);
+			return {
+				reply: pickReply(
+					capture.replies.map((text) => ({ role: "assistant", text })),
+					0,
+				),
+				timedOut,
+				turnId,
+			};
 		} catch (e) {
-			return { reply: null, timedOut, error: e instanceof Error ? e.message : String(e) };
+			return {
+				reply: pickReply(
+					capture.replies.map((text) => ({ role: "assistant", text })),
+					0,
+				),
+				timedOut,
+				error: e instanceof Error ? e.message : String(e),
+				turnId,
+			};
 		} finally {
-			clearTimeout(hardCap);
+			clearTimeout(timeout);
+			if (this.sessionOwner.get(key) === owner) this.sessionOwner.delete(key);
+			if (!timedOut || !retainOnTimeout) {
+				this.turnCaptures.delete(turnId);
+				if (this.activeTurn.get(key) === turnId) this.activeTurn.delete(key);
+			}
 		}
-
-		const texts = flattenMessages(session.messages);
-		return { reply: pickReply(texts, before), timedOut };
 	}
 
 	// ── errands ───────────────────────────────────────────────────────────────
 
 	private async tickErrands(): Promise<void> {
 		if (this.disposed) return;
+		await this.ensureRecovered();
 		const errands = await store.listErrands();
 		const now = Date.now();
 		for (const errand of errands) {
@@ -1268,6 +1695,7 @@ export class OfficeService {
 
 	/** Run one errand now (also used by the "run now" client action). */
 	async runErrandNow(id: string): Promise<void> {
+		await this.ensureRecovered();
 		const errand = (await store.listErrands()).find((e) => e.id === id);
 		if (!errand) throw new Error("Errand not found");
 		if (this.activeErrands.has(id)) throw new Error("Errand is already running");
@@ -1297,14 +1725,24 @@ export class OfficeService {
 			let error: string | undefined;
 			try {
 				if (errand.continuity) {
-					const outcome = await this.enqueueTurn(coworker.id, () => this.runCoworkerTurn(coworker, prompt));
+					const outcome = await this.enqueueTurn(coworker.id, () =>
+						this.runCoworkerTurn(coworker, prompt, undefined, `errand:${errand.id}`),
+					);
 					reply = outcome.reply;
-					if (outcome.timedOut) {
-						status = "timeout";
+					if (outcome.timedOut) status = "timeout";
+					if (outcome.error) {
+						status = "error";
+						error = outcome.error;
 					}
 				} else {
 					// Fresh eyes: ephemeral side session, disposed after the run.
-					reply = await this.runEphemeralTurn(coworker, prompt);
+					const outcome = await this.runEphemeralTurn(coworker, prompt);
+					reply = outcome.reply;
+					if (outcome.timedOut) status = "timeout";
+					if (outcome.error) {
+						status = "error";
+						error = outcome.error;
+					}
 				}
 			} catch (e) {
 				status = "error";
@@ -1363,20 +1801,43 @@ export class OfficeService {
 
 	/** One-off turn in an ephemeral session (fresh-eyes errands). The soul is
 	 *  pinned in the first prompt so the persona holds even without history. */
-	private async runEphemeralTurn(coworker: Coworker, prompt: string): Promise<string | null> {
+	private async runEphemeralTurn(coworker: Coworker, prompt: string): Promise<TurnOutcome> {
 		const cwd = this.runtime.cwd;
 		const sessionManager = SessionManager.create(cwd, getDefaultSessionDir(cwd, this.runtime.services.agentDir));
 		const result = await this.runtime.createSideRuntime({ cwd, sessionManager });
 		const session = result.session;
-		const detach = this.attachActivity(session, coworker.id);
+		const key = `ephemeral:${coworker.id}:${randomUUID()}`;
+		const detach = this.attachActivity(session, coworker.id, key);
 		try {
-			await session.bindExtensions({ uiContext: noOpUIContext, mode: "rpc", onError: () => {} });
+			await session.bindExtensions({
+				uiContext: this.createOfficeUIContext(coworker),
+				mode: "rpc",
+				permissionPromptHandler: async (toolName, reason) => {
+					const choice = await this.askUser(coworker, {
+						kind: "approval",
+						title: `Allow ${toolName}?`,
+						message: reason ?? `Permission required for "${toolName}"`,
+						choices: ["Allow", "Deny"],
+					});
+					return choice === "Allow";
+				},
+				onError: () => {
+					this.emitActivity(coworker.id, { kind: "error" });
+				},
+			});
 			session.setPermissionMode(coworker.autonomy === "auto" ? "auto" : "ask");
-			const before = session.messages.length;
+			const model = this.resolveCoworkerModel(coworker);
+			if (model) await session.setModel(model).catch(() => {});
 			const withSoul = `${coworker.soul}\n\n---\n\n${prompt}`;
-			await session.prompt(withSoul);
-			const texts = flattenMessages(session.messages);
-			return pickReply(texts, before);
+			return await this.runSessionTurn(
+				session,
+				coworker.id,
+				key,
+				withSoul,
+				undefined,
+				`errand:${coworker.id}`,
+				false,
+			);
 		} finally {
 			detach();
 			session.dispose();

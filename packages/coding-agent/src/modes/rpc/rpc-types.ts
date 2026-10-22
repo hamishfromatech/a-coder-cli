@@ -32,6 +32,7 @@ import type {
 	OfficeActivityEvent,
 	OfficeHuddleDelta,
 	OfficeHuddlePayload,
+	OfficeSearchHit,
 	OfficeSnapshot,
 } from "../../core/office/types.ts";
 import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.ts";
@@ -191,6 +192,8 @@ export type RpcCommand =
 	| { id?: string; type: "office_huddle_delete"; huddleId: string }
 	| { id?: string; type: "office_send"; huddleId: string; text: string; images?: OfficeRpcAttachment[] }
 	| { id?: string; type: "office_huddle_get"; huddleId: string }
+	| { id?: string; type: "office_message_delete"; huddleId: string; messageId: string }
+	| { id?: string; type: "office_search"; query: string; limit?: number }
 	| { id?: string; type: "office_stop"; huddleId: string }
 	| { id?: string; type: "office_respond"; requestId: string; choice: string | null }
 	| { id?: string; type: "office_errand_save"; errand: OfficeRpcErrandInput }
@@ -701,6 +704,14 @@ export type RpcResponse =
 			data: { huddleId: string; messageId: string };
 	  }
 	| { id?: string; type: "response"; command: "office_huddle_get"; success: true; data: OfficeHuddlePayload | null }
+	| { id?: string; type: "response"; command: "office_search"; success: true; data: OfficeSearchHit[] }
+	| {
+			id?: string;
+			type: "response";
+			command: "office_message_delete";
+			success: true;
+			data: { removed: boolean };
+	  }
 	| { id?: string; type: "response"; command: "office_stop"; success: true }
 	| { id?: string; type: "response"; command: "office_respond"; success: true; data: { handled: boolean } }
 	| { id?: string; type: "response"; command: "office_errand_save"; success: true; data: { errand: Errand } }

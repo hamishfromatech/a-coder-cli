@@ -1754,6 +1754,12 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 			}
 			case "office_huddle_get":
 				return success(id, "office_huddle_get", await office.getHuddle(command.huddleId));
+			case "office_search":
+				return success(id, "office_search", await office.searchHuddles(command.query, command.limit));
+			case "office_message_delete":
+				return success(id, "office_message_delete", {
+					removed: await office.deleteMessage(command.huddleId, command.messageId),
+				});
 			case "office_stop": {
 				await office.stopHuddle(command.huddleId);
 				return success(id, "office_stop");

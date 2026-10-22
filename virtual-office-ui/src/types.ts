@@ -65,6 +65,8 @@ export interface VirtualOfficeFeed {
 	roomMembers: string[];
 	/** Room display name, shown in the banner while a drive runs. */
 	roomName?: string;
+	/** Room id, used to open the room from the floor. */
+	roomId?: string;
 }
 
 export type FloorTheme = "dark" | "light";
@@ -78,4 +80,6 @@ export interface VirtualOfficeProps {
 	store?: FloorStore;
 	/** Click a coworker avatar on the floor. */
 	onCoworkerClick?: (coworkerId: string) => void;
+	/** Click the active room (banner or meeting table) on the floor. */
+	onHuddleClick?: (huddleId: string) => void;
 }

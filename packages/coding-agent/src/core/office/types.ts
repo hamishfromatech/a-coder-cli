@@ -110,8 +110,8 @@ export interface HuddleData {
 	holds: Record<string, number>;
 	/** Live drive state, present while a drive is running. */
 	running?: { startedAt: number; current?: string; thread: number };
-	/** Late-reply markers: coworker id → { log index at dispatch, drive id }. */
-	stranded?: Record<string, { before: number; thread: number }>;
+	/** Late-reply markers: coworker id → { legacy log index, drive id, turn capture id }. */
+	stranded?: Record<string, { before: number; thread: number; turnId?: string }>;
 }
 
 /** Schedule kinds for errands. */
@@ -225,6 +225,16 @@ export interface CoworkerDetails {
 	};
 }
 
+/** One result from a room search. */
+export interface OfficeSearchHit {
+	huddleId: string;
+	title: string;
+	snippet: string;
+	author?: string;
+	messageId?: string;
+	at: number;
+}
+
 /** Full state snapshot pushed to clients on every change. */
 export interface OfficeSnapshot {
 	coworkers: Coworker[];
@@ -285,8 +295,18 @@ export const OFFICE_HISTORY_LIMIT = 24;
  *  the full-file JSON write and the payload stay bounded on long-running rooms. */
 export const OFFICE_MAX_LOG_MESSAGES = 500;
 export const OFFICE_MAX_MEMBERS = 6;
-export const OFFICE_TURN_TIMEOUT_MS = 180_000;
-/** A visibly-working turn keeps its slot up to this hard cap before abort. */
-export const OFFICE_TURN_HARD_CAP_MS = 20 * 60_000;
+export const OFFICE_TURN_TIMEOUT_MS = 20 * 60_000;
+/** @deprecated Use OFFICE_TURN_TIMEOUT_MS. Kept as an alias for callers that
+ *  still name the hard cap directly. */
+export const OFFICE_TURN_HARD_CAP_MS = OFFICE_TURN_TIMEOUT_MS;
+/** Maximum characters of one room line shown to a coworker. Long reports are
+ *  truncated in the prompt, not in the stored log. */
+export const OFFICE_MAX_PROMPT_MESSAGE_CHARS = 6_000;
+/** Maximum characters of the room delta included in one turn prompt. */
+export const OFFICE_MAX_PROMPT_CHARS = 24_000;
+/** Attachment limits for one huddle message. */
+export const OFFICE_MAX_ATTACHMENTS = 4;
+export const OFFICE_MAX_ATTACHMENT_CHARS = 8 * 1024 * 1024;
+export const OFFICE_MAX_ATTACHMENT_TOTAL_CHARS = 16 * 1024 * 1024;
 /** Silence marker: a reply that means "nothing to add". */
 export const OFFICE_PASS_TEXT = "(pass)";

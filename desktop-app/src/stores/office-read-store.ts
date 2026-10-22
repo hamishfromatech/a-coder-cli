@@ -14,10 +14,12 @@ const STORAGE_KEY = "a-coder.office.readAt";
 interface StoredReadState {
 	readAt: Record<string, number>;
 	initializedAt: number;
+	unread: Record<string, number>;
+	mentions: Record<string, boolean>;
 }
 
 function loadState(): StoredReadState {
-	const fallback: StoredReadState = { readAt: {}, initializedAt: Date.now() };
+	const fallback: StoredReadState = { readAt: {}, initializedAt: Date.now(), unread: {}, mentions: {} };
 	if (typeof window === "undefined") return fallback;
 	try {
 		const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -29,6 +31,8 @@ function loadState(): StoredReadState {
 		return {
 			readAt: parsed.readAt && typeof parsed.readAt === "object" ? parsed.readAt : {},
 			initializedAt: typeof parsed.initializedAt === "number" ? parsed.initializedAt : Date.now(),
+			unread: parsed.unread && typeof parsed.unread === "object" ? parsed.unread : {},
+			mentions: parsed.mentions && typeof parsed.mentions === "object" ? parsed.mentions : {},
 		};
 	} catch {
 		return fallback;
@@ -36,26 +40,49 @@ function loadState(): StoredReadState {
 }
 
 interface OfficeReadState extends StoredReadState {
+	recordActivity: (huddleId: string, count: number, mentioned: boolean) => void;
 	markRead: (huddleId: string, at?: number) => void;
 }
 
 export const useOfficeReadStore = create<OfficeReadState>()((set, get) => ({
 	...loadState(),
 
-	markRead: (huddleId, at = Date.now()) => {
-		const current = get().readAt[huddleId] ?? 0;
-		if (current >= at) return;
+	recordActivity: (huddleId, count, mentioned) => {
+		if (count <= 0 && !mentioned) return;
 		set((state) => {
-			const readAt = { ...state.readAt, [huddleId]: at };
+			const unread = { ...state.unread, [huddleId]: (state.unread[huddleId] ?? 0) + Math.max(0, count) };
+			const mentions = mentioned ? { ...state.mentions, [huddleId]: true } : state.mentions;
 			try {
 				window.localStorage.setItem(
 					STORAGE_KEY,
-					JSON.stringify({ readAt, initializedAt: state.initializedAt }),
+					JSON.stringify({ readAt: state.readAt, initializedAt: state.initializedAt, unread, mentions }),
+				);
+			} catch {
+				// Storage disabled: keep the in-memory counters.
+			}
+			return { unread, mentions };
+		});
+	},
+
+	markRead: (huddleId, at = Date.now()) => {
+		const state = get();
+		const current = state.readAt[huddleId] ?? 0;
+		if (current >= at && !state.unread[huddleId] && !state.mentions[huddleId]) return;
+		set((currentState) => {
+			const readAt = { ...currentState.readAt, [huddleId]: Math.max(currentState.readAt[huddleId] ?? 0, at) };
+			const unread = { ...currentState.unread };
+			delete unread[huddleId];
+			const mentions = { ...currentState.mentions };
+			delete mentions[huddleId];
+			try {
+				window.localStorage.setItem(
+					STORAGE_KEY,
+					JSON.stringify({ readAt, initializedAt: currentState.initializedAt, unread, mentions }),
 				);
 			} catch {
 				// Storage disabled: keep the in-memory pointer.
 			}
-			return { readAt };
+			return { readAt, unread, mentions };
 		});
 	},
 }));

@@ -4,6 +4,10 @@
 
 ### Added
 
+- Office chat gains `office_message_delete` (user messages only), which removes the log entry and shifts watermarks/stranded pointers so in-flight and late replies stay aligned. `office_search` hits now include the matching `messageId` for jump-to-message.
+
+- Office search is now a backend RPC command (`office_search`), searching every stored huddle/DM log rather than only the rooms a client has loaded. Results include room name, author, time, and a snippet; the desktop uses it with a local fallback for older engines.
+
 - Routines now have an overlap policy (`skip_if_active`, `coalesce_if_active`, `always_enqueue`), a missed-window policy (`run_once`, `skip_missed`), non-secret `{{name}}` variables with per-run overrides, and capped revision history. `/cron history`/`restore`, `schedule_task` revisions/restore, and RPC `cron_revisions`/`cron_restore_revision` expose rollback; the desktop gains a routine detail surface with runs, activity, and history.
 - The desktop Activity panel is now a keyboard-first Decisions queue: open/history views, human/automation filters, snooze/dismiss/resolve/restore, and stable source keys that dedupe run lifecycle and approval updates. Permission approvals resolve their decision item when answered, and scheduled-run triage feeds the same queue.
 - Post-run triage for scheduled tasks: after a run finishes, a System One decision model classifies `outcome` (ok / no_work / needs_user / failed) and scores `notify`, `retry`, and `pause`. The advisory recommendation (including model, latency, and probabilities) is stored on the run and shown in `/cron`, desktop run history, and the Activity inbox. Triage is local-first and only uses a cloud decision model when `settings.decisions` is explicitly configured; set `cron.triage: false` to disable it. Fired runs now also store a truncated final-answer summary for history and triage.
@@ -141,6 +145,10 @@
 - The `@composio/core` + `@composio/experimental` SDK integration: the bespoke session-tools/custom-tools wiring, the Composio system-prompt section, and the `composio.*` settings (`enabled`, `apiKey`, `toolkits`, `sandbox`, `includeWorkbenchTools`, `callbackUrl`; leftovers in old settings files are ignored). App discovery/connect moved entirely into the MCP meta tools (the agent lists and connects apps for the user), so the `/apps` CLI command, the `composio_list_apps` / `composio_connect_app` / `composio_disconnect_app` RPC commands, and the desktop Apps panel were removed with it, and the desktop `Composio` settings card is empty by design pointing at the MCP servers editor.
 
 ### Fixed
+
+- Huddle questions addressed to the room ("both of you", "everyone", "hey guys") now carry an explicit per-coworker instruction to answer in their own voice instead of passing because a teammate already replied. A coworker who still passes leaves a visible "had nothing to add" room line, so the turn no longer looks stuck.
+
+- Office chat reliability: replies are captured from `message_end` instead of indexing `session.messages`, so compaction can no longer lose a turn. Late replies are stored against a turn id rather than a huddle-log index. Redirects and Stop now commit through one file-lock transaction that restores/consumes watermarks correctly and refuses stale replies; Stop is published before any await and aborts only turns it owns. A restart clears interrupted `running`/`stranded` state instead of leaving rooms typing forever, and disposal prevents queued drives from starting. Sends now coalesce into one pending drive per room, queued turns re-check epoch/holds/membership before calling the model, and prompts/attachments are bounded (24k prompt chars, 6k per message, 4 attachments, 8 MiB each).
 
 - A-Coder Bench: graders were never executed in compiled Bun builds because `process.execPath` is the CLI itself — running `process.execPath grade.mjs` booted another agent, whose final text was recorded as the grade detail. Graders now resolve an actual Node/Bun runtime (PATH plus nvm/fnm/volta/homebrew fallbacks), verify that the agent's repo copy and grader exist, and fail the run when no runtime can be found. The standalone runner no longer appends each result twice.
 

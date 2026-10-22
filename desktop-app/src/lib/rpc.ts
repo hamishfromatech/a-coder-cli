@@ -167,6 +167,15 @@ export interface OfficeHuddleDelta {
 	working: Record<string, boolean>;
 }
 
+export interface OfficeSearchHit {
+	huddleId: string;
+	title: string;
+	snippet: string;
+	author?: string;
+	messageId?: string;
+	at: number;
+}
+
 export interface OfficeActivityItem {
 	coworkerId: string;
 	kind: "turn_start" | "tool_start" | "tool_end" | "speaking" | "turn_end" | "error";
@@ -1863,6 +1872,12 @@ export const officeSend = (huddleId: string, text: string, images?: OfficeAttach
 
 export const officeGetHuddle = (huddleId: string) =>
 	sendCommand({ type: "office_huddle_get", huddleId }) as Promise<OfficeHuddlePayload | null>;
+
+export const officeSearch = (query: string, limit?: number) =>
+	sendCommand({ type: "office_search", query, limit }) as Promise<OfficeSearchHit[]>;
+
+export const officeDeleteMessage = (huddleId: string, messageId: string) =>
+	sendCommand({ type: "office_message_delete", huddleId, messageId }) as Promise<{ removed: boolean }>;
 
 export const officeStop = (huddleId: string) => sendCommand({ type: "office_stop", huddleId });
 
