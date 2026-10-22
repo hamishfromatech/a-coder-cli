@@ -1164,7 +1164,7 @@ export function OfficePanel() {
 					className={
 						floorExpanded
 							? "fixed inset-0 z-[var(--z-modal)] flex flex-col gap-2 bg-pi-bg p-3"
-							: "relative min-h-0 flex-1"
+							: "relative flex min-h-0 flex-1 flex-col"
 					}
 				>
 					{floorExpanded && (

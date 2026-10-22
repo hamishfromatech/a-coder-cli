@@ -4,6 +4,7 @@
 
 ### Changed
 
+- Office floor views now use the full sidebar area: the 3D canvas stretches to the panel and pulls the camera back for tall layouts, while the 2D floor stays fully visible with a matching wall background instead of overflowing or leaving black letterbox bands.
 - The desktop engine bootstrap now downloads from `hamishfromatech/a-coder-cli` directly instead of relying on GitHub's `pi-mono` rename redirect.
 - Settings got a UI/UX pass: the sidebar is grouped (App / Assistant / Workspace / System) with proper icons and an active marker, the search box now searches every settings page and jumps straight to the matching control (or merged sub-section) with a brief highlight, cards honor their `defaultCollapsed` state, advanced fields auto-expand for search hits, and the footer shows live Saving / Saved / error status instead of a static note. The raw JSON editor gains a saved/unsaved state, Reload, a confirmed reset, and opens the correct project-scoped settings file.
 - Composio integration moved into the engine's built-in **Composio MCP server** (`https://connect.composio.dev/mcp`, seeded on fresh installs next to chrome-devtools; auth = dashboard consumer API key via `COMPOSIO_API_KEY` or the MCP servers editor). The desktop **Apps panel** (browse/connect apps) and the empty `Composio` settings card are gone — app discovery and connection now happen in the chat through the server's manage-connections meta tools, and old `#composio` settings deep links still land on Integrations.

@@ -889,15 +889,44 @@ function Character({
 const CAMERA_DEFAULTS = { azimuth: 0.66, polar: 1.02, radius: 21 };
 
 function CameraRig({ target = [0, 0, 0] as [number, number, number], idleOrbit = true }: { target?: [number, number, number]; idleOrbit?: boolean }) {
-	const { camera } = useThree();
-	const state = useRef({ ...CAMERA_DEFAULTS, dragging: false, lx: 0, ly: 0 });
+	const { camera, size } = useThree();
+	// The office is wide (about 1.6:1). In a tall sidebar, pulling the camera
+	// back keeps the room readable instead of filling the panel with the middle
+	// two desks; the scene background covers the remaining margin.
+	const fitRadius = useMemo(() => {
+		const aspect = size.width / Math.max(1, size.height);
+		return Math.min(52, Math.max(21, 21 * (1.35 / Math.max(0.35, aspect))));
+	}, [size.width, size.height]);
+	const fitRadiusRef = useRef(fitRadius);
+	fitRadiusRef.current = fitRadius;
+	const state = useRef({ ...CAMERA_DEFAULTS, radius: fitRadius, dragging: false, lx: 0, ly: 0 });
+	const manualZoom = useRef(false);
+
+	useEffect(() => {
+		if (!manualZoom.current) state.current.radius = fitRadius;
+	}, [fitRadius]);
 
 	useEffect(() => {
 		const onControl = (event: Event) => {
 			const action = (event as CustomEvent<{ action?: string }>).detail?.action;
-			if (action === "reset") state.current = { ...CAMERA_DEFAULTS, dragging: false, lx: 0, ly: 0 };
-			if (action === "zoom-in") state.current.radius = Math.max(9, state.current.radius - 2);
-			if (action === "zoom-out") state.current.radius = Math.min(34, state.current.radius + 2);
+			if (action === "reset") {
+				state.current = {
+					...CAMERA_DEFAULTS,
+					radius: fitRadiusRef.current,
+					dragging: false,
+					lx: 0,
+					ly: 0,
+				};
+				manualZoom.current = false;
+			}
+			if (action === "zoom-in") {
+				manualZoom.current = true;
+				state.current.radius = Math.max(8, state.current.radius - 2);
+			}
+			if (action === "zoom-out") {
+				manualZoom.current = true;
+				state.current.radius = Math.min(80, state.current.radius + 2);
+			}
 		};
 		window.addEventListener("a-coder:office-camera", onControl);
 		return () => window.removeEventListener("a-coder:office-camera", onControl);
@@ -924,7 +953,8 @@ function CameraRig({ target = [0, 0, 0] as [number, number, number], idleOrbit =
 		};
 		const wheel = (e: WheelEvent) => {
 			e.preventDefault();
-			state.current.radius = Math.min(34, Math.max(9, state.current.radius + e.deltaY * 0.012));
+			manualZoom.current = true;
+			state.current.radius = Math.min(80, Math.max(8, state.current.radius + e.deltaY * 0.012));
 		};
 		dom.addEventListener("pointerdown", down);
 		window.addEventListener("pointermove", move);
@@ -1220,8 +1250,9 @@ export function Office3D({
 
 	const theme = THEMES[themeName];
 	return (
-		<div className={className} style={style}>
+		<div className={className} style={{ width: "100%", height: "100%", ...style }}>
 			<Canvas
+				style={{ width: "100%", height: "100%" }}
 				shadows="percentage"
 				frameloop={visible ? "always" : "never"}
 				gl={{ antialias: true, alpha: false }}

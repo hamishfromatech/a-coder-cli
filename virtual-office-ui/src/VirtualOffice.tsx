@@ -390,7 +390,7 @@ export function VirtualOffice({
 			viewBox="0 -28 160 132"
 			preserveAspectRatio="xMidYMid meet"
 			className={className}
-			style={style}
+			style={{ backgroundColor: theme.wallDeep, ...style }}
 			role={interactive ? "group" : "img"}
 			aria-label="Virtual office floor"
 		>

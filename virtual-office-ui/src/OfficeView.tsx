@@ -238,7 +238,12 @@ export function OfficeView({ view: controlled, onViewChange, theme = "dark", ...
 						</div>
 					}
 				>
-					<Office3D {...props} store={store} theme={theme} style={{ flex: 1 }} />
+					<Office3D
+						{...props}
+						store={store}
+						theme={theme}
+						style={{ flex: 1, minHeight: 0, minWidth: 0 }}
+					/>
 				</Suspense>
 			)}
 			{view === "3d" && <CameraControls theme={theme} />}
