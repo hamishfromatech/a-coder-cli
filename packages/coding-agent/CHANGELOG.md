@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Subagents now default to a **100-turn** cap instead of 25 when neither the agent definition nor the spawn call sets `maxTurns`. Per-agent and per-call overrides are unchanged.
 ### Added
 
 - Scheduled tasks now run in isolated background subagents by default (per-job opt-out). Each run gets its own context/turn budget, a live progress card in the target session, and final output returned through the existing task-notification wake. Run records gain `execution`, `subagentId`, `outputFile`, and `worktreePath`; the desktop exposes the subagent log and marks the execution mode.

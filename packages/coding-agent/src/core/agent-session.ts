@@ -4871,7 +4871,7 @@ export class AgentSession {
 			return { agentType, finalText: "No model available for sub-agent.", toolUseCount: 0, turnCount: 0, warnings };
 		}
 
-		const maxTurns = params.maxTurns ?? def?.maxTurns ?? 25;
+		const maxTurns = params.maxTurns ?? def?.maxTurns ?? 100;
 		const parent = this.agent;
 		const subAgent = new Agent({
 			initialState: {
@@ -5096,7 +5096,7 @@ export class AgentSession {
 			return { id };
 		}
 
-		const maxTurns = params.maxTurns ?? def?.maxTurns ?? 25;
+		const maxTurns = params.maxTurns ?? def?.maxTurns ?? 100;
 		record.maxTurns = maxTurns;
 		const parent = this.agent;
 		this._subAgents.set(id, record);

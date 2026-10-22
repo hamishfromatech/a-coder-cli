@@ -49,7 +49,7 @@ Do not modify files. Report findings as a numbered list with file paths.
 | `tools` | No | Explicit tool allow-list (CSV string or YAML list). When omitted, the agent inherits the parent's full tool pool minus the `spawn_subagent` tool itself. |
 | `disallowedTools` | No | Tool names to strip from the inherited pool (`disallowed_tools:` also accepted) — how read-only agents guarantee they cannot write. |
 | `model` | No | Model override for this agent; falls back to the parent's model. Also overridden per-spawn by `spawn_subagent(model: ...)`. |
-| `maxTurns` | No | Positive integer bound on the agent's loop. (`max_turns:` also accepted.) |
+| `maxTurns` | No | Positive integer bound on the agent's loop; defaults to 100 when neither the definition nor the spawn call sets one. (`max_turns:` also accepted.) |
 | `permissionMode` | No | `default` (parent's mode), `plan` (read-only, enforced), or `auto` (policy rules apply). |
 | `isolation` | No | `worktree` runs the agent inside a fresh `git worktree` so its edits never touch the main working copy (kept only if it has changes); requires a git repository. `none` is the default. |
 
