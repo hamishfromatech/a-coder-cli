@@ -74,15 +74,18 @@ function base64ToBytes(base64: string): Uint8Array<ArrayBuffer> {
 }
 
 /** Downscale large images before sending them to a provider. */
-async function normalizeImageData(data: string, mimeType: string): Promise<string> {
-	if (mimeType === "image/gif") return data;
+async function normalizeImageData(
+	data: string,
+	mimeType: string,
+): Promise<{ data: string; mimeType: string }> {
+	if (mimeType === "image/gif") return { data, mimeType };
 	try {
 		const blob = new Blob([base64ToBytes(data)], { type: mimeType });
 		const bitmap = await createImageBitmap(blob);
 		const maxEdge = Math.max(bitmap.width, bitmap.height);
 		if (maxEdge <= 2048) {
 			bitmap.close();
-			return data;
+			return { data, mimeType };
 		}
 		const scale = 2048 / maxEdge;
 		const canvas = document.createElement("canvas");
@@ -91,15 +94,15 @@ async function normalizeImageData(data: string, mimeType: string): Promise<strin
 		const context = canvas.getContext("2d");
 		if (!context) {
 			bitmap.close();
-			return data;
+			return { data, mimeType };
 		}
 		context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
 		bitmap.close();
 		const outputMime = mimeType === "image/png" ? "image/png" : "image/jpeg";
 		const url = canvas.toDataURL(outputMime, 0.86);
-		return url.split(",")[1] ?? data;
+		return { data: url.split(",")[1] ?? data, mimeType: outputMime };
 	} catch {
-		return data;
+		return { data, mimeType };
 	}
 }
 
@@ -154,9 +157,8 @@ export async function attachmentFromPath(path: string): Promise<ComposerAttachme
 			throw new Error(`"${name}" is larger than ${formatAttachmentBytes(MAX_IMAGE_BYTES)}.`);
 		}
 		const file = await readFileBase64(path);
-		const mimeType = file.mimeType || info.mimeType;
-		const data = await normalizeImageData(file.content, mimeType);
-		return imageAttachment(name, mimeType, data, path);
+		const normalized = await normalizeImageData(file.content, file.mimeType || info.mimeType);
+		return imageAttachment(name, normalized.mimeType, normalized.data, path);
 	}
 
 	if (isTextFile(kind) && info.size <= MAX_TEXT_FILE_BYTES) {
@@ -182,7 +184,7 @@ export async function attachmentFromFile(file: File): Promise<ComposerAttachment
 		const dataUrl = await readFileDataUrl(file);
 		const data = dataUrl.split(",")[1] ?? "";
 		const normalized = await normalizeImageData(data, file.type);
-		return imageAttachment(file.name, file.type, normalized);
+		return imageAttachment(file.name, normalized.mimeType, normalized.data);
 	}
 
 	if (isTextFile(kind) && file.size <= MAX_TEXT_FILE_BYTES) {
