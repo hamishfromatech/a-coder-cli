@@ -79,11 +79,12 @@ Modes:
 
 - `off` — no decision-gated continuation (the legacy one-shot length nudge remains).
 - `compaction` — decide after compaction; `compaction.autoContinue` remains the fallback when no model is reachable.
-- `smart` — decide after length stops, compaction, and a normal agent pause.
+- `smart` — decide after length stops, compaction, a normal agent pause, and an empty assistant turn that follows a tool result.
 
 Safety rules:
 
 - A `done` or `blocked` answer stops.
+- An empty assistant turn after a tool result is treated as a dropped completion, not as `done`: the policy continues when the tool made progress, unless the model reports a block or asks for the user. With no decision model available, that empty post-tool stop gets one deterministic continuation, still bounded by `maxConsecutive`.
 - Low progress stops even if the model is not confident enough to pick `done`.
 - The cap and a no-progress gate prevent continuation loops.
 - An explicit user abort, pending approval, authentication failure, and failed overflow recovery are never auto-continued.

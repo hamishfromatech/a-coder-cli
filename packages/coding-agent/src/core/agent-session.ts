@@ -704,16 +704,31 @@ export class AgentSession {
 			.filter((line) => line.length > 0);
 		const estimate = estimateContextTokens(messages);
 		const contextWindow = this.model?.contextWindow ?? 0;
+		const lastAssistantText = this._extractAssistantText(assistantMessage ?? this._findLastAssistantMessage()).trim();
+		const lastTool = this._lastToolResultName();
 
 		return {
 			checkpoint,
 			goal,
-			lastAssistant: this._extractAssistantText(assistantMessage ?? this._findLastAssistantMessage()),
+			lastAssistant: lastAssistantText,
 			recent,
 			consecutive: this._smartContinuationsForCurrentPrompt,
 			...(assistantMessage?.stopReason ? { stopReason: assistantMessage.stopReason } : {}),
+			...(lastTool ? { lastTool } : {}),
+			...(lastTool && lastAssistantText.length === 0 ? { emptyAfterTool: true } : {}),
 			context: { used: estimate.tokens, window: contextWindow },
 		};
+	}
+
+	/** Name of the latest tool result in the current transcript, if any. */
+	private _lastToolResultName(): string | undefined {
+		const messages = this.agent.state.messages;
+		for (let i = messages.length - 1; i >= 0; i--) {
+			const message = messages[i] as { role?: string; toolName?: string };
+			if (message.role === "user") return undefined;
+			if (message.role === "toolResult") return message.toolName;
+		}
+		return undefined;
 	}
 
 	private _summarizeMessageForDecision(message: AgentMessage): string {
@@ -754,17 +769,32 @@ export class AgentSession {
 		if (settings.mode === "off") return undefined;
 		if (checkpoint !== "compaction" && settings.mode !== "smart") return undefined;
 
+		const state = this._buildAutoContinueState(checkpoint, assistantMessage);
 		const model = await this._autoContinueDecisionModel(settings);
-		if (!model) return undefined;
+		if (!model) {
+			// A server can drop an otherwise valid tool turn with an empty final
+			// message. That is not a completion, so continue once even when the
+			// decision model is unavailable. A model-backed decision still wins
+			// when one is reachable.
+			const decision =
+				checkpoint === "tool_pause" && state.emptyAfterTool && state.consecutive < settings.maxConsecutive
+					? {
+							action: "continue" as const,
+							checkpoint,
+							probabilities: {},
+							progress: 1,
+							latencyMs: 0,
+							reason: "empty assistant response after tool use",
+						}
+					: undefined;
+			if (!decision) return undefined;
+			this._emit({ type: "auto_continue_decision", ...decision });
+			return decision;
+		}
 		const decisions = this._decisionModels();
 		if (!decisions) return undefined;
 
-		const decision = await decideAutoContinue(
-			decisions,
-			model,
-			this._buildAutoContinueState(checkpoint, assistantMessage),
-			settings,
-		).catch(() => undefined);
+		const decision = await decideAutoContinue(decisions, model, state, settings).catch(() => undefined);
 		if (!decision) return undefined;
 
 		this._emit({
@@ -2333,9 +2363,18 @@ export class AgentSession {
 		}
 
 		if (msg.stopReason === "stop") {
-			const smart = await this._maybeSmartAutoContinue("agent_end", msg);
+			// An empty final assistant turn after a tool result is a dropped
+			// completion, not a normal pause. Give the decision model the
+			// stronger checkpoint and include the tool name in the nudge.
+			const toolName = this._lastToolResultName();
+			const emptyAfterTool = !!toolName && this._extractAssistantText(msg).trim().length === 0;
+			const smart = await this._maybeSmartAutoContinue(emptyAfterTool ? "tool_pause" : "agent_end", msg);
 			if (smart?.action === "continue") {
-				await this._queueSmartContinuation("Continue working on the user's request. Do not repeat completed work.");
+				await this._queueSmartContinuation(
+					emptyAfterTool
+						? `You stopped after using ${toolName} without a final response. Continue from the tool result and finish the user's request. Do not repeat the tool call unless it failed.`
+						: "Continue working on the user's request. Do not repeat completed work.",
+				);
 				return true;
 			}
 		}

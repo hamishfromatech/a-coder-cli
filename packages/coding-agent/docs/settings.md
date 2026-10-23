@@ -214,7 +214,7 @@ Set `A_CODER_CLI_SKIP_VERSION_CHECK=1` to disable the version update check. Use 
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `autoContinue.mode` | `"off"` \| `"compaction"` \| `"smart"` | `"off"` | Off, decision-gated after compaction only, or decision-gated after length stops, compaction, and a normal pause |
+| `autoContinue.mode` | `"off"` \| `"compaction"` \| `"smart"` | `"off"` | Off, decision-gated after compaction only, or decision-gated after length stops, compaction, normal pauses, and empty post-tool stops |
 | `autoContinue.provider` | string | - | Decision provider override; defaults to `decisions.provider` |
 | `autoContinue.model` | string | - | Decision model override; defaults to `decisions.model` |
 | `autoContinue.minContinueProbability` | number | `0.70` | Minimum probability for the `continue` choice |

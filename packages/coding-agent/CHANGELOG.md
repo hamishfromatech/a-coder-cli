@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Smart auto-continue now handles a model that stops with an empty final assistant turn immediately after a tool result (including MCP tools). The stop is classified as a `tool_pause` checkpoint, continued when the tool made progress, and given one deterministic continuation when no decision model is available; `blocked`, low-progress, and `maxConsecutive` still stop it.
 - MCP stdio server stderr is no longer forwarded into the TUI/chat during startup, tool use, or `/reload`. Each server's output is captured in `~/.a-coder/cli/agent/logs/mcp/<server>.log`; set `forwardStderr: true` on a server to opt into terminal output while debugging. Connection-failure errors still include the server stderr tail.
 
 ### Changed

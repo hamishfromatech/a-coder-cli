@@ -556,7 +556,7 @@ export interface AutoRetryEndEvent {
 
 export interface AutoContinueDecisionEvent {
 	type: "auto_continue_decision";
-	checkpoint: "length" | "compaction" | "agent_end";
+	checkpoint: "length" | "compaction" | "agent_end" | "tool_pause";
 	action: "continue" | "ask_user" | "stop";
 	probabilities: Record<string, number>;
 	progress: number;

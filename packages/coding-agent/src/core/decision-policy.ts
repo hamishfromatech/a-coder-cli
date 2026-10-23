@@ -16,7 +16,7 @@ import type {
 import type { DecisionsModels } from "@earendil-works/pi-ai/compat";
 import type { ResolvedAutoContinueSettings } from "./settings-manager.ts";
 
-export type AutoContinueCheckpoint = "length" | "compaction" | "agent_end";
+export type AutoContinueCheckpoint = "length" | "compaction" | "agent_end" | "tool_pause";
 export type AutoContinueAction = "continue" | "ask_user" | "stop";
 
 export interface AutoContinueState {
@@ -30,6 +30,10 @@ export interface AutoContinueState {
 	/** Smart continuations already used for this prompt. */
 	consecutive: number;
 	stopReason?: string;
+	/** Name of the most recent tool result, when the last turn used a tool. */
+	lastTool?: string;
+	/** True when the assistant stopped with no visible text immediately after a tool result. */
+	emptyAfterTool?: boolean;
 	context?: { used: number; window: number };
 }
 
@@ -58,11 +62,15 @@ const CONTINUE_CRITERIA = {
 	continue: "Clearly unfinished work remains, and another turn can make progress without the user.",
 } as const;
 
-export function buildAutoContinueQuestions(): Record<string, DecisionQuestion> {
+export function buildAutoContinueQuestions(checkpoint?: AutoContinueCheckpoint): Record<string, DecisionQuestion> {
+	const instructions =
+		checkpoint === "tool_pause"
+			? "The agent stopped with no final response immediately after a tool result. Should it continue working without user input?"
+			: "Should the coding agent continue working without user input?";
 	return {
 		next: {
 			type: "choice",
-			instructions: "Should the coding agent continue working without user input?",
+			instructions,
 			criteria: CONTINUE_CRITERIA,
 		},
 		progress: {
@@ -88,6 +96,8 @@ function serializeState(state: AutoContinueState): string {
 		goal: clip(state.goal),
 		lastAssistant: clip(state.lastAssistant),
 		recent: state.recent.slice(-MAX_RECENT).map((line) => clip(line, MAX_RECENT_CHARS)),
+		lastTool: state.lastTool,
+		emptyAfterTool: state.emptyAfterTool,
 		context: state.context,
 	});
 }
@@ -124,10 +134,12 @@ export interface AutoContinueChoiceInput {
 	progress: number;
 	consecutive: number;
 	settings: ResolvedAutoContinueSettings;
+	/** A blank assistant turn after a tool result is not a valid completion. */
+	emptyAfterTool?: boolean;
 }
 
 export function chooseAutoContinueAction(input: AutoContinueChoiceInput): AutoContinueAction {
-	const { probabilities, progress, consecutive, settings } = input;
+	const { probabilities, progress, consecutive, settings, emptyAfterTool } = input;
 	if (consecutive >= settings.maxConsecutive) return "stop";
 	const continueP = probabilities.continue ?? 0;
 	const askP = probabilities.ask_user ?? 0;
@@ -135,6 +147,10 @@ export function chooseAutoContinueAction(input: AutoContinueChoiceInput): AutoCo
 	const blockedP = probabilities.blocked ?? 0;
 
 	if (blockedP >= 0.5) return "stop";
+	// An empty assistant turn after a tool result is a dropped completion, not
+	// a valid "done" signal. Let the model veto for a block or a user question,
+	// but otherwise continue once when the last tool made progress.
+	if (emptyAfterTool && progress >= settings.minProgressProbability && askP < 0.5) return "continue";
 	if (doneP >= 0.55 && doneP >= continueP) return "stop";
 	if (
 		continueP >= settings.minContinueProbability &&
@@ -169,7 +185,7 @@ export async function decideAutoContinue(
 
 	const result = await models.postDecisions(
 		model,
-		{ state: serializeState(state), questions: buildAutoContinueQuestions() },
+		{ state: serializeState(state), questions: buildAutoContinueQuestions(state.checkpoint) },
 		{ ...(signal ? { signal } : {}) },
 	);
 	if (result.stopReason !== "stop") return undefined;
@@ -188,6 +204,7 @@ export async function decideAutoContinue(
 		progress: progressP,
 		consecutive: state.consecutive,
 		settings,
+		emptyAfterTool: state.emptyAfterTool,
 	});
 	const summary = `next=${choice.choice} p=${continueP.toFixed(2)} progress=${progressP.toFixed(2)}`;
 

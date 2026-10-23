@@ -45,6 +45,27 @@ describe("auto-continue decision policy", () => {
 		expect(choose({ consecutive: 2 })).toBe("stop");
 	});
 
+	test("continues past a blank assistant turn after a tool when the tool made progress", () => {
+		expect(
+			choose({
+				emptyAfterTool: true,
+				probabilities: { continue: 0.1, ask_user: 0.1, done: 0.75, blocked: 0.05 },
+				progress: 0.8,
+			}),
+		).toBe("continue");
+	});
+
+	test("still respects a block or a lack of progress after a blank tool stop", () => {
+		expect(
+			choose({
+				emptyAfterTool: true,
+				probabilities: { continue: 0.1, ask_user: 0.1, done: 0.1, blocked: 0.7 },
+				progress: 0.8,
+			}),
+		).toBe("stop");
+		expect(choose({ emptyAfterTool: true, progress: 0.2 })).toBe("stop");
+	});
+
 	test("asks the model for a bounded, typed question set", () => {
 		const questions = buildAutoContinueQuestions();
 		expect(questions.next?.type).toBe("choice");
@@ -52,5 +73,6 @@ describe("auto-continue decision policy", () => {
 		if (questions.next?.type === "choice") {
 			expect(Object.keys(questions.next.criteria)).toEqual(["done", "ask_user", "blocked", "continue"]);
 		}
+		expect(buildAutoContinueQuestions("tool_pause").next?.instructions).toContain("no final response");
 	});
 });
