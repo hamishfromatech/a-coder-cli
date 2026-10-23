@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- MCP stdio server stderr is no longer forwarded into the TUI/chat during startup, tool use, or `/reload`. Each server's output is captured in `~/.a-coder/cli/agent/logs/mcp/<server>.log`; set `forwardStderr: true` on a server to opt into terminal output while debugging. Connection-failure errors still include the server stderr tail.
+
 ### Changed
 
 - Coworker conversations now live in hidden `.office` session directories, so Virtual Office DMs and huddles no longer appear in the composer session list, session picker, or resume flow. Legacy coworker session files are moved out of the main session store at startup; their canonical history remains available to the Office service.

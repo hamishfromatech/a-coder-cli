@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -37,9 +37,22 @@ async function createLinked(): Promise<LinkedFixture> {
 	return { mc, server, serverTransport, clientTransport, injected };
 }
 
+const originalAgentDir = process.env.A_CODER_CLI_CODING_AGENT_DIR;
+const testAgentDirs: string[] = [];
+
 afterEach(() => {
 	vi.restoreAllMocks();
+	if (originalAgentDir === undefined) delete process.env.A_CODER_CLI_CODING_AGENT_DIR;
+	else process.env.A_CODER_CLI_CODING_AGENT_DIR = originalAgentDir;
+	for (const dir of testAgentDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
+
+function useTempAgentDir(): string {
+	const dir = mkdtempSync(join(tmpdir(), "mcp-agent-"));
+	testAgentDirs.push(dir);
+	process.env.A_CODER_CLI_CODING_AGENT_DIR = dir;
+	return dir;
+}
 
 describe("McpClient", () => {
 	it("aggregates paginated listTools results", async () => {
@@ -227,6 +240,7 @@ describe("McpClient", () => {
 		});
 
 		it("attaches the server stderr tail to timeout errors and inherits the parent env", async () => {
+			useTempAgentDir();
 			withConnectTimeout("400");
 			const mc = new McpClient({
 				name: "noisy",
@@ -240,6 +254,30 @@ describe("McpClient", () => {
 			});
 			try {
 				await expect(mc.connect()).rejects.toThrow(/timed out after 400ms[\s\S]*my-var=inherited-merge/s);
+			} finally {
+				clearConnectTimeout();
+				await mc.close();
+			}
+		}, 10_000);
+
+		it("captures stdio stderr to the MCP log instead of the terminal", async () => {
+			withConnectTimeout("400");
+			const agentDir = useTempAgentDir();
+			const write = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+			const mc = new McpClient({
+				name: "noisy",
+				transport: "stdio",
+				commandOrUrl: process.execPath,
+				args: ["-e", "process.stderr.write('leak-test\\n');setInterval(() => {}, 1000)"],
+			});
+			try {
+				await expect(mc.connect()).rejects.toThrow(/timed out after 400ms/);
+				const logPath = join(agentDir, "logs", "mcp", "noisy.log");
+				await vi.waitFor(() => {
+					expect(existsSync(logPath)).toBe(true);
+					expect(readFileSync(logPath, "utf8")).toContain("leak-test");
+				});
+				expect(write).not.toHaveBeenCalled();
 			} finally {
 				clearConnectTimeout();
 				await mc.close();

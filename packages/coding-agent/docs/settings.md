@@ -83,7 +83,7 @@ Use `/trust` in interactive mode to save a project trust decision for future ses
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `mcpServers` | array | chrome-devtools + composio on fresh installs | MCP servers (stdio/http/sse) exposed as `mcp__<server>__<tool>` tools; each entry supports `timeoutMs`, `env`, `headers` (with `${ENV_VAR}` placeholders), `disabled`, and `suppressStderrPatterns` (the chrome-devtools stderr noise is auto-suppressed when unset). See [Built-in MCP servers](#built-in-mcp-servers) |
+| `mcpServers` | array | chrome-devtools + composio on fresh installs | MCP servers (stdio/http/sse) exposed as `mcp__<server>__<tool>` tools; each entry supports `timeoutMs`, `env`, `headers` (with `${ENV_VAR}` placeholders), `disabled`, `suppressStderrPatterns` (the chrome-devtools stderr noise is auto-suppressed when unset), and `forwardStderr` (default `false`; stdio server stderr is written to `~/.a-coder/cli/agent/logs/mcp/<server>.log` instead of the terminal). See [Built-in MCP servers](#built-in-mcp-servers) |
 
 MCP server lists merge across scopes: the union of the global agent settings and the project `.a-coder-cli/settings.json` loads, keyed by name — a project entry with the same name fully replaces the global one (and vice versa: project servers never shadow globals they don't define). Every server is annotated with its `source` (`global` | `project`); `/mcp` shows project-defined servers with a `(project)` label. Untrusted projects contribute no servers.
 

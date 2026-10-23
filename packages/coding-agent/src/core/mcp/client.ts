@@ -1,3 +1,5 @@
+import { appendFileSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
@@ -6,7 +8,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { CallToolResult, ListToolsResult, ReadResourceResult } from "@modelcontextprotocol/sdk/types.js";
 import { ListRootsRequestSchema, ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
-import { VERSION } from "../../config.ts";
+import { getMcpLogsDir, VERSION } from "../../config.ts";
 import type { McpServerConfig } from "./types.ts";
 
 /**
@@ -330,7 +332,7 @@ function createTransport(config: McpServerConfig): TransportBundle {
 				env: { ...(process.env as Record<string, string>), ...(config.env ?? {}) },
 				stderr: "pipe",
 			});
-			const getStderrTail = pipeStderr(transport, suppress ?? []);
+			const getStderrTail = pipeStderr(transport, suppress ?? [], config.name, config.forwardStderr === true);
 			return { transport, getStderrTail };
 		}
 		case "sse": {
@@ -365,14 +367,6 @@ function createTransport(config: McpServerConfig): TransportBundle {
 }
 
 /**
- * Pipe a stdio MCP server's stderr to the parent process, dropping any line
- * that matches one of `suppressPatterns` (each a regex source, tested per
- * line) — used to silence known-benign server noise without hiding real
- * errors. Also keeps a bounded raw tail (including suppressed lines) that
- * connect() appends to failure messages so a crashed server's last words are
- * not lost. Returns the tail getter.
- */
-/**
  * Expand `${ENV_VAR}` placeholders in header values against the parent
  * environment. Letting a server config write the placeholder in the first
  * place keeps the secret out of the settings file; the placeholder is the
@@ -398,15 +392,40 @@ export function resolveHeaderPlaceholders(
 	return Object.keys(resolved).length > 0 ? resolved : undefined;
 }
 
-function pipeStderr(transport: StdioClientTransport, suppressPatterns: string[]): () => string {
+/**
+ * Capture a stdio MCP server's stderr without writing it to the terminal by
+ * default. Lines are appended to a per-server log under the agent directory;
+ * matching `suppressPatterns` are dropped from that log, and `forwardStderr`
+ * opts into also writing matching lines to the parent process. A bounded raw
+ * tail (including suppressed lines) is kept so connect() can append a crashed
+ * server's last words to its error. Returns the tail getter.
+ */
+function pipeStderr(
+	transport: StdioClientTransport,
+	suppressPatterns: string[],
+	serverName: string,
+	forward: boolean,
+): () => string {
 	const stderr = transport.stderr;
 	if (!stderr) return () => "";
 	const regexes = suppressPatterns.map((p) => new RegExp(p));
+	const logDir = getMcpLogsDir();
+	const logPath = join(logDir, `${serverName.replace(/[^a-zA-Z0-9._-]+/g, "_") || "server"}.log`);
+	let logDirReady = false;
 	let pending = "";
 	let rawTail = "";
 	const forEachLine = (line: string): void => {
 		if (regexes.some((r) => r.test(line))) return;
-		process.stderr.write(`${line}\n`);
+		try {
+			if (!logDirReady) {
+				mkdirSync(logDir, { recursive: true });
+				logDirReady = true;
+			}
+			appendFileSync(logPath, `${line}\n`);
+		} catch {
+			// Logging must never take down a server connection.
+		}
+		if (forward) process.stderr.write(`${line}\n`);
 	};
 	stderr.on("data", (chunk: Buffer) => {
 		rawTail = (rawTail + chunk.toString()).slice(-STDERR_TAIL_BYTES);

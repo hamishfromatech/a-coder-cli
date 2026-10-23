@@ -7,12 +7,18 @@ export interface McpServerConfig {
 	headers?: Record<string, string>;
 	/**
 	 * Regex sources (tested per stderr line) whose matching lines are dropped
-	 * from the MCP server's stderr before it reaches the terminal. Only applied
-	 * to stdio transports, and only when non-empty (otherwise stderr is
-	 * inherited unchanged). Use to silence known-benign server noise, e.g.
+	 * from the captured MCP server log. Only applied to stdio transports, and
+	 * only when non-empty. Use to silence known-benign server noise, e.g.
 	 * chrome-devtools-mcp's "No handler registered for issue code ...".
 	 */
 	suppressStderrPatterns?: string[];
+	/**
+	 * Forward captured stdio stderr to the terminal in addition to the MCP log
+	 * file. Defaults to false so server banners, warnings, and debug output do
+	 * not corrupt the TUI/chat. Set true only while debugging a server; the
+	 * tail is always preserved for connection-failure errors.
+	 */
+	forwardStderr?: boolean;
 	/**
 	 * Timeout in ms for requests to this server (tool calls and the connection
 	 * handshake). Defaults to the MCP SDK's 60s. Increase for slow servers
@@ -32,7 +38,7 @@ export interface McpServerConfig {
 /**
  * chrome-devtools-mcp logs this to stderr for every MCP "issue" notification
  * the client doesn't subscribe to (e.g. its PerformanceIssue insights) — pure
- * terminal noise while DevTools collects metrics mid-run.
+ * log noise while DevTools collects metrics mid-run.
  */
 const CHROME_DEVTOOLS_NOISE_PATTERN = "No handler registered for issue code";
 

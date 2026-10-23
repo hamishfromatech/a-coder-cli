@@ -612,6 +612,11 @@ export function getDebugLogPath(): string {
 	return join(getAgentDir(), `${APP_NAME}-debug.log`);
 }
 
+/** Get directory for captured MCP server stderr logs. */
+export function getMcpLogsDir(): string {
+	return join(getAgentDir(), "logs", "mcp");
+}
+
 /** Get path to the Agent Teams root directory (e.g., ~/.a-coder/cli/teams). */
 export function getTeamsRoot(): string {
 	const envDir = process.env[ENV_TEAMS_DIR];
