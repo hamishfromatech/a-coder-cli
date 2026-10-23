@@ -24,7 +24,7 @@ import type { AgentSession } from "../agent-session.ts";
 import type { AgentSessionRuntime } from "../agent-session-runtime.ts";
 import { noOpUIContext } from "../extensions/runner.ts";
 import type { ExtensionUIContext, UserQuestionOption } from "../extensions/types.ts";
-import { getDefaultSessionDir, SessionManager } from "../session-manager.ts";
+import { SessionManager } from "../session-manager.ts";
 import { describeSchedule, isDue, nextRunAt } from "./errands.ts";
 import {
 	buildDmTurnPrompt,
@@ -46,6 +46,7 @@ import {
 	unaddressedMentions,
 	userAuthor,
 } from "./rounds.ts";
+import { getOfficeSessionDir } from "./sessions.ts";
 import { composeSoul, handleFromName, identityReminder } from "./soul.ts";
 import * as store from "./store.ts";
 import {
@@ -1433,7 +1434,7 @@ export class OfficeService {
 			if (stored && existsSync(stored)) {
 				sessionManager = SessionManager.open(stored);
 			} else {
-				sessionManager = SessionManager.create(cwd, getDefaultSessionDir(cwd, this.runtime.services.agentDir));
+				sessionManager = SessionManager.create(cwd, getOfficeSessionDir(cwd, this.runtime.services.agentDir));
 			}
 
 			const result = await this.runtime.createSideRuntime({ cwd, sessionManager });
@@ -1803,7 +1804,7 @@ export class OfficeService {
 	 *  pinned in the first prompt so the persona holds even without history. */
 	private async runEphemeralTurn(coworker: Coworker, prompt: string): Promise<TurnOutcome> {
 		const cwd = this.runtime.cwd;
-		const sessionManager = SessionManager.create(cwd, getDefaultSessionDir(cwd, this.runtime.services.agentDir));
+		const sessionManager = SessionManager.create(cwd, getOfficeSessionDir(cwd, this.runtime.services.agentDir));
 		const result = await this.runtime.createSideRuntime({ cwd, sessionManager });
 		const session = result.session;
 		const key = `ephemeral:${coworker.id}:${randomUUID()}`;

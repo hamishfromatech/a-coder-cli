@@ -4,7 +4,9 @@
 
 ### Changed
 
+- Coworker conversations now live in hidden `.office` session directories, so Virtual Office DMs and huddles no longer appear in the composer session list, session picker, or resume flow. Legacy coworker session files are moved out of the main session store at startup; their canonical history remains available to the Office service.
 - Subagents now default to a **100-turn** cap instead of 25 when neither the agent definition nor the spawn call sets `maxTurns`. Per-agent and per-call overrides are unchanged.
+
 ### Added
 
 - Scheduled tasks now run in isolated background subagents by default (per-job opt-out). Each run gets its own context/turn budget, a live progress card in the target session, and final output returned through the existing task-notification wake. Run records gain `execution`, `subagentId`, `outputFile`, and `worktreePath`; the desktop exposes the subagent log and marks the execution mode.

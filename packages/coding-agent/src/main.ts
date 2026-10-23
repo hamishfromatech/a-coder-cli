@@ -46,6 +46,7 @@ import { applyHttpProxySettings, configureHttpDispatcher } from "./core/http-dis
 import { ModelRegistry, type ResolvedRequestAuth } from "./core/model-registry.ts";
 import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/model-resolver.ts";
 import { ensureBundledNodeOnPath } from "./core/node-runtime.ts";
+import { migrateLegacyOfficeSessions } from "./core/office/sessions.ts";
 import { restoreStdout, takeOverStdout } from "./core/output-guard.ts";
 import { type AppMode, resolveProjectTrusted } from "./core/project-trust.ts";
 import type { CreateAgentSessionOptions } from "./core/sdk.ts";
@@ -721,6 +722,11 @@ export async function main(args: string[], options?: MainOptions) {
 
 	validateForkFlags(parsed);
 	validateSessionIdFlags(parsed);
+
+	// Coworker conversations are agent sessions, but they must not appear in
+	// the composer/session pickers. Move any pre-fix files out of the main
+	// store before session lookup (idempotent; no-op without office data).
+	await migrateLegacyOfficeSessions(agentDir).catch(() => {});
 
 	// Run migrations (pass cwd for project-local migrations)
 	const { migratedAuthProviders: migratedProviders, deprecationWarnings } = runMigrations(cwd);

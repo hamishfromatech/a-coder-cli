@@ -54,7 +54,7 @@ export function listSessionFiles(dir: string = getSessionsDir()): string[] {
 		for (const entry of entries) {
 			const path = join(current, entry.name);
 			if (entry.isDirectory()) {
-				if (entry.name === ".trash") continue;
+				if (entry.name === ".trash" || entry.name === ".office") continue;
 				walk(path);
 			} else if (entry.isFile() && entry.name.endsWith(".jsonl")) {
 				out.push(path);

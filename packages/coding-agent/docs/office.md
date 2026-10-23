@@ -18,7 +18,7 @@ Your Office gives A-Coder a society of **named coworkers** — agents with their
 - Roster: `~/.a-coder/cli/office/coworkers.json`
 - Huddles: `~/.a-coder/cli/office/huddles.json` + `huddles-data/<id>.log.jsonl` (append-only messages) and `huddles-data/<id>.state.json` (epoch, watermarks, holds, running, stranded). Legacy `huddles-data/<id>.json` files are read and migrated on the next write.
 - Errands: `~/.a-coder/cli/office/errands.json`
-- Coworker sessions: normal session files in each project's session dir (the pointer is stored per coworker per project cwd)
+- Coworker sessions: normal agent session files in a hidden `.office` directory inside each project's session folder (the pointer is stored per coworker per project cwd). They are excluded from the composer session list, session picker, and resume flow, and legacy files are migrated at startup.
 
 Set `A_CODER_CLI_OFFICE_DIR` to relocate the office root.
 
