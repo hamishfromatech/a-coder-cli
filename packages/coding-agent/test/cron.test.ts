@@ -575,6 +575,60 @@ describe("cron concurrency and catch-up", () => {
 	});
 });
 
+describe("cron scheduler lease", () => {
+	type TickableService = { tick: () => Promise<void> };
+
+	it("fires a due window once across two scheduler instances", async () => {
+		const firstSession = makeFakeSession(undefined, "ran once");
+		const secondSession = makeFakeSession(undefined, "should not run");
+		const first = new CronService({ runtime: makeRuntime("/proj", firstSession) });
+		const second = new CronService({ runtime: makeRuntime("/proj", secondSession) });
+		first.start();
+		second.start();
+
+		const job = await first.create({
+			name: "08:00 job",
+			prompt: "run the morning routine",
+			schedule: { kind: "every", minutes: 30 },
+		});
+		await store.updateJob(job.id, (j) => {
+			j.nextRunAt = Date.now() - 1_000;
+		});
+
+		await (first as unknown as TickableService).tick();
+		await (second as unknown as TickableService).tick();
+
+		expect(await first.listRuns(job.id)).toHaveLength(1);
+		expect((firstSession as unknown as { __sent: unknown[] }).__sent).toHaveLength(1);
+		expect((secondSession as unknown as { __sent: unknown[] }).__sent).toHaveLength(0);
+		await first.dispose();
+		await second.dispose();
+	});
+
+	it("spools a follower event for the leader to drain", async () => {
+		const firstSession = makeFakeSession(undefined, "reviewed");
+		const secondSession = makeFakeSession(undefined, "should not run");
+		const first = new CronService({ runtime: makeRuntime("/proj", firstSession) });
+		const second = new CronService({ runtime: makeRuntime("/proj", secondSession) });
+		first.start();
+		second.start();
+
+		const job = await first.create({
+			name: "Reviewer",
+			prompt: "review the latest diff",
+			schedule: { kind: "event", trigger: "turn_end" },
+		});
+		await second.notifyEvent({ type: "turn_end", cwd: "/proj" });
+		await (first as unknown as TickableService).tick();
+
+		expect(await first.listRuns(job.id)).toHaveLength(1);
+		expect((firstSession as unknown as { __sent: unknown[] }).__sent).toHaveLength(1);
+		expect((secondSession as unknown as { __sent: unknown[] }).__sent).toHaveLength(0);
+		await first.dispose();
+		await second.dispose();
+	});
+});
+
 describe("cron event triggers", () => {
 	it("validates event schedules", () => {
 		expect(validateSchedule({ kind: "event", trigger: "turn_end" })).toBeNull();

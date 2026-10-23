@@ -22,7 +22,9 @@ import type { AgentSession } from "../agent-session.ts";
 import { noOpUIContext } from "../extensions/runner.ts";
 import { describeSchedule, isDue, isValidDailyTime, isValidWeekdays, nextRunAt } from "../office/errands.ts";
 import { getDefaultSessionDir, SessionManager } from "../session-manager.ts";
+import { appendCronEvent, drainCronEvents } from "./event-spool.ts";
 import * as revisions from "./revisions.ts";
+import { CronSchedulerLease } from "./scheduler-lease.ts";
 import * as store from "./store.ts";
 import type { CronTriageInput } from "./triage.ts";
 import type {
@@ -263,6 +265,8 @@ export class CronService {
 	private readonly resolveGitHead: (cwd: string) => Promise<string | null>;
 	private readonly triage?: (input: CronTriageInput) => Promise<CronTriageDecision | undefined>;
 	private ticker: ReturnType<typeof setInterval> | undefined;
+	private schedulerLease: CronSchedulerLease | undefined;
+	private schedulerHeartbeat: ReturnType<typeof setInterval> | undefined;
 	private disposed = false;
 	/** Live continuity sessions for off-session delivery, keyed by job id. */
 	private readonly sideSessions = new Map<string, AgentSession>();
@@ -281,6 +285,15 @@ export class CronService {
 
 	start(): void {
 		if (this.ticker) return;
+		// One scheduler per machine: the lease owner ticks, everyone else
+		// follows. The heartbeat keeps a long run from losing ownership while
+		// its async work is in flight.
+		this.schedulerLease ??= new CronSchedulerLease();
+		this.schedulerLease.acquireOrRenew();
+		this.schedulerHeartbeat = setInterval(() => {
+			this.schedulerLease?.acquireOrRenew();
+		}, 20_000);
+		this.schedulerHeartbeat.unref?.();
 		this.ticker = setInterval(() => {
 			void this.tick();
 		}, TICK_MS);
@@ -293,6 +306,12 @@ export class CronService {
 			clearInterval(this.ticker);
 			this.ticker = undefined;
 		}
+		if (this.schedulerHeartbeat) {
+			clearInterval(this.schedulerHeartbeat);
+			this.schedulerHeartbeat = undefined;
+		}
+		this.schedulerLease?.release();
+		this.schedulerLease = undefined;
 		for (const session of this.sideSessions.values()) {
 			if (session.isStreaming) {
 				await session.abort().catch(() => {});
@@ -484,6 +503,14 @@ export class CronService {
 
 	private async tick(): Promise<void> {
 		if (this.disposed) return;
+		// A follower still reads snapshots and serves run-now, but never fires a
+		// scheduled window. This is the machine-wide lock that prevents five
+		// tabs from launching the same 08:00 job.
+		if (this.schedulerLease && !this.schedulerLease.acquireOrRenew()) return;
+		const events = drainCronEvents();
+		for (const event of events) {
+			await this.handleEvent(event);
+		}
 		const jobs = await store.listJobs();
 		const now = Date.now();
 		for (const job of jobs) {
@@ -524,7 +551,13 @@ export class CronService {
 	/** Entry point for hosts: session/git events matching jobs by cwd + trigger.
 	 *  Awaiting is optional; hosts may fire-and-forget. */
 	notifyEvent(event: CronHostEvent): Promise<void> {
-		return this.handleEvent(event);
+		// Not started (print mode, direct service use): handle immediately.
+		// Started followers spool the event for the scheduler leader.
+		if (!this.ticker || !this.schedulerLease || this.schedulerLease.isLeader) {
+			return this.handleEvent(event);
+		}
+		appendCronEvent(event);
+		return Promise.resolve();
 	}
 
 	private async handleEvent(event: CronHostEvent): Promise<void> {
