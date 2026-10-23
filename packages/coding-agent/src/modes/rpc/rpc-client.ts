@@ -327,6 +327,13 @@ export class RpcClient {
 	}
 
 	/**
+	 * Set the model for scheduled runs (`provider/model`; undefined clears it).
+	 */
+	async setCronModel(model?: string): Promise<void> {
+		await this.send({ type: "set_cron_model", model });
+	}
+
+	/**
 	 * Set auto-retry enabled/disabled.
 	 */
 	async setAutoRetry(enabled: boolean): Promise<void> {

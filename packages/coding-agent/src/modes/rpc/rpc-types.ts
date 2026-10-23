@@ -127,6 +127,7 @@ export type RpcCommand =
 	| { id?: string; type: "get_llama_cpp_status" }
 	| { id?: string; type: "get_auto_continue_settings" }
 	| { id?: string; type: "set_auto_continue_settings"; settings: AutoContinueSettings }
+	| { id?: string; type: "set_cron_model"; model?: string }
 
 	// Retry
 	| { id?: string; type: "set_auto_retry"; enabled: boolean }

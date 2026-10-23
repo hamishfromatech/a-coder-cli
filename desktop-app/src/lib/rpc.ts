@@ -331,6 +331,8 @@ export interface CronRun {
 	triage?: CronTriageDecision;
 	/** Resolved variable values for this run (manual overrides included). */
 	variables?: Record<string, string>;
+	model?: string;
+	modelSource?: "cron" | "subagent" | "default" | "session";
 	execution?: "session" | "subagent";
 	subagentId?: string;
 	outputFile?: string;
@@ -1205,6 +1207,8 @@ export const getAutoContinueSettings = () =>
 
 export const setAutoContinueSettings = (settings: AutoContinueSettings) =>
 	sendCommand({ type: "set_auto_continue_settings", settings });
+
+export const setCronModel = (model?: string) => sendCommand({ type: "set_cron_model", model });
 
 // ---- thinking ----
 export const setThinkingLevel = (level: ThinkingLevel) =>

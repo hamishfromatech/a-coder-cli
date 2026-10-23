@@ -231,6 +231,10 @@ export interface DecisionsSettings {
 export interface CronSettings {
 	/** Triage finished scheduled runs with a System One model. Default: true. */
 	triage?: boolean;
+	/** Model used for scheduled runs, as "provider/model". Blank uses the
+	 *  delegated-work model, then the default chat model. Scheduled runs never
+	 *  inherit a job session's pinned model implicitly. */
+	model?: string;
 }
 
 export type AutoContinueMode = "off" | "compaction" | "smart";
@@ -1497,6 +1501,18 @@ export class SettingsManager {
 
 	getCronTriageEnabled(): boolean {
 		return this.settings.cron?.triage !== false;
+	}
+
+	/** Explicit model for scheduled runs (`provider/model`), if configured. */
+	getCronModel(): string | undefined {
+		return this.settings.cron?.model?.trim() || undefined;
+	}
+
+	setCronModel(model: string | undefined): void {
+		if (!this.globalSettings.cron) this.globalSettings.cron = {};
+		this.globalSettings.cron.model = model?.trim() || undefined;
+		this.markModified("cron", "model");
+		this.save();
 	}
 
 	getAutoContinueSettings(): ResolvedAutoContinueSettings {

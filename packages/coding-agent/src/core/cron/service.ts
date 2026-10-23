@@ -22,6 +22,7 @@ import type { AgentSession } from "../agent-session.ts";
 import { noOpUIContext } from "../extensions/runner.ts";
 import { describeSchedule, isDue, isValidDailyTime, isValidWeekdays, nextRunAt } from "../office/errands.ts";
 import { getDefaultSessionDir, SessionManager } from "../session-manager.ts";
+import type { SettingsManager } from "../settings-manager.ts";
 import { appendCronEvent, drainCronEvents } from "./event-spool.ts";
 import * as revisions from "./revisions.ts";
 import { CronSchedulerLease } from "./scheduler-lease.ts";
@@ -687,9 +688,16 @@ export class CronService {
 		let subagentId: string | undefined;
 		let outputFile: string | undefined;
 		let worktreePath: string | undefined;
+		let unbindModel: (() => void) | undefined;
 		try {
 			const target = await this.resolveDelivery(fresh);
 			run.sessionFile = target.sessionFile;
+			const scheduledModel = this.resolveScheduledModel(target.session);
+			if (scheduledModel) {
+				run.model = scheduledModel.label;
+				run.modelSource = scheduledModel.source;
+				unbindModel = target.session.bindTurnModel(scheduledModel.provider, scheduledModel.modelId);
+			}
 			const canIsolate =
 				fresh.isolated !== false &&
 				typeof target.session.runSubAgentBackground === "function" &&
@@ -697,6 +705,8 @@ export class CronService {
 			if (run.sessionFile) {
 				await store.updateRun(run.jobId, run.id, (r) => {
 					r.sessionFile = run.sessionFile;
+					r.model = run.model;
+					r.modelSource = run.modelSource;
 				});
 			}
 			if (canIsolate) {
@@ -745,6 +755,8 @@ export class CronService {
 				r.subagentId = subagentId;
 				r.outputFile = outputFile;
 				r.worktreePath = worktreePath;
+				r.model = run.model;
+				r.modelSource = run.modelSource;
 			});
 		} catch (error_) {
 			status = error_ instanceof CronTimeoutError ? "timeout" : "error";
@@ -758,7 +770,11 @@ export class CronService {
 				r.subagentId = subagentId;
 				r.outputFile = outputFile;
 				r.worktreePath = worktreePath;
+				r.model = run.model;
+				r.modelSource = run.modelSource;
 			});
+		} finally {
+			unbindModel?.();
 		}
 
 		run.finishedAt = Date.now();
@@ -775,6 +791,8 @@ export class CronService {
 			r.status = status;
 			r.error = lastError;
 			r.summary = summary;
+			r.model = run.model;
+			r.modelSource = run.modelSource;
 			if (triage) r.triage = triage;
 		});
 		this.emitRunEvent({ type: "run_finished", run: { ...run } });
@@ -811,6 +829,67 @@ export class CronService {
 				error: error instanceof Error ? error.message : String(error),
 			};
 		}
+	}
+
+	/**
+	 * Model for a scheduled run. Precedence: `cron.model`, the delegated-work
+	 * model, the default chat model. Deliberately never falls back to the
+	 * job session's pinned model when a configured choice exists, so a session
+	 * created under an expensive model cannot silently become the automation
+	 * model. An explicit cron model that is missing or unauthenticated fails
+	 * the run instead of silently using something else.
+	 */
+	private resolveScheduledModel(
+		session: AgentSession,
+	):
+		| { provider: string; modelId: string; label: string; source: "cron" | "subagent" | "default" | "session" }
+		| undefined {
+		const settings = (session as { settingsManager?: SettingsManager }).settingsManager;
+		if (!settings) return undefined;
+		const registry = session.modelRegistry;
+		const candidates: Array<{ raw?: string; source: "cron" | "subagent" | "default" }> = [
+			{ raw: settings.getCronModel(), source: "cron" },
+			{ raw: settings.getSubagentModel(), source: "subagent" },
+		];
+		const defaultProvider = settings.getDefaultProvider();
+		const defaultModel = settings.getDefaultModel();
+		if (defaultProvider && defaultModel) {
+			candidates.push({ raw: `${defaultProvider}/${defaultModel}`, source: "default" });
+		}
+
+		for (const candidate of candidates) {
+			if (!candidate.raw) continue;
+			const split = splitModelReference(candidate.raw);
+			if (!split.modelId) continue;
+			const model = split.provider
+				? registry.find(split.provider, split.modelId)
+				: registry.getAvailable().find((entry) => entry.id === split.modelId);
+			if (!model) {
+				if (candidate.source === "cron") {
+					throw new Error(`Cron model not found: ${candidate.raw}`);
+				}
+				continue;
+			}
+			if (!registry.hasConfiguredAuth(model)) {
+				if (candidate.source === "cron") {
+					throw new Error(`No credentials configured for cron model ${model.provider}/${model.id}`);
+				}
+				continue;
+			}
+			return {
+				provider: model.provider,
+				modelId: model.id,
+				label: `${model.provider}/${model.id}`,
+				source: candidate.source,
+			};
+		}
+
+		// Do not fall back to the target session's model. That is how a job
+		// created inside an expensive interactive session silently inherits its
+		// billing. Fail loudly instead; the user can set cron.model or a default.
+		throw new Error(
+			"No scheduled-task model configured. Set cron.model (Settings → Models → Scheduled task model), subagentModel, or defaultProvider/defaultModel.",
+		);
 	}
 
 	/**
@@ -935,6 +1014,14 @@ class CronTimeoutError extends Error {
 		super("Cron run timed out");
 		this.name = "CronTimeoutError";
 	}
+}
+
+/** Split a provider/model reference. The model id may itself contain slashes. */
+function splitModelReference(reference: string): { provider?: string; modelId?: string } {
+	const trimmed = reference.trim();
+	const slash = trimmed.indexOf("/");
+	if (slash <= 0 || slash === trimmed.length - 1) return { modelId: trimmed || undefined };
+	return { provider: trimmed.slice(0, slash), modelId: trimmed.slice(slash + 1) };
 }
 
 /** Cooldown window for an event job (clamped to the minimum). */

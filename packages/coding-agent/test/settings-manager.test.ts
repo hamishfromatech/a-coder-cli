@@ -46,6 +46,15 @@ describe("SettingsManager", () => {
 		});
 	});
 
+	describe("cron model", () => {
+		it("reads and clears the scheduled-task model", () => {
+			const manager = SettingsManager.inMemory({ cron: { model: "ollama-cloud/beam" } });
+			expect(manager.getCronModel()).toBe("ollama-cloud/beam");
+			manager.setCronModel(undefined);
+			expect(manager.getCronModel()).toBeUndefined();
+		});
+	});
+
 	describe("computerUse", () => {
 		const SAVED_ENV = process.env.A_CODER_CLI_COMPUTER_USE;
 

@@ -575,6 +575,87 @@ describe("cron concurrency and catch-up", () => {
 	});
 });
 
+describe("cron scheduled model", () => {
+	function modelSession(options: { cronModel?: string; subagentModel?: string; found?: boolean }) {
+		const bound: string[] = [];
+		const unbound: string[] = [];
+		const modelRegistry = {
+			find: vi.fn((provider: string, modelId: string) =>
+				options.found === false ? undefined : { provider, id: modelId, name: modelId, baseUrl: "", api: "test" },
+			),
+			getAvailable: vi.fn(() => []),
+			hasConfiguredAuth: vi.fn(() => true),
+		};
+		const settingsManager = {
+			getCronModel: () => options.cronModel,
+			getSubagentModel: () => options.subagentModel,
+			getDefaultProvider: () => "ollama-cloud",
+			getDefaultModel: () => "beam",
+		};
+		const session = makeFakeSession(
+			{
+				model: { provider: "openrouter", id: "pinned/old-model", name: "old" },
+				settingsManager,
+				modelRegistry,
+				bindTurnModel: (provider: string, modelId: string) => {
+					bound.push(`${provider}/${modelId}`);
+					return () => unbound.push(`${provider}/${modelId}`);
+				},
+			},
+			"ran",
+		);
+		return { session, bound, unbound };
+	}
+
+	it("uses the delegated-work model instead of a job session's pinned model", async () => {
+		const { session, bound, unbound } = modelSession({ subagentModel: "ollama-cloud/beam" });
+		const service = new CronService({ runtime: makeRuntime("/proj", session) });
+		const job = await service.create({
+			name: "Scheduled",
+			prompt: "do work",
+			schedule: { kind: "every", minutes: 30 },
+			isolated: false,
+		});
+		await service.runNow(job.id);
+		expect(bound).toEqual(["ollama-cloud/beam"]);
+		expect(unbound).toEqual(["ollama-cloud/beam"]);
+		const run = (await service.listRuns(job.id))[0];
+		expect(run?.model).toBe("ollama-cloud/beam");
+		expect(run?.modelSource).toBe("subagent");
+		await service.dispose();
+	});
+
+	it("prefers an explicit cron.model and fails instead of silently using the session model", async () => {
+		const configured = modelSession({ cronModel: "ollama-cloud/beam", subagentModel: "other/fallback" });
+		const service = new CronService({ runtime: makeRuntime("/proj", configured.session) });
+		const job = await service.create({
+			name: "Explicit",
+			prompt: "do work",
+			schedule: { kind: "every", minutes: 30 },
+			isolated: false,
+		});
+		await service.runNow(job.id);
+		expect(configured.bound).toEqual(["ollama-cloud/beam"]);
+
+		const missing = modelSession({ cronModel: "missing/model", subagentModel: "ollama-cloud/beam", found: false });
+		const missingService = new CronService({ runtime: makeRuntime("/proj", missing.session) });
+		const missingJob = await missingService.create({
+			name: "Missing",
+			prompt: "do work",
+			schedule: { kind: "every", minutes: 30 },
+			isolated: false,
+		});
+		await missingService.runNow(missingJob.id);
+		const [run] = await missingService.listRuns(missingJob.id);
+		expect(run?.status).toBe("error");
+		expect(run?.error).toContain("Cron model not found");
+		expect((missing.session as unknown as { __sent: unknown[] }).__sent).toHaveLength(0);
+		expect(missing.bound).toHaveLength(0);
+		await service.dispose();
+		await missingService.dispose();
+	});
+});
+
 describe("cron scheduler lease", () => {
 	type TickableService = { tick: () => Promise<void> };
 

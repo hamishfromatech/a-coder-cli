@@ -1082,6 +1082,18 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 				return success(id, "set_auto_continue_settings");
 			}
 
+			case "set_cron_model": {
+				if (command.model !== undefined && typeof command.model !== "string") {
+					return error(id, "set_cron_model", "model must be a string");
+				}
+				const model = command.model?.trim() || undefined;
+				if (model && !model.includes("/")) {
+					return error(id, "set_cron_model", "model must be provider/model");
+				}
+				session.settingsManager.setCronModel(model);
+				return success(id, "set_cron_model");
+			}
+
 			// =================================================================
 			// Thinking
 			// =================================================================

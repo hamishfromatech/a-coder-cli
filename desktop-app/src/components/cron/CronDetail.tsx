@@ -261,6 +261,7 @@ export function CronDetail({
 									<Property label="Execution" value={job.isolated === false ? "Live session" : "Isolated subagent"} />
 									<Property label="Last run" value={job.lastRunAt ? `${relativeTime(job.lastRunAt)}${job.lastStatus ? ` · ${job.lastStatus}` : ""}` : "never"} />
 									<Property label="Last triage" value={triageLabel(job.lastTriage) ?? "none"} />
+								<Property label="Last model" value={runs[0]?.model ? `${runs[0].model}${runs[0].modelSource ? ` (${runs[0].modelSource})` : ""}` : "not recorded"} />
 								</div>
 								{(job.variables ?? []).length > 0 && (
 									<div>
@@ -378,7 +379,7 @@ function RunList({ runs, loading }: { runs: CronRun[]; loading: boolean }) {
 					<div className="min-w-0 flex-1">
 						<div className="flex flex-wrap items-center gap-1.5 text-xs text-pi-text">
 							<span className={statusClass(run.status)}>{run.status}</span>
-							<span className="text-2xs text-pi-text-faint">{run.trigger} · {run.execution ?? "session"} · {run.delivery} · {duration(run)}</span>
+							<span className="text-2xs text-pi-text-faint">{run.trigger} · {run.execution ?? "session"} · {run.delivery} · {run.model ? `${run.model}${run.modelSource ? ` (${run.modelSource})` : ""}` : "model not recorded"} · {duration(run)}</span>
 							{triageLabel(run.triage) && <span className="text-2xs text-pi-accent">{triageLabel(run.triage)}</span>}
 						</div>
 						{run.summary && <div className="mt-0.5 line-clamp-2 text-2xs leading-relaxed text-pi-text-muted">{run.summary}</div>}

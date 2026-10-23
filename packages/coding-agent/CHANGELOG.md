@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `cron.model` setting (Settings → Models → Scheduled task model) pins the model used for scheduled runs. Precedence is `cron.model`, `subagentModel`, default chat model; a job session's pinned model is never inherited implicitly. Runs record the model and source, and the desktop shows both in run history.
+
 ### Fixed
 
 - Scheduled tasks now use a machine-wide scheduler lease (`cron/scheduler.lock`): only one engine process fires due windows, while follower tabs/desktop sessions spool `turn_end` events for the owner. This prevents the same scheduled window from running concurrently in every open tab. A dead owner's lease is taken over immediately; a live owner keeps it until exit.

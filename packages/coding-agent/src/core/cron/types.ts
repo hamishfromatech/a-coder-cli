@@ -153,6 +153,10 @@ export interface CronRun {
 	triage?: CronTriageDecision;
 	/** Resolved variable values for this run (manual overrides included). */
 	variables?: Record<string, string>;
+	/** Model used for the run, as provider/model. */
+	model?: string;
+	/** Where that model came from. */
+	modelSource?: "cron" | "subagent" | "default" | "session";
 	/** How the prompt was executed. Missing on old runs means "session". */
 	execution?: "session" | "subagent";
 	/** Background subagent id, when execution is subagent. */

@@ -69,7 +69,7 @@ Use `/trust` in interactive mode to save a project trust decision for future ses
 | `permissionPolicies` | object | - | Extra rules used by `"auto"` mode's classifier (see [extensions.md](extensions.md) and `A_CODER` policy docs) |
 | `autoMode` | object | - | Opt-in classifier configuration for `"auto"` mode (`enabled`, `maxConsecutiveFailures`, `maxConsecutiveBlocks`) |
 | `decisions` | object | - | System One decision-model target for the `decide` tool and the auto-mode classifier gate: `{provider, model}` (e.g. `{"ollama","clef-flash"}`). Unset: first reachable keyless local server, then OpenRouter when keyed. See [decision-models.md](decision-models.md) |
-| `cron` | object | - | Scheduled-task policy. `cron.triage` (default `true`) classifies finished runs with a System One model and records an advisory action. |
+| `cron` | object | - | Scheduled-task policy. `cron.model` (`provider/model`) pins the model used for scheduled runs; blank uses `subagentModel`, then the default chat model. Scheduled runs never inherit a job session's pinned model implicitly. `cron.triage` (default `true`) classifies finished runs with a System One model and records an advisory action. |
 
 
 ### Computer Use
@@ -238,6 +238,7 @@ Smart auto-continue needs a reachable System One model (see [decision-models.md]
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
+| `cron.model` | string | - | Model for scheduled runs, as `provider/model`. Blank uses `subagentModel`, then `defaultProvider`/`defaultModel`. A job session's pinned model is not used implicitly. |
 | `cron.triage` | boolean | `true` | After a scheduled task finishes, ask the decision model to classify the outcome and recommend notify, stay quiet, retry, or pause. |
 
 Triage is local-first: without an explicit `decisions.provider/model`, it only uses a keyless local System One server. The recommendation is stored on the run and shown in the CLI and desktop; it never retries or pauses a schedule automatically.

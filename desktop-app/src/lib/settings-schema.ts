@@ -63,14 +63,15 @@ export interface CliSettingsFieldSpec {
 	/** Number-only: step */
 	step?: number;
 	/** Custom-widget name when kind === "custom" */
-	widget?: "theme" | "thinking" | "models" | "defaultModel" | "subagents" | "mcpServers" | "permissionPolicies" | "packages" | "resources" | "completionSound" | "benchRunner" | "onboardingTour" | "computerUse" | "browserSettings" | "chatTextSize" | "interfaceMode" | "keepAwake" | "autoContinue" | "llamaCpp";
+	widget?: "theme" | "thinking" | "models" | "defaultModel" | "subagents" | "cronModel" | "mcpServers" | "permissionPolicies" | "packages" | "resources" | "completionSound" | "benchRunner" | "onboardingTour" | "computerUse" | "browserSettings" | "chatTextSize" | "interfaceMode" | "keepAwake" | "autoContinue" | "llamaCpp";
 	/** If true, change is also pushed to the engine at runtime (not just persisted) */
 	runtimeSync?:
 		| "thinkingLevel"
 		| "steeringMode"
 		| "followUpMode"
 		| "autoCompaction"
-		| "autoRetry";
+		| "autoRetry"
+		| "cronModel";
 	/** If true, this field is tucked behind a per-card "Show advanced" disclosure */
 	advanced?: boolean;
 }
@@ -240,6 +241,14 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 				hint: "Model used by subagents and background tasks. Blank inherits the session model; an agent definition can override it.",
 				kind: "custom",
 				widget: "subagents",
+			},
+			{
+				path: "cron.model",
+				label: "Scheduled task model",
+				hint: "Model used for scheduled runs. Blank uses the delegated work model, then the default chat model — never a job session's pinned model. Set this explicitly to control automation spend.",
+				kind: "custom",
+				widget: "cronModel",
+				runtimeSync: "cronModel",
 			},
 			{
 				path: "defaultThinkingLevel",
@@ -1068,6 +1077,9 @@ export function applyRuntimeSync(path: string, value: unknown): void {
 			return;
 		case "retry.enabled":
 			void rpc.setAutoRetry(Boolean(value)).catch(() => {});
+			return;
+		case "cron.model":
+			void rpc.setCronModel(typeof value === "string" && value.trim() ? value.trim() : undefined).catch(() => {});
 			return;
 	}
 }

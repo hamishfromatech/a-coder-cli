@@ -61,6 +61,10 @@ export interface ResolvedAutoContinueSettings extends Required<Omit<AutoContinue
 export interface CronSettings {
 	/** Triage finished scheduled runs with a System One model. Default: true. */
 	triage?: boolean;
+	/** Model used for scheduled runs, as "provider/model". Blank uses the
+	 *  delegated-work model, then the default chat model. Scheduled runs never
+	 *  inherit a job session's pinned model implicitly. */
+	model?: string;
 }
 
 export interface DecisionModelInfo {

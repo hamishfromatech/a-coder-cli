@@ -594,6 +594,22 @@ List installed/configured System One models and the resolved smart auto-continue
 
 `mode` is `off`, `compaction`, or `smart`. See [settings.md](settings.md#smart-auto-continue).
 
+#### set_cron_model
+
+Set the model used for scheduled runs (`provider/model`). `model` omitted or empty clears the override. The engine persists it in global settings; new runs resolve `cron.model` → `subagentModel` → default model, never a job session's pinned model.
+
+```json
+{"type": "set_cron_model", "model": "ollama-cloud/beam"}
+```
+
+#### set_cron_model
+
+Set the model used for scheduled runs (`provider/model`). `model` omitted or empty clears the override. The engine persists it in global settings; new runs resolve `cron.model` → `subagentModel` → default model, never a job session's pinned model.
+
+```json
+{"type": "set_cron_model", "model": "ollama-cloud/beam"}
+```
+
 #### set_compaction_auto_continue
 
 Enable or disable automatic continuation after auto-compaction completes. When enabled, the agent queues a follow-up "continue" message after threshold compaction so it resumes without waiting for user input. Overflow recovery always retries regardless of this setting.

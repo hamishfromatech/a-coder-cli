@@ -66,6 +66,7 @@ import { AutoContinueSection } from "./panels/widgets/AutoContinueSection";
 import { ThinkingPresetPicker } from "./panels/widgets/ThinkingPresetPicker";
 import { ModelsPicker } from "./panels/widgets/ModelsPicker";
 import { DefaultModelPicker } from "./panels/widgets/DefaultModelPicker";
+import { CronModelPicker } from "./panels/widgets/CronModelPicker";
 import { SubagentModelPicker } from "./panels/widgets/SubagentModelPicker";
 import { AccountSection } from "./panels/widgets/AccountSection";
 import { CustomProvidersSection } from "./panels/widgets/CustomProvidersSection";
@@ -598,6 +599,13 @@ function renderCustom(
 				<SubagentModelPicker
 					provider={settings.subagentProvider}
 					modelId={settings.subagentModel}
+					onUpdateField={onUpdateField}
+				/>
+			);
+		case "cronModel":
+			return (
+				<CronModelPicker
+					value={readPath(settings, "cron.model") as string | undefined}
 					onUpdateField={onUpdateField}
 				/>
 			);
