@@ -12,6 +12,8 @@ export interface AnnounceOptions {
 	name: string;
 	port: number;
 	machineId: string;
+	/** Advertise that the bridge serves wss:// (clients must pair with TLS). */
+	tls?: boolean;
 }
 
 export class BridgeAnnounce {
@@ -30,6 +32,7 @@ export class BridgeAnnounce {
 					tokenReq: "1",
 					engine: "a-coder-cli",
 					id: options.machineId,
+					tls: options.tls ? "1" : "0",
 				},
 			});
 		} catch (error) {

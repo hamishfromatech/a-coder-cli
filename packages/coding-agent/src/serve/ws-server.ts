@@ -9,6 +9,7 @@
 
 import type { IncomingMessage, Server } from "node:http";
 import http from "node:http";
+import https from "node:https";
 import type { Socket } from "node:net";
 import { type WebSocket, WebSocketServer } from "ws";
 import { BRIDGE_CONTRACT, bridgeFrame } from "./control-frames.ts";
@@ -53,6 +54,8 @@ export interface WsServerOptions {
 	onClientMessage: (data: string, ws: WebSocket) => void;
 	onClientConnected: (ws: WebSocket) => void;
 	onClientDisconnected: () => void;
+	/** PEM TLS material. When set the bridge serves https/wss instead of http/ws. */
+	tls?: { cert: string; key: string };
 }
 
 export interface ServeAddress {
@@ -74,9 +77,12 @@ export class BridgeWsServer {
 
 	constructor(options: WsServerOptions) {
 		this.options = options;
-		this.httpServer = http.createServer((req, res) => {
+		const handler = (req: http.IncomingMessage, res: http.ServerResponse) => {
 			this.handleHttp(req, res);
-		});
+		};
+		this.httpServer = options.tls
+			? https.createServer({ cert: options.tls.cert, key: options.tls.key }, handler)
+			: http.createServer(handler);
 		this.wss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 * 1024 });
 		this.httpServer.on("upgrade", (req, socket, head) => {
 			this.handleUpgrade(req, socket as Socket, head);
