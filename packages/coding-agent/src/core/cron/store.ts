@@ -6,10 +6,11 @@
  * the office store uses for concurrent writers.
  */
 
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { getAgentDir } from "../../config.ts";
 import { withKeyedLock } from "../../utils/async-mutex.ts";
+import { atomicWrite } from "./atomic-write.ts";
 import type { CronJob, CronRun } from "./types.ts";
 
 function jobsPath(): string {
@@ -31,10 +32,7 @@ async function readJobs(path = jobsPath()): Promise<CronJob[]> {
 }
 
 async function writeJobs(path: string, jobs: CronJob[]): Promise<void> {
-	await mkdir(dirname(path), { recursive: true });
-	const tmp = `${path}.${process.pid}.${Date.now()}.tmp`;
-	await writeFile(tmp, JSON.stringify(jobs, null, "\t"), "utf-8");
-	await rename(tmp, path);
+	await atomicWrite(path, JSON.stringify(jobs, null, "\t"));
 }
 
 function withFileLock<T>(path: string, fn: () => Promise<T>): Promise<T> {
@@ -98,10 +96,7 @@ async function readRuns(path = runsPath()): Promise<Record<string, CronRun[]>> {
 }
 
 async function writeRuns(path: string, runs: Record<string, CronRun[]>): Promise<void> {
-	await mkdir(dirname(path), { recursive: true });
-	const tmp = `${path}.${process.pid}.${Date.now()}.tmp`;
-	await writeFile(tmp, JSON.stringify(runs, null, "\t"), "utf-8");
-	await rename(tmp, path);
+	await atomicWrite(path, JSON.stringify(runs, null, "\t"));
 }
 
 /** All runs for a job (newest first), or every job's runs flattened newest-first. */

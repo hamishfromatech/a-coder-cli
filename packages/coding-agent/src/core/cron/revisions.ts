@@ -7,10 +7,11 @@
  * different project or session.
  */
 
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { getAgentDir } from "../../config.ts";
 import { withKeyedLock } from "../../utils/async-mutex.ts";
+import { atomicWrite } from "./atomic-write.ts";
 import type { CronJobRevision } from "./types.ts";
 
 export const MAX_REVISIONS_PER_JOB = 20;
@@ -32,10 +33,7 @@ async function readRevisions(path = revisionsPath()): Promise<RevisionMap> {
 }
 
 async function writeRevisions(path: string, revisions: RevisionMap): Promise<void> {
-	await mkdir(dirname(path), { recursive: true });
-	const tmp = `${path}.${process.pid}.${Date.now()}.tmp`;
-	await writeFile(tmp, JSON.stringify(revisions, null, "\t"), "utf-8");
-	await rename(tmp, path);
+	await atomicWrite(path, JSON.stringify(revisions, null, "\t"));
 }
 
 export function mintRevisionId(): string {

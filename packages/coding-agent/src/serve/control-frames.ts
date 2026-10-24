@@ -18,8 +18,17 @@ export type BridgeEvent =
 	| { type: "bridge"; event: "connected"; clients: number }
 	| { type: "bridge"; event: "engine_exited"; code: number | null }
 	| { type: "bridge"; event: "engine_failed"; attempts: number }
-	| { type: "bridge"; event: "engine_unavailable" }
-	| { type: "bridge"; event: "shutting_down" };
+	/**
+	 * A client command was not delivered. `starting` = no running engine yet
+	 * (spawning or restarting); `backlog` = engine alive but its stdin queue is
+	 * full, so the command should be retried once it drains. `id` is the dropped
+	 * command's correlation id when its line parsed, letting the client fail
+	 * that waiting request immediately instead of timing out.
+	 */
+	| { type: "bridge"; event: "engine_unavailable"; reason: "starting" | "backlog"; id?: string }
+	| { type: "bridge"; event: "shutting_down" }
+	/** The client's socket could not keep up; it is about to be closed (doc 04 §4). */
+	| { type: "bridge"; event: "slow_client"; ip: string };
 
 export function bridgeFrame(event: BridgeEvent): string {
 	// Control frames carry a schema version so mobile clients can evolve safely.

@@ -18,6 +18,7 @@ import { join, resolve } from "path";
 import { createInterface } from "readline";
 import { StringDecoder } from "string_decoder";
 import { getAgentDir as getDefaultAgentDir, getSessionsDir } from "../config.ts";
+import { withFileLockRetrySync } from "../utils/file-retry.ts";
 import { normalizePath, resolvePath } from "../utils/paths.ts";
 import {
 	type BashExecutionMessage,
@@ -971,7 +972,10 @@ export class SessionManager {
 
 	private _rewriteFile(): void {
 		if (!this.persist || !this.sessionFile) return;
-		const fd = openSync(this.sessionFile, "w");
+		const file = this.sessionFile;
+		// "w" truncates, so open-time lock errors are safe to retry: nothing has
+		// been written yet by the failed attempt.
+		const fd = withFileLockRetrySync(() => openSync(file, "w"));
 		try {
 			for (const entry of this.fileEntries) {
 				writeFileSync(fd, `${JSON.stringify(entry)}\n`);
@@ -1007,11 +1011,12 @@ export class SessionManager {
 
 	_persist(entry: SessionEntry): void {
 		if (!this.persist || !this.sessionFile) return;
+		const file = this.sessionFile;
 
 		const hasAssistant = this.fileEntries.some((e) => e.type === "message" && e.message.role === "assistant");
 		if (!hasAssistant) {
 			if (this.flushed) {
-				appendFileSync(this.sessionFile, `${JSON.stringify(entry)}\n`);
+				withFileLockRetrySync(() => appendFileSync(file, `${JSON.stringify(entry)}\n`));
 			} else {
 				// Mark as not flushed so when assistant arrives, all entries get written
 				this.flushed = false;
@@ -1020,7 +1025,9 @@ export class SessionManager {
 		}
 
 		if (!this.flushed) {
-			const fd = openSync(this.sessionFile, "wx");
+			// "wx" fails closed on an existing file, so open-time lock errors are
+			// safe to retry without risking a clobber.
+			const fd = withFileLockRetrySync(() => openSync(file, "wx"));
 			try {
 				for (const e of this.fileEntries) {
 					writeFileSync(fd, `${JSON.stringify(e)}\n`);
@@ -1030,7 +1037,7 @@ export class SessionManager {
 			}
 			this.flushed = true;
 		} else {
-			appendFileSync(this.sessionFile, `${JSON.stringify(entry)}\n`);
+			withFileLockRetrySync(() => appendFileSync(file, `${JSON.stringify(entry)}\n`));
 		}
 	}
 
@@ -1637,12 +1644,14 @@ export class SessionManager {
 			cwd: resolvedTargetCwd,
 			parentSession: resolvedSourcePath,
 		};
-		writeFileSync(newSessionFile, `${JSON.stringify(newHeader)}\n`, { flag: "wx" });
+		// "wx" rejects an existing target, so a retry cannot clobber another
+		// session; only lock errors are retried.
+		withFileLockRetrySync(() => writeFileSync(newSessionFile, `${JSON.stringify(newHeader)}\n`, { flag: "wx" }));
 
 		// Copy all non-header entries from source
 		for (const entry of sourceEntries) {
 			if (entry.type !== "session") {
-				appendFileSync(newSessionFile, `${JSON.stringify(entry)}\n`);
+				withFileLockRetrySync(() => appendFileSync(newSessionFile, `${JSON.stringify(entry)}\n`));
 			}
 		}
 

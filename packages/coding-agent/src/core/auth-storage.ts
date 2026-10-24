@@ -18,6 +18,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "f
 import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
 import { getAgentDir } from "../config.ts";
+import { withFileLockRetrySync } from "../utils/file-retry.ts";
 import { normalizePath } from "../utils/paths.ts";
 import { resolveConfigValue } from "./resolve-config-value.ts";
 
@@ -78,7 +79,7 @@ export class FileAuthStorageBackend implements AuthStorageBackend {
 
 	private ensureFileExists(): void {
 		if (!existsSync(this.authPath)) {
-			writeFileSync(this.authPath, "{}", AUTH_FILE_WRITE_OPTIONS);
+			withFileLockRetrySync(() => writeFileSync(this.authPath, "{}", AUTH_FILE_WRITE_OPTIONS));
 			chmodSync(this.authPath, 0o600);
 		}
 	}
@@ -120,7 +121,9 @@ export class FileAuthStorageBackend implements AuthStorageBackend {
 			const current = existsSync(this.authPath) ? readFileSync(this.authPath, "utf-8") : undefined;
 			const { result, next } = fn(current);
 			if (next !== undefined) {
-				writeFileSync(this.authPath, next, AUTH_FILE_WRITE_OPTIONS);
+				// Full overwrite under the proper-lockfile lock; a retried attempt
+				// rewrites the whole file, never a partial one.
+				withFileLockRetrySync(() => writeFileSync(this.authPath, next, AUTH_FILE_WRITE_OPTIONS));
 				chmodSync(this.authPath, 0o600);
 			}
 			return result;
@@ -165,7 +168,7 @@ export class FileAuthStorageBackend implements AuthStorageBackend {
 			const { result, next } = await fn(current);
 			throwIfCompromised();
 			if (next !== undefined) {
-				writeFileSync(this.authPath, next, AUTH_FILE_WRITE_OPTIONS);
+				withFileLockRetrySync(() => writeFileSync(this.authPath, next, AUTH_FILE_WRITE_OPTIONS));
 				chmodSync(this.authPath, 0o600);
 			}
 			throwIfCompromised();

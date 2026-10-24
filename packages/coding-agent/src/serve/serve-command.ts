@@ -140,6 +140,16 @@ function logLine(message: string): void {
 	process.stderr.write(`[serve] ${message}\n`);
 }
 
+/** Correlation id of a refused command line (undefined when it did not parse). */
+export function commandIdOf(line: string): string | undefined {
+	try {
+		const parsed = JSON.parse(line) as { id?: unknown };
+		return typeof parsed.id === "string" ? parsed.id : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Command entry
 // ---------------------------------------------------------------------------
@@ -187,6 +197,9 @@ export async function handleServeCommand(args: string[]): Promise<boolean> {
 			},
 			flags.idleExitMinutes * 60 * 1000,
 		);
+		// Do not let the idle timer keep the process alive after a shutdown path
+		// already cleared everything else.
+		idleTimer.unref?.();
 	};
 
 	const server = new BridgeWsServer({
@@ -206,8 +219,17 @@ export async function handleServeCommand(args: string[]): Promise<boolean> {
 			for (const rawLine of data.split("\n")) {
 				const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
 				if (line.length === 0) continue;
-				if (!engine?.writeLine(line)) {
-					server.sendTo(ws, bridgeFrame({ type: "bridge", event: "engine_unavailable" }));
+				const result = engine?.writeLine(line);
+				if (result !== "sent") {
+					server.sendTo(
+						ws,
+						bridgeFrame({
+							type: "bridge",
+							event: "engine_unavailable",
+							reason: result === "backlog" ? "backlog" : "starting",
+							id: commandIdOf(line),
+						}),
+					);
 				}
 			}
 		},
@@ -218,6 +240,9 @@ export async function handleServeCommand(args: string[]): Promise<boolean> {
 		},
 		onClientDisconnected: () => {
 			if (server.clientCount === 0) armIdleExit();
+		},
+		onSlowClient: ({ ip }) => {
+			logLine(`dropping slow client ${ip} (backpressure)`);
 		},
 	});
 

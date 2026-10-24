@@ -17,6 +17,15 @@ import { attachJsonlLineReader } from "../modes/rpc/jsonl.ts";
 const RESTART_LIMIT = 2;
 const DEFAULT_RESTART_DELAY_MS = 30_000;
 const SIGKILL_GRACE_MS = 10_000;
+/**
+ * Cap in-flight stdin writes. A phone can send commands faster than a busy
+ * engine drains them; Node would otherwise buffer unboundedly in this process.
+ * At the cap, callers surface `engine_unavailable` rather than growing memory.
+ */
+const MAX_PENDING_STDIN_WRITES = 256;
+
+/** Outcome of a client-to-engine write. */
+export type EngineWriteResult = "sent" | "unavailable" | "backlog";
 
 /** Resolve the a-coder-cli child command (same walk as bench; see bench/core.ts). */
 function resolveBenchChildEntry(): string {
@@ -57,6 +66,7 @@ export class EngineProcess {
 	private child: ChildProcess | undefined;
 	private restarts = 0;
 	private stopped = false;
+	private pendingWrites = 0;
 
 	constructor(options: EngineOptions) {
 		this.options = options;
@@ -73,6 +83,7 @@ export class EngineProcess {
 	/** Spawn the engine and start pumping. Resolves once the child is running. */
 	start(): Promise<void> {
 		this.stopped = false;
+		this.pendingWrites = 0;
 		const resolved = this.options.commandOverride ?? {
 			command: process.execPath,
 			baseArgs: [resolveBenchChildEntry()],
@@ -130,20 +141,28 @@ export class EngineProcess {
 	/**
 	 * Write one NDJSON command line to the engine's stdin.
 	 *
-	 * Returns false when the line could NOT be delivered (no engine yet, engine
-	 * exited, or stdin closed). Callers must surface that — silently dropping a
-	 * client message (e.g. an approval response) leaves the agent blocked on a
-	 * prompt nobody can answer.
+	 * `"unavailable"` means there is no running engine (not spawned yet, exited,
+	 * or restarting); `"backlog"` means the engine is alive but its stdin queue
+	 * is full. Callers must surface both — silently dropping a client message
+	 * (e.g. an approval response) leaves the agent blocked on a prompt nobody
+	 * can answer — and must distinguish them, because the remedies differ.
 	 */
-	writeLine(line: string): boolean {
-		if (!this.child?.stdin || this.child.exitCode !== null) return false;
+	writeLine(line: string): EngineWriteResult {
+		const stdin = this.child?.stdin;
+		if (!stdin || this.child?.exitCode !== null) return "unavailable";
+		if (this.pendingWrites >= MAX_PENDING_STDIN_WRITES) return "backlog";
+		this.pendingWrites += 1;
 		try {
-			this.child.stdin.write(`${line}\n`);
-			return true;
+			stdin.write(`${line}\n`, (error) => {
+				this.pendingWrites = Math.max(0, this.pendingWrites - 1);
+				if (error) this.options.log(`[engine] stdin write failed: ${error.message}`);
+			});
+			return "sent";
 		} catch {
 			// write() throws synchronously only after the stream is already
 			// destroyed; the exit handler owns recovery from here.
-			return false;
+			this.pendingWrites = Math.max(0, this.pendingWrites - 1);
+			return "unavailable";
 		}
 	}
 

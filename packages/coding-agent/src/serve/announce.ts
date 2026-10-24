@@ -18,6 +18,9 @@ export class BridgeAnnounce {
 	private bonjour: Bonjour | undefined;
 
 	start(options: AnnounceOptions): void {
+		// Re-announcing (SIGHUP, network change) must replace the previous
+		// instance rather than orphan it.
+		this.stop();
 		try {
 			this.bonjour = new Bonjour();
 			this.bonjour.publish({
@@ -42,13 +45,25 @@ export class BridgeAnnounce {
 	}
 
 	stop(): void {
+		const instance = this.bonjour;
+		// Clear first: the unpublish callback runs asynchronously, and clearing
+		// afterwards would leave nothing for it to destroy.
+		this.bonjour = undefined;
+		if (!instance) return;
 		try {
-			this.bonjour?.unpublishAll(() => {
-				this.bonjour?.destroy();
+			instance.unpublishAll(() => {
+				try {
+					instance.destroy();
+				} catch {
+					// best effort
+				}
 			});
 		} catch {
-			// best effort
+			try {
+				instance.destroy();
+			} catch {
+				// best effort
+			}
 		}
-		this.bonjour = undefined;
 	}
 }

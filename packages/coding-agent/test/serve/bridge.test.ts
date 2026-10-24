@@ -5,6 +5,7 @@ import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import { bridgeFrame, isBridgeFrame } from "../../src/serve/control-frames.ts";
 import { EngineProcess } from "../../src/serve/engine-process.ts";
+import { commandIdOf } from "../../src/serve/serve-command.ts";
 import { BridgeWsServer, type WsServerOptions } from "../../src/serve/ws-server.ts";
 
 const TOKEN = "conformance-token";
@@ -102,8 +103,17 @@ async function startBridge(engineSource: string = FAKE_ENGINE_SOURCE): Promise<{
 			for (const line of data.split("\n")) {
 				const trimmed = line.endsWith("\r") ? line.slice(0, -1) : line;
 				if (trimmed.length === 0) continue;
-				if (!engine!.writeLine(trimmed)) {
-					server!.sendTo(ws, bridgeFrame({ type: "bridge", event: "engine_unavailable" }));
+				const result = engine!.writeLine(trimmed);
+				if (result !== "sent") {
+					server!.sendTo(
+						ws,
+						bridgeFrame({
+							type: "bridge",
+							event: "engine_unavailable",
+							reason: result === "backlog" ? "backlog" : "starting",
+							id: commandIdOf(trimmed),
+						}),
+					);
 				}
 			}
 		},
@@ -167,6 +177,40 @@ describe("EngineProcess lifecycle", () => {
 		await engine.stop();
 		expect(engine.running).toBe(false);
 	});
+
+	it("refuses writes once the engine's stdin backlog is full", async () => {
+		// An engine that never reads stdin models a wedged or extremely busy
+		// engine. Writes must stop being accepted at the cap instead of buffering
+		// the phone's whole command stream in the bridge process.
+		const scriptPath = join(tempDir, "wedged-engine.mjs");
+		fs.writeFileSync(scriptPath, `setTimeout(() => process.exit(0), 10_000);\n`);
+		const engine = new EngineProcess({
+			cwd: tempDir,
+			continueSession: false,
+			commandOverride: { command: process.execPath, baseArgs: [scriptPath] },
+			onLine: () => {},
+			onExit: () => {},
+			log: () => {},
+		});
+		await engine.start();
+
+		const line = JSON.stringify({ id: "x", type: "command", command: "prompt", message: "y".repeat(4096) });
+		let accepted = 0;
+		let refusal: string | undefined;
+		for (let i = 0; i < 1000; i++) {
+			const result = engine.writeLine(line);
+			if (result === "sent") {
+				accepted += 1;
+			} else {
+				refusal = result;
+				break;
+			}
+		}
+		expect(refusal).toBe("backlog");
+		expect(accepted).toBeGreaterThan(0);
+
+		await engine.stop();
+	}, 20_000);
 
 	it("restarts a crashed engine up to 2 times then gives up", async () => {
 		const scriptPath = join(tempDir, "crash-engine.mjs");
@@ -269,8 +313,17 @@ describe("bridge conformance (server + engine over the wire)", () => {
 				for (const line of data.split("\n")) {
 					const trimmed = line.endsWith("\r") ? line.slice(0, -1) : line;
 					if (trimmed.length === 0) continue;
-					if (!engine!.writeLine(trimmed)) {
-						server!.sendTo(ws, bridgeFrame({ type: "bridge", event: "engine_unavailable" }));
+					const result = engine!.writeLine(trimmed);
+					if (result !== "sent") {
+						server!.sendTo(
+							ws,
+							bridgeFrame({
+								type: "bridge",
+								event: "engine_unavailable",
+								reason: result === "backlog" ? "backlog" : "starting",
+								id: commandIdOf(trimmed),
+							}),
+						);
 					}
 				}
 			},
@@ -283,8 +336,14 @@ describe("bridge conformance (server + engine over the wire)", () => {
 		const frames = await collectUntil(ws, (all) =>
 			all.some((f) => (f as { event?: string }).event === "engine_unavailable"),
 		);
-		const refused = frames.find((f) => (f as { event?: string }).event === "engine_unavailable");
+		const refused = frames.find((f) => (f as { event?: string }).event === "engine_unavailable") as
+			| { reason?: string; id?: string }
+			| undefined;
 		expect(refused).toBeDefined();
+		expect(refused?.reason).toBe("starting");
+		// The frame carries the dropped command's correlation id so the client
+		// can fail it immediately instead of waiting out its response timeout.
+		expect(refused?.id).toBe("x");
 		expect(isBridgeFrame(refused)).toBe(true);
 		ws.close();
 	});

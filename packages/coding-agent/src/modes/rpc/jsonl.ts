@@ -12,6 +12,13 @@ export function serializeJsonLine(value: unknown): string {
 }
 
 /**
+ * Upper bound for one unterminated JSONL record. The WebSocket server accepts
+ * 16 MiB frames, so a longer line cannot be part of a valid exchange; dropping
+ * the tail keeps a runaway engine from growing the bridge's buffer forever.
+ */
+export const MAX_JSONL_LINE_BYTES = 16 * 1024 * 1024;
+
+/**
  * Attach an LF-only JSONL reader to a stream.
  *
  * This intentionally does not use Node readline. Readline splits on additional
@@ -32,6 +39,10 @@ export function attachJsonlLineReader(stream: Readable, onLine: (line: string) =
 		while (true) {
 			const newlineIndex = buffer.indexOf("\n");
 			if (newlineIndex === -1) {
+				// Completed lines were already emitted; only an unterminated tail can
+				// remain. Beyond the frame cap it can never be accepted, so drop it
+				// instead of retaining unbounded memory.
+				if (buffer.length > MAX_JSONL_LINE_BYTES) buffer = "";
 				return;
 			}
 

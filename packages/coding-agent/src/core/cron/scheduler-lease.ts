@@ -18,6 +18,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileS
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { getAgentDir } from "../../config.ts";
+import { withFileLockRetrySync } from "../../utils/file-retry.ts";
 
 const LEASE_TTL_MS = 60_000;
 
@@ -89,10 +90,15 @@ export class CronSchedulerLease {
 			// Dead local process or expired remote lease. Rename the stale file
 			// first: the rename is atomic and means two contenders cannot both
 			// delete a freshly-created replacement. Whoever wins the subsequent
-			// `wx` create owns the lease.
+			// `wx` create owns the lease. A short retry ride out a transient
+			// Windows lock on the stale file; otherwise takeover waits a full tick.
 			const stale = `${this.path}.stale-${current.token}-${this.token}`;
 			try {
-				renameSync(this.path, stale);
+				withFileLockRetrySync(() => renameSync(this.path, stale), {
+					retries: 4,
+					baseDelayMs: 25,
+					maxDelayMs: 100,
+				});
 			} catch {
 				return false;
 			}

@@ -95,6 +95,7 @@ function formatCronList(snapshot: CronSnapshot, cwd: string): string {
 		dim('  ask: "Schedule a task every weekday at 9am to ..." (the agent creates it for you)'),
 		dim("  advanced: /cron add <name> every:30m|daily:HH:MM|weekly:mon,wed@HH:MM|once:<ISO> <prompt>"),
 		dim("  run/pause/resume/remove: /cron run|pause|resume|remove <name>"),
+		dim("  scheduled model: /cron model <provider/model|clear>"),
 		dim("  history/restore: /cron history <name> · /cron restore <name> <revision-id|vN>"),
 	);
 	return lines.join("\n");
@@ -327,12 +328,90 @@ export class CronTui {
 			return;
 		}
 
+		if (verb === "model") {
+			await this.handleModelCommand(remainder.trim());
+			return;
+		}
+
 		if (await this.handleNatural(trimmed)) return;
 
 		this.print(
 			errorText(`Unknown subcommand "${verb}".`) +
 				dim(" Use /cron, /cron add, /cron run|pause|resume|remove, or ask naturally."),
 		);
+	}
+
+	/**
+	 * /cron model — view, set, or clear the scheduled-task model (CLI parity
+	 * with the desktop Settings picker). Validates against the registry so a
+	 * typo fails here instead of failing every future fire at run time.
+	 */
+	async handleModelCommand(value: string): Promise<void> {
+		if (!value) {
+			const current = this.runtimeHost.services.settingsManager.getCronModel();
+			this.print(
+				[
+					bold("Scheduled task model"),
+					current
+						? `  ${current}${this.modelStatusNote(current)}`
+						: dim("  not set — runs use the delegated-work model, then the default chat model"),
+					dim("  resolution: cron.model → subagent model → default chat model (never the job's pinned model)"),
+					dim("  set: /cron model <provider/model> · clear: /cron model clear"),
+				].join("\n"),
+			);
+			return;
+		}
+
+		if (value.toLowerCase() === "clear") {
+			this.runtimeHost.services.settingsManager.setCronModel(undefined);
+			this.print(
+				dim("Scheduled task model cleared — runs use the delegated-work model, then the default chat model."),
+			);
+			return;
+		}
+
+		const separator = value.indexOf("/");
+		if (separator <= 0 || separator === value.length - 1) {
+			this.print(errorText("Model must be provider/model — e.g. anthropic/claude-sonnet-4-5."));
+			return;
+		}
+
+		const provider = value.slice(0, separator);
+		const modelId = value.slice(separator + 1);
+		const registry = this.runtimeHost.services.modelRegistry;
+		const model =
+			registry.find(provider, modelId) ??
+			registry.getAvailable().find((e) => e.provider === provider && e.id === modelId);
+		if (!model) {
+			this.print(
+				errorText(
+					`"${value}" is not in the model catalog. Check the provider id; dynamic providers (OpenRouter, Inception) refresh their catalogs automatically.`,
+				),
+			);
+			return;
+		}
+
+		this.runtimeHost.services.settingsManager.setCronModel(value);
+		if (!registry.hasConfiguredAuth(model)) {
+			this.print(
+				`${bold(value)} set — ${dim("warning: no credentials for this provider; scheduled runs will fail until it is authenticated.")}`,
+			);
+			return;
+		}
+		this.print(`${bold(value)} set as the scheduled task model.`);
+	}
+
+	/** Short suffix showing whether a configured model resolves and is authenticated. */
+	private modelStatusNote(reference: string): string {
+		const separator = reference.indexOf("/");
+		if (separator <= 0 || separator === reference.length - 1) return dim(" · unresolvable");
+		const model = this.runtimeHost.services.modelRegistry.find(
+			reference.slice(0, separator),
+			reference.slice(separator + 1),
+		);
+		if (!model) return dim(" · not in catalog");
+		if (!this.runtimeHost.services.modelRegistry.hasConfiguredAuth(model)) return dim(" · no credentials");
+		return "";
 	}
 
 	/** Natural-language requests are sent to the agent, which calls schedule_task. */

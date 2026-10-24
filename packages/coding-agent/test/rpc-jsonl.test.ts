@@ -1,6 +1,6 @@
 import { Readable } from "node:stream";
 import { describe, expect, test } from "vitest";
-import { attachJsonlLineReader, serializeJsonLine } from "../src/modes/rpc/jsonl.ts";
+import { attachJsonlLineReader, MAX_JSONL_LINE_BYTES, serializeJsonLine } from "../src/modes/rpc/jsonl.ts";
 
 describe("RPC JSONL framing", () => {
 	test("serializes strict JSONL records without escaping Unicode separators", () => {
@@ -61,5 +61,22 @@ describe("RPC JSONL framing", () => {
 		await done;
 
 		expect(lines).toEqual(['{"a":1}']);
+	});
+
+	test("drops an unterminated line beyond the frame cap and keeps later records", async () => {
+		const lines: string[] = [];
+		const stream = new Readable({ read() {} });
+		attachJsonlLineReader(stream, (line) => {
+			lines.push(line);
+		});
+
+		// A runaway record with no LF must not grow the buffer without bound. The
+		// next complete record still parses because the dropped tail never ended.
+		stream.push("x".repeat(MAX_JSONL_LINE_BYTES + 1));
+		stream.push('{"ok":true}\n');
+		stream.push(null);
+		await new Promise<void>((resolve) => stream.on("end", resolve));
+
+		expect(lines).toEqual(['{"ok":true}']);
 	});
 });

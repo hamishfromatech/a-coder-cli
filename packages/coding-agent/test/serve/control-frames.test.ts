@@ -16,12 +16,19 @@ describe("bridge control frames", () => {
 			{ type: "bridge", event: "shutting_down" },
 			{ type: "bridge", event: "engine_exited", code: 3 },
 			{ type: "bridge", event: "engine_failed", attempts: 2 },
-			{ type: "bridge", event: "engine_unavailable" },
+			{ type: "bridge", event: "engine_unavailable", reason: "starting" },
+			{ type: "bridge", event: "engine_unavailable", reason: "backlog", id: "c9" },
 			{ type: "bridge", event: "server_version", version: "1.0", contract: 1 },
+			{ type: "bridge", event: "slow_client", ip: "192.168.1.5" },
 		];
 		for (const event of events) {
 			expect(isBridgeFrame(JSON.parse(bridgeFrame(event)))).toBe(true);
 		}
+	});
+
+	it("carries the client ip on slow_client so the client can attribute the eviction", () => {
+		const frame = JSON.parse(bridgeFrame({ type: "bridge", event: "slow_client", ip: "10.0.0.7" }));
+		expect(frame).toEqual({ v: 1, type: "bridge", event: "slow_client", ip: "10.0.0.7" });
 	});
 
 	it("rejects engine frames and non-bridge objects", () => {

@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { getSessionsDir } from "../config.ts";
+import { withFileLockRetrySync } from "../utils/file-retry.ts";
 import {
 	type FileEntry,
 	parseSessionEntries,
@@ -124,7 +125,7 @@ export function archiveSessionFile(path: string, options: ArchiveOptions = {}): 
 	const trashDir = join(sessionsDir, ".trash");
 	mkdirSync(trashDir, { recursive: true });
 	const trashPath = join(trashDir, `${basename(target)}.${Date.now()}`);
-	renameSync(target, trashPath);
+	withFileLockRetrySync(() => renameSync(target, trashPath));
 	return { trashPath };
 }
 
@@ -588,13 +589,13 @@ export function compactSessionFile(path: string, options: CompactFileOptions = {
 	const trashDir = join(sessionsDir, ".trash");
 	mkdirSync(trashDir, { recursive: true });
 	const trashPath = join(trashDir, `${basename(target)}.${Date.now()}`);
-	writeFileSync(trashPath, content);
+	withFileLockRetrySync(() => writeFileSync(trashPath, content));
 
 	// Same directory, so the rename is atomic on every supported platform.
 	const tempPath = join(dirname(target), `.${basename(target)}.${process.pid}.compact.tmp`);
 	try {
-		writeFileSync(tempPath, selection.bytes);
-		renameSync(tempPath, target);
+		withFileLockRetrySync(() => writeFileSync(tempPath, selection.bytes));
+		withFileLockRetrySync(() => renameSync(tempPath, target));
 	} catch (error) {
 		if (existsSync(tempPath)) unlinkSync(tempPath);
 		throw error;

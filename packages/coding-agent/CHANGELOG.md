@@ -6,13 +6,16 @@
 
 - Inception's direct provider now refreshes its live `/v1/models` catalog on model refresh and session `/reload`; newly published Mercury models appear without waiting for a release.
 - `cron.model` setting (Settings → Models → Scheduled task model) pins the model used for scheduled runs. Precedence is `cron.model`, `subagentModel`, default chat model; a job session's pinned model is never inherited implicitly. Runs record the model and source, and the desktop shows both in run history.
+- `/cron model` subcommand (`<provider/model|clear>`) to view, set, or clear the scheduled-task model from the terminal — CLI parity with the desktop Settings picker. It validates the reference against the model catalog and warns when the provider has no credentials.
 
 ### Fixed
 
 - File writes, edits, edit previews, and file-history backups now retry transient Windows `EBUSY`/`EPERM`/`EACCES` locks with bounded backoff instead of failing immediately when another process holds a file open.
+- The same transient file-lock retry now covers the remaining persistence paths: session `.jsonl` appends/rewrites and branch copies, `settings.json` and `auth.json` writes, session archive/compaction swaps, cron `jobs.json`/`runs.json`/`revisions.json` atomic writes (failed renames no longer leave tmp files behind), and scheduler-lease stale takeover.
 - Scheduled tasks now use a machine-wide scheduler lease (`cron/scheduler.lock`): only one engine process fires due windows, while follower tabs/desktop sessions spool `turn_end` events for the owner. This prevents the same scheduled window from running concurrently in every open tab. A dead owner's lease is taken over immediately; a live owner keeps it until exit.
 - Smart auto-continue now handles a model that stops with an empty final assistant turn immediately after a tool result (including MCP tools). The stop is classified as a `tool_pause` checkpoint, continued when the tool made progress, and given one deterministic continuation when no decision model is available; `blocked`, low-progress, and `maxConsecutive` still stop it.
 - MCP stdio server stderr is no longer forwarded into the TUI/chat during startup, tool use, or `/reload`. Each server's output is captured in `~/.a-coder/cli/agent/logs/mcp/<server>.log`; set `forwardStderr: true` on a server to opt into terminal output while debugging. Connection-failure errors still include the server stderr tail.
+- The `serve` bridge now enforces mobile-app backpressure: each client has a bounded outbound queue, a client that cannot keep up receives a `slow_client` control frame and is closed (1008) instead of growing bridge memory, and a ping/pong sweep evicts sockets that vanished without a close handshake. Shutdown drains queued frames, closes clients, and tears down raw sockets (including upgrades still registering) within the drain window. Engine stdin writes are capped so a busy engine cannot buffer a phone's whole command stream; refused commands carry `engine_unavailable` with `reason: "starting" | "backlog"` and the dropped command's correlation id, so clients can explain the failure and stop waiting for a response that will never come. mDNS announce teardown destroys its instance, and an unterminated JSONL line beyond 16 MiB is dropped instead of retained.
 
 ### Changed
 
