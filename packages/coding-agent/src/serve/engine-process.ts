@@ -16,7 +16,8 @@ import { attachJsonlLineReader } from "../modes/rpc/jsonl.ts";
 
 const RESTART_LIMIT = 2;
 const DEFAULT_RESTART_DELAY_MS = 30_000;
-const SIGKILL_GRACE_MS = 10_000;
+const SIGKILL_GRACE_MS = 1_500;
+const MAX_PENDING_STDIN_WRITES = 256;
 
 /** Resolve the a-coder-cli child command (same walk as bench; see bench/core.ts). */
 function resolveBenchChildEntry(): string {
@@ -57,6 +58,9 @@ export class EngineProcess {
 	private child: ChildProcess | undefined;
 	private restarts = 0;
 	private stopped = false;
+	private restartTimer: ReturnType<typeof setTimeout> | undefined;
+	private pendingWrites: string[] = [];
+	private drainListenerAttached = false;
 
 	constructor(options: EngineOptions) {
 		this.options = options;
@@ -105,12 +109,17 @@ export class EngineProcess {
 			const unsubscribe = attachJsonlLineReader(out, (line) => {
 				if (line.length > 0) this.options.onLine(line);
 			});
-			child.once("exit", () => unsubscribe());
+			child.once("exit", () => {
+				unsubscribe();
+			});
 		}
 		const err = child.stderr;
 		if (err) {
-			attachJsonlLineReader(err, (line) => {
+			const unsubscribe = attachJsonlLineReader(err, (line) => {
 				if (line.length > 0) this.options.log(`[engine] ${line}`);
+			});
+			child.once("exit", () => {
+				unsubscribe();
 			});
 		}
 		child.once("exit", (code, signal) => {
@@ -136,20 +145,64 @@ export class EngineProcess {
 	 * prompt nobody can answer.
 	 */
 	writeLine(line: string): boolean {
-		if (!this.child?.stdin || this.child.exitCode !== null) return false;
-		try {
-			this.child.stdin.write(`${line}\n`);
+		const child = this.child;
+		if (!child?.stdin || child.exitCode !== null || child.stdin.destroyed) return false;
+		const payload = `${line}\n`;
+		if (this.pendingWrites.length >= MAX_PENDING_STDIN_WRITES) return false;
+		if (this.pendingWrites.length === 0) {
+			let ok = true;
+			try {
+				ok = child.stdin.write(payload);
+			} catch {
+				return false;
+			}
+			if (ok) return true;
+			this.pendingWrites.push(payload);
+			this.attachDrainListener(child.stdin);
 			return true;
-		} catch {
-			// write() throws synchronously only after the stream is already
-			// destroyed; the exit handler owns recovery from here.
-			return false;
 		}
+		this.pendingWrites.push(payload);
+		return true;
+	}
+
+	private attachDrainListener(stdin: NodeJS.WritableStream): void {
+		if (this.drainListenerAttached) return;
+		this.drainListenerAttached = true;
+		const onDrain = () => {
+			this.drainListenerAttached = false;
+			const child = this.child;
+			if (!child?.stdin || child.exitCode !== null) {
+				this.pendingWrites = [];
+				return;
+			}
+			while (this.pendingWrites.length > 0) {
+				const next = this.pendingWrites[0]!;
+				let ok = true;
+				try {
+					ok = child.stdin.write(next);
+				} catch {
+					this.pendingWrites = [];
+					return;
+				}
+				if (!ok) {
+					this.pendingWrites.shift();
+					this.attachDrainListener(child.stdin);
+					return;
+				}
+				this.pendingWrites.shift();
+			}
+		};
+		stdin.once("drain", onDrain);
 	}
 
 	/** Graceful stop: SIGTERM, then SIGKILL after the grace period. */
 	async stop(): Promise<void> {
 		this.stopped = true;
+		if (this.restartTimer) {
+			clearTimeout(this.restartTimer);
+			this.restartTimer = undefined;
+		}
+		this.pendingWrites = [];
 		const child = this.child;
 		if (!child || child.exitCode !== null) return;
 		child.kill("SIGTERM");
@@ -174,7 +227,8 @@ export class EngineProcess {
 		this.options.log(
 			`engine exited (${signalText}); restarting in ${delay}ms (attempt ${this.restarts}/${RESTART_LIMIT})`,
 		);
-		setTimeout(() => {
+		this.restartTimer = setTimeout(() => {
+			this.restartTimer = undefined;
 			if (this.stopped) return;
 			this.start().catch((error) => {
 				this.options.log(`[engine] restart failed: ${error instanceof Error ? error.message : String(error)}`);

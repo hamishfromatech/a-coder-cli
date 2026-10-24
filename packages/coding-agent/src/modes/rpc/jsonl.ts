@@ -26,6 +26,7 @@ export function attachJsonlLineReader(stream: Readable, onLine: (line: string) =
 		onLine(line.endsWith("\r") ? line.slice(0, -1) : line);
 	};
 
+	const MAX_LINE_BYTES = 16 * 1024 * 1024;
 	const onData = (chunk: string | Buffer) => {
 		buffer += typeof chunk === "string" ? chunk : decoder.write(chunk);
 
@@ -37,6 +38,10 @@ export function attachJsonlLineReader(stream: Readable, onLine: (line: string) =
 
 			emitLine(buffer.slice(0, newlineIndex));
 			buffer = buffer.slice(newlineIndex + 1);
+		}
+		if (buffer.length > MAX_LINE_BYTES) {
+			// Drop an unterminated oversized tail; completed lines were already emitted.
+			buffer = "";
 		}
 	};
 

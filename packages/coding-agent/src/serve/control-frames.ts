@@ -19,7 +19,8 @@ export type BridgeEvent =
 	| { type: "bridge"; event: "engine_exited"; code: number | null }
 	| { type: "bridge"; event: "engine_failed"; attempts: number }
 	| { type: "bridge"; event: "engine_unavailable" }
-	| { type: "bridge"; event: "shutting_down" };
+	| { type: "bridge"; event: "shutting_down" }
+	| { type: "bridge"; event: "slow_client"; ip: string };
 
 export function bridgeFrame(event: BridgeEvent): string {
 	// Control frames carry a schema version so mobile clients can evolve safely.

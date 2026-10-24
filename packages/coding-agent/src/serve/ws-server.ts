@@ -16,14 +16,28 @@ import { bearerFromHeader, tokenFromUrl, tokenMatches } from "./pairing.ts";
 
 const RATE_WINDOW_MS = 15 * 60 * 1000;
 const RATE_MAX_FAILURES = 10;
-
-/** Slow-client cap: close a client whose socket buffers more than this many bytes (doc 04 §4). */
 const MAX_CLIENT_BUFFER_BYTES = 8 * 1024 * 1024;
+const MAX_CLIENT_QUEUE_BYTES = 8 * 1024 * 1024;
+const MAX_CLIENT_QUEUE_MESSAGES = 512;
+const HIGH_WATER_BYTES = 1 * 1024 * 1024;
+const PING_INTERVAL_MS = 5_000;
+const PONG_TIMEOUT_MS = 2_000;
+const CLOSE_DRAIN_MS = 1_000;
+const RATE_SWEEP_MS = 60_000;
+const MAX_RATE_ENTRIES = 10_000;
 
 interface RateState {
 	failures: number;
 	windowStart: number;
 	blockedUntil?: number;
+}
+
+interface ClientState {
+	ip: string;
+	queue: string[];
+	queueBytes: number;
+	slow: boolean;
+	lastPong: number;
 }
 
 export interface WsServerOptions {
@@ -51,9 +65,12 @@ export class BridgeWsServer {
 	private readonly options: WsServerOptions;
 	private readonly httpServer: Server;
 	private readonly wss: WebSocketServer;
-	private readonly clients = new Map<WebSocket, boolean>();
+	private readonly clients = new Map<WebSocket, ClientState>();
 	private readonly rateByIp = new Map<string, RateState>();
+	private readonly clientIps = new Map<WebSocket, string>();
 	private started = false;
+	private keepaliveTimer: ReturnType<typeof setInterval> | undefined;
+	private rateSweepTimer: ReturnType<typeof setInterval> | undefined;
 
 	constructor(options: WsServerOptions) {
 		this.options = options;
@@ -83,9 +100,15 @@ export class BridgeWsServer {
 				resolve(this.address!);
 				return;
 			}
-			this.httpServer.once("error", reject);
+			const onError = (error: unknown) => {
+				reject(error instanceof Error ? error : new Error(String(error)));
+			};
+			this.httpServer.once("error", onError);
 			this.httpServer.listen(this.options.port, this.options.host, () => {
+				this.httpServer.off("error", onError);
 				this.started = true;
+				this.keepaliveTimer = setInterval(() => this.keepaliveSweep(), PING_INTERVAL_MS);
+				this.rateSweepTimer = setInterval(() => this.sweepRateLimits(), RATE_SWEEP_MS);
 				resolve(this.address!);
 			});
 		});
@@ -98,36 +121,64 @@ export class BridgeWsServer {
 	}
 
 	async stop(): Promise<void> {
+		if (this.keepaliveTimer) {
+			clearInterval(this.keepaliveTimer);
+			this.keepaliveTimer = undefined;
+		}
+		if (this.rateSweepTimer) {
+			clearInterval(this.rateSweepTimer);
+			this.rateSweepTimer = undefined;
+		}
+
 		for (const ws of this.clients.keys()) {
-			ws.close(1001, "shutting down");
+			try {
+				ws.close(1001, "shutting down");
+			} catch {
+				// best effort
+			}
+		}
+
+		// Wait briefly for graceful closes, then terminate stragglers.
+		await this.waitForDrain(CLOSE_DRAIN_MS);
+		for (const ws of [...this.clients.keys()]) {
+			try {
+				ws.terminate();
+			} catch {
+				// best effort
+			}
 		}
 		this.clients.clear();
+		this.clientIps.clear();
+
 		await new Promise<void>((resolve) => {
-			this.httpServer.close(() => resolve());
+			let settled = false;
+			const timer = setTimeout(() => {
+				if (!settled) {
+					settled = true;
+					resolve();
+				}
+			}, CLOSE_DRAIN_MS);
+			this.httpServer.close(() => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timer);
+				resolve();
+			});
 		});
 	}
 
 	/** Broadcast one NDJSON line to every connected (authenticated) client. */
 	broadcast(line: string): void {
-		for (const [ws] of this.clients) {
-			if (ws.readyState !== ws.OPEN) continue;
-			// Slow-client guard: drop rather than buffer unboundedly (doc 04 §4).
-			if (ws.bufferedAmount > MAX_CLIENT_BUFFER_BYTES) {
-				ws.close(1008, "slow client");
-				continue;
-			}
-			ws.send(line);
+		const payload = line.endsWith("\n") ? line : `${line}\n`;
+		for (const ws of [...this.clients.keys()]) {
+			this.enqueue(ws, payload);
 		}
 	}
 
 	/** Send one NDJSON line to a single authenticated client (handshake frames). */
 	sendTo(ws: WebSocket, line: string): void {
-		if (ws.readyState !== ws.OPEN) return;
-		if (ws.bufferedAmount > MAX_CLIENT_BUFFER_BYTES) {
-			ws.close(1008, "slow client");
-			return;
-		}
-		ws.send(line);
+		const payload = line.endsWith("\n") ? line : `${line}\n`;
+		this.enqueue(ws, payload);
 	}
 
 	// ---- HTTP endpoints ----------------------------------------------------
@@ -208,21 +259,8 @@ export class BridgeWsServer {
 		}
 
 		this.wss.handleUpgrade(req, socket, head, (ws) => {
-			this.clients.set(ws, true);
-			ws.on("close", () => {
-				this.clients.delete(ws);
-				this.options.onClientDisconnected();
-			});
-			ws.on("error", () => {
-				// Transport errors end in a close event; nothing further to do.
-			});
-			ws.on("message", (data) => {
-				this.options.onClientMessage(data.toString(), ws);
-			});
+			this.registerClient(ws, ip);
 			this.options.onClientConnected(ws);
-			// Per-client handshake frame: the client treats this as auth-complete
-			// and starts its initial sync. `contract` lets the client verify it
-			// speaks a compatible bridge protocol before driving the engine.
 			this.sendTo(
 				ws,
 				bridgeFrame({
@@ -235,12 +273,130 @@ export class BridgeWsServer {
 		});
 	}
 
+	private registerClient(ws: WebSocket, ip: string): void {
+		const state: ClientState = {
+			ip,
+			queue: [],
+			queueBytes: 0,
+			slow: false,
+			lastPong: Date.now(),
+		};
+		this.clients.set(ws, state);
+		this.clientIps.set(ws, ip);
+		if (this.options.requireAuth) this.recordSuccess(ip);
+
+		ws.on("message", (data) => {
+			this.options.onClientMessage(data.toString(), ws);
+		});
+		ws.on("pong", () => {
+			const client = this.clients.get(ws);
+			if (client) client.lastPong = Date.now();
+		});
+		ws.on("close", () => {
+			this.clients.delete(ws);
+			this.clientIps.delete(ws);
+			this.options.onClientDisconnected();
+		});
+		ws.on("error", () => {
+			// Transport errors end in a close event; nothing further to do.
+		});
+	}
+
 	/** Reject an upgrade with a plain HTTP response before the WS handshake. */
 	private reject(socket: Socket, status: number, message: string): void {
 		socket.write(
 			`HTTP/1.1 ${status} ${http.STATUS_CODES[status] ?? "Error"}\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n${message}\n`,
 		);
 		socket.destroy();
+	}
+
+	// ---- per-client queue --------------------------------------------------
+
+	private enqueue(ws: WebSocket, line: string): void {
+		const client = this.clients.get(ws);
+		if (!client || ws.readyState !== ws.OPEN || client.slow) return;
+		if (ws.bufferedAmount >= MAX_CLIENT_BUFFER_BYTES) {
+			this.markSlow(ws, client);
+			return;
+		}
+		const bytes = Buffer.byteLength(line, "utf8");
+		if (
+			client.queueBytes + bytes > MAX_CLIENT_QUEUE_BYTES ||
+			client.queue.length >= MAX_CLIENT_QUEUE_MESSAGES ||
+			bytes > MAX_CLIENT_QUEUE_BYTES
+		) {
+			this.markSlow(ws, client);
+			return;
+		}
+		client.queue.push(line);
+		client.queueBytes += bytes;
+		this.pump(ws, client);
+	}
+
+	private pump(ws: WebSocket, client: ClientState): void {
+		if (client.slow || ws.readyState !== ws.OPEN) return;
+		while (
+			client.queue.length > 0 &&
+			ws.bufferedAmount <= HIGH_WATER_BYTES &&
+			ws.bufferedAmount + Buffer.byteLength(client.queue[0]!, "utf8") <= MAX_CLIENT_BUFFER_BYTES
+		) {
+			const next = client.queue.shift()!;
+			client.queueBytes -= Buffer.byteLength(next, "utf8");
+			ws.send(next);
+			if (ws.bufferedAmount > MAX_CLIENT_BUFFER_BYTES) {
+				this.markSlow(ws, client);
+				return;
+			}
+		}
+		if (
+			!client.slow &&
+			(ws.bufferedAmount >= MAX_CLIENT_BUFFER_BYTES ||
+				(client.queue.length > 0 && ws.bufferedAmount >= HIGH_WATER_BYTES))
+		) {
+			this.markSlow(ws, client);
+		}
+	}
+
+	private markSlow(ws: WebSocket, client: ClientState): void {
+		if (client.slow) return;
+		client.slow = true;
+		client.queue = [];
+		client.queueBytes = 0;
+		const ip = client.ip;
+		try {
+			ws.send(bridgeFrame({ type: "bridge", event: "slow_client", ip }));
+		} catch {
+			// best effort
+		}
+		setTimeout(() => {
+			try {
+				ws.close(1008, "slow client");
+			} catch {
+				// best effort
+			}
+		}, 10);
+	}
+
+	// ---- keepalive ---------------------------------------------------------
+
+	private keepaliveSweep(): void {
+		const now = Date.now();
+		for (const [ws, client] of this.clients) {
+			if (ws.readyState !== ws.OPEN) continue;
+			if (now - client.lastPong > PING_INTERVAL_MS + PONG_TIMEOUT_MS) {
+				try {
+					ws.terminate();
+				} catch {
+					// best effort
+				}
+				continue;
+			}
+			try {
+				ws.ping();
+			} catch {
+				// best effort
+			}
+		}
 	}
 
 	// ---- handshake rate limiting --------------------------------------------
@@ -267,5 +423,47 @@ export class BridgeWsServer {
 			state.blockedUntil = state.windowStart + RATE_WINDOW_MS;
 		}
 		this.rateByIp.set(ip, state);
+		this.enforceRateMapLimit();
+	}
+
+	private recordSuccess(ip: string): void {
+		this.rateByIp.delete(ip);
+	}
+
+	private sweepRateLimits(): void {
+		const now = Date.now();
+		for (const [ip, state] of this.rateByIp) {
+			if (state.blockedUntil !== undefined) {
+				if (now >= state.blockedUntil) this.rateByIp.delete(ip);
+			} else if (now - state.windowStart > RATE_WINDOW_MS) {
+				this.rateByIp.delete(ip);
+			}
+		}
+	}
+
+	private enforceRateMapLimit(): void {
+		if (this.rateByIp.size <= MAX_RATE_ENTRIES) return;
+		const excess = this.rateByIp.size - MAX_RATE_ENTRIES;
+		let removed = 0;
+		for (const key of this.rateByIp.keys()) {
+			this.rateByIp.delete(key);
+			removed += 1;
+			if (removed >= excess) break;
+		}
+	}
+
+	private waitForDrain(timeoutMs: number): Promise<void> {
+		return new Promise((resolve) => {
+			const start = Date.now();
+			const check = () => {
+				const anyOpen = [...this.clients.keys()].some((ws) => ws.readyState === ws.OPEN);
+				if (!anyOpen || Date.now() - start >= timeoutMs) {
+					resolve();
+					return;
+				}
+				setTimeout(check, 25);
+			};
+			check();
+		});
 	}
 }

@@ -255,8 +255,13 @@ export async function handleServeCommand(args: string[]): Promise<boolean> {
 		cancelIdleExit();
 		server.broadcast(bridgeFrame({ type: "bridge", event: "shutting_down" }));
 		announce.stop();
-		await engine?.stop();
-		await server.stop();
+		await Promise.race([
+			(async () => {
+				await engine?.stop();
+				await server.stop();
+			})(),
+			new Promise<void>((resolve) => setTimeout(resolve, 1_900)),
+		]);
 		process.exit(code);
 	}
 

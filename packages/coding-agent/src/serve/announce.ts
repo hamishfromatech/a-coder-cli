@@ -42,13 +42,23 @@ export class BridgeAnnounce {
 	}
 
 	stop(): void {
+		const instance = this.bonjour;
+		this.bonjour = undefined;
+		if (!instance) return;
 		try {
-			this.bonjour?.unpublishAll(() => {
-				this.bonjour?.destroy();
+			instance.unpublishAll(() => {
+				try {
+					instance.destroy();
+				} catch {
+					// best effort
+				}
 			});
 		} catch {
-			// best effort
+			try {
+				instance.destroy();
+			} catch {
+				// best effort
+			}
 		}
-		this.bonjour = undefined;
 	}
 }
