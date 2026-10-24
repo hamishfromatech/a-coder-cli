@@ -1,53 +1,78 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { getModel } from "../src/compat.ts";
-import { findEnvKeys, getEnvApiKey } from "../src/env-api-keys.ts";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { INCEPTION_MODELS } from "../src/providers/inception.models.ts";
+import { createInceptionModel, fetchInceptionModels, type InceptionModelListItem } from "../src/providers/inception.ts";
 
-const originalInceptionApiKey = process.env.INCEPTION_API_KEY;
+const MERCURY_3: InceptionModelListItem = {
+	id: "mercury-3",
+	name: "Inception: Mercury 3",
+	context_length: 1_000_000,
+	max_output_length: 131_072,
+	input_modalities: ["text"],
+	output_modalities: ["text"],
+	pricing: {
+		prompt: "0.0000002",
+		completion: "0.00000075",
+		input_cache_reads: "0.00000002",
+		input_cache_writes: "0",
+	},
+	supported_features: ["tools", "json_mode"],
+	supported_endpoints: ["chat.completions"],
+};
 
-afterEach(() => {
-	if (originalInceptionApiKey === undefined) {
-		delete process.env.INCEPTION_API_KEY;
-	} else {
-		process.env.INCEPTION_API_KEY = originalInceptionApiKey;
-	}
-});
+describe("Inception dynamic models", () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
 
-describe("Inception models", () => {
-	it("registers Mercury 2.5 via the OpenAI-compatible Chat Completions API", () => {
-		const model = getModel("inception", "mercury-2.5");
-
-		expect(model).toBeDefined();
-		expect(model.api).toBe("openai-completions");
+	test("maps live model metadata and keeps the generated compat", () => {
+		const model = createInceptionModel(MERCURY_3);
+		expect(model.id).toBe("mercury-3");
 		expect(model.provider).toBe("inception");
+		expect(model.api).toBe("openai-completions");
 		expect(model.baseUrl).toBe("https://api.inceptionlabs.ai/v1");
-		expect(model.contextWindow).toBe(260000);
-		expect(model.maxTokens).toBe(65536);
-		expect(model.cost).toEqual({
-			input: 0.04,
-			output: 0.15,
-			cacheRead: 0.004,
-			cacheWrite: 0,
+		expect(model.cost).toEqual({ input: 0.2, output: 0.75, cacheRead: 0.02, cacheWrite: 0 });
+		expect(model.contextWindow).toBe(1_000_000);
+		expect(model.maxTokens).toBe(131_072);
+		expect(model.compat).toMatchObject({ supportsDeveloperRole: false, maxTokensField: "max_tokens" });
+
+		const mercury2 = createInceptionModel({
+			id: "mercury-2",
+			name: "Inception: Mercury 2",
+			supported_features: ["tools"],
+			supported_endpoints: ["chat.completions"],
 		});
-		// Inception's /v1/chat/completions expects the classic max_tokens field,
-		// classic message roles (system, not developer), and no reasoning/store
-		// extensions.
-		expect(model.compat?.maxTokensField).toBe("max_tokens");
-		expect(model.compat?.supportsDeveloperRole).toBe(false);
-		expect(model.compat?.supportsReasoningEffort).toBe(false);
-		expect(model.compat?.supportsStore).toBe(false);
+		expect(mercury2.compat).toEqual(INCEPTION_MODELS["mercury-2"]?.compat);
 	});
 
-	it("registers Mercury 2", () => {
-		const model = getModel("inception", "mercury-2");
-		expect(model).toBeDefined();
-		expect(model.contextWindow).toBe(128000);
-		expect(model.maxTokens).toBe(50000);
-	});
+	test("fetches the live catalog and filters non-chat/non-tool models", async () => {
+		const fetchMock = vi.fn(async (_input: unknown, init?: RequestInit) => {
+			expect(new Headers(init?.headers).get("authorization")).toBe("Bearer test-key");
+			return new Response(
+				JSON.stringify({
+					data: [
+						MERCURY_3,
+						{
+							id: "mercury-decide",
+							name: "Inception: Mercury Decide",
+							supported_features: [],
+							supported_endpoints: ["decisions"],
+						},
+						{
+							id: "mercury-edit-2",
+							name: "Inception: Mercury Edit 2",
+							supported_features: [],
+							supported_endpoints: ["edit.completions"],
+						},
+					],
+				}),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			);
+		});
+		vi.stubGlobal("fetch", fetchMock);
 
-	it("resolves INCEPTION_API_KEY from the environment", () => {
-		process.env.INCEPTION_API_KEY = "test-inception-key";
-
-		expect(findEnvKeys("inception")).toEqual(["INCEPTION_API_KEY"]);
-		expect(getEnvApiKey("inception")).toBe("test-inception-key");
+		const models = await fetchInceptionModels("test-key");
+		expect(models.map((model) => model.id)).toEqual(["mercury-3"]);
+		expect(fetchMock).toHaveBeenCalledOnce();
+		expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.inceptionlabs.ai/v1/models");
 	});
 });

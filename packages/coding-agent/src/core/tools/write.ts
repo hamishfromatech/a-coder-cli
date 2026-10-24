@@ -5,6 +5,7 @@ import { dirname } from "path";
 import { type Static, Type } from "typebox";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.ts";
 import { getLanguageFromPath, highlightCode, type Theme } from "../../modes/interactive/theme/theme.ts";
+import { withFileLockRetry } from "../../utils/file-retry.ts";
 import type { ExtensionContext, ToolDefinition, ToolRenderResultOptions } from "../extensions/types.ts";
 import { withFileMutationQueue } from "./file-mutation-queue.ts";
 import { resolveToCwd } from "./path-utils.ts";
@@ -48,8 +49,8 @@ export interface WriteOperations {
 }
 
 const defaultWriteOperations: WriteOperations = {
-	writeFile: (path, content) => fsWriteFile(path, content, "utf-8"),
-	mkdir: (dir) => fsMkdir(dir, { recursive: true }).then(() => {}),
+	writeFile: (path, content) => withFileLockRetry(() => fsWriteFile(path, content, "utf-8")),
+	mkdir: (dir) => withFileLockRetry(() => fsMkdir(dir, { recursive: true }).then(() => {})),
 };
 
 export interface WriteToolOptions {

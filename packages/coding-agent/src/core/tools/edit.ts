@@ -5,6 +5,7 @@ import { access as fsAccess, readFile as fsReadFile, writeFile as fsWriteFile } 
 import { type Static, Type } from "typebox";
 import { renderDiff } from "../../modes/interactive/components/diff.ts";
 import type { Theme } from "../../modes/interactive/theme/theme.ts";
+import { withFileLockRetry } from "../../utils/file-retry.ts";
 import type { ExtensionContext, ToolDefinition } from "../extensions/types.ts";
 import {
 	applyEditsToNormalizedContent,
@@ -99,9 +100,9 @@ export interface EditOperations {
 }
 
 const defaultEditOperations: EditOperations = {
-	readFile: (path) => fsReadFile(path),
-	writeFile: (path, content) => fsWriteFile(path, content, "utf-8"),
-	access: (path) => fsAccess(path, constants.R_OK | constants.W_OK),
+	readFile: (path) => withFileLockRetry(() => fsReadFile(path)),
+	writeFile: (path, content) => withFileLockRetry(() => fsWriteFile(path, content, "utf-8")),
+	access: (path) => withFileLockRetry(() => fsAccess(path, constants.R_OK | constants.W_OK)),
 };
 
 export interface EditToolOptions {

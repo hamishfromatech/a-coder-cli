@@ -10,6 +10,8 @@ describe("scheduled-task isolated subagents", () => {
 
 	beforeEach(async () => {
 		harness = await createHarness();
+		const model = harness.getModel();
+		harness.settingsManager.setCronModel(`${model.provider}/${model.id}`);
 		process.env.A_CODER_CLI_CODING_AGENT_DIR = harness.tempDir;
 	});
 

@@ -36,6 +36,7 @@ import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { diffLines } from "diff";
 import { USER_CONFIG_DIR_NAME } from "../config.ts";
+import { withFileLockRetry } from "../utils/file-retry.ts";
 
 /** null backupFileName means "the file did not exist in this version". */
 type BackupFileName = string | null;
@@ -421,11 +422,11 @@ export class FileHistory {
 		}
 
 		try {
-			await copyFile(filePath, backupPath);
+			await withFileLockRetry(() => copyFile(filePath, backupPath));
 		} catch (e) {
 			if (!isENOENT(e)) throw e;
 			await mkdir(dirname(backupPath), { recursive: true });
-			await copyFile(filePath, backupPath);
+			await withFileLockRetry(() => copyFile(filePath, backupPath));
 		}
 		await chmod(backupPath, srcStats.mode);
 
@@ -443,11 +444,11 @@ export class FileHistory {
 		}
 
 		try {
-			await copyFile(backupPath, filePath);
+			await withFileLockRetry(() => copyFile(backupPath, filePath));
 		} catch (e) {
 			if (!isENOENT(e)) throw e;
 			await mkdir(dirname(filePath), { recursive: true });
-			await copyFile(backupPath, filePath);
+			await withFileLockRetry(() => copyFile(backupPath, filePath));
 		}
 		await chmod(filePath, backupStats.mode);
 	}

@@ -4,10 +4,12 @@
 
 ### Added
 
+- Inception's direct provider now refreshes its live `/v1/models` catalog on model refresh and session `/reload`; newly published Mercury models appear without waiting for a release.
 - `cron.model` setting (Settings → Models → Scheduled task model) pins the model used for scheduled runs. Precedence is `cron.model`, `subagentModel`, default chat model; a job session's pinned model is never inherited implicitly. Runs record the model and source, and the desktop shows both in run history.
 
 ### Fixed
 
+- File writes, edits, edit previews, and file-history backups now retry transient Windows `EBUSY`/`EPERM`/`EACCES` locks with bounded backoff instead of failing immediately when another process holds a file open.
 - Scheduled tasks now use a machine-wide scheduler lease (`cron/scheduler.lock`): only one engine process fires due windows, while follower tabs/desktop sessions spool `turn_end` events for the owner. This prevents the same scheduled window from running concurrently in every open tab. A dead owner's lease is taken over immediately; a live owner keeps it until exit.
 - Smart auto-continue now handles a model that stops with an empty final assistant turn immediately after a tool result (including MCP tools). The stop is classified as a `tool_pause` checkpoint, continued when the tool made progress, and given one deterministic continuation when no decision model is available; `blocked`, low-progress, and `maxConsecutive` still stop it.
 - MCP stdio server stderr is no longer forwarded into the TUI/chat during startup, tool use, or `/reload`. Each server's output is captured in `~/.a-coder/cli/agent/logs/mcp/<server>.log`; set `forwardStderr: true` on a server to opt into terminal output while debugging. Connection-failure errors still include the server stderr tail.

@@ -4318,6 +4318,10 @@ export class AgentSession {
 		this.syncQueueModesFromSettings();
 		resetApiProviders();
 		await this._resourceLoader.reload();
+		// Model catalogs are provider-owned and cache live additions (Inception,
+		// OpenRouter, local servers). A reload should refresh them in the
+		// background so reopening the picker does not require a second action.
+		void this._modelRegistry.refreshDynamicModels().catch(() => {});
 		this._buildRuntime({
 			activeToolNames: this.getActiveToolNames(),
 			flagValues: previousFlagValues,

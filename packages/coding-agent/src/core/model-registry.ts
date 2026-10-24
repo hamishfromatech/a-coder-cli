@@ -21,6 +21,7 @@ import {
 	streamSimple,
 } from "@earendil-works/pi-ai/compat";
 import { registerOAuthProvider, resetOAuthProviders } from "@earendil-works/pi-ai/oauth";
+import { fetchInceptionModels } from "@earendil-works/pi-ai/providers/inception";
 import { fetchLlamaCppModels } from "@earendil-works/pi-ai/providers/llama-cpp";
 import { fetchLMStudioModels } from "@earendil-works/pi-ai/providers/lm-studio";
 import { fetchOllamaModels } from "@earendil-works/pi-ai/providers/ollama";
@@ -446,6 +447,12 @@ export class ModelRegistry {
 	private openrouterLastError: string | undefined = undefined;
 	private static readonly OPENROUTER_REFRESH_MS = 5 * 60 * 1000;
 	private static readonly OPENROUTER_FAILURE_RETRY_MS = 30 * 1000;
+	private inceptionRefreshPromise: Promise<void> | undefined;
+	private inceptionLastSuccess = 0;
+	private inceptionLastAttempt = 0;
+	private inceptionLastError: string | undefined = undefined;
+	private static readonly INCEPTION_REFRESH_MS = 5 * 60 * 1000;
+	private static readonly INCEPTION_FAILURE_RETRY_MS = 30 * 1000;
 	private lmStudioRefreshPromise: Promise<void> | undefined;
 	private lmStudioLastSuccess = 0;
 	private lmStudioLastAttempt = 0;
@@ -528,6 +535,10 @@ export class ModelRegistry {
 		this.openrouterLastAttempt = 0;
 		this.openrouterLastError = undefined;
 		this.openrouterRefreshPromise = undefined;
+		this.inceptionLastSuccess = 0;
+		this.inceptionLastAttempt = 0;
+		this.inceptionLastError = undefined;
+		this.inceptionRefreshPromise = undefined;
 		this.lmStudioLastSuccess = 0;
 		this.lmStudioLastAttempt = 0;
 		this.lmStudioRefreshPromise = undefined;
@@ -853,8 +864,8 @@ export class ModelRegistry {
 	}
 
 	/**
-	 * Refresh dynamic provider model lists. Ollama Cloud and OpenAdapter fetch
-	 * their /v1/models endpoints when auth is configured. Best-effort: failures
+	 * Refresh dynamic provider model lists. Ollama Cloud, OpenAdapter, OpenRouter,
+	 * and Inception fetch their /v1/models endpoints when auth is configured. Best-effort: failures
 	 * leave the existing static models in place. Concurrent calls share one
 	 * in-flight fetch per provider.
 	 *
@@ -870,6 +881,8 @@ export class ModelRegistry {
 		if (openadapterError) errors.push(openadapterError);
 		const openrouterError = await this.refreshOpenRouterModels(force);
 		if (openrouterError) errors.push(openrouterError);
+		const inceptionError = await this.refreshInceptionModels(force);
+		if (inceptionError) errors.push(inceptionError);
 		const lmStudioError = await this.refreshLMStudioModels(force);
 		if (lmStudioError) errors.push(lmStudioError);
 		const llamaCppError = await this.refreshLlamaCppModels(force);
@@ -998,6 +1011,61 @@ export class ModelRegistry {
 
 		await promise;
 		if (force && this.openrouterLastError) return this.openrouterLastError;
+		return undefined;
+	}
+
+	/**
+	 * Refresh Inception's model list from /v1/models. Best-effort: on failure
+	 * the generated catalog remains. Concurrent calls share one in-flight
+	 * fetch, and models.json overrides are never overwritten.
+	 *
+	 * @param force When true, bypass the success/failure caches and fetch
+	 * immediately. Returns an error message if the refresh fails.
+	 */
+	private async refreshInceptionModels(force = false): Promise<string | undefined> {
+		if (!this.hasConfiguredAuthForProvider("inception")) return;
+
+		const now = Date.now();
+		const recentlySucceeded = now - this.inceptionLastSuccess < ModelRegistry.INCEPTION_REFRESH_MS;
+		const recentlyAttempted = now - this.inceptionLastAttempt < ModelRegistry.INCEPTION_FAILURE_RETRY_MS;
+		if (!force && (this.inceptionRefreshPromise || recentlyAttempted)) {
+			return (this.inceptionRefreshPromise ?? Promise.resolve()).then(() => undefined);
+		}
+
+		this.inceptionRefreshPromise = (async () => {
+			this.inceptionLastAttempt = Date.now();
+			this.inceptionLastError = undefined;
+			if (!force && recentlySucceeded && this.models.some((model) => model.provider === "inception")) {
+				this.inceptionRefreshPromise = undefined;
+				return;
+			}
+			try {
+				const apiKey = await this.getApiKeyForProvider("inception");
+				const refreshed = await fetchInceptionModels(apiKey);
+				if (refreshed.length === 0) return;
+
+				// Additive merge, like OpenRouter: preserve the generated catalog
+				// and any models.json overrides, and append models added upstream.
+				const existingIds = new Set(
+					this.models.filter((model) => model.provider === "inception").map((model) => model.id),
+				);
+				const additions = refreshed.filter((model) => !existingIds.has(model.id));
+				if (additions.length > 0) this.models.push(...additions);
+				this.inceptionLastSuccess = Date.now();
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				console.error(
+					`Failed to refresh Inception models — keeping last known models. (${message.split("\n")[0]})`,
+				);
+				this.inceptionLastError = message;
+			} finally {
+				this.inceptionRefreshPromise = undefined;
+			}
+		})();
+		const promise = this.inceptionRefreshPromise;
+
+		await promise;
+		if (force && this.inceptionLastError) return this.inceptionLastError;
 		return undefined;
 	}
 

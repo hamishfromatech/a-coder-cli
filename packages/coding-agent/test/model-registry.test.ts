@@ -2126,3 +2126,96 @@ describe("ModelRegistry openrouter refresh", () => {
 		expect(matches[0]?.contextWindow).toBe(64000);
 	});
 });
+
+describe("ModelRegistry inception refresh", () => {
+	let tempDir: string;
+	let authStorage: AuthStorage;
+
+	beforeEach(() => {
+		tempDir = join(tmpdir(), `pi-test-model-registry-inception-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		mkdirSync(tempDir, { recursive: true });
+		authStorage = AuthStorage.create(join(tempDir, "auth.json"));
+	});
+
+	afterEach(() => {
+		if (tempDir && existsSync(tempDir)) rmSync(tempDir, { recursive: true });
+		clearApiKeyCache();
+		vi.restoreAllMocks();
+	});
+
+	function stubInceptionCatalog(ids: string[]): void {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (input: unknown) => {
+				const url = typeof input === "string" ? input : (input as Request).url;
+				if (url === "https://api.inceptionlabs.ai/v1/models") {
+					return new Response(
+						JSON.stringify({
+							data: ids.map((id) => ({
+								id,
+								name: `Inception: ${id}`,
+								context_length: 1_000_000,
+								max_output_length: 131_072,
+								input_modalities: ["text"],
+								pricing: { prompt: "0.0000002", completion: "0.00000075" },
+								supported_features: ["tools"],
+								supported_endpoints: ["chat.completions"],
+							})),
+						}),
+						{ status: 200, headers: { "content-type": "application/json" } },
+					);
+				}
+				throw new Error(`Unexpected fetch: ${url}`);
+			}),
+		);
+	}
+
+	test("adds live Inception models and refreshes after reload", async () => {
+		stubInceptionCatalog(["mercury-3"]);
+		authStorage.set("inception", { type: "api_key", key: "test-key" });
+		const registry = ModelRegistry.create(authStorage, join(tempDir, "models.json"));
+
+		await expect(registry.refreshDynamicModels(true)).resolves.toBeUndefined();
+		expect(registry.find("inception", "mercury-3")).toBeDefined();
+		expect(registry.find("inception", "mercury-3")?.contextWindow).toBe(1_000_000);
+
+		stubInceptionCatalog(["mercury-4"]);
+		registry.refresh();
+		await registry.refreshDynamicModels(true);
+		expect(registry.find("inception", "mercury-4")).toBeDefined();
+
+		// Repeated refreshes must not duplicate the overlay.
+		await registry.refreshDynamicModels(true);
+		expect(registry.getAll().filter((entry) => entry.id === "mercury-4")).toHaveLength(1);
+	});
+
+	test("does not overwrite a models.json Inception entry", async () => {
+		stubInceptionCatalog(["mercury-3"]);
+		authStorage.set("inception", { type: "api_key", key: "test-key" });
+		writeFileSync(
+			join(tempDir, "models.json"),
+			JSON.stringify({
+				providers: {
+					inception: {
+						models: [
+							{
+								id: "mercury-3",
+								name: "Pinned Mercury 3",
+								api: "openai-completions",
+								contextWindow: 64000,
+								maxTokens: 8192,
+							},
+						],
+					},
+				},
+			}),
+		);
+		const registry = ModelRegistry.create(authStorage, join(tempDir, "models.json"));
+
+		await registry.refreshDynamicModels(true);
+		const matches = registry.getAll().filter((entry) => entry.id === "mercury-3" && entry.provider === "inception");
+		expect(matches).toHaveLength(1);
+		expect(matches[0]?.name).toBe("Pinned Mercury 3");
+		expect(matches[0]?.contextWindow).toBe(64000);
+	});
+});

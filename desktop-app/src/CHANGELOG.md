@@ -8,6 +8,10 @@
 - The desktop engine bootstrap now downloads from `hamishfromatech/a-coder-cli` directly instead of relying on GitHub's `pi-mono` rename redirect.
 - Settings got a UI/UX pass: the sidebar is grouped (App / Assistant / Workspace / System) with proper icons and an active marker, the search box now searches every settings page and jumps straight to the matching control (or merged sub-section) with a brief highlight, cards honor their `defaultCollapsed` state, advanced fields auto-expand for search hits, and the footer shows live Saving / Saved / error status instead of a static note. The raw JSON editor gains a saved/unsaved state, Reload, a confirmed reset, and opens the correct project-scoped settings file.
 - Composio integration moved into the engine's built-in **Composio MCP server** (`https://connect.composio.dev/mcp`, seeded on fresh installs next to chrome-devtools; auth = dashboard consumer API key via `COMPOSIO_API_KEY` or the MCP servers editor). The desktop **Apps panel** (browse/connect apps) and the empty `Composio` settings card are gone — app discovery and connection now happen in the chat through the server's manage-connections meta tools, and old `#composio` settings deep links still land on Integrations.
+### Fixed
+
+- File writes and edits through the desktop engine retry transient Windows `EBUSY`/`EPERM`/`EACCES` locks, so an editor, dev server, or antivirus hold is less likely to fail an edit to a file such as `routes.py`.
+
 ### Added
 
 - **Scheduled task model.** Settings → Models now exposes a dedicated model picker for scheduled runs. It takes precedence over the delegated-work model and the default chat model, and a job session's pinned model is no longer inherited implicitly. Run history shows the model and its source, so automation spend is visible.
