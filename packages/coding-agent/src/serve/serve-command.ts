@@ -216,9 +216,15 @@ export async function handleServeCommand(args: string[]): Promise<boolean> {
 			// the engine cannot accept (not started, exited, restarting) is refused
 			// back to the sender: the client must learn its message was dropped
 			// instead of waiting forever for a response that never comes.
+			if (process.env.A_CODER_SERVE_DEBUG) {
+				logLine(`<- client frame ${data.length}b: ${data.slice(0, 160).replace(/\n/g, " | ")}`);
+			}
 			for (const rawLine of data.split("\n")) {
 				const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
 				if (line.length === 0) continue;
+				if (process.env.A_CODER_SERVE_DEBUG) {
+					logLine(`-> engine line ${line.length}b: ${line.slice(0, 200)}`);
+				}
 				const result = engine?.writeLine(line);
 				if (result !== "sent") {
 					server.sendTo(
@@ -234,11 +240,13 @@ export async function handleServeCommand(args: string[]): Promise<boolean> {
 			}
 		},
 		onClientConnected: () => {
+			if (process.env.A_CODER_SERVE_DEBUG) logLine("client connected");
 			cancelIdleExit();
 			void ensureEngine();
 			server.broadcast(bridgeFrame({ type: "bridge", event: "connected", clients: server.clientCount }));
 		},
 		onClientDisconnected: () => {
+			if (process.env.A_CODER_SERVE_DEBUG) logLine(`client disconnected (${server.clientCount} left)`);
 			if (server.clientCount === 0) armIdleExit();
 		},
 		onSlowClient: ({ ip }) => {
@@ -255,7 +263,12 @@ export async function handleServeCommand(args: string[]): Promise<boolean> {
 			provider: flags.provider,
 			model: flags.model,
 			continueSession: flags.continueSession,
-			onLine: (line) => server.broadcast(`${line}\n`),
+			onLine: (line) => {
+				if (process.env.A_CODER_SERVE_DEBUG && line.length > 10_000) {
+					logLine(`<- engine HUGE line ${line.length}b: ${line.slice(0, 120)}…`);
+				}
+				server.broadcast(`${line}\n`);
+			},
 			onExit: ({ code, willRestart }) => {
 				server.broadcast(bridgeFrame({ type: "bridge", event: "engine_exited", code: code ?? null }));
 				if (!willRestart) {

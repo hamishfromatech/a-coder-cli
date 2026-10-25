@@ -1075,13 +1075,18 @@ wire relative to each other. Tracing failures never affect the engine.
 
 #### list_sessions
 
-List known sessions (all projects), newest first. Pass `limit` to page (capped at 500):
+List known sessions, newest first. Pass `limit` to page (capped at 500), and
+`cwd` to scope to one project. Without a limit the response carries the 500
+most recent machine-wide sessions **plus** the active project's 100 most recent,
+so a quiet project still appears on a client's home screen. `data.total` is the
+number of sessions in the requested scope before paging.
 
 ```json
 {"type": "list_sessions", "limit": 50}
+{"type": "list_sessions", "cwd": "/Users/me/code/app"}
 ```
 
-Response `data.sessions` entries carry `path`, `id`, `cwd`, `name`, `parentSessionPath`, `created`, `modified`, `messageCount`, `firstMessage` (ISO date strings), plus optional `model`, `totalTokens`, and `totalCost` summed from the session's assistant turns.
+Response `data.sessions` entries carry `path`, `id`, `cwd`, `name`, `parentSessionPath`, `created`, `modified`, `messageCount`, `firstMessage` (ISO date strings; the preview is trimmed to 200 characters), plus optional `model`, `totalTokens`, and `totalCost` summed from the session's assistant turns.
 
 #### get_sessions_status
 

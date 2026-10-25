@@ -79,6 +79,9 @@ export type {
  * Run in RPC mode.
  * Listens for JSON commands on stdin, outputs events and responses on stdout.
  */
+/** Default page for unbounded get_messages callers (recent window). */
+const DEFAULT_MESSAGE_PAGE = 200;
+
 export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { logPath?: string }): Promise<never> {
 	takeOverStdout();
 	// Protocol trace: one JSONL line per inbound command and outbound frame,
@@ -1444,11 +1447,33 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 				const sessions = (await SessionManager.listAll()).sort(
 					(a, b) => b.modified.getTime() - a.modified.getTime(),
 				);
-				const limited =
-					typeof command.limit === "number" && command.limit > 0
-						? sessions.slice(0, Math.min(command.limit, 500))
-						: sessions;
+				// Optional project scope: mobile home screens ask per project so the
+				// machine-wide store (thousands of sessions) never crosses the wire.
+				const hasScope = typeof command.cwd === "string" && command.cwd.length > 0;
+				const scoped = hasScope ? sessions.filter((s) => s.cwd === command.cwd) : sessions;
+				let limited: SessionInfo[];
+				if (typeof command.limit === "number" && command.limit > 0) {
+					// Explicit limit keeps the historical "most recent" semantics.
+					limited = scoped.slice(0, Math.min(command.limit, 500));
+				} else if (hasScope) {
+					limited = scoped.slice(0, 500);
+				} else {
+					// Unscoped default: the 500 most recent machine-wide, UNIONed
+					// with the active project's own recent sessions. Without the
+					// union, a project with quiet history falls out of the global
+					// top-500 and its home screen shows an empty list.
+					const activeCwd = session.sessionManager.getCwd();
+					const project = activeCwd ? sessions.filter((s) => s.cwd === activeCwd).slice(0, 100) : [];
+					const seen = new Set<string>();
+					limited = [];
+					for (const candidate of [...project, ...sessions.slice(0, 500)]) {
+						if (seen.has(candidate.path)) continue;
+						seen.add(candidate.path);
+						limited.push(candidate);
+					}
+				}
 				return success(id, "list_sessions", {
+					total: scoped.length,
 					sessions: limited.map((s: SessionInfo) => ({
 						path: s.path,
 						id: s.id,
@@ -1458,7 +1483,9 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 						created: s.created.toISOString(),
 						modified: s.modified.toISOString(),
 						messageCount: s.messageCount,
-						firstMessage: s.firstMessage,
+						// Preview only: some sessions open with kilobytes of pasted
+						// text, and the wire cost is paid by every client.
+						firstMessage: s.firstMessage.slice(0, 200),
 						model: s.model,
 						totalTokens: s.totalTokens,
 						totalCost: s.totalCost,
@@ -1576,7 +1603,13 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 				if (!target) {
 					return error(id, "get_messages", `Unknown session: ${command.sessionPath}`, "unknown_session");
 				}
-				const page = pageMessages(target.messages, { limit: command.limit, before: command.before });
+				// Unbounded "all messages" responses reach multiple MB on long
+				// sessions and wedge phone clients. Desktop always pages explicitly;
+				// the wire default is the recent window.
+				const page = pageMessages(target.messages, {
+					limit: command.limit ?? DEFAULT_MESSAGE_PAGE,
+					before: command.before,
+				});
 				if (eventStream.has("attachments")) {
 					return success(id, "get_messages", {
 						...page,

@@ -148,7 +148,7 @@ export type RpcCommand =
 	| { id?: string; type: "get_fork_messages" }
 	| { id?: string; type: "get_entries"; since?: string }
 	| { id?: string; type: "get_tree"; flat?: boolean }
-	| { id?: string; type: "list_sessions"; limit?: number }
+	| { id?: string; type: "list_sessions"; limit?: number; cwd?: string }
 	| { id?: string; type: "get_last_assistant_text" }
 	| { id?: string; type: "set_session_name"; name: string; sessionPath?: string }
 	| { id?: string; type: "rename_session"; sessionPath: string; name: string }
@@ -580,7 +580,7 @@ export type RpcResponse =
 			type: "response";
 			command: "list_sessions";
 			success: true;
-			data: { sessions: RpcSessionInfo[] };
+			data: { sessions: RpcSessionInfo[]; total: number };
 	  }
 	| {
 			id?: string;

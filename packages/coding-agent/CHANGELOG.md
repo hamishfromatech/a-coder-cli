@@ -4,12 +4,14 @@
 
 ### Added
 
+- `A_CODER_SERVE_DEBUG=1` logs bridge client frames and oversized engine lines (env-gated; off by default) to diagnose mobile connection issues from the `serve` log.
 - Inception's direct provider now refreshes its live `/v1/models` catalog on model refresh and session `/reload`; newly published Mercury models appear without waiting for a release.
 - `cron.model` setting (Settings → Models → Scheduled task model) pins the model used for scheduled runs. Precedence is `cron.model`, `subagentModel`, default chat model; a job session's pinned model is never inherited implicitly. Runs record the model and source, and the desktop shows both in run history.
 - `/cron model` subcommand (`<provider/model|clear>`) to view, set, or clear the scheduled-task model from the terminal — CLI parity with the desktop Settings picker. It validates the reference against the model catalog and warns when the provider has no credentials.
 
 ### Fixed
 
+- `list_sessions` and `get_messages` now bound their default payloads for mobile clients. An unbounded `list_sessions` returned every session on the machine (thousands of rows, multi-MB on the wire); the default is now the 500 most recent **plus** the active project's 100, with `total` for the unpaged count, an optional `cwd` scope, and `firstMessage` trimmed to a 200-character preview. An unbounded `get_messages` returned full multi-MB transcripts; the default page is now the most recent 200 messages (desktop always paged explicitly).
 - File writes, edits, edit previews, and file-history backups now retry transient Windows `EBUSY`/`EPERM`/`EACCES` locks with bounded backoff instead of failing immediately when another process holds a file open.
 - The same transient file-lock retry now covers the remaining persistence paths: session `.jsonl` appends/rewrites and branch copies, `settings.json` and `auth.json` writes, session archive/compaction swaps, cron `jobs.json`/`runs.json`/`revisions.json` atomic writes (failed renames no longer leave tmp files behind), and scheduler-lease stale takeover.
 - Scheduled tasks now use a machine-wide scheduler lease (`cron/scheduler.lock`): only one engine process fires due windows, while follower tabs/desktop sessions spool `turn_end` events for the owner. This prevents the same scheduled window from running concurrently in every open tab. A dead owner's lease is taken over immediately; a live owner keeps it until exit.
