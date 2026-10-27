@@ -83,7 +83,7 @@ export async function updateJob(id: string, mutate: (job: CronJob) => void): Pro
 
 // ── Run history (`runs.json`, keyed by job id, capped per job) ───────────────
 
-const MAX_RUNS_PER_JOB = 20;
+const MAX_RUNS_PER_JOB = 100;
 
 async function readRuns(path = runsPath()): Promise<Record<string, CronRun[]>> {
 	try {

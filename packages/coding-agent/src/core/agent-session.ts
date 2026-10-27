@@ -872,6 +872,12 @@ export class AgentSession {
 
 	// Permission mode state
 	private _permissionMode: PermissionMode;
+	/**
+	 * Permission mode bound for an unattended run (scheduled tasks). Wins over
+	 * the session mode and sub-agent definition defaults, and is inherited by
+	 * sub-agents spawned while bound. Unbound when the run finishes.
+	 */
+	private _turnPermissionMode: PermissionMode | undefined;
 	private _permissionPromptHandler?: (
 		toolName: string,
 		reason: string,
@@ -1080,7 +1086,7 @@ export class AgentSession {
 	): Promise<PermissionDecisionResult> {
 		const decision = this._resolvePermissionDecision(toolName, args, modeOverride);
 		const matchedDefault = decision.decision === "approve" ? decision.matchedDefault === true : false;
-		const mode = modeOverride ?? this._permissionMode;
+		const mode = this._turnPermissionMode ?? modeOverride ?? this._permissionMode;
 		if (mode !== "auto" || !matchedDefault) {
 			return decision;
 		}
@@ -1192,8 +1198,9 @@ export class AgentSession {
 		// are free, but input actions (click/type/key/...) and focus changes
 		// weigh like mutating tools in every mode. In read-only mode they are
 		// blocked outright; other modes fall through to the normal handling.
+		const effectiveMode = this._turnPermissionMode ?? modeOverride ?? this._permissionMode;
 		if (toolName === "computer" && COMPUTER_INPUT_ACTIONS.has(getComputerActionArg(args))) {
-			if (modeOverride === "read-only" || (!modeOverride && this._permissionMode === "read-only")) {
+			if (effectiveMode === "read-only") {
 				return { decision: "deny", reason: `computer ${getComputerActionArg(args)} is blocked in read-only mode` };
 			}
 		}
@@ -1222,7 +1229,7 @@ export class AgentSession {
 			return { decision: "approve" };
 		}
 
-		const mode = modeOverride ?? this._permissionMode;
+		const mode = effectiveMode;
 		const isInteractive = this._permissionPromptHandler !== undefined;
 		const policies: PermissionPolicyConfig | undefined = this.settingsManager.getPermissionPolicies();
 		// "ask" without a prompt handler cannot actually ask, so treat it as "allow"
@@ -2987,6 +2994,22 @@ export class AgentSession {
 	 * stay on the user's model. The unbind function restores the previous
 	 * model; unknown or unconfigured models leave the session untouched.
 	 */
+	/**
+	 * Bind a permission mode for the duration of one unattended run.
+	 *
+	 * Scheduled tasks run headless: the resting `auto` mode soft-denies
+	 * bash/write/edit and, with no TTY, turns every prompt into a hard deny.
+	 * A cron run binds "allow" around its prompt so the agent can actually do
+	 * the work, then restores the previous override.
+	 */
+	bindTurnPermissionMode(mode: PermissionMode): () => void {
+		const previous = this._turnPermissionMode;
+		this._turnPermissionMode = mode;
+		return () => {
+			this._turnPermissionMode = previous;
+		};
+	}
+
 	bindTurnModel(provider: string, modelId: string): () => void {
 		const next = this._modelRegistry.find(provider, modelId);
 		if (!next || !this._modelRegistry.hasConfiguredAuth(next)) return () => {};

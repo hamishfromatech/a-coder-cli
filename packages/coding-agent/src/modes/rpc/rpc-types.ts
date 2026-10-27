@@ -208,7 +208,7 @@ export type RpcCommand =
 	| { id?: string; type: "cron_update"; jobId: string; patch: CronRpcJobPatch }
 	| { id?: string; type: "cron_delete"; jobId: string }
 	| { id?: string; type: "cron_run_now"; jobId: string; variables?: Record<string, string> }
-	| { id?: string; type: "cron_runs"; jobId?: string }
+	| { id?: string; type: "cron_runs"; jobId?: string; limit?: number }
 	| { id?: string; type: "cron_revisions"; jobId: string }
 	| { id?: string; type: "cron_restore_revision"; jobId: string; revisionId: string }
 
@@ -733,7 +733,13 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "cron_update"; success: true; data: { job: CronJob } }
 	| { id?: string; type: "response"; command: "cron_delete"; success: true }
 	| { id?: string; type: "response"; command: "cron_run_now"; success: true }
-	| { id?: string; type: "response"; command: "cron_runs"; success: true; data: { runs: CronRun[] } }
+	| {
+			id?: string;
+			type: "response";
+			command: "cron_runs";
+			success: true;
+			data: { runs: CronRun[]; jobId?: string | null };
+	  }
 	| { id?: string; type: "response"; command: "cron_revisions"; success: true; data: { revisions: CronJobRevision[] } }
 	| { id?: string; type: "response"; command: "cron_restore_revision"; success: true; data: { job: CronJob } }
 

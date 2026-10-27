@@ -1879,7 +1879,13 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 
 			case "cron_runs": {
 				const runs = await cron.listRuns(command.jobId);
-				return success(id, "cron_runs", { runs });
+				// A job's own history is already bounded per job; a machine-wide
+				// query (no jobId) is capped so a client's history view stays small.
+				const limited =
+					command.jobId || typeof command.limit === "number"
+						? runs.slice(0, Math.min(command.limit ?? runs.length, 500))
+						: runs.slice(0, 200);
+				return success(id, "cron_runs", { runs: limited, jobId: command.jobId ?? null });
 			}
 
 			case "cron_revisions": {

@@ -262,6 +262,8 @@ async function recordRevision(job: CronJob, reason: CronRevisionReason): Promise
 export class CronService {
 	private readonly runtime: AgentRuntimeLike;
 	private readonly onUpdate?: (snapshot: CronSnapshot) => void;
+	/** One-shot guard: stale-run reconciliation runs once per process. */
+	private reconciledInterruptedRuns = false;
 	private readonly onRunEvent?: (event: CronServiceEvent) => void;
 	private readonly resolveGitHead: (cwd: string) => Promise<string | null>;
 	private readonly triage?: (input: CronTriageInput) => Promise<CronTriageDecision | undefined>;
@@ -291,6 +293,7 @@ export class CronService {
 		// its async work is in flight.
 		this.schedulerLease ??= new CronSchedulerLease();
 		this.schedulerLease.acquireOrRenew();
+		if (this.schedulerLease.isLeader) void this.reconcileInterruptedRuns().catch(() => {});
 		this.schedulerHeartbeat = setInterval(() => {
 			this.schedulerLease?.acquireOrRenew();
 		}, 20_000);
@@ -508,6 +511,9 @@ export class CronService {
 		// scheduled window. This is the machine-wide lock that prevents five
 		// tabs from launching the same 08:00 job.
 		if (this.schedulerLease && !this.schedulerLease.acquireOrRenew()) return;
+		// First tick after taking the lease from a crashed/quit process: close
+		// the runs it left behind.
+		if (this.schedulerLease?.isLeader) void this.reconcileInterruptedRuns().catch(() => {});
 		const events = drainCronEvents();
 		for (const event of events) {
 			await this.handleEvent(event);
@@ -689,8 +695,15 @@ export class CronService {
 		let outputFile: string | undefined;
 		let worktreePath: string | undefined;
 		let unbindModel: (() => void) | undefined;
+		let unbindPermission: (() => void) | undefined;
 		try {
 			const target = await this.resolveDelivery(fresh);
+			// Unattended: approve tool calls for the run. This also covers
+			// delivery into a live session, whose own mode (often "auto") would
+			// soft-deny mutating tools and, headless, deny them outright.
+			if (typeof target.session.bindTurnPermissionMode === "function") {
+				unbindPermission = target.session.bindTurnPermissionMode("allow");
+			}
 			run.sessionFile = target.sessionFile;
 			const scheduledModel = this.resolveScheduledModel(target.session);
 			if (scheduledModel) {
@@ -775,6 +788,7 @@ export class CronService {
 			});
 		} finally {
 			unbindModel?.();
+			unbindPermission?.();
 		}
 
 		run.finishedAt = Date.now();
@@ -925,9 +939,11 @@ export class CronService {
 			uiContext: noOpUIContext,
 			mode: "rpc",
 		});
-		// Unattended: the job was scheduled deliberately; permission prompts
-		// would hang a run nobody is watching.
-		session.setPermissionMode("auto");
+		// Unattended: this session exists only for scheduled work, so it runs on
+		// "allow" for its whole life. Bound rather than setPermissionMode: the
+		// setter persists to global settings, and a cron run must never rewrite
+		// the user's own permission mode.
+		session.bindTurnPermissionMode("allow");
 
 		// Persist the session pointer so future fires share context.
 		if (session.sessionFile && session.sessionFile !== job.sessionFile) {
@@ -955,6 +971,26 @@ export class CronService {
 			}),
 		]);
 		if (timedOut) throw new CronTimeoutError();
+	}
+
+	/**
+	 * Close out runs a previous process left `running` (crash, force quit, or a
+	 * scheduler handoff). Only the leader does this, and only past the run
+	 * timeout, so a live run owned by another process is never touched.
+	 */
+	private async reconcileInterruptedRuns(): Promise<void> {
+		if (this.reconciledInterruptedRuns) return;
+		this.reconciledInterruptedRuns = true;
+		const cutoff = Date.now() - RUN_TIMEOUT_MS;
+		for (const run of await store.listRuns()) {
+			if (run.status !== "running" || run.startedAt > cutoff) continue;
+			await store.updateRun(run.jobId, run.id, (r) => {
+				r.status = "error";
+				r.finishedAt = Date.now();
+				r.error = "Run interrupted (engine restarted before it finished)";
+			});
+		}
+		await this.emitUpdate();
 	}
 
 	private async emitUpdate(): Promise<void> {

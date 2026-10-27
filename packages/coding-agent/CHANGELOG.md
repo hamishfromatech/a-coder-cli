@@ -11,6 +11,7 @@
 
 ### Fixed
 
+- Scheduled runs can now actually do work. Cron bound the resting `auto` permission mode, which soft-denies `bash`/`write`/`edit`; headless there is no TTY to approve the prompt, so every mutating call was denied while the run still recorded `ok` (jobs reported "session is read-only" and wrote nothing). A run now binds `allow` for its duration — inherited by its sub-agent and restored afterwards — while PreToolUse hooks and plan mode still apply. Side sessions bind `allow` for their lifetime instead of calling `setPermissionMode`, which used to persist `auto` into the user's global settings. Runs left `running` by a crashed process are also reconciled to `error` when a new scheduler leader takes over.
 - `list_sessions` and `get_messages` now bound their default payloads for mobile clients. An unbounded `list_sessions` returned every session on the machine (thousands of rows, multi-MB on the wire); the default is now the 500 most recent **plus** the active project's 100, with `total` for the unpaged count, an optional `cwd` scope, and `firstMessage` trimmed to a 200-character preview. An unbounded `get_messages` returned full multi-MB transcripts; the default page is now the most recent 200 messages (desktop always paged explicitly).
 - File writes, edits, edit previews, and file-history backups now retry transient Windows `EBUSY`/`EPERM`/`EACCES` locks with bounded backoff instead of failing immediately when another process holds a file open.
 - The same transient file-lock retry now covers the remaining persistence paths: session `.jsonl` appends/rewrites and branch copies, `settings.json` and `auth.json` writes, session archive/compaction swaps, cron `jobs.json`/`runs.json`/`revisions.json` atomic writes (failed renames no longer leave tmp files behind), and scheduler-lease stale takeover.
@@ -21,6 +22,7 @@
 
 ### Changed
 
+- Scheduled-task run history keeps the newest **100** runs per job (was 20), so a daily routine retains months of outcomes. `cron_runs` without a `jobId` returns a machine-wide history capped at the newest 200 (or an explicit `limit`, max 500). Runs already record exact `startedAt`/`finishedAt`, status, trigger, delivery, execution, model + source, variables, triage, summary/error, and the session/subagent log paths; clients now render them.
 - Coworker conversations now live in hidden `.office` session directories, so Virtual Office DMs and huddles no longer appear in the composer session list, session picker, or resume flow. Legacy coworker session files are moved out of the main session store at startup; their canonical history remains available to the Office service.
 - Subagents now default to a **100-turn** cap instead of 25 when neither the agent definition nor the spawn call sets `maxTurns`. Per-agent and per-call overrides are unchanged.
 

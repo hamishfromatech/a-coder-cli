@@ -1313,7 +1313,7 @@ Schedules: `{"kind": "every", "minutes": N}` (min 5), `{"kind": "daily", "time":
 {"type": "cron_runs", "jobId": "<id>"}
 ```
 
-Response `data`: `{ runs }` — newest-first `CronRun` records (`id`, `jobId`, `jobName`, `trigger` schedule|manual, `delivery` session|background, `execution` session|subagent, `startedAt`, `finishedAt`, `status` running|ok|error|timeout, `error`, `summary`, `sessionFile`, `subagentId`, `outputFile`, `worktreePath`). Omit `jobId` for every job's runs. `sessionFile` is the continue-a-run handle: switch the engine to it to reopen that run's conversation.
+Response `data`: `{ runs, jobId }` — `jobId` echoes the requested scope (`null` for machine-wide) so a client can route interleaved responses. `runs` are newest-first `CronRun` records (`id`, `jobId`, `jobName`, `trigger` schedule|manual, `delivery` session|background, `execution` session|subagent, `startedAt`, `finishedAt`, `status` running|ok|error|timeout, `error`, `summary`, `sessionFile`, `subagentId`, `outputFile`, `worktreePath`, plus `model`, `modelSource`, `variables`, and advisory `triage`). Omit `jobId` for a machine-wide history (newest 200 runs, or pass `limit` up to 500). Each job keeps its newest 100 runs. `sessionFile` is the continue-a-run handle: switch the engine to it to reopen that run's conversation.
 
 ## Events (continued)
 
