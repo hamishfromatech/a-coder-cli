@@ -4,11 +4,9 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { open as openPath } from "@tauri-apps/plugin-shell";
 import {
 	Bot,
 	CalendarClock,
-	FileText,
 	Check,
 	History,
 	Loader2,
@@ -30,10 +28,10 @@ import {
 } from "../../lib/rpc";
 import { useCronStore } from "../../stores/cron-store";
 import { useConfirmStore } from "../../stores/confirm-store";
-import { openSessionFile } from "../../lib/open-session";
 import { Button } from "../ui/Button";
 import { ModalBackdrop, ModalPanel } from "../ui/Modal";
 import { CronRunDialog } from "./CronRunDialog";
+import { CronRunDetails, CronRunRow, groupRunsByDay } from "./CronRunRow";
 
 type DetailTab = "overview" | "runs" | "activity" | "history";
 
@@ -70,13 +68,6 @@ function duration(run: CronRun): string {
 	return `${Math.floor(ms / 60_000)}m ${Math.floor((ms % 60_000) / 1000)}s`;
 }
 
-function statusClass(status: CronRun["status"]): string {
-	if (status === "ok") return "text-pi-success";
-	if (status === "error") return "text-pi-error";
-	if (status === "timeout") return "text-pi-warning";
-	return "text-pi-accent";
-}
-
 function triageLabel(triage: CronRun["triage"]): string | undefined {
 	if (!triage) return undefined;
 	if (triage.outcome === "unavailable") return "triage unavailable";
@@ -103,10 +94,12 @@ export function CronDetail({
 	const [error, setError] = useState<string | null>(null);
 	const [runDialog, setRunDialog] = useState(false);
 	const refreshStore = useCronStore((state) => state.refresh);
+	const liveRuns = useCronStore((state) => state.runs);
+	const liveJob = useCronStore((state) => state.jobs.find((entry) => entry.id === initialJob.id));
 	const confirm = useConfirmStore((state) => state.ask);
 
-	const load = useCallback(async () => {
-		setLoading(true);
+	const load = useCallback(async (silent = false) => {
+		if (!silent) setLoading(true);
 		setError(null);
 		try {
 			const [runResult, revisionResult] = await Promise.all([cronRuns(job.id), cronRevisions(job.id)]);
@@ -115,13 +108,28 @@ export function CronDetail({
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : String(cause));
 		} finally {
-			setLoading(false);
+			if (!silent) setLoading(false);
 		}
 	}, [job.id]);
 
 	useEffect(() => {
 		void load();
 	}, [load]);
+
+	// A run started/finished while this pane is open: refresh the authoritative
+	// list when the job's last-run marker moves (cron_update).
+	useEffect(() => {
+		if (liveJob?.lastRunAt) void load(true);
+	}, [liveJob?.lastRunAt, load]);
+
+	// Overlay live run events so a running row appears before the refetch.
+	const mergedRuns = useMemo(() => {
+		const byId = new Map(runs.map((run) => [run.id, run]));
+		for (const run of liveRuns) {
+			if (run.jobId === job.id) byId.set(run.id, run);
+		}
+		return [...byId.values()].sort((a, b) => b.startedAt - a.startedAt);
+	}, [runs, liveRuns, job.id]);
 
 	const runNow = async () => {
 		if ((job.variables ?? []).length > 0) {
@@ -285,7 +293,7 @@ export function CronDetail({
 							</div>
 						)}
 
-						{tab === "runs" && <RunList runs={runs} loading={loading} />}
+						{tab === "runs" && <RunList runs={mergedRuns} loading={loading} />}
 						{tab === "activity" && (
 							<div className="space-y-1">
 								{activity.length === 0 ? (
@@ -369,38 +377,25 @@ function Property({ label, value, mono }: { label: string; value: string; mono?:
 }
 
 function RunList({ runs, loading }: { runs: CronRun[]; loading: boolean }) {
+	const [selected, setSelected] = useState<CronRun | null>(null);
 	if (loading) return <div className="py-6 text-center text-2xs text-pi-text-faint">Loading runs…</div>;
 	if (runs.length === 0) return <div className="py-6 text-center text-2xs text-pi-text-faint">No runs yet.</div>;
 	return (
 		<div className="space-y-1">
-			{runs.map((run) => (
-				<div key={run.id} className="flex items-start gap-2 rounded-md px-1.5 py-1.5 hover:bg-pi-surface-raised">
-					<span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${run.status === "ok" ? "bg-pi-success" : run.status === "error" ? "bg-pi-error" : run.status === "timeout" ? "bg-pi-warning" : "bg-pi-accent animate-pulse"}`} />
-					<div className="min-w-0 flex-1">
-						<div className="flex flex-wrap items-center gap-1.5 text-xs text-pi-text">
-							<span className={statusClass(run.status)}>{run.status}</span>
-							<span className="text-2xs text-pi-text-faint">{run.trigger} · {run.execution ?? "session"} · {run.delivery} · {run.model ? `${run.model}${run.modelSource ? ` (${run.modelSource})` : ""}` : "model not recorded"} · {duration(run)}</span>
-							{triageLabel(run.triage) && <span className="text-2xs text-pi-accent">{triageLabel(run.triage)}</span>}
-						</div>
-						{run.summary && <div className="mt-0.5 line-clamp-2 text-2xs leading-relaxed text-pi-text-muted">{run.summary}</div>}
-						{run.error && <div className="mt-0.5 truncate text-2xs text-pi-error">{run.error}</div>}
+			{groupRunsByDay(runs).map((group) => (
+				<div key={group.label}>
+					<div className="flex items-center gap-2 px-1.5 pb-1 pt-2">
+						<span className="font-mono text-3xs font-semibold uppercase tracking-wider text-pi-text-faint">
+							{group.label}
+						</span>
+						<span className="h-px flex-1 bg-pi-border" />
 					</div>
-					<span className="shrink-0 text-2xs text-pi-text-faint">{relativeTime(run.startedAt)}</span>
-					{run.outputFile && (
-						<Button
-							variant="ghost"
-							size="icon-sm"
-							icon={FileText}
-							aria-label="Open subagent log"
-							title="Open subagent log"
-							onClick={() => void openPath(run.outputFile!).catch(() => {})}
-						/>
-					)}
-					{run.sessionFile && run.status !== "running" && (
-						<Button variant="ghost" size="icon-sm" icon={History} aria-label="Continue run" onClick={() => void openSessionFile(run.sessionFile!)} />
-					)}
+					{group.runs.map((run) => (
+						<CronRunRow key={run.id} run={run} onOpen={() => setSelected(run)} />
+					))}
 				</div>
 			))}
+			{selected && <CronRunDetails run={selected} onClose={() => setSelected(null)} />}
 		</div>
 	);
 }

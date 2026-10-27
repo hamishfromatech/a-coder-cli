@@ -1943,8 +1943,8 @@ export const cronDelete = (jobId: string) => sendCommand({ type: "cron_delete", 
 export const cronRunNow = (jobId: string, variables?: Record<string, string>) =>
 	sendCommand({ type: "cron_run_now", jobId, variables });
 
-export const cronRuns = (jobId?: string) =>
-	sendCommand({ type: "cron_runs", jobId }) as Promise<{ runs: CronRun[] }>;
+export const cronRuns = (jobId?: string, limit?: number) =>
+	sendCommand({ type: "cron_runs", jobId, limit }) as Promise<{ runs: CronRun[] }>;
 
 export const cronRevisions = (jobId: string) =>
 	sendCommand({ type: "cron_revisions", jobId }) as Promise<{ revisions: CronJobRevision[] }>;

@@ -549,6 +549,7 @@ export function processAgentEvent(event: rpc.RpcEvent, deps: AgentEventDeps): vo
 		case "cron_run": {
 			// A scheduled-task run started or finished — feed the inbox.
 			const cronRun = (event as import("./rpc").CronRunEvent).run;
+			useCronStore.getState().applyRun(cronRun);
 			const started = (event as import("./rpc").CronRunEvent).event === "started";
 			const triage = cronRun.triage;
 			const triageNeedsAttention =

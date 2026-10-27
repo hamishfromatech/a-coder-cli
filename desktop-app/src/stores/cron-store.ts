@@ -19,6 +19,8 @@ interface CronState {
 
 	refresh: () => Promise<void>;
 	applyJobs: (jobs: CronJob[]) => void;
+	/** Apply a live `cron_run` event (started → insert, finished → replace). */
+	applyRun: (run: CronRun) => void;
 	refreshRuns: () => Promise<void>;
 }
 
@@ -39,6 +41,14 @@ export const useCronStore = create<CronState>((set) => ({
 	},
 
 	applyJobs: (jobs) => set({ jobs, error: null, loadedAt: Date.now() }),
+
+	applyRun: (run) =>
+		set((state) => {
+			const next = state.runs.filter((entry) => entry.id !== run.id);
+			next.push(run);
+			next.sort((a, b) => b.startedAt - a.startedAt);
+			return { runs: next.slice(0, 200) };
+		}),
 
 	refreshRuns: async () => {
 		try {

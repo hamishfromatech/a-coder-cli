@@ -11,11 +11,12 @@ import { Switch } from "../ui/Switch";
 import { cronDelete, cronRunNow, cronRuns, cronUpdate, type CronJob, type CronRun } from "../../lib/rpc";
 import { useCronStore } from "../../stores/cron-store";
 import { useSessionStore } from "../../stores/session-store";
-import { openSessionFile } from "../../lib/open-session";
 import { CronCalendar } from "./CronCalendar";
 import { CronDetail } from "./CronDetail";
 import { CronEditor } from "./CronEditor";
 import { CronRunDialog } from "./CronRunDialog";
+import { CronRunDetails, CronRunRow, groupRunsByDay } from "./CronRunRow";
+import { SegmentedControl } from "../ui/SegmentedControl";
 
 function relativeTime(ms: number | undefined): string {
 	if (!ms) return "";
@@ -49,7 +50,7 @@ export function CronPanel() {
 	const cwd = useSessionStore((s) => s.cwd);
 	const [editor, setEditor] = useState<{ open: boolean; job?: CronJob }>({ open: false });
 	const [detail, setDetail] = useState<CronJob | null>(null);
-	const [view, setView] = useState<"list" | "calendar">("list");
+	const [view, setView] = useState<"list" | "calendar" | "runs">("list");
 
 	useEffect(() => {
 		void refresh();
@@ -65,10 +66,16 @@ export function CronPanel() {
 					<Button
 						variant="ghost"
 						size="icon-sm"
-						icon={view === "list" ? CalendarDays : List}
-						aria-label={view === "list" ? "Switch to calendar view" : "Switch to list view"}
-						title={view === "list" ? "Calendar view" : "List view"}
-						onClick={() => setView(view === "list" ? "calendar" : "list")}
+						icon={view === "list" ? CalendarDays : view === "calendar" ? History : List}
+						aria-label={
+							view === "list"
+								? "Switch to calendar view"
+								: view === "calendar"
+									? "Switch to run history"
+									: "Switch to list view"
+						}
+						title={view === "list" ? "Calendar view" : view === "calendar" ? "Run history" : "List view"}
+						onClick={() => setView(view === "list" ? "calendar" : view === "calendar" ? "runs" : "list")}
 					/>
 					<Button
 						variant="ghost"
@@ -91,6 +98,8 @@ export function CronPanel() {
 
 			{view === "calendar" ? (
 				<CronCalendar jobs={visible} />
+			) : view === "runs" ? (
+				<RunsView />
 			) : (
 				<div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-4">
 					{visible.length === 0 && (
@@ -258,22 +267,67 @@ function triageLabel(triage: CronRun["triage"]): string | undefined {
 	return `${triage.recommendedAction} suggested`;
 }
 
-const TRIAGE_CLASS: Record<string, string> = {
-	"needs attention": "text-pi-accent",
-	quiet: "text-pi-text-faint",
-	"retry suggested": "text-pi-warning",
-	"pause suggested": "text-pi-error",
-	"triage unavailable": "text-pi-text-faint",
-};
 
-const RUN_STATUS_DOT: Record<CronRun["status"], string> = {
-	running: "bg-pi-accent animate-pulse",
-	ok: "bg-pi-success",
-	error: "bg-pi-error",
-	timeout: "bg-pi-warning",
-};
+function RunsView() {
+	const runs = useCronStore((state) => state.runs);
+	const refreshRuns = useCronStore((state) => state.refreshRuns);
+	const [filter, setFilter] = useState<"all" | "errors">("all");
+	const [selected, setSelected] = useState<CronRun | null>(null);
+
+	useEffect(() => {
+		void refreshRuns();
+	}, [refreshRuns]);
+
+	const filtered =
+		filter === "errors"
+			? runs.filter((run) => run.status === "error" || run.status === "timeout")
+			: runs;
+
+	return (
+		<div className="flex min-h-0 flex-1 flex-col">
+			<div className="flex items-center justify-between px-3 py-1.5">
+				<span className="font-mono text-3xs text-pi-text-faint">
+					{runs.length} run{runs.length === 1 ? "" : "s"}
+				</span>
+				<SegmentedControl
+					options={[
+						{ value: "all", label: "All" },
+						{ value: "errors", label: "Errors" },
+					]}
+					value={filter}
+					onChange={setFilter}
+				/>
+			</div>
+			<div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-4">
+				{filtered.length === 0 ? (
+					<div className="px-2 py-8 text-center text-2xs leading-relaxed text-pi-text-faint">
+						{filter === "errors"
+							? "No failed runs recorded."
+							: "No runs yet. History appears the moment a routine starts."}
+					</div>
+				) : (
+					groupRunsByDay(filtered).map((group) => (
+						<div key={group.label}>
+							<div className="flex items-center gap-2 px-1.5 pb-1 pt-2">
+								<span className="font-mono text-3xs font-semibold uppercase tracking-wider text-pi-text-faint">
+									{group.label}
+								</span>
+								<span className="h-px flex-1 bg-pi-border" />
+							</div>
+							{group.runs.map((run) => (
+								<CronRunRow key={run.id} run={run} showJobName onOpen={() => setSelected(run)} />
+							))}
+						</div>
+					))
+				)}
+			</div>
+			{selected && <CronRunDetails run={selected} onClose={() => setSelected(null)} />}
+		</div>
+	);
+}
 
 function RunHistory({ runs, loading }: { runs: CronRun[] | null; loading: boolean }) {
+	const [selected, setSelected] = useState<CronRun | null>(null);
 	if (loading || runs === null) {
 		return (
 			<div className="flex items-center gap-1.5 px-6 pb-2 text-2xs text-pi-text-faint">
@@ -285,44 +339,11 @@ function RunHistory({ runs, loading }: { runs: CronRun[] | null; loading: boolea
 		return <div className="px-6 pb-2 text-2xs text-pi-text-faint">No runs yet.</div>;
 	}
 	return (
-		<div className="mb-1.5 ml-6 mr-1.5 flex flex-col gap-0.5 border-l border-pi-border pl-2">
+		<div className="mb-1.5 ml-6 mr-1.5 border-l border-pi-border pl-2">
 			{runs.map((run) => (
-				<div key={run.id} className="flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-pi-surface-raised">
-					<span className={`h-1.5 w-1.5 shrink-0 rounded-full ${RUN_STATUS_DOT[run.status]}`} />
-					<span className="w-16 shrink-0 text-2xs text-pi-text-muted">{relativeTime(run.startedAt)}</span>
-					<span className="shrink-0 text-2xs text-pi-text-faint">
-						{run.trigger === "manual" ? "manual" : "schedule"} · {run.delivery === "session" ? "session" : "background"}
-					</span>
-					{(() => {
-						const label = triageLabel(run.triage);
-						return label ? (
-							<span
-								className={`shrink-0 text-2xs ${TRIAGE_CLASS[label] ?? "text-pi-text-faint"}`}
-								title={run.triage?.error ?? run.summary}
-							>
-								· {label}
-							</span>
-						) : null;
-					})()}
-					{run.error && (
-						<span className="min-w-0 flex-1 truncate text-2xs text-pi-error" title={run.error}>
-							{run.error}
-						</span>
-					)}
-					{run.sessionFile && run.status !== "running" && (
-						<Button
-							variant="ghost"
-							size="sm"
-							className="ml-auto shrink-0 text-2xs text-pi-text-muted"
-							aria-label="Continue run"
-							onClick={() => void openSessionFile(run.sessionFile!)}
-						>
-							<History className="h-3 w-3" />
-							Continue
-						</Button>
-					)}
-				</div>
+				<CronRunRow key={run.id} run={run} onOpen={() => setSelected(run)} />
 			))}
+			{selected && <CronRunDetails run={selected} onClose={() => setSelected(null)} />}
 		</div>
 	);
 }
