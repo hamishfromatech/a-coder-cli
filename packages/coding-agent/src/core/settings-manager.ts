@@ -15,6 +15,7 @@ import { withFileLockRetrySync } from "../utils/file-retry.ts";
 import { normalizePath, resolvePath } from "../utils/paths.ts";
 import { stripBom } from "../utils/text.ts";
 import { DEFAULT_HTTP_IDLE_TIMEOUT_MS, parseHttpIdleTimeoutMs } from "./http-dispatcher.ts";
+import { normalizeMcpServers } from "./mcp/config-converter.ts";
 import type { McpServerConfig } from "./mcp/types.ts";
 import { defaultStderrSuppressPatterns } from "./mcp/types.ts";
 import {
@@ -747,6 +748,15 @@ export class SettingsManager {
 			} else {
 				delete settings.skills;
 			}
+		}
+
+		// Hand-edited settings often carry the IDE/Claude named-map shape for
+		// mcpServers. Normalize it to the CLI array so reload and every read
+		// path cannot crash on `.map`/`.filter` calls.
+		if ("mcpServers" in settings && !Array.isArray(settings.mcpServers)) {
+			const normalized = normalizeMcpServers(settings.mcpServers);
+			if (normalized) settings.mcpServers = normalized;
+			else delete settings.mcpServers;
 		}
 
 		// Migrate retry.maxDelayMs -> retry.provider.maxRetryDelayMs
@@ -1748,8 +1758,12 @@ export class SettingsManager {
 			suppressStderrPatterns: server.suppressStderrPatterns ?? defaultStderrSuppressPatterns(server),
 			source,
 		});
-		const global = (this.globalSettings.mcpServers ?? []).map((server) => labelSource(server, "global"));
-		const project = (this.projectSettings.mcpServers ?? []).map((server) => labelSource(server, "project"));
+		const global = (normalizeMcpServers(this.globalSettings.mcpServers) ?? []).map((server) =>
+			labelSource(server, "global"),
+		);
+		const project = (normalizeMcpServers(this.projectSettings.mcpServers) ?? []).map((server) =>
+			labelSource(server, "project"),
+		);
 		const byName = new Map(global.map((server) => [server.name, server]));
 		for (const server of project) {
 			byName.set(server.name, server);
@@ -1759,7 +1773,7 @@ export class SettingsManager {
 
 	/** The raw project-scope MCP server list (before union with global). */
 	getProjectMcpServers(): McpServerConfig[] {
-		return structuredClone(this.projectSettings.mcpServers ?? []);
+		return structuredClone(normalizeMcpServers(this.projectSettings.mcpServers) ?? []);
 	}
 
 	setMcpServers(servers: McpServerConfig[]): void {

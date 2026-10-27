@@ -103,3 +103,101 @@ export function mergeIdeMcpIntoCli(config: IdeMcpConfigFile, existing: McpServer
 	const cliOnly = existing.filter((s) => !ideNames.has(s.name));
 	return [...ideServers, ...cliOnly];
 }
+
+function asStringArray(value: unknown): string[] | undefined {
+	if (!Array.isArray(value)) return undefined;
+	const out = value.filter((entry): entry is string => typeof entry === "string");
+	return out.length > 0 ? out : undefined;
+}
+
+function asStringRecord(value: unknown): Record<string, string> | undefined {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+	const out: Record<string, string> = {};
+	for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+		if (typeof raw === "string") out[key] = raw;
+		else if (typeof raw === "number" || typeof raw === "boolean") out[key] = String(raw);
+	}
+	return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function toServer(name: string, raw: unknown): McpServerConfig | undefined {
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+	const entry = raw as Record<string, unknown>;
+	const declared =
+		typeof entry.transport === "string"
+			? entry.transport.toLowerCase()
+			: typeof entry.type === "string"
+				? entry.type.toLowerCase()
+				: undefined;
+	const resolvedName = typeof entry.name === "string" && entry.name.trim() ? entry.name.trim() : name;
+	if (!resolvedName) return undefined;
+
+	const fromIdeCommand = typeof entry.command === "string" && entry.command.length > 0;
+	const fromIdeUrl = typeof entry.url === "string" && entry.url.length > 0;
+	const commandOrUrl =
+		typeof entry.commandOrUrl === "string" && entry.commandOrUrl.length > 0
+			? entry.commandOrUrl
+			: fromIdeCommand
+				? (entry.command as string)
+				: fromIdeUrl
+					? (entry.url as string)
+					: undefined;
+	if (!commandOrUrl) return undefined;
+
+	const transport =
+		declared === "stdio" || declared === "http" || declared === "sse"
+			? declared
+			: fromIdeUrl && !fromIdeCommand
+				? "http"
+				: "stdio";
+	const args = asStringArray(entry.args);
+	const env = asStringRecord(entry.env);
+	const headers = asStringRecord(entry.headers);
+	// Keep an explicit `[]`: it opts a server out of the built-in defaults.
+	const suppress = Array.isArray(entry.suppressStderrPatterns)
+		? entry.suppressStderrPatterns.filter((item): item is string => typeof item === "string")
+		: undefined;
+	return {
+		name: resolvedName,
+		transport,
+		commandOrUrl,
+		...(args ? { args } : {}),
+		...(env ? { env } : {}),
+		...(headers ? { headers } : {}),
+		...(entry.disabled === true ? { disabled: true } : {}),
+		...(typeof entry.timeoutMs === "number" ? { timeoutMs: entry.timeoutMs } : {}),
+		...(suppress ? { suppressStderrPatterns: suppress } : {}),
+		...(entry.forwardStderr === true ? { forwardStderr: true } : {}),
+	};
+}
+
+/**
+ * Normalize whatever a settings file holds under `mcpServers` into the CLI's
+ * array form. Hand-edited project files frequently use the IDE / Claude named
+ * map (`{ name: { command, args } }`) instead of the CLI array, which used to
+ * crash settings reload (`.map is not a function`). Accepts:
+ *   - the CLI array: `[{ name, transport, commandOrUrl, ... }]`
+ *   - the IDE map: `{ name: { command, args } | { url, headers } }`
+ *   - a map whose entries are already CLI-shaped (name comes from the key)
+ * Entries that resolve to neither a command nor a URL are dropped. Returns
+ * `undefined` when the value is absent or not an object, so callers keep their
+ * default (an absent `mcpServers` is not an error).
+ */
+export function normalizeMcpServers(value: unknown): McpServerConfig[] | undefined {
+	if (value === undefined || value === null) return undefined;
+	if (Array.isArray(value)) {
+		const servers: McpServerConfig[] = [];
+		for (const entry of value) {
+			const server = toServer("", entry);
+			if (server) servers.push(server);
+		}
+		return servers;
+	}
+	if (typeof value !== "object") return undefined;
+	const servers: McpServerConfig[] = [];
+	for (const [name, entry] of Object.entries(value as Record<string, unknown>)) {
+		const server = toServer(name, entry);
+		if (server) servers.push(server);
+	}
+	return servers;
+}

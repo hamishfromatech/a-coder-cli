@@ -141,6 +141,39 @@ describe("SettingsManager", () => {
 			expect(servers.find((s) => s.name === "workspace-tools")?.source).toBe("project");
 		});
 
+		it("accepts the IDE named-map shape in project settings without breaking reload", async () => {
+			writeFileSync(
+				join(projectDir, ".a-coder-cli", "settings.json"),
+				JSON.stringify({
+					mcpServers: {
+						"workspace-tools": { command: "node", args: ["tools.js"], env: { MODE: "project" } },
+						"remote-tools": { url: "http://127.0.0.1:4010/mcp", headers: { Authorization: "Bearer map" } },
+					},
+				}),
+			);
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+			const servers = manager.getMcpServers();
+			expect(
+				servers
+					.filter((server) => server.source === "project")
+					.map((server) => server.name)
+					.sort(),
+			).toEqual(["remote-tools", "workspace-tools"]);
+			expect(servers.find((server) => server.name === "workspace-tools")).toMatchObject({
+				source: "project",
+				transport: "stdio",
+				commandOrUrl: "node",
+				args: ["tools.js"],
+				env: { MODE: "project" },
+			});
+			expect(servers.find((server) => server.name === "remote-tools")?.transport).toBe("http");
+
+			// The reload path that used to throw `(projectSettings.mcpServers ?? []).map is not a function`.
+			await expect(manager.reload()).resolves.toBeUndefined();
+			expect(manager.getProjectMcpServers()).toHaveLength(2);
+		});
+
 		it("a project entry with the same name replaces the global one entirely", async () => {
 			writeFileSync(
 				join(agentDir, "settings.json"),

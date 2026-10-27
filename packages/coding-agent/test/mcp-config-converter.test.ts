@@ -4,6 +4,7 @@ import {
 	type IdeMcpConfigFile,
 	ideMcpToCli,
 	mergeIdeMcpIntoCli,
+	normalizeMcpServers,
 } from "../src/core/mcp/config-converter.ts";
 import type { McpServerConfig } from "../src/core/mcp/types.ts";
 
@@ -139,6 +140,50 @@ describe("MCP config converter", () => {
 				commandOrUrl: "http://x",
 				headers: { A: "b" },
 			});
+		});
+	});
+
+	describe("normalizeMcpServers", () => {
+		it("converts the IDE named-map shape used in hand-edited settings", () => {
+			const servers = normalizeMcpServers({
+				filesystem: { command: "npx", args: ["-y", "server-filesystem"], env: { ROOT: "/tmp" } },
+				context7: { url: "https://mcp.context7.com/mcp", headers: { Authorization: "Bearer x" } },
+				events: { type: "sse", url: "https://example.test/sse" },
+			});
+			expect(servers).toHaveLength(3);
+			expect(servers?.find((server) => server.name === "filesystem")).toMatchObject({
+				transport: "stdio",
+				commandOrUrl: "npx",
+				args: ["-y", "server-filesystem"],
+				env: { ROOT: "/tmp" },
+			});
+			expect(servers?.find((server) => server.name === "context7")).toMatchObject({
+				transport: "http",
+				commandOrUrl: "https://mcp.context7.com/mcp",
+				headers: { Authorization: "Bearer x" },
+			});
+			expect(servers?.find((server) => server.name === "events")?.transport).toBe("sse");
+		});
+
+		it("keeps the CLI array shape untouched", () => {
+			const cli: McpServerConfig[] = [
+				{ name: "a", transport: "stdio", commandOrUrl: "node", args: ["a.js"], disabled: true },
+			];
+			expect(normalizeMcpServers(cli)).toEqual(cli);
+		});
+
+		it("accepts CLI-shaped entries inside a map and drops unusable ones", () => {
+			const servers = normalizeMcpServers({
+				tools: { commandOrUrl: "node", args: ["tools.js"] },
+				broken: { args: ["nope"] },
+				nullish: null,
+			});
+			expect(servers).toEqual([{ name: "tools", transport: "stdio", commandOrUrl: "node", args: ["tools.js"] }]);
+		});
+
+		it("returns undefined for absent or non-object values", () => {
+			expect(normalizeMcpServers(undefined)).toBeUndefined();
+			expect(normalizeMcpServers("nope")).toBeUndefined();
 		});
 	});
 });
