@@ -54,12 +54,17 @@ jobs:
             args: --target aarch64-apple-darwin
             engine_platform: darwin
             engine_arch: arm64
-          # macOS Intel
+          # macOS Intel: the x64 mac runner pool has had sustained outages
+          # (jobs assigned, then cancelled with zero steps for ~15 minutes).
+          # Non-blocking so a broken pool can't hold the whole release
+          # hostage; the latest.json generator skips the platform, and Intel
+          # users simply stay on their current version until it recovers.
           - platform: macos-latest
             target: x86_64-apple-darwin
             args: --target x86_64-apple-darwin
             engine_platform: darwin
             engine_arch: x64
+            allow_broken_runner: true
           # Linux
           - platform: ubuntu-latest
             target: x86_64-unknown-linux-gnu
@@ -74,6 +79,9 @@ jobs:
             engine_arch: x64
 
     runs-on: ${{ matrix.platform }}
+    # Legs can opt out of blocking the whole build job (see the matrix note
+    # on the macOS x64 entry for why).
+    continue-on-error: ${{ matrix.allow_broken_runner == true }}
     defaults:
       run:
         working-directory: desktop-app
