@@ -210,6 +210,9 @@ jobs:
           # required if the updater plugin is enabled.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # The vite build bundles the monaco editors + the 3D office; the
+          # macOS runners OOM at the default ~4 GB node heap (arm64 abort).
+          NODE_OPTIONS: "--max-old-space-size=6144"
         run: npm run tauri:build -- ${{ matrix.args }}
 
       - name: Build desktop app (Linux/Windows)
@@ -217,6 +220,7 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          NODE_OPTIONS: "--max-old-space-size=6144"
         run: npm run tauri:build -- ${{ matrix.args }}
 
       # ──────────────────────────────────────────────────────────────────────
