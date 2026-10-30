@@ -36,6 +36,15 @@ export function normalizeDisplayText(text: string): string {
 	return text.replace(/\r/g, "");
 }
 
+/**
+ * Model-copy text for tool content: ANSI-free (SGR/cursor/OSC sequences die)
+ * and control-char-free (sanitizeBinaryOutput), CR-normalized. Color survives
+ * only in display-side copies (details), never in what the model receives.
+ */
+export function sanitizeToolText(text: string): string {
+	return sanitizeBinaryOutput(stripAnsi(text)).replace(/\r/g, "");
+}
+
 export function getTextOutput(
 	result: { content: Array<{ type: string; text?: string; data?: string; mimeType?: string }> } | undefined,
 	showImages: boolean,

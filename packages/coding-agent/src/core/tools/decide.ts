@@ -83,6 +83,8 @@ const decideSchema = Type.Object(
 	{ additionalProperties: false },
 );
 
+import { isTruthyEnvFlag } from "../telemetry.ts";
+
 export type DecideToolInput = Static<typeof decideSchema>;
 
 export interface DecideToolOptions {
@@ -99,6 +101,9 @@ async function resolveLocalModel(
 	models: DecisionsModels,
 	signal?: AbortSignal,
 ): Promise<DecisionsModel<any> | undefined> {
+	if (process.env.PI_OFFLINE === "1" || isTruthyEnvFlag(process.env.A_CODER_CLI_OFFLINE)) {
+		return undefined;
+	}
 	for (const provider of models.getProviders()) {
 		const candidates = models.getModels(provider.id);
 		if (candidates.length === 0) continue;
@@ -135,8 +140,18 @@ export async function resolveDecideModel(
 
 	// Local decision models can be added at any time (`ollama pull nimble-v3`);
 	// refresh the target before resolving so a newly installed model is found
-	// even when it is not in the static catalog yet.
-	await models.refresh(wantedProvider ?? "ollama").catch(() => {});
+	// even when it is not in the static catalog yet. Under the offline
+	// contract (tests, --offline) skip both the refresh probe and live local
+	// discovery entirely.
+	const offline = process.env.PI_OFFLINE === "1" || isTruthyEnvFlag(process.env.A_CODER_CLI_OFFLINE);
+	if (!wantedProvider && !wantedModel && offline) {
+		throw new Error(
+			"No local decision model is reachable. Start a local System One server or configure settings.decisions to allow a cloud provider.",
+		);
+	}
+	if (!offline) {
+		await models.refresh(wantedProvider ?? "ollama").catch(() => {});
+	}
 
 	if (wantedProvider && wantedModel) {
 		const model = models.getModel(wantedProvider, wantedModel);

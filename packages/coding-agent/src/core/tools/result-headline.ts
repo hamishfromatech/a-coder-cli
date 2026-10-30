@@ -18,6 +18,7 @@
 import { getKeybindings } from "@earendil-works/pi-tui";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.ts";
 import type { Theme } from "../../modes/interactive/theme/theme.ts";
+import { stripAnsi } from "../../utils/ansi.ts";
 
 export type ToolOutcome = "success" | "error";
 
@@ -79,15 +80,43 @@ export function firstErrorLine(text: string, maxLen = 80): string {
 /**
  * Collapsed generic-result block for tools without custom renderers (MCP,
  * bare extension tools): headline + preview lines + unified footer instead
- * of the raw output dump.
+ * of the raw output dump. Error results preview from the tail — the first
+ * lines are usually command noise while the root cause sits last.
  */
 export function formatPreviewResult(lines: string[], isError: boolean, theme: Theme, previewCount = 3): string {
 	const headline = formatHeadline(isError ? "error" : "success", theme, isError ? undefined : `${lines.length} lines`);
-	const shown = lines.slice(0, previewCount);
-	const body = shown.map((line) => `  ${isError ? theme.fg("error", line) : theme.fg("toolOutput", line)}`);
+	let shown: string[];
+	if (isError && lines.length > previewCount) {
+		// Head + tail window: the first line shows what was attempted, the
+		// last lines carry the actual failure.
+		shown = [...lines.slice(0, 1), ...lines.slice(-(previewCount - 1))];
+	} else {
+		shown = isError ? lines.slice(-previewCount) : lines.slice(0, previewCount);
+	}
+	const body = shown.map((line) => {
+		if (isError && looksLikeErrorLine(line)) return `  ${theme.fg("error", theme.bold(stripAnsi(line)))}`;
+		return `  ${isError ? theme.fg("error", line) : theme.fg("toolOutput", line)}`;
+	});
 	const remaining = lines.length - shown.length;
 	if (remaining > 0) {
 		body.push(`  ${moreLinesFooter(theme, remaining)}`);
 	}
 	return `\n${[headline, ...body].join("\n")}`;
+}
+
+const ERROR_LINE_RE =
+	/\berror\b|\bfail(?:ed|s|ure)?\b|\bfatal\b|\bexception\b|\btraceback\b|\bpanic\b|\bassertion\b|npm ERR!|ELIFECYCLE|EADDRINUSE|EACCES|ENOENT|EPERM/i;
+
+/** Heuristic: does this output line look like a failure line worth emphasizing? */
+export function looksLikeErrorLine(line: string): boolean {
+	return ERROR_LINE_RE.test(line);
+}
+
+/**
+ * Emphasize failure lines in an error card's body: bold error color. Lines
+ * carrying their own terminal color are reduced to the emphasis style so the
+ * failure signal (not the emitter's palette) dominates.
+ */
+export function emphasizeErrorLines(lines: string[], theme: Theme): string[] {
+	return lines.map((line) => (looksLikeErrorLine(line) ? theme.fg("error", theme.bold(stripAnsi(line))) : line));
 }

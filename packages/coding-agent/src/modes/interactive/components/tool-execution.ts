@@ -1,4 +1,15 @@
-import { Box, type Component, Container, getCapabilities, Image, Spacer, Text, type TUI } from "@earendil-works/pi-tui";
+import {
+	Box,
+	type Component,
+	Container,
+	getCapabilities,
+	Image,
+	Spacer,
+	Text,
+	type TUI,
+	type TuiMouseDispatchResult,
+	type TuiMouseEvent,
+} from "@earendil-works/pi-tui";
 import type { ToolDefinition, ToolRenderContext } from "../../../core/extensions/types.ts";
 import { createAllToolDefinitions, type ToolName } from "../../../core/tools/index.ts";
 import { getTextOutput as getRenderedTextOutput } from "../../../core/tools/render-utils.ts";
@@ -271,6 +282,27 @@ export class ToolExecutionComponent extends Container {
 	setExpanded(expanded: boolean): void {
 		this.expanded = expanded;
 		this.updateDisplay();
+	}
+
+	/** Per-card toggle (click / "expand most recent" key); a later global
+	 * expansion flow simply overwrites it. */
+	toggleExpanded(): void {
+		this.expanded = !this.expanded;
+		this.updateDisplay();
+	}
+
+	/**
+	 * Click affordance: a left click on a collapsed card expands it; expanded
+	 * cards ignore clicks so text selection stays comfortable.
+	 */
+	override handleMouse(event: TuiMouseEvent): TuiMouseDispatchResult | undefined {
+		if (event.type !== "click" || event.button !== "left") return undefined;
+		if (this.expanded) return undefined;
+		this.toggleExpanded();
+		return {
+			handled: true,
+			target: { component: this, originX: 0, originY: 0, width: event.width, height: event.height },
+		};
 	}
 
 	setShowImages(show: boolean): void {

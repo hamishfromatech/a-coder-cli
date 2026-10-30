@@ -11,14 +11,18 @@ describe("SettingsManager", () => {
 	const projectDir = join(testDir, "project");
 
 	describe("autoContinue", () => {
-		it("defaults off and clamps probabilities and the continuation cap", () => {
+		it("defaults to smart mode and clamps probabilities and the continuation cap", () => {
 			const defaults = SettingsManager.inMemory().getAutoContinueSettings();
 			expect(defaults).toEqual({
-				mode: "off",
+				mode: "smart",
 				minContinueProbability: 0.7,
 				minProgressProbability: 0.55,
 				maxConsecutive: 2,
 			});
+			// A block without an explicit mode inherits the default too.
+			expect(SettingsManager.inMemory({ autoContinue: { maxConsecutive: 5 } }).getAutoContinueSettings().mode).toBe(
+				"smart",
+			);
 
 			const clamped = SettingsManager.inMemory({
 				autoContinue: {

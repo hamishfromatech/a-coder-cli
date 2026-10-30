@@ -971,10 +971,14 @@ export abstract class TuiBase extends Container implements TUI {
 
 	stop(options: TuiStopOptions = {}): void {
 		this.stopped = true;
-		if (this.simpleMouseEnabled) {
-			// Exit safety net: never leave mouse tracking on after the TUI stops.
+		// Exit safety net: never leave mouse tracking on after the TUI stops,
+		// regardless of how many refs were outstanding.
+		const wasTracking = this.mouseTrackingRefs > 0;
+		this.mouseTrackingRefs = 0;
+		this.simpleMouseEnabled = false;
+		this.mousePress = undefined;
+		if (wasTracking) {
 			this.terminal.write(TuiBase.DISABLE_MOUSE_TRACKING);
-			this.simpleMouseEnabled = false;
 		}
 		this.cancelRenderTimer();
 		if (this.terminalColorSchemeNotificationsEnabled) {
@@ -1049,24 +1053,45 @@ export abstract class TuiBase extends Container implements TUI {
 	}
 
 	/**
-	 * Whether simple SGR mouse tracking is currently enabled (transcript overlay). When on, wheel
-	 * reports are translated into arrow-key inputs for the focused component and all other mouse
-	 * reports are swallowed so they never leak into the editor as garbage bytes.
+	 * Whether simple wheel-as-arrow handling is currently enabled (transcript overlay). When on,
+	 * wheel reports are translated into arrow-key inputs for the focused component so the overlay
+	 * content scrolls.
 	 */
 	private simpleMouseEnabled = false;
+
+	/** Mouse-tracking refcount: overlays acquire/release; the main screen holds one permanently. */
+	private mouseTrackingRefs = 0;
+	/** Left-button press pending its release (click synthesis). */
+	private mousePress?: { x: number; y: number; shift: boolean; alt: boolean; ctrl: boolean } | undefined;
 
 	private static readonly ENABLE_MOUSE_TRACKING = "\x1b[?1000h\x1b[?1006h";
 	private static readonly DISABLE_MOUSE_TRACKING = "\x1b[?1000l\x1b[?1006l";
 
 	/**
-	 * Enable/disable simple wheel-event handling. Callers (the transcript
-	 * overlay) use this so the terminal starts sending SGR mouse reports.
+	 * Enable/disable simple wheel-event handling (wheel reports become arrow
+	 * keys for the focused component). Callers (the transcript overlay) use
+	 * this so the terminal starts sending SGR mouse reports; it refcounts the
+	 * tracking mode so an overlay closing never drops the main screen's own
+	 * tracking.
 	 */
 	setMouseEnabled(enabled: boolean): void {
-		if (this.simpleMouseEnabled === enabled) return;
 		this.simpleMouseEnabled = enabled;
+		this.acquireMouseTracking(enabled ? 1 : -1);
+	}
+
+	/** Hold mouse tracking for the process lifetime (main-screen click dispatch). */
+	enableMouseReportTracking(): void {
+		this.acquireMouseTracking(1);
+	}
+
+	private acquireMouseTracking(delta: 1 | -1): void {
+		const before = this.mouseTrackingRefs;
+		this.mouseTrackingRefs = Math.max(0, this.mouseTrackingRefs + delta);
+		if (this.mouseTrackingRefs === before) return;
 		if (!this.stopped) {
-			this.terminal.write(enabled ? TuiBase.ENABLE_MOUSE_TRACKING : TuiBase.DISABLE_MOUSE_TRACKING);
+			this.terminal.write(
+				this.mouseTrackingRefs > 0 ? TuiBase.ENABLE_MOUSE_TRACKING : TuiBase.DISABLE_MOUSE_TRACKING,
+			);
 		}
 	}
 
@@ -1090,24 +1115,46 @@ export abstract class TuiBase extends Container implements TUI {
 			// Alt-screen is active: its input listener owns mouse handling.
 			return false;
 		}
+		if (this.mouseTrackingRefs === 0) {
+			// Not tracking (no overlay, no main-screen clicks): swallow so the
+			// bytes never leak into the editor as garbage input.
+			return true;
+		}
 		// SGR encoding: ESC [ < button ; column ; row (M = press, m = release).
 		// X10 fallback: ESC [ M b x y (three raw bytes after the prefix).
 		// Multiple reports can arrive coalesced in one stdin chunk — honor each.
 		let wheelUp = 0;
 		let wheelDown = 0;
-		for (const m of data.matchAll(/\u001b\[<(\d+);\d+;\d+[Mm]/g)) {
+		for (const m of data.matchAll(/\u001b\[<(\d+);(\d+);(\d+)([Mm])/g)) {
 			const button = Number(m[1]);
 			if (button === 64) wheelUp += 1;
 			else if (button === 65) wheelDown += 1;
+			else
+				this.consumeMouseButton(
+					Number(button),
+					Number(m[2]),
+					Number(m[3]),
+					m[4] === "M",
+					(Number(button) & 4) !== 0,
+				);
 		}
 		for (const m of data.matchAll(/\u001b\[M([\u0040-\u007f])([\u0020-\u007f])([\u0020-\u007f])/g)) {
 			const button = m[1].charCodeAt(0) - 32;
 			if (button === 64) wheelUp += 1;
 			else if (button === 65) wheelDown += 1;
+			// X10 presses only; releases are button 3 (no coordinates semantics we track).
+			else
+				this.consumeMouseButton(
+					button & 3,
+					m[2].charCodeAt(0) - 32,
+					m[3].charCodeAt(0) - 32,
+					(button & 3) !== 3,
+					(button & 4) !== 0,
+				);
 		}
 		if (wheelUp === 0 && wheelDown === 0) {
-			// Mouse report (click/motion/unknown) — swallow so the bytes never
-			// leak into the editor as garbage input.
+			// Press/release/click/motion — handled above when tracked, otherwise
+			// swallowed so the bytes never leak into the editor as garbage input.
 			return true;
 		}
 		if (!this.simpleMouseEnabled) {
@@ -1124,6 +1171,80 @@ export abstract class TuiBase extends Container implements TUI {
 			for (let i = 0; i < wheelDown * 3; i++) focused.handleInput(down);
 		}
 		return true;
+	}
+
+	/** Track a left-button press/release pair and dispatch the synthesized click. */
+	private consumeMouseButton(button: number, col: number, row: number, pressed: boolean, shift: boolean): void {
+		if (button !== 0) {
+			// Middle/right clicks are not consumed by main-screen content.
+			this.mousePress = undefined;
+			return;
+		}
+		if (pressed) {
+			this.mousePress = { x: col - 1, y: row - 1, shift, alt: false, ctrl: false };
+			return;
+		}
+		const press = this.mousePress;
+		this.mousePress = undefined;
+		if (!press) return;
+		const x = col - 1;
+		const y = row - 1;
+		// Press and release cells apart by more than one is a drag, not a click.
+		if (Math.abs(x - press.x) > 1 || Math.abs(y - press.y) > 1) return;
+		this.dispatchMainScreenClick(x, y, press.shift, press.alt, press.ctrl);
+	}
+
+	/**
+	 * Dispatch a synthesized left click into the component stack. Terminal
+	 * reports are viewport-relative; main-screen content spans the full
+	 * rendered history, so the viewport row maps into the content tail.
+	 */
+	private dispatchMainScreenClick(x: number, y: number, shift: boolean, alt: boolean, ctrl: boolean): void {
+		const width = this.terminal.columns;
+		const rows = this.terminal.rows;
+		if (this.overlayStack.length > 0) {
+			// Overlays own their own dispatch path.
+			const event: TuiMouseEvent = {
+				type: "click",
+				button: "left",
+				x,
+				y,
+				screenX: x,
+				screenY: y,
+				width,
+				height: rows,
+				shift,
+				alt,
+				ctrl,
+			};
+			const dispatch = this.dispatchMouseToOverlay(event);
+			if (dispatch.hit) this.requestRender();
+			return;
+		}
+		if (this.inputListeners.size > 0) {
+			// Alt-screen owns input; do not shadow its click routing.
+			return;
+		}
+		const content = this.render(width);
+		const contentY = content.length - rows + y;
+		if (contentY < 0) {
+			// Clicked the empty area above short content.
+			return;
+		}
+		const event: TuiMouseEvent = {
+			type: "click",
+			button: "left",
+			x,
+			y: contentY,
+			screenX: x,
+			screenY: y,
+			width,
+			height: content.length,
+			shift,
+			alt,
+			ctrl,
+		};
+		if (dispatchMouseEvent(this, event)) this.requestRender();
 	}
 
 	private handleTerminalInput(data: string): void {

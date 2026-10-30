@@ -696,6 +696,7 @@ export class CronService {
 		let worktreePath: string | undefined;
 		let unbindModel: (() => void) | undefined;
 		let unbindPermission: (() => void) | undefined;
+		let unbindUnattended: (() => void) | undefined;
 		try {
 			const target = await this.resolveDelivery(fresh);
 			// Unattended: approve tool calls for the run. This also covers
@@ -703,6 +704,10 @@ export class CronService {
 			// soft-deny mutating tools and, headless, deny them outright.
 			if (typeof target.session.bindTurnPermissionMode === "function") {
 				unbindPermission = target.session.bindTurnPermissionMode("allow");
+			}
+			// Unattended: auto-continue must not wait for user input on ask_user.
+			if (typeof target.session.bindUnattendedRun === "function") {
+				unbindUnattended = target.session.bindUnattendedRun();
 			}
 			run.sessionFile = target.sessionFile;
 			const scheduledModel = this.resolveScheduledModel(target.session);
@@ -789,6 +794,7 @@ export class CronService {
 		} finally {
 			unbindModel?.();
 			unbindPermission?.();
+			unbindUnattended?.();
 		}
 
 		run.finishedAt = Date.now();
@@ -944,6 +950,8 @@ export class CronService {
 		// setter persists to global settings, and a cron run must never rewrite
 		// the user's own permission mode.
 		session.bindTurnPermissionMode("allow");
+		// Same lifetime: no user to answer ask_user in auto-continue decisions.
+		session.bindUnattendedRun?.();
 
 		// Persist the session pointer so future fires share context.
 		if (session.sessionFile && session.sessionFile !== job.sessionFile) {

@@ -562,6 +562,10 @@ export interface AutoContinueDecisionEvent {
 	action: "continue" | "ask_user" | "stop";
 	probabilities: Record<string, number>;
 	progress: number;
+	/** Normalized completion estimate (0..1) when the model answered the score question. */
+	completion?: number;
+	/** Effective-progress verdict (noul above threshold or a rising completion). */
+	progressed?: boolean;
 	confidence?: number;
 	model?: string;
 	latencyMs: number;

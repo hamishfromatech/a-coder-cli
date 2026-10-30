@@ -169,7 +169,8 @@ On native Windows, `app.suspend` has no default because Windows terminals do not
 
 | Keybinding id | Default | Description |
 |--------|---------|-------------|
-| `app.tools.expand` | `ctrl+shift+o` | Collapse or expand tool output |
+| `app.tools.expand` | `ctrl+shift+o` | Expand or collapse the most recent tool result card (group cards expand into their members). Clicking a collapsed card toggles it too |
+| `app.tools.expandAll` | `ctrl+shift+u` | Collapse or expand every tool result card |
 | `app.message.copy` | `ctrl+x` | Copy the selected message in `/tree`; in fullscreen mode, copy the active selection when `fullscreenCopyOnSelect` is `false`; otherwise copy the last assistant message. On OAuth sign-in screens, copy the sign-in URL |
 | `app.message.followUp` | `alt+enter` (`ctrl+q` on Windows and WSL) | Queue follow-up message |
 | `app.message.dequeue` | `alt+up` (`alt+q` on Windows and WSL) | Restore queued messages to editor |

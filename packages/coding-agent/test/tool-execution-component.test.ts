@@ -555,4 +555,85 @@ describe("ToolExecutionComponent parity", () => {
 		expect(() => stripAnsi(component.render(120).join("\n"))).not.toThrow();
 		expect(stripAnsi(component.render(120).join("\n"))).toContain("all OK");
 	});
+
+	test("expands a single card on click without touching the global flag", () => {
+		const toolDefinition: ToolDefinition = {
+			...createBaseToolDefinition(),
+			renderCall: () => new Text("call", 0, 0),
+			renderResult: (_result, options) => new Text(options.expanded ? "full result" : "collapsed", 0, 0),
+		};
+		const component = new ToolExecutionComponent(
+			"custom_tool",
+			"tool-click",
+			{},
+			{},
+			toolDefinition,
+			createFakeTui(),
+			process.cwd(),
+		);
+		component.updateResult({ content: [{ type: "text", text: "line1\nline2" }], details: {}, isError: false });
+		const click = {
+			type: "click" as const,
+			button: "left" as const,
+			x: 0,
+			y: 0,
+			screenX: 0,
+			screenY: 0,
+			width: 80,
+			height: 4,
+			shift: false,
+			alt: false,
+			ctrl: false,
+		};
+		// Collapsed by default; a click expands just this card.
+		expect(stripAnsi(component.render(120).join("\n"))).toContain("collapsed");
+		expect(component.handleMouse(click)).toBeDefined();
+		expect(stripAnsi(component.render(120).join("\n"))).toContain("full result");
+		// Clicking an expanded card is a no-op (text selection comfort).
+		expect(component.handleMouse(click)).toBeUndefined();
+	});
+
+	test("keeps terminal color from displayOutput details in the settled body", () => {
+		const component = new ToolExecutionComponent(
+			"bash",
+			"tool-color",
+			{ command: "ls --color=always" },
+			{},
+			undefined,
+			createFakeTui(),
+			process.cwd(),
+		);
+		component.updateResult({
+			content: [{ type: "text", text: "plain thing\nnext" }],
+			details: { displayOutput: `\u001B[32mgreen thing\u001B[0m\nnext`, exitCode: 0 },
+			isError: false,
+		});
+		const rendered = component.render(120).join("\n");
+		expect(rendered).toContain("\u001B[32m");
+		expect(rendered).toContain("green thing");
+	});
+
+	test("emphasizes failure lines and reports the real exit code", () => {
+		const component = new ToolExecutionComponent(
+			"bash",
+			"tool-error",
+			{ command: "npm test" },
+			{},
+			undefined,
+			createFakeTui(),
+			process.cwd(),
+		);
+		component.markExecutionStarted();
+		component.updateResult({
+			content: [{ type: "text", text: "first\nmid\nlast: failure here" }],
+			details: {
+				displayOutput: "first\nmid\nlast: failure here",
+				exitCode: 5,
+			},
+			isError: true,
+		});
+		const rendered = stripAnsi(component.render(120).join("\n"));
+		expect(rendered).toContain("exit 5");
+		expect(rendered).toContain("failure here");
+	});
 });

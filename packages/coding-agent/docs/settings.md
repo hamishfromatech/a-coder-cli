@@ -214,12 +214,12 @@ Set `A_CODER_CLI_SKIP_VERSION_CHECK=1` to disable the version update check. Use 
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `autoContinue.mode` | `"off"` \| `"compaction"` \| `"smart"` | `"off"` | Off, decision-gated after compaction only, or decision-gated after length stops, compaction, normal pauses, and empty post-tool stops |
+| `autoContinue.mode` | `"off"` \| `"compaction"` \| `"smart"` | `"smart"` | Off, decision-gated after compaction only, or decision-gated after length stops, compaction, normal pauses, and empty post-tool stops. With no reachable decision model, smart degrades to the legacy deterministic behavior |
 | `autoContinue.provider` | string | - | Decision provider override; defaults to `decisions.provider` |
 | `autoContinue.model` | string | - | Decision model override; defaults to `decisions.model` |
 | `autoContinue.minContinueProbability` | number | `0.70` | Minimum probability for the `continue` choice |
 | `autoContinue.minProgressProbability` | number | `0.55` | Minimum probability that the last turns made progress |
-| `autoContinue.maxConsecutive` | number | `2` | Maximum smart continuations per prompt |
+| `autoContinue.maxConsecutive` | number | `2` | Maximum smart continuations per prompt that report no progress; continuations with a rising completion score do not consume the cap |
 
 ```json
 {

@@ -75,21 +75,33 @@ Settings:
 }
 ```
 
-Modes:
+Modes (default `smart` when `autoContinue` is not configured at all — with no reachable decision model, smart degrades to the legacy deterministic behavior, so the default is safe either way):
 
-- `off` — no decision-gated continuation (the legacy one-shot length nudge remains).
+- `off` — explicitly disabled; only the legacy one-shot length nudge remains.
 - `compaction` — decide after compaction; `compaction.autoContinue` remains the fallback when no model is reachable.
 - `smart` — decide after length stops, compaction, a normal agent pause, and an empty assistant turn that follows a tool result.
 
-Safety rules:
+Each decision is one batch of typed questions: `next` (done / ask_user / blocked / continue), `progress` (noul), and `completion` (a 7-level score from "not started" to "fully done", normalized to 0–1). The state also carries a per-prompt decision trajectory — earlier decisions, their continue lean, and their completion scores — so the policy judges movement, not just a snapshot.
+
+Local hard guards run before the decision model call, so an already-decided state never spends a decision turn:
+
+- The smart-continuation cap (`maxConsecutive`) counts continuations whose checkpoint reported no progress. A continuation with real progress does not consume the cap.
+- Three or more trailing errored tool results stop the run.
+- Four or more identical trailing tool calls (same tool + same arguments) stop the run as a detected loop.
+- Context at 85% of the model's window stops the run instead of continuing into overflow.
+- When the completion score does not rise across two continuations, the run has plateaued and stops.
+
+Model-backed rules:
 
 - A `done` or `blocked` answer stops.
-- An empty assistant turn after a tool result is treated as a dropped completion, not as `done`: the policy continues when the tool made progress, unless the model reports a block or asks for the user. With no decision model available, that empty post-tool stop gets one deterministic continuation, still bounded by `maxConsecutive`.
-- Low progress stops even if the model is not confident enough to pick `done`.
-- The cap and a no-progress gate prevent continuation loops.
+- An empty assistant turn after a tool result is treated as a dropped completion, not as `done`: the policy continues when the tool made progress, unless the model reports a block or asks for the user. With no decision model available, local guards still apply and that empty post-tool stop gets one deterministic continuation.
+- When the agent's own plan (todo / task list) reports every item complete, a weaker `done` vote is accepted.
+- Progress evidence is the `progress` noul above `minProgressProbability`, **or** a rising completion score on the trajectory.
+- The continue lean is averaged with the previous checkpoint's lean (hysteresis), so a single jittery score near the threshold cannot flip the action.
+- Unattended runs (scheduled tasks bind the session) cannot wait on input: an `ask_user` verdict degrades to `stop`.
 - An explicit user abort, pending approval, authentication failure, and failed overflow recovery are never auto-continued.
 
-Every decision emits `auto_continue_decision` with the question probabilities, progress, model, and latency. The CLI shows a status line; the desktop shows a toast and the settings panel exposes the mode/model.
+Every decision emits `auto_continue_decision` with the question probabilities, progress, completion, progressed verdict, model, and latency. The CLI shows a status line; the desktop shows a toast and the settings panel exposes the mode/model.
 
 ## Auto-mode classifier
 

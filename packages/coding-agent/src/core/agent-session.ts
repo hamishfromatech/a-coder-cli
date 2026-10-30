@@ -72,8 +72,12 @@ import type { CronTriageDecision } from "./cron/types.ts";
 import {
 	type AutoContinueCheckpoint,
 	type AutoContinueDecision,
+	type AutoContinueHistoryEntry,
 	type AutoContinueState,
 	decideAutoContinue,
+	localAutoContinueStop,
+	MAX_HISTORY_IN_STATE,
+	recordAutoContinueDecision,
 } from "./decision-policy.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import { exportSessionToHtml, type ToolHtmlRenderer } from "./export-html/index.ts";
@@ -243,6 +247,8 @@ export type AgentSessionEvent =
 			action: AutoContinueDecision["action"];
 			probabilities: Record<string, number>;
 			progress: number;
+			completion?: number;
+			progressed?: boolean;
 			confidence?: number;
 			model?: string;
 			latencyMs: number;
@@ -472,6 +478,72 @@ function detectThinkingEscalation(text: string): number | undefined {
 function getBashCommandArg(args?: Record<string, unknown>): string {
 	const raw = args?.command ?? args?.cmd;
 	return typeof raw === "string" ? raw : "";
+}
+
+/** ---- Auto-continue local features ---- */
+
+/** Tool calls scanned (from the most recent backwards) for repeat detection. */
+const REPEAT_SCAN_LIMIT = 12;
+
+/** A plan item as seen by the auto-continue policy. */
+interface PlanItem {
+	text: string;
+	status: "pending" | "in_progress" | "completed";
+}
+
+interface TaskLike {
+	subject?: string;
+	text?: string;
+	status?: string;
+}
+
+interface AutoContinueLocalFeatures {
+	errorStreak: number;
+	repeatStreak: number;
+	plan?: { total: number; done: number };
+	openPlanItems?: string[];
+	nextPlanItem?: string;
+}
+
+/** Deterministic JSON for tool-call argument fingerprints (key order ignored). */
+function stableStringifyArgs(value: unknown): string {
+	if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "undefined";
+	if (Array.isArray(value)) return `[${value.map(stableStringifyArgs).join(",")}]`;
+	const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+	return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${stableStringifyArgs(item)}`).join(",")}}`;
+}
+
+function stableToolFingerprint(toolName: string, args: unknown): string {
+	return `${toolName}|${stableStringifyArgs(args)}`;
+}
+
+function toPlanFeatures(items: PlanItem[]): AutoContinueLocalFeatures {
+	const plan = { total: items.length, done: items.filter((item) => item.status === "completed").length };
+	const open = items.filter((item) => item.status !== "completed");
+	const inProgress = open.find((item) => item.status === "in_progress");
+	const pending = open.find((item) => item.status === "pending");
+	const next = inProgress ?? pending;
+	return {
+		errorStreak: 0,
+		repeatStreak: 0,
+		...(items.length > 0 ? { plan } : {}),
+		...(open.length > 0 ? { openPlanItems: open.map((item) => item.text) } : {}),
+		...(next ? { nextPlanItem: next.text } : {}),
+	};
+}
+
+function todoToPlanEntry(item: { text?: unknown; status?: unknown }): PlanItem {
+	return {
+		text: typeof item.text === "string" ? item.text : "",
+		status: item.status === "completed" || item.status === "in_progress" ? item.status : "pending",
+	};
+}
+
+function taskToPlanEntry(item: TaskLike): PlanItem {
+	return {
+		text: typeof item.subject === "string" ? item.subject : typeof item.text === "string" ? item.text : "",
+		status: item.status === "completed" || item.status === "in_progress" ? item.status : "pending",
+	};
 }
 
 /**
@@ -706,6 +778,7 @@ export class AgentSession {
 		const contextWindow = this.model?.contextWindow ?? 0;
 		const lastAssistantText = this._extractAssistantText(assistantMessage ?? this._findLastAssistantMessage()).trim();
 		const lastTool = this._lastToolResultName();
+		const features = this._localAutoContinueFeatures();
 
 		return {
 			checkpoint,
@@ -717,7 +790,79 @@ export class AgentSession {
 			...(lastTool ? { lastTool } : {}),
 			...(lastTool && lastAssistantText.length === 0 ? { emptyAfterTool: true } : {}),
 			context: { used: estimate.tokens, window: contextWindow },
+			...(features.errorStreak > 0 ? { errorStreak: features.errorStreak } : {}),
+			...(features.repeatStreak > 0 ? { repeatStreak: features.repeatStreak } : {}),
+			...(features.plan ? { plan: features.plan } : {}),
+			...(features.openPlanItems ? { openPlanItems: features.openPlanItems } : {}),
+			...(features.nextPlanItem ? { nextPlanItem: features.nextPlanItem } : {}),
+			...(this._unattendedRuns > 0 ? { unattended: true } : {}),
+			...(this._autoContinueHistory.length > 0
+				? { history: this._autoContinueHistory.slice(-MAX_HISTORY_IN_STATE) }
+				: {}),
 		};
+	}
+
+	/** Deterministic features the policy can gate on without a decision-model
+	 * turn: trailing tool failures, repeated identical tool calls, and the
+	 * agent's own plan (todo/task list) snapshot. */
+	private _localAutoContinueFeatures(): AutoContinueLocalFeatures {
+		const messages = this.agent.state.messages;
+
+		// Trailing errored tool results: the final assistant reply may sit after
+		// them at this checkpoint, so it does not break the streak.
+		let errorStreak = 0;
+		for (let i = messages.length - 1; i >= 0; i--) {
+			const role = messages[i].role;
+			if (role === "assistant") continue;
+			if (role !== "toolResult") break;
+			if ((messages[i] as { isError?: boolean }).isError === true) errorStreak++;
+			else break;
+		}
+
+		// Trailing identical tool calls (tool name + argument fingerprint).
+		const fingerprints: string[] = [];
+		for (let i = messages.length - 1; i >= 0 && fingerprints.length < REPEAT_SCAN_LIMIT; i--) {
+			const message = messages[i] as { role?: string; content?: unknown };
+			if (message.role !== "assistant") continue;
+			const content = Array.isArray(message.content) ? message.content : [];
+			for (const part of content) {
+				const call = part as { type?: string; name?: string; arguments?: unknown };
+				if (call?.type === "toolCall" && call.name) {
+					fingerprints.push(stableToolFingerprint(call.name, call.arguments));
+				}
+			}
+		}
+		let repeatStreak = 0;
+		if (fingerprints.length > 0) {
+			const lead = fingerprints[0];
+			for (const fingerprint of fingerprints) {
+				if (fingerprint !== lead) break;
+				repeatStreak++;
+			}
+		}
+
+		// Latest plan snapshot from the todo tool or the task-list tools.
+		for (let i = messages.length - 1; i >= 0; i--) {
+			const message = messages[i] as { role?: string; toolName?: string; details?: unknown };
+			if (message.role !== "toolResult" || !message.toolName) continue;
+			if (message.toolName === "todo") {
+				const todos = (message.details as { todos?: PlanItem[] } | undefined)?.todos ?? [];
+				if (todos.length > 0) {
+					const planFeatures = toPlanFeatures(todos.map(todoToPlanEntry));
+					return { ...planFeatures, errorStreak, repeatStreak };
+				}
+				break;
+			}
+			if (message.toolName.startsWith("task_")) {
+				const tasks = (message.details as { tasks?: TaskLike[] } | undefined)?.tasks ?? [];
+				if (tasks.length > 0) {
+					const planFeatures = toPlanFeatures(tasks.map(taskToPlanEntry));
+					return { ...planFeatures, errorStreak, repeatStreak };
+				}
+				break;
+			}
+		}
+		return { errorStreak, repeatStreak };
 	}
 
 	/** Name of the latest tool result in the current transcript, if any. */
@@ -772,12 +917,20 @@ export class AgentSession {
 		const state = this._buildAutoContinueState(checkpoint, assistantMessage);
 		const model = await this._autoContinueDecisionModel(settings);
 		if (!model) {
-			// A server can drop an otherwise valid tool turn with an empty final
-			// message. That is not a completion, so continue once even when the
-			// decision model is unavailable. A model-backed decision still wins
-			// when one is reachable.
-			const decision =
-				checkpoint === "tool_pause" && state.emptyAfterTool && state.consecutive < settings.maxConsecutive
+			// No decision model reachable: deterministic local guards still stop a
+			// run that is stuck, and a dropped completion (blank assistant turn
+			// right after a tool result) keeps its one deterministic continuation.
+			const localStop = localAutoContinueStop(state, settings);
+			const decision = localStop
+				? {
+						action: "stop" as const,
+						checkpoint,
+						probabilities: {},
+						progress: 0,
+						latencyMs: 0,
+						reason: localStop,
+					}
+				: checkpoint === "tool_pause" && state.emptyAfterTool
 					? {
 							action: "continue" as const,
 							checkpoint,
@@ -788,6 +941,7 @@ export class AgentSession {
 						}
 					: undefined;
 			if (!decision) return undefined;
+			this._recordAutoContinueDecision(decision);
 			this._emit({ type: "auto_continue_decision", ...decision });
 			return decision;
 		}
@@ -797,12 +951,15 @@ export class AgentSession {
 		const decision = await decideAutoContinue(decisions, model, state, settings).catch(() => undefined);
 		if (!decision) return undefined;
 
+		this._recordAutoContinueDecision(decision);
 		this._emit({
 			type: "auto_continue_decision",
 			checkpoint: decision.checkpoint,
 			action: decision.action,
 			probabilities: decision.probabilities,
 			progress: decision.progress,
+			...(decision.completion !== undefined ? { completion: decision.completion } : {}),
+			...(decision.progressed !== undefined ? { progressed: decision.progressed } : {}),
 			...(decision.confidence !== undefined ? { confidence: decision.confidence } : {}),
 			...(decision.model ? { model: decision.model } : {}),
 			latencyMs: decision.latencyMs,
@@ -811,8 +968,31 @@ export class AgentSession {
 		return decision;
 	}
 
-	private async _queueSmartContinuation(text: string): Promise<void> {
-		this._smartContinuationsForCurrentPrompt++;
+	/** Record a decision in this prompt's trajectory for the next checkpoint. */
+	private _recordAutoContinueDecision(decision: AutoContinueDecision): void {
+		recordAutoContinueDecision(this._autoContinueHistory, decision);
+	}
+
+	/** Continuation nudge, composed from the local state: plan items, repeats. */
+	private _autoContinueNudge(emptyAfterTool: boolean, toolName: string | undefined): string {
+		if (emptyAfterTool) {
+			return `You stopped after using ${toolName} without a final response. Continue from the tool result and finish the user's request. Do not repeat the tool call unless it failed.`;
+		}
+		const parts = ["Continue working on the user's request. Do not repeat completed work."];
+		const features = this._localAutoContinueFeatures();
+		if (features.nextPlanItem) {
+			parts.push(`Next open plan item: ${features.nextPlanItem}`);
+		}
+		if (features.repeatStreak >= 2) {
+			parts.push("Your recent tool calls repeated the same invocation; vary the approach instead of repeating it.");
+		}
+		return parts.join(" ");
+	}
+
+	private async _queueSmartContinuation(text: string, progressed = false): Promise<void> {
+		// The cap counts stalled continuations; a continuation whose checkpoint
+		// reports real progress does not consume the budget.
+		if (!progressed) this._smartContinuationsForCurrentPrompt++;
 		this._autoContinuedForCurrentPrompt = true;
 		await this._queueFollowUp(text);
 	}
@@ -841,6 +1021,10 @@ export class AgentSession {
 	// describes a plan but fails to emit tool calls (e.g., 'Let me build that now').
 	private _autoContinuedForCurrentPrompt = false;
 	private _smartContinuationsForCurrentPrompt = 0;
+	/** Decisions recorded this prompt, oldest first (trajectory for the next checkpoint). */
+	private _autoContinueHistory: AutoContinueHistoryEntry[] = [];
+	/** Bound unattended runs (scheduled tasks): ask_user cannot wait for input. */
+	private _unattendedRuns = 0;
 	private _autoContinueModel: DecisionsModel<any> | "unavailable" | undefined;
 	private _cronTriageModel: DecisionsModel<any> | "unavailable" | undefined;
 
@@ -2356,6 +2540,7 @@ export class AgentSession {
 			if (smart?.action === "continue") {
 				await this._queueSmartContinuation(
 					"You were cut off due to the output token limit. Please continue exactly where you left off. Do not repeat what you already wrote.",
+					smart.progressed === true,
 				);
 				return true;
 			}
@@ -2378,9 +2563,8 @@ export class AgentSession {
 			const smart = await this._maybeSmartAutoContinue(emptyAfterTool ? "tool_pause" : "agent_end", msg);
 			if (smart?.action === "continue") {
 				await this._queueSmartContinuation(
-					emptyAfterTool
-						? `You stopped after using ${toolName} without a final response. Continue from the tool result and finish the user's request. Do not repeat the tool call unless it failed.`
-						: "Continue working on the user's request. Do not repeat completed work.",
+					this._autoContinueNudge(emptyAfterTool, toolName),
+					smart.progressed === true,
 				);
 				return true;
 			}
@@ -2404,6 +2588,7 @@ export class AgentSession {
 		// Reset per-prompt auto-continue state so a fresh user request can be nudged once.
 		this._autoContinuedForCurrentPrompt = false;
 		this._smartContinuationsForCurrentPrompt = 0;
+		this._autoContinueHistory = [];
 
 		const expandPromptTemplates = options?.expandPromptTemplates ?? true;
 		const preflightResult = options?.preflightResult;
@@ -3007,6 +3192,19 @@ export class AgentSession {
 		this._turnPermissionMode = mode;
 		return () => {
 			this._turnPermissionMode = previous;
+		};
+	}
+
+	/**
+	 * Mark the session as running unattended (scheduled task). Auto-continue
+	 * cannot wait on a user while marked, so `ask_user` decisions degrade to
+	 * stop instead of a stall. Nesting-aware like bindTurnPermissionMode.
+	 */
+	bindUnattendedRun(active = true): () => void {
+		if (!active) return () => {};
+		this._unattendedRuns++;
+		return () => {
+			this._unattendedRuns = Math.max(0, this._unattendedRuns - 1);
 		};
 	}
 
@@ -3772,6 +3970,7 @@ export class AgentSession {
 					if (smart.action === "continue") {
 						await this._queueSmartContinuation(
 							"Continue working on the user's request. Do not repeat completed work.",
+							smart.progressed === true,
 						);
 						return true;
 					}

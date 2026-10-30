@@ -6,10 +6,22 @@
  *
  * Header: "Read 5 files · Searched 3 patterns · Listed 2 directories"
  * Preview: first few targets, "+N more" if truncated.
+ *
+ * The member components are RETAINED: expanding the group (click or the
+ * expand-recent key) re-renders them in place, so the summary is a view,
+ * not a permanent replacement.
  */
 
-import { Container, Spacer, Text, truncateToWidth } from "@earendil-works/pi-tui";
+import {
+	Container,
+	Spacer,
+	Text,
+	type TuiMouseDispatchResult,
+	type TuiMouseEvent,
+	truncateToWidth,
+} from "@earendil-works/pi-tui";
 import { theme } from "../theme/theme.ts";
+import type { ToolExecutionComponent } from "./tool-execution.ts";
 
 const COLLAPSIBLE_TOOLS = new Set(["read", "grep", "ls"]);
 const TARGET_PREVIEW = 4;
@@ -57,15 +69,63 @@ function computeSummary(members: CollapsedToolInfo[]): string {
 
 export class GroupedToolCardComponent extends Container {
 	private readonly members: CollapsedToolInfo[];
+	private readonly components: ToolExecutionComponent[];
+	private expanded = false;
 
-	constructor(members: CollapsedToolInfo[]) {
+	constructor(members: CollapsedToolInfo[], components: ToolExecutionComponent[] = []) {
 		super();
 		this.members = members;
+		this.components = components;
+		this.rerender();
+	}
+
+	/** Global expansion flow: refreshes members to the group's new state. */
+	setExpanded(expanded: boolean): void {
+		this.expanded = expanded;
+		for (const component of this.components) {
+			component.setExpanded(expanded);
+		}
+		this.rerender();
+	}
+
+	/** Per-card toggle (click / "expand most recent" key). */
+	toggleExpanded(): void {
+		this.setExpanded(!this.expanded);
+	}
+
+	/**
+	 * Collapsed: a left click expands the group. Expanded: clicks fall through
+	 * to the member cards (Container hit-testing), whose own click expands the
+	 * individual tool result.
+	 */
+	override handleMouse(event: TuiMouseEvent): TuiMouseDispatchResult | undefined {
+		if (event.type !== "click" || event.button !== "left") return undefined;
+		if (this.expanded) return undefined;
+		this.toggleExpanded();
+		return {
+			handled: true,
+			target: { component: this, originX: 0, originY: 0, width: event.width, height: event.height },
+		};
+	}
+
+	/** Fold newly completed collapsible cards into this group (merge run). */
+	absorb(infos: CollapsedToolInfo[], components: ToolExecutionComponent[]): void {
+		this.members.push(...infos);
+		this.components.push(...components);
+		for (const component of components) {
+			component.setExpanded(this.expanded);
+		}
 		this.rerender();
 	}
 
 	private rerender(): void {
 		this.clear();
+		if (this.expanded && this.components.length > 0) {
+			for (const component of this.components) {
+				this.addChild(component);
+			}
+			return;
+		}
 		const label = computeSummary(this.members);
 		this.addChild(new Text(`${theme.fg("accent", "● ")}${theme.fg("text", theme.bold(label))}`, 1, 1));
 

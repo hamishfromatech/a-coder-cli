@@ -46,7 +46,11 @@ export function createInteractiveTui(options: InteractiveTuiOptions): TuiMainScr
 			},
 		});
 	}
-	return new TuiMainScreen(terminal, options.showHardwareCursor, options.logDirectory);
+	const tui = new TuiMainScreen(terminal, options.showHardwareCursor, options.logDirectory);
+	// Hold mouse tracking for the process lifetime so main-screen clicks can
+	// dispatch into content (wheel handling still depends on overlay mode).
+	tui.enableMouseReportTracking();
+	return tui;
 }
 
 /** Stable reference for components while InteractiveMode replaces the active renderer. */

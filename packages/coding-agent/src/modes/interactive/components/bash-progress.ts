@@ -16,6 +16,7 @@ import { type Component, Container, type TUI, truncateToWidth } from "@earendil-
 import type { BashProgress } from "../../../core/stores/bash-progress-store.ts";
 import { subscribeBashProgress } from "../../../core/stores/bash-progress-store.ts";
 import { formatSize } from "../../../core/tools/truncate.ts";
+import { sanitizeToolAnsi } from "../../../utils/ansi.ts";
 import { formatDuration } from "../../../utils/duration.ts";
 import { theme } from "../theme/theme.ts";
 
@@ -89,7 +90,12 @@ export class BashProgressComponent extends Container {
 
 		const lines: string[] = [];
 		for (const l of tail) {
-			const styled = theme.fg("muted", l.length > 0 ? l : " ");
+			const cleaned = l.length > 0 && /[\u001B\u009B]/.test(l) ? sanitizeToolAnsi(l) : l;
+			// Lines that arrived with their own color keep it; plain lines take
+			// the muted tint so colored signal lines stand out.
+			const styled = /[\u001B\u009B]/.test(cleaned)
+				? cleaned
+				: theme.fg("muted", cleaned.length > 0 ? cleaned : " ");
 			lines.push(truncateToWidth(styled, width, "…"));
 		}
 		if (statusBits.length > 0) {

@@ -8,6 +8,7 @@ import { type Static, Type } from "typebox";
 import { BashProgressComponent } from "../../modes/interactive/components/bash-progress.ts";
 import { truncateToVisualLines } from "../../modes/interactive/components/visual-truncate.ts";
 import { theme } from "../../modes/interactive/theme/theme.ts";
+import { sanitizeToolAnsi } from "../../utils/ansi.ts";
 import { formatDuration } from "../../utils/duration.ts";
 import {
 	getShellConfig,
@@ -29,8 +30,8 @@ import {
 } from "../stores/index.ts";
 import { bashIntentTarget, classifyBashIntent } from "./bash-intent.ts";
 import { OutputAccumulator } from "./output-accumulator.ts";
-import { getTextOutput, invalidArgText, str } from "./render-utils.ts";
-import { formatHeadline, moreLinesFooter } from "./result-headline.ts";
+import { getTextOutput, invalidArgText, sanitizeToolText, str } from "./render-utils.ts";
+import { emphasizeErrorLines, formatHeadline, moreLinesFooter } from "./result-headline.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult } from "./truncate.ts";
 
@@ -77,6 +78,26 @@ export interface BashToolDetails {
 	fullOutputPath?: string;
 	/** stderr output captured separately for layered rendering (stdout vs stderr). */
 	stderr?: string;
+	/** Exit code when the process exited normally (undefined for signals/aborts). */
+	exitCode?: number;
+	/** Sanitized, color-preserving output for display. Same lines the model saw
+	 * (whose context copy is ANSI-stripped); colors survive here. */
+	displayOutput?: string;
+}
+
+/**
+ * Ask piped children for terminal color so result cards can show it. Test
+ * runners, compilers, and CLICOLOR-aware tools disable styling when stdout is
+ * a pipe; FORCE_COLOR/CLICOLOR_FORCE opt them back in. An explicit NO_COLOR
+ * from the user always wins.
+ */
+function forceColorEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+	if (env.NO_COLOR) return env;
+	return {
+		...env,
+		FORCE_COLOR: env.FORCE_COLOR ?? "3",
+		CLICOLOR_FORCE: env.CLICOLOR_FORCE ?? "1",
+	};
 }
 
 export interface BashExecOptions {
@@ -272,7 +293,7 @@ function resolveSpawnContext(
 		}
 		if (ctx.thinkingLevel) env.A_CODER_REASONING_LEVEL = ctx.thinkingLevel;
 	}
-	const baseContext: BashSpawnContext = { command, cwd, env };
+	const baseContext: BashSpawnContext = { command, cwd, env: forceColorEnv(env) };
 	return spawnHook ? spawnHook(baseContext) : baseContext;
 }
 
@@ -294,6 +315,53 @@ export interface BashToolOptions {
 
 const BASH_PREVIEW_LINES = 3;
 const BASH_UPDATE_THROTTLE_MS = 100;
+
+/** Display-tail caps for the color-preserving copy of tool output. Matches
+ * the model-visible truncation limit when small; larger outputs keep a
+ * tail-biased colored slice. */
+const DISPLAY_TAIL_MAX_LINES = DEFAULT_MAX_LINES;
+const DISPLAY_TAIL_MAX_BYTES = DEFAULT_MAX_BYTES * 2;
+
+/**
+ * Split-stream capture of a command's output for display: colors preserved
+ * (unlike the model-copy) and bounded like the content path. An escape
+ * sequence split across two data chunks is held back until it completes.
+ */
+export class DisplayTail {
+	private text = "";
+	private hold = "";
+
+	append(chunk: string): void {
+		let combined = `${this.hold}${chunk.replace(/\r/g, "")}`;
+		// An escape may arrive split across chunks; hold the trailing fragment.
+		const incomplete = /\u001B(?:\[[0-9;:]*|]8;[0-9;]*)?$/.exec(combined);
+		if (incomplete) {
+			this.hold = incomplete[0];
+			combined = combined.slice(0, incomplete.index);
+		} else {
+			this.hold = "";
+		}
+		if (!combined) return;
+		this.text += sanitizeToolAnsi(combined);
+
+		if (Buffer.byteLength(this.text, "utf-8") > DISPLAY_TAIL_MAX_BYTES) {
+			let cut = this.text.length;
+			while (cut > 0 && Buffer.byteLength(this.text.slice(cut), "utf-8") > DISPLAY_TAIL_MAX_BYTES) {
+				cut -= 1024;
+			}
+			const newline = this.text.indexOf("\n", Math.max(0, cut));
+			if (newline !== -1) this.text = this.text.slice(newline + 1);
+		}
+		if (this.text.includes("\n") && this.text.split("\n").length > DISPLAY_TAIL_MAX_LINES) {
+			this.text = `${this.text.split("\n").slice(-DISPLAY_TAIL_MAX_LINES).join("\n")}`;
+		}
+	}
+
+	/** Colored display text (already sanitized, per line); empty when only control junk arrived. */
+	snapshot(): string {
+		return this.text;
+	}
+}
 
 type BashRenderState = {
 	startedAt: number | undefined;
@@ -351,14 +419,17 @@ function rebuildBashResultRenderComponent(
 
 	// Outcome headline: ✓/✗ + duration (and exit code on failure), replacing
 	// the former trailing "Took" line. Non-zero exits and aborts are isError
-	// (execute() throws); exit code comes from the suffix execute() appends.
+	// (execute() throws); exitCode now comes straight from details, with the
+	// text-scrape kept as a fallback.
 	const endTime = endedAt ?? Date.now();
 	const duration = startedAt !== undefined ? formatDuration(endTime - startedAt) : undefined;
+	const details = result.details;
 	let output = getTextOutput(result as any, showImages).trim();
 	const exitMatch = /Command exited with code (\d+)/.exec(output);
+	const exitCode = details?.exitCode ?? (exitMatch ? Number(exitMatch[1]) : undefined);
 	const headlineStats = duration
-		? isError && exitMatch
-			? `exit ${exitMatch[1]} · ${duration}`
+		? isError && exitCode !== undefined
+			? `exit ${exitCode} · ${duration}`
 			: duration
 		: undefined;
 	component.addChild(new Text(`\n${formatHeadline(isError ? "error" : "success", theme, headlineStats)}`, 0, 0));
@@ -372,11 +443,17 @@ function rebuildBashResultRenderComponent(
 		}
 	}
 
-	if (output) {
-		const styledOutput = output
-			.split("\n")
-			.map((line) => theme.fg("toolOutput", line))
-			.join("\n");
+	// Display copy: details.displayOutput is the sanitized, color-preserving
+	// capture of the raw stream. Lines without their own styling fall back to
+	// the theme's tool-output color, so plain and colored lines coexist.
+	const colored = details?.displayOutput?.trim();
+	if (output || colored) {
+		const tintColorless = (line: string): string => (line.includes("\u001B") ? line : theme.fg("toolOutput", line));
+		const displayLines = colored
+			? colored.split("\n").map(tintColorless)
+			: output.split("\n").map((line) => theme.fg("toolOutput", line));
+		const styledLines = isError ? emphasizeErrorLines(displayLines, theme) : displayLines;
+		const styledOutput = styledLines.join("\n");
 
 		if (options.expanded) {
 			component.addChild(new Text(`\n${styledOutput}`, 0, 0));
@@ -405,7 +482,7 @@ function rebuildBashResultRenderComponent(
 	}
 
 	// Render stderr separately in error color if captured.
-	const stderr = result.details?.stderr;
+	const stderr = details?.stderr;
 	if (stderr) {
 		const styledStderr = stderr
 			.split("\n")
@@ -471,6 +548,7 @@ export function createBashToolDefinition(
 				ctx,
 			);
 			const output = new OutputAccumulator({ tempFilePrefix: "pi-bash" });
+			const displayTail = new DisplayTail();
 			let acceptingOutput = true;
 			let updateTimer: NodeJS.Timeout | undefined;
 			let updateDirty = false;
@@ -585,7 +663,9 @@ export function createBashToolDefinition(
 			const handleData = (data: Buffer) => {
 				if (!acceptingOutput) return;
 				output.append(data);
-				appendBashProgress(toolCallId, data.toString());
+				const chunk = data.toString();
+				appendBashProgress(toolCallId, chunk);
+				displayTail.append(chunk);
 				scheduleOutputUpdate();
 			};
 
@@ -608,16 +688,22 @@ export function createBashToolDefinition(
 
 			const formatOutput = (snapshot: Awaited<ReturnType<typeof finishOutput>>, emptyText = "(no output)") => {
 				const truncation = snapshot.truncation;
-				let text = snapshot.content || emptyText;
+				// The model-copy is ANSI-free and control-char-free (raw output may
+				// carry forced color); the display copy keeps color via details.
+				let text = sanitizeToolText(snapshot.content || emptyText);
 				let details: BashToolDetails | undefined;
 				// Include stderr if captured.
 				const stderrText =
-					stderrChunks.length > 0 ? Buffer.concat(stderrChunks).toString("utf8").trimEnd() : undefined;
-				if (truncation.truncated || stderrText) {
+					stderrChunks.length > 0
+						? sanitizeToolText(Buffer.concat(stderrChunks).toString("utf8")).trimEnd()
+						: undefined;
+				const displayOutput = displayTail.snapshot().trim();
+				if (truncation.truncated || stderrText || displayOutput) {
 					details = {
 						truncation: truncation.truncated ? truncation : undefined,
 						fullOutputPath: snapshot.fullOutputPath,
-						stderr: stderrText,
+						...(stderrText ? { stderr: stderrText } : {}),
+						...(displayOutput ? { displayOutput } : {}),
 					};
 					const startLine = truncation.totalLines - truncation.outputLines + 1;
 					const endLine = truncation.totalLines;
@@ -678,7 +764,7 @@ export function createBashToolDefinition(
 							content: [
 								{
 									type: "text",
-									text: `Command backgrounded (pid ${bgChild.pid ?? "unknown"}). The process is still running. Output so far:\n${partialOutput.content || "(no output yet)"}`,
+									text: `Command backgrounded (pid ${bgChild.pid ?? "unknown"}). The process is still running. Output so far:\n${sanitizeToolText(partialOutput.content || "(no output yet)")}`,
 								},
 							],
 							details: undefined,
@@ -700,6 +786,7 @@ export function createBashToolDefinition(
 
 				const snapshot = await finishOutput();
 				const { text: outputText, details } = formatOutput(snapshot);
+				if (details && exitCode !== undefined && exitCode !== null) details.exitCode = exitCode;
 				if (exitCode !== 0 && exitCode !== null) {
 					throw new Error(appendStatus(outputText, `Command exited with code ${exitCode}`));
 				}

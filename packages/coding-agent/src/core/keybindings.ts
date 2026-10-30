@@ -21,6 +21,7 @@ export interface AppKeybindings {
 	"app.model.cycleBackward": true;
 	"app.model.select": true;
 	"app.tools.expand": true;
+	"app.tools.expandAll": true;
 	"app.thinking.toggle": true;
 	"app.thinking.save": true;
 	"app.session.toggleNamedFilter": true;
@@ -119,7 +120,14 @@ export const KEYBINDINGS = {
 		description: "Cycle to previous model",
 	},
 	"app.model.select": { defaultKeys: "ctrl+l", description: "Open model selector" },
-	"app.tools.expand": { defaultKeys: "ctrl+shift+o", description: "Toggle tool output" },
+	"app.tools.expand": {
+		defaultKeys: "ctrl+shift+o",
+		description: "Expand or collapse the most recent tool result",
+	},
+	"app.tools.expandAll": {
+		defaultKeys: "ctrl+shift+u",
+		description: "Expand or collapse all tool output",
+	},
 	"app.thinking.toggle": {
 		defaultKeys: "ctrl+t",
 		description: "Toggle thinking blocks",

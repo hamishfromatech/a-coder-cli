@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { stripAnsi } from "../src/utils/ansi.ts";
+import { DisplayTail } from "../src/core/tools/bash.ts";
+import { sanitizeToolAnsi, stripAnsi } from "../src/utils/ansi.ts";
 
 function referenceAnsiRegex(): RegExp {
 	const ST = "(?:\\u0007|\\u001B\\u005C|\\u009C)";
@@ -106,5 +107,48 @@ describe("stripAnsi", () => {
 	it("strips common ANSI sequences used in tool output", () => {
 		const input = "a\x1b[31mred\x1b[0m\x1b]8;;https://example.com\x07link\x1b]8;;\x07z";
 		expect(stripAnsi(input)).toBe("aredlinkz");
+	});
+});
+
+describe("sanitizeToolAnsi", () => {
+	it("preserves SGR color sequences and the text they style", () => {
+		expect(sanitizeToolAnsi(`\u001B[32mok\u001B[0m`)).toBe(`\u001B[32mok\u001B[0m`);
+	});
+
+	it("drops cursor-movement, mode-set, and other non-SGR CSI sequences", () => {
+		const input = "\u001B[2Kreset\u001B[Gstart\u001B[?25lhidden\u001B[31mred\u001B[0m";
+		expect(sanitizeToolAnsi(input)).toBe("resetstarthidden\u001B[31mred\u001B[0m");
+	});
+
+	it("drops OSC sequences that are not well-formed hyperlinks", () => {
+		expect(sanitizeToolAnsi("\u001B]0;title\u0007body")).toBe("body");
+		expect(sanitizeToolAnsi("\u001B]8;;\u0007broken")).toBe("broken");
+	});
+
+	it("preserves well-formed OSC 8 hyperlinks", () => {
+		const link = "\u001B]8;;file:///tmp/x.log\u0007log\u001B]8;;\u0007";
+		expect(sanitizeToolAnsi(`see ${link}`)).toBe(`see ${link}`);
+	});
+
+	it("removes binary control garbage from text runs", () => {
+		expect(sanitizeToolAnsi(`a\u0007b\u0011c`)).toBe("abc");
+	});
+
+	it("closes styling on every line so color cannot bleed across lines", () => {
+		const rendered = sanitizeToolAnsi("\u001B[32mfirst\nsecond").split("\n");
+		expect(rendered[0]).toBe("\u001B[32mfirst\u001B[0m");
+		expect(rendered[1]).toBe("second");
+	});
+
+	it("survives escape sequences split across chunk boundaries", () => {
+		const tail = new DisplayTail();
+		tail.append(`\u001B[3`);
+		tail.append(`8mok\u001B[0m`);
+		expect(tail.snapshot()).toBe(`\u001B[38mok\u001B[0m`);
+	});
+
+	it("is idempotent (safe to sanitize already-sanitized text)", () => {
+		const once = sanitizeToolAnsi("\u001B[31mhello\u001B[0m world");
+		expect(sanitizeToolAnsi(once)).toBe(once);
 	});
 });

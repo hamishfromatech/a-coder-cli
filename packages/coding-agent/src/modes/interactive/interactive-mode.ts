@@ -502,14 +502,28 @@ export class InteractiveMode {
 				collapsible.unshift(child);
 				i--;
 			} else if (child instanceof GroupedToolCardComponent) {
-				// Already-grouped card: merge with it if we have collapsible tools.
-				break;
+				if (collapsible.length > 0) {
+					// New collapsible run below an existing group: merge into it.
+					for (const c of collapsible) {
+						this.chatContainer.removeChild(c);
+					}
+					child.absorb(
+						collapsible.map((c) => ({
+							toolName: c.getToolName(),
+							target: extractToolTarget(c.getToolName(), c.getArgs()),
+						})),
+						collapsible,
+					);
+					this.ui.requestRender();
+				}
+				return;
 			} else {
 				break;
 			}
 		}
 		if (collapsible.length < 2) return;
-		// Extract info and remove the individual tool components.
+		// Extract info; the member components stay alive inside the group card
+		// so it can expand back into them.
 		const members: CollapsedToolInfo[] = collapsible.map((c) => ({
 			toolName: c.getToolName(),
 			target: extractToolTarget(c.getToolName(), c.getArgs()),
@@ -517,7 +531,7 @@ export class InteractiveMode {
 		for (const c of collapsible) {
 			this.chatContainer.removeChild(c);
 		}
-		this.chatContainer.addChild(new GroupedToolCardComponent(members));
+		this.chatContainer.addChild(new GroupedToolCardComponent(members, collapsible));
 		this.ui.requestRender();
 	}
 
@@ -3296,7 +3310,8 @@ export class InteractiveMode {
 		// Global debug handler on TUI (works regardless of focus)
 		this.ui.onDebug = () => this.handleDebugCommand();
 		this.defaultEditor.onAction("app.model.select", () => this.showModelSelector());
-		this.defaultEditor.onAction("app.tools.expand", () => this.toggleToolOutputExpansion());
+		this.defaultEditor.onAction("app.tools.expand", () => this.toggleMostRecentToolExpansion());
+		this.defaultEditor.onAction("app.tools.expandAll", () => this.toggleToolOutputExpansion());
 		this.defaultEditor.onAction("app.transcript.toggle", () => this.toggleTranscriptOverlay());
 		this.defaultEditor.onAction("app.history.search", () => this.showHistorySearch());
 		this.defaultEditor.onAction("app.thinking.toggle", () => this.toggleThinkingBlockVisibility());
@@ -4194,6 +4209,7 @@ export class InteractiveMode {
 				const p = event.probabilities.continue;
 				const probability = typeof p === "number" ? ` p=${p.toFixed(2)}` : "";
 				const progress = ` progress=${event.progress.toFixed(2)}`;
+				const completion = typeof event.completion === "number" ? ` completion=${event.completion.toFixed(2)}` : "";
 				const model = event.model ? ` ${event.model}` : "";
 				const label =
 					event.action === "continue"
@@ -4201,7 +4217,7 @@ export class InteractiveMode {
 						: event.action === "ask_user"
 							? "Auto-continue paused for input"
 							: "Auto-continue stopped";
-				this.showStatus(`${label}${probability}${progress}${model}`);
+				this.showStatus(`${label}${probability}${progress}${completion}${model}`);
 				this.ui.requestRender();
 				break;
 			}
@@ -4910,6 +4926,26 @@ export class InteractiveMode {
 
 	private toggleToolOutputExpansion(): void {
 		this.setToolsExpanded(!this.toolOutputExpanded);
+	}
+
+	/**
+	 * Expand or collapse the most recent settled tool row (card or group card).
+	 * Falls back to the global toggle when no tool row exists yet — that keeps
+	 * the startup-help affordance working on a fresh session.
+	 */
+	private toggleMostRecentToolExpansion(): void {
+		for (const container of [this.chatContainer, this.loadedResourcesContainer]) {
+			const children = container.children;
+			for (let i = children.length - 1; i >= 0; i--) {
+				const child = children[i];
+				if (child instanceof ToolExecutionComponent || child instanceof GroupedToolCardComponent) {
+					child.toggleExpanded();
+					this.ui.requestRender();
+					return;
+				}
+			}
+		}
+		this.toggleToolOutputExpansion();
 	}
 
 	private toggleTranscriptOverlay(): void {

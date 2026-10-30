@@ -250,6 +250,9 @@ export interface ResolvedAutoContinueSettings extends Required<Omit<AutoContinue
 }
 
 export interface AutoContinueSettings {
+	/** "off", "compaction" (decide after compaction only), or "smart" (judge
+	 * every stop). Default: "smart" — with no reachable decision model it
+	 * degrades to the legacy deterministic behavior. */
 	mode?: AutoContinueMode;
 	/** Decision provider override; defaults to settings.decisions.provider. */
 	provider?: string;
@@ -364,7 +367,7 @@ export interface Settings {
 	permissionPolicies?: PermissionPolicyConfig; // policy rules for "auto" mode
 	autoMode?: AutoModeSettings; // LLM classifier for "auto" mode (opt-in)
 	decisions?: DecisionsSettings; // System One decision model target for the `decide` tool + auto-mode classifier
-	autoContinue?: AutoContinueSettings; // Decision-model-assisted auto-continue (off by default)
+	autoContinue?: AutoContinueSettings; // Decision-model-assisted auto-continue (default: "smart"; "off" disables)
 	cron?: CronSettings; // Scheduled-task policy, including post-run triage
 	memory?: MemoryInjectionSettings; // inject MEMORY.md contents into the system prompt
 	httpProxy?: string; // Proxy URL applied as HTTP_PROXY and HTTPS_PROXY for Pi-managed HTTP clients
@@ -1530,10 +1533,11 @@ export class SettingsManager {
 
 	getAutoContinueSettings(): ResolvedAutoContinueSettings {
 		const configured = this.settings.autoContinue;
-		const mode: AutoContinueMode =
-			configured?.mode === "smart" || configured?.mode === "compaction" || configured?.mode === "off"
-				? configured.mode
-				: "off";
+		// Default is "smart": with a reachable decision model, agent stops are
+		// judged (continue/ask/stop); with none, it degrades to the legacy
+		// deterministic behavior, so the default is safe either way.
+		const explicitMode = configured?.mode === "smart" || configured?.mode === "compaction";
+		const mode: AutoContinueMode = configured?.mode === undefined ? "smart" : explicitMode ? configured.mode : "off";
 		return {
 			mode,
 			...(configured?.provider ? { provider: configured.provider } : {}),

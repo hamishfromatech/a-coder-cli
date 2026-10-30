@@ -1571,12 +1571,16 @@ Emitted when smart auto-continue evaluates a checkpoint. The model is advisory; 
   "action": "continue",
   "probabilities": {"done": 0.06, "ask_user": 0.08, "blocked": 0.04, "continue": 0.82},
   "progress": 0.74,
+  "completion": 0.5,
+  "progressed": true,
   "confidence": 0.61,
   "model": "nimble-v3",
   "latencyMs": 180,
-  "reason": "next=continue p=0.82 progress=0.74"
+  "reason": "next=continue p=0.82 progress=0.74 completion=0.50"
 }
 ```
+
+`progress` is the `progress` noul answer; `completion` is the normalized `completion` score answer (0 to 1) when the model answered it; `progressed` is the policy's effective-progress verdict (threshold noul or a rising completion score). A reason without a model call (local hard guard stops) carries only the guard text.
 
 `checkpoint` is `length`, `compaction`, or `agent_end`; `action` is `continue`, `ask_user`, or `stop`. `confidence` is distribution concentration, not correctness.
 
