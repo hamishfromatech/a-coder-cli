@@ -6,6 +6,9 @@ export function useGlobalKeybindings(): void {
 		const handler = (e: KeyboardEvent) => {
 			const mod = e.metaKey || e.ctrlKey;
 			if (!mod) return;
+			// Editors (Monaco) and surfaces that own a shortcut preventDefault it;
+			// don't double-handle those.
+			if (e.defaultPrevented) return;
 
 			// Cmd/Ctrl+Shift+O — resume a different session (quick-switcher).
 			if (e.shiftKey && e.key.toLowerCase() === "o") {

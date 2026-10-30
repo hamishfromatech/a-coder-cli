@@ -36,6 +36,7 @@ dirs = "6"
 lol_html = "1"
 libc = "0.2"
 log = { version = "0.4", features = ["std"] }
+portable-pty = "0.9.0"
 # File diagnostics: browser panels launched via `open` have no stderr to read.
 
 # Browser panel: pages route their network through our loopback proxy and

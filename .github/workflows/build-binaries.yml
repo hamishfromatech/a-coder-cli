@@ -359,10 +359,24 @@ jobs:
             };
           }
 
-          const manifest = { version, notes: `A-Coder Desktop ${version}`, pub_date: pubDate, platforms };
+          const manifest = { version, notes: buildNotes(), pub_date: pubDate, platforms };
           fs.writeFileSync("release-assets/latest.json", JSON.stringify(manifest, null, 2) + "\n");
           console.log("Generated latest.json:");
           console.log(fs.readFileSync("release-assets/latest.json", "utf8"));
+
+          // The updater manifest's notes feed the desktop app's release-notes
+          // view; use the generated release notes (same text as the GitHub
+          // release body) instead of a placeholder line.
+          function buildNotes() {
+            const candidates = ["release-assets/RELEASE_NOTES.md", "RELEASE_NOTES.md"];
+            for (const file of candidates) {
+              try {
+                const text = fs.readFileSync(file, "utf8").trim();
+                if (text) return text.length > 12000 ? `${text.slice(0, 12000).trimEnd()}\n\n…` : text;
+              } catch {}
+            }
+            return `A-Coder Desktop ${version}`;
+          }
           NODE
       - name: Verify staged assets match the release version
         env:

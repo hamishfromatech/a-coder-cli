@@ -18,6 +18,10 @@ import { playCompletionSound } from "./completion-sound";
 import { playAudioBlob, synthesize, type VoiceSettings } from "./voice";
 import { speechify } from "./speech-text";
 import { triggerHaptic } from "./haptics";
+
+/** Tools whose results may change files under the workspace — the IDE
+ * workspace listens for these to refresh open models and the explorer. */
+const FILE_MUTATING_TOOLS = new Set(["edit", "write", "multiedit", "apply_patch", "bash", "replace"]);
 import { pickLoadingVerb } from "./loading-verbs";
 import { getCachedSessionMessages, setCachedSessionMessages } from "./session-cache";
 import { applyHistoryPage, HISTORY_PAGE_SIZE } from "./history";
@@ -872,6 +876,12 @@ export function processAgentEvent(event: rpc.RpcEvent, deps: AgentEventDeps): vo
 				}
 				maybeRevealBrowserPanel(event.message);
 			} else if (event.message.role === "toolResult") {
+				// File-mutating tools may change the workspace on disk; the IDE
+				// workspace listens and refreshes its open models + explorer.
+				const ideTool = (event.message as { toolName?: string }).toolName;
+				if (ideTool && FILE_MUTATING_TOOLS.has(ideTool)) {
+					window.dispatchEvent(new CustomEvent("a-coder:agent-files-changed", { detail: ideTool }));
+				}
 				if (event.type === "message_end") noticeForToolError(event.message);
 				// Append or replace an existing tool result with the same id so streaming
 				// tool output stays visible without duplicating final results.

@@ -41,6 +41,7 @@ import { Loader } from "./components/ui/Loader";
 import { ChangelogModal } from "./components/ChangelogModal";
 import { ChatBackdrop } from "./components/ChatBackdrop";
 import { CommandCenter } from "./components/CommandCenter";
+import { IdeWorkspace } from "./components/ide/IdeWorkspace";
 import { CommandPalette, type CommandItem } from "./components/CommandPalette";
 import { Composer } from "./components/Composer";
 import { FindBar } from "./components/FindBar";
@@ -86,6 +87,12 @@ export default function App() {
 	const [showProjectPicker, setShowProjectPicker] = useState(false);
 	const [showResume, setShowResume] = useState(false);
 	const [showModelPicker, setShowModelPicker] = useState(false);
+	/** Viewport rect of the model pill when the picker opens (null = top-center). */
+	const [modelPickerAnchor, setModelPickerAnchor] = useState<DOMRect | null>(null);
+	const openModelPicker = useCallback(() => {
+		setModelPickerAnchor(document.querySelector("[data-model-trigger]")?.getBoundingClientRect() ?? null);
+		setShowModelPicker(true);
+	}, []);
 	const [showSettings, setShowSettings] = useState(false);
 	const [showFindBar, setShowFindBar] = useState(false);
 	const [showCommandPalette, setShowCommandPalette] = useState(false);
@@ -343,6 +350,13 @@ export default function App() {
 	const interfaceMode = useUiStore((state) => state.interfaceMode);
 	const setInterfaceMode = useUiStore((state) => state.setInterfaceMode);
 	const simple = interfaceMode === "simple";
+	const ideMode = interfaceMode === "ide";
+	// IDE mode wants the full editor layout: collapse the chat sidebar while
+	// active (the rail is still there; the user can re-open anytime).
+	useEffect(() => {
+		if (!ideMode) return;
+		setLeftSidebarOpen(false);
+	}, [ideMode, setLeftSidebarOpen]);
 	useEffect(() => {
 		if (simple) setRightSidebarOpen(false);
 	}, [simple, setRightSidebarOpen]);
@@ -819,7 +833,7 @@ export default function App() {
 			// Then navigate to the account section (handled by SettingsPanel via URL hash).
 			window.location.hash = "account";
 		};
-		const onOpenModel = () => setShowModelPicker(true);
+		const onOpenModel = openModelPicker;
 		const onOpenSession = () => setShowProjectPicker(true);
 		const onSwitchProject = (e: Event) => {
 			const detail = (e as CustomEvent).detail as { path?: string } | undefined;
@@ -1131,7 +1145,7 @@ export default function App() {
 			{ id: "abort", label: "Abort current turn", keybinding: "⌘.", group: "session", action: () => void rpc.sendCommand({ type: "abort" }) },
 			{ id: "compact", label: "Compact context", group: "session", action: () => void rpc.sendCommand({ type: "compact" }) },
 			{ id: "resume", label: "Resume another session", keybinding: "⇧⌘O", group: "session", action: () => setShowResume(true) },
-			{ id: "model-picker", label: "Select model", keybinding: "⌘P", group: "navigate", action: () => setShowModelPicker(true) },
+				{ id: "model-picker", label: "Select model", keybinding: "⌘P", group: "navigate", action: openModelPicker },
 			{ id: "project-picker", label: "Open project", group: "navigate", action: () => setShowProjectPicker(true) },
 			{ id: "find", label: "Find in page", keybinding: "⌘F", group: "navigate", action: () => setShowFindBar(true) },
 			{ id: "home", label: "Open home dashboard", keybinding: "⇧⌘H", group: "navigate", action: () => setShowHome(true) },
@@ -1174,8 +1188,8 @@ export default function App() {
 			{
 				id: "interface-mode",
 				label: "Interface mode",
-				hint: simple ? "Simple" : "Advanced",
-				keywords: ["ui", "layout", "chrome", "simple", "advanced"],
+				hint: interfaceMode === "ide" ? "IDE" : simple ? "Simple" : "Advanced",
+				keywords: ["ui", "layout", "chrome", "simple", "advanced", "ide", "editor"],
 				group: "view",
 				children: [
 					{
@@ -1191,6 +1205,13 @@ export default function App() {
 						hint: "All panels and instrumentation",
 						group: "view",
 						action: () => setInterfaceMode("advanced"),
+					},
+					{
+						id: "interface-ide",
+						label: "IDE workspace",
+						hint: "Editor, explorer, terminal",
+						group: "view",
+						action: () => setInterfaceMode("ide"),
 					},
 				],
 			},
@@ -1337,7 +1358,17 @@ export default function App() {
 				{/* ================== Main column ================== */}
 				<main className="flex min-w-0 flex-1 flex-col overflow-hidden">
 					<SessionTabs />
-					<header className="relative z-30 flex h-9 shrink-0 items-center justify-between border-b border-pi-border bg-pi-bg/60 px-3 backdrop-blur">
+					{ideMode ? (
+						projectPath ? (
+							<IdeWorkspace projectPath={projectPath} cwd={cwd ?? undefined} />
+						) : (
+							<div className="flex flex-1 items-center justify-center text-sm text-pi-text-muted">
+								Open a project (⌘K → Open project) to use the IDE workspace.
+							</div>
+						)
+					) : (
+						<>
+						<header className="relative z-30 flex h-9 shrink-0 items-center justify-between border-b border-pi-border bg-pi-bg/60 px-3 backdrop-blur">
 						<Toolbar
 							onShowMemory={() => setShowMemory(true)}
 							onToggleBrowser={() => {
@@ -1366,6 +1397,8 @@ export default function App() {
 					</ChatContainer>
 					<Butterbar />
 					<StatusBar projectPath={projectPath} onReconnect={handleReconnect} />
+						</>
+					)}
 				</main>
 
 				{/* ================== Right sidebar (resizable drawer) ================== */}
@@ -1434,6 +1467,7 @@ export default function App() {
 
 			{showModelPicker && (
 				<ModelPicker
+					anchor={modelPickerAnchor}
 					onClose={() => setShowModelPicker(false)}
 					onSelect={(m) => void handleSelectModel(m)}
 				/>

@@ -162,18 +162,24 @@ export function UpdateModal({ update, onDismiss }: UpdateModalProps) {
 						</div>
 					)}
 
-					{/* Release notes (collapsed by default, optional) */}
-					{update.body && !isDownloading && !isReady && (
-						<details className="mt-4">
-							<summary className="cursor-pointer text-xs text-pi-text-muted transition-hover hover:text-pi-text-secondary focus-visible:shadow-focus focus-visible:outline-none">
-								View release notes
-							</summary>
-							<div className="mt-2 max-h-48 overflow-y-auto rounded-lg bg-pi-surface-raised p-3">
-								<p className="text-xs leading-relaxed text-pi-text-secondary whitespace-pre-wrap">
-									{update.body}
-								</p>
+					{/* Release notes: the updater manifest's notes field (markdown sent
+						as plain text). Open by default; hint when the release was built
+						without notes. */}
+					{!isDownloading && !isReady && (
+						<div className="mt-4">
+							<div className="text-2xs font-semibold uppercase tracking-[0.08em] text-pi-text-faint">
+								What's new in {versionLabel}
 							</div>
-						</details>
+							{update.body ? (
+								<div className="mt-2 max-h-56 overflow-y-auto rounded-lg bg-pi-surface-raised p-3">
+									<ReleaseNotes body={update.body} />
+								</div>
+							) : (
+								<p className="mt-2 text-xs text-pi-text-faint">
+									Full notes are on the release page once published.
+								</p>
+							)}
+						</div>
 					)}
 				</div>
 
@@ -215,4 +221,81 @@ export function UpdateModal({ update, onDismiss }: UpdateModalProps) {
 			</ModalPanel>
 		</ModalBackdrop>
 	);
+}
+/**
+ * Release-notes renderer for the updater manifest's `notes` field. The notes
+ * are markdown (same text as the GitHub release body) but rendered here as
+ * styled plain text — headings, bullets, bold and inline code get the house
+ * treatment; nothing else is parsed, so nothing can inject layout surprises.
+ */
+function ReleaseNotes({ body }: { body: string }): React.ReactNode {
+	const blocks = body.split("\n").map((line) => line.trimEnd());
+	const nodes: React.ReactNode[] = [];
+	for (let index = 0; index < blocks.length; index++) {
+		const line = blocks[index]!;
+		if (!line.trim()) continue;
+
+		// Headings: "# Title", "## Section"…
+		const heading = /^(#{1,4})\s+(.*)$/.exec(line);
+		if (heading) {
+			nodes.push(
+				<div
+					key={index}
+					className="mt-2.5 text-2xs font-semibold tracking-tight text-pi-text first:mt-0"
+				>
+					{inlineNodes(heading[2]!)}
+				</div>,
+			);
+			continue;
+		}
+
+		// Bullets: "- item", "* item", "1. item"
+		const bullet = /^\s*(?:[-*]|\d+[.)])\s+(.*)$/.exec(line);
+		if (bullet) {
+			nodes.push(
+				<div key={index} className="flex gap-2 pl-1">
+					<span className="mt-0.5 select-none text-pi-accent">•</span>
+					<span className="min-w-0 flex-1">{inlineNodes(bullet[1]!)}</span>
+				</div>,
+			);
+			continue;
+		}
+
+		// Everything else: paragraph line.
+		nodes.push(
+			<p key={index} className="text-xs leading-relaxed text-pi-text-secondary">
+				{inlineNodes(line)}
+			</p>,
+		);
+	}
+	return <div className="flex flex-col gap-1">{nodes}</div>;
+}
+
+/** Minimal inline markdown: **bold**, `code`, and bare links (display only). */
+function inlineNodes(text: string): React.ReactNode {
+	const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`|https?:\/\/\S+)/g).filter(Boolean);
+	return parts.map((part, index) => {
+		if (part.startsWith("**") && part.endsWith("**")) {
+			return (
+				<span key={index} className="font-semibold text-pi-text">
+					{part.slice(2, -2)}
+				</span>
+			);
+		}
+		if (part.startsWith("`") && part.endsWith("`")) {
+			return (
+				<code key={index} className="rounded bg-pi-bg px-1 py-0.5 font-mono text-3xs text-pi-accent">
+					{part.slice(1, -1)}
+				</code>
+			);
+		}
+		if (/^https?:\/\//.test(part)) {
+			return (
+				<a key={index} href={part} target="_blank" rel="noopener noreferrer" className="break-all text-pi-accent underline decoration-pi-accent/40">
+					{part.replace(/^https?:\/\/(?:www\.)?/, "")}
+				</a>
+			);
+		}
+		return <span key={index}>{part}</span>;
+	});
 }

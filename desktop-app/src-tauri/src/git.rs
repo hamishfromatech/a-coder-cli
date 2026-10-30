@@ -210,3 +210,63 @@ fn map_status(code: char) -> Option<FileStatus> {
 		_ => None,
 	}
 }
+
+fn run_git(cwd: &Path, args: &[&str]) -> Result<String, String> {
+	let output = Command::new("git")
+		.args(args)
+		.current_dir(cwd)
+		.output()
+		.map_err(|e| format!("Failed to invoke git: {e}. Is git installed and on PATH?"))?;
+	if !output.status.success() {
+		let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+		if stderr.is_empty() {
+			return Err("git command failed".to_string());
+		}
+		return Err(stderr);
+	}
+	Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// Stage the given paths (git add --).
+#[tauri::command]
+pub fn git_stage(cwd: String, paths: Vec<String>) -> Result<(), String> {
+	if paths.is_empty() {
+		return Ok(());
+	}
+	let cwd_path = Path::new(&cwd);
+	if !cwd_path.exists() {
+		return Err(format!("Directory does not exist: {cwd}"));
+	}
+	let mut args: Vec<&str> = vec!["add", "--"];
+	for path in &paths {
+		args.push(path);
+	}
+	run_git(cwd_path, &args).map(|_out| ())
+}
+
+/// Unstage the given paths (git reset HEAD --). Works on empty-repo index too.
+#[tauri::command]
+pub fn git_unstage(cwd: String, paths: Vec<String>) -> Result<(), String> {
+	if paths.is_empty() {
+		return Ok(());
+	}
+	let cwd_path = Path::new(&cwd);
+	if !cwd_path.exists() {
+		return Err(format!("Directory does not exist: {cwd}"));
+	}
+	let mut args: Vec<&str> = vec!["reset", "HEAD", "--"];
+	for path in &paths {
+		args.push(path);
+	}
+	run_git(cwd_path, &args).map(|_out| ())
+}
+
+/// Discard working-tree changes to a tracked path (git checkout -- path).
+#[tauri::command]
+pub fn git_discard(cwd: String, path: String) -> Result<(), String> {
+	let cwd_path = Path::new(&cwd);
+	if !cwd_path.exists() {
+		return Err(format!("Directory does not exist: {cwd}"));
+	}
+	run_git(cwd_path, &["checkout", "--", &path]).map(|_out| ())
+}

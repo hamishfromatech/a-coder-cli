@@ -3,7 +3,7 @@ import { persist } from "zustand/middleware";
 
 export type RightSidebarTab = "files" | "git" | "office" | "cron" | "activity" | "browser" | "voice";
 export type ArtifactViewMode = "raw" | "preview";
-export type InterfaceMode = "simple" | "advanced";
+export type InterfaceMode = "simple" | "advanced" | "ide";
 
 export interface UiState {
 	leftSidebarOpen: boolean;

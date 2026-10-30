@@ -2,20 +2,21 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Cpu, RefreshCw, Search, X } from "lucide-react";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import * as rpc from "../lib/rpc";
-import { useModalA11y } from "../hooks/useModalA11y";
 import { useSessionStore } from "../stores/session-store";
 import { IconButton } from "./ui/Button";
 import { Badge } from "./ui/Badge";
-import { ModalBackdrop, ModalPanel } from "./ui/Modal";
 import { ESCAPE_PRIORITY, isTopEscapeLayer, pushEscapeLayer } from "../lib/escape-layers";
 import { modelKey, readRecentModels, recordRecentModel } from "../lib/model-recents";
 
 type AnyModel = Model<Api>;
 
 export function ModelPicker({
+	anchor,
 	onClose,
 	onSelect,
 }: {
+	/** Viewport rect of the trigger button; null = fall back to top-center. */
+	anchor: DOMRect | null;
 	onClose: () => void;
 	onSelect: (model: AnyModel) => void;
 }) {
@@ -28,9 +29,7 @@ export function ModelPicker({
 	const [recentKeys, setRecentKeys] = useState(() => readRecentModels());
 	const inputRef = useRef<HTMLInputElement>(null);
 	const listRef = useRef<HTMLDivElement>(null);
-	const modalRef = useRef<HTMLDivElement>(null);
 	const currentModel = useSessionStore((s) => s.model);
-	useModalA11y(modalRef, true, onClose);
 
 	async function loadModels(reload = false) {
 		if (reload) {
@@ -167,16 +166,39 @@ export function ModelPicker({
 		active?.scrollIntoView({ block: "nearest" });
 	}, [highlight]);
 
+	// Anchored dropdown placement: below the trigger, flipped above when the
+	// viewport has more room up there; clamped to stay on screen. Computed
+	// once at open — the composer doesn't move while it's open.
+	const panelStyle = useMemo(() => {
+		const width = 480;
+		const height = Math.min(0.6 * window.innerHeight, 560);
+		const vw = window.innerWidth;
+		const vh = window.innerHeight;
+		const gap = 6;
+		if (anchor) {
+			const below = anchor.bottom + gap + height <= vh - 8;
+			const left = Math.max(8, Math.min(anchor.left - (anchor.width - width) / 2, vw - width - 8));
+			if (below) {
+				return { left, top: anchor.bottom + gap, width } as const;
+			}
+			return { left, bottom: vh - anchor.top + gap, width } as const;
+		}
+		return { left: (vw - width) / 2, top: 60, width } as const;
+	}, [anchor]);
+
 	return (
-		<ModalBackdrop
-			ref={modalRef}
-			aria-label="Choose a model"
-			position="top"
+		<div
+			className="fixed inset-0 z-40 transition-smooth"
 			onClick={onClose}
+			onContextMenu={(e) => e.preventDefault()}
+			aria-hidden
 		>
-			<ModalPanel
-				className="max-w-xl"
-				centered={false}
+			<div
+				role="dialog"
+				aria-modal={false}
+				aria-label="Choose a model"
+				className="flex max-h-[60vh] flex-col overflow-hidden rounded-xl border border-pi-border-strong bg-pi-surface-overlay shadow-2xl transition-smooth"
+				style={panelStyle}
 				onClick={(e) => e.stopPropagation()}
 			>
 				{/* Search header */}
@@ -212,12 +234,12 @@ export function ModelPicker({
 				</div>
 
 				{/* List */}
-				<div
-					ref={listRef}
-					role="listbox"
-					aria-label="Available models"
-					aria-activedescendant={`model-option-${highlight}`}
-					className="max-h-[60vh] overflow-y-auto p-1.5"
+						<div
+							ref={listRef}
+							role="listbox"
+							aria-label="Available models"
+							aria-activedescendant={`model-option-${highlight}`}
+							className="min-h-0 flex-1 overflow-y-auto p-1.5"
 				>
 					{loading ? (
 						<div className="px-3 py-6 text-center text-xs text-pi-text-muted">
@@ -305,8 +327,8 @@ export function ModelPicker({
 						{ordered.length}/{models.length}
 					</span>
 				</div>
-			</ModalPanel>
-		</ModalBackdrop>
+			</div>
+		</div>
 	);
 }
 

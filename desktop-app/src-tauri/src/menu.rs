@@ -65,7 +65,9 @@ pub fn build_menu<R: Runtime>(app_handle: &AppHandle<R>) -> Result<Menu<R>, Stri
 	let session_menu = SubmenuBuilder::new(app_handle, "Session")
 		.item(
 			&MenuItemBuilder::with_id(MENU_COMPACT, "Compact Context")
-				.accelerator("CmdOrCtrl+K")
+				// NOT ⌘K: that belongs to the in-app command palette
+				// (useGlobalKeybindings intercepts before menu items would).
+				.accelerator("CmdOrCtrl+Shift+L")
 				.build(app_handle)
 				.map_err(|e| e.to_string())?,
 		)

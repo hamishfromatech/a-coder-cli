@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
 	ChevronDown,
+	Code2,
 	Copy,
 	FileDown,
 	FileText,
@@ -49,8 +50,10 @@ export function Titlebar() {
 		setRightSidebarTab,
 		rightSidebarTab,
 		interfaceMode,
+		setInterfaceMode,
 	} = useUiStore();
 	const simple = interfaceMode === "simple";
+	const ideMode = interfaceMode === "ide";
 	const sessionName = useSessionStore((s) => s.sessionName);
 	const setSessionName = useSessionStore((s) => s.setSessionName);
 	const sessionFile = useSessionStore((s) => s.sessionFile);
@@ -254,6 +257,23 @@ export function Titlebar() {
 
 			{/* Right slot: right sidebar controls. Simple mode rests them out of
 			    the chrome; the command palette still opens every pane. */}
+			{/* IDE workspace toggle: one click into the editor surface (visible
+			    in every interface mode; the palette and rail stay secondary). */}
+			<div className="flex h-full shrink-0 items-center gap-0.5 pl-1">
+				<button
+					onClick={() => {
+						triggerHaptic("selection");
+						setInterfaceMode(ideMode ? "advanced" : "ide");
+					}}
+					className={`flex h-7 w-7 cursor-pointer items-center justify-center rounded-pi-md transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
+						ideMode ? "bg-pi-accent-soft text-pi-accent" : "text-pi-text-muted hover:bg-pi-surface-raised hover:text-pi-text"
+					}`}
+					aria-label={ideMode ? "Back to agent chat" : "Open IDE workspace"}
+					title={ideMode ? "Back to agent chat" : "Open IDE workspace (code editor + terminal)"}
+				>
+					<Code2 className="h-3.5 w-3.5 transition-smooth" />
+				</button>
+			</div>
 			{!simple && (
 				<div data-tauri-drag-region className="flex h-full shrink-0 items-center gap-0.5 px-1.5">
 					{(

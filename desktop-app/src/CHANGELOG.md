@@ -10,6 +10,7 @@
 - Composio integration moved into the engine's built-in **Composio MCP server** (`https://connect.composio.dev/mcp`, seeded on fresh installs next to chrome-devtools; auth = dashboard consumer API key via `COMPOSIO_API_KEY` or the MCP servers editor). The desktop **Apps panel** (browse/connect apps) and the empty `Composio` settings card are gone — app discovery and connection now happen in the chat through the server's manage-connections meta tools, and old `#composio` settings deep links still land on Integrations.
 ### Fixed
 
+- The update modal now shows real release notes: `latest.json` is generated with the same notes text as the GitHub release body instead of a one-line placeholder, and the modal renders the notes as styled text ("What's new in vX.Y.Z" — headings, bullets, bold, code, links) with a hint when a release carries none.
 - File writes and edits through the desktop engine retry transient Windows `EBUSY`/`EPERM`/`EACCES` locks, so an editor, dev server, or antivirus hold is less likely to fail an edit to a file such as `routes.py`.
 
 ### Added

@@ -21,6 +21,9 @@ function collectTypescriptFiles(directory) {
 }
 
 function isRelativeJavaScriptSpecifier(specifier) {
+	// Vite worker-asset queries (`...worker.js?worker`) are build resources fed
+	// to `new Worker()`, not TypeScript module imports that need .d.ts typing.
+	if (/\?worker$/.test(specifier)) return false;
 	return /^\.\.?\//.test(specifier) && /\.js(?:[?#].*)?$/.test(specifier);
 }
 

@@ -1500,6 +1500,48 @@ export async function gitStatus(cwd: string): Promise<GitStatus> {
 	return await invoke<GitStatus>("git_status", { cwd });
 }
 
+export async function gitStage(cwd: string, paths: string[]): Promise<void> {
+	return await invoke<void>("git_stage", { cwd, paths });
+}
+
+export async function gitUnstage(cwd: string, paths: string[]): Promise<void> {
+	return await invoke<void>("git_unstage", { cwd, paths });
+}
+
+export async function gitDiscard(cwd: string, path: string): Promise<void> {
+	return await invoke<void>("git_discard", { cwd, path });
+}
+
+/** One matched line from a workspace text search. */
+export interface WorkspaceSearchMatch {
+	path: string;
+	line: number;
+	text: string;
+}
+
+export async function searchWorkspace(
+	root: string,
+	query: string,
+): Promise<WorkspaceSearchMatch[]> {
+	return await invoke<WorkspaceSearchMatch[]>("ide_search_workspace", { root, query });
+}
+
+export async function createDirectory(path: string): Promise<void> {
+	return await invoke<void>("ide_create_dir", { path });
+}
+
+export async function createFile(path: string): Promise<void> {
+	return await invoke<void>("ide_create_file", { path });
+}
+
+export async function deletePath(path: string, isDir: boolean): Promise<void> {
+	return await invoke<void>("ide_delete_path", { path, isDir });
+}
+
+export async function renamePath(from: string, to: string): Promise<void> {
+	return await invoke<void>("ide_rename_path", { from, to });
+}
+
 export async function gitDiff(
 	cwd: string,
 	path: string,

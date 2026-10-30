@@ -7,6 +7,7 @@ mod browser;
 mod cli;
 mod fs;
 mod git;
+mod ide;
 mod menu;
 mod power;
 mod resources;
@@ -62,6 +63,7 @@ fn main() {
 		.manage(browser::tabs::TabsState::default())
 		.manage(browser::downloads::DownloadsState::default())
 		.manage(browser::agentserver::AgentGateState::default())
+		.manage(ide::IdeState::default())
 		.manage(screen::ScreenShareState::default())
 		.manage(power::KeepAwakeState::default())
 		.plugin(tauri_plugin_opener::init())
@@ -125,6 +127,9 @@ fn main() {
 			rpc_commands::send_ui_response,
 			git::git_status,
 			git::git_diff,
+			git::git_stage,
+			git::git_unstage,
+			git::git_discard,
 			fs::debug_log,
 			fs::canonicalize_path,
 			fs::read_text_file,
@@ -132,6 +137,16 @@ fn main() {
 			fs::read_file_base64,
 			fs::list_files,
 			fs::list_directory,
+			ide::write_text_file,
+			ide::ide_create_dir,
+			ide::ide_create_file,
+			ide::ide_delete_path,
+			ide::ide_rename_path,
+			ide::ide_search_workspace,
+			ide::ide_pty_spawn,
+			ide::ide_pty_write,
+			ide::ide_pty_resize,
+			ide::ide_pty_kill,
 			settings::get_settings_paths,
 			settings::read_settings_file,
 			settings::write_settings_file,
