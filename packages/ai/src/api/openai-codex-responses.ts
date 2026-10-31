@@ -403,8 +403,9 @@ export const stream: StreamFunction<"openai-codex-responses", OpenAICodexRespons
 							method: "POST",
 							headers: sseHeaders,
 							// Node 24 types make Uint8Array generic over ArrayBufferLike, which the
-							// DOM BodyInit union does not admit; the runtime value is unchanged.
-							body: sseBody as BodyInit,
+							// body union does not admit; name it through RequestInit so this compiles
+							// against both @types/node 22 and 24 (BodyInit is not global in 22).
+							body: sseBody as unknown as RequestInit["body"],
 							signal: combinedSignal.signal,
 						});
 					} catch (error) {
