@@ -87,7 +87,10 @@ export interface AutoContinueDecision {
 	confidence?: number;
 	model?: string;
 	latencyMs: number;
+	/** Human-readable explanation suitable for UI copy. */
 	reason: string;
+	/** Machine-readable decision summary, for logs/telemetry only. */
+	diagnostic?: string;
 }
 
 const MAX_STRING = 6000;
@@ -428,9 +431,15 @@ export async function decideAutoContinue(
 	});
 	const modelId = result.servedModel ?? result.model;
 	const latencyMs = result.durationMs ?? 0;
-	const summary = `next=${choice.choice} p=${continueP.toFixed(2)} progress=${progressP.toFixed(2)}${
+	const diagnostic = `next=${choice.choice} p=${continueP.toFixed(2)} progress=${progressP.toFixed(2)}${
 		completion !== undefined ? ` completion=${completion.toFixed(2)}` : ""
 	}`;
+	const reason =
+		action === "continue"
+			? "model detected progress"
+			: action === "ask_user"
+				? "model needs your input"
+				: "model recommended stopping";
 
 	return {
 		action,
@@ -442,7 +451,8 @@ export async function decideAutoContinue(
 		...(typeof choice.confidence === "number" ? { confidence: choice.confidence } : {}),
 		model: modelId,
 		latencyMs,
-		reason: summary,
+		reason,
+		diagnostic,
 	};
 }
 
