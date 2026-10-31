@@ -27,3 +27,15 @@ describe("settings navigation", () => {
 		}
 	});
 });
+
+describe("scheduled task durability", () => {
+	it("exposes the crash-proof runs toggle and syncs it at runtime", () => {
+		const fields = SETTINGS_SECTIONS.flatMap((section) => section.fields ?? []);
+		const durable = fields.find((field) => field.path === "cron.durable");
+		expect(durable).toMatchObject({
+			kind: "toggle",
+			runtimeSync: "cronDurable",
+			advanced: true,
+		});
+	});
+});

@@ -10,6 +10,8 @@
 - Composio integration moved into the engine's built-in **Composio MCP server** (`https://connect.composio.dev/mcp`, seeded on fresh installs next to chrome-devtools; auth = dashboard consumer API key via `COMPOSIO_API_KEY` or the MCP servers editor). The desktop **Apps panel** (browse/connect apps) and the empty `Composio` settings card are gone — app discovery and connection now happen in the chat through the server's manage-connections meta tools, and old `#composio` settings deep links still land on Integrations.
 ### Added
 
+- Settings → Chat behaviour has a **Crash-proof scheduled runs** toggle: scheduled tasks checkpoint every step and resume after a crash or restart. Scheduled run history labels those runs `durable · resumable`.
+
 - **Plan mode in the desktop.** Status-bar Plan chip when active (click to exit), toggles in ⌘K and the `/plan` chat command; the flag syncs from the engine on every state refresh.
 - **Background processes surface.** The status bar gains a chip when background bash processes exist: a popover lists each process with live status, elapsed/exit code, and the latest output line; running processes can be killed and finished ones cleared (new `kill_background_process` engine command). The chip doubles as a one-click "Background now" for the currently running foreground command.
 - **Background bash from the desktop.** Running bash tool cards get a hover "Background" control (plus Ctrl+B during a run), mirroring the CLI: the process detaches, keeps running, and the agent continues immediately.

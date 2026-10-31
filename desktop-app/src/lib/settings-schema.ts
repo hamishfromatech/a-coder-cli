@@ -71,7 +71,8 @@ export interface CliSettingsFieldSpec {
 		| "followUpMode"
 		| "autoCompaction"
 		| "autoRetry"
-		| "cronModel";
+		| "cronModel"
+		| "cronDurable";
 	/** If true, this field is tucked behind a per-card "Show advanced" disclosure */
 	advanced?: boolean;
 }
@@ -249,6 +250,14 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 				kind: "custom",
 				widget: "cronModel",
 				runtimeSync: "cronModel",
+			},
+			{
+				path: "cron.durable",
+				label: "Crash-proof scheduled runs",
+				hint: "Checkpoint every step so a run cut off by a crash or restart resumes where it left off. Checkpoints are pruned after seven days.",
+				kind: "toggle",
+				runtimeSync: "cronDurable",
+				advanced: true,
 			},
 			{
 				path: "defaultThinkingLevel",
@@ -1080,6 +1089,9 @@ export function applyRuntimeSync(path: string, value: unknown): void {
 			return;
 		case "cron.model":
 			void rpc.setCronModel(typeof value === "string" && value.trim() ? value.trim() : undefined).catch(() => {});
+			return;
+		case "cron.durable":
+			void rpc.setCronDurableRuns(Boolean(value)).catch(() => {});
 			return;
 	}
 }

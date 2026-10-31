@@ -333,7 +333,7 @@ export interface CronRun {
 	variables?: Record<string, string>;
 	model?: string;
 	modelSource?: "cron" | "subagent" | "default" | "session";
-	execution?: "session" | "subagent";
+	execution?: "session" | "subagent" | "durable";
 	subagentId?: string;
 	outputFile?: string;
 	worktreePath?: string;
@@ -1218,6 +1218,9 @@ export const setAutoContinueSettings = (settings: AutoContinueSettings) =>
 	sendCommand({ type: "set_auto_continue_settings", settings });
 
 export const setCronModel = (model?: string) => sendCommand({ type: "set_cron_model", model });
+
+export const setCronDurableRuns = (enabled: boolean) =>
+	sendCommand({ type: "set_cron_durable", enabled });
 
 // ---- thinking ----
 export const setThinkingLevel = (level: ThinkingLevel) =>

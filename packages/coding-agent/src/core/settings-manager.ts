@@ -1534,6 +1534,13 @@ export class SettingsManager {
 		return this.settings.cron?.model?.trim() || undefined;
 	}
 
+	setCronDurableRuns(enabled: boolean): void {
+		if (!this.globalSettings.cron) this.globalSettings.cron = {};
+		this.globalSettings.cron.durable = enabled || undefined;
+		this.markModified("cron", "durable");
+		this.save();
+	}
+
 	setCronModel(model: string | undefined): void {
 		if (!this.globalSettings.cron) this.globalSettings.cron = {};
 		this.globalSettings.cron.model = model?.trim() || undefined;

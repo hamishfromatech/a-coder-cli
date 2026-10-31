@@ -86,6 +86,11 @@ export function groupRunsByDay(runs: CronRun[]): Array<{ label: string; runs: Cr
 	return groups;
 }
 
+/** Human-readable execution mode; durable runs carry their own checkpoints. */
+function executionLabel(run: CronRun): string {
+	return run.execution === "durable" ? "durable · resumable" : (run.execution ?? "session");
+}
+
 export function CronRunRow({
 	run,
 	showJobName = false,
@@ -96,7 +101,7 @@ export function CronRunRow({
 	onOpen: () => void;
 }) {
 	const triage = triageLabel(run.triage);
-	const meta = [run.trigger, run.execution ?? "session", run.delivery, runDuration(run)].join(" · ");
+	const meta = [run.trigger, executionLabel(run), run.delivery, runDuration(run)].join(" · ");
 	return (
 		<div
 			role="button"
@@ -232,7 +237,7 @@ export function CronRunDetails({ run, onClose }: { run: CronRun; onClose: () => 
 					{row("Finished", run.finishedAt ? absoluteTime(run.finishedAt) : "—")}
 					{row("Duration", runDuration(run))}
 					{row("Trigger", run.trigger)}
-					{row("Execution", run.execution ?? "session")}
+					{row("Execution", executionLabel(run))}
 					{row("Delivery", run.delivery)}
 					{run.model && row("Model", `${run.model}${run.modelSource ? ` (${run.modelSource})` : ""}`)}
 

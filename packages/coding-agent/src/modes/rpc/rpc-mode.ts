@@ -1093,6 +1093,13 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 				return success(id, "set_auto_continue_settings");
 			}
 
+			case "set_cron_durable": {
+				if (typeof command.enabled !== "boolean") {
+					return error(id, "set_cron_durable", "enabled must be a boolean");
+				}
+				session.settingsManager.setCronDurableRuns(command.enabled);
+				return success(id, "set_cron_durable");
+			}
 			case "set_cron_model": {
 				if (command.model !== undefined && typeof command.model !== "string") {
 					return error(id, "set_cron_model", "model must be a string");

@@ -128,6 +128,7 @@ export type RpcCommand =
 	| { id?: string; type: "get_auto_continue_settings" }
 	| { id?: string; type: "set_auto_continue_settings"; settings: AutoContinueSettings }
 	| { id?: string; type: "set_cron_model"; model?: string }
+	| { id?: string; type: "set_cron_durable"; enabled: boolean }
 
 	// Retry
 	| { id?: string; type: "set_auto_retry"; enabled: boolean }

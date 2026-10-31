@@ -65,6 +65,11 @@ export interface CronSettings {
 	 *  delegated-work model, then the default chat model. Scheduled runs never
 	 *  inherit a job session's pinned model implicitly. */
 	model?: string;
+	/**
+	 * Run scheduled tasks on the durable harness: every step is checkpointed, so a
+	 * run cut off by a crash or restart resumes instead of failing.
+	 */
+	durable?: boolean;
 }
 
 export interface DecisionModelInfo {

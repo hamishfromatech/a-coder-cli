@@ -85,7 +85,11 @@ const STEPS: TourStep[] = [
 		target: "tour-right-sidebar",
 		drive: () => useUiStore.getState().setRightSidebarTab("cron"),
 		body: "Scheduled tasks run the agent on a clock — a morning triage digest, a nightly test sweep, a weekly summary. Create them here or just ask in chat.",
-		points: ["Runs land in history with results and costs", "Triaged failures surface in the inbox next door"],
+		points: [
+			"Runs land in history with results and costs",
+			"Crash-proof runs resume after a restart (Settings → Chat behaviour)",
+			"Triaged failures surface in the inbox next door",
+		],
 	},
 	{
 		id: "activity",
