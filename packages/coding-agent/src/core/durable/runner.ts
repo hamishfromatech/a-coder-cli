@@ -28,7 +28,7 @@ import {
 } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeJsonlStorage } from "@earendil-works/pi-durable/storage/jsonl/node";
-import { CodingTools } from "@earendil-works/pi-durable/tools";
+import { createCodingTools } from "@earendil-works/pi-durable/tools";
 import type { ModelRegistry } from "../model-registry.ts";
 import { createRegistryModels } from "./models.ts";
 
@@ -67,10 +67,23 @@ export function durableStoragePath(storageDir: string, runId: string): string {
 	return join(storageDir, runId.replace(/[^A-Za-z0-9._-]+/g, "_"));
 }
 
+/**
+ * Tools whose interruption may be replayed on recovery. Reads have no side
+ * effects; writes, edits and bash do, so an interrupted call is reported to the
+ * model with its partial output instead of being re-run.
+ */
+const REPLAY_SAFE_TOOLS = new Set(["read"]);
+
 /** Registry with the durable coding tools (read, write, edit, bash) installed. */
 function createDurableRegistry(): Registry {
 	const registry = createRegistry();
-	registry.install(CodingTools);
+	const coding = createCodingTools();
+	registry.install({
+		...coding,
+		tools: (coding.tools ?? []).map((tool) =>
+			REPLAY_SAFE_TOOLS.has(tool.name) ? { ...tool, replay: "safe" as const } : tool,
+		),
+	});
 	return registry;
 }
 
@@ -143,8 +156,9 @@ export async function resumeDurableRun(
 		harness.resume();
 		const root = await harness.root(context);
 		await harness.waitForIdle(context);
+		// `entries()` pages newest first.
 		const entries = await root.entries({}, 200, undefined, context);
-		const last = [...entries.items].reverse().find((entry) => entry.kind === "pi.assistant");
+		const last = entries.items.find((entry) => entry.kind === "pi.assistant");
 		return { status: "done", text: answerText(last) };
 	} catch {
 		return undefined;

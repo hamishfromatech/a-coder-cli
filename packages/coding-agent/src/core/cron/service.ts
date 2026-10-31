@@ -20,7 +20,8 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { withKeyedLock } from "../../utils/async-mutex.ts";
 import type { AgentSession } from "../agent-session.ts";
-import { resumeDurableRun, runDurablePrompt } from "../durable/runner.ts";
+import { pruneDurableStorage } from "../durable/retention.ts";
+import { durableStoragePath, resumeDurableRun, runDurablePrompt } from "../durable/runner.ts";
 import { noOpUIContext } from "../extensions/runner.ts";
 import { describeSchedule, isDue, isValidDailyTime, isValidWeekdays, nextRunAt } from "../office/errands.ts";
 import { getDefaultSessionDir, SessionManager } from "../session-manager.ts";
@@ -1043,7 +1044,20 @@ export class CronService {
 				r.error = "Run interrupted (engine restarted before it finished)";
 			});
 		}
+		await this.pruneDurableRunStorage();
 		await this.emitUpdate();
+	}
+
+	/** Drop checkpoint storage of finished durable runs past the retention window. */
+	private async pruneDurableRunStorage(): Promise<void> {
+		const runs = await store.listRuns();
+		const dir = durableRunDir(this.runtime.services.agentDir);
+		const keep = new Set(
+			runs
+				.filter((run) => run.execution === "durable" && run.status === "running")
+				.map((run) => durableStoragePath(dir, durableRunId(run.jobId, run.id))),
+		);
+		await pruneDurableStorage({ storageDir: dir, keep });
 	}
 
 	/** Resume a durable scheduled run recorded as running by a previous process. */

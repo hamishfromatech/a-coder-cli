@@ -6,7 +6,8 @@
 
 - **Durable scheduled runs (opt-in):** scheduled tasks can execute on the vendored `pi-durable` harness — every model request and tool call is checkpointed under the engine data dir, and a run cut off by a crash or restart is resumed on the next boot instead of being marked failed. Enable with `"cron": { "durable": true }` in settings. Runs record `execution: "durable"`.
 - **Engine `ModelRegistry` → pi-ai `Models` bridge** (`core/durable/models.ts`): durable generation, compaction and hooks resolve models, credentials and request configs through the existing registry, with durable's system-message transcripts normalized into the provider-facing request shape.
-- **Durable run runner** (`core/durable/runner.ts`): open a harness over per-run JSONL storage, run a prompt to an answer, or reopen storage to resume interrupted work.
+- **Durable run runner** (`core/durable/runner.ts`): open a harness over per-run JSONL storage, run a prompt to an answer, or reopen storage to resume interrupted work. Reads are replay-safe; an interrupted `bash`/`write`/`edit` is reported to the model with its partial output instead of being re-run.
+- **Durable storage retention:** finished run checkpoints are pruned after seven days on boot; runs still marked running are always kept.
 - **RPC `kill_background_process` command:** clients can kill a running background process (tree-kill, marked killed) or remove a finished one's row; the desktop's background-processes chip uses it.
 - **RPC `background_bash` command:** clients (the desktop app) can background a running bash tool call by id — the same flag mechanism the CLI drives with Ctrl+B. The bash tool detaches the process, keeps it running, and reports a "backgrounded" result so the agent continues immediately.
 
