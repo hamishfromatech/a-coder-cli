@@ -1,3 +1,4 @@
+import { MacosPermissionHint } from "../MacosPermissionHint";
 import { memo, useMemo, useState } from "react";
 import { useSessionViewStore } from "../../stores/session-view-store";
 import { formatToolProgress, useToolProgressStore } from "../../stores/tool-progress-store";
@@ -290,6 +291,7 @@ export const RichToolCall = memo(function RichToolCall({
 									>
 										{output}
 									</pre>
+									{result?.isError && <MacosPermissionHint text={output} />}
 								</div>
 							)}
 						</>

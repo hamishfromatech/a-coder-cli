@@ -6,10 +6,31 @@
  * readable by default; `--json` for bug reports and scripts.
  */
 
-import { accessSync, constants, statfsSync } from "node:fs";
+import { accessSync, constants, readdirSync, statfsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join, sep } from "node:path";
 import process from "node:process";
 import chalk from "chalk";
 import { getAgentDir, getAuthPath, getSessionsDir, getSettingsPath, VERSION } from "../config.ts";
+
+/**
+ * Folders macOS guards with a privacy prompt. Kept local so `doctor` stays
+ * independent of the agent package's build output.
+ */
+const GUARDED_FOLDERS: Array<{ label: string; path: string }> = [
+	{ label: "Desktop", path: join(homedir(), "Desktop") },
+	{ label: "Documents", path: join(homedir(), "Documents") },
+	{ label: "Downloads", path: join(homedir(), "Downloads") },
+	{ label: "Movies", path: join(homedir(), "Movies") },
+	{ label: "Music", path: join(homedir(), "Music") },
+	{ label: "Pictures", path: join(homedir(), "Pictures") },
+	{ label: "iCloud Drive", path: join(homedir(), "Library", "Mobile Documents") },
+];
+
+function guardedRootFor(path: string): { label: string; path: string } | undefined {
+	return GUARDED_FOLDERS.find((root) => path === root.path || path.startsWith(`${root.path}${sep}`));
+}
+
 import { AuthStorage } from "../core/auth-storage.ts";
 import { getMcpServerStates } from "../core/mcp/status-store.ts";
 import { formatBytes, getSessionStoreStats } from "../core/session-maintenance.ts";
@@ -29,6 +50,16 @@ export interface DoctorReport {
 		sessions: string;
 	};
 	writable: { agentDir: boolean; sessions: boolean };
+	/** macOS privacy check for the working directory, when it is a guarded folder. */
+	fileAccess: {
+		platform: string;
+		cwd: string;
+		status: "ok" | "denied" | "missing" | "not_applicable";
+		guardedFolder?: string;
+		hint?: string;
+	};
+	/** Every guarded folder macOS may prompt for, with a readable probe. */
+	guardedFolders: Array<{ label: string; path: string; status: "ok" | "denied" | "missing" }>;
 	settingsErrors: string[];
 	sessions: {
 		count: number;
@@ -58,6 +89,22 @@ function freeDiskBytes(path: string): number | undefined {
 	}
 }
 
+/**
+ * Probe a directory without triggering a write. `readdirSync` is the cheapest read
+ * that macOS gates: a TCC denial answers EPERM, an absent folder ENOENT.
+ */
+function probeDirectory(path: string): "ok" | "denied" | "missing" {
+	try {
+		readdirSync(path);
+		return "ok";
+	} catch (error) {
+		const code = (error as NodeJS.ErrnoException).code;
+		if (code === "ENOENT") return "missing";
+		if (code === "EPERM" || code === "EACCES") return "denied";
+		return "ok";
+	}
+}
+
 export function collectDoctorReport(): DoctorReport {
 	const cwd = process.cwd();
 	const agentDir = getAgentDir();
@@ -79,6 +126,28 @@ export function collectDoctorReport(): DoctorReport {
 	}
 
 	const storeStats = getSessionStoreStats(sessionsDir);
+
+	const workingDir = process.cwd();
+	const guarded = process.platform === "darwin" ? guardedRootFor(workingDir) : undefined;
+	const fileAccess: DoctorReport["fileAccess"] = {
+		platform: process.platform,
+		cwd: workingDir,
+		status: process.platform !== "darwin" ? "not_applicable" : guarded ? probeDirectory(workingDir) : "ok",
+		...(guarded ? { guardedFolder: guarded.label } : {}),
+		...(guarded && probeDirectory(workingDir) === "denied"
+			? {
+					hint: `macOS is blocking access to ~/${guarded.label}. Open System Settings → Privacy & Security → Files and Folders (or Full Disk Access), enable access for ${process.env.TERM_PROGRAM ?? "your terminal or A-Coder Desktop"}, then restart it.`,
+				}
+			: {}),
+	};
+	const guardedFolders =
+		process.platform === "darwin"
+			? GUARDED_FOLDERS.map((root) => ({
+					label: root.label,
+					path: root.path,
+					status: probeDirectory(root.path),
+				}))
+			: [];
 	return {
 		version: VERSION,
 		rpcContract: RPC_CONTRACT,
@@ -98,6 +167,8 @@ export function collectDoctorReport(): DoctorReport {
 		settingsErrors,
 		sessions: { count: storeStats.count, totalBytes: storeStats.totalBytes, largest: storeStats.largest },
 		diskFreeBytes: freeDiskBytes(agentDir),
+		fileAccess,
+		guardedFolders,
 		auth,
 		mcp: getMcpServerStates().map((state) => ({
 			name: state.name,
@@ -131,6 +202,25 @@ export function formatDoctorReport(report: DoctorReport): string {
 		`${report.paths.sessions}  (${report.sessions.count} sessions, ${formatBytes(report.sessions.totalBytes)}${report.writable.sessions ? "" : `, ${chalk.red("not writable")}`})`,
 	);
 	if (report.diskFreeBytes !== undefined) row("disk free", formatBytes(report.diskFreeBytes));
+
+	if (report.fileAccess.platform === "darwin") {
+		section("File access (macOS)");
+		const status =
+			report.fileAccess.status === "denied"
+				? chalk.red("blocked by macOS privacy settings")
+				: report.fileAccess.status === "missing"
+					? chalk.dim("folder not found")
+					: report.fileAccess.status === "ok"
+						? chalk.green("ok")
+						: chalk.dim("not checked");
+		row("working dir", `${report.fileAccess.cwd}  ${status}`);
+		for (const folder of report.guardedFolders) {
+			if (folder.status === "missing") continue;
+			const label = folder.status === "denied" ? chalk.red("blocked") : chalk.green("ok");
+			lines.push(`  ${folder.label.padEnd(14)} ${label}`);
+		}
+		if (report.fileAccess.hint) lines.push("", chalk.yellow(`  ${report.fileAccess.hint}`));
+	}
 
 	section("Auth");
 	if (report.auth.length === 0) {

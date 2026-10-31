@@ -27,6 +27,7 @@ import {
 	type Result,
 	toError,
 } from "../types.ts";
+import { withMacosAccessHint } from "./macos-permissions.ts";
 
 const MAX_TIMEOUT_MS = 2_147_483_647;
 const MAX_TIMEOUT_SECONDS = MAX_TIMEOUT_MS / 1000;
@@ -90,7 +91,13 @@ function toFileError(error: unknown, path?: string): FileError {
 				return new FileError("not_found", message, path, cause);
 			case "EACCES":
 			case "EPERM":
-				return new FileError("permission_denied", message, path, cause);
+				// macOS privacy denials surface as EPERM on guarded folders; say so.
+				return new FileError(
+					"permission_denied",
+					path === undefined ? message : withMacosAccessHint(message, path),
+					path,
+					cause,
+				);
 			case "ENOTDIR":
 				return new FileError("not_directory", message, path, cause);
 			case "EISDIR":
@@ -324,7 +331,8 @@ export class NodeExecutionEnv implements ExecutionEnv {
 				}
 			} catch (error) {
 				const cause = toError(error);
-				settle(err(new ExecutionError("spawn_error", cause.message, cause)));
+				const cwd = options?.cwd ?? this.cwd;
+				settle(err(new ExecutionError("spawn_error", withMacosAccessHint(cause.message, cwd), cause)));
 				return;
 			}
 
@@ -370,7 +378,8 @@ export class NodeExecutionEnv implements ExecutionEnv {
 			});
 
 			child.on("error", (error) => {
-				settle(err(new ExecutionError("spawn_error", error.message, error)));
+				const cwd = options?.cwd ?? this.cwd;
+				settle(err(new ExecutionError("spawn_error", withMacosAccessHint(error.message, cwd), error)));
 			});
 
 			child.on("close", (code) => {

@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use base64::Engine;
 use walkdir::WalkDir;
 
+use crate::macos_permissions::fs_error;
+
 /// Resolve a path to its canonical form (real casing on case-insensitive
 /// filesystems, symlinks resolved) for comparing dialog-provided paths
 /// against stored ones. Returns None when the path does not exist.
@@ -47,7 +49,7 @@ pub fn read_text_file(path: String) -> Result<String, String> {
 			MAX_BYTES
 		));
 	}
-	fs::read_to_string(&path).map_err(|e| format!("Failed to read {}: {e}", path.display()))
+	fs::read_to_string(&path).map_err(|e| fs_error(&path, format!("Failed to read {}", path.display()), &e))
 }
 
 /// List files inside `cwd` whose extension matches `extension` (e.g. ".html").
@@ -191,7 +193,7 @@ pub fn list_directory(cwd: String, max_depth: Option<usize>) -> Result<Vec<DirEn
 
 		let mut entries: Vec<DirEntry> = Vec::new();
 		let iter = fs::read_dir(dir)
-			.map_err(|e| format!("Failed to read directory {}: {e}", dir.display()))?;
+			.map_err(|e| fs_error(dir, format!("Failed to read directory {}", dir.display()), &e))?;
 
 		for entry in iter.flatten() {
 			if *count >= max_entries {
@@ -320,7 +322,7 @@ pub fn read_file_base64(path: String) -> Result<FileBase64, String> {
 		));
 	}
 
-	let bytes = fs::read(&path).map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
+	let bytes = fs::read(&path).map_err(|e| fs_error(&path, format!("Failed to read {}", path.display()), &e))?;
 	let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
 
 	let mime_type = mime_type_from_path(&path);

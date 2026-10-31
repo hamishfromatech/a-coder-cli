@@ -9,6 +9,7 @@ mod fs;
 mod git;
 mod ide;
 mod menu;
+mod macos_permissions;
 mod power;
 mod resources;
 mod rpc;

@@ -10,6 +10,8 @@
 - Composio integration moved into the engine's built-in **Composio MCP server** (`https://connect.composio.dev/mcp`, seeded on fresh installs next to chrome-devtools; auth = dashboard consumer API key via `COMPOSIO_API_KEY` or the MCP servers editor). The desktop **Apps panel** (browse/connect apps) and the empty `Composio` settings card are gone — app discovery and connection now happen in the chat through the server's manage-connections meta tools, and old `#composio` settings deep links still land on Integrations.
 ### Added
 
+- When macOS blocks a guarded folder, tool errors carry an explanation and the card offers **Open Privacy Settings**; the IDE editor's save path shows the same guidance.
+
 - Settings → Chat behaviour has a **Crash-proof scheduled runs** toggle: scheduled tasks checkpoint every step and resume after a crash or restart. Scheduled run history labels those runs `durable · resumable`.
 
 - **Plan mode in the desktop.** Status-bar Plan chip when active (click to exit), toggles in ⌘K and the `/plan` chat command; the flag syncs from the engine on every state refresh.

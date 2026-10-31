@@ -7,6 +7,7 @@ use portable_pty::{native_pty_system, MasterPty, PtySize};
 use tauri::{AppHandle, Emitter, State};
 
 use crate::cli::reconstructed_path;
+use crate::macos_permissions::fs_error;
 
 /// Write a UTF-8 text file for the IDE editor surface (editor save). A hard
 /// cap keeps a runaway write from pinning memory; the model's copy in the
@@ -19,9 +20,10 @@ pub fn write_text_file(path: String, content: String) -> Result<(), String> {
 	let path = std::path::PathBuf::from(&path);
 	if let Some(parent) = path.parent() {
 		std::fs::create_dir_all(parent)
-			.map_err(|e| format!("Failed to create parent directory: {e}"))?;
+			.map_err(|e| fs_error(parent, format!("Failed to create parent directory: {e}"), &e))?;
 	}
-	std::fs::write(&path, content).map_err(|e| format!("Failed to write {}: {e}", path.display()))
+	std::fs::write(&path, content)
+		.map_err(|e| fs_error(&path, format!("Failed to write {}", path.display()), &e))
 }
 
 // ============================================================================
