@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 import { BridgeWsServer, type WsServerOptions } from "../../src/serve/ws-server.ts";
 
@@ -118,9 +118,11 @@ describe("slow client eviction", () => {
 		resumeClient(ws);
 		await waitForEvent(ws, ["close", "error"]);
 
+		// The server removes a client in the socket's own `close` handler, which can
+		// run after the client observes the close; wait for the registry to drain.
 		// One eviction, not one per flood, and the server stays usable.
 		expect(slowClients).toHaveLength(1);
-		expect(server.clientCount).toBe(0);
+		await vi.waitFor(() => expect(server.clientCount).toBe(0), { timeout: 5_000, interval: 25 });
 		expect(() => server.broadcast(`{"id":"after"}\n`)).not.toThrow();
 	}, 20_000);
 
