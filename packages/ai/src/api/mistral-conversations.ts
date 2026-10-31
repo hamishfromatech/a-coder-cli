@@ -789,6 +789,11 @@ function toChatMessages(messages: Message[], supportsImages: boolean): MistralCh
 	const result: MistralChatMessage[] = [];
 
 	for (const msg of messages) {
+		if (msg.role === "system") {
+			// System entries are folded into the prompt before dispatch; a provider
+			// implementation never receives them.
+			continue;
+		}
 		if (msg.role === "user") {
 			if (typeof msg.content === "string") {
 				result.push({ role: "user", content: sanitizeSurrogates(msg.content) });

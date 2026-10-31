@@ -4,6 +4,8 @@
 
 ### Added
 
+- Durable-transcript seam from upstream Pi 1.4: `SystemMessage` participates in the `Message` union, plus `utils/transcript.ts` (system-message replay, tool declarations, `normalizeContext`/`toRequestContext`) and `utils/identity.ts` (client identity, User-Agent, provider attribution). `Models.stream`/`streamSimple` normalize system entries back into `Context` so providers are unchanged. `Model.inputLimits` and a `telemetry` request option pass through for the durable harness.
+
 - Inception now participates in dynamic model refresh: the direct provider fetches `https://api.inceptionlabs.ai/v1/models`, keeps chat models that support tools, maps live context/output limits and pricing, and merges newly published models (for example Mercury 3) over the generated catalog without replacing `models.json` overrides. The refresh runs on the normal model refresh paths and after a session `/reload`.
 
 - Full llama.cpp capability discovery and thinking controls: the provider reads `/props` (build info, loaded context, `modalities.vision`, chat-template caps, and the template itself) and derives reasoning support from `supports_reasoning_effort`, `enable_thinking`, or a bare `thinking` variable. Discovered models now expose the CLI/Desktop thinking controls, send `reasoning_effort: "none"` when off, map the selected level when on, and cap reasoning with `thinking_budget_tokens`. Boolean-only templates use `chat_template_kwargs`; vision is no longer advertised for text-only llama.cpp models.

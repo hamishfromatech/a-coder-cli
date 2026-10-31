@@ -11,6 +11,7 @@ import {
 	streamSimple as streamSimpleOpenAICodexResponses,
 } from "../src/api/openai-codex-responses.ts";
 import type { Context, Model } from "../src/types.ts";
+import { headersToRecord } from "../src/utils/headers.ts";
 
 const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
 
@@ -2114,7 +2115,7 @@ describe("openai-codex streaming", () => {
 		let capturedSseHeaders: Record<string, string> | undefined;
 
 		const fetchMock = vi.fn(async (_input: string | URL, init?: RequestInit) => {
-			capturedSseHeaders = Object.fromEntries(new Headers(init?.headers).entries());
+			capturedSseHeaders = headersToRecord(new Headers(init?.headers));
 			return new Response(buildSSEPayload({ status: "completed" }), {
 				status: 200,
 				headers: { "content-type": "text/event-stream" },

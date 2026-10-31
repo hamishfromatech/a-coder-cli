@@ -18,4 +18,6 @@
 
 ### Added
 
+- Ported from upstream Pi 1.4: `metrics.ts` (typed metrics), `render.ts`, propagation/carrier types, stored traces/spans and `TelemetryStore` queries, and the expanded conformance suite. Adds the `./render` export.
+
 - Added the callback-based telemetry context contract, shared no-op context, deterministic in-memory reference adapter, reusable adapter conformance suite, typed serializable schema utilities, and multi-schema typed span starters with explicit child propagation.

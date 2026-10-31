@@ -128,6 +128,11 @@ export interface ProviderRequestOptions<TModel = Model<Api>> {
 	signal?: AbortSignal;
 	/** Explicit parent context for telemetry produced by this logical request. */
 	telemetryContext?: TelemetryContext;
+	/**
+	 * Parent span attached by the durable harness (upstream 1.x field name). Providers
+	 * that only understand `telemetryContext` may ignore it.
+	 */
+	telemetry?: unknown;
 	apiKey?: string;
 	/**
 	 * Optional fetch implementation for provider HTTP requests.
@@ -600,7 +605,45 @@ export interface ToolResultMessage<TDetails = any> {
 	timestamp: number; // Unix timestamp in milliseconds
 }
 
-export type Message = UserMessage | AssistantMessage | ToolResultMessage;
+export type Message = SystemMessage | UserMessage | AssistantMessage | ToolResultMessage;
+
+/**
+ * A system-prompt entry in a durable transcript (upstream 1.x model). Our request
+ * `Context` still carries `systemPrompt`/`tools` directly; this type exists so
+ * durable transcripts can be represented and normalized without changing the
+ * provider-facing message union.
+ */
+export interface SystemMessage {
+	role: "system";
+	/** Instruction text. On the leading message this is the base prompt; later, additional instructions. */
+	content: string | TextContent[];
+	/**
+	 * Named, ordered prompt sections rendered verbatim after `content`. The leading message
+	 * declares them; later messages replace sections by name, and `null` removes one.
+	 */
+	sections?: Record<string, string | null>;
+	/** Complete definitions of tools that become available at this point. */
+	toolsAdded?: Tool[];
+	/** Tools that stop being available at this point. */
+	toolsRemoved?: ToolReference[];
+	timestamp: number;
+}
+
+export interface ToolReference {
+	name: string;
+}
+
+declare const transcriptContextBrand: unique symbol;
+
+/**
+ * Normalized request context used by the durable harness: the prompt and tool
+ * declarations are carried by system messages in the transcript. Build one from
+ * our {@link Context} with `normalizeContext()` from `utils/transcript.ts`.
+ */
+export type TranscriptContext = {
+	messages: (Message | SystemMessage)[];
+	readonly [transcriptContextBrand]: true;
+};
 
 export type ImagesInputContent = TextContent | ImageContent;
 export type ImagesOutputContent = TextContent | ImageContent;
@@ -978,6 +1021,35 @@ export interface ModelCost extends ModelCostRates {
 }
 
 // Model interface for the unified model system
+/**
+ * Provider input limits and cache-safe preprocessing metadata (upstream 1.x shape).
+ * Optional everywhere; providers that publish limits populate it, everything else
+ * simply omits it.
+ */
+export interface ModelInputLimits {
+	/** Maximum serialized provider request size in bytes. */
+	maxRequestBytes?: number;
+	/** Image limits and the cache-safe preprocessing profile (upstream 1.x shape). */
+	images?: ModelImageInputLimits;
+}
+
+export interface ModelImageInputLimits {
+	/** Cache-safe resize profile applied before a new image enters conversation history. */
+	resize?: ModelImageResizeOptions;
+	/** Maximum images accepted in one provider message. */
+	maxPerMessage?: number;
+	/** Maximum images accepted across one provider request. */
+	maxPerRequest?: number;
+}
+
+export interface ModelImageResizeOptions {
+	maxWidth?: number;
+	maxHeight?: number;
+	/** Maximum base64-encoded payload size in bytes. */
+	maxBytes?: number;
+	jpegQuality?: number;
+}
+
 export interface Model<TApi extends Api> {
 	id: string;
 	name: string;
@@ -991,6 +1063,8 @@ export interface Model<TApi extends Api> {
 	 */
 	thinkingLevelMap?: ThinkingLevelMap;
 	input: ("text" | "image")[];
+	/** Provider input limits and cache-safe preprocessing metadata (upstream 1.x). */
+	inputLimits?: ModelInputLimits;
 	cost: ModelCost;
 	contextWindow: number;
 	maxTokens: number;

@@ -402,7 +402,9 @@ export const stream: StreamFunction<"openai-codex-responses", OpenAICodexRespons
 						response = await (options?.fetch ?? globalThis.fetch)(resolveCodexUrl(model.baseUrl), {
 							method: "POST",
 							headers: sseHeaders,
-							body: sseBody,
+							// Node 24 types make Uint8Array generic over ArrayBufferLike, which the
+							// DOM BodyInit union does not admit; the runtime value is unchanged.
+							body: sseBody as BodyInit,
 							signal: combinedSignal.signal,
 						});
 					} catch (error) {

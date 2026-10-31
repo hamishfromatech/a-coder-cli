@@ -2,9 +2,11 @@ import type { ProviderHeaders } from "../types.ts";
 
 export function headersToRecord(headers: Headers): Record<string, string> {
 	const result: Record<string, string> = {};
-	for (const [key, value] of headers.entries()) {
+	// forEach exists in both the DOM and undici (Node) Headers typings, unlike
+	// entries(), whose availability depends on the resolved @types/node.
+	headers.forEach((value, key) => {
 		result[key] = value;
-	}
+	});
 	return result;
 }
 

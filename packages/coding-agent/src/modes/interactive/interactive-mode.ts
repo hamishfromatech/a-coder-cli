@@ -4380,6 +4380,10 @@ export class InteractiveMode {
 				// Tool results are rendered inline with tool calls, handled separately
 				break;
 			}
+			case "system": {
+				// System entries belong to durable transcripts, not the TUI session view.
+				break;
+			}
 			default: {
 				const _exhaustive: never = message;
 			}

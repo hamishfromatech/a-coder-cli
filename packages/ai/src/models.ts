@@ -34,6 +34,7 @@ import type {
 	Usage,
 } from "./types.ts";
 import { operationSignal, raceWithAbortSignal } from "./utils/abort.ts";
+import { toRequestContext } from "./utils/transcript.ts";
 
 export { ModelsError, type ModelsErrorCode } from "./auth/resolve.ts";
 
@@ -83,8 +84,16 @@ export interface ModelsRequestTransforms {
 
 export type ModelsApiStreamOptions<TApi extends Api> = ApiStreamOptions<TApi> & ModelsRequestTransforms;
 export type ModelsSimpleStreamOptions = SimpleStreamOptions & ModelsRequestTransforms;
-export type ModelsDeferredFetchOptions = DeferredFetchOptions & ModelsRequestTransforms;
-export type ModelsDeferredCancelOptions = DeferredCancelOptions & ModelsRequestTransforms;
+export type ModelsDeferredFetchOptions = DeferredFetchOptions &
+	ModelsRequestTransforms & {
+		/** Parent span attached by the durable harness; providers may ignore it. */
+		telemetry?: unknown;
+	};
+export type ModelsDeferredCancelOptions = DeferredCancelOptions &
+	ModelsRequestTransforms & {
+		/** Parent span attached by the durable harness; providers may ignore it. */
+		telemetry?: unknown;
+	};
 
 /**
  * A provider is the concrete runtime unit. It owns id/name/base metadata,
@@ -686,7 +695,11 @@ class ModelsImpl implements MutableModels {
 				model,
 				options as ModelsApiStreamOptions<Api> | undefined,
 			);
-			return provider.stream(requestModel as Model<TApi>, context, requestOptions as ApiStreamOptions<TApi>);
+			return provider.stream(
+				requestModel as Model<TApi>,
+				toRequestContext(context),
+				requestOptions as ApiStreamOptions<TApi>,
+			);
 		});
 	}
 
@@ -702,7 +715,7 @@ class ModelsImpl implements MutableModels {
 		return lazyStream(model, async () => {
 			const provider = this.requireProvider(model);
 			const { requestModel, requestOptions } = await this.applyAuth(model, options);
-			return provider.streamSimple(requestModel, context, requestOptions as SimpleStreamOptions);
+			return provider.streamSimple(requestModel, toRequestContext(context), requestOptions as SimpleStreamOptions);
 		});
 	}
 

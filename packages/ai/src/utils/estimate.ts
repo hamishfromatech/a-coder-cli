@@ -1,4 +1,16 @@
-import type { AssistantMessage, Context, ImageContent, Message, TextContent, Tool, Usage } from "../types.ts";
+import type {
+	AssistantMessage,
+	Context,
+	ImageContent,
+	Message,
+	SystemMessage,
+	TextContent,
+	Tool,
+	ToolReference,
+	TranscriptContext,
+	Usage,
+} from "../types.ts";
+import { getSystemMessageText } from "./text.ts";
 
 export interface ContextUsageEstimate {
 	/** Estimated total context tokens. */
@@ -11,6 +23,9 @@ export interface ContextUsageEstimate {
 	lastUsageIndex: number | null;
 }
 
+// Our fork keeps 4 chars/token: upstream 1.4 moved to 3.5, but our compaction
+// thresholds and tests are calibrated at 4, and durable only needs the
+// system-message accounting added above.
 const CHARS_PER_TOKEN = 4;
 const ESTIMATED_IMAGE_CHARS = 4800;
 
@@ -42,9 +57,16 @@ export function estimateTextAndImageContentTokens(content: string | Array<TextCo
 	return Math.ceil(estimateTextAndImageContentChars(content) / CHARS_PER_TOKEN);
 }
 
-export function estimateMessageTokens(message: Message): number {
+export function estimateMessageTokens(message: Message | SystemMessage): number {
 	let chars = 0;
 
+	if (message.role === "system") {
+		return (
+			estimateTextTokens(getSystemMessageText(message)) +
+			estimateToolsTokens(message.toolsAdded) +
+			estimateReferenceTokens(message.toolsRemoved)
+		);
+	}
 	if (message.role === "user") return estimateTextAndImageContentTokens(message.content);
 	if (message.role === "toolResult") return estimateTextAndImageContentTokens(message.content);
 
@@ -60,7 +82,9 @@ export function estimateMessageTokens(message: Message): number {
 	return Math.ceil(chars / CHARS_PER_TOKEN);
 }
 
-function getLastAssistantUsageInfo(messages: readonly Message[]): { usage: Usage; index: number } | undefined {
+function getLastAssistantUsageInfo(
+	messages: readonly (Message | SystemMessage)[],
+): { usage: Usage; index: number } | undefined {
 	let latestPrefixTimestamp = Number.NEGATIVE_INFINITY;
 	let usageInfo: { usage: Usage; index: number } | undefined;
 
@@ -86,7 +110,7 @@ function getLastAssistantUsageInfo(messages: readonly Message[]): { usage: Usage
 	return usageInfo;
 }
 
-function estimateMessages(messages: readonly Message[]): ContextUsageEstimate {
+function estimateMessages(messages: readonly (Message | SystemMessage)[]): ContextUsageEstimate {
 	const usageInfo = getLastAssistantUsageInfo(messages);
 	if (usageInfo) {
 		const usageTokens = calculateContextTokens(usageInfo.usage);
@@ -107,12 +131,26 @@ function estimateToolsTokens(tools: readonly Tool[] | undefined): number {
 	return estimateTextTokens(safeJsonStringify(tools));
 }
 
-function isMessageArray(value: Context | readonly Message[]): value is readonly Message[] {
+/** A removal only carries the tool name; its declaration cost was already counted earlier. */
+function estimateReferenceTokens(tools: readonly ToolReference[] | undefined): number {
+	if (!tools || tools.length === 0) return 0;
+	return estimateTextTokens(safeJsonStringify(tools));
+}
+
+type EstimateInput = Context | TranscriptContext | readonly (Message | SystemMessage)[];
+
+function isMessageArray(value: EstimateInput): value is readonly (Message | SystemMessage)[] {
 	return Array.isArray(value);
 }
 
-export function estimateContextTokens(context: Context | readonly Message[]): ContextUsageEstimate {
+export function estimateContextTokens(context: EstimateInput): ContextUsageEstimate {
 	if (isMessageArray(context)) return estimateMessages(context);
+
+	// A transcript context carries the prompt in system messages; a request
+	// context carries it in systemPrompt/tools.
+	if (!("systemPrompt" in context) && !("tools" in context)) {
+		return estimateMessages(context.messages);
+	}
 
 	const estimate = estimateMessages(context.messages);
 	if (estimate.lastUsageIndex !== null) {

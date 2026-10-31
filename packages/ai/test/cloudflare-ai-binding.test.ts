@@ -6,6 +6,7 @@ import {
 } from "../src/api/cloudflare-ai-binding.ts";
 import { streamSimple as streamOpenAICompletions } from "../src/api/openai-completions.ts";
 import type { Model } from "../src/types.ts";
+import { headersToRecord } from "../src/utils/headers.ts";
 
 const BINDING_PREFIX = "https://workers-binding.ai/ai-gateway/gateways/my-gateway";
 
@@ -49,7 +50,7 @@ describe("createAiBindingFetch", () => {
 
 		expect(requests[0].url).toBe(`${BINDING_PREFIX}/anthropic/v1/messages?beta=true`);
 		expect(requests[0].method).toBe("POST");
-		expect(Object.fromEntries(requests[0].headers)).toEqual({
+		expect(headersToRecord(requests[0].headers)).toEqual({
 			"content-type": "application/json",
 			// The gateway recognizes and strips the sentinel itself; nothing here touches headers.
 			"cf-aig-authorization": `Bearer ${CLOUDFLARE_GATEWAY_BINDING_AUTH_SENTINEL}`,
@@ -103,7 +104,7 @@ describe("createAiBindingFetch", () => {
 		expect(result.stopReason).toBe("error");
 		expect(requests).toHaveLength(1);
 		expect(requests[0].url).toBe(`${BINDING_PREFIX}/openai/chat/completions`);
-		const headerNames = Object.keys(Object.fromEntries(requests[0].headers));
+		const headerNames = Object.keys(headersToRecord(requests[0].headers));
 		expect(headerNames).not.toContain("authorization");
 		expect(headerNames).not.toContain("x-api-key");
 	});

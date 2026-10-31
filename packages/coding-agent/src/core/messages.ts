@@ -181,6 +181,10 @@ export function convertToLlm(messages: AgentMessage[]): Message[] {
 						],
 						timestamp: m.timestamp,
 					};
+				case "system":
+					// System entries live only in durable transcripts; session
+					// messages never carry them.
+					return undefined;
 				case "user":
 				case "assistant":
 				case "toolResult":
