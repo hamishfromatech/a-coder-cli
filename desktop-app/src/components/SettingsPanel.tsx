@@ -638,7 +638,7 @@ function renderCustom(
 		case "completionSound":
 			return <CompletionSoundPicker />;
 		case "onboardingTour":
-			return <Button variant="secondary" size="md" onClick={() => replayOnboarding()}>Watch the tour</Button>;
+			return <Button variant="secondary" size="md" onClick={() => replayOnboarding()}>Start guided tour</Button>;
 		case "computerUse":
 			return <ComputerUseWidget value={value} onChange={onChange} />;
 		case "browserSettings":
@@ -1622,6 +1622,7 @@ export function SettingsPanel({
 	return (
 		<ModalBackdrop ref={modalRef} aria-label="Settings" onClick={onClose}>
 			<ModalPanel
+				data-tour-id="tour-settings-panel"
 				className="max-w-[min(1080px,calc(100vw-3rem))] bg-pi-surface"
 				onClick={(e) => e.stopPropagation()}
 			>

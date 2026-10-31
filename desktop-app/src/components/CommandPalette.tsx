@@ -222,6 +222,7 @@ export function CommandPalette({ open, commands, onClose, onDismiss }: CommandPa
 			/>
 			{/* Panel */}
 			<div
+				data-tour-id="tour-command-palette"
 				className="relative w-full max-w-lg overflow-hidden rounded-pi-xl border border-[var(--pi-border)] bg-[var(--pi-surface-overlay)] shadow-2xl"
 				role="dialog"
 				aria-label="Command palette"

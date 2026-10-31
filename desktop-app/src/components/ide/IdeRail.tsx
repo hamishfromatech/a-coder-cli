@@ -18,7 +18,7 @@ export function IdeRail(): ReactNode {
 	const setInterfaceMode = useUiStore((s) => s.setInterfaceMode);
 
 	return (
-		<aside className="flex w-11 shrink-0 flex-col items-center gap-1 border-r border-pi-border bg-pi-surface py-2">
+		<aside data-tour-id="tour-ide-rail" className="flex w-11 shrink-0 flex-col items-center gap-1 border-r border-pi-border bg-pi-surface py-2">
 			<RailButton
 				active={sidebarTab === "explorer"}
 				onClick={() => setSidebarTab(sidebarTab === "explorer" ? null : "explorer")}

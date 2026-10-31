@@ -52,6 +52,8 @@ import { ModelPicker } from "./components/ModelPicker";
 import { REPLAY_ONBOARDING_EVENT, isFirstRunSetupComplete, isOnboardingComplete } from "./lib/onboarding";
 import { OnboardingModal } from "./components/OnboardingModal";
 import { FirstRunSetup } from "./components/FirstRunSetup";
+import { GuidedTour } from "./components/GuidedTour";
+import { useTourStore } from "./stores/tour-store";
 import { ProjectPicker } from "./components/ProjectPicker";
 import { RightSidebar } from "./components/RightSidebar";
 import { SettingsPanel } from "./components/SettingsPanel";
@@ -115,10 +117,16 @@ export default function App() {
 	const [showOnboarding, setShowOnboarding] = useState(() => !isOnboardingComplete());
 	const [showFirstRunSetup, setShowFirstRunSetup] = useState(false);
 
-	// Settings > General > Welcome tour re-opens the onboarding overlay.
+	// Settings > General > welcome tour: with a workspace already loaded, skip
+	// the folder modal entirely and run the interactive guided tour; without
+	// one, the folder/first-run flow is still the right shape.
 	useEffect(() => {
 		const handler = () => {
 			setShowSettings(false);
+			if (useWorkspaceStore.getState().current) {
+				useTourStore.getState().start();
+				return;
+			}
 			setShowOnboarding(true);
 		};
 		window.addEventListener(REPLAY_ONBOARDING_EVENT, handler);
@@ -856,6 +864,12 @@ export default function App() {
 			void getCurrentWindow().close();
 		};
 
+		const onCloseOverlay = () => {
+			setShowSettings(false);
+			setShowCommandPalette(false);
+			setShowFindBar(false);
+		};
+		window.addEventListener("a-coder:close-overlay", onCloseOverlay);
 		window.addEventListener("a-coder:open-settings", onOpenSettings);
 		window.addEventListener("a-coder:find-in-page", onOpenFindBar);
 		window.addEventListener("a-coder:command-palette", onOpenCommandPalette);
@@ -874,6 +888,7 @@ export default function App() {
 		window.addEventListener("a-coder:quit", onQuit);
 
 		return () => {
+			window.removeEventListener("a-coder:close-overlay", onCloseOverlay);
 			window.removeEventListener("a-coder:open-settings", onOpenSettings);
 			window.removeEventListener("a-coder:find-in-page", onOpenFindBar);
 			window.removeEventListener("a-coder:command-palette", onOpenCommandPalette);
@@ -1148,6 +1163,7 @@ export default function App() {
 				{ id: "model-picker", label: "Select model", keybinding: "⌘P", group: "navigate", action: openModelPicker },
 			{ id: "project-picker", label: "Open project", group: "navigate", action: () => setShowProjectPicker(true) },
 			{ id: "find", label: "Find in page", keybinding: "⌘F", group: "navigate", action: () => setShowFindBar(true) },
+			{ id: "guided-tour", label: "Start guided tour", group: "navigate", action: () => useTourStore.getState().start() },
 			{ id: "home", label: "Open home dashboard", keybinding: "⇧⌘H", group: "navigate", action: () => setShowHome(true) },
 			{ id: "reopen-closed-tab", label: "Reopen closed session", keybinding: "⇧⌘T", group: "session", action: () => window.dispatchEvent(new CustomEvent("a-coder:reopen-closed-tab")) },
 			{ id: "settings", label: "Open settings", keybinding: "⌘,", group: "settings", action: () => openSettingsSection("general") },
@@ -1426,7 +1442,10 @@ export default function App() {
 
 			{showFirstRunSetup && !showOnboarding && engineReady && !trustPrompt && (
 				<FirstRunSetup
-					onClose={() => setShowFirstRunSetup(false)}
+					onClose={() => {
+						setShowFirstRunSetup(false);
+						useTourStore.getState().startForNewUser();
+					}}
 					onOpenSettings={() => setShowSettings(true)}
 				/>
 			)}
@@ -1472,6 +1491,10 @@ export default function App() {
 					onSelect={(m) => void handleSelectModel(m)}
 				/>
 			)}
+
+			{/* Guided tour: above everything while active, so it can spotlight
+			    modals it drove open. */}
+			<GuidedTour />
 
 			{showMemory && (
 				<MemoryModal open={showMemory} onClose={() => setShowMemory(false)} />
@@ -1760,7 +1783,7 @@ function SidebarRail({
 			onMouseEnter={() => setHovered(true)}
 			onMouseLeave={() => setHovered(false)}
 		>
-			<aside className="flex w-12 flex-col items-center gap-1 border-r border-pi-border bg-pi-surface py-2">
+			<aside data-tour-id="tour-left-rail" className="flex w-12 flex-col items-center gap-1 border-r border-pi-border bg-pi-surface py-2">
 				<button
 					onClick={onExpand}
 					className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md bg-pi-accent-soft text-pi-accent transition-hover hover:brightness-105"
@@ -1950,6 +1973,7 @@ function ResizableRightSidebar({
 
 	return (
 		<aside
+			data-tour-id="tour-right-sidebar"
 			className={`relative shrink-0 border-l border-pi-border bg-pi-surface ${
 				open
 					? isResizing

@@ -52,12 +52,15 @@ export function ModalPanel({
 	centered = true,
 	appear = true,
 	onClick,
+	dataTourId,
 }: {
 	children: React.ReactNode;
 	className?: string;
 	centered?: boolean;
 	appear?: boolean;
 	onClick?: (e: React.MouseEvent) => void;
+	/** Anchor attribute for the guided tour's spotlight. */
+	dataTourId?: string;
 }) {
 	const [visible, setVisible] = useState(!appear);
 
@@ -68,6 +71,7 @@ export function ModalPanel({
 	return (
 		<div
 			onClick={onClick}
+			data-tour-id={dataTourId}
 			className={cn(
 				"pi-card-overlay flex w-full flex-col overflow-hidden transition-all duration-300 ease-out",
 				centered ? "max-h-overlay" : "",

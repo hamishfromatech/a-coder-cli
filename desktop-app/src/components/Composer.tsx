@@ -641,7 +641,7 @@ export function Composer() {
 	}, []);
 
 	return (
-		<div ref={composerRef} className="chat-composer relative shrink-0 pt-1 pb-3">
+		<div ref={composerRef} data-tour-id="tour-composer" className="chat-composer relative shrink-0 pt-1 pb-3">
 			<input
 				ref={fileInputRef}
 				type="file"
