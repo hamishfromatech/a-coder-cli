@@ -121,6 +121,8 @@ Attribution:
 
 **Lockstep versioning**: all packages share one version; every release updates all together. `patch` = fixes + additions, `minor` = breaking changes. No major releases.
 
+**Verification**: every release runs [docs/release-verification.md](docs/release-verification.md) before the tag is pushed and after the release publishes. The runbook is board-gated and never pushes tags, publishes releases, or runs `npm publish`.
+
 **What triggers a release**: pushing a `v*` tag (e.g. `v0.80.30`) triggers `.github/workflows/build-binaries.yml`, which builds CLI binaries + desktop installers (via `desktop-build.yml` workflow_call), stages a draft GitHub Release, runs `build`/`check`/`test`, publishes npm packages via OIDC trusted publishing **only when the `ENABLE_NPM_PUBLISH` repo variable is `true`** (default: off; no local `npm publish`/OTP needed), then publishes the GitHub Release. A bare branch push to `feat/desktop-unified-release` only builds test binaries as artifacts — it does not release.
 
 There are two release flows: a quick manual flow for fast iteration, and the full release script for proper changelog-managed releases.
