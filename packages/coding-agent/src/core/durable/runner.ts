@@ -29,6 +29,8 @@ import {
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeJsonlStorage } from "@earendil-works/pi-durable/storage/jsonl/node";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
+import type { ModelRegistry } from "../model-registry.ts";
+import { createRegistryModels } from "./models.ts";
 
 /** The harness context every call takes; background work is not bound to a UI request. */
 const context: Context = BACKGROUND_CONTEXT;
@@ -38,7 +40,10 @@ export interface DurableRunOptions {
 	storageDir: string;
 	/** Stable run id; the storage file name. Reopening the same id resumes that run. */
 	runId: string;
-	models: Models;
+	/** pi-ai models; omit and pass `registry` to run through the engine registry. */
+	models?: Models;
+	/** Engine registry: models, auth and request configs resolve per request. */
+	registry?: ModelRegistry;
 	/** Provider and model the run's conversation is pinned to. */
 	model: { provider: string; id: string };
 	/** Working directory the tools execute in. */
@@ -70,12 +75,14 @@ function createDurableRegistry(): Registry {
 }
 
 async function openHarness(options: DurableRunOptions): Promise<{ harness: Harness; registry: Registry }> {
+	const models = options.models ?? (options.registry ? createRegistryModels(options.registry) : undefined);
+	if (models === undefined) throw new Error("Durable run needs `models` or `registry`");
 	await mkdir(options.storageDir, { recursive: true });
 	const registry = createDurableRegistry();
 	const harness = await DurableHarness.open(
 		await openNodeJsonlStorage(durableStoragePath(options.storageDir, options.runId), context),
 		{
-			models: options.models,
+			models,
 			registry,
 			env: (target) => new NodeExecutionEnv({ cwd: target.cwd ?? options.cwd }),
 			onReport: (error, info) => {

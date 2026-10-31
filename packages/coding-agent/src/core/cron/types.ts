@@ -158,7 +158,7 @@ export interface CronRun {
 	/** Where that model came from. */
 	modelSource?: "cron" | "subagent" | "default" | "session";
 	/** How the prompt was executed. Missing on old runs means "session". */
-	execution?: "session" | "subagent";
+	execution?: "session" | "subagent" | "durable";
 	/** Background subagent id, when execution is subagent. */
 	subagentId?: string;
 	/** Subagent JSONL progress/result log. */

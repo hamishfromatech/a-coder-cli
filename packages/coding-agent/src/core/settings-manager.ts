@@ -237,6 +237,11 @@ export interface CronSettings {
 	 *  delegated-work model, then the default chat model. Scheduled runs never
 	 *  inherit a job session's pinned model implicitly. */
 	model?: string;
+	/**
+	 * Run scheduled tasks on the durable harness: every step is checkpointed, so a
+	 * run cut off by a crash or restart resumes instead of failing. Default false.
+	 */
+	durable?: boolean;
 }
 
 export type AutoContinueMode = "off" | "compaction" | "smart";
@@ -1520,6 +1525,11 @@ export class SettingsManager {
 	}
 
 	/** Explicit model for scheduled runs (`provider/model`), if configured. */
+	/** Whether scheduled runs use the durable harness. */
+	getCronDurableRuns(): boolean {
+		return this.settings.cron?.durable === true;
+	}
+
 	getCronModel(): string | undefined {
 		return this.settings.cron?.model?.trim() || undefined;
 	}

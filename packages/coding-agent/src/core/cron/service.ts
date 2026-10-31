@@ -17,8 +17,10 @@
 
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { withKeyedLock } from "../../utils/async-mutex.ts";
 import type { AgentSession } from "../agent-session.ts";
+import { resumeDurableRun, runDurablePrompt } from "../durable/runner.ts";
 import { noOpUIContext } from "../extensions/runner.ts";
 import { describeSchedule, isDue, isValidDailyTime, isValidWeekdays, nextRunAt } from "../office/errands.ts";
 import { getDefaultSessionDir, SessionManager } from "../session-manager.ts";
@@ -58,6 +60,16 @@ const RUN_TIMEOUT_MS = 15 * 60_000;
 /** Minimum cooldown for event jobs — protects the engine from event storms
  *  (including the job's own runs ending turns). */
 const MIN_EVENT_COOLDOWN_MS = 5 * 60_000;
+
+/** Durable run storage lives beside the other engine data. */
+export function durableRunDir(agentDir: string): string {
+	return join(agentDir, "durable", "cron");
+}
+
+/** Stable storage id for one scheduled run attempt. */
+export function durableRunId(jobId: string, runId: string): string {
+	return `cron-${jobId}-${runId}`;
+}
 /** Default quiet period for turn_end jobs: the job's own fires end turns too. */
 const DEFAULT_TURN_END_COOLDOWN_MINUTES = 30;
 
@@ -690,7 +702,7 @@ export class CronService {
 		let status: "ok" | "error" | "timeout" = "ok";
 		let lastError: string | undefined;
 		let summary: string | undefined;
-		let execution: "session" | "subagent" = "session";
+		let execution: "session" | "subagent" | "durable" = "session";
 		let subagentId: string | undefined;
 		let outputFile: string | undefined;
 		let worktreePath: string | undefined;
@@ -698,84 +710,109 @@ export class CronService {
 		let unbindPermission: (() => void) | undefined;
 		let unbindUnattended: (() => void) | undefined;
 		try {
-			const target = await this.resolveDelivery(fresh);
-			// Unattended: approve tool calls for the run. This also covers
-			// delivery into a live session, whose own mode (often "auto") would
-			// soft-deny mutating tools and, headless, deny them outright.
-			if (typeof target.session.bindTurnPermissionMode === "function") {
-				unbindPermission = target.session.bindTurnPermissionMode("allow");
-			}
-			// Unattended: auto-continue must not wait for user input on ask_user.
-			if (typeof target.session.bindUnattendedRun === "function") {
-				unbindUnattended = target.session.bindUnattendedRun();
-			}
-			run.sessionFile = target.sessionFile;
-			const scheduledModel = this.resolveScheduledModel(target.session);
-			if (scheduledModel) {
-				run.model = scheduledModel.label;
-				run.modelSource = scheduledModel.source;
-				unbindModel = target.session.bindTurnModel(scheduledModel.provider, scheduledModel.modelId);
-			}
-			const canIsolate =
-				fresh.isolated !== false &&
-				typeof target.session.runSubAgentBackground === "function" &&
-				typeof target.session.waitSubAgent === "function";
-			if (run.sessionFile) {
+			const durableModel = this.durableRunModel();
+			if (durableModel !== undefined) {
+				// Durable runs checkpoint every step under the engine data dir; a run cut
+				// off by a crash resumes on the next boot instead of being lost.
+				execution = "durable";
+				run.execution = execution;
+				run.model = durableModel.label;
+				run.modelSource = durableModel.source;
 				await store.updateRun(run.jobId, run.id, (r) => {
-					r.sessionFile = run.sessionFile;
+					r.execution = execution;
+					r.model = run.model;
+					r.modelSource = run.modelSource;
+				});
+				const result = await runDurablePrompt({
+					storageDir: durableRunDir(this.runtime.services.agentDir),
+					runId: durableRunId(fresh.id, run.id),
+					registry: this.runtime.session.modelRegistry,
+					model: { provider: durableModel.provider, id: durableModel.modelId },
+					cwd: fresh.cwd ?? this.runtime.cwd,
+					prompt,
+				});
+				status = result.status === "done" ? "ok" : "error";
+				summary = (result.text ?? "").trim().slice(0, MAX_RUN_SUMMARY_CHARS) || undefined;
+			} else {
+				const target = await this.resolveDelivery(fresh);
+				// Unattended: approve tool calls for the run. This also covers
+				// delivery into a live session, whose own mode (often "auto") would
+				// soft-deny mutating tools and, headless, deny them outright.
+				if (typeof target.session.bindTurnPermissionMode === "function") {
+					unbindPermission = target.session.bindTurnPermissionMode("allow");
+				}
+				// Unattended: auto-continue must not wait for user input on ask_user.
+				if (typeof target.session.bindUnattendedRun === "function") {
+					unbindUnattended = target.session.bindUnattendedRun();
+				}
+				run.sessionFile = target.sessionFile;
+				const scheduledModel = this.resolveScheduledModel(target.session);
+				if (scheduledModel) {
+					run.model = scheduledModel.label;
+					run.modelSource = scheduledModel.source;
+					unbindModel = target.session.bindTurnModel(scheduledModel.provider, scheduledModel.modelId);
+				}
+				const canIsolate =
+					fresh.isolated !== false &&
+					typeof target.session.runSubAgentBackground === "function" &&
+					typeof target.session.waitSubAgent === "function";
+				if (run.sessionFile) {
+					await store.updateRun(run.jobId, run.id, (r) => {
+						r.sessionFile = run.sessionFile;
+						r.model = run.model;
+						r.modelSource = run.modelSource;
+					});
+				}
+				if (canIsolate) {
+					execution = "subagent";
+					subagentId = `cron-${run.id}`;
+					run.execution = execution;
+					run.subagentId = subagentId;
+					await store.updateRun(run.jobId, run.id, (r) => {
+						r.execution = "subagent";
+						r.subagentId = subagentId;
+					});
+					target.session.runSubAgentBackground({
+						id: subagentId,
+						prompt,
+						detached: true,
+						notifyOnComplete: run.delivery === "session",
+					});
+					const record = await target.session.waitSubAgent(subagentId, RUN_TIMEOUT_MS);
+					if (!record) throw new Error("Scheduled sub-agent record disappeared");
+					if (record.status === "running") {
+						target.session.killSubAgent(subagentId, "timeout");
+						throw new CronTimeoutError();
+					}
+					outputFile = record.outputFile;
+					worktreePath = record.worktreePath;
+					if (record.status === "completed") {
+						summary = (record.finalText ?? "").trim().slice(0, MAX_RUN_SUMMARY_CHARS);
+					} else {
+						status = "error";
+						lastError = record.error ?? `Sub-agent ${record.status}`;
+						summary = (record.finalText ?? "").trim().slice(0, MAX_RUN_SUMMARY_CHARS);
+					}
+				} else {
+					execution = "session";
+					run.execution = execution;
+					const messageStart = messageCount(target.session);
+					await this.runPrompt(target.session, prompt);
+					summary = summarizeAssistantOutput(target.session, messageStart);
+				}
+				run.execution = execution;
+				run.subagentId = subagentId;
+				run.outputFile = outputFile;
+				run.worktreePath = worktreePath;
+				await store.updateRun(run.jobId, run.id, (r) => {
+					r.execution = execution;
+					r.subagentId = subagentId;
+					r.outputFile = outputFile;
+					r.worktreePath = worktreePath;
 					r.model = run.model;
 					r.modelSource = run.modelSource;
 				});
 			}
-			if (canIsolate) {
-				execution = "subagent";
-				subagentId = `cron-${run.id}`;
-				run.execution = execution;
-				run.subagentId = subagentId;
-				await store.updateRun(run.jobId, run.id, (r) => {
-					r.execution = "subagent";
-					r.subagentId = subagentId;
-				});
-				target.session.runSubAgentBackground({
-					id: subagentId,
-					prompt,
-					detached: true,
-					notifyOnComplete: run.delivery === "session",
-				});
-				const record = await target.session.waitSubAgent(subagentId, RUN_TIMEOUT_MS);
-				if (!record) throw new Error("Scheduled sub-agent record disappeared");
-				if (record.status === "running") {
-					target.session.killSubAgent(subagentId, "timeout");
-					throw new CronTimeoutError();
-				}
-				outputFile = record.outputFile;
-				worktreePath = record.worktreePath;
-				if (record.status === "completed") {
-					summary = (record.finalText ?? "").trim().slice(0, MAX_RUN_SUMMARY_CHARS);
-				} else {
-					status = "error";
-					lastError = record.error ?? `Sub-agent ${record.status}`;
-					summary = (record.finalText ?? "").trim().slice(0, MAX_RUN_SUMMARY_CHARS);
-				}
-			} else {
-				execution = "session";
-				run.execution = execution;
-				const messageStart = messageCount(target.session);
-				await this.runPrompt(target.session, prompt);
-				summary = summarizeAssistantOutput(target.session, messageStart);
-			}
-			run.execution = execution;
-			run.subagentId = subagentId;
-			run.outputFile = outputFile;
-			run.worktreePath = worktreePath;
-			await store.updateRun(run.jobId, run.id, (r) => {
-				r.execution = execution;
-				r.subagentId = subagentId;
-				r.outputFile = outputFile;
-				r.worktreePath = worktreePath;
-				r.model = run.model;
-				r.modelSource = run.modelSource;
-			});
 		} catch (error_) {
 			status = error_ instanceof CronTimeoutError ? "timeout" : "error";
 			lastError = error_ instanceof Error ? error_.message : String(error_);
@@ -991,7 +1028,15 @@ export class CronService {
 		this.reconciledInterruptedRuns = true;
 		const cutoff = Date.now() - RUN_TIMEOUT_MS;
 		for (const run of await store.listRuns()) {
-			if (run.status !== "running" || run.startedAt > cutoff) continue;
+			if (run.status !== "running") continue;
+			if (run.execution === "durable" && run.model) {
+				// Durable runs carry their own checkpoints: finish the interrupted work
+				// instead of failing it. Resume regardless of age; the scheduler lease
+				// guarantees no other process is running it.
+				const resumed = await this.resumeInterruptedDurableRun(run);
+				if (resumed) continue;
+			}
+			if (run.startedAt > cutoff) continue;
 			await store.updateRun(run.jobId, run.id, (r) => {
 				r.status = "error";
 				r.finishedAt = Date.now();
@@ -999,6 +1044,51 @@ export class CronService {
 			});
 		}
 		await this.emitUpdate();
+	}
+
+	/** Resume a durable scheduled run recorded as running by a previous process. */
+	private async resumeInterruptedDurableRun(run: CronRun): Promise<boolean> {
+		const [provider, ...rest] = (run.model ?? "").split("/");
+		const modelId = rest.join("/");
+		if (!provider || !modelId) return false;
+		try {
+			const result = await resumeDurableRun({
+				storageDir: durableRunDir(this.runtime.services.agentDir),
+				runId: durableRunId(run.jobId, run.id),
+				registry: this.runtime.session.modelRegistry,
+				model: { provider, id: modelId },
+				cwd: this.runtime.cwd,
+			});
+			if (result === undefined) return false;
+			await store.updateRun(run.jobId, run.id, (r) => {
+				r.status = result.status === "done" ? "ok" : "error";
+				r.finishedAt = Date.now();
+				r.summary = (result.text ?? "").trim().slice(0, MAX_RUN_SUMMARY_CHARS) || undefined;
+			});
+			this.emitRunEvent({
+				type: "run_finished",
+				run: { ...run, status: result.status === "done" ? "ok" : "error" },
+			});
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	/**
+	 * The model a durable run would use, or undefined when durable cron runs are
+	 * off or no configured model resolves.
+	 */
+	private durableRunModel():
+		| { provider: string; modelId: string; label: string; source: "cron" | "subagent" | "default" | "session" }
+		| undefined {
+		const settings = (this.runtime.session as { settingsManager?: SettingsManager }).settingsManager;
+		if (settings?.getCronDurableRuns?.() !== true) return undefined;
+		try {
+			return this.resolveScheduledModel(this.runtime.session);
+		} catch {
+			return undefined;
+		}
 	}
 
 	private async emitUpdate(): Promise<void> {

@@ -392,7 +392,7 @@ export const clearApiKeyCache = clearConfigValueCache;
 /**
  * Model registry - loads and manages models, resolves API keys via AuthStorage.
  */
-function failedAssistantStream(model: Model<Api>, errorMessage: string): AssistantMessageEventStream {
+export function failedAssistantStream(model: Model<Api>, errorMessage: string): AssistantMessageEventStream {
 	const stream = createAssistantMessageEventStream();
 	stream.push({
 		type: "error",
