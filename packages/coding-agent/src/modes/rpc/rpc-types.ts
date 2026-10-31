@@ -136,6 +136,8 @@ export type RpcCommand =
 	// Bash
 	| { id?: string; type: "bash"; command: string; excludeFromContext?: boolean }
 	| { id?: string; type: "abort_bash" }
+	| { id?: string; type: "background_bash"; toolCallId: string }
+	| { id?: string; type: "kill_background_process"; processId: string }
 
 	// Session
 	| { id?: string; type: "get_session_stats" }
@@ -513,6 +515,8 @@ export type RpcResponse =
 	// Bash
 	| { id?: string; type: "response"; command: "bash"; success: true; data: BashResult }
 	| { id?: string; type: "response"; command: "abort_bash"; success: true }
+	| { id?: string; type: "response"; command: "background_bash"; success: true; data: { toolCallId: string } }
+	| { id?: string; type: "response"; command: "kill_background_process"; success: true; data: { processId: string } }
 
 	// Session
 	| { id?: string; type: "response"; command: "get_session_stats"; success: true; data: SessionStats }

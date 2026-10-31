@@ -6,10 +6,12 @@ import {
 	Check,
 	ChevronRight,
 	Copy,
+	FastForward,
 	Hammer,
 	Loader2,
 } from "lucide-react";
 import type { ToolResultMessage } from "@earendil-works/pi-ai";
+import { backgroundRunningBash } from "../../lib/bash-background";
 import { useSessionStore, type UiRequest } from "../../stores/session-store";
 import { ToolApprovalBar } from "../ToolApprovalBar";
 import { diffStats, EditDiff } from "./EditDiff";
@@ -182,6 +184,28 @@ export const RichToolCall = memo(function RichToolCall({
 						title={formatToolProgress(progress.progress)}
 					>
 						{formatToolProgress(progress.progress)}
+					</span>
+				)}
+				{toolCall.name === "bash" && status === "running" && (
+					<span
+						onClick={(e) => {
+							e.stopPropagation();
+							void backgroundRunningBash();
+						}}
+						role="button"
+						tabIndex={0}
+						title="Background this command — it keeps running and the agent continues"
+						className="ml-auto flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-3xs text-pi-text-faint opacity-0 transition-hover hover:bg-pi-surface-overlay hover:text-pi-text group-hover/tool:opacity-100 focus-visible:shadow-focus focus-visible:outline-none"
+						onKeyDown={(e) => {
+							if (e.key === "Enter" || e.key === " ") {
+								e.preventDefault();
+								e.stopPropagation();
+								void backgroundRunningBash();
+							}
+						}}
+					>
+						<FastForward className="h-3 w-3" />
+						Background
 					</span>
 				)}
 				<span

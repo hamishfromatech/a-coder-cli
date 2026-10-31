@@ -4,6 +4,9 @@
 
 ### Added
 
+- **RPC `kill_background_process` command:** clients can kill a running background process (tree-kill, marked killed) or remove a finished one's row; the desktop's background-processes chip uses it.
+- **RPC `background_bash` command:** clients (the desktop app) can background a running bash tool call by id — the same flag mechanism the CLI drives with Ctrl+B. The bash tool detaches the process, keeps it running, and reports a "backgrounded" result so the agent continues immediately.
+
 - Tool result card upgrades: colored output. Bash results now render with terminal color — child processes are spawned with `FORCE_COLOR`/`CLICOLOR_FORCE` (an explicit `NO_COLOR` still wins), the color-preserving copy rides in the tool's `details` (`displayOutput`, bounded like the model copy), the model-facing content stays ANSI-stripped, and lines without their own styling fall back to the theme color. Error cards are smarter: collapsed error previews are tail-biased (first line + last lines) and failure lines (error/fail/exception/traceback/npm ERR!/ENOENT, …) render bold in error color. Exit code in bash headlines now comes from a real `details.exitCode` field instead of scraping the output text.
 - Tool result cards are individually expandable: `ctrl+shift+o` expands/collapses the most recent card (group cards unfold into their member cards), the new `ctrl+shift+u` (`app.tools.expandAll`) keeps the global flip, and left-clicking a collapsed card expands it — the main-screen TUI now decodes SGR mouse press/release into click events and hit-dispatches them, keeping wheel behavior unchanged.
 - Grouped read/search cards ("Read 5 files · Searched 3 patterns") keep their member cards alive: expanding the group re-renders the individual tool cards in place instead of being a dead end, and later collapsible runs merge into the same group.

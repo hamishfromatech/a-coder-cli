@@ -1,5 +1,8 @@
 import { useEffect } from "react";
 
+import { backgroundRunningBash } from "../lib/bash-background";
+import { useSessionStore } from "../stores/session-store";
+
 /** Global shortcuts that mirror a-coder-cli keybindings. */
 export function useGlobalKeybindings(): void {
 	useEffect(() => {
@@ -49,6 +52,14 @@ export function useGlobalKeybindings(): void {
 					// Cmd/Ctrl+K — command palette.
 					e.preventDefault();
 					window.dispatchEvent(new CustomEvent("a-coder:command-palette"));
+					break;
+				case "b":
+					// Ctrl+B — background the running bash command (CLI parity).
+					// Only fires while the agent is streaming so stray shortcuts
+					// don't toast at idle.
+					if (!useSessionStore.getState().isStreaming) break;
+					e.preventDefault();
+					void backgroundRunningBash();
 					break;
 					// Other shortcuts are handled by native menus / commandRouter.
 			}

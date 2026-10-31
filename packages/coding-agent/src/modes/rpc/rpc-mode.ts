@@ -38,10 +38,18 @@ import {
 } from "../../core/output-guard.ts";
 import { archiveSessionFile } from "../../core/session-maintenance.ts";
 import { type SessionInfo, SessionManager } from "../../core/session-manager.ts";
-import { getBackgroundProcesses, subscribeBackgroundProcesses } from "../../core/stores/index.ts";
+import {
+	completeBackgroundProcess,
+	getBackgroundProcess,
+	getBackgroundProcesses,
+	getBashProgress,
+	removeBackgroundProcess,
+	requestBackground,
+	subscribeBackgroundProcesses,
+} from "../../core/stores/index.ts";
 import { findWorkflow } from "../../core/workflows/loader.ts";
 import { getWorkflowRunSummaries, stopWorkflowRun, subscribeWorkflowRuns } from "../../core/workflows/registry.ts";
-import { killTrackedDetachedChildren } from "../../utils/shell.ts";
+import { killProcessTree, killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { type Theme, theme } from "../interactive/theme/theme.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
 import { externalizeAttachments, type RpcAttachmentData } from "./rpc-attachments.ts";
@@ -1249,6 +1257,43 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 			case "abort_bash": {
 				session.abortBash();
 				return success(id, "abort_bash");
+			}
+
+			case "kill_background_process": {
+				const processId = String(command.processId ?? "");
+				const record = getBackgroundProcess(processId);
+				if (!record) {
+					return error(id, "kill_background_process", "No such background process.");
+				}
+				if (record.status === "running" && record.pid) {
+					try {
+						killProcessTree(record.pid);
+					} catch {
+						// Process may have already exited; the store update still
+						// records the kill.
+					}
+					completeBackgroundProcess(processId, undefined, true);
+				} else {
+					// Done records have nothing to kill; the call removes the row.
+					removeBackgroundProcess(processId);
+				}
+				return success(id, "kill_background_process", { processId });
+			}
+
+			case "background_bash": {
+				// Mirror of the TUI's Ctrl+B: set the background-request flag;
+				// the tool's backgroundCheck detaches it on the next poll and
+				// reports a "backgrounded" result to the model.
+				const toolCallId = String(command.toolCallId ?? "");
+				const progress = getBashProgress(toolCallId);
+				if (!progress) {
+					return error(id, "background_bash", "No running bash command with that id.");
+				}
+				if (progress.done) {
+					return error(id, "background_bash", "That bash command already finished.");
+				}
+				requestBackground(toolCallId);
+				return success(id, "background_bash", { toolCallId });
 			}
 
 			// =================================================================

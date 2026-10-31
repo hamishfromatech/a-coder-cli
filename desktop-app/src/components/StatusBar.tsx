@@ -1,6 +1,7 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, type ReactNode } from "react";
 import {
 	AlertCircle,
+	BookOpen,
 	Check,
 	ChevronDown,
 	Coins,
@@ -12,8 +13,10 @@ import {
 	MessageSquare,
 	RefreshCw,
 	Shield,
+	SquareArrowOutUpRight,
 	Timer,
 	Wrench,
+	X,
 	Zap,
 } from "lucide-react";
 import { Loader } from "./ui/Loader";
@@ -21,11 +24,15 @@ import { Tip } from "./ui/Tip";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { FolderOpen } from "lucide-react";
 import * as rpc from "../lib/rpc";
+import type { BackgroundProcessRecord } from "../lib/rpc";
 import { useSessionStore } from "../stores/session-store";
 import { useSettingsStore } from "../stores/settings-store";
 import { useUiStore } from "../stores/ui-store";
 import { useStatsStore } from "../stores/stats-store";
+import { killBackgroundProcess } from "../lib/rpc";
 import type { PermissionMode } from "../lib/settings.types";
+import { toast } from "../stores/toast-store";
+import { backgroundRunningBash } from "../lib/bash-background";
 import { Badge, type BadgeVariant } from "./ui/Badge";
 import { useShallow } from "zustand/react/shallow";
 import { ESCAPE_PRIORITY, isTopEscapeLayer, pushEscapeLayer } from "../lib/escape-layers";
@@ -74,7 +81,7 @@ const MODE_META: Record<
 };
 
 export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
-	const { status, error, isStreaming, isCompacting, thinkingLevel, permissionMode, contextUsage, streamingVerb } =
+	const { status, error, isStreaming, isCompacting, thinkingLevel, permissionMode, planMode, contextUsage, streamingVerb, backgroundProcesses, setPlanMode: setPlanModeState } =
 		useSessionStore(
 			useShallow((s) => ({
 				status: s.status,
@@ -83,8 +90,11 @@ export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
 				isCompacting: s.isCompacting,
 				thinkingLevel: s.thinkingLevel,
 				permissionMode: s.permissionMode,
+				planMode: s.planMode,
 				contextUsage: s.contextUsage,
 				streamingVerb: s.streamingVerb,
+				backgroundProcesses: s.backgroundProcesses,
+				setPlanMode: s.setPlanMode,
 			})),
 		);
 	const subAgents = useSessionStore((s) => s.subAgents);
@@ -140,6 +150,18 @@ export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
 		const next = new Set<StatusBarItemId>();
 		writeHiddenStatusItems(next);
 		setHidden(next);
+	};
+
+	const togglePlanMode = async () => {
+		const next = !planMode;
+		setPlanModeState(next); // optimistic; reverted on failure
+		try {
+			await rpc.setPlanMode(next);
+			toast.success(next ? "Plan mode on" : "Plan mode off");
+		} catch (e) {
+			setPlanModeState(!next);
+			toast.error("Failed to set plan mode", e instanceof Error ? e.message : String(e));
+		}
 	};
 
 	const runningAgents = subAgents.filter((a) => a.status === "running");
@@ -203,6 +225,12 @@ export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
 						<PermissionModePicker mode={permissionMode} />
 					</>
 				)}
+				{!simple && planMode && !hidden.has("plan") && (
+					<>
+						<Sep />
+						<PlanModeChip onToggle={() => void togglePlanMode()} />
+					</>
+				)}
 				{!simple && runningAgents.length > 0 && !hidden.has("agents") && (
 					<>
 						<Sep />
@@ -236,6 +264,12 @@ export function StatusBar({ projectPath, onReconnect }: StatusBarProps) {
 
 			{/* Right: status / streaming / compacting / error */}
 			<div className="flex items-center gap-1.5">
+				{backgroundProcesses.length > 0 && !hidden.has("processes") && (
+					<BackgroundProcessesChip
+						processes={backgroundProcesses}
+						onBackground={() => void backgroundRunningBash()}
+					/>
+				)}
 				{isCompacting && (
 					<Tip content="Summarizing older messages to reclaim context window" placement="control">
 						<div className="flex items-center gap-1 rounded-pi-sm bg-pi-warning/10 px-1.5 py-0.5 text-pi-warning">
@@ -487,4 +521,174 @@ function Stat({
 
 function Sep() {
 	return <span className="mx-1 h-3 w-px bg-pi-border" />;
+}
+function PlanModeChip({ onToggle }: { onToggle: () => void }) {
+	return (
+		<Tip content="Plan mode: the agent plans and you approve before it touches tools. Click to exit." placement="control">
+			<Badge
+				variant="accent"
+				size="sm"
+				icon={BookOpen}
+				className="cursor-pointer transition-hover active-press"
+				onClick={onToggle}
+				role="button"
+				aria-pressed
+			>
+				Plan
+			</Badge>
+		</Tip>
+	);
+}
+
+const PROCESS_STATUS_META: Record<
+	string,
+	{ glyph: ReactNode; label: string; tone: string }
+> = {
+	running: { glyph: <Loader2 className="size-3 animate-spin text-pi-accent" />, label: "running", tone: "text-pi-accent" },
+	done: { glyph: <Check className="size-3 text-pi-success" strokeWidth={2.5} />, label: "exited 0", tone: "text-pi-success" },
+	error: { glyph: <AlertCircle className="size-3 text-pi-error" />, label: "failed", tone: "text-pi-error" },
+	killed: { glyph: <X className="size-3 text-pi-text-muted" />, label: "killed", tone: "text-pi-text-muted" },
+};
+
+/** Status-bar chip + popover listing the engine's background bash processes. */
+function BackgroundProcessesChip({
+	processes,
+	onBackground,
+}: {
+	processes: BackgroundProcessRecord[];
+	onBackground: () => void;
+}) {
+	const [open, setOpen] = useState(false);
+	const rootRef = useRef<HTMLDivElement | null>(null);
+
+	useEffect(() => {
+		if (!open) return;
+		const unregister = pushEscapeLayer(ESCAPE_PRIORITY.contextMenu);
+		const onDown = (event: MouseEvent) => {
+			if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+		};
+		const onKey = (event: KeyboardEvent) => {
+			if (event.key !== "Escape") return;
+			if (event.defaultPrevented || !isTopEscapeLayer(ESCAPE_PRIORITY.contextMenu)) return;
+			event.preventDefault();
+			setOpen(false);
+		};
+		document.addEventListener("mousedown", onDown);
+		document.addEventListener("keydown", onKey);
+		return () => {
+			unregister();
+			document.removeEventListener("mousedown", onDown);
+			document.removeEventListener("keydown", onKey);
+		};
+	}, [open]);
+
+	const running = processes.filter((p) => p.status === "running");
+
+	const kill = async (processId: string) => {
+		try {
+			await killBackgroundProcess(processId);
+		} catch (e) {
+			toast.error("Kill failed", e instanceof Error ? e.message : String(e));
+		}
+	};
+
+	const chipLabel = `${running.length} running`;
+	return (
+		<div ref={rootRef} className="relative">
+			<Tip content="Background processes (Ctrl+B backgrounds a running command)" placement="control">
+				<Badge
+					variant={running.length > 0 ? "accent" : "muted"}
+					size="sm"
+					icon={SquareArrowOutUpRight}
+					className="cursor-pointer transition-hover active-press"
+					onClick={() => setOpen((v) => !v)}
+					aria-haspopup="dialog"
+					aria-expanded={open}
+					role="button"
+					tabIndex={0}
+				>
+					{running.length > 0 ? chipLabel : `${processes.length} finished`}
+					<ChevronDown className={`h-3 w-3 transition-smooth ${open ? "rotate-180" : ""}`} />
+				</Badge>
+			</Tip>
+			{open && (
+				<div
+					role="dialog"
+					aria-label="Background processes"
+					className="absolute bottom-full right-0 z-popover mb-1.5 flex max-h-80 w-[380px] max-w-[90vw] flex-col overflow-hidden rounded-pi-xl border border-pi-border bg-pi-surface-overlay shadow-overlay"
+				>
+					<div className="flex items-center justify-between border-b border-pi-border px-3 py-2">
+						<span className="text-3xs font-semibold uppercase tracking-[0.08em] text-pi-text-faint">
+							Background processes
+						</span>
+						<button
+							type="button"
+							onClick={onBackground}
+							disabled={running.length > 0}
+							title="Send the currently running foreground command to the background"
+							className="flex cursor-pointer items-center gap-1 rounded-pi-sm px-1.5 py-0.5 text-3xs text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text disabled:cursor-default disabled:opacity-40"
+						>
+							<SquareArrowOutUpRight className="h-3 w-3" />
+							Background now
+						</button>
+					</div>
+					<div className="min-h-0 flex-1 overflow-y-auto py-1">
+						{processes.length === 0 && (
+							<div className="px-3 py-4 text-center text-2xs text-pi-text-muted">
+								Nothing running in the background.
+							</div>
+						)}
+						{processes.map((process) => {
+							const meta = PROCESS_STATUS_META[process.status] ?? PROCESS_STATUS_META.done!;
+							const tail = process.output.split("\n").filter(Boolean).at(-1) ?? "";
+							return (
+								<div
+									key={process.id}
+									className="group/process flex w-full items-start gap-2 px-3 py-1.5 transition-hover hover:bg-pi-surface-raised"
+								>
+									<span className="mt-1 shrink-0">{meta.glyph}</span>
+									<div className="min-w-0 flex-1">
+										<div className="flex items-baseline gap-2">
+											<span className="truncate font-mono text-2xs text-pi-text-secondary">
+												{process.command}
+											</span>
+											<span className={`ml-auto shrink-0 font-mono text-3xs ${meta.tone}`}>
+												{process.status === "running"
+													? formatElapsed(process.startedAt)
+													: process.exitCode
+														? `${meta.label} (${process.exitCode})`
+														: meta.label}
+											</span>
+										</div>
+										{tail && (
+											<div className="mt-0.5 truncate font-mono text-3xs text-pi-text-faint" title={tail}>
+												{tail}
+											</div>
+										)}
+									</div>
+									<button
+										type="button"
+										onClick={() => void kill(process.id)}
+										aria-label={process.status === "running" ? "Kill process" : "Remove from list"}
+										title={process.status === "running" ? "Kill" : "Remove"}
+										className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-pi-text-faint opacity-0 transition-hover hover:bg-pi-error/10 hover:text-pi-error group-hover/process:opacity-100"
+									>
+										<X className="h-3 w-3" />
+									</button>
+								</div>
+							);
+						})}
+					</div>
+				</div>
+			)}
+		</div>
+	);
+}
+
+function formatElapsed(startedAt: number): string {
+	const seconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+	const minutes = Math.floor(seconds / 60);
+	const hours = Math.floor(minutes / 60);
+	if (hours > 0) return `${hours}h${String(minutes % 60).padStart(2, "0")}m`;
+	return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
 }

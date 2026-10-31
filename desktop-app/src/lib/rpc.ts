@@ -656,6 +656,10 @@ export interface BackgroundProcessRecord {
 	fullOutputPath: string | undefined;
 }
 
+/** Kill a running background process, or remove a finished one's row. */
+export const killBackgroundProcess = (processId: string) =>
+	sendCommand({ type: "kill_background_process", processId }) as Promise<{ processId: string }>;
+
 export interface BackgroundProcessesUpdateEvent {
 	type: "background_processes_update";
 	processes: BackgroundProcessRecord[];
@@ -998,6 +1002,7 @@ export interface EngineSessionState {
 	model?: { provider: string; id: string; name?: string };
 	thinkingLevel?: string;
 	permissionMode?: PermissionMode;
+	planMode?: boolean;
 	sessionName?: string;
 	sessionId?: string;
 	sessionFile?: string;
@@ -1229,6 +1234,12 @@ export const getPermissionMode = () =>
 	sendCommand({ type: "get_permission_mode" }) as Promise<{ mode: PermissionMode }>;
 export const setPermissionMode = (mode: PermissionMode) =>
 	sendCommand({ type: "set_permission_mode", mode });
+
+// ---- plan mode ----
+export const getPlanMode = () =>
+	sendCommand({ type: "get_plan_mode" }) as Promise<{ enabled: boolean }>;
+export const setPlanMode = (enabled: boolean) =>
+	sendCommand({ type: "set_plan_mode", enabled }) as Promise<{ success: boolean }>;
 
 /** Grant session-scoped allow rules (the approval card's "Always allow"). */
 export const addSessionAllowRules = (rules: string[]) =>

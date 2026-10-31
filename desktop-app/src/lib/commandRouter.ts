@@ -15,6 +15,7 @@ import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialo
 import * as rpc from "./rpc";
 import { openHud } from "./hud";
 import { toast } from "../stores/toast-store";
+import { useSessionStore } from "../stores/session-store";
 
 export type RoutedAction =
 	| { kind: "rpc"; call: () => Promise<unknown>; label: string }
@@ -289,6 +290,21 @@ export const BUILTIN_COMMANDS: BuiltinCommand[] = [
 				toast.success("Conversation cleared");
 			},
 			label: "Clear conversation",
+		}),
+	},
+	{
+		name: "plan",
+		description: "Toggle plan mode (approval before destructive tools)",
+		route: () => ({
+			kind: "rpc",
+			call: async () => {
+				const res = (await rpc.getPlanMode()) as { enabled: boolean };
+				const next = !res.enabled;
+				await rpc.setPlanMode(next);
+				useSessionStore.getState().setPlanMode(next);
+				toast.success(next ? "Plan mode on" : "Plan mode off");
+			},
+			label: "Toggle plan mode",
 		}),
 	},
 	{

@@ -1,8 +1,17 @@
-export type StatusBarItemId = "thinking" | "permission" | "agents" | "context" | "stats";
+export type StatusBarItemId =
+	| "thinking"
+	| "permission"
+	| "plan"
+	| "processes"
+	| "agents"
+	| "context"
+	| "stats";
 
 export const STATUS_BAR_ITEMS: { id: StatusBarItemId; label: string }[] = [
 	{ id: "thinking", label: "Thinking level" },
 	{ id: "permission", label: "Permission mode" },
+	{ id: "plan", label: "Plan mode indicator" },
+	{ id: "processes", label: "Background processes" },
 	{ id: "agents", label: "Background agents" },
 	{ id: "context", label: "Context usage" },
 	{ id: "stats", label: "Messages, tools, tokens, cost" },

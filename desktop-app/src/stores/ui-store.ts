@@ -5,8 +5,13 @@ export type RightSidebarTab = "files" | "git" | "office" | "cron" | "activity" |
 export type ArtifactViewMode = "raw" | "preview";
 export type InterfaceMode = "simple" | "advanced" | "ide";
 
+/** The left sidebar's active section; the rail switches it. */
+export type LeftSidebarSection = "sessions" | "projects";
+
 export interface UiState {
 	leftSidebarOpen: boolean;
+	leftSidebarSection: LeftSidebarSection;
+	leftSidebarWidth: number;
 	rightSidebarOpen: boolean;
 	rightSidebarWidth: number;
 	rightSidebarTab: RightSidebarTab;
@@ -19,6 +24,8 @@ export interface UiState {
 	selectedArtifactViewMode: ArtifactViewMode;
 
 	setLeftSidebarOpen: (open: boolean) => void;
+	setLeftSidebarSection: (section: LeftSidebarSection) => void;
+	setLeftSidebarWidth: (width: number) => void;
 	setRightSidebarOpen: (open: boolean) => void;
 	setRightSidebarWidth: (width: number) => void;
 	setRightSidebarTab: (tab: RightSidebarTab) => void;
@@ -35,6 +42,8 @@ export const useUiStore = create<UiState>()(
 	persist(
 		(set, get) => ({
 			leftSidebarOpen: true,
+			leftSidebarSection: "sessions" as LeftSidebarSection,
+			leftSidebarWidth: 272,
 			rightSidebarOpen: false,
 			rightSidebarWidth: 320,
 			rightSidebarTab: "files",
@@ -46,6 +55,8 @@ export const useUiStore = create<UiState>()(
 			selectedArtifactViewMode: "preview",
 
 			setLeftSidebarOpen: (open) => set({ leftSidebarOpen: open }),
+			setLeftSidebarSection: (leftSidebarSection) => set({ leftSidebarSection, leftSidebarOpen: true }),
+			setLeftSidebarWidth: (leftSidebarWidth) => set({ leftSidebarWidth }),
 			setRightSidebarOpen: (open) => set({ rightSidebarOpen: open }),
 			setRightSidebarWidth: (width) => set({ rightSidebarWidth: width }),
 			setRightSidebarTab: (tab) => set({ rightSidebarTab: tab, rightSidebarOpen: true }),
@@ -76,6 +87,8 @@ export const useUiStore = create<UiState>()(
 			},
 			partialize: (state) => ({
 				leftSidebarOpen: state.leftSidebarOpen,
+				leftSidebarSection: state.leftSidebarSection,
+				leftSidebarWidth: state.leftSidebarWidth,
 				rightSidebarOpen: state.rightSidebarOpen,
 				rightSidebarWidth: state.rightSidebarWidth,
 				rightSidebarTab: state.rightSidebarTab,

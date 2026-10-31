@@ -43,6 +43,12 @@ async function waitForRender(): Promise<void> {
 	await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+// Renders of edit previews carry intra-line change highlighting (inverse-video
+// escape codes can land inside an assertion substring); match on bare text.
+function stripAnsi(text: string): string {
+	return text.replace(/[\x1b][[0-9;]*[A-Za-z]/g, "");
+}
+
 async function waitForRenderedText(
 	getRender: () => string,
 	expectedText: string,
@@ -125,7 +131,7 @@ describe("edit tool TUI rendering", () => {
 		await waitForRender();
 
 		const callOnlyRender = await waitForRenderedText(
-			() => component.render(80).join("\n"),
+			() => stripAnsi(component.render(80).join("\n")),
 			"line 50 changed",
 			() => tui.requestRender(true),
 		);
@@ -148,7 +154,7 @@ describe("edit tool TUI rendering", () => {
 		expect(tui.fullRedraws).toBe(redrawsBeforeResult);
 		expect(terminal.fullClearCount).toBe(clearsBeforeResult);
 
-		const settledRender = component.render(80).join("\n");
+		const settledRender = stripAnsi(component.render(80).join("\n"));
 		expect(settledRender).toContain("line 50 changed");
 		expect(settledRender).toContain("line 950 changed");
 		expect(settledRender).not.toContain("Successfully replaced");
@@ -198,7 +204,7 @@ describe("edit tool TUI rendering", () => {
 		await waitForRender();
 		await waitForRender();
 
-		const rendered = component.render(80).join("\n");
+		const rendered = stripAnsi(component.render(80).join("\n"));
 		expect(rendered).toContain("line 50 changed");
 		expect(rendered).toContain("line 150 changed");
 	});

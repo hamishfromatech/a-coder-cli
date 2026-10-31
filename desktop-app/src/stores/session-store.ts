@@ -57,6 +57,8 @@ export interface SessionState {
 	model: AnyModel | null;
 	thinkingLevel: string | null;
 	permissionMode: PermissionMode;
+	/** Engine plan mode: mutating tools require approval until the agent exits. */
+	planMode: boolean;
 	isStreaming: boolean;
 	/** True once the user requests an abort, until the next agent_start. Lets the
 	 *  agent_end handler tell a user-cancelled turn end apart from a natural one
@@ -114,6 +116,7 @@ export interface SessionState {
 	setModel: (model: AnyModel | null) => void;
 	setThinkingLevel: (level: string | null) => void;
 	setPermissionMode: (mode: PermissionMode) => void;
+	setPlanMode: (planMode: boolean) => void;
 	setIsStreaming: (isStreaming: boolean) => void;
 	setAbortRequested: (abortRequested: boolean) => void;
 	setIsCompacting: (isCompacting: boolean) => void;
@@ -163,6 +166,8 @@ export const useSessionStore = create<SessionState>((set) => ({
 	model: null,
 	thinkingLevel: null,
 	permissionMode: "allow",
+	/** Engine plan mode: mutating tools require approval until the agent exits. */
+	planMode: false,
 	isStreaming: false,
 	abortRequested: false,
 	isCompacting: false,
@@ -200,6 +205,7 @@ export const useSessionStore = create<SessionState>((set) => ({
 	setModel: (model) => set({ model }),
 	setThinkingLevel: (thinkingLevel) => set({ thinkingLevel }),
 	setPermissionMode: (permissionMode) => set({ permissionMode }),
+	setPlanMode: (planMode) => set({ planMode }),
 	setIsStreaming: (isStreaming) => set({ isStreaming }),
 	setAbortRequested: (abortRequested) => set({ abortRequested }),
 	setIsCompacting: (isCompacting) => set({ isCompacting }),
@@ -247,6 +253,7 @@ export const useSessionStore = create<SessionState>((set) => ({
 			followUp: [],
 			subAgents: [],
 			backgroundProcesses: [],
+			planMode: false,
 			workflowRuns: [],
 			streamingVerb: pickLoadingVerb(),
 			sessionLoading: false,

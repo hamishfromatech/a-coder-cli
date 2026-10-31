@@ -21,6 +21,8 @@ import { useRuntimeStatusStore } from "./stores/runtime-status-store";
 import { useSessionStore, type QuestionUiRequest } from "./stores/session-store";
 import { persistCliSettings, useSettingsStore, type Skin, type Theme } from "./stores/settings-store";
 import { useWorkspaceStore } from "./stores/workspace-store";
+import { type LeftSidebarSection } from "./stores/ui-store";
+import { clampSize, ResizeHandle } from "./components/ide/ResizeHandle";
 import { useSessionTreeStore } from "./stores/session-tree-store";
 // Bind the desktop browser's event channel at startup: the agent's openPanel
 // event must arrive even while the panel is closed, and browser-store is
@@ -157,6 +159,7 @@ export default function App() {
 		setModel,
 		setThinkingLevel,
 		setPermissionMode,
+		setPlanMode,
 		setSessionName,
 		setSessionId,
 		setSessionFile,
@@ -212,6 +215,7 @@ export default function App() {
 			setModel: s.setModel,
 			setThinkingLevel: s.setThinkingLevel,
 			setPermissionMode: s.setPermissionMode,
+			setPlanMode: s.setPlanMode,
 			setSessionName: s.setSessionName,
 			setSessionId: s.setSessionId,
 			setSessionFile: s.setSessionFile,
@@ -353,7 +357,9 @@ export default function App() {
 		},
 		[setStats, setContextUsage],
 	);
-	const { leftSidebarOpen, setLeftSidebarOpen, rightSidebarOpen, setRightSidebarOpen, rightSidebarWidth } = useUiStore();
+	const { leftSidebarOpen, setLeftSidebarOpen, leftSidebarSection, leftSidebarWidth, rightSidebarOpen, setRightSidebarOpen, rightSidebarWidth } = useUiStore();
+	const setLeftSidebarSection = useUiStore((state) => state.setLeftSidebarSection);
+	const setLeftSidebarWidth = useUiStore((state) => state.setLeftSidebarWidth);
 	const rightSidebarTab = useUiStore((state) => state.rightSidebarTab);
 	const interfaceMode = useUiStore((state) => state.interfaceMode);
 	const setInterfaceMode = useUiStore((state) => state.setInterfaceMode);
@@ -368,22 +374,11 @@ export default function App() {
 	useEffect(() => {
 		if (simple) setRightSidebarOpen(false);
 	}, [simple, setRightSidebarOpen]);
-	type SidebarSectionId = "sessions" | "projects" | "tree";
-	const [pendingSidebarSection, setPendingSidebarSection] = useState<SidebarSectionId | null>(null);
-	const jumpToSidebarSection = (section: SidebarSectionId) => {
-		setLeftSidebarOpen(true);
-		setPendingSidebarSection(section);
+	/** Rail click: toggle the drawer, or switch its section while open. */
+	const jumpToSidebarSection = (section: LeftSidebarSection) => {
+		if (leftSidebarOpen && leftSidebarSection === section) setLeftSidebarOpen(false);
+		else setLeftSidebarSection(section);
 	};
-	useEffect(() => {
-		if (!pendingSidebarSection) return;
-		const frame = requestAnimationFrame(() => {
-			const id = `sidebar-${pendingSidebarSection}`;
-			window.dispatchEvent(new CustomEvent("a-coder:open-sidebar-section", { detail: { id } }));
-			document.getElementById(id)?.scrollIntoView({ block: "start", behavior: "smooth" });
-			setPendingSidebarSection(null);
-		});
-		return () => cancelAnimationFrame(frame);
-	}, [pendingSidebarSection]);
 	const setRightSidebarTab = useUiStore((state) => state.setRightSidebarTab);
 	const effectiveCwd = projectPath || FALLBACK_CWD;
 
@@ -483,6 +478,8 @@ export default function App() {
 			if (s?.model) setModel(s.model as never);
 			if (s?.thinkingLevel) setThinkingLevel(s.thinkingLevel);
 			if (s?.permissionMode) setPermissionMode(s.permissionMode);
+			// Plan mode is boolean-authoritative from the engine; apply both ways.
+			setPlanMode(s?.planMode ?? false);
 			// Always apply the name, including clearing it: switching to an unnamed
 			// session must not inherit the previous session's name (the tab strip
 			// derives its labels from this field). The authority marker records
@@ -1164,6 +1161,23 @@ export default function App() {
 			{ id: "project-picker", label: "Open project", group: "navigate", action: () => setShowProjectPicker(true) },
 			{ id: "find", label: "Find in page", keybinding: "⌘F", group: "navigate", action: () => setShowFindBar(true) },
 			{ id: "guided-tour", label: "Start guided tour", group: "navigate", action: () => useTourStore.getState().start() },
+			{
+				id: "plan-mode",
+				label: "Toggle plan mode",
+				group: "session",
+				action: async () => {
+					const store = useSessionStore.getState();
+					const next = !store.planMode;
+					store.setPlanMode(next);
+					try {
+						await rpc.setPlanMode(next);
+						toast.success(next ? "Plan mode on" : "Plan mode off");
+					} catch (e) {
+						store.setPlanMode(!next);
+						toast.error("Failed to set plan mode", e instanceof Error ? e.message : String(e));
+					}
+				},
+			},
 			{ id: "home", label: "Open home dashboard", keybinding: "⇧⌘H", group: "navigate", action: () => setShowHome(true) },
 			{ id: "reopen-closed-tab", label: "Reopen closed session", keybinding: "⇧⌘T", group: "session", action: () => window.dispatchEvent(new CustomEvent("a-coder:reopen-closed-tab")) },
 			{ id: "settings", label: "Open settings", keybinding: "⌘,", group: "settings", action: () => openSettingsSection("general") },
@@ -1344,31 +1358,42 @@ export default function App() {
 
 			{/* ================== Main row ================== */}
 			<div className="flex min-h-0 flex-1">
-				{/* ================== Left sidebar (pinned or hover rail) ================== */}
-				{leftSidebarOpen ? (
-					<aside className="flex shrink-0 flex-col border-r border-pi-border bg-pi-surface">
-						<SidebarContent
-							projectName={projectName}
-							onPickProject={(path) => void switchProject(path)}
-							onOpenPicker={() => setShowProjectPicker(true)}
-							onOpenSettings={() => setShowSettings(true)}
-							onCollapse={() => setLeftSidebarOpen(false)}
+				{/* ================== Left sidebar: rail + section drawer ================== */}
+				<SidebarRail
+					activeSection={leftSidebarOpen ? leftSidebarSection : null}
+					simple={simple}
+					onOpenPicker={() => setShowProjectPicker(true)}
+					onOpenSettings={() => setShowSettings(true)}
+					onToggleSection={jumpToSidebarSection}
+					needsBackgroundInput={needsBackgroundInput}
+					hasBackgroundFinished={hasBackgroundFinished}
+					needsBackgroundInputCount={needsBackgroundInputCount}
+					backgroundFinishedCount={backgroundFinishedCount}
+					onFocusBackground={focusBackgroundSession}
+				/>
+				{leftSidebarOpen && (
+					<>
+						<aside
+							className="flex shrink-0 flex-col border-r border-pi-border bg-pi-surface"
+							style={{ width: leftSidebarWidth }}
+						>
+							<SidebarContent
+								section={leftSidebarSection}
+								projectName={projectName}
+								onPickProject={(path) => void switchProject(path)}
+								onOpenPicker={() => setShowProjectPicker(true)}
+								onOpenSettings={() => setShowSettings(true)}
+								onCollapse={() => setLeftSidebarOpen(false)}
+							/>
+						</aside>
+						<ResizeHandle
+							orientation="horizontal"
+							value={leftSidebarWidth}
+							ariaLabel="Resize sidebar"
+							onResize={(next) => setLeftSidebarWidth(clampSize(next, 232, 420))}
+							className="w-1 shrink-0 cursor-col-resize bg-transparent transition-colors hover:bg-pi-accent/30"
 						/>
-					</aside>
-				) : (
-					<SidebarRail
-						projectName={projectName}
-						onOpenPicker={() => setShowProjectPicker(true)}
-						onOpenSettings={() => setShowSettings(true)}
-						onExpand={() => setLeftSidebarOpen(true)}
-						onPickProject={(path) => void switchProject(path)}
-						onJump={jumpToSidebarSection}
-						needsBackgroundInput={needsBackgroundInput}
-						hasBackgroundFinished={hasBackgroundFinished}
-						needsBackgroundInputCount={needsBackgroundInputCount}
-						backgroundFinishedCount={backgroundFinishedCount}
-						onFocusBackground={focusBackgroundSession}
-					/>
+					</>
 				)}
 
 				{/* ================== Main column ================== */}
@@ -1600,72 +1625,9 @@ export default function App() {
 	);
 }
 
-function SidebarSection({
-	id,
-	title,
-	children,
-	className = "",
-}: {
-	id?: string;
-	title: string;
-	children: React.ReactNode;
-	className?: string;
-}) {
-	const storageKey = id ? `a-coder:sidebar-section:${id}` : null;
-	const [open, setOpen] = useState(() => {
-		if (!storageKey) return true;
-		try {
-			return globalThis.localStorage.getItem(storageKey) !== "collapsed";
-		} catch {
-			return true;
-		}
-	});
-
-	const setSectionOpen = (next: boolean) => {
-		setOpen(next);
-		if (!storageKey) return;
-		try {
-			globalThis.localStorage.setItem(storageKey, next ? "open" : "collapsed");
-		} catch {
-			/* storage unavailable — the section still collapses for this run */
-		}
-	};
-
-	const toggle = () => setSectionOpen(!open);
-
-	useEffect(() => {
-		if (!id) return;
-		const onOpen = (event: Event) => {
-			const detail = (event as CustomEvent<{ id?: string }>).detail;
-			if (detail?.id === id) setSectionOpen(true);
-		};
-		window.addEventListener("a-coder:open-sidebar-section", onOpen);
-		return () => window.removeEventListener("a-coder:open-sidebar-section", onOpen);
-	}, [id, storageKey]);
-
-	return (
-		<div id={id} className={`scroll-mt-3 ${className}`}>
-			<button
-				type="button"
-				onClick={toggle}
-				aria-expanded={open}
-				className="mb-1.5 flex w-full items-center gap-1 rounded px-2.5 py-0.5 text-left transition-hover hover:bg-pi-surface-raised/60 focus-visible:shadow-focus focus-visible:outline-none"
-			>
-				<span className="text-3xs font-semibold uppercase tracking-[0.08em] text-pi-text-faint">
-					{title}
-				</span>
-				{open ? (
-					<ChevronDown className="ml-auto h-3 w-3 shrink-0 text-pi-text-faint opacity-60" />
-				) : (
-					<ChevronRight className="ml-auto h-3 w-3 shrink-0 text-pi-text-faint opacity-60" />
-				)}
-			</button>
-			{open && children}
-		</div>
-	);
-}
 
 interface SidebarContentProps {
+	section: "sessions" | "projects";
 	projectName: string;
 	onPickProject: (path: string) => void;
 	onOpenPicker: () => void;
@@ -1674,6 +1636,7 @@ interface SidebarContentProps {
 }
 
 function SidebarContent({
+	section,
 	projectName,
 	onPickProject,
 	onOpenPicker,
@@ -1681,6 +1644,8 @@ function SidebarContent({
 	onCollapse,
 }: SidebarContentProps) {
 	const simple = useUiStore((state) => state.interfaceMode === "simple");
+	const [showTree, setShowTree] = useState(false);
+
 	return (
 		<>
 			{/* Workspace switcher */}
@@ -1691,9 +1656,7 @@ function SidebarContent({
 				>
 					<BrandMark className="h-7 w-7" />
 					<div className="min-w-0 flex-1">
-						<div className="truncate text-[13px] font-semibold tracking-tight">
-							A-Coder
-						</div>
+						<div className="truncate text-[13px] font-semibold tracking-tight">A-Coder</div>
 						<div className="flex items-center gap-1 truncate text-2xs text-pi-text-muted">
 							<FolderGit2 className="h-3 w-3 shrink-0 transition-smooth" />
 							<span className="truncate">{projectName}</span>
@@ -1704,32 +1667,59 @@ function SidebarContent({
 				{onCollapse && (
 					<button
 						onClick={onCollapse}
-						className="ml-1 flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-pi-text-faint transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none" aria-label="Collapse sidebar"
+						className="ml-1 flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-pi-text-faint transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+						aria-label="Collapse sidebar"
 					>
-						<ChevronsUpDown className="h-3.5 w-3.5 rotate-90" />
+						<ChevronRight className="h-3.5 w-3.5" />
 					</button>
 				)}
 			</div>
 
-				{/* Sidebar content */}
-			<div className="flex-1 overflow-auto px-2 py-3">
-				<SidebarSection id="sidebar-sessions" title="Sessions">
+			{section === "sessions" ? (
+				<div className="flex-1 overflow-auto px-2 py-3">
 					<SessionList />
-				</SidebarSection>
-				<SidebarSection id="sidebar-projects" title="Projects" className="mt-4">
-					<SidebarProjects onSelect={onPickProject} onAdd={onOpenPicker} />
-				</SidebarSection>
-				{!simple && (
-					<>
-						<SidebarSection id="sidebar-current" title="Current session" className="mt-4">
-							<SessionActions />
-						</SidebarSection>
-						<SidebarSection id="sidebar-tree" title="Tree" className="mt-4">
+					{!simple && showTree && (
+						<div className="mt-1.5 border-t border-pi-border pt-1.5">
 							<SessionTree />
-						</SidebarSection>
-					</>
-				)}
-			</div>
+						</div>
+					)}
+					{!simple && (
+						<div className="mt-1.5 border-t border-pi-border pt-1.5 pb-1"
+							// Current-session actions live with the list; the tree
+							// toggle keeps the rail at two items instead of three.
+						>
+							<SessionActions />
+							<button
+								onClick={() => setShowTree((value) => !value)}
+								aria-expanded={showTree}
+								className="mt-0.5 flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+							>
+								<GitBranch className="h-3.5 w-3.5 transition-smooth" />
+								{showTree ? "Hide session tree" : "Show session tree"}
+								{showTree ? (
+									<ChevronDown className="ml-auto h-3 w-3 text-pi-text-faint opacity-60" />
+								) : (
+									<ChevronRight className="ml-auto h-3 w-3 text-pi-text-faint opacity-60" />
+								)}
+							</button>
+						</div>
+					)}
+				</div>
+			) : (
+				<div className="flex min-h-0 flex-1 flex-col overflow-auto px-2 py-3">
+					<div className="mb-1 flex items-center justify-between px-2.5">
+						<span className="text-3xs font-semibold uppercase tracking-[0.08em] text-pi-text-faint">Projects</span>
+						<button
+							onClick={onOpenPicker}
+							className="flex h-5 items-center gap-1 rounded px-1 text-3xs text-pi-text-muted transition-hover hover:text-pi-text"
+						>
+							<Plus className="h-3 w-3" />
+							New
+						</button>
+					</div>
+					<SidebarProjects onSelect={onPickProject} onAdd={onOpenPicker} />
+				</div>
+			)}
 
 			{/* Footer */}
 			<div className="border-t border-pi-border p-2">
@@ -1747,12 +1737,12 @@ function SidebarContent({
 }
 
 interface SidebarRailProps {
-	projectName: string;
+	/** The open drawer's section; null while the drawer is closed. */
+	activeSection: "sessions" | "projects" | null;
+	simple: boolean;
 	onOpenPicker: () => void;
 	onOpenSettings: () => void;
-	onExpand: () => void;
-	onPickProject: (path: string) => void;
-	onJump: (section: "sessions" | "projects" | "tree") => void;
+	onToggleSection: (section: "sessions" | "projects") => void;
 	/** A background session is blocked on a permission prompt / dialog. */
 	needsBackgroundInput: boolean;
 	/** A background turn finished since its session was last visited. */
@@ -1763,68 +1753,52 @@ interface SidebarRailProps {
 }
 
 function SidebarRail({
-	projectName,
+	activeSection,
+	simple,
 	onOpenPicker,
 	onOpenSettings,
-	onExpand,
-	onPickProject,
-	onJump,
+	onToggleSection,
 	needsBackgroundInput,
 	hasBackgroundFinished,
 	needsBackgroundInputCount,
 	backgroundFinishedCount,
 	onFocusBackground,
 }: SidebarRailProps) {
-	const [hovered, setHovered] = useState(false);
-	const simple = useUiStore((state) => state.interfaceMode === "simple");
 	return (
-		<div
-			className="relative flex shrink-0"
-			onMouseEnter={() => setHovered(true)}
-			onMouseLeave={() => setHovered(false)}
-		>
-			<aside data-tour-id="tour-left-rail" className="flex w-12 flex-col items-center gap-1 border-r border-pi-border bg-pi-surface py-2">
-				<button
-					onClick={onExpand}
-					className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md bg-pi-accent-soft text-pi-accent transition-hover hover:brightness-105"
-
-					aria-label="Pin sidebar open"
-				>
-<BrandMark className="h-6 w-6" />
-				</button>
-				<div className="my-1 h-px w-5 bg-pi-border" />
-				<RailIcon
-					icon={MessageSquare}
-					label="Sessions"
-					onClick={() => onJump("sessions")}
-					badge={needsBackgroundInputCount + backgroundFinishedCount}
-					badgeTone={needsBackgroundInputCount > 0 ? "warning" : "success"}
-				/>
-				<RailIcon icon={FolderGit2} label="Projects" onClick={() => onJump("projects")} />
-				{!simple && <RailIcon icon={GitBranch} label="Session tree" onClick={() => onJump("tree")} />}
-				<RailIcon icon={Plus} label="New / open project" onClick={onOpenPicker} />
-				<div className="flex-1" />
-				<BackgroundAttentionOrb
-					needsInput={needsBackgroundInput}
-					finished={hasBackgroundFinished}
-					onClick={onFocusBackground}
-				/>
-				<div className="my-1 h-px w-5 bg-pi-border" />
-				<RailIcon icon={Settings} label="Settings" onClick={onOpenSettings} />
-			</aside>
-
-			{hovered && (
-				<aside className="absolute left-12 top-0 z-[var(--z-modal)] flex h-full w-64 flex-col border-r border-pi-border bg-pi-surface shadow-overlay">
-					<SidebarContent
-						projectName={projectName}
-						onPickProject={onPickProject}
-						onOpenPicker={onOpenPicker}
-						onOpenSettings={onOpenSettings}
-						onCollapse={onExpand}
-					/>
-				</aside>
-			)}
-		</div>
+		<aside data-tour-id="tour-left-rail" className="flex w-12 shrink-0 flex-col items-center gap-1 border-r border-pi-border bg-pi-surface py-2">
+			<button
+				onClick={() => onToggleSection("sessions")}
+				className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md transition-hover hover:brightness-105"
+				aria-label="Toggle sidebar"
+				title="Toggle sidebar"
+			>
+				<BrandMark className="h-6 w-6" />
+			</button>
+			<div className="my-1 h-px w-5 bg-pi-border" />
+			<RailIcon
+				icon={MessageSquare}
+				label="Sessions"
+				onClick={() => onToggleSection("sessions")}
+				active={activeSection === "sessions"}
+				badge={needsBackgroundInputCount + backgroundFinishedCount}
+				badgeTone={needsBackgroundInputCount > 0 ? "warning" : "success"}
+			/>
+			<RailIcon
+				icon={FolderGit2}
+				label="Projects"
+				onClick={() => onToggleSection("projects")}
+				active={activeSection === "projects"}
+			/>
+			{!simple && <RailIcon icon={Plus} label="New / open project" onClick={onOpenPicker} />}
+			<div className="flex-1" />
+			<BackgroundAttentionOrb
+				needsInput={needsBackgroundInput}
+				finished={hasBackgroundFinished}
+				onClick={onFocusBackground}
+			/>
+			<div className="my-1 h-px w-5 bg-pi-border" />
+			<RailIcon icon={Settings} label="Settings" onClick={onOpenSettings} />
+		</aside>
 	);
 }
 
@@ -1834,19 +1808,25 @@ function RailIcon({
 	onClick,
 	badge = 0,
 	badgeTone = "success",
+	active = false,
 }: {
 	icon: typeof FolderGit2;
 	label: string;
 	onClick: () => void;
 	badge?: number;
 	badgeTone?: "warning" | "success";
+	active?: boolean;
 }) {
 	const accessibilityLabel = badge > 0 ? `${label} (${badge} need attention)` : label;
 	return (
 		<Tip content={accessibilityLabel} placement="row">
 			<button
 				onClick={onClick}
-				className="relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+				className={`relative flex h-8 w-8 cursor-pointer items-center justify-center rounded-md transition-hover focus-visible:shadow-focus focus-visible:outline-none ${
+					active
+						? "bg-pi-accent-soft text-pi-accent"
+						: "text-pi-text-muted hover:bg-pi-surface-raised hover:text-pi-text"
+				}`}
 				aria-label={accessibilityLabel}
 			>
 				<IconCmp className="h-4 w-4" />

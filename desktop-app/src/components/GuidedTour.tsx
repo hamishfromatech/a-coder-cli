@@ -68,8 +68,8 @@ const STEPS: TourStep[] = [
 		title: "Sessions and projects live on the left",
 		target: "tour-left-rail",
 		drive: () => window.dispatchEvent(new CustomEvent("a-coder:close-overlay")),
-		body: "The rail holds your sessions, projects, and the session tree. Hover it to expand; the badge shows background jobs waiting on you.",
-		points: ["Sessions resume where they left off", "New / open project pins a workspace"],
+		body: "The rail switches the sidebar between Sessions and Projects. Click the active icon to close it; the badge shows background jobs waiting on you.",
+		points: ["Sessions resume where they left off", "The session tree lives under Sessions"],
 	},
 	{
 		id: "sidebar",
