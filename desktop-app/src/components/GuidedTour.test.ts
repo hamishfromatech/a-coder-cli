@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-const { computeCardPosition } = await import("../components/GuidedTour");
+const { computeCardPosition, computeSpotlightCutout, computeSpotlightPanels } = await import(
+	"../components/GuidedTour"
+);
 
 const rect = (left: number, top: number, width: number, height: number) =>
 	({ left, top, width, height, right: left + width, bottom: top + height }) as DOMRect;
@@ -9,6 +11,53 @@ const win = (vw: number, vh: number) => {
 	Object.defineProperty(window, "innerWidth", { value: vw, configurable: true });
 	Object.defineProperty(window, "innerHeight", { value: vh, configurable: true });
 };
+
+describe("computeSpotlightPanels", () => {
+	afterEach(() => win(1440, 900));
+
+	it("covers the viewport outside a mid-screen cutout exactly once", () => {
+		win(1440, 900);
+		const spot = rect(300, 200, 380, 220);
+		const panels = computeSpotlightPanels(spot);
+		expect(panels).toEqual([
+			{ left: 0, top: 0, width: 1440, height: 194 },
+			{ left: 0, top: 426, width: 1440, height: 474 },
+			{ left: 0, top: 194, width: 294, height: 232 },
+			{ left: 686, top: 194, width: 754, height: 232 },
+		]);
+		const area = panels.reduce((sum, p) => sum + p.width * p.height, 0);
+		// Cutout is 392 x 232; the four panels tile the rest of the viewport.
+		expect(area).toBe(1440 * 900 - 392 * 232);
+	});
+
+	it("leaves no top/bottom band for a full-height rail", () => {
+		win(1440, 900);
+		const panels = computeSpotlightPanels(rect(0, 0, 48, 900));
+		expect(panels[0]!.height).toBe(0);
+		expect(panels[1]!.height).toBe(0);
+		expect(panels[2]!.width).toBe(0);
+		expect(panels[3]).toEqual({ left: 54, top: 0, width: 1386, height: 900 });
+	});
+
+	it("clamps a cutout that hangs off the viewport edges", () => {
+		win(640, 480);
+		expect(computeSpotlightCutout(rect(-40, -30, 100, 100))).toEqual({
+			left: 0,
+			top: 0,
+			width: 66,
+			height: 76,
+		});
+		const panels = computeSpotlightPanels(rect(-40, -30, 100, 100));
+		for (const panel of panels) {
+			expect(panel.width).toBeGreaterThanOrEqual(0);
+			expect(panel.height).toBeGreaterThanOrEqual(0);
+			expect(panel.left).toBeGreaterThanOrEqual(0);
+			expect(panel.top).toBeGreaterThanOrEqual(0);
+			expect(panel.left + panel.width).toBeLessThanOrEqual(640);
+			expect(panel.top + panel.height).toBeLessThanOrEqual(480);
+		}
+	});
+});
 
 describe("computeCardPosition", () => {
 	afterEach(() => win(1440, 900));

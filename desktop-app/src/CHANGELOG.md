@@ -44,6 +44,8 @@
 
 ### Fixed
 
+- The auto-continue toast now shows human copy instead of the decision model's raw summary. `reason` is "model detected progress" / "model needs your input" / "model recommended stopping"; the `next=… p=… progress=…` string moved to an optional `diagnostic` field used for logs and telemetry, so the toast no longer prints the same numbers twice (or float timings such as `533.381500000177ms`), and local guard stops show only their reason instead of empty progress/latency fields.
+- The guided tour no longer dead-ends: the spotlight's 9999px `box-shadow` (a ~20k-px composited layer that WKWebView mis-hit-tested on Retina) is replaced with four viewport-sized dim panels, so the card's Next / Back / X buttons stay clickable on every step; and the card now owns the keyboard while the tour runs (Next is focused after each step and focus is pulled back from surfaces a step drives open), so Enter advances the tour instead of running the command palette's highlighted item ("Start guided tour", which restarted the tour) and a restart re-focuses Next.
 - The model dropdown on the composer's pill now has a working refresh button; the icon used to be decorative markup, so clicking it did nothing.
 
 - The model modal opened by `/model` and `⌘P` now lands centered on the screen; the dialog never had a position so its `left`/`top` coordinates were silently dropped and it rendered pinned to the window's top-left corner.
