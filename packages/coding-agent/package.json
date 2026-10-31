@@ -1,6 +1,6 @@
 {
 	"name": "@earendil-works/pi-coding-agent",
-	"version": "0.80.190",
+	"version": "0.80.191",
 	"description": "Coding agent CLI with read, bash, edit, write tools and session management",
 	"type": "module",
 	"piConfig": {
@@ -42,11 +42,11 @@
 		"prepublishOnly": "npm run clean && npm run build && npm run shrinkwrap"
 	},
 	"dependencies": {
-		"@earendil-works/pi-agent-core": "^0.80.190",
-		"@earendil-works/pi-ai": "^0.80.190",
-		"@earendil-works/pi-cloud": "^0.80.190",
-		"@earendil-works/pi-tui": "^0.80.190",
-		"@modelcontextprotocol/sdk": "1.30.0",
+		"@earendil-works/pi-agent-core": "^0.80.191",
+		"@earendil-works/pi-ai": "^0.80.191",
+		"@earendil-works/pi-cloud": "^0.80.191",
+		"@earendil-works/pi-tui": "^0.80.191",
+		"@modelcontextprotocol/sdk": "1.32.2",
 		"@silvia-odwyer/photon-node": "0.3.4",
 		"bonjour-service": "1.4.4",
 		"chalk": "5.6.2",
@@ -64,7 +64,7 @@
 		"qrcode": "1.5.4",
 		"semver": "7.8.0",
 		"typebox": "1.1.38",
-		"undici": "8.5.0",
+		"undici": "8.12.3",
 		"ws": "8.21.3",
 		"yaml": "2.9.0"
 	},
@@ -82,11 +82,11 @@
 		"@types/node": "24.12.4",
 		"@types/proper-lockfile": "4.1.4",
 		"@types/qrcode": "1.5.5",
-		"@types/ws": "8.5.10",
 		"@types/semver": "7.7.1",
+		"@types/ws": "8.5.10",
 		"shx": "0.4.0",
 		"typescript": "5.9.3",
-		"vitest": "4.1.9"
+		"vitest": "4.1.12"
 	},
 	"keywords": [
 		"coding-agent",

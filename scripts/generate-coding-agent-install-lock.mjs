@@ -16,7 +16,7 @@ const internalPackageNames = new Set(["@earendil-works/chord"]);
 const installPackageName = "@earendil-works/pi-coding-agent-install";
 const allowedInstallScriptPackages = new Map([
 	["@google/genai@2.21.0", "preinstall is a no-op in the published package"],
-	["protobufjs@7.6.4", "postinstall only warns about protobufjs version scheme mismatches"],
+	["protobufjs@7.6.6", "postinstall only warns about protobufjs version scheme mismatches"],
 ]);
 
 const args = new Set(process.argv.slice(2));

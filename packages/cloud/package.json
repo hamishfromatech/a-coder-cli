@@ -1,6 +1,6 @@
 {
 	"name": "@earendil-works/pi-cloud",
-	"version": "0.80.190",
+	"version": "0.80.191",
 	"description": "A-Coder Cloud control plane: always-on a-coder agents with git sync-back, reports, and session continuity",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -40,6 +40,6 @@
 	"dependencies": {},
 	"devDependencies": {
 		"shx": "0.4.0",
-		"vitest": "4.1.9"
+		"vitest": "4.1.12"
 	}
 }

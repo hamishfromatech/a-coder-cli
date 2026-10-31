@@ -39,6 +39,9 @@ function makeFakeSession(overrides?: Partial<Record<string, unknown>>, reply?: s
 		sessionFile: "/tmp/fake-session.jsonl",
 		messages,
 		prompt: vi.fn(async () => {}),
+		// Real sessions require this (binds turn-scoped permission mode and
+		// returns an unbind fn); absent here since 0eaca093e, which killed runs.
+		bindTurnPermissionMode: vi.fn(() => () => {}),
 		sendUserMessage: vi.fn(async (text: string, options?: { deliverAs?: string }) => {
 			sent.push({ text, deliverAs: options?.deliverAs });
 			if (reply) messages.push({ role: "assistant", content: [{ type: "text", text: reply }] });

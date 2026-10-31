@@ -500,7 +500,14 @@ describe("Coding Agent Tools", () => {
 			const result = await bashTool.execute("test-call-8", { command: "echo 'test output'" });
 
 			expect(getTextOutput(result)).toContain("test output");
-			expect(result.details).toBeUndefined();
+			// Color-preserving display copy (details.displayOutput) plus a truthful
+			// exitCode ride in details for every bash result (903f61613).
+			expect(result.details).toEqual({
+				truncation: undefined,
+				fullOutputPath: undefined,
+				displayOutput: "test output",
+				exitCode: 0,
+			});
 		});
 
 		it("should handle command errors", async () => {
