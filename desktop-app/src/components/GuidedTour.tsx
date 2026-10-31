@@ -6,7 +6,7 @@
  * switches, and its escape-layer slot closes it on Esc.
  */
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { ArrowLeft, Compass, Sparkles, X } from "lucide-react";
 
 import { ESCAPE_PRIORITY, isTopEscapeLayer, pushEscapeLayer } from "../lib/escape-layers";
@@ -142,6 +142,63 @@ const TOUR_CARD_WIDTH = 400;
 /** Rough card height for placement; the exact height varies with body copy. */
 const TOUR_CARD_HEIGHT = 240;
 
+/** Screen-space dim panels: everything outside the spotlight cutout. */
+export interface SpotlightPanel {
+	left: number;
+	top: number;
+	width: number;
+	height: number;
+}
+
+const SPOTLIGHT_PANEL_KEYS = ["above", "below", "left", "right"] as const;
+
+/** Viewport-clamped cutout around the spotlight target. */
+export function computeSpotlightCutout(spot: DOMRect, pad = 6): SpotlightPanel {
+	const left = Math.max(0, spot.left - pad);
+	const top = Math.max(0, spot.top - pad);
+	const right = Math.min(window.innerWidth, spot.right + pad);
+	const bottom = Math.min(window.innerHeight, spot.bottom + pad);
+	return {
+		left,
+		top,
+		width: Math.max(0, right - left),
+		height: Math.max(0, bottom - top),
+	};
+}
+
+/**
+ * The four dim panels around a spotlight cutout. Deliberately NOT a single
+ * element with a huge `box-shadow` spread: a 9999px shadow is a ~20k-px
+ * composited layer, and WKWebView mis-handles hit-testing/painting of one on
+ * Retina (the guided-tour card became unclickable). Four viewport-sized panels
+ * are cheap and unambiguous. Values are clamped so an edge cutout never
+ * produces negative geometry.
+ */
+export function computeSpotlightPanels(spot: DOMRect, pad = 6): SpotlightPanel[] {
+	const vw = window.innerWidth;
+	const vh = window.innerHeight;
+	const cut = computeSpotlightCutout(spot, pad);
+	const bottom = cut.top + cut.height;
+	const right = cut.left + cut.width;
+	return [
+		{ left: 0, top: 0, width: vw, height: cut.top },
+		{ left: 0, top: bottom, width: vw, height: Math.max(0, vh - bottom) },
+		{ left: 0, top: cut.top, width: cut.left, height: cut.height },
+		{ left: right, top: cut.top, width: Math.max(0, vw - right), height: cut.height },
+	];
+}
+
+/** Compare two measured rects so the 350ms tracker doesn't churn renders. */
+function sameRect(a: DOMRect | null, b: DOMRect | null): boolean {
+	if (!a || !b) return a === b;
+	return (
+		a.left === b.left &&
+		a.top === b.top &&
+		a.width === b.width &&
+		a.height === b.height
+	);
+}
+
 /**
  * Place the tour card near the spotlight without ever leaving the viewport:
  * attempts below → above → right → left of the spotlight, and a candidate
@@ -192,6 +249,8 @@ export function GuidedTour(): ReactNode {
 
 	const [rect, setRect] = useState<DOMRect | null>(null);
 	const [settled, setSettled] = useState(false);
+	const cardRef = useRef<HTMLDivElement | null>(null);
+	const primaryRef = useRef<HTMLButtonElement | null>(null);
 	const tourActive = stepIndex !== null;
 
 	// Drive the app on step entry, then let layout settle before measuring.
@@ -233,7 +292,10 @@ export function GuidedTour(): ReactNode {
 		}
 		const measure = () => {
 			const el = document.querySelector(`[data-tour-id="${current.target}"]`);
-			setRect(el instanceof HTMLElement ? el.getBoundingClientRect() : null);
+			const next = el instanceof HTMLElement ? el.getBoundingClientRect() : null;
+			// Only publish real changes: a new DOMRect every 350ms re-rendered the
+			// card and re-armed its left/top transition, which could make it drift.
+			setRect((prev) => (sameRect(prev, next) ? prev : next));
 		};
 		measure();
 		const timer = setInterval(measure, 350);
@@ -244,6 +306,30 @@ export function GuidedTour(): ReactNode {
 		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [stepIndex, settled, tourActive]);
+
+	// The card owns the keyboard while the tour runs. Step drives open surfaces
+	// that focus themselves (the command palette's input steals focus in a rAF),
+	// which used to let Enter run the highlighted command instead of advancing
+	// the tour. Focus the primary button after every step change and pull focus
+	// back into the card whenever anything outside it tries to take it.
+	useEffect(() => {
+		if (!tourActive) return;
+		const frame = requestAnimationFrame(() => primaryRef.current?.focus());
+		return () => cancelAnimationFrame(frame);
+	}, [stepIndex, tourActive]);
+
+	useEffect(() => {
+		if (!tourActive) return;
+		const onFocusIn = (event: FocusEvent) => {
+			const card = cardRef.current;
+			if (!card) return;
+			const target = event.target;
+			if (target instanceof Node && card.contains(target)) return;
+			primaryRef.current?.focus();
+		};
+		document.addEventListener("focusin", onFocusIn);
+		return () => document.removeEventListener("focusin", onFocusIn);
+	}, [tourActive]);
 
 	// Escape layer: Esc ends the tour. An overlay opened by a drive (palette,
 	// settings) stays open in the background — a second Esc reaches it
@@ -273,9 +359,11 @@ export function GuidedTour(): ReactNode {
 	const cardStyle: React.CSSProperties = {
 		...computeCardPosition(spot, TOUR_CARD_WIDTH, TOUR_CARD_HEIGHT),
 		width: TOUR_CARD_WIDTH,
+		pointerEvents: "auto",
 		transition:
 			"left 240ms cubic-bezier(0.2,0.8,0.2,1), top 240ms cubic-bezier(0.2,0.8,0.2,1)",
 	};
+	const cutout = spot ? computeSpotlightCutout(spot) : null;
 
 	return (
 		<div
@@ -285,23 +373,45 @@ export function GuidedTour(): ReactNode {
 			style={{ zIndex: 300 }}
 		>
 			{spot ? (
-				<div
-					style={{
-						position: "fixed",
-						left: spot.left - 6,
-						top: spot.top - 6,
-						width: spot.width + 12,
-						height: spot.height + 12,
-						borderRadius: 14,
-						boxShadow: "0 0 0 4px rgba(79,125,217,0.35), 0 0 0 9999px rgba(6,8,12,0.62)",
-						pointerEvents: "none",
-						transition: "all 220ms cubic-bezier(0.2,0.8,0.2,1)",
-					}}
-				/>
+				<>
+					{computeSpotlightPanels(spot).map((panel, index) => (
+						<div
+							key={SPOTLIGHT_PANEL_KEYS[index] ?? index}
+							aria-hidden
+							style={{
+								position: "fixed",
+								left: panel.left,
+								top: panel.top,
+								width: panel.width,
+								height: panel.height,
+								background: "rgba(6,8,12,0.62)",
+								pointerEvents: "none",
+								transition:
+									"left 220ms cubic-bezier(0.2,0.8,0.2,1), top 220ms cubic-bezier(0.2,0.8,0.2,1), width 220ms cubic-bezier(0.2,0.8,0.2,1), height 220ms cubic-bezier(0.2,0.8,0.2,1)",
+							}}
+						/>
+					))}
+					<div
+						aria-hidden
+						style={{
+							position: "fixed",
+							left: cutout?.left ?? 0,
+							top: cutout?.top ?? 0,
+							width: cutout?.width ?? 0,
+							height: cutout?.height ?? 0,
+							borderRadius: 14,
+							boxShadow: "0 0 0 4px rgba(79,125,217,0.35)",
+							pointerEvents: "none",
+							transition: "all 220ms cubic-bezier(0.2,0.8,0.2,1)",
+						}}
+					/>
+				</>
 			) : (
 				<div className="absolute inset-0 bg-pi-bg/70" />
 			)}
 			<TourCard
+				ref={cardRef}
+				primaryRef={primaryRef}
 				step={step}
 				index={stepIndex}
 				total={STEPS.length}
@@ -319,16 +429,19 @@ interface TourCardProps {
 	index: number;
 	total: number;
 	style: React.CSSProperties;
+	ref?: RefObject<HTMLDivElement | null>;
+	primaryRef: RefObject<HTMLButtonElement | null>;
 	onNext: () => void;
 	onBack: () => void;
 	onEnd: () => void;
 }
 
-function TourCard({ step, index, total, style, onNext, onBack, onEnd }: TourCardProps): ReactNode {
+function TourCard({ step, index, total, style, ref, primaryRef, onNext, onBack, onEnd }: TourCardProps): ReactNode {
 	const Icon = index === 0 ? Sparkles : Compass;
 	const isLast = index === total - 1;
 	return (
 		<div
+			ref={ref}
 			className="absolute rounded-xl border border-pi-border-strong bg-pi-surface-overlay p-4 shadow-2xl"
 			style={style}
 			onClick={(event) => event.stopPropagation()}
@@ -380,9 +493,9 @@ function TourCard({ step, index, total, style, onNext, onBack, onEnd }: TourCard
 						</button>
 					)}
 					<button
+						ref={primaryRef}
 						type="button"
 						onClick={onNext}
-						autoFocus
 						className="cursor-pointer rounded-md bg-pi-accent px-3 py-1 text-2xs font-medium text-white transition-hover hover:brightness-110"
 					>
 						{isLast ? "Finish" : "Next"}
