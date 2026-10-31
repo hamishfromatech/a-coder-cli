@@ -250,7 +250,8 @@ describe("decision-model round trip", () => {
 		expect(decision?.action).toBe("continue");
 		expect(decision?.completion).toBeCloseTo(0.5, 5);
 		expect(decision?.progressed).toBe(true);
-		expect(decision?.reason).toContain("completion=0.50");
+		expect(decision?.reason).toBe("model detected progress");
+		expect(decision?.diagnostic).toContain("completion=0.50");
 	});
 
 	test("skips the model call when a local guard is decisive", async () => {

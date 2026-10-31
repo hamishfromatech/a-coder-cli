@@ -515,9 +515,18 @@ export function processAgentEvent(event: rpc.RpcEvent, deps: AgentEventDeps): vo
 		case "auto_continue_decision": {
 			const decision = event as rpc.AutoContinueDecisionEvent;
 			const continueP = Math.round((decision.probabilities.continue ?? 0) * 100);
-			const completion =
-				typeof decision.completion === "number" ? ` · done ${Math.round(decision.completion * 100)}%` : "";
-			const detail = `${decision.reason} · progress ${Math.round(decision.progress * 100)}%${completion} · ${decision.latencyMs}ms${decision.model ? ` · ${decision.model}` : ""}`;
+			const parts = [decision.reason];
+			// Local guards stop without a model call: the reason is the whole story.
+			const hasModelData = decision.latencyMs > 0 || Object.keys(decision.probabilities).length > 0;
+			if (hasModelData) {
+				parts.push(`progress ${Math.round(decision.progress * 100)}%`);
+				if (typeof decision.completion === "number") {
+					parts.push(`done ${Math.round(decision.completion * 100)}%`);
+				}
+				parts.push(`${Math.round(decision.latencyMs)}ms`);
+				if (decision.model) parts.push(decision.model);
+			}
+			const detail = parts.filter(Boolean).join(" · ");
 			if (decision.action === "continue") {
 				toast.info(`Auto-continuing (${continueP}%)`, detail);
 			} else if (decision.action === "ask_user") {
