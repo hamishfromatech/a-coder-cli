@@ -4,11 +4,18 @@
 
 ### Changed
 
+- **Session and project switching is one shared path.** Every surface (tab strip, session rail, resume picker, home dashboard, background-session focus, project switch) claims a single in-flight switch: the target lights up immediately, the transcript keeps the previous page under a chip that names where you are going, and a thin progress hairline runs under the tab strip until the engine answers. A failed switch restores the previous tab and drops any speculative one.
+
+- The session tab strip gains drag reorder, middle-click close, an active-tab accent, and ⌘⇧[ / ⌘⇧] cycling. A session visited for the first time opens at the latest message (not the top), and each transcript swap crossfades briefly; workspace rows in the sidebar and project picker show "Opening…" with a spinner while a project switch is in flight.
+
+- The browser panel's chrome is rebuilt around the page: one toolbar with a site glyph, an inline loading line, zoom presets, a downloads menu that lists pending approvals beside recent files, and an overflow menu (find, mute, reopen closed tab, open in the system browser, settings). Tabs support drag reorder, middle-click close, per-tab mute, and ⌘1–9 / Ctrl-Tab switching; the agent permission select is now an Ask/Auto pill that explains the gate, and find-in-page gained working previous/next with an empty state.
 - Office floor views now use the full sidebar area: the 3D canvas stretches to the panel and pulls the camera back for tall layouts, while the 2D floor stays fully visible with a matching wall background instead of overflowing or leaving black letterbox bands.
 - The desktop engine bootstrap now downloads from `hamishfromatech/a-coder-cli` directly instead of relying on GitHub's `pi-mono` rename redirect.
 - Settings got a UI/UX pass: the sidebar is grouped (App / Assistant / Workspace / System) with proper icons and an active marker, the search box now searches every settings page and jumps straight to the matching control (or merged sub-section) with a brief highlight, cards honor their `defaultCollapsed` state, advanced fields auto-expand for search hits, and the footer shows live Saving / Saved / error status instead of a static note. The raw JSON editor gains a saved/unsaved state, Reload, a confirmed reset, and opens the correct project-scoped settings file.
 - Composio integration moved into the engine's built-in **Composio MCP server** (`https://connect.composio.dev/mcp`, seeded on fresh installs next to chrome-devtools; auth = dashboard consumer API key via `COMPOSIO_API_KEY` or the MCP servers editor). The desktop **Apps panel** (browse/connect apps) and the empty `Composio` settings card are gone — app discovery and connection now happen in the chat through the server's manage-connections meta tools, and old `#composio` settings deep links still land on Integrations.
 ### Added
+
+- **New-tab start surface.** A new tab opens a local start page — address field, recently visited pages, the agent's page permission, and a link to browser settings — instead of loading a search engine, so ⌘T is instant, offline-capable, and private. It also fills the panel when no tab exists.
 
 - When macOS blocks a guarded folder, tool errors carry an explanation and the card offers **Open Privacy Settings**; the IDE editor's save path shows the same guidance.
 
@@ -22,6 +29,10 @@
 - **First-run onboarding is leaner:** the legacy video walkthrough is gone (5.3 MB off the app payload); onboarding is now folder → trust → model → guided tour.
 
 ### Fixed
+
+- Switching projects no longer reconnects the engine. The boot effect was keyed on the active workspace, so adopting a session's folder mid-switch tore the RPC connection down and the `session_start` history fetch raced `disconnect`, toasting "Failed to load messages after session start — Not connected to engine" before the session loaded normally. The effect now connects once per boot shape and reads the workspace at run time; the history fetch also retries the short transport gap instead of reporting it as a failure.
+
+- Browser tabs show the page title instead of the URL when the title event lands after the finished-load event (the stale-sequence guard used to drop it).
 
 - The desktop frontend build no longer depends on a node_modules layout: monaco web-worker imports resolve through a `@monaco-editor-root` Vite alias computed from monaco's actual install location at config time, working both under the npm-workspaces hoist and the CI standalone `npm ci --no-workspaces` install (previously the build only resolved in the workspace layout and every desktop release build failed on it).
 - The update modal now shows real release notes: `latest.json` is generated with the same notes text as the GitHub release body instead of a one-line placeholder, and the modal renders the notes as styled text ("What's new in vX.Y.Z" — headings, bullets, bold, code, links) with a hint when a release carries none.

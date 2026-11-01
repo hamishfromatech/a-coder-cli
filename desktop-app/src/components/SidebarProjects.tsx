@@ -1,5 +1,6 @@
-import { Folder, FolderPlus } from "lucide-react";
+import { Folder, FolderPlus, Loader2 } from "lucide-react";
 import { useWorkspaceStore } from "../stores/workspace-store";
+import { useSwitchStore } from "../stores/switch-store";
 import { triggerHaptic } from "../lib/haptics";
 
 /** Inline recent-projects list for the left sidebar — the OpenCode-style
@@ -15,6 +16,7 @@ export function SidebarProjects({
 	const current = useWorkspaceStore((s) => s.current);
 	const recentProjects = useWorkspaceStore((s) => s.recentProjects);
 	const removeRecent = useWorkspaceStore((s) => s.removeRecent);
+	const pending = useSwitchStore((s) => s.pending);
 
 	const displayName = (path: string) => {
 		const parts = path.split(/[/\\]/).filter(Boolean);
@@ -38,37 +40,45 @@ export function SidebarProjects({
 				<>
 					{recentProjects.slice(0, 6).map((path) => {
 						const isActive = path === current;
+						const opening = pending?.kind === "project" && pending.path === path;
 						return (
 							<div
 								key={path}
+								aria-busy={opening}
 								className={`group/proj flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
 									isActive ? "bg-pi-accent-soft" : "hover:bg-pi-surface-raised"
-								}`}
+								} ${pending && !opening ? "opacity-60" : ""}`}
 							>
 								<button
 									type="button"
+									disabled={Boolean(pending)}
 									onClick={() => {
 										triggerHaptic("selection");
 										onSelect(path);
 									}}
-									className="flex min-w-0 flex-1 items-center gap-2 text-left"
+									className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-default"
 
 								>
-									<Folder
-										className={`h-3.5 w-3.5 shrink-0 ${
-											isActive ? "text-pi-accent" : "text-pi-text-muted"
-										}`}
-									/>
+									{opening ? (
+										<Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-pi-accent" />
+									) : (
+										<Folder
+											className={`h-3.5 w-3.5 shrink-0 ${
+												isActive ? "text-pi-accent" : "text-pi-text-muted"
+											}`}
+										/>
+									)}
 									<span
 										className={`truncate text-xs font-medium ${
 											isActive ? "text-pi-accent" : "text-pi-text"
 										}`}
 									>
-										{displayName(path)}
+										{opening ? "Opening…" : displayName(path)}
 									</span>
 								</button>
 								<button
 									type="button"
+									disabled={Boolean(pending)}
 									onClick={(e) => {
 										e.stopPropagation();
 										removeRecent(path);

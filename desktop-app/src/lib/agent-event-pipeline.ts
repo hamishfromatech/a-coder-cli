@@ -397,6 +397,28 @@ export function processAgentEvent(event: rpc.RpcEvent, deps: AgentEventDeps): vo
 		}
 	}
 
+	/**
+	 * History fetch that survives the brief window where the desktop's RPC
+	 * client is between connections (engine restart, reattach, a reconnect
+	 * triggered by a workspace change). A switch that lands during that window
+	 * used to toast "Not connected to engine" even though the session loaded
+	 * as soon as the transport came back; retry transient failures instead.
+	 */
+	const getMessagesWithRetry = async (isCurrent: () => boolean): Promise<rpc.GetMessagesResult | null> => {
+		const delays = [180, 450, 900];
+		for (let attempt = 0; ; attempt += 1) {
+			try {
+				return (await rpc.getMessages({ limit: HISTORY_PAGE_SIZE })) as rpc.GetMessagesResult;
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				const code = (error as { code?: string } | null)?.code;
+				const transient = code === "not_connected" || /not connected to engine/i.test(message);
+				if (!transient || attempt >= delays.length || !isCurrent()) throw error;
+				await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
+			}
+		}
+	};
+
 	const { loadingHistoryRef, sessionStartGenerationRef, parkedQuestionsRef, deferredUserEchoesRef, syncEngineState } = deps;
 	const isSessionStart = event.type === "session_start";
 	const active = useSessionStore.getState();
@@ -731,8 +753,9 @@ export function processAgentEvent(event: rpc.RpcEvent, deps: AgentEventDeps): vo
 					})();
 					try {
 						try {
-							const msgsRes = (await rpc.getMessages({ limit: HISTORY_PAGE_SIZE })) as rpc.GetMessagesResult;
+							const msgsRes = await getMessagesWithRetry(isCurrent);
 							if (!isCurrent()) return;
+							if (msgsRes === null) return;
 							if (msgsRes?.messages) {
 								applyHistoryPage(msgsRes, "replace");
 								painted = true;

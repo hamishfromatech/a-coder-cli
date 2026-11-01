@@ -402,6 +402,23 @@ input[type="range"].pi-range,
 	border-radius: 999px;
 }
 
+/* Session/workspace switching: one indeterminate hairline under the tab strip
+   while the engine switches, and one short crossfade when the transcript does. */
+@keyframes pi-switch-progress {
+	0%   { transform: translateX(-120%); }
+	100% { transform: translateX(420%); }
+}
+.switch-progress {
+	animation: pi-switch-progress 1.15s ease-in-out infinite;
+}
+@keyframes pi-session-enter {
+	from { opacity: 0; transform: translateY(3px); }
+	to   { opacity: 1; transform: none; }
+}
+.session-enter {
+	animation: pi-session-enter 160ms ease-out;
+}
+
 /* Animated shimmer for "streaming" dots. */
 @keyframes pi-pulse {
 	0%, 100% { opacity: 0.4; transform: scale(0.85); }

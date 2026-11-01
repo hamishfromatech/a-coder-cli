@@ -44,3 +44,31 @@ describe("tabs-store openTab label semantics", () => {
 		expect(tabs.map((t) => t.name)).toEqual(["Fix login bug v2", "Build app"]);
 	});
 });
+describe("tabs-store moveTab", () => {
+	beforeEach(() => {
+		useTabsStore.getState().clear();
+	});
+
+	it("reorders by drag without changing the active tab", () => {
+		const store = useTabsStore.getState();
+		store.openTab("/s/a.jsonl", "A");
+		store.openTab("/s/b.jsonl", "B");
+		store.openTab("/s/c.jsonl", "C");
+		store.setActive("/s/b.jsonl");
+
+		useTabsStore.getState().moveTab("/s/c.jsonl", "/s/a.jsonl");
+		expect(useTabsStore.getState().tabs.map((tab) => tab.path)).toEqual([
+			"/s/c.jsonl",
+			"/s/a.jsonl",
+			"/s/b.jsonl",
+		]);
+		expect(useTabsStore.getState().activePath).toBe("/s/b.jsonl");
+	});
+
+	it("ignores unknown paths", () => {
+		useTabsStore.getState().openTab("/s/a.jsonl", "A");
+		const before = useTabsStore.getState().tabs;
+		useTabsStore.getState().moveTab("/missing", "/s/a.jsonl");
+		expect(useTabsStore.getState().tabs).toBe(before);
+	});
+});

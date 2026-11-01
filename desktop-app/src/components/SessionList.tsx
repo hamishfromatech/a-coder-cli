@@ -3,14 +3,13 @@ import { Check, Copy, MoreHorizontal, Pencil, Pin, PinOff, Plus, SlidersHorizont
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import * as rpc from "../lib/rpc";
 import { useRuntimeStatusStore } from "../stores/runtime-status-store";
-import { pickLoadingVerb } from "../lib/loading-verbs";
 import { useSessionStore } from "../stores/session-store";
 import { useTabsStore } from "../stores/tabs-store";
 import { toast } from "../stores/toast-store";
 import { useWorkspaceStore } from "../stores/workspace-store";
-import { runSwitch } from "../lib/session-switch";
+import { performSessionSwitch } from "../lib/session-switch";
+import { useSwitchStore } from "../stores/switch-store";
 import { triggerHaptic } from "../lib/haptics";
-import { adoptSwitchResult } from "../lib/adopt-session";
 import { readPinnedSessions, togglePin } from "../lib/session-pins";
 import { applySessionOrder, readSessionOrder, writeSessionOrder } from "../lib/session-order";
 import { sessionJsonlToMarkdown } from "../lib/session-export";
@@ -157,7 +156,8 @@ export function SessionList() {
 	const [sessions, setSessions] = useState<rpc.RpcSessionInfo[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [query, setQuery] = useState("");
-	const [pendingPath, setPendingPath] = useState<string | null>(null);
+	const switchPending = useSwitchStore((s) => s.pending);
+	const pendingPath = switchPending?.kind === "session" ? switchPending.path : null;
 	const [pins, setPins] = useState<string[]>(() => readPinnedSessions());
 	const [editingPath, setEditingPath] = useState<string | null>(null);
 	const [menu, setMenu] = useState<MenuAnchor | null>(null);
@@ -265,27 +265,11 @@ export function SessionList() {
 
 	const switchTo = useCallback(
 		async (path: string) => {
-			if (path === activePath || pendingPath) return;
-			setPendingPath(path);
-			try {
-				useTabsStore.getState().setActive(path);
-				const result = await runSwitch(path);
-				adoptSwitchResult(result);
-				if (result.reattached && result.snapshot?.running) {
-					const store = useSessionStore.getState();
-					if (!store.isStreaming) {
-						store.setIsStreaming(true);
-						store.setStreamingVerb(pickLoadingVerb());
-					}
-				}
-			} catch (e) {
-				useTabsStore.getState().setActive(activePath ?? "");
-				toast.error("Failed to switch session", e instanceof Error ? e.message : String(e));
-			} finally {
-				setPendingPath((current) => (current === path ? null : current));
-			}
+			if (path === activePath || useSwitchStore.getState().pending) return;
+			const session = sessions.find((entry) => entry.path === path);
+			await performSessionSwitch(path, { name: session ? sessionTitle(session) : null });
 		},
-		[activePath, pendingPath],
+		[activePath, sessions],
 	);
 
 	const startNew = async () => {

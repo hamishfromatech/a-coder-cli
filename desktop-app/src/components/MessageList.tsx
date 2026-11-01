@@ -9,6 +9,7 @@ import { useSessionStore, type UiRequest } from "../stores/session-store";
 import { pickLoadingVerb } from "../lib/loading-verbs";
 import { loadOlderHistory } from "../lib/history";
 import { useSessionViewStore } from "../stores/session-view-store";
+import { useSwitchStore } from "../stores/switch-store";
 import { messageKey } from "../lib/message-key";
 import { inlineDataUrl, loadAttachmentDataUrl } from "../lib/attachment-cache";
 import { toast } from "../stores/toast-store";
@@ -92,6 +93,9 @@ export function MessageList() {
 	const streamingMessage = useSessionStore((s) => s.streamingMessage);
 	const isStreaming = useSessionStore((s) => s.isStreaming);
 	const sessionLoading = useSessionStore((s) => s.sessionLoading);
+	// The switch target's label: while the engine answers, the store still holds
+	// the session we are leaving, so the pending chip must name the goal.
+	const switchPending = useSwitchStore((s) => s.pending);
 	const hideThinkingBlock = useSettingsStore((s) => s.cliGlobalSettings?.hideThinkingBlock ?? false);
 	const toolResults = useToolResultsById(messages);
 	const approvalToolCallId = usePendingApprovalToolCallId(messages, toolResults);
@@ -178,10 +182,11 @@ export function MessageList() {
 		const el = listRef.current;
 		if (!el) return;
 		const saved = sessionFile ? useSessionViewStore.getState().scroll[sessionFile] : undefined;
-		if (saved === undefined) return;
 		suppressAutoScrollRef.current = true;
 		const restore = () => {
-			el.scrollTop = saved;
+			// A session visited for the first time opens at the latest message;
+			// starting at the top of a long transcript reads as broken.
+			el.scrollTop = saved ?? el.scrollHeight;
 			setAutoScroll(el.scrollHeight - el.scrollTop - el.clientHeight < 80);
 			suppressAutoScrollRef.current = false;
 		};
@@ -208,11 +213,16 @@ export function MessageList() {
 		}
 	};
 
-	if (messages.length === 0 && !streamingMessage) {
-		return sessionLoading ? <SessionLoadingState /> : <EmptyState />;
-	}
-
-	return (
+	// The keyed wrapper replays one crossfade per session identity; the chat
+	// surface itself stays mounted across message ticks.
+	const body =
+		messages.length === 0 && !streamingMessage ? (
+			sessionLoading ? (
+				<SessionLoadingState />
+			) : (
+				<EmptyState />
+			)
+		) : (
 		<div ref={listRef} className="chat-surface flex-1 overflow-y-auto">
 			<div className="sticky top-0 z-20 flex justify-end px-4 pt-2">
 				<button
@@ -249,7 +259,11 @@ export function MessageList() {
 				{sessionLoading && messages.length > 0 && (
 					<div className="sticky top-0 z-10 mx-auto flex items-center gap-2 rounded-full border border-pi-border bg-pi-surface-overlay/90 px-3 py-1 text-2xs text-pi-text-muted shadow-ring backdrop-blur-sm">
 						<Loader2 className="h-3 w-3 animate-spin" />
-						Loading {useSessionStore.getState().sessionName ?? "session"}…
+						Opening{" "}
+						{switchPending
+							? (switchPending.name ?? "the selected session")
+							: (useSessionStore.getState().sessionName ?? "session")}
+						…
 					</div>
 				)}
 				{hasMoreOlder && (
@@ -298,6 +312,12 @@ export function MessageList() {
 				)}
 			</div>
 			)}
+		</div>
+		);
+
+	return (
+		<div key={sessionFile ?? "new"} className="session-enter flex min-h-0 flex-1 flex-col">
+			{body}
 		</div>
 	);
 }

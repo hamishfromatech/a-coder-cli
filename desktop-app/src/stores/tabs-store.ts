@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { moveBefore } from "../lib/tab-order";
 
 export interface SessionTab {
 	/** Session file path — the `switchSession` target. */
@@ -21,6 +22,8 @@ export interface TabsState {
 	closeTab: (path: string) => string | null;
 	setActive: (path: string) => void;
 	renameTab: (path: string, name: string) => void;
+	/** Drag reorder: move a tab into another's slot. */
+	moveTab: (path: string, beforePath: string) => void;
 	clear: () => void;
 }
 
@@ -71,5 +74,10 @@ export const useTabsStore = create<TabsState>((set, get) => ({
 				t.path === path ? { ...t, name: name || t.name } : t,
 			),
 		})),
+	moveTab: (path, beforePath) =>
+		set((s) => {
+			const tabs = moveBefore(s.tabs, (tab) => tab.path, path, beforePath);
+			return tabs === s.tabs ? s : { tabs };
+		}),
 	clear: () => set({ tabs: [], activePath: null }),
 }));

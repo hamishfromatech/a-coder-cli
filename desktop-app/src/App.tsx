@@ -12,10 +12,9 @@ import { hydrateLinkTarget } from "./stores/browser-store";
 import { abortRun } from "./lib/session-abort";
 import { triggerHaptic } from "./lib/haptics";
 import { rafCoalesce } from "./lib/raf-coalesce";
-import { pickLoadingVerb } from "./lib/loading-verbs";
 import { applyKeepAwake, keepAwakeWanted, useKeepAwakeStore } from "./lib/keep-awake";
-import { adoptSwitchResult } from "./lib/adopt-session";
-import { runSwitch } from "./lib/session-switch";
+import { performSessionSwitch } from "./lib/session-switch";
+import { useSwitchStore } from "./stores/switch-store";
 import { isAuthoritativeSession, setAuthoritativeSession } from "./lib/session-authority";
 import { useRuntimeStatusStore } from "./stores/runtime-status-store";
 import { useSessionStore, type QuestionUiRequest } from "./stores/session-store";
@@ -684,19 +683,28 @@ export default function App() {
 		],
 	);
 
+	// Connect once per boot shape — NOT on every workspace change. A project
+	// switch is a session switch (switchProject resumes that project's session
+	// in the existing engine); re-running this effect on the new cwd tore the
+	// RPC connection down mid-switch, so the session_start history fetch raced
+	// `disconnect` and toasted "Failed to load messages … Not connected to
+	// engine" even though the reconnect then loaded the session fine.
+	// The workspace is read from the store at run time, so the `--desktop`
+	// preselection (applied before bootReady) still wins.
 	useEffect(() => {
 		let cancelled = false;
 
-			async function bootstrap() {
+		async function bootstrap() {
 			if (cancelled) return;
 			if (!bootReady) return; // Wait for the initial-workspace lookup
 			if (showOnboarding) return; // Wait for onboarding to complete
-			const startCwd = reopenLastProject ? effectiveCwd : FALLBACK_CWD;
+			const current = useWorkspaceStore.getState().current;
+			const startCwd = reopenLastProject ? (current || FALLBACK_CWD) : FALLBACK_CWD;
 			// Resume the most recent session for this project so past conversation
 			// history loads on open (matches Hermes desktop). When there's no
 			// project selected (empty cwd) we start a fresh session instead.
 			await connectEngine(startCwd, {
-				continueSession: reopenLastProject && effectiveCwd.length > 0,
+				continueSession: reopenLastProject && startCwd.length > 0,
 			});
 		}
 
@@ -707,7 +715,7 @@ export default function App() {
 			unlistenRef.current?.();
 			rpc.disconnect().catch(() => {});
 		};
-	}, [connectEngine, showOnboarding, reopenLastProject, effectiveCwd, bootReady]);
+	}, [connectEngine, showOnboarding, reopenLastProject, bootReady]);
 
 	// Listen for native menu actions.
 	useEffect(() => {
@@ -828,7 +836,7 @@ export default function App() {
 			const onReopenClosedTab = () => {
 			const tab = useClosedTabsStore.getState().take();
 			if (tab) {
-				void runSwitch(tab.sessionId).catch(() => {});
+				void performSessionSwitch(tab.sessionId, { name: tab.sessionName });
 			}
 			setShowHome(false);
 			setShowResume(false);
@@ -996,11 +1004,7 @@ export default function App() {
 		const target = needsInputPath ?? Object.keys(status.finishedWhileAway).find((p) => p !== sessionFile);
 		if (!target) return;
 		pushCurrentToClosedTabs();
-		void runSwitch(target)
-			.then((result) => adoptSwitchResult(result))
-			.catch((e) =>
-				toast.error("Failed to switch session", e instanceof Error ? e.message : String(e)),
-			);
+		void performSessionSwitch(target);
 	}, [sessionFile, pushCurrentToClosedTabs]);
 
 	const handleReconnect = useCallback(async () => {
@@ -1034,6 +1038,11 @@ export default function App() {
 			}
 			const current = projectPath.replace(/\/+$/, "");
 			if (current && current.toLowerCase() === target.toLowerCase()) return;
+			// One switch at a time across every surface: a second project click
+			// while the engine is still moving is a no-op, not a race.
+			if (useSwitchStore.getState().pending) return;
+			const leaf = target.split(/[/\\]/).filter(Boolean).at(-1) ?? target;
+			useSwitchStore.getState().begin({ kind: "project", path: target, name: leaf });
 			try {
 				const trusted = await rpc.getProjectTrust(target);
 				if (!trusted) {
@@ -1048,21 +1057,21 @@ export default function App() {
 					.sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime())[0];
 				if (latest) {
 					pushCurrentToClosedTabs();
-					const result = await runSwitch(latest.path);
-					adoptSwitchResult(result);
-					if (result.reattached && result.snapshot?.running) {
-						const store = useSessionStore.getState();
-						if (!store.isStreaming) {
-							store.setIsStreaming(true);
-							store.setStreamingVerb(pickLoadingVerb());
-						}
-					}
+					// The project switch owns the shared slot; the resume inside it
+					// must not try to claim it (nor toast over the project error).
+					await performSessionSwitch(latest.path, {
+						skipGuard: true,
+						silent: true,
+						name: latest.name ?? latest.firstMessage?.slice(0, 60) ?? leaf,
+					});
 				} else {
 					useWorkspaceStore.getState().setCurrent(target);
 					await rpc.newSession(undefined, target);
 				}
 			} catch (e) {
 				toast.error("Failed to switch project", e instanceof Error ? e.message : String(e));
+			} finally {
+				useSwitchStore.getState().clear(target);
 			}
 		},
 		[projectPath, pushCurrentToClosedTabs],
@@ -1481,20 +1490,10 @@ export default function App() {
 					onResume={async (sessionPath) => {
 						setShowResume(false);
 						pushCurrentToClosedTabs();
-						try {
-							const result = await runSwitch(sessionPath);
-							if (result.reattached && result.snapshot?.running) {
-								const store = useSessionStore.getState();
-								if (!store.isStreaming) {
-									store.setIsStreaming(true);
-									store.setStreamingVerb(pickLoadingVerb());
-								}
-							}
-						} catch (e) {
-							toast.error("Failed to resume session", e instanceof Error ? e.message : String(e));
-						}
-						// The engine emits session_start after switching; the existing event
-						// handler reloads messages/tree/state from the authoritative session.
+						// The switch helper adopts the engine identity and shows the
+						// pending state everywhere; the event path still refreshes the
+						// transcript/tree once session_start lands.
+						await performSessionSwitch(sessionPath);
 					}}
 				/>
 			)}
@@ -1606,11 +1605,7 @@ export default function App() {
 				onOpenSession={async (sessionId) => {
 					setShowHome(false);
 					pushCurrentToClosedTabs();
-					try {
-						await runSwitch(sessionId);
-					} catch (e) {
-						toast.error("Failed to open session", e instanceof Error ? e.message : String(e));
-					}
+					await performSessionSwitch(sessionId);
 				}}
 				onOpenProject={(path) => {
 					setShowHome(false);

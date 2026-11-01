@@ -1,8 +1,9 @@
 import { open } from "@tauri-apps/plugin-dialog";
-import { Clock, Folder, FolderOpen, Trash2, X } from "lucide-react";
+import { Clock, Folder, FolderOpen, Loader2, Trash2, X } from "lucide-react";
 import { useRef } from "react";
 import { useModalA11y } from "../hooks/useModalA11y";
 import { useWorkspaceStore } from "../stores/workspace-store";
+import { useSwitchStore } from "../stores/switch-store";
 import { triggerHaptic } from "../lib/haptics";
 import { ModalBackdrop, ModalPanel } from "./ui/Modal";
 import { IconButton } from "./ui/Button";
@@ -16,6 +17,7 @@ export function ProjectPicker({ onClose, onSelect }: ProjectPickerProps) {
 	const modalRef = useRef<HTMLDivElement>(null);
 	useModalA11y(modalRef, true, onClose);
 	const { current, recentProjects, clearRecent, removeRecent } = useWorkspaceStore();
+	const pending = useSwitchStore((s) => s.pending);
 
 	const handlePickFolder = async () => {
 		triggerHaptic("crisp");
@@ -127,29 +129,36 @@ export function ProjectPicker({ onClose, onSelect }: ProjectPickerProps) {
 						) : (
 							recentProjects.map((path) => {
 								const isActive = path === current;
+								const opening = pending?.kind === "project" && pending.path === path;
 								return (
 									<div
 										key={path}
+										aria-busy={opening}
 										className={`group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
 											isActive
 												? "bg-pi-accent-soft"
 												: "hover:bg-pi-surface-raised"
-										}`}
+										} ${pending && !opening ? "opacity-60" : ""}`}
 									>
 										<button
+											disabled={Boolean(pending)}
 											onClick={() => {
 											triggerHaptic("selection");
 											onSelect(path);
 										}}
-											className="flex min-w-0 flex-1 items-center gap-2 rounded-md text-left transition-hover focus-visible:shadow-focus focus-visible:outline-none"
+											className="flex min-w-0 flex-1 items-center gap-2 rounded-md text-left transition-hover focus-visible:shadow-focus focus-visible:outline-none disabled:cursor-default"
 										>
-											<Folder
-												className={`h-3.5 w-3.5 shrink-0 ${
-													isActive
-														? "text-pi-accent"
-														: "text-pi-text-muted"
-												}`}
-											/>
+											{opening ? (
+												<Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-pi-accent" />
+											) : (
+												<Folder
+													className={`h-3.5 w-3.5 shrink-0 ${
+														isActive
+															? "text-pi-accent"
+															: "text-pi-text-muted"
+													}`}
+												/>
+											)}
 											<div className="min-w-0">
 												<div
 													className={`truncate text-xs font-medium ${
@@ -158,7 +167,7 @@ export function ProjectPicker({ onClose, onSelect }: ProjectPickerProps) {
 															: "text-pi-text"
 													}`}
 												>
-													{displayName(path)}
+													{opening ? "Opening…" : displayName(path)}
 												</div>
 												<div
 													className="truncate font-mono text-3xs text-pi-text-faint"
