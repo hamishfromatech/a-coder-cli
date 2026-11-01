@@ -6,10 +6,12 @@
  */
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { GitBranch, Minus, Plus, RotateCcw } from "lucide-react";
+import { CheckCheck, FileText, GitBranch, Minus, Plus, RotateCcw } from "lucide-react";
 
 import { gitStatus, gitStage, gitUnstage, gitDiscard, type GitFileChange, type GitStatus } from "../../lib/rpc.ts";
 import { openWorkspaceFile } from "../../lib/ide.ts";
+import { Tip } from "../ui/Tip";
+import { GitDiffDialog } from "./GitDiffDialog";
 import { cn } from "../../lib/cn.ts";
 
 const STATUS_BADGE: Record<GitFileChange["status"], { letter: string; color: string }> = {
@@ -28,6 +30,7 @@ export function GitPanel({ root }: GitPanelProps): ReactNode {
 	const [status, setStatus] = useState<GitStatus | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [confirmDiscard, setConfirmDiscard] = useState<string | null>(null);
+	const [diff, setDiff] = useState<{ change: GitFileChange; staged: boolean } | null>(null);
 
 	const refresh = useCallback(async () => {
 		try {
@@ -53,11 +56,16 @@ export function GitPanel({ root }: GitPanelProps): ReactNode {
 		return () => window.removeEventListener("a-coder:agent-files-changed", handler);
 	}, [refresh]);
 
-	async function act(kind: "stage" | "unstage" | "discard", path: string): Promise<void> {
+	async function act(
+		kind: "stage" | "unstage" | "discard",
+		paths: string | string[],
+	): Promise<void> {
+		const list = Array.isArray(paths) ? paths : [paths];
+		if (list.length === 0) return;
 		try {
-			if (kind === "stage") await gitStage(root, [path]);
-			else if (kind === "unstage") await gitUnstage(root, [path]);
-			else await gitDiscard(root, path);
+			if (kind === "stage") await gitStage(root, list);
+			else if (kind === "unstage") await gitUnstage(root, list);
+			else await gitDiscard(root, list[0]);
 			setConfirmDiscard(null);
 		} catch (e) {
 			setError(e instanceof Error ? e.message : String(e));
@@ -87,6 +95,32 @@ export function GitPanel({ root }: GitPanelProps): ReactNode {
 						{status.branch.behind > 0 && <span className="text-pi-text-muted">↓{status.branch.behind}</span>}
 					</span>
 				)}
+				{status && status.unstaged.length + status.untracked.length > 0 && (
+					<Tip content="Stage all changes" placement="toolbar">
+						<button
+							type="button"
+							onClick={() =>
+								void act("stage", [...status.unstaged, ...status.untracked].map((change) => change.path))
+							}
+							className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-pi-text-faint transition-smooth hover:bg-pi-surface-raised hover:text-pi-text"
+							aria-label="Stage all changes"
+						>
+							<CheckCheck className="size-3" />
+						</button>
+					</Tip>
+				)}
+				{status && status.staged.length > 0 && (
+					<Tip content="Unstage all changes" placement="toolbar">
+						<button
+							type="button"
+							onClick={() => void act("unstage", status.staged.map((change) => change.path))}
+							className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-pi-text-faint transition-smooth hover:bg-pi-surface-raised hover:text-pi-text"
+							aria-label="Unstage all changes"
+						>
+							<Minus className="size-3" />
+						</button>
+					</Tip>
+				)}
 			</div>
 			<div className="min-h-0 flex-1 overflow-auto py-1.5 pr-1" onClick={() => setConfirmDiscard(null)}>
 				{error && <div className="px-3 py-2 text-xs text-pi-error">{error}</div>}
@@ -107,7 +141,8 @@ export function GitPanel({ root }: GitPanelProps): ReactNode {
 									className="group flex w-full items-center gap-1 rounded pr-1 pl-3 text-xs text-pi-text-secondary transition-smooth hover:bg-pi-surface-raised hover:text-pi-text"
 								>
 									<button
-										onClick={() => void openWorkspaceFile(root, change.path)}
+										onClick={() => setDiff({ change, staged: group === "staged" })}
+										title="View diff"
 										className="flex min-w-0 flex-1 cursor-pointer items-baseline gap-2 py-1 text-left"
 									>
 										<span className="truncate">{fileBase(change.path)}</span>
@@ -117,6 +152,12 @@ export function GitPanel({ root }: GitPanelProps): ReactNode {
 										</span>
 									</button>
 									<span className="flex shrink-0 items-center gap-px opacity-0 transition-smooth group-hover:opacity-100">
+										<ActionButton
+											tooltip="Open file"
+											onClick={() => void openWorkspaceFile(root, change.path)}
+										>
+											<FileText className="size-3" />
+										</ActionButton>
 										{(group === "unstaged" || group === "untracked") && (
 											<ActionButton
 												tooltip="Stage (+)"
@@ -161,6 +202,16 @@ export function GitPanel({ root }: GitPanelProps): ReactNode {
 					</div>
 				))}
 			</div>
+
+			{diff && (
+				<GitDiffDialog
+					root={root}
+					change={diff.change}
+					staged={diff.staged}
+					onClose={() => setDiff(null)}
+					onChanged={() => void refresh()}
+				/>
+			)}
 		</div>
 	);
 }

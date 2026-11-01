@@ -281,12 +281,19 @@ export function Composer() {
 	// ---- set_editor_text listener ----
 	useEffect(() => {
 		const handler = (e: Event) => {
-			const detail = (e as CustomEvent).detail as { text?: string } | undefined;
-			if (typeof detail?.text === "string") {
-				setText(detail.text);
-				setCursor(detail.text.length);
+			const detail = (e as CustomEvent).detail as { text?: string; append?: boolean } | undefined;
+			if (typeof detail?.text !== "string") return;
+			const value = detail.text;
+			// `append` keeps a half-written message (IDE AI actions add context
+			// below it instead of replacing the draft).
+			setText((current) =>
+				detail.append && current.trim() ? `${current.trimEnd()}\n\n${value}` : value,
+			);
+			requestAnimationFrame(() => {
+				const next = textareaRef.current?.value ?? "";
+				setCursor(next.length);
 				textareaRef.current?.focus();
-			}
+			});
 		};
 		window.addEventListener("a-coder:set-editor-text", handler);
 		return () => window.removeEventListener("a-coder:set-editor-text", handler);

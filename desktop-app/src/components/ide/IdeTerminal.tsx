@@ -12,10 +12,11 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { RotateCcw, X } from "lucide-react";
+import { Eraser, RotateCcw, X } from "lucide-react";
 
 import { onPtyExit, onPtyOutput, ptyKill, ptyResize, ptySpawn, ptyWrite, tokenColor } from "../../lib/ide";
 import { useIdeStore } from "../../stores/ide-store";
+import { Tip } from "../ui/Tip";
 
 function resolvedXtermTheme(): { background: string; foreground: string; cursor: string; selectionBackground: string } {
 	return {
@@ -137,27 +138,40 @@ export function IdeTerminal({ cwd }: IdeTerminalProps) {
 	}, []);
 
 	return (
-		<div className="flex h-64 shrink-0 flex-col border-t border-pi-border bg-pi-bg">
+		<div className="flex h-full min-h-0 shrink-0 flex-col bg-pi-bg">
 			<div className="flex h-8 shrink-0 items-center gap-2 border-b border-pi-border bg-pi-surface px-3">
 				<span className="text-2xs font-semibold uppercase tracking-widest text-pi-text-muted">
 					Terminal
 				</span>
 				<span className="truncate font-mono text-2xs text-pi-text-faint">{cwd}</span>
 				<div className="ml-auto flex items-center gap-1">
-					<button
-						onClick={() => setGeneration((g) => g + 1)}
-						className="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-pi-text-faint transition-smooth hover:text-pi-text"
-						aria-label="Restart terminal"
-					>
-						<RotateCcw className="size-3" />
-					</button>
-					<button
-						onClick={() => setTerminalOpen(false)}
-						className="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-pi-text-faint transition-smooth hover:text-pi-text"
-						aria-label="Hide terminal"
-					>
-						<X className="size-3" />
-					</button>
+					<Tip content="Clear" placement="toolbar">
+						<button
+							onClick={() => xtermRef.current?.clear()}
+							className="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-pi-text-faint transition-smooth hover:text-pi-text"
+							aria-label="Clear terminal"
+						>
+							<Eraser className="size-3" />
+						</button>
+					</Tip>
+					<Tip content="Restart shell" placement="toolbar">
+						<button
+							onClick={() => setGeneration((g) => g + 1)}
+							className="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-pi-text-faint transition-smooth hover:text-pi-text"
+							aria-label="Restart terminal"
+						>
+							<RotateCcw className="size-3" />
+						</button>
+					</Tip>
+					<Tip content="Hide terminal (Ctrl+`)" placement="toolbar">
+						<button
+							onClick={() => setTerminalOpen(false)}
+							className="flex h-5 w-5 cursor-pointer items-center justify-center rounded text-pi-text-faint transition-smooth hover:text-pi-text"
+							aria-label="Hide terminal"
+						>
+							<X className="size-3" />
+						</button>
+					</Tip>
 				</div>
 			</div>
 			<div ref={containerRef} className="min-h-0 flex-1 px-2 py-1" />

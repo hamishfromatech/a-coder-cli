@@ -87,22 +87,18 @@ export function IdeWorkspace({ projectPath, cwd }: IdeWorkspaceProps): ReactNode
 		};
 	}, [workspace]);
 
-	// Persisted tabs may be stale after a workspace switch or restart: drop
-	// tabs outside the (new) workspace and tabs whose file is gone.
+	// Persisted tabs may be stale after a restart: drop tabs whose file is
+	// gone. Tabs from another workspace stay open — they are absolute paths and
+	// closing them on a project switch silently threw away unsaved edits.
 	useEffect(() => {
 		let cancelled = false;
 		void (async () => {
 			const { openTabs } = useIdeStore.getState();
 			for (const tab of openTabs) {
 				if (cancelled) return;
-				const inWorkspace = tab.path.startsWith(workspace);
-				if (inWorkspace) {
-					try {
-						await fileInfo(tab.path);
-					} catch {
-						useIdeStore.getState().closeTab(tab.path);
-					}
-				} else {
+				try {
+					await fileInfo(tab.path);
+				} catch {
 					useIdeStore.getState().closeTab(tab.path);
 				}
 			}

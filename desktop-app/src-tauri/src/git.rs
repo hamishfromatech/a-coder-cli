@@ -69,6 +69,32 @@ pub fn git_status(cwd: String) -> Result<GitStatus, String> {
 	parse_git_status(&stdout)
 }
 
+/// Content of a path at a revision, for the IDE's diff view.
+/// `rev` is "HEAD" (last commit) or "index" (staged snapshot). A missing blob
+/// (new/deleted file) is `None`, which the viewer renders as an empty side.
+#[tauri::command]
+pub fn git_file_content(cwd: String, path: String, rev: String) -> Result<Option<String>, String> {
+	let cwd_path = Path::new(&cwd);
+	if !cwd_path.exists() {
+		return Err(format!("Directory does not exist: {cwd}"));
+	}
+	let spec = if rev == "index" {
+		format!(":{path}")
+	} else {
+		format!("HEAD:{path}")
+	};
+	let output = Command::new("git")
+		.args(["show", &spec])
+		.current_dir(cwd_path)
+		.output()
+		.map_err(|e| format!("Failed to invoke git: {e}. Is git installed and on PATH?"))?;
+	if !output.status.success() {
+		// New file (index) or deleted file (HEAD): no blob, not an error.
+		return Ok(None);
+	}
+	Ok(Some(String::from_utf8_lossy(&output.stdout).into_owned()))
+}
+
 /// Run `git diff [--staged] -- <path>` and return the unified diff text.
 /// `staged` controls whether we look at the index or the working tree.
 #[tauri::command]

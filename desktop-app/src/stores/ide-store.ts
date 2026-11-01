@@ -25,6 +25,14 @@ export interface IdeState {
 	sidebarWidth: number;
 	terminalOpen: boolean;
 	terminalHeight: number;
+	/** Expanded folders per workspace root, so a restart keeps the tree shape. */
+	explorerExpanded: Record<string, string[]>;
+	setExplorerExpanded: (root: string, paths: string[]) => void;
+	/** Editor preferences, persisted so a restart keeps the working setup. */
+	editorFontSize: number;
+	editorMinimap: boolean;
+	editorWordWrap: boolean;
+	editorRenderWhitespace: boolean;
 	/** Consumed by the editor group; the editor clears it after revealing. */
 	pendingReveal: IdeRevealRequest | null;
 
@@ -36,6 +44,12 @@ export interface IdeState {
 	setSidebarWidth: (width: number) => void;
 	setTerminalOpen: (open: boolean) => void;
 	setTerminalHeight: (height: number) => void;
+	setEditorFontSize: (size: number) => void;
+	setEditorMinimap: (enabled: boolean) => void;
+	setEditorWordWrap: (enabled: boolean) => void;
+	setEditorRenderWhitespace: (enabled: boolean) => void;
+	/** Drag reorder in the editor tab strip. */
+	moveTab: (path: string, beforePath: string) => void;
 	setPendingReveal: (request: IdeRevealRequest | null) => void;
 }
 
@@ -48,6 +62,13 @@ export const useIdeStore = create<IdeState>()(
 			sidebarWidth: 264,
 			terminalOpen: true,
 			terminalHeight: 260,
+			explorerExpanded: {},
+			setExplorerExpanded: (root, paths) =>
+				set((state) => ({ explorerExpanded: { ...state.explorerExpanded, [root]: paths } })),
+			editorFontSize: 13,
+			editorMinimap: true,
+			editorWordWrap: false,
+			editorRenderWhitespace: false,
 			pendingReveal: null,
 
 			openFile: (path, content) => {
@@ -78,6 +99,21 @@ export const useIdeStore = create<IdeState>()(
 			setSidebarWidth: (sidebarWidth) => set({ sidebarWidth }),
 			setTerminalOpen: (terminalOpen) => set({ terminalOpen }),
 			setTerminalHeight: (terminalHeight) => set({ terminalHeight }),
+			setEditorFontSize: (editorFontSize) =>
+				set({ editorFontSize: Math.min(22, Math.max(10, editorFontSize)) }),
+			setEditorMinimap: (editorMinimap) => set({ editorMinimap }),
+			setEditorWordWrap: (editorWordWrap) => set({ editorWordWrap }),
+			setEditorRenderWhitespace: (editorRenderWhitespace) => set({ editorRenderWhitespace }),
+			moveTab: (path, beforePath) =>
+				set((state) => {
+					const from = state.openTabs.findIndex((tab) => tab.path === path);
+					const to = state.openTabs.findIndex((tab) => tab.path === beforePath);
+					if (from < 0 || to < 0 || from === to) return state;
+					const openTabs = [...state.openTabs];
+					const [moved] = openTabs.splice(from, 1);
+					openTabs.splice(from < to ? to - 1 : to, 0, moved);
+					return { openTabs };
+				}),
 			setPendingReveal: (pendingReveal) => set({ pendingReveal }),
 		}),
 		{
@@ -89,6 +125,11 @@ export const useIdeStore = create<IdeState>()(
 				sidebarWidth: state.sidebarWidth,
 				terminalOpen: state.terminalOpen,
 				terminalHeight: state.terminalHeight,
+				explorerExpanded: state.explorerExpanded,
+				editorFontSize: state.editorFontSize,
+				editorMinimap: state.editorMinimap,
+				editorWordWrap: state.editorWordWrap,
+				editorRenderWhitespace: state.editorRenderWhitespace,
 			}),
 		},
 	),

@@ -1,41 +1,36 @@
 /**
- * Quick Open (⌘P): fuzzy file jump — VS Code's signature navigator. Flat
- * rel-path list from the workspace tree, scored subsequence match, keyboard
- * driven. Enter opens, Esc closes.
+ * Quick Open (⌘P): fuzzy file jump built on the bounded workspace file index
+ * (`ide_index_files`) rather than a depth-walked tree, so it stays instant on
+ * large repositories. `path:42` opens at a line. Enter opens, Esc closes.
  */
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { listDirectory, type DirEntry } from "../../lib/rpc.ts";
+import { indexWorkspaceFiles } from "../../lib/rpc.ts";
 import { openWorkspaceFile } from "../../lib/ide.ts";
+import { parseFileLocation, relativeDir } from "../../lib/quick-open.ts";
+import { useIdeStore } from "../../stores/ide-store";
 import { cn } from "../../lib/cn.ts";
+
+const INDEX_TTL_MS = 10_000;
+
+/** Root → recently fetched index. Kept across opens so ⌘P is instant twice. */
+const indexCache = new Map<string, { at: number; files: string[] }>();
+
+/** Drop the cached index after the explorer creates/renames/deletes a file. */
+export function invalidateQuickOpenIndex(root?: string): void {
+	if (root) indexCache.delete(root);
+	else indexCache.clear();
+}
 
 interface QuickOpenProps {
 	root: string;
 	onClose: () => void;
 }
 
-interface FlatFile {
-	/** Relative path with '/' separators (the row's subtitle). */
-	rel: string;
-	/** File name (the row's title; matches weigh most). */
-	name: string;
-}
-
-function flattenTree(entries: DirEntry[], depth: number, out: FlatFile[]): void {
-	if (depth >= 10 || out.length >= 4000) return;
-	for (const entry of entries) {
-		if (entry.is_dir) {
-			flattenTree(entry.children, depth + 1, out);
-		} else {
-			out.push({ rel: entry.path, name: entry.name });
-		}
-	}
-}
-
 /** Scored subsequence match; higher is better; null = no match.
  * Consecutive hits and word starts beat scattered ones; shorter wins ties. */
-function fuzzyScore(query: string, target: string): number | null {
+export function fuzzyScore(query: string, target: string): number | null {
 	if (!query) return 0;
 	const haystack = target.toLowerCase();
 	const needle = query.toLowerCase();
@@ -62,120 +57,153 @@ function fuzzyScore(query: string, target: string): number | null {
 
 export function QuickOpen({ root, onClose }: QuickOpenProps): ReactNode {
 	const [query, setQuery] = useState("");
-	const [files, setFiles] = useState<FlatFile[] | null>(null);
+	const [files, setFiles] = useState<string[] | null>(() => indexCache.get(root)?.files ?? null);
 	const [selected, setSelected] = useState(0);
 	const listRef = useRef<HTMLDivElement>(null);
+	const parsed = parseFileLocation(query);
+	const filter = parsed.path;
+
+	const loadIndex = useCallback(
+		async (force = false): Promise<void> => {
+			const cached = indexCache.get(root);
+			if (!force && cached && Date.now() - cached.at < INDEX_TTL_MS) {
+				setFiles(cached.files);
+				return;
+			}
+			try {
+				const next = await indexWorkspaceFiles(root);
+				indexCache.set(root, { at: Date.now(), files: next });
+				setFiles(next);
+			} catch {
+				setFiles((prev) => prev ?? []);
+			}
+		},
+		[root],
+	);
 
 	useEffect(() => {
-		let cancelled = false;
-		void (async () => {
-			try {
-				const tree = await listDirectory(root, 10);
-				if (cancelled) return;
-				const flat: FlatFile[] = [];
-				flattenTree(tree, 0, flat);
-				setFiles(flat);
-			} catch {
-				if (!cancelled) setFiles([]);
-			}
-		})();
-		return () => {
-			cancelled = true;
+		void loadIndex();
+	}, [loadIndex]);
+
+	// Agent writes while the picker is open: refresh after the burst.
+	useEffect(() => {
+		let timer: number | null = null;
+		const onFiles = (): void => {
+			if (timer !== null) window.clearTimeout(timer);
+			timer = window.setTimeout(() => void loadIndex(true), 300);
 		};
-	}, [root]);
+		window.addEventListener("a-coder:agent-files-changed", onFiles);
+		return () => {
+			window.removeEventListener("a-coder:agent-files-changed", onFiles);
+			if (timer !== null) window.clearTimeout(timer);
+		};
+	}, [loadIndex]);
 
 	const results = useMemo(() => {
 		if (!files) return [];
-		const scored: Array<{ file: FlatFile; score: number }> = [];
-		for (const file of files) {
-			const byName = fuzzyScore(query, file.name);
-			const byPath = query.length >= 2 ? fuzzyScore(query, file.rel) : null;
+		if (!filter) return files.slice(0, 60);
+		const scored: Array<{ path: string; score: number }> = [];
+		for (const rel of files) {
+			const name = rel.split("/").at(-1) ?? rel;
+			const byName = fuzzyScore(filter, name);
+			const byPath = filter.length >= 2 ? fuzzyScore(filter, rel) : null;
 			const score = Math.max(byName ?? -Infinity, (byPath ?? -Infinity) * 0.8);
-			if (score > -Infinity) scored.push({ file, score });
+			if (score > -Infinity) scored.push({ path: rel, score });
 		}
-		scored.sort((a, b) => b.score - a.score || a.file.rel.length - b.file.rel.length);
-		return scored.slice(0, 60).map((entry) => entry.file);
-	}, [files, query]);
+		scored.sort((a, b) => b.score - a.score || a.path.length - b.path.length);
+		return scored.slice(0, 60).map((entry) => entry.path);
+	}, [files, filter]);
 
 	useEffect(() => {
 		setSelected(0);
-	}, [query]);
+	}, [filter]);
 
 	useEffect(() => {
 		const row = listRef.current?.querySelector('[data-selected="true"]');
 		row?.scrollIntoView({ block: "nearest" });
 	}, [selected, results.length]);
 
-	function open(entry: FlatFile): void {
-		void openWorkspaceFile(root, entry.rel);
+	function open(rel: string): void {
+		void openWorkspaceFile(root, rel).then(() => {
+			if (parsed.line) {
+				useIdeStore.getState().setPendingReveal({
+					path: rel.startsWith("/") ? rel : `${root.replace(/[/\\]+$/, "")}/${rel}`,
+					line: parsed.line,
+					nonce: Date.now(),
+				});
+			}
+		});
 		onClose();
 	}
 
 	return (
-		<div className="fixed inset-0 z-50 flex items-start justify-center bg-black/25 pt-[12vh]" onClick={onClose}>
+		<div className="fixed inset-0 z-[85] flex items-start justify-center bg-black/25 pt-[12vh]" onClick={onClose}>
 			<div
-				className="w-[540px] max-w-[86vw] overflow-hidden rounded-xl border border-pi-border-strong bg-pi-surface-raised shadow-2xl"
+				className="w-[560px] max-w-[86vw] overflow-hidden rounded-xl border border-pi-border-strong bg-pi-surface-raised shadow-2xl"
 				onClick={(e) => e.stopPropagation()}
 			>
-				<input
-					autoFocus
-					value={query}
-					onChange={(e) => setQuery(e.target.value)}
-					onKeyDown={(e) => {
-						if (e.key === "Escape") {
-							e.preventDefault();
-							onClose();
-						} else if (e.key === "ArrowDown") {
-							e.preventDefault();
-							setSelected((s) => Math.min(s + 1, results.length - 1));
-						} else if (e.key === "ArrowUp") {
-							e.preventDefault();
-							setSelected((s) => Math.max(s - 1, 0));
-						} else if (e.key === "Enter") {
-							e.preventDefault();
-							const entry = results[selected];
-							if (entry) open(entry);
-						}
-					}}
-					placeholder="Go to file…"
-					className="w-full border-b border-pi-border bg-transparent px-4 py-3 text-sm text-pi-text outline-none placeholder:text-pi-text-faint"
-				/>
-				<div ref={listRef} className="max-h-70 overflow-auto p-1">
-					{files === null && <div className="px-3 py-4 text-xs text-pi-text-faint">Reading files…</div>}
+				<div className="flex items-center gap-2 border-b border-pi-border px-4">
+					<span className="font-mono text-2xs text-pi-text-faint">⌘P</span>
+					<input
+						autoFocus
+						value={query}
+						onChange={(e) => setQuery(e.target.value)}
+						onKeyDown={(e) => {
+							if (e.key === "Escape") {
+								e.preventDefault();
+								onClose();
+							} else if (e.key === "ArrowDown") {
+								e.preventDefault();
+								setSelected((s) => Math.min(s + 1, Math.max(0, results.length - 1)));
+							} else if (e.key === "ArrowUp") {
+								e.preventDefault();
+								setSelected((s) => Math.max(s - 1, 0));
+							} else if (e.key === "Enter") {
+								e.preventDefault();
+								const entry = results[selected];
+								if (entry) open(entry);
+							}
+						}}
+						placeholder="Go to file… (add :line to jump)"
+						className="h-12 min-w-0 flex-1 bg-transparent text-sm text-pi-text outline-none placeholder:text-pi-text-faint"
+					/>
+					{parsed.line && (
+						<span className="shrink-0 rounded bg-pi-accent-soft px-1.5 py-0.5 font-mono text-3xs text-pi-accent">
+							line {parsed.line}
+						</span>
+					)}
+				</div>
+				<div ref={listRef} className="max-h-80 overflow-auto p-1">
+					{files === null && <div className="px-3 py-4 text-xs text-pi-text-faint">Indexing files…</div>}
 					{files !== null && results.length === 0 && (
 						<div className="px-3 py-4 text-xs text-pi-text-faint">
-							{query ? "No matching files" : "No files"}
+							{filter ? "No matching files" : "No files"}
 						</div>
 					)}
-					{results.map((entry, index) => (
-						<button
-							key={entry.rel}
-							data-selected={index === selected}
-							onClick={() => open(entry)}
-							onMouseMove={() => setSelected(index)}
-							className={cn(
-								"flex w-full cursor-pointer items-baseline gap-2 rounded-md px-3 py-1.5 text-left text-xs transition-smooth",
-								index === selected
-									? "bg-pi-accent-soft text-pi-text"
-									: "text-pi-text-secondary",
-							)}
-						>
-							<span className="shrink-0 font-medium">{entry.name}</span>
-							<span className="truncate font-mono text-2xs text-pi-text-faint">{relativeDir(entry.rel)}</span>
-						</button>
-					))}
+					{results.map((rel, index) => {
+						const name = rel.split("/").at(-1) ?? rel;
+						return (
+							<button
+								key={rel}
+								data-selected={index === selected}
+								onClick={() => open(rel)}
+								onMouseMove={() => setSelected(index)}
+								className={cn(
+									"flex w-full cursor-pointer items-baseline gap-2 rounded-md px-3 py-1.5 text-left text-xs transition-smooth",
+									index === selected ? "bg-pi-accent-soft text-pi-text" : "text-pi-text-secondary",
+								)}
+							>
+								<span className="shrink-0 font-medium">{name}</span>
+								<span className="truncate font-mono text-2xs text-pi-text-faint">{relativeDir(rel)}</span>
+							</button>
+						);
+					})}
 				</div>
 				<div className="flex items-center gap-3 border-t border-pi-border px-4 py-1.5 text-2xs text-pi-text-faint">
-					<span>↑↓ navigate</span>
-					<span>↵ open</span>
-					<span className="ml-auto">esc close</span>
+					<span>{files ? `${files.length} files` : "—"}</span>
+					<span className="ml-auto">↑↓ navigate · ↵ open · esc close</span>
 				</div>
 			</div>
 		</div>
 	);
-}
-
-function relativeDir(rel: string): string {
-	const parts = rel.split("/");
-	return parts.length > 1 ? parts.slice(0, -1).join("/") : "";
 }

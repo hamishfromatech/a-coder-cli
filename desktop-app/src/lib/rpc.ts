@@ -1533,11 +1533,43 @@ export interface WorkspaceSearchMatch {
 	text: string;
 }
 
+export interface IdeDirEntry {
+	path: string;
+	name: string;
+	is_dir: boolean;
+}
+
+/** One directory level for the lazy explorer. */
+export async function listDir(path: string): Promise<IdeDirEntry[]> {
+	return await invoke<IdeDirEntry[]>("ide_list_dir", { path });
+}
+
+/** Workspace-relative file list for Quick Open (bounded, skip-list aware). */
+export async function indexWorkspaceFiles(root: string): Promise<string[]> {
+	return await invoke<string[]>("ide_index_files", { root });
+}
+
+/** Show the path in Finder / Explorer / the desktop file manager. */
+export async function revealPath(path: string): Promise<void> {
+	return await invoke<void>("ide_reveal_path", { path });
+}
+
+export interface WorkspaceSearchOptions {
+	caseSensitive?: boolean;
+	wholeWord?: boolean;
+}
+
 export async function searchWorkspace(
 	root: string,
 	query: string,
+	options: WorkspaceSearchOptions = {},
 ): Promise<WorkspaceSearchMatch[]> {
-	return await invoke<WorkspaceSearchMatch[]>("ide_search_workspace", { root, query });
+	return await invoke<WorkspaceSearchMatch[]>("ide_search_workspace", {
+		root,
+		query,
+		caseSensitive: options.caseSensitive ?? false,
+		wholeWord: options.wholeWord ?? false,
+	});
 }
 
 export async function createDirectory(path: string): Promise<void> {
@@ -1554,6 +1586,15 @@ export async function deletePath(path: string, isDir: boolean): Promise<void> {
 
 export async function renamePath(from: string, to: string): Promise<void> {
 	return await invoke<void>("ide_rename_path", { from, to });
+}
+
+/** Content of `path` at a revision: "HEAD" or "index" (staged). Null = no blob. */
+export async function gitFileContent(
+	cwd: string,
+	path: string,
+	rev: "HEAD" | "index",
+): Promise<string | null> {
+	return await invoke<string | null>("git_file_content", { cwd, path, rev });
 }
 
 export async function gitDiff(
