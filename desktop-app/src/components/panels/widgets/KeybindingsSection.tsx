@@ -84,7 +84,7 @@ export function KeybindingsSection() {
 					type="button"
 					onClick={save}
 					disabled={Boolean(error)}
-					className="inline-flex h-8 items-center gap-1.5 rounded-md bg-pi-accent px-3 text-xs font-semibold text-white transition-hover active-press hover:bg-pi-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+					className="inline-flex h-8 items-center gap-1.5 rounded-md bg-pi-accent px-3 text-xs font-semibold text-pi-accent-foreground transition-hover active-press hover:bg-pi-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
 				>
 					<Save className="h-3.5 w-3.5" />
 					Save keybindings

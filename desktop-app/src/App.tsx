@@ -2058,7 +2058,7 @@ function TrustModal({
 					</button>
 					<button
 						onClick={onAccept}
-						className="rounded-lg bg-pi-accent px-3 py-2 text-xs font-medium text-white transition-hover hover:bg-pi-accent-hover"
+						className="rounded-lg bg-pi-accent px-3 py-2 text-xs font-medium text-pi-accent-foreground transition-hover hover:bg-pi-accent-hover"
 					>
 						Trust project
 					</button>

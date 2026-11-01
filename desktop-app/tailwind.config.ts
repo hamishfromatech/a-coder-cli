@@ -17,6 +17,7 @@ const config: Config = {
 				"pi-text-muted": "rgb(var(--pi-text-muted-rgb) / <alpha-value>)",
 				"pi-text-faint": "rgb(var(--pi-text-faint-rgb) / <alpha-value>)",
 				"pi-accent": "rgb(var(--pi-accent-rgb) / <alpha-value>)",
+				"pi-accent-foreground": "rgb(var(--pi-accent-foreground-rgb) / <alpha-value>)",
 				"pi-accent-hover": "rgb(var(--pi-accent-hover-rgb) / <alpha-value>)",
 				"pi-accent-soft": "var(--pi-accent-soft)",
 				"pi-accent-ring": "var(--pi-accent-ring)",

@@ -317,7 +317,7 @@ function ProviderCard({
 									type="button"
 									onClick={onOAuth}
 									disabled={Boolean(oauthFlow)}
-									className={`inline-flex h-7 items-center gap-1 rounded-md bg-pi-accent px-2.5 text-2xs font-semibold text-white transition-hover active-press hover:bg-pi-accent-hover disabled:cursor-not-allowed disabled:opacity-60`}
+									className={`inline-flex h-7 items-center gap-1 rounded-md bg-pi-accent px-2.5 text-2xs font-semibold text-pi-accent-foreground transition-hover active-press hover:bg-pi-accent-hover disabled:cursor-not-allowed disabled:opacity-60`}
 								>
 									{oauthFlow ? (
 										<Loader2 className="h-3 w-3 animate-spin" />
@@ -485,7 +485,7 @@ function ProviderCard({
 								setApiKey("");
 								setExpanded(false);
 							}}
-							className={`inline-flex h-8 items-center gap-1 rounded-md bg-pi-accent px-3 text-xs font-semibold text-white transition-hover active-press hover:bg-pi-accent-hover disabled:cursor-not-allowed disabled:opacity-50`}
+							className={`inline-flex h-8 items-center gap-1 rounded-md bg-pi-accent px-3 text-xs font-semibold text-pi-accent-foreground transition-hover active-press hover:bg-pi-accent-hover disabled:cursor-not-allowed disabled:opacity-50`}
 						>
 							Save key
 						</button>

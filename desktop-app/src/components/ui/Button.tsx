@@ -35,9 +35,9 @@ type ButtonProps = {
 
 const variantClasses: Record<ButtonVariant, string> = {
 	default:
-		"bg-pi-accent text-white shadow-ring-accent hover:bg-pi-accent-hover",
+		"bg-pi-accent text-pi-accent-foreground shadow-ring-accent hover:bg-pi-accent-hover",
 	primary:
-		"bg-pi-accent text-white shadow-ring-accent hover:bg-pi-accent-hover",
+		"bg-pi-accent text-pi-accent-foreground shadow-ring-accent hover:bg-pi-accent-hover",
 	secondary:
 		"bg-pi-surface-raised text-pi-text shadow-ring hover:bg-pi-surface-overlay",
 	outline:

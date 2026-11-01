@@ -58,7 +58,13 @@ export function contrastRatio(a: string, b: string): number {
 
 /** Returns a readable foreground (#161616 or #ffffff) for a background hex. */
 export function readableOn(hex: string): string {
-	return relativeLuminance(hex) > 0.58 ? "#161616" : "#ffffff";
+	// Pick whichever label actually has more contrast. A fixed luminance
+	// threshold returned white on mid-tone accents (coral, amber, mint) where
+	// black is roughly twice as readable.
+	const l = relativeLuminance(hex);
+	const white = 1.05 / (l + 0.05);
+	const black = (l + 0.05) / 0.05;
+	return black >= white ? "#161616" : "#ffffff";
 }
 
 /**

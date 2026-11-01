@@ -449,7 +449,7 @@ export function ResourcesSection({ search }: { search?: string }) {
 							type="button"
 							onClick={() => void handleInstall()}
 							disabled={working?.startsWith("install") || !newSource.trim()}
-							className="inline-flex h-7 items-center gap-1 rounded-md bg-pi-accent px-2.5 text-2xs font-medium text-white transition-hover active-press hover:bg-pi-accent-hover disabled:opacity-50"
+							className="inline-flex h-7 items-center gap-1 rounded-md bg-pi-accent px-2.5 text-2xs font-medium text-pi-accent-foreground transition-hover active-press hover:bg-pi-accent-hover disabled:opacity-50"
 						>
 							<Plus className="h-3 w-3" />
 							Add

@@ -71,7 +71,7 @@ export function BrowserDownloadsPopover({
 						<button
 							type="button"
 							onClick={() => void decide(prompt.id, "save")}
-							className="cursor-pointer rounded bg-pi-accent px-2 py-0.5 text-3xs font-medium text-white transition-hover hover:bg-pi-accent-hover"
+							className="cursor-pointer rounded bg-pi-accent px-2 py-0.5 text-3xs font-medium text-pi-accent-foreground transition-hover hover:bg-pi-accent-hover"
 						>
 							Save
 						</button>

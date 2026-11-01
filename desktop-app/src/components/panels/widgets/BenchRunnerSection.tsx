@@ -291,7 +291,7 @@ export function BenchRunnerSection() {
 								onClick={() => s.setBenchRuns(n)}
 								className={`rounded-pi-md px-3 py-1 text-2xs font-medium transition-colors ${
 									s.benchRuns === n
-										? "bg-pi-accent text-white"
+										? "bg-pi-accent text-pi-accent-foreground"
 										: "bg-pi-surface-raised text-pi-text-muted hover:text-pi-text"
 								}`}
 							>
@@ -312,7 +312,7 @@ export function BenchRunnerSection() {
 								onClick={() => s.setBenchConcurrency(n)}
 								className={`rounded-pi-md px-3 py-1 text-2xs font-medium transition-colors ${
 									s.benchConcurrency === n
-										? "bg-pi-accent text-white"
+										? "bg-pi-accent text-pi-accent-foreground"
 										: "bg-pi-surface-raised text-pi-text-muted hover:text-pi-text"
 								}`}
 							>

@@ -1253,7 +1253,7 @@ function SearchResultsView({
 function FirstLaunchBanner({ onDismiss, onGoToAccount }: { onDismiss: () => void; onGoToAccount: () => void }) {
 	return (
 		<div className="mb-4 flex items-start gap-3 rounded-lg border border-pi-accent/30 bg-pi-accent-soft px-4 py-3 transition-smooth hover:bg-pi-accent-soft">
-			<div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-pi-accent text-white active-press">
+			<div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-pi-accent text-pi-accent-foreground active-press">
 				<Sparkles className="h-3.5 w-3.5" />
 			</div>
 			<div className="min-w-0 flex-1">
@@ -1656,7 +1656,7 @@ export function SettingsPanel({
 										}
 										className={`flex h-6 flex-1 items-center justify-center rounded text-3xs font-semibold uppercase tracking-wider transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40 ${
 											scope === value
-												? "bg-pi-accent text-white shadow-sm hover:bg-pi-accent-hover"
+												? "bg-pi-accent text-pi-accent-foreground shadow-sm hover:bg-pi-accent-hover"
 												: "text-pi-text-muted hover:bg-pi-surface-overlay hover:text-pi-text"
 										}`}
 									>

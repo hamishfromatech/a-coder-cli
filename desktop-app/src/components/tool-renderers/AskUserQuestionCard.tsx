@@ -508,7 +508,7 @@ function KeyBadge({ char, selected }: { char: string; selected: boolean }) {
 			className={cn(
 				"mt-0.5 flex h-4 min-w-[1rem] shrink-0 items-center justify-center rounded border px-1 font-mono text-[0.625rem] leading-none transition-smooth",
 				selected
-					? "border-pi-accent bg-pi-accent text-white shadow-none"
+					? "border-pi-accent bg-pi-accent text-pi-accent-foreground shadow-none"
 					: "border-pi-border bg-pi-surface-raised text-pi-text-muted",
 			)}
 		>

@@ -643,7 +643,7 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 							>
 								<Download className="h-3.5 w-3.5" />
 								{downloads.length > 0 && (
-									<span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-pi-accent px-1 text-[9px] font-semibold leading-none text-white">
+									<span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-pi-accent px-1 text-[9px] font-semibold leading-none text-pi-accent-foreground">
 										{downloads.length}
 									</span>
 								)}
@@ -875,7 +875,7 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 								</button>
 								<button
 									onClick={() => void useBrowserStore.getState().decideDownload(prompt.id, "save")}
-									className="cursor-pointer rounded bg-pi-accent px-2 py-0.5 text-3xs font-medium text-white transition-hover hover:bg-pi-accent-hover"
+									className="cursor-pointer rounded bg-pi-accent px-2 py-0.5 text-3xs font-medium text-pi-accent-foreground transition-hover hover:bg-pi-accent-hover"
 								>
 									Save
 								</button>

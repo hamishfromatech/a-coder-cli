@@ -206,7 +206,7 @@ export function ModelsPicker({ enabled, onChange }: Props) {
 									<span
 										className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-smooth ${
 											enabled
-												? "border-pi-accent bg-pi-accent text-white hover:bg-pi-accent-hover"
+												? "border-pi-accent bg-pi-accent text-pi-accent-foreground hover:bg-pi-accent-hover"
 												: "border-pi-border bg-pi-bg text-transparent group-hover:border-pi-text-faint"
 										}`}
 									>

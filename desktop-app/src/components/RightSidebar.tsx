@@ -89,7 +89,7 @@ export function RightSidebar({ projectPath }: Props) {
 							)}
 							{id === "activity" && attention > 0 && (
 								<span
-									className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-pi-accent px-1 text-[9px] font-semibold leading-none text-white"
+									className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-pi-accent px-1 text-[9px] font-semibold leading-none text-pi-accent-foreground"
 									aria-label={`${attention} items need attention`}
 								>
 									{attention > 9 ? "9+" : attention}

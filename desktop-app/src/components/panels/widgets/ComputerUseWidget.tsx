@@ -69,12 +69,12 @@ export function ComputerUseWidget({
 					<div className="absolute left-0 top-0 h-14 w-40 rounded-md border border-pi-border bg-pi-surface-raised" />
 					{/* Labeled targets inside the mock window */}
 					<div className="absolute left-2 top-2 flex h-4 w-32 items-center rounded bg-pi-accent-soft/60 px-1.5">
-						<span className="cu-badge cu-badge-1 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-pi-accent text-[8px] font-semibold text-white">
+						<span className="cu-badge cu-badge-1 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-pi-accent text-[8px] font-semibold text-pi-accent-foreground">
 							1
 						</span>
 					</div>
 					<div className="absolute left-2 top-8 flex h-4 w-32 items-center rounded bg-pi-accent-soft/40 px-1.5">
-						<span className="cu-badge cu-badge-2 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-pi-accent text-[8px] font-semibold text-white">
+						<span className="cu-badge cu-badge-2 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-pi-accent text-[8px] font-semibold text-pi-accent-foreground">
 							2
 						</span>
 					</div>

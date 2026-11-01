@@ -19,7 +19,8 @@ interface ModeOption {
 
 /**
  * Two-part appearance picker:
- *   1. Skin — the accent/identity palette (aurora + the six Hermes skins).
+ *   1. Skin — the accent/identity palette, grouped into classic working
+ *      palettes and expressive artistic ones.
  *   2. Mode — light/dark/system brightness.
  *
  * Both apply instantly to the document and persist to settings.json.
@@ -73,6 +74,9 @@ export function ThemePicker() {
 		[setSkin, theme],
 	);
 
+	const classicSkins = useMemo(() => SKIN_LIST.filter((opt) => opt.group !== "artistic"), []);
+	const artisticSkins = useMemo(() => SKIN_LIST.filter((opt) => opt.group === "artistic"), []);
+
 	const chooseMode = useCallback(
 		(next: Theme) => {
 			setTheme(next);
@@ -100,47 +104,23 @@ export function ThemePicker() {
 						{SKIN_LIST.length} themes
 					</span>
 				</div>
-				<div
-					role="radiogroup"
-					aria-label="Skin"
-					className="grid grid-cols-2 gap-2 sm:grid-cols-3"
-				>
-					{SKIN_LIST.map((opt) => {
-						const active = skin === opt.name;
-						return (
-							<button
-								key={opt.name}
-								type="button"
-								role="radio"
-								aria-checked={active}
-								onClick={() => chooseSkin(opt.name)}
-								className={`group flex flex-col gap-2 rounded-lg p-2.5 text-left transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
-									active
-										? "bg-pi-accent-soft shadow-ring-accent-2 hover:bg-pi-accent-soft"
-										: "bg-pi-surface-raised shadow-ring hover:shadow-card-hover hover:bg-pi-surface-overlay"
-								}`}
-							>
-								<div className="flex items-center justify-between">
-									<SkinPreview skin={opt.name} mode={resolveMode(theme as SkinMode)} />
-									{active && (
-										<Check className="h-3.5 w-3.5 text-pi-accent" aria-hidden />
-									)}
-								</div>
-								<div>
-									<div
-										className={`text-xs font-semibold transition-smooth ${
-											active ? "text-pi-accent" : "text-pi-text"
-										}`}
-									>
-										{opt.label}
-									</div>
-									<div className="mt-0.5 text-3xs leading-snug text-pi-text-muted">
-										{opt.description}
-									</div>
-								</div>
-							</button>
-						);
-					})}
+				<SkinGroup
+					title="Classic"
+					hint="Neutral palettes for everyday work"
+					skins={classicSkins}
+					skin={skin}
+					mode={resolveMode(theme as SkinMode)}
+					onChoose={chooseSkin}
+				/>
+				<div className="mt-4">
+					<SkinGroup
+						title="Artistic & modern"
+						hint="Expressive color, still tuned for readability"
+						skins={artisticSkins}
+						skin={skin}
+						mode={resolveMode(theme as SkinMode)}
+						onChoose={chooseSkin}
+					/>
 				</div>
 			</section>
 
@@ -203,6 +183,70 @@ export function ThemePicker() {
 					})}
 				</div>
 			</section>
+		</div>
+	);
+}
+
+function SkinGroup({
+	title,
+	hint,
+	skins,
+	skin,
+	mode,
+	onChoose,
+}: {
+	title: string;
+	hint: string;
+	skins: typeof SKIN_LIST;
+	skin: string;
+	mode: ResolvedMode;
+	onChoose: (name: string) => void;
+}): React.ReactNode {
+	if (skins.length === 0) return null;
+	return (
+		<div>
+			<div className="mb-1.5 flex items-baseline justify-between">
+				<span className="text-3xs font-semibold uppercase tracking-wider text-pi-text-faint">
+					{title}
+				</span>
+				<span className="text-3xs text-pi-text-faint">{hint}</span>
+			</div>
+			<div role="radiogroup" aria-label={`${title} skins`} className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+				{skins.map((opt) => {
+					const active = skin === opt.name;
+					return (
+						<button
+							key={opt.name}
+							type="button"
+							role="radio"
+							aria-checked={active}
+							onClick={() => onChoose(opt.name)}
+							className={`group flex flex-col gap-2 rounded-lg p-2.5 text-left transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none ${
+								active
+									? "bg-pi-accent-soft shadow-ring-accent-2 hover:bg-pi-accent-soft"
+									: "bg-pi-surface-raised shadow-ring hover:bg-pi-surface-overlay hover:shadow-card-hover"
+							}`}
+						>
+							<div className="flex items-center justify-between">
+								<SkinPreview skin={opt.name} mode={mode} />
+								{active && <Check className="h-3.5 w-3.5 text-pi-accent" aria-hidden />}
+							</div>
+							<div>
+								<div
+									className={`text-xs font-semibold transition-smooth ${
+										active ? "text-pi-accent" : "text-pi-text"
+									}`}
+								>
+									{opt.label}
+								</div>
+								<div className="mt-0.5 text-3xs leading-snug text-pi-text-muted">
+									{opt.description}
+								</div>
+							</div>
+						</button>
+					);
+				})}
+			</div>
 		</div>
 	);
 }

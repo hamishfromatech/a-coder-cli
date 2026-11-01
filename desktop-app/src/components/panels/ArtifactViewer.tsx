@@ -194,7 +194,7 @@ function ToggleButton({
 			onClick={onClick}
 			className={`rounded px-2 py-0.5 text-3xs font-medium transition-hover focus-visible:shadow-focus focus-visible:outline-none ${
 				active
-					? "bg-pi-accent text-white shadow-sm"
+					? "bg-pi-accent text-pi-accent-foreground shadow-sm"
 					: "text-pi-text-muted hover:bg-pi-surface-overlay hover:text-pi-text"
 			}`}
 		>

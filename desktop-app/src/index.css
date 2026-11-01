@@ -88,6 +88,7 @@
 	/* Nous-blue accent — the singular brand color */
 	--pi-accent-rgb: 46 127 255;
 	--pi-accent: rgb(var(--pi-accent-rgb));
+	--pi-accent-foreground-rgb: 255 255 255;
 	--pi-accent-hover-rgb: 74 149 255;
 	--pi-accent-hover: rgb(var(--pi-accent-hover-rgb));
 	--pi-accent-soft: color-mix(in srgb, var(--pi-accent) 14%, transparent);
@@ -137,6 +138,7 @@
 
 	--pi-accent-rgb: 0 83 253;
 	--pi-accent: rgb(var(--pi-accent-rgb));
+	--pi-accent-foreground-rgb: 255 255 255;
 	--pi-accent-hover-rgb: 0 64 204;
 	--pi-accent-hover: rgb(var(--pi-accent-hover-rgb));
 	--pi-accent-soft: color-mix(in srgb, var(--pi-accent) 10%, transparent);

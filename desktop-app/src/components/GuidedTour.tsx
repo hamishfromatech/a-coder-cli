@@ -387,7 +387,7 @@ function TourCard({ step, index, total, style, onNext, onBack, onEnd }: TourCard
 						type="button"
 						onClick={onNext}
 						autoFocus
-						className="cursor-pointer rounded-md bg-pi-accent px-3 py-1 text-2xs font-medium text-white transition-hover hover:brightness-110"
+						className="cursor-pointer rounded-md bg-pi-accent px-3 py-1 text-2xs font-medium text-pi-accent-foreground transition-hover hover:brightness-110"
 					>
 						{isLast ? "Finish" : "Next"}
 					</button>

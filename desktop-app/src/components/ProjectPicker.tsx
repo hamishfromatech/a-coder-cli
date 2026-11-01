@@ -97,7 +97,7 @@ export function ProjectPicker({ onClose, onSelect }: ProjectPickerProps) {
 				<div className="border-b border-pi-border p-3">
 					<button
 						onClick={() => void handlePickFolder()}
-						className="flex w-full items-center justify-center gap-2 rounded-md bg-pi-accent px-3 py-2 text-xs font-medium text-white shadow-ring-accent transition-hover active-press hover:bg-pi-accent-hover"
+						className="flex w-full items-center justify-center gap-2 rounded-md bg-pi-accent px-3 py-2 text-xs font-medium text-pi-accent-foreground shadow-ring-accent transition-hover active-press hover:bg-pi-accent-hover"
 					>
 						<FolderOpen className="h-3.5 w-3.5" />
 						Choose folder…

@@ -15,8 +15,35 @@ describe("built-in desktop skins", () => {
 		expect(SKIN_LIST.length).toBe(1 + Object.keys(HERMES_THEMES).length);
 	});
 
+	it("every skin belongs to a picker group, and both groups are populated", () => {
+		const groups = new Set(SKIN_LIST.map((skin) => skin.group));
+		expect(groups.has("classic")).toBe(true);
+		expect(groups.has("artistic")).toBe(true);
+		for (const skin of SKIN_LIST) {
+			expect(["classic", "artistic"]).toContain(skin.group);
+		}
+	});
+
 	it("new skins ship tuned palettes for both modes", () => {
-		for (const name of ["nord", "dracula", "gruvbox", "catppuccin", "tokyo-night"]) {
+		for (const name of [
+			"nord",
+			"dracula",
+			"gruvbox",
+			"catppuccin",
+			"tokyo-night",
+			"graphite",
+			"paper",
+			"ocean",
+			"contrast",
+			"sakura",
+			"sunset",
+			"vaporwave",
+			"forest",
+			"clay",
+			"blueprint",
+			"neon-noir",
+			"iris",
+		]) {
 			const skin = resolveHermesTheme(name);
 			expect(skin, name).not.toBeNull();
 			expect(skin?.darkColors, `${name} darkColors`).toBeTruthy();

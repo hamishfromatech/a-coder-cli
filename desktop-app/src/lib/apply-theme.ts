@@ -44,7 +44,9 @@ function prefersDark(): boolean {
 
 /** Synthesise a light `DesktopThemeColors` variant for dark-only Hermes skins. */
 function synthLightColors(seed: DesktopTheme): DesktopThemeColors {
-	const accent = seed.colors.ring || seed.colors.primary;
+	// Dark-only skins often carry a neon accent that disappears on white; the
+	// synthesized light palette raises it to a usable contrast first.
+	const accent = ensureContrast(seed.colors.ring || seed.colors.primary, "#ffffff", 3);
 	const soft = mix("#ffffff", accent, 0.1);
 	const softer = mix("#ffffff", accent, 0.06);
 	const border = mix("#ececef", accent, 0.14);
@@ -104,6 +106,7 @@ function colorsToPiPalette(colors: DesktopThemeColors): PiPalette {
 		textFaint: mix(colors.mutedForeground, bg, 0.45),
 		accent,
 		accentHover: mix(accent, fg, 0.14),
+		accentForeground: readableOn(accent),
 		user: ensureContrast("#34d399", bg, 3),
 		assistant: ensureContrast(accent, bg, 3),
 		tool: ensureContrast("#a3a3ff", bg, 3),
@@ -190,6 +193,7 @@ export function applySkinToRoot(skinName: string, mode: SkinMode): ResolvedMode 
 	setRgb("--pi-text-faint-rgb", palette.textFaint);
 	setRgb("--pi-accent-rgb", palette.accent);
 	setRgb("--pi-accent-hover-rgb", palette.accentHover);
+	setRgb("--pi-accent-foreground-rgb", palette.accentForeground);
 	setRgb("--pi-user-rgb", palette.user);
 	setRgb("--pi-assistant-rgb", palette.assistant);
 	setRgb("--pi-tool-rgb", palette.tool);

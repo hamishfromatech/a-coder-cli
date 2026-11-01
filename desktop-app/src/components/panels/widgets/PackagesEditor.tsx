@@ -158,7 +158,7 @@ function PackageCard({
 									onUpdate(pkg.source);
 								}
 							}}
-							className={`h-5 rounded px-2 text-3xs font-medium transition-colors ${isSimple ? "bg-pi-accent text-white" : "bg-pi-surface-overlay text-pi-text-muted"}`}
+							className={`h-5 rounded px-2 text-3xs font-medium transition-colors ${isSimple ? "bg-pi-accent text-pi-accent-foreground" : "bg-pi-surface-overlay text-pi-text-muted"}`}
 						>
 							Simple
 						</button>
@@ -169,7 +169,7 @@ function PackageCard({
 									onUpdate({ source: pkg, extensions: [], skills: [], prompts: [], themes: [] });
 								}
 							}}
-							className={`h-5 rounded px-2 text-3xs font-medium transition-colors ${!isSimple ? "bg-pi-accent text-white" : "bg-pi-surface-overlay text-pi-text-muted"}`}
+							className={`h-5 rounded px-2 text-3xs font-medium transition-colors ${!isSimple ? "bg-pi-accent text-pi-accent-foreground" : "bg-pi-surface-overlay text-pi-text-muted"}`}
 						>
 							Filtered
 						</button>
