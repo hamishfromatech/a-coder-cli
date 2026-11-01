@@ -3,6 +3,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { pathToFileURL } from "node:url";
 import path from "node:path";
 
 const DEFAULT_REPO = "hamishfromatech/a-coder-cli";
@@ -369,35 +370,117 @@ function collectChangelogSources(options, tag) {
 	return parts;
 }
 
-/** Best-effort commit list for this tag (context only; never fatal). */
-function collectCommitLog(tag) {
+/** Commits that are release plumbing, never release content. */
+const NON_CONTENT_COMMIT = [
+	/^chore: version (?:bump|sync)\b/i,
+	/^chore\(release\)/i,
+	/^Add \[Unreleased\] section/i,
+];
+
+/**
+ * Collect the commits that landed *between the previous release and this tag*.
+ *
+ * The changelog's `[Unreleased]` section accumulates entries until a full
+ * release rolls it, so using it for a quick release re-announced months of
+ * shipped work. The tag range is the authoritative change set for this
+ * release. Best-effort: without history/tags the caller falls back to the
+ * changelog path.
+ */
+function collectReleaseCommits(tag) {
+	let previousTag = "";
 	try {
-		return run("git", ["log", "--oneline", "--no-decorate", "-40", `${tag}~1..${tag}`], { capture: true }).trim();
+		previousTag = run("git", ["describe", "--tags", "--abbrev=0", "--match", "v*", `${tag}^`], {
+			capture: true,
+		}).trim();
 	} catch {
-		return "";
+		return { previousTag: null, commits: [] };
 	}
+	if (!previousTag || previousTag === tag) {
+		return { previousTag: null, commits: [] };
+	}
+	let raw = "";
+	try {
+		raw = run(
+			"git",
+			["log", "--no-merges", "--reverse", "--format=%s%x1f%b%x1e", `${previousTag}..${tag}`],
+			{ capture: true },
+		);
+	} catch {
+		return { previousTag, commits: [] };
+	}
+	const commits = raw
+		.split("\u001e")
+		.map((record) => record.trim())
+		.filter(Boolean)
+		.map((record) => {
+			const [subject, ...body] = record.split("\u001f");
+			return { subject: subject.trim(), body: body.join("\u001f").trim() };
+		})
+		.filter((commit) => !NON_CONTENT_COMMIT.some((pattern) => pattern.test(commit.subject)))
+		.slice(-200);
+	return { previousTag, commits };
 }
 
-function buildGenerateMessages(options, tag, sources, commitLog) {
+/** Compact, bounded commit material for the writer prompt. */
+function formatCommitMaterial(release) {
+	return release.commits
+		.map((commit) => {
+			const body = commit.body ? `\n${commit.body.split("\n").slice(0, 12).join("\n")}` : "";
+			return `- ${commit.subject}${body}`;
+		})
+		.join("\n");
+}
+
+/** Non-AI fallback: a plain, accurate list of this release's commits. */
+function commitsToMarkdown(tag, release, repo) {
 	const version = versionFromTag(tag);
-	const material = sources.join("\n\n") || "(no changelog section found for this version)";
-	const commits = commitLog ? `\n### Commits\n\n${commitLog}\n` : "";
+	const groups = [
+		{ title: "Features", match: /^feat\b/i, items: [] },
+		{ title: "Fixes", match: /^fix\b/i, items: [] },
+		{ title: "Other changes", match: null, items: [] },
+	];
+	for (const commit of release.commits) {
+		const group = groups.find((candidate) => candidate.match?.test(commit.subject)) ?? groups[2];
+		group.items.push(commit.subject.replace(/^(?:feat|fix|docs|chore|test|refactor|perf|build|ci)(?:\([^)]*\))?!?:\s*/i, ""));
+	}
+	const sections = groups
+		.filter((group) => group.items.length > 0)
+		.map((group) => `### ${group.title}\n\n${group.items.map((item) => `- ${item}`).join("\n")}`);
+	const compare = release.previousTag
+		? `[Compare ${release.previousTag}...${tag}](https://github.com/${repo}/compare/${release.previousTag}...${tag})`
+		: "";
+	return [`## Changes in ${version}`, "", ...sections, compare ? `\n${compare}` : ""].join("\n").trim() + "\n";
+}
+
+function buildGenerateMessages(options, tag, sources, release) {
+	const version = versionFromTag(tag);
+	const hasCommits = release.commits.length > 0;
+	const material = hasCommits
+		? formatCommitMaterial(release)
+		: sources.join("\n\n") || "(no changelog section found for this version)";
 
 	const system = [
 		"You write release notes for A-Coder, a terminal-native AI coding agent.",
-		"You are given raw changelog entries (and optionally a commit list) for one release version.",
+		hasCommits
+			? `You are given the commits that landed between ${release.previousTag} and ${tag}. They are the authoritative change set for THIS release.`
+			: "You are given raw changelog entries for one release version.",
 		"Write GitHub release notes in Markdown that a technical user skims in 30 seconds:",
 		"- Start with ONE short paragraph (2-3 sentences) summarizing what this release is about.",
 		"- Then a '## Highlights' section with the 3-6 most user-visible changes as bullets.",
 		'- Then a "Details" section grouping the remaining entries under short headers',
-		'  (e.g. "Office", "TUI", "Desktop", "Engine", "Fixed") — keep every real change, drop nothing meaningful.',
+		'  (e.g. "Desktop", "IDE", "TUI", "Engine", "Fixed") — keep every real change, drop nothing meaningful.',
+		hasCommits
+			? "- Use ONLY these commits. Do not describe older features that are not in this list."
+			: "- Do not describe features that are not in the source material.",
 		"- Preserve any issue/PR links and file paths exactly as given.",
 		"- Do not invent features, numbers, or links that are not in the source material.",
 		"- No emojis, no marketing fluff, no 'We are excited to announce'.",
 		`- Output ONLY the release notes markdown for version ${version}. No preamble, no code fences.`,
 	].join("\n");
 
-	const user = `Version: ${version} (tag ${tag})\n\n### Changelog source material\n\n${sources.join("\n\n")}${commitLog ? `\n### Commits\n\n${commitLog}\n` : ""}`;
+	const user = hasCommits
+		? `Version: ${version} (tag ${tag})\nRange: ${release.previousTag}..${tag}\n\n### Commits\n\n${material}`
+		: `Version: ${version} (tag ${tag})\n\n### Changelog source material\n\n${material}`;
 	const truncatedUser = user.length > AI_MAX_INPUT_CHARS ? `${user.slice(0, AI_MAX_INPUT_CHARS)}\n(…truncated)` : user;
 
 	return [
@@ -458,9 +541,13 @@ async function generateReleaseNotes(options) {
 	}
 
 	const tag = normalizeTag(options.tag ?? version);
-	const sources = collectChangelogSources(options, tag);
-	if (sources.length === 0) {
-		// No changelog material for this version — same fallback as extract.
+	const release = collectReleaseCommits(tag);
+	// The changed commits are authoritative. Changelogs are only consulted when
+	// the range is unavailable (shallow checkout, first release, git failure);
+	// their [Unreleased] fallback accumulates months of shipped entries.
+	const sources = release.commits.length > 0 ? [] : collectChangelogSources(options, tag);
+	if (release.commits.length === 0 && sources.length === 0) {
+		// Nothing to describe for this version — same fallback as extract.
 		writeOutput(`Release ${version}\n`, options.out);
 		return;
 	}
@@ -468,20 +555,27 @@ async function generateReleaseNotes(options) {
 	let generated;
 	if (!options.aiSkip) {
 		try {
-			const messages = buildGenerateMessages(options, tag, sources, collectCommitLog(tag));
+			const messages = buildGenerateMessages(options, tag, sources, release);
 			generated = await callAiWriter(options, messages);
 			console.error(`[release-notes] notes written by ${options.aiModel} (${options.aiBaseUrl}).`);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			console.warn(
-				`[release-notes] AI generation failed (${error?.name === "AbortError" ? "timeout" : message}); falling back to changelog extraction.`,
+				`[release-notes] AI generation failed (${error?.name === "AbortError" ? "timeout" : message}); falling back to ${
+					release.commits.length > 0 ? "the commit list" : "changelog extraction"
+				}.`,
 			);
 		}
 	}
 
-	// Fallback: the merged changelog extraction. The generated prose may also
-	// carry partially-copied links, so re-normalize either way.
-	const { markdown } = normalizeReleaseNoteLinks(generated ? stripCodeFences(generated) : `${sources.join("\n\n")}\n`, {
+	// Fallback: this release's commits when we have them, else the merged
+	// changelog extraction. Generated prose may carry partially-copied links,
+	// so re-normalize either way.
+	const fallback =
+		release.commits.length > 0
+			? commitsToMarkdown(tag, release, options.repo)
+			: `${sources.join("\n\n")}\n`;
+	const { markdown } = normalizeReleaseNoteLinks(generated ? stripCodeFences(generated) : fallback, {
 		basePath: options.basePath,
 		repo: options.repo,
 		tag,
@@ -567,6 +661,13 @@ function fixGithubReleases(options) {
 	console.log(`${prefix} ${changedCount} release${changedCount === 1 ? "" : "s"}.`);
 }
 
+export { buildGenerateMessages, collectReleaseCommits, commitsToMarkdown, formatCommitMaterial };
+
+const isDirectRun =
+	typeof process.argv[1] === "string" &&
+	import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isDirectRun) {
 try {
 	const [command, ...args] = process.argv.slice(2);
 	if (!command || command === "--help") {
@@ -587,4 +688,5 @@ try {
 } catch (error) {
 	console.error(error instanceof Error ? error.message : error);
 	process.exit(1);
+}
 }
