@@ -43,7 +43,7 @@ export function AgentAskDialog() {
 								type="checkbox"
 								id="agent-ask-remember"
 								defaultChecked
-								className="h-3.5 w-3.5 accent-[var(--pi-accent,theme(colors.pi.accent))]"
+								className="h-3.5 w-3.5 accent-pi-accent"
 							/>
 							<span className="text-2xs">Remember for future agent visits to this site</span>
 						</label>

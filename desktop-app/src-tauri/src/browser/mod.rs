@@ -48,7 +48,9 @@ impl ViewBounds {
 /// Everything the panel learns about its pages, on one channel
 /// (`desktop://browser`) with a one-of payload.
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+// `rename_all` on an enum renames the variant tags only; the panel reads the
+// variant fields too (`tabId`, not `tab_id`), so rename those explicitly.
+#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub(crate) enum BrowserEvent {
 	/// A page started or finished loading; `started` is a commit (WebKit) or
 	/// content loading (WebView2), never a download.
@@ -249,5 +251,22 @@ mod tests {
 			merge_string_lists(&["a.com".into(), "b.com".into()], "a.com"),
 			vec!["a.com", "b.com"]
 		);
+	}
+
+	#[test]
+	fn browser_events_serialize_camel_case_fields() {
+		let value = serde_json::to_value(BrowserEvent::Load {
+			tab_id: "t1".into(),
+			url: "https://example.com/".into(),
+			loading: false,
+			seq: 7,
+		})
+		.expect("serialize");
+		// The panel keys every event on `tabId`; an enum's `rename_all` only
+		// renames variant tags, so fields are renamed by `rename_all_fields`.
+		assert_eq!(value["type"], "load");
+		assert_eq!(value["tabId"], "t1");
+		assert_eq!(value["started"], false);
+		assert_eq!(value["seq"], 7);
 	}
 }

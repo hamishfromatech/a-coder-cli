@@ -11,6 +11,8 @@ import { openExternalLink } from "../lib/external-link";
 import { readSettingsFile } from "../lib/rpc";
 import { triggerHaptic } from "../lib/haptics";
 import { useUiStore } from "./ui-store";
+import { useBrowserRecentStore } from "./browser-recent-store";
+import { moveTabBefore } from "../lib/tab-order";
 
 export interface BrowserTab {
 	id: string;
@@ -71,10 +73,13 @@ interface BrowserState {
 	externalPrompt: ExternalPrompt | null;
 	/** The gate's parked agent calls, newest first, awaiting a decision. */
 	agentAsks: AgentAsk[];
+	/** URLs of tabs closed this run, newest first (reopen from the menu). */
+	closedUrls: string[];
 
 	setOpen: (open: boolean) => void;
 	init: () => Promise<void>;
-	openTab: (url: string) => Promise<void>;
+	/** Opens a tab; no URL opens the start surface instead of a site. */
+	openTab: (url?: string) => Promise<void>;
 	activate: (tabId: string) => Promise<void>;
 	navigate: (tabId: string, url: string) => Promise<void>;
 	action: (tabId: string, action: string) => Promise<void>;
@@ -93,7 +98,8 @@ interface BrowserState {
 	requestExternalConfirm: (url: string) => void;
 	/** Resolves the pending handoff; accept hands the URL to the system. */
 	decideExternalPrompt: (accept: boolean) => void;
-	find: (query: string, backwards: boolean) => Promise<void>;
+	/** Runs the page's native find; false when the page has no match, null when unavailable. */
+	find: (query: string, backwards: boolean) => Promise<boolean | null>;
 	capture: (tabId: string) => Promise<void>;
 	captureRegion: (bounds: {
 		x: number;
@@ -106,6 +112,12 @@ interface BrowserState {
 	decideDownload: (id: string, action: "save" | "open" | "reveal" | "cancel") => Promise<void>;
 	/** Resolves one parked agent op: allow (optionally remember the host) or deny. */
 	decideAgentAsk: (id: string, allow: boolean, remember: boolean) => Promise<void>;
+	/** Moves a tab before another in the strip (drag reorder). */
+	reorder: (tabId: string, beforeId: string) => void;
+	/** Reopens the most recently closed tab, if any. */
+	reopenClosed: () => Promise<void>;
+	/** Clears the completed-download list (pending approvals stay). */
+	clearRecentDownloads: () => void;
 	/** Applies one Rust event; bound once at startup. */
 	applyEvent: (event: BrowserEvent) => void;
 }
@@ -129,6 +141,13 @@ const isWebUrl = (url: string): boolean => {
 // persisted `restored` flag marks the snapshot consumed — a replayed restore
 // or an explicitly closed session never comes back mid-run.
 const MAX_SESSION_TABS = 20;
+/** Closed-tab memory for the reopen command; deep enough for a burst. */
+const MAX_CLOSED_TABS = 10;
+
+/** Panel-only id for a start tab (no native view exists until it navigates). */
+function startTabId(): string {
+	return `start-${crypto.randomUUID().slice(0, 8)}`;
+}
 
 interface BrowserSessionSnapshot {
 	/** Open-tab URLs in strip order, capped. */
@@ -213,6 +232,7 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 	pendingUrl: null,
 	externalPrompt: null,
 	agentAsks: [],
+	closedUrls: [],
 
 	setOpen: (open) => set({ open }),
 
@@ -240,33 +260,62 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 	},
 
 	openTab: async (url) => {
+		const target = (url ?? "").trim();
+		const start = target.length === 0;
+		// Start tabs live only in the panel until the first address: the native
+		// view is created by the panel's bounds pass once a URL exists, so no
+		// blank page ever covers the start surface.
 		if (!get().supported) {
 			// Gateways render reading frames; without one the system browser is
 			// the only way to see a page.
-			if (get().gateway) {
-				const tabId = `frame-${crypto.randomUUID().slice(0, 8)}`;
-				set((state) => ({
-					tabs: [
-						...state.tabs,
-						{
-							id: tabId,
-							url,
-							title: url,
-							loading: false,
-							back: false,
-							forward: false,
-							muted: false,
-							zoom: 1,
-						},
-					],
-					activeId: tabId,
-				}));
+			const tabId = start
+				? startTabId()
+				: get().gateway
+					? `frame-${crypto.randomUUID().slice(0, 8)}`
+					: startTabId();
+			if (!start && !get().gateway) {
+				await openExternalLink(target);
 				return;
 			}
-			await openExternalLink(url);
+			set((state) => ({
+				tabs: [
+					...state.tabs,
+					{
+						id: tabId,
+						url: target,
+						title: start ? "" : target,
+						loading: false,
+						back: false,
+						forward: false,
+						muted: false,
+						zoom: 1,
+					},
+				],
+				activeId: tabId,
+			}));
 			return;
 		}
-		const tabId = await browser.openTab({ url }).catch((error) => {
+		if (start) {
+			const tabId = startTabId();
+			set((state) => ({
+				tabs: [
+					...state.tabs,
+					{
+						id: tabId,
+						url: "",
+						title: "",
+						loading: false,
+						back: false,
+						forward: false,
+						muted: false,
+						zoom: 1,
+					},
+				],
+				activeId: tabId,
+			}));
+			return;
+		}
+		const tabId = await browser.openTab({ url: target }).catch((error) => {
 			rendererLog(`browser: openTab failed: ${String(error)}`);
 			throw error;
 		});
@@ -275,8 +324,8 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 				...state.tabs,
 				{
 					id: tabId,
-					url,
-					title: url,
+					url: target,
+					title: target,
 					loading: true,
 					back: false,
 					forward: false,
@@ -295,15 +344,27 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 	navigate: async (tabId, input) => {
 		const url = normalizeUrl(input);
 		if (!url) return;
+		if (!get().supported && !get().gateway) {
+			await openExternalLink(url, { forceDefault: true });
+			return;
+		}
+		const current = get().tabs.find((tab) => tab.id === tabId);
 		const frameTab = tabId.startsWith("frame-");
+		// A start tab has no native view yet; the panel creates one at the new
+		// address when it next measures the page area. Reading frames never
+		// report loads, so they must not sit on a spinner.
+		const startTab = current?.url === "";
+		const pendingLoad = !frameTab && get().supported;
 		set((state) => ({
 			tabs: state.tabs.map((tab) =>
-				tab.id === tabId ? { ...tab, url, title: frameTab ? url : tab.title, loading: !frameTab } : tab,
+				tab.id === tabId
+					? { ...tab, url, title: frameTab ? url : "", loading: pendingLoad }
+					: tab,
 			),
 		}));
 		// Frame tabs (unsupported platforms) are pure frontend: the iframe's
 		// src follows the URL; the sentinel reports loads back.
-		if (frameTab) return;
+		if (frameTab || startTab) return;
 		await browser.navigate(tabId, url).catch(() => {});
 	},
 
@@ -337,9 +398,13 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 	},
 
 	close: async (tabId) => {
+		const closing = get().tabs.find((tab) => tab.id === tabId);
 		set((state) => ({
 			tabs: state.tabs.filter((tab) => tab.id !== tabId),
 			activeId: state.activeId === tabId ? (state.tabs.find((tab) => tab.id !== tabId)?.id ?? null) : state.activeId,
+			closedUrls: closing?.url
+				? [closing.url, ...state.closedUrls].slice(0, MAX_CLOSED_TABS)
+				: state.closedUrls,
 		}));
 		await browser.close(tabId).catch(() => {});
 	},
@@ -359,7 +424,12 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 
 	closeAll: async () => {
 		const all = get().tabs;
-		set({ tabs: [], activeId: null });
+		const urls = [...all].reverse().map((tab) => tab.url).filter(Boolean);
+		set((state) => ({
+			tabs: [],
+			activeId: null,
+			closedUrls: [...urls, ...state.closedUrls].slice(0, MAX_CLOSED_TABS),
+		}));
 		for (const tab of all) {
 			if (tab.id.startsWith("frame-")) continue;
 			await browser.close(tab.id).catch(() => {});
@@ -418,9 +488,22 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 
 	find: async (query, backwards) => {
 		const tabId = get().activeId;
-		if (!tabId || !query) return;
-		await browser.find(tabId, query, backwards).catch(() => {});
+		if (!tabId || tabId.startsWith("start-") || !query) return null;
+		return browser.find(tabId, query, backwards).catch(() => null);
 	},
+
+	reorder: (tabId, beforeId) => {
+		set((state) => ({ tabs: moveTabBefore(state.tabs, tabId, beforeId) }));
+	},
+
+	reopenClosed: async () => {
+		const [url, ...rest] = get().closedUrls;
+		if (!url) return;
+		set({ closedUrls: rest });
+		await get().openTab(url);
+	},
+
+	clearRecentDownloads: () => set({ recentDownloads: [] }),
 
 	capture: async (tabId) => {
 		if (!get().captureSupported) return;
@@ -486,12 +569,27 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 						tab.id === event.tabId ? { ...tab, url: event.url, loading: event.started } : tab,
 					),
 				});
+				// A finished load is a page the user actually saw: remember it for
+				// the start surface (the title usually arrives just after this).
+				if (!event.started) {
+					const loaded = get().tabs.find((tab) => tab.id === event.tabId);
+					useBrowserRecentStore.getState().record(event.url, loaded?.title ?? "");
+				}
 				break;
 			case "title":
-				if (!isFresh(event, event.tabId)) return;
+				// No seq gate: a title that arrives after the finished-load event
+				// carries a lower ordinal but is the correct name for the tab.
 				set({
 					tabs: state.tabs.map((tab) => (tab.id === event.tabId ? { ...tab, title: event.title } : tab)),
-					});
+				});
+				// Keep the start surface's label truthful when the name lands after
+				// the load settled (the common order).
+				{
+					const titled = get().tabs.find((tab) => tab.id === event.tabId);
+					if (titled?.url) {
+						useBrowserRecentStore.getState().record(titled.url, event.title);
+					}
+				}
 				break;
 			case "url":
 				if (!isFresh(event, event.tabId)) return;
@@ -544,7 +642,9 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 				break;
 			}
 			case "closed":
-				lastSeqByTab.delete(event.tabId);
+				for (const kind of ["load", "title", "url", "history"]) {
+					lastSeqByTab.delete(`${kind}:${event.tabId}`);
+				}
 				set({
 					tabs: state.tabs.filter((tab) => tab.id !== event.tabId),
 					activeId: state.activeId === event.tabId ? null : state.activeId,
@@ -614,25 +714,34 @@ function toBlob(png: ArrayBuffer | number[]): Blob | null {
 
 void browser;
 
-// Per-tab last applied event ordinal; Rust hands out the seq under the tab
-// lock, so a spawned commit task's events can never apply out of order (an
-// older commit finishing after a newer one pinned the spinner on).
+// Last applied event ordinal per tab AND kind; Rust hands out one counter per
+// tab under its lock, so an older commit's event can never overwrite a newer
+// one. Keying by kind matters: comparing a `load` against a `url`/`history`
+// ordinal let a later-delivered finish get dropped by a redirect's commit
+// event, which pinned the tab spinner on forever.
 const lastSeqByTab = new Map<string, number>();
 
-/** Drops per-tab events from older commits; returns true when fresh. */
+/** Drops events an older commit of the same kind superseded. */
 function isFresh(event: BrowserEvent, tabId: string): boolean {
 	if (!("seq" in event)) return true;
 	if (event.seq === 0) return true;
-	const last = lastSeqByTab.get(tabId) ?? 0;
+	const key = `${event.type}:${tabId}`;
+	const last = lastSeqByTab.get(key) ?? 0;
 	if (event.seq <= last) return false;
-	lastSeqByTab.set(tabId, event.seq);
+	lastSeqByTab.set(key, event.seq);
 	return true;
 }
 // A native page under the app webview needs the body transparent over the
 // page's region (index.css `.has-page`): keep the class in sync with whether
 // any OS page view is live.
 useBrowserStore.subscribe((state) => {
-	const on = Boolean(state.supported && state.layered && state.tabs.length > 0);
+	// Start tabs and reading frames paint in the app's own webview; only a
+	// native page under the transparent chrome needs the grain switched off.
+	const on = Boolean(
+		state.supported &&
+			state.layered &&
+			state.tabs.some((tab) => tab.url && !tab.id.startsWith("frame-")),
+	);
 	document.documentElement.classList.toggle("has-page", on);
 	syncSessionSnapshot(state);
 });

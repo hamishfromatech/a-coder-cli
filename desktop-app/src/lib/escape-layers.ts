@@ -25,6 +25,8 @@ export const ESCAPE_PRIORITY = {
 	titlebarEdit: 50,
 	/** Model picker + command center overlays. */
 	picker: 60,
+	/** In-panel screenshot preview over the page. */
+	capture: 65,
 	/** Find-in-page (⌘F). */
 	findBar: 70,
 	/** Command palette (⌘K). */

@@ -33,6 +33,12 @@ export default defineConfig(async () => ({
 			"@monaco-editor-root": locateMonacoRoot(),
 		},
 	},
+	// The alias is a bare-looking specifier; the dependency scanner would try
+	// to prebundle the `?worker` imports into .vite/deps and 404 at runtime.
+	// Workers are served straight from the alias target instead.
+	optimizeDeps: {
+		exclude: ["@monaco-editor-root"],
+	},
 	// Vite options tailored for Tauri development and explicit separation from the CLI's own port usage.
 	clearScreen: false,
 	server: {
