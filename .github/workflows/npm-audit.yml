@@ -30,5 +30,15 @@ jobs:
       - name: Audit production vulnerabilities
         run: npm audit --omit=dev --audit-level=moderate
 
+      # The desktop and floor-plan UI are separate npm projects with their own
+      # lockfiles, so the root audit does not see them.
+      - name: Audit desktop-app production vulnerabilities
+        working-directory: desktop-app
+        run: npm audit --omit=dev --audit-level=moderate
+
+      - name: Audit virtual-office-ui production vulnerabilities
+        working-directory: virtual-office-ui
+        run: npm audit --omit=dev --audit-level=moderate
+
       - name: Verify registry signatures
         run: npm audit signatures --omit=dev

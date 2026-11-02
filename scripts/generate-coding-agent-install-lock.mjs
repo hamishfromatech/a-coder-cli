@@ -3,6 +3,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { allowedInstallScriptPackages } from "./install-script-allowlist.mjs";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(scriptDir, "..");
@@ -14,10 +15,6 @@ const outputLockfilePath = join(outputDir, "package-lock.json");
 const internalPackagePrefix = "@earendil-works/pi-";
 const internalPackageNames = new Set(["@earendil-works/chord"]);
 const installPackageName = "@earendil-works/pi-coding-agent-install";
-const allowedInstallScriptPackages = new Map([
-	["@google/genai@2.21.0", "preinstall is a no-op in the published package"],
-	["protobufjs@7.6.6", "postinstall only warns about protobufjs version scheme mismatches"],
-]);
 
 const args = new Set(process.argv.slice(2));
 const checkOnly = args.has("--check");
@@ -305,6 +302,19 @@ function validateGeneratedFiles(installerPackageJson, installLock, internalNames
 		}
 		if (typeof entry.resolved === "string" && /^(file:|link:|workspace:|\.\.?\/|\/)/.test(entry.resolved)) {
 			errors.push(`${lockPath} has a local resolved value: ${entry.resolved}`);
+		}
+		if (typeof entry.resolved === "string" && entry.resolved.startsWith("https://registry.npmjs.org/")) {
+			const tarballVersion = entry.resolved.match(/\/(?:@[^/]+\/)?[^/]+\/-\/[^/]+-(\d[^/]*)\.tgz$/)?.[1];
+			if (tarballVersion && entry.version && tarballVersion !== entry.version) {
+				errors.push(`${lockPath} declares version ${entry.version} but resolves ${tarballVersion} from ${entry.resolved}`);
+			}
+			// Internal workspaces are regenerated before they are published, so their
+			// integrity is not knowable at release-commit time. Every external package
+			// must ship a hash.
+			const internal = packageName !== undefined && (packageName.startsWith(internalPackagePrefix) || internalPackageNames.has(packageName));
+			if (!entry.integrity && !internal) {
+				errors.push(`${lockPath} has no integrity hash for ${entry.resolved}`);
+			}
 		}
 		if (entry.dev || entry.devOptional || entry.extraneous) {
 			errors.push(`${lockPath || "root"} contains dev/extraneous metadata`);

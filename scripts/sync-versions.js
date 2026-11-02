@@ -9,6 +9,16 @@ import { readFileSync, writeFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 
 const packagesDir = join(process.cwd(), 'packages');
+
+// Preserve the indentation a file already uses so a version bump does not
+// produce a whole-file whitespace diff.
+function serializeJson(data, previousContent) {
+	const indent = previousContent.startsWith('{\n\t')
+		? '\t'
+		: (previousContent.match(/^\{\n( +)"/)?.[1] ?? '\t');
+	return JSON.stringify(data, null, indent) + '\n';
+}
+
 const packageDirs = readdirSync(packagesDir, { withFileTypes: true })
 	.filter(dirent => dirent.isDirectory())
 	.map(dirent => dirent.name);
@@ -20,8 +30,9 @@ const versionMap = {};
 for (const dir of packageDirs) {
 	const pkgPath = join(packagesDir, dir, 'package.json');
 	try {
-		const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
-		packages[dir] = { path: pkgPath, data: pkg };
+		const raw = readFileSync(pkgPath, 'utf8');
+		const pkg = JSON.parse(raw);
+		packages[dir] = { path: pkgPath, data: pkg, raw };
 		versionMap[pkg.name] = pkg.version;
 	} catch (e) {
 		console.error(`Failed to read ${pkgPath}:`, e.message);
@@ -55,7 +66,7 @@ for (const [dir, pkg] of Object.entries(packages)) {
 	if (pkg.data.dependencies) {
 		for (const [depName, currentVersion] of Object.entries(pkg.data.dependencies)) {
 			if (versionMap[depName]) {
-				const newVersion = `^${versionMap[depName]}`;
+				const newVersion = versionMap[depName];
 				if (currentVersion !== newVersion) {
 					console.log(`\n${pkg.data.name}:`);
 					console.log(`  ${depName}: ${currentVersion} → ${newVersion}`);
@@ -71,7 +82,7 @@ for (const [dir, pkg] of Object.entries(packages)) {
 	if (pkg.data.devDependencies) {
 		for (const [depName, currentVersion] of Object.entries(pkg.data.devDependencies)) {
 			if (versionMap[depName]) {
-				const newVersion = `^${versionMap[depName]}`;
+				const newVersion = versionMap[depName];
 				if (currentVersion !== newVersion) {
 					console.log(`\n${pkg.data.name}:`);
 					console.log(`  ${depName}: ${currentVersion} → ${newVersion} (devDependencies)`);
@@ -85,7 +96,7 @@ for (const [dir, pkg] of Object.entries(packages)) {
 	
 	// Write if updated
 	if (updated) {
-		writeFileSync(pkg.path, JSON.stringify(pkg.data, null, '\t') + '\n');
+		writeFileSync(pkg.path, serializeJson(pkg.data, pkg.raw));
 	}
 }
 
@@ -95,31 +106,47 @@ if (totalUpdates === 0) {
 	console.log(`\n✅ Updated ${totalUpdates} dependency version(s)`);
 }
 
-// Sync desktop app versions to match lockstep version
+// Sync workspace versions: root, desktop app, and its Tauri/Cargo manifests.
 const lockstepVersion = Object.values(versionMap)[0];
-let desktopUpdates = 0;
+let workspaceUpdates = 0;
+
+// The root is a private, unpublished workspace, but keeping its version in
+// lockstep stops it drifting (it was pinned at 0.80.122 while every package
+// had moved on).
+const rootPkgPath = join(process.cwd(), 'package.json');
+const rootPkgRaw = readFileSync(rootPkgPath, 'utf8');
+const rootPkg = JSON.parse(rootPkgRaw);
+if (rootPkg.version !== lockstepVersion) {
+	console.log(`\npackage.json:`);
+	console.log(`  version: ${rootPkg.version} → ${lockstepVersion}`);
+	rootPkg.version = lockstepVersion;
+	writeFileSync(rootPkgPath, serializeJson(rootPkg, rootPkgRaw));
+	workspaceUpdates++;
+}
 
 const desktopPkgPath = join(process.cwd(), 'desktop-app', 'package.json');
 try {
-	const desktopPkg = JSON.parse(readFileSync(desktopPkgPath, 'utf8'));
+	const desktopPkgRaw = readFileSync(desktopPkgPath, 'utf8');
+	const desktopPkg = JSON.parse(desktopPkgRaw);
 	if (desktopPkg.version !== lockstepVersion) {
 		console.log(`\ndesktop-app/package.json:`);
 		console.log(`  version: ${desktopPkg.version} → ${lockstepVersion}`);
 		desktopPkg.version = lockstepVersion;
-		writeFileSync(desktopPkgPath, JSON.stringify(desktopPkg, null, '\t') + '\n');
-		desktopUpdates++;
+		writeFileSync(desktopPkgPath, serializeJson(desktopPkg, desktopPkgRaw));
+		workspaceUpdates++;
 	}
 } catch {}
 
 const tauriConfPath = join(process.cwd(), 'desktop-app', 'src-tauri', 'tauri.conf.json');
 try {
-	const tauriConf = JSON.parse(readFileSync(tauriConfPath, 'utf8'));
+	const tauriConfRaw = readFileSync(tauriConfPath, 'utf8');
+	const tauriConf = JSON.parse(tauriConfRaw);
 	if (tauriConf.version !== lockstepVersion) {
 		console.log(`\ndesktop-app/src-tauri/tauri.conf.json:`);
 		console.log(`  version: ${tauriConf.version} → ${lockstepVersion}`);
 		tauriConf.version = lockstepVersion;
-		writeFileSync(tauriConfPath, JSON.stringify(tauriConf, null, '\t') + '\n');
-		desktopUpdates++;
+		writeFileSync(tauriConfPath, serializeJson(tauriConf, tauriConfRaw));
+		workspaceUpdates++;
 	}
 } catch {}
 
@@ -142,12 +169,12 @@ try {
 		console.log(`\ndesktop-app/src-tauri/Cargo.toml:`);
 		console.log(`  version: ${oldVersion} → ${lockstepVersion}`);
 		writeFileSync(cargoTomlPath, cargoContent.replace(packageSection, updatedSection));
-		desktopUpdates++;
+		workspaceUpdates++;
 	}
 } catch {}
 
-if (desktopUpdates === 0) {
-	console.log('\nDesktop app versions already in sync.');
+if (workspaceUpdates === 0) {
+	console.log('\nWorkspace versions already in sync.');
 } else {
-	console.log(`\n✅ Updated ${desktopUpdates} desktop app file(s)`);
+	console.log(`\n✅ Updated ${workspaceUpdates} workspace file(s)`);
 }

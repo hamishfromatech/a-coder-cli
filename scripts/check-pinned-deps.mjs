@@ -10,8 +10,10 @@ const ignoredDirectories = new Set([".git", "dist", "node_modules", "target", "i
 const internalWorkspacePrefixes = ["@earendil-works/pi-", "@earendil-works/chord"];
 const packageJsonFiles = [];
 const failures = [];
+const checkedLockDirs = new Set();
 
 collectPackageJsonFiles(".");
+const workspaceVersions = collectWorkspaceVersions();
 resolvePinsAgainstLockfiles();
 
 if (failures.length > 0) {
@@ -39,6 +41,35 @@ function collectPackageJsonFiles(directory) {
 
 function isInternalWorkspaceDependency(name) {
 	return internalWorkspacePrefixes.some((prefix) => name.startsWith(prefix));
+}
+
+// Published workspace packages must pin their siblings to the exact lockstep
+// version. Consumer-only packages (desktop-app, shipped examples) keep the
+// range exemption because they resolve against the registry, not the workspace.
+function collectWorkspaceVersions() {
+	const versions = new Map();
+	for (const file of packageJsonFiles) {
+		const directory = file.slice(0, "package.json".length * -1 - 1);
+		if (!directory.startsWith("packages/")) continue;
+		const packageJson = JSON.parse(readFileSync(file, "utf8"));
+		if (packageJson.name && isInternalWorkspaceDependency(packageJson.name)) {
+			versions.set(packageJson.name, packageJson.version);
+		}
+	}
+	return versions;
+}
+
+function checkInternalDependencyPins(file, directory, section, name, specifier) {
+	if (!directory.startsWith("packages/") || !isInternalWorkspaceDependency(name)) return;
+	if (isNonRegistrySpecifier(specifier)) return;
+	const expected = workspaceVersions.get(name);
+	if (expected === undefined) return;
+	const pinned = getVersionSpecifier(specifier);
+	if (!exactVersionPattern.test(pinned)) {
+		failures.push(`${file}: ${section}.${name} must be pinned to ${expected}, found ${specifier}`);
+	} else if (pinned !== expected) {
+		failures.push(`${file}: ${section}.${name} pinned to ${pinned} but workspace version is ${expected}`);
+	}
 }
 
 function isNonRegistrySpecifier(specifier) {
@@ -91,7 +122,14 @@ function owningLockfile(directory) {
 }
 
 function lockCoversDirectory(lock, lockDir, directory) {
-	const relative = !lockDir ? directory : directory.startsWith(`${lockDir}/`) ? directory.slice(lockDir.length + 1) : undefined;
+	const relative =
+		directory === lockDir
+			? ""
+			: !lockDir
+				? directory
+				: directory.startsWith(`${lockDir}/`)
+					? directory.slice(lockDir.length + 1)
+					: undefined;
 	if (relative === undefined) return false;
 	if (relative === "") return true;
 	const workspaces = workspaceRoots(lockDir);
@@ -102,7 +140,7 @@ function workspaceRoots(lockDir) {
 	const roots = [];
 	for (const workspace of readWorkspaceGlobs(lockDir)) {
 		if (workspace.endsWith("*")) {
-			const base = workspace.slice(0, -2);
+			const base = workspace.slice(0, -1);
 			try {
 				for (const entry of readdirSync(lockDir ? join(lockDir, base) : base, { withFileTypes: true })) {
 					if (entry.isDirectory() && !ignoredDirectories.has(entry.name)) roots.push(`${base}${entry.name}`);
@@ -165,6 +203,7 @@ function resolvePinsAgainstLockfiles() {
 
 		for (const section of dependencySections) {
 			for (const [name, specifier] of Object.entries(packageJson[section] ?? {})) {
+				checkInternalDependencyPins(file, directory, section, name, specifier);
 				if (isInternalWorkspaceDependency(name) || isNonRegistrySpecifier(specifier)) continue;
 				const pinned = getVersionSpecifier(specifier);
 				if (!exactVersionPattern.test(pinned)) continue;
@@ -177,6 +216,31 @@ function resolvePinsAgainstLockfiles() {
 					failures.push(`${file}: ${section}.${name} pinned to ${pinned} resolves to ${entry.version} in ${owned.dir}/package-lock.json`);
 				}
 			}
+		}
+
+		checkLockEntries(owned.dir, owned.lock);
+	}
+}
+
+// A registry entry must install the version it names and must carry the hash
+// that verifies those bytes. This is the check that catches a lock whose
+// `version` was rewritten without re-resolving `resolved`.
+function checkLockEntries(lockDir, lock) {
+	if (checkedLockDirs.has(lockDir)) return;
+	checkedLockDirs.add(lockDir);
+
+	for (const [lockPath, entry] of Object.entries(lock.packages ?? {})) {
+		if (entry.link || typeof entry.resolved !== "string") continue;
+		if (!entry.resolved.startsWith("https://registry.npmjs.org/")) continue;
+
+		const tarballVersion = entry.resolved.match(/\/(?:@[^/]+\/)?[^/]+\/-\/[^/]+-(\d[^/]*)\.tgz$/)?.[1];
+		if (tarballVersion && entry.version && tarballVersion !== entry.version) {
+			failures.push(
+				`${lockDir}/package-lock.json: ${lockPath || "(root)"} declares ${entry.version} but resolves ${tarballVersion}`,
+			);
+		}
+		if (!entry.integrity) {
+			failures.push(`${lockDir}/package-lock.json: ${lockPath || "(root)"} has no integrity hash`);
 		}
 	}
 }

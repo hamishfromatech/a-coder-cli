@@ -85,7 +85,7 @@
 		"node": ">=22.19.0"
 	},
 	"dependencies": {
-		"@earendil-works/pi-telemetry": "^0.80.193",
+		"@earendil-works/pi-telemetry": "0.80.193",
 		"typebox": "1.3.27"
 	}
 }
