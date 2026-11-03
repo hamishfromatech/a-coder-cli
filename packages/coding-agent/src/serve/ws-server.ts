@@ -15,6 +15,7 @@
 
 import type { IncomingMessage, Server } from "node:http";
 import http from "node:http";
+import https from "node:https";
 import type { Socket } from "node:net";
 import { type WebSocket, WebSocketServer } from "ws";
 import { BRIDGE_CONTRACT, bridgeFrame } from "./control-frames.ts";
@@ -77,6 +78,8 @@ export interface WsServerOptions {
 	/** Optional log hook for evictions (the bridge prefixes it on stderr). */
 	onSlowClient?: (info: { ip: string }) => void;
 	timing?: WsServerTiming;
+	/** PEM TLS material. When set the bridge serves https/wss instead of http/ws. */
+	tls?: { cert: string; key: string };
 }
 
 export interface ServeAddress {
@@ -106,9 +109,12 @@ export class BridgeWsServer {
 
 	constructor(options: WsServerOptions) {
 		this.options = options;
-		this.httpServer = http.createServer((req, res) => {
+		const handler = (req: http.IncomingMessage, res: http.ServerResponse) => {
 			this.handleHttp(req, res);
-		});
+		};
+		this.httpServer = options.tls
+			? https.createServer({ cert: options.tls.cert, key: options.tls.key }, handler)
+			: http.createServer(handler);
 		this.httpServer.on("connection", (socket) => {
 			this.sockets.add(socket);
 			socket.on("close", () => this.sockets.delete(socket));

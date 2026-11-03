@@ -6,6 +6,8 @@
  * mDNS, and prints the pairing QR to the terminal.
  */
 
+import { X509Certificate } from "node:crypto";
+import fs from "node:fs";
 import { createRequire } from "node:module";
 import { hostname, networkInterfaces } from "node:os";
 import process from "node:process";
@@ -35,6 +37,8 @@ export interface ServeFlags {
 	noAuth: boolean;
 	announce: boolean;
 	rotate: boolean;
+	tlsCert?: string;
+	tlsKey?: string;
 }
 
 function parseServeFlags(args: string[]): ServeFlags {
@@ -58,6 +62,8 @@ function parseServeFlags(args: string[]): ServeFlags {
 		"--token-file",
 		"--max-clients",
 		"--idle-exit",
+		"--tls-cert",
+		"--tls-key",
 	]);
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
@@ -86,6 +92,8 @@ function parseServeFlags(args: string[]): ServeFlags {
 			// location already persists under the agent dir.
 			else if (arg === "--max-clients") flags.maxClients = Math.max(1, Number.parseInt(value, 10) || 1);
 			else if (arg === "--idle-exit") flags.idleExitMinutes = Math.max(0, Number.parseInt(value, 10) || 0);
+			else if (arg === "--tls-cert") flags.tlsCert = value;
+			else if (arg === "--tls-key") flags.tlsKey = value;
 		}
 	}
 	return flags;
@@ -108,6 +116,8 @@ Options:
   --no-auth              Disable token auth (only allowed with --bind 127.0.0.1)
   --no-announce          Disable mDNS discovery announce
   --rotate               Regenerate the persisted pairing token
+  --tls-cert <path>      PEM certificate — serve wss:// (requires --tls-key)
+  --tls-key <path>       PEM private key    — serve wss:// (requires --tls-cert)
   -h, --help             Show this help
 `;
 
@@ -202,6 +212,28 @@ export async function handleServeCommand(args: string[]): Promise<boolean> {
 		idleTimer.unref?.();
 	};
 
+	let tlsMaterial: { cert: string; key: string } | undefined;
+	let certPin: string | undefined;
+	if (flags.tlsCert || flags.tlsKey) {
+		if (!flags.tlsCert || !flags.tlsKey) {
+			process.stderr.write("Error: --tls-cert and --tls-key must be used together\n");
+			process.exitCode = 2;
+			return true;
+		}
+		try {
+			const cert = fs.readFileSync(flags.tlsCert, "utf8");
+			const key = fs.readFileSync(flags.tlsKey, "utf8");
+			tlsMaterial = { cert, key };
+			certPin = new X509Certificate(cert).fingerprint256.replace(/:/g, "").toLowerCase();
+		} catch (error) {
+			process.stderr.write(
+				`Error: could not read TLS material: ${error instanceof Error ? error.message : String(error)}\n`,
+			);
+			process.exitCode = 2;
+			return true;
+		}
+	}
+
 	const server = new BridgeWsServer({
 		port: flags.port ?? DEFAULT_PORT,
 		host: flags.bind,
@@ -211,6 +243,9 @@ export async function handleServeCommand(args: string[]): Promise<boolean> {
 		version,
 		machineId: id,
 		friendlyName,
+		// Without this the bridge keeps listening on plain http/ws while the
+		// banner and pairing QR advertise wss:// + a certificate pin.
+		tls: tlsMaterial,
 		onClientMessage: (data, ws) => {
 			// Inbound: strict JSONL — split on LF only, forward each line. A line
 			// the engine cannot accept (not started, exited, restarting) is refused
@@ -293,8 +328,13 @@ export async function handleServeCommand(args: string[]): Promise<boolean> {
 		cancelIdleExit();
 		server.broadcast(bridgeFrame({ type: "bridge", event: "shutting_down" }));
 		announce.stop();
-		await engine?.stop();
-		await server.stop();
+		await Promise.race([
+			(async () => {
+				await engine?.stop();
+				await server.stop();
+			})(),
+			new Promise<void>((resolve) => setTimeout(resolve, 1_900)),
+		]);
 		process.exit(code);
 	}
 
@@ -332,9 +372,20 @@ export async function handleServeCommand(args: string[]): Promise<boolean> {
 
 	// Pairing banner (stderr — stdout stays clean).
 	const lanIp = primaryLanAddress() ?? address.address;
-	process.stderr.write(`a-coder-cli serve listening on ws://${lanIp}:${address.port}\n`);
+	const scheme = tlsMaterial ? "wss" : "ws";
+	process.stderr.write(`a-coder-cli serve listening on ${scheme}://${lanIp}:${address.port}\n`);
+	if (tlsMaterial && certPin) {
+		process.stderr.write(`TLS certificate pin (SHA-256): ${certPin}\n`);
+	}
 	if (!flags.noAuth) {
-		const payload = pairingPayload({ host: lanIp, port: address.port, token, name: friendlyName });
+		const payload = pairingPayload({
+			host: lanIp,
+			port: address.port,
+			token,
+			name: friendlyName,
+			tls: Boolean(tlsMaterial),
+			...(certPin ? { pin: certPin } : {}),
+		});
 		process.stderr.write(`Pairing token: ${token}\n`);
 		process.stderr.write(`  manual: ${manualChunks(token)}\n`);
 		try {
@@ -345,7 +396,12 @@ export async function handleServeCommand(args: string[]): Promise<boolean> {
 		}
 	}
 	if (flags.announce) {
-		announce.start({ name: friendlyName, port: address.port, machineId: id });
+		announce.start({
+			name: friendlyName,
+			port: address.port,
+			machineId: id,
+			tls: Boolean(tlsMaterial),
+		});
 		logLine(`mDNS: _a-coder._tcp announced as "${friendlyName}"`);
 	}
 	logLine(`cwd: ${cwd}`);

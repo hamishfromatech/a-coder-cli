@@ -90,18 +90,28 @@ export interface PairingPayload {
 	token: string;
 	name: string;
 	id: string;
+	/** SHA-256 of the server certificate (lowercase hex) when TLS is enabled. */
+	pin?: string;
 }
 
-export function pairingPayload(options: { host: string; port: number; token: string; name: string }): PairingPayload {
+export function pairingPayload(options: {
+	host: string;
+	port: number;
+	token: string;
+	name: string;
+	tls?: boolean;
+	pin?: string;
+}): PairingPayload {
 	return {
 		v: 1,
 		kind: "acoder",
 		host: options.host,
 		port: options.port,
-		tls: false,
+		tls: options.tls ?? false,
 		token: options.token,
 		name: options.name,
 		id: machineId(options.token),
+		...(options.pin ? { pin: options.pin } : {}),
 	};
 }
 
