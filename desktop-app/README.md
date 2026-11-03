@@ -18,7 +18,7 @@ A cross-platform desktop wrapper around the `a-coder-cli` engine, built with Tau
 - **MCP Servers Editor** — Add, edit, enable/disable, and remove MCP servers (stdio/http/sse); fresh installs come with the built-in chrome-devtools server pre-configured (isolated profile, telemetry off)
 - **Local Model Servers** — Configure addresses for Ollama, LM Studio, llama.cpp, Unsloth, vLLM, and SGLang; models are discovered live with real context windows
 - **Computer Use** — Toggle the opt-in `computer` desktop-control tool with diagnostics (driver detection, permission status) in the Computer Use panel
-- **Mobile Access** — Serve the workspace over the network for phone access, with a QR code to connect; sessions sync live
+- **Mobile Access** — Serve the workspace over the network for phone access, with a pairing QR, masked manual token, device list, and token rotation; sessions sync live. See [Mobile access](docs/mobile-access.md).
 - **Scheduled Tasks (Cron)** — Create and manage scheduled and event-triggered prompts with run history
 - **Activity Inbox** — Pending approvals, run outcomes, and failures in one place with an unread badge
 - **Session Persistence** — Chat history saved across app restarts
@@ -63,7 +63,7 @@ Access settings via the gear icon or `Cmd+,` / `Ctrl+,`. Panels include:
 - **MCP Servers** — Editor for the `mcpServers` list; fresh installs include the chrome-devtools server pre-seeded
 - **Local Models** — Base URLs for keyless local servers (Ollama, LM Studio, llama.cpp, Unsloth, vLLM, SGLang)
 - **Computer Use** — Enable the `computer` tool (with a disclaimer flow) and view diagnostics
-- **Mobile Access** — Serve and pair for phone access
+- **Mobile Access** — Start/stop the bridge, scan the pairing QR (port, TLS and certificate pin shown), reveal or copy the masked manual code, list/remove paired devices from the bridge registry, and rotate the token (old clients receive 401 on reconnect). See [Mobile access](docs/mobile-access.md).
 - **Voice** — Speech-to-text / text-to-speech endpoints
 - **Updates** — CLI auto-update mode
 - **Packages** — Skills, prompt templates, themes, and workflow sources

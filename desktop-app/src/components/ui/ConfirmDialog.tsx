@@ -46,7 +46,10 @@ export function ConfirmHost() {
 	if (!request) return null;
 
 	return (
-		<div className="fixed inset-0 z-backdrop flex items-center justify-center bg-black/60 p-4">
+		// Above Settings and other modals: confirmations can be raised from inside
+		// a modal (for example Rotate token in Settings → Mobile access), and at
+		// `z-backdrop` the dialog would render behind it.
+		<div className="fixed inset-0 z-over-modal flex items-center justify-center bg-black/60 p-4">
 			<div
 				role="alertdialog"
 				aria-modal="true"

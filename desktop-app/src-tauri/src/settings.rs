@@ -46,6 +46,18 @@ pub fn global_settings_path() -> Result<PathBuf, String> {
 	Ok(agent_dir()?.join("settings.json"))
 }
 
+/// Bridge state directory (`agent/serve`): pairing token and device registry.
+/// Honors the same `A_CODER_CLI_CODING_AGENT_DIR` override the coding-agent
+/// reads (hyphens in the app name become underscores).
+pub fn global_serve_dir() -> Result<PathBuf, String> {
+	if let Ok(dir) = std::env::var("A_CODER_CLI_CODING_AGENT_DIR") {
+		if !dir.trim().is_empty() {
+			return Ok(PathBuf::from(dir).join("serve"));
+		}
+	}
+	Ok(agent_dir()?.join("serve"))
+}
+
 pub fn global_auth_path() -> Result<PathBuf, String> {
 	Ok(agent_dir()?.join("auth.json"))
 }
