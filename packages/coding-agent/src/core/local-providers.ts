@@ -39,3 +39,33 @@ export const KEYLESS_LOCAL_PROVIDER_ENV: Record<string, string> = {
 	vllm: "VLLM_BASE_URL",
 	sglang: "SGLANG_BASE_URL",
 };
+
+/**
+ * Resolve a keyless local provider's base URL.
+ *
+ * `settings.json` `localProviders.*` is applied to `process.env` and is the
+ * user-facing source of truth. A value stored in `auth.json` (for example by
+ * an earlier `/login` with the default URL) must not override a newer setting,
+ * otherwise model discovery silently polls the stale server.
+ */
+export function resolveLocalProviderBaseUrl(provider: string, storedEnv?: Record<string, string>): string | undefined {
+	const envName = KEYLESS_LOCAL_PROVIDER_ENV[provider];
+	if (!envName) return undefined;
+	const fromSettings = typeof process !== "undefined" ? process.env[envName] : undefined;
+	return fromSettings || storedEnv?.[envName];
+}
+
+/**
+ * Stored provider env with the settings-applied base URL taking precedence.
+ * Passed to the auth resolver so requests and model discovery use the same
+ * server as the settings UI.
+ */
+export function withLocalProviderEnv(
+	provider: string,
+	storedEnv?: Record<string, string>,
+): Record<string, string> | undefined {
+	const envName = KEYLESS_LOCAL_PROVIDER_ENV[provider];
+	const baseUrl = resolveLocalProviderBaseUrl(provider, storedEnv);
+	if (!envName || !baseUrl) return storedEnv;
+	return { ...storedEnv, [envName]: baseUrl };
+}

@@ -41,7 +41,12 @@ import { getAgentDir } from "../config.ts";
 import { stripJsonComments } from "../utils/json.ts";
 import { normalizePath } from "../utils/paths.ts";
 import type { AuthStatus, AuthStorage } from "./auth-storage.ts";
-import { KEYLESS_LOCAL_API_KEY, KEYLESS_LOCAL_PROVIDERS } from "./local-providers.ts";
+import {
+	KEYLESS_LOCAL_API_KEY,
+	KEYLESS_LOCAL_PROVIDERS,
+	resolveLocalProviderBaseUrl,
+	withLocalProviderEnv,
+} from "./local-providers.ts";
 import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "./provider-display-names.ts";
 
 import {
@@ -1151,7 +1156,7 @@ export class ModelRegistry {
 			}
 			try {
 				const env = this.authStorage.getProviderEnv("lm-studio");
-				const refreshed = await fetchLMStudioModels(env?.LM_STUDIO_BASE_URL);
+				const refreshed = await fetchLMStudioModels(resolveLocalProviderBaseUrl("lm-studio", env));
 				if (refreshed.length === 0) return;
 				this.models = this.models.filter((m) => m.provider !== "lm-studio");
 				this.models.push(...refreshed);
@@ -1188,7 +1193,7 @@ export class ModelRegistry {
 			}
 			try {
 				const env = this.authStorage.getProviderEnv("llama-cpp");
-				const refreshed = await fetchLlamaCppModels(env?.LLAMACPP_BASE_URL);
+				const refreshed = await fetchLlamaCppModels(resolveLocalProviderBaseUrl("llama-cpp", env));
 				if (refreshed.length === 0) return;
 				this.models = this.models.filter((m) => m.provider !== "llama-cpp");
 				this.models.push(...refreshed.map((model) => this.applyStoredOverrides(model, "llama-cpp")));
@@ -1225,7 +1230,7 @@ export class ModelRegistry {
 			}
 			try {
 				const env = this.authStorage.getProviderEnv("unsloth");
-				const refreshed = await fetchUnslothModels(env?.UNSLOTH_BASE_URL);
+				const refreshed = await fetchUnslothModels(resolveLocalProviderBaseUrl("unsloth", env));
 				if (refreshed.length === 0) return;
 				this.models = this.models.filter((m) => m.provider !== "unsloth");
 				this.models.push(...refreshed);
@@ -1264,7 +1269,7 @@ export class ModelRegistry {
 			this.vllmLastAttempt = Date.now();
 			try {
 				const env = this.authStorage.getProviderEnv("vllm");
-				const refreshed = await fetchVllmModels(env?.VLLM_BASE_URL);
+				const refreshed = await fetchVllmModels(resolveLocalProviderBaseUrl("vllm", env));
 				if (refreshed.length === 0) return;
 				this.models = this.models.filter((m) => m.provider !== "vllm");
 				this.models.push(...refreshed);
@@ -1302,7 +1307,7 @@ export class ModelRegistry {
 			this.sgLangLastAttempt = Date.now();
 			try {
 				const env = this.authStorage.getProviderEnv("sglang");
-				const refreshed = await fetchSgLangModels(env?.SGLANG_BASE_URL);
+				const refreshed = await fetchSgLangModels(resolveLocalProviderBaseUrl("sglang", env));
 				if (refreshed.length === 0) return;
 				this.models = this.models.filter((m) => m.provider !== "sglang");
 				this.models.push(...refreshed);
@@ -1340,7 +1345,7 @@ export class ModelRegistry {
 			}
 			try {
 				const env = this.authStorage.getProviderEnv("ollama");
-				const refreshed = await fetchOllamaModels(env?.OLLAMA_BASE_URL);
+				const refreshed = await fetchOllamaModels(resolveLocalProviderBaseUrl("ollama", env));
 				if (refreshed.length === 0) return;
 				this.models = this.models.filter((m) => m.provider !== "ollama");
 				this.models.push(...refreshed);
@@ -1510,7 +1515,7 @@ export class ModelRegistry {
 	): Promise<ResolvedRequestAuth> {
 		try {
 			const providerConfig = this.providerRequestConfigs.get(model.provider);
-			const providerEnv = this.authStorage.getProviderEnv(model.provider);
+			const providerEnv = withLocalProviderEnv(model.provider, this.authStorage.getProviderEnv(model.provider));
 			const apiKeyFromAuthStorage = await this.authStorage.getApiKey(model.provider, {
 				includeFallback: false,
 				minOAuthValidityMs: options.minOAuthValidityMs,
@@ -1621,7 +1626,10 @@ export class ModelRegistry {
 
 		const providerApiKey = this.providerRequestConfigs.get(provider)?.apiKey;
 		return providerApiKey
-			? resolveConfigValueUncached(providerApiKey, this.authStorage.getProviderEnv(provider))
+			? resolveConfigValueUncached(
+					providerApiKey,
+					withLocalProviderEnv(provider, this.authStorage.getProviderEnv(provider)),
+				)
 			: undefined;
 	}
 
