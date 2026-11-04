@@ -1457,7 +1457,9 @@ export class OfficeService {
 				},
 			});
 
-			session.setPermissionMode(coworker.autonomy === "auto" ? "auto" : "ask");
+			// The mode is bound per turn in runSessionTurn; setPermissionMode()
+			// persists to the global settings and would overwrite the user's
+			// machine-wide choice (the office used to reset it to "auto").
 
 			const model = this.resolveCoworkerModel(coworker);
 			if (model) {
@@ -1484,7 +1486,6 @@ export class OfficeService {
 		const model = this.resolveCoworkerModel(coworker);
 		for (const [key, session] of this.sessions) {
 			if (!key.startsWith(`${coworker.id}::`)) continue;
-			session.setPermissionMode(coworker.autonomy === "auto" ? "auto" : "ask");
 			if (model) {
 				await session.setModel(model).catch(() => {});
 			}
@@ -1602,7 +1603,16 @@ export class OfficeService {
 			// Defensive: queues should prevent this; treat as busy-pass.
 			return { reply: null, timedOut: false, skipped: true };
 		}
-		return this.runSessionTurn(session, coworker.id, this.sessionKey(coworker.id), prompt, images, owner, true);
+		return this.runSessionTurn(
+			session,
+			coworker.id,
+			this.sessionKey(coworker.id),
+			prompt,
+			images,
+			owner,
+			true,
+			coworker.autonomy === "auto" ? "auto" : "ask",
+		);
 	}
 
 	/** Run one prompt against a session while capturing its assistant
@@ -1616,6 +1626,7 @@ export class OfficeService {
 		images: OfficeAttachment[] | undefined,
 		owner: string | undefined,
 		retainOnTimeout: boolean,
+		permissionMode: "auto" | "ask",
 	): Promise<TurnOutcome> {
 		const turnId = randomUUID();
 		const capture: TurnCapture = { id: turnId, replies: [] };
@@ -1636,6 +1647,7 @@ export class OfficeService {
 		// `prompt` resolves when the whole turn settles (tool loops and retries
 		// included), so it IS the turn — the cap aborts a run that outlives its
 		// window, and the capture keeps whatever landed for the late harvest.
+		const unbindPermission = session.bindTurnPermissionMode(permissionMode);
 		const timeout = setTimeout(() => {
 			timedOut = true;
 			void session.abort().catch(() => {});
@@ -1661,6 +1673,7 @@ export class OfficeService {
 				turnId,
 			};
 		} finally {
+			unbindPermission();
 			clearTimeout(timeout);
 			if (this.sessionOwner.get(key) === owner) this.sessionOwner.delete(key);
 			if (!timedOut || !retainOnTimeout) {
@@ -1826,7 +1839,6 @@ export class OfficeService {
 					this.emitActivity(coworker.id, { kind: "error" });
 				},
 			});
-			session.setPermissionMode(coworker.autonomy === "auto" ? "auto" : "ask");
 			const model = this.resolveCoworkerModel(coworker);
 			if (model) await session.setModel(model).catch(() => {});
 			const withSoul = `${coworker.soul}\n\n---\n\n${prompt}`;
@@ -1838,6 +1850,7 @@ export class OfficeService {
 				undefined,
 				`errand:${coworker.id}`,
 				false,
+				coworker.autonomy === "auto" ? "auto" : "ask",
 			);
 		} finally {
 			detach();
