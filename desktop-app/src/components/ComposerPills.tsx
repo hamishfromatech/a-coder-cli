@@ -101,6 +101,25 @@ function ModelPill({
 	const filterRef = useRef<HTMLInputElement | null>(null);
 	const listRef = useRef<HTMLDivElement | null>(null);
 	const currentModel = useSessionStore((s) => s.model);
+	const [refreshing, setRefreshing] = useState(false);
+
+	// Manual refresh: force a re-fetch of dynamic providers, then re-read the
+	// catalog. On failure the cached list just stays.
+	async function refreshNow() {
+		if (refreshing) return;
+		setRefreshing(true);
+		try {
+			await rpc.refreshModels();
+			const result = (await rpc.sendCommand({ type: "get_available_models" })) as {
+				models?: AnyModel[];
+			};
+			setModels(result.models ?? []);
+		} catch {
+			// cached list stays visible
+		} finally {
+			setRefreshing(false);
+		}
+	}
 
 	// Open: load the list (cached → instant; background refresh keeps dynamic
 	// providers fresh), focus the search, and arm outside/escape closing.
@@ -267,7 +286,18 @@ function ModelPill({
 							}}
 							className="w-full bg-transparent text-2xs text-pi-text placeholder:text-pi-text-faint focus:outline-none"
 						/>
-						<RefreshCw className="h-3 w-3 shrink-0 text-pi-text-faint" aria-hidden />
+						<button
+						type="button"
+						aria-label="Refresh models"
+						title="Refresh models"
+						onClick={() => void refreshNow()}
+						className="shrink-0 rounded-sm p-0.5 text-pi-text-faint transition-hover hover:bg-pi-surface-raised hover:text-pi-text"
+					>
+						<RefreshCw
+							className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`}
+							aria-hidden
+						/>
+					</button>
 					</div>
 					<ModelList
 						rows={rows}

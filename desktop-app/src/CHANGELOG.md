@@ -44,6 +44,10 @@
 
 ### Fixed
 
+- The model dropdown on the composer's pill now has a working refresh button; the icon used to be decorative markup, so clicking it did nothing.
+
+- The model modal opened by `/model` and `⌘P` now lands centered on the screen; the dialog never had a position so its `left`/`top` coordinates were silently dropped and it rendered pinned to the window's top-left corner.
+
 - Sites like Google and YouTube now serve the browser panel their current versions instead of legacy ones. Page views never set a user agent, so they inherited WKWebView's bare default — an incomplete Safari string with no version token — which big sites answer with old layouts; page views now present a current Chrome UA (per platform) and the gateway fetches with the same UA, so the agent reads exactly what the panel renders.
 
 - Switching projects no longer reconnects the engine. The boot effect was keyed on the active workspace, so adopting a session's folder mid-switch tore the RPC connection down and the `session_start` history fetch raced `disconnect`, toasting "Failed to load messages after session start — Not connected to engine" before the session loaded normally. The effect now connects once per boot shape and reads the workspace at run time; the history fetch also retries the short transport gap instead of reporting it as a failure.

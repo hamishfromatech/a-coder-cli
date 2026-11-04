@@ -183,7 +183,9 @@ export function ModelPicker({
 			}
 			return { left, bottom: vh - anchor.top + gap, width } as const;
 		}
-		return { left: (vw - width) / 2, top: 60, width } as const;
+		// No anchor (command palette / slash command): center the dialog on both
+		// axes using the max height it can reach.
+		return { left: (vw - width) / 2, top: Math.max(60, (vh - height) / 2), width } as const;
 	}, [anchor]);
 
 	return (
@@ -197,7 +199,7 @@ export function ModelPicker({
 				role="dialog"
 				aria-modal={false}
 				aria-label="Choose a model"
-				className="flex max-h-[60vh] flex-col overflow-hidden rounded-xl border border-pi-border-strong bg-pi-surface-overlay shadow-2xl transition-smooth"
+				className="fixed flex max-h-[60vh] flex-col overflow-hidden rounded-xl border border-pi-border-strong bg-pi-surface-overlay shadow-2xl transition-smooth"
 				style={panelStyle}
 				onClick={(e) => e.stopPropagation()}
 			>
