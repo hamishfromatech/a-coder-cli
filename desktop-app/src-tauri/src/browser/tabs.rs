@@ -778,6 +778,7 @@ fn open_view<R: Runtime>(
 		})
 		.zoom_hotkeys_enabled(false)
 		.initialization_script(READINESS_WATCH)
+		.user_agent(super::page_user_agent())
 		.devtools(cfg!(debug_assertions))
 		.focused(false);
 	let builder = with_page_profile(builder, &app)?;

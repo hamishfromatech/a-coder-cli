@@ -27,6 +27,26 @@ pub mod tabs;
 use serde::{Deserialize, Serialize};
 use tauri::{Runtime, Webview};
 
+/// The UA page views present to sites, and the gateway fetches with, so the
+/// agent reads exactly what the panel renders. wry never sets one, so page
+/// views inherit WKWebView's bare default — no Safari version token — which
+/// Google, YouTube and friends answer with legacy pages. A current Chrome UA
+/// gets every site's modern build; keep the major version roughly current.
+pub fn page_user_agent() -> &'static str {
+	#[cfg(target_os = "macos")]
+	{
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36"
+	}
+	#[cfg(windows)]
+	{
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36"
+	}
+	#[cfg(not(any(target_os = "macos", windows)))]
+	{
+		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36"
+	}
+}
+
 /// A rect in the calling webview's CSS pixels, plus the caller's width in CSS
 /// pixels, so Rust can scale by the page zoom the frontend reports.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]

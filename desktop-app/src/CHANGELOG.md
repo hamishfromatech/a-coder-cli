@@ -44,6 +44,8 @@
 
 ### Fixed
 
+- Sites like Google and YouTube now serve the browser panel their current versions instead of legacy ones. Page views never set a user agent, so they inherited WKWebView's bare default — an incomplete Safari string with no version token — which big sites answer with old layouts; page views now present a current Chrome UA (per platform) and the gateway fetches with the same UA, so the agent reads exactly what the panel renders.
+
 - Switching projects no longer reconnects the engine. The boot effect was keyed on the active workspace, so adopting a session's folder mid-switch tore the RPC connection down and the `session_start` history fetch raced `disconnect`, toasting "Failed to load messages after session start — Not connected to engine" before the session loaded normally. The effect now connects once per boot shape and reads the workspace at run time; the history fetch also retries the short transport gap instead of reporting it as a failure.
 
 - Browser tabs show the page title instead of the URL when the title event lands after the finished-load event (the stale-sequence guard used to drop it).

@@ -27,9 +27,9 @@ const MAX_RESPONSE: usize = 8 * 1024 * 1024;
 /// Reading-frame HTML: anything above this is cut (not refused), so enormous
 /// document dumps still render their start.
 const MAX_HTML_RENDER: usize = 1024 * 1024;
-/// UA for the gateway's fetches; some sites refuse unknown clients.
-const USER_AGENT: &str =
-	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15 a-coder-desktop/1.0";
+/// UA for the gateway's fetches; some sites refuse unknown clients. Same UA
+/// as the page views (`super::page_user_agent`), so the agent reads what the
+/// panel renders — no bespoke suffix that trips bot heuristics.
 
 static ADDRESS: OnceLock<Mutex<Option<reqwest::Client>>> = OnceLock::new();
 
@@ -48,7 +48,7 @@ pub fn address() -> Result<String, String> {
 			.port();
 		let client = reqwest::Client::builder()
 			.timeout(TIMEOUT)
-			.user_agent(USER_AGENT)
+			.user_agent(super::page_user_agent())
 			.proxy(
 				reqwest::Proxy::all(format!("http://127.0.0.1:{proxy_port}"))
 					.map_err(|e| e.to_string())?,
