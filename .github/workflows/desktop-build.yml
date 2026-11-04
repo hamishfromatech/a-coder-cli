@@ -27,7 +27,12 @@ on:
         type: string
 
 concurrency:
-  group: desktop-${{ github.ref }}
+  # Called instances (workflow_call from build-binaries) key on the CALLER's
+  # run id, so the branch push and the tag push of a quick release each get
+  # their own build instead of cancelling each other's macOS jobs mid-run.
+  # Standalone (push) runs keep the ref group, so a redundant branch build
+  # still yields to the one doing the publishing work.
+  group: ${{ github.event_name == 'workflow_call' && format('desktop-{0}', github.run_id) || format('desktop-{0}', github.ref) }}
   cancel-in-progress: true
 
 # Permissions required for the release job to create a GitHub Release and
