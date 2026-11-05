@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+
 import { DisplayTail } from "../src/core/tools/bash.ts";
-import { sanitizeToolAnsi, stripAnsi } from "../src/utils/ansi.ts";
+import { sanitizeToolAnsi, splitIncompleteAnsiSuffix, stripAnsi } from "../src/utils/ansi.ts";
 
 function referenceAnsiRegex(): RegExp {
 	const ST = "(?:\\u0007|\\u001B\\u005C|\\u009C)";
@@ -108,6 +109,31 @@ describe("stripAnsi", () => {
 		const input = "a\x1b[31mred\x1b[0m\x1b]8;;https://example.com\x07link\x1b]8;;\x07z";
 		expect(stripAnsi(input)).toBe("aredlinkz");
 	});
+
+	// https://github.com/earendil-works/pi/issues/11377
+	it("strips private-parameter CSI sequences with their parameters", () => {
+		expect(stripAnsi("\x1b[<35;59;1Mstep 1")).toBe("step 1");
+		expect(stripAnsi("a\x1b[<0;10;20mb")).toBe("ab");
+		expect(stripAnsi("a\x1b[>0;276;0cb")).toBe("ab");
+		expect(stripAnsi("a\x1b[>cb")).toBe("ab");
+		expect(stripAnsi("a\x1b[=5hb")).toBe("ab");
+		expect(stripAnsi("a\x9b<35;59;1Mb")).toBe("ab");
+	});
+
+	// https://github.com/earendil-works/pi/issues/11377
+	it("keeps digits after bare ESC keypad-mode sequences", () => {
+		expect(stripAnsi("\x1b[?1h\x1b=123 tests passed")).toBe("123 tests passed");
+		expect(stripAnsi("\x1b[?1l\x1b>42 files")).toBe("42 files");
+		expect(stripAnsi("\x1b<10 items")).toBe("10 items");
+	});
+});
+
+describe("splitIncompleteAnsiSuffix", () => {
+	// https://github.com/earendil-works/pi/issues/11377
+	it("holds back unfinished private-parameter CSI sequences", () => {
+		expect(splitIncompleteAnsiSuffix("x\x1b[<35;59")).toEqual({ complete: "x", pending: "\x1b[<35;59" });
+		expect(splitIncompleteAnsiSuffix("x\x1b=")).toEqual({ complete: "x\x1b=", pending: "" });
+	});
 });
 
 describe("sanitizeToolAnsi", () => {
@@ -150,5 +176,22 @@ describe("sanitizeToolAnsi", () => {
 	it("is idempotent (safe to sanitize already-sanitized text)", () => {
 		const once = sanitizeToolAnsi("\u001B[31mhello\u001B[0m world");
 		expect(sanitizeToolAnsi(once)).toBe(once);
+	});
+
+	// https://github.com/earendil-works/pi/issues/11377
+	it("strips private-parameter CSI sequences with their parameters", () => {
+		expect(stripAnsi("\x1b[<35;59;1Mstep 1")).toBe("step 1");
+		expect(stripAnsi("a\x1b[<0;10;20mb")).toBe("ab");
+		expect(stripAnsi("a\x1b[>0;276;0cb")).toBe("ab");
+		expect(stripAnsi("a\x1b[>cb")).toBe("ab");
+		expect(stripAnsi("a\x1b[=5hb")).toBe("ab");
+		expect(stripAnsi("a\x9b<35;59;1Mb")).toBe("ab");
+	});
+
+	// https://github.com/earendil-works/pi/issues/11377
+	it("keeps digits after bare ESC keypad-mode sequences", () => {
+		expect(stripAnsi("\x1b[?1h\x1b=123 tests passed")).toBe("123 tests passed");
+		expect(stripAnsi("\x1b[?1l\x1b>42 files")).toBe("42 files");
+		expect(stripAnsi("\x1b<10 items")).toBe("10 items");
 	});
 });

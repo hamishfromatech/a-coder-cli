@@ -4,6 +4,7 @@
 
 ### Changed
 
+- Fullscreen double-click selection treats `_`, `~`, `.`, `\` and `+` as word characters, matching iTerm2's defaults, so paths and tokens are selected whole (#10980).
 - `Text.setText()` keeps its wrapped lines when the text is unchanged, so components that set the same text on every update no longer re-wrap every frame.
 
 ### Added

@@ -27,6 +27,7 @@
 
 ### Fixed
 
+- Tool and `!` command output no longer prints the parameters of control sequences with a `<`, `=` or `>` prefix as text (for example `35;59;1M` from a mouse report or `0;276;0c` from a terminal reply); a shared helper also splits unfinished escape sequences while streaming (#11377).
 - Text truncation no longer splits UTF-16 surrogate pairs, so grep/output rows cannot contain a lone surrogate that breaks width-based renderers (#11757).
 - Ctrl+V stays a paste key on Windows and WSL (Alt+V also pastes), and the binding description now says it pastes files, images, or text (#11780).
 - HTML session export now renders system messages (the leading prompt, later section/tool updates) instead of storing them unrendered, and walks deep session trees iteratively so sessions deeper than the call stack export instead of rendering blank (#11225, #11261, #11290, #11293). `--export` includes the prompt and tools too.
