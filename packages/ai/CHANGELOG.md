@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Claude models with mid-conversation effort no longer fail with `Invalid effort level` on accounts whose organization caps effort below `high`; the top-level effort is sent as `low` (#10063).
+
+
+
 ### Added
 
 - Export `getSystemMessageText()` and `renderSystemMessageUpdate()` so consumers can render system messages the same way the model receives them.
