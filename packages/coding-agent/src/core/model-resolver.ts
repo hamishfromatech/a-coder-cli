@@ -102,22 +102,29 @@ export function findExactModelReferenceMatch(
 		return undefined;
 	}
 
-	const slashIndex = trimmedReference.indexOf("/");
-	if (slashIndex !== -1) {
-		const provider = trimmedReference.substring(0, slashIndex).trim();
-		const modelId = trimmedReference.substring(slashIndex + 1).trim();
-		if (provider && modelId) {
-			const providerMatches = availableModels.filter(
-				(model) =>
-					model.provider.toLowerCase() === provider.toLowerCase() &&
-					model.id.toLowerCase() === modelId.toLowerCase(),
-			);
-			if (providerMatches.length === 1) {
-				return providerMatches[0];
-			}
-			if (providerMatches.length > 1) {
-				return undefined;
-			}
+	// Provider ids may contain "/" themselves (e.g. URL-derived ids), so match
+	// known ids longest-first instead of splitting at the first slash (#11394).
+	const lowerReference = trimmedReference.toLowerCase();
+	let best: { provider: string; modelId: string } | undefined;
+	for (const model of availableModels) {
+		const provider = model.provider.trim();
+		const prefix = provider.toLowerCase();
+		if (!prefix || (best && best.provider.length >= provider.length)) continue;
+		const slashAfterPrefix = lowerReference.indexOf("/", prefix.length);
+		if (slashAfterPrefix === -1) continue;
+		if (lowerReference.substring(0, slashAfterPrefix).trim() !== prefix) continue;
+		const modelId = trimmedReference.substring(slashAfterPrefix + 1).trim();
+		if (modelId) best = { provider, modelId };
+	}
+	if (best) {
+		const providerMatches = availableModels.filter(
+			(model) => model.provider === best!.provider && model.id.toLowerCase() === best!.modelId.toLowerCase(),
+		);
+		if (providerMatches.length === 1) {
+			return providerMatches[0];
+		}
+		if (providerMatches.length > 1) {
+			return undefined;
 		}
 	}
 

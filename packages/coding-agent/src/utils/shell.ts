@@ -210,6 +210,17 @@ export function killProcessTree(pid: number): void {
 			// Ignore errors if taskkill fails
 		}
 	} else {
+		if (process.platform === "darwin") {
+			// macOS signals group members individually after releasing the group lock. A killed
+			// child can wake its waiting shell before that shell is signalled, letting `a; b`
+			// start b during cancellation (#11252). Stop the group first to reduce this race;
+			// this is best-effort, not an atomic freeze. SIGKILL also kills stopped processes.
+			try {
+				process.kill(-pid, "SIGSTOP");
+			} catch {
+				// A failed stop must not prevent the kill attempt or its single-process fallback.
+			}
+		}
 		// Use SIGKILL on Unix/Linux/Mac
 		try {
 			process.kill(-pid, "SIGKILL");

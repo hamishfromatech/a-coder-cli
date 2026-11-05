@@ -275,6 +275,28 @@ describe("resolveCliModel", () => {
 		expect(result.model?.id).toBe("gpt-4o");
 	});
 
+	test("resolves --model when the provider id contains a slash", () => {
+		const slashedModel = {
+			...mockModels[1]!,
+			id: "qwen2.5-coder",
+			name: "Qwen2.5 Coder",
+			provider: "llama=http://host:10800",
+			baseUrl: "http://host:10800/v1",
+		};
+		const registry = {
+			getAll: () => [...allModels, slashedModel],
+		} as unknown as Parameters<typeof resolveCliModel>[0]["modelRegistry"];
+
+		const result = resolveCliModel({
+			cliModel: "llama=http://host:10800/qwen2.5-coder",
+			modelRegistry: registry,
+		});
+
+		expect(result.error).toBeUndefined();
+		expect(result.model?.provider).toBe("llama=http://host:10800");
+		expect(result.model?.id).toBe("qwen2.5-coder");
+	});
+
 	test("resolves fuzzy patterns within an explicit provider", () => {
 		const registry = {
 			getAll: () => allModels,
