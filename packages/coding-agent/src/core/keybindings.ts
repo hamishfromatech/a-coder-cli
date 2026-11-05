@@ -157,8 +157,8 @@ export const KEYBINDINGS = {
 		description: "Copy selection or last assistant message",
 	},
 	"app.clipboard.pasteImage": {
-		defaultKeys: process.platform === "win32" ? "alt+v" : "ctrl+v",
-		description: "Paste image from clipboard",
+		defaultKeys: windowsKeybindings ? ["alt+v", "ctrl+v"] : "ctrl+v",
+		description: "Paste files on macOS, images, or text from clipboard",
 	},
 	"app.permissionMode.select": {
 		defaultKeys: "shift+tab",
