@@ -27,6 +27,7 @@
 
 ### Fixed
 
+- HTML session export now renders system messages (the leading prompt, later section/tool updates) instead of storing them unrendered, and walks deep session trees iteratively so sessions deeper than the call stack export instead of rendering blank (#11225, #11261, #11290, #11293). `--export` includes the prompt and tools too.
 - Resized photos now prefer the smaller of PNG and JPEG at the configured quality, so attachments no longer go out as multi-megabyte PNGs (#11551).
 - `CodeHighlighter` reuses syntax-highlighted lines per owner while the code, language, theme and registered grammars stay unchanged, and Markdown code blocks share the same highlight path; streamed tool rows no longer re-highlight unchanged code on every redraw.
 - Aborting a `bash` command on macOS stops the process group before killing it, so a list such as `long_step; next_step` no longer starts its next command during cancellation (#11252).

@@ -4,6 +4,10 @@
 
 ### Added
 
+- Export `getSystemMessageText()` and `renderSystemMessageUpdate()` so consumers can render system messages the same way the model receives them.
+
+### Added
+
 - Durable-transcript seam from upstream Pi 1.4: `SystemMessage` participates in the `Message` union, plus `utils/transcript.ts` (system-message replay, tool declarations, `normalizeContext`/`toRequestContext`) and `utils/identity.ts` (client identity, User-Agent, provider attribution). `Models.stream`/`streamSimple` normalize system entries back into `Context` so providers are unchanged. `Model.inputLimits` and a `telemetry` request option pass through for the durable harness.
 
 - Inception now participates in dynamic model refresh: the direct provider fetches `https://api.inceptionlabs.ai/v1/models`, keeps chat models that support tools, maps live context/output limits and pricing, and merges newly published models (for example Mercury 3) over the generated catalog without replacing `models.json` overrides. The refresh runs on the normal model refresh paths and after a session `/reload`.
