@@ -27,6 +27,7 @@
 
 ### Fixed
 
+- `CodeHighlighter` reuses syntax-highlighted lines per owner while the code, language, theme and registered grammars stay unchanged, and Markdown code blocks share the same highlight path; streamed tool rows no longer re-highlight unchanged code on every redraw.
 - Aborting a `bash` command on macOS stops the process group before killing it, so a list such as `long_step; next_step` no longer starts its next command during cancellation (#11252).
 - `--model "<provider>/<id>"` now resolves when the provider ID itself contains a slash, such as URL-derived llama.cpp provider IDs (#11394).
 - `grep` with `context` now takes the surrounding lines from ripgrep instead of re-reading every matched file, so memory no longer grows with the size of matched files (#9276). Context lines keep a lone carriage return and strip only the CRLF terminator (#11398), overlapping context is printed once, and the exact-limit notice appears only after ripgrep proves one more match. `GrepOperations.readFile` is removed; override the tool's `execute()` to search a remote system.

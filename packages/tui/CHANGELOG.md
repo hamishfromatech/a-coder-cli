@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `Text.setText()` keeps its wrapped lines when the text is unchanged, so components that set the same text on every update no longer re-wrap every frame.
+
 ### Added
 
 - Main-screen SGR click dispatch: the main (scrollback) TUI can now decode mouse press/release reports into synthesized left-click events and hit-dispatch them through the component tree (viewport rows map into the rendered content tail; drags, middle/right buttons, and orphan releases are ignored, and wheel behavior is unchanged). Mouse tracking is refcounted — overlays acquire/release, host apps can hold it for the process lifetime via `enableMouseReportTracking()` — and `stop()` always clears tracking before the shell takes over.
