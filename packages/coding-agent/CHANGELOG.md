@@ -27,6 +27,7 @@
 
 ### Fixed
 
+- Resized photos now prefer the smaller of PNG and JPEG at the configured quality, so attachments no longer go out as multi-megabyte PNGs (#11551).
 - `CodeHighlighter` reuses syntax-highlighted lines per owner while the code, language, theme and registered grammars stay unchanged, and Markdown code blocks share the same highlight path; streamed tool rows no longer re-highlight unchanged code on every redraw.
 - Aborting a `bash` command on macOS stops the process group before killing it, so a list such as `long_step; next_step` no longer starts its next command during cancellation (#11252).
 - `--model "<provider>/<id>"` now resolves when the provider ID itself contains a slash, such as URL-derived llama.cpp provider IDs (#11394).
