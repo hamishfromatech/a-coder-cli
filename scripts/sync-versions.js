@@ -173,6 +173,23 @@ try {
 	}
 } catch {}
 
+// The pi-ai identity User-Agent carries its own copy of the version, and a
+// test asserts it matches packages/ai/package.json.
+const aiVersionPath = join(process.cwd(), 'packages', 'ai', 'src', 'utils', 'version.ts');
+try {
+	const aiVersionContent = readFileSync(aiVersionPath, 'utf8');
+	const updated = aiVersionContent.replace(
+		/(export const PI_AI_VERSION = ")[^"]*(")/,
+		`$1${lockstepVersion}$2`
+	);
+	if (updated !== aiVersionContent) {
+		console.log(`\npackages/ai/src/utils/version.ts:`);
+		console.log(`  PI_AI_VERSION → ${lockstepVersion}`);
+		writeFileSync(aiVersionPath, updated);
+		workspaceUpdates++;
+	}
+} catch {}
+
 if (workspaceUpdates === 0) {
 	console.log('\nWorkspace versions already in sync.');
 } else {
