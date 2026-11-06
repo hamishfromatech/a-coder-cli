@@ -19,6 +19,7 @@
 
 ### Added
 
+- Device-code auth info gains optional `openBrowserOnConfirm` and `copyCodeOnConfirm` (both default to true), so clients can honor a provider that does not want the browser opened or the code copied (#9282).
 - Export `getSystemMessageText()` and `renderSystemMessageUpdate()` so consumers can render system messages the same way the model receives them.
 
 ### Added
