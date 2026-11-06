@@ -20,6 +20,8 @@ import type {
 } from "../types.ts";
 import { createAssistantMessageEventStream } from "../utils/event-stream.ts";
 
+import { ToolCallArgumentsStream } from "../utils/streaming-json.ts";
+
 const DEFAULT_API = "faux";
 const DEFAULT_PROVIDER = "faux";
 const DEFAULT_MODEL_ID = "faux-1";
@@ -409,6 +411,8 @@ async function streamWithDeltas(
 
 		partial.content = [...partial.content, { type: "toolCall", id: block.id, name: block.name, arguments: {} }];
 		stream.push({ type: "toolcall_start", contentIndex: index, partial: { ...partial } });
+		// Partial arguments come from the same parser real providers use, so consumers see them grow.
+		const toolArguments = new ToolCallArgumentsStream();
 		for (const chunk of splitStringByTokenSize(JSON.stringify(block.arguments), minTokenSize, maxTokenSize)) {
 			await scheduleChunk(chunk, tokensPerSecond);
 			if (signal?.aborted) {
@@ -417,6 +421,7 @@ async function streamWithDeltas(
 				stream.end(aborted);
 				return;
 			}
+			(partial.content[index] as ToolCall).arguments = toolArguments.append(chunk);
 			stream.push({ type: "toolcall_delta", contentIndex: index, delta: chunk, partial: { ...partial } });
 		}
 		(partial.content[index] as ToolCall).arguments = block.arguments;

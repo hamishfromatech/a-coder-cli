@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Streamed tool-call arguments are parsed incrementally with `StreamingJsonParser` / `ToolCallArgumentsStream`: each delta is read once, snapshots share completed containers, and stream state stays off content blocks, so long argument streams cost time and memory linear in their length (#9265).
+- A finished tool call whose arguments text is not a JSON object now sets `argumentsError` (and `arguments: {}`) instead of silently sending empty arguments, so tool validation can report the malformed text back to the model.
+- Invalid `\u` escapes in tool arguments are preserved as literal text instead of dropping the rest of the value.
 - Zhipu/Z.ai usage-limit error code `1308` (HTTP 429) is no longer retried as a transient rate limit; the plan cap resets only after hours (#11537).
 - LiteLLM's `ContextWindowExceededError` is recognized as context overflow (#11492).
 - Gemini tool schemas rewrite unsupported `const` keywords to single-value `enum` schemas without rewriting literal data in defaults, examples, or enum values, and without losing names such as `__proto__` (#11308).

@@ -42,7 +42,7 @@ describe("large payload handling", () => {
 			ws.on("error", reject);
 		});
 		const payload = "x".repeat(2 * 1024 * 1024);
-		const line = payload + "\n";
+		const line = `${payload}\n`;
 		const received = new Promise<string>((resolve, reject) => {
 			ws.on("message", (data) => resolve(data.toString()));
 			setTimeout(() => reject(new Error("timeout")), 10000);

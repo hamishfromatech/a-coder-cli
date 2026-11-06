@@ -37,3 +37,12 @@ export function renderSystemMessageUpdate(message: SystemMessage): string {
 	}
 	return parts.join("\n\n");
 }
+
+/**
+ * `text.slice(start, end)` as a string of its own. V8 represents a slice of 13 or more characters as a view that keeps
+ * all of `text` alive, so a short excerpt kept from a large text would keep the whole text alive as long as the excerpt
+ * lives. Copying drops that reference.
+ */
+export function ownedSlice(text: string, start: number, end = text.length): string {
+	return `${text.slice(start, end)} `.slice(0, -1);
+}

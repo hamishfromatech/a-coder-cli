@@ -13,13 +13,14 @@ import type {
 	Tool,
 	ToolCall,
 } from "../types.ts";
+import { truncateErrorText } from "../utils/error-body.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { shortHash } from "../utils/hash.ts";
 import { headersToRecord } from "../utils/headers.ts";
-import { parseStreamingJson } from "../utils/json-parse.ts";
 import { getPiUserAgent } from "../utils/pi-user-agent.ts";
 import { extractRetryAfterMs } from "../utils/retry.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
+import { ToolCallArgumentsStream } from "../utils/streaming-json.ts";
 import { getJsonSchemaToolParameters, resolveJsonSchemaStrictSampling } from "./constrained-sampling.ts";
 import { buildBaseOptions } from "./simple-options.ts";
 import { transformMessages } from "./transform-messages.ts";
@@ -162,10 +163,6 @@ export const stream: StreamFunction<"mistral-conversations", MistralOptions> = (
 			stream.push({ type: "done", reason: output.stopReason, message: output });
 			stream.end();
 		} catch (error) {
-			for (const block of output.content) {
-				// partialArgs is only a streaming scratch buffer; never persist it.
-				delete (block as { partialArgs?: string }).partialArgs;
-			}
 			output.stopReason = options?.signal?.aborted ? "aborted" : "error";
 			output.errorMessage = formatMistralError(error);
 			if (output.stopReason === "error") {
@@ -272,11 +269,6 @@ function formatMistralError(error: unknown): string {
 		return error.message;
 	}
 	return safeJsonStringify(error);
-}
-
-function truncateErrorText(text: string, maxChars: number): string {
-	if (text.length <= maxChars) return text;
-	return `${text.slice(0, maxChars)}... [truncated ${text.length - maxChars} chars]`;
 }
 
 function safeJsonStringify(value: unknown): string {
@@ -568,7 +560,8 @@ async function consumeChatStream(
 	let currentBlock: TextContent | ThinkingContent | null = null;
 	const blocks = output.content;
 	const blockIndex = () => blocks.length - 1;
-	const toolBlocksByKey = new Map<string | number, number>();
+	// Stream state per Mistral tool call, kept off the content blocks so it never reaches partials.
+	const toolCallsByKey = new Map<string | number, { contentIndex: number; arguments: ToolCallArgumentsStream }>();
 
 	const finishCurrentBlock = (block?: typeof currentBlock) => {
 		if (!block) return;
@@ -698,38 +691,24 @@ async function consumeChatStream(
 					? toolCall.id
 					: deriveMistralToolCallId(`toolcall:${toolCall.index ?? 0}`, 0);
 			const key = toolCall.index ?? callId;
-			const existingIndex = toolBlocksByKey.get(key);
-			let block: (ToolCall & { partialArgs?: string }) | undefined;
-
-			if (existingIndex !== undefined) {
-				const existing = output.content[existingIndex];
-				if (existing?.type === "toolCall") {
-					block = existing as ToolCall & { partialArgs?: string };
-				}
-			}
-
-			if (!block) {
-				block = {
-					type: "toolCall",
-					id: callId,
-					name: toolCall.function.name,
-					arguments: {},
-					partialArgs: "",
-				};
-				output.content.push(block);
-				toolBlocksByKey.set(key, output.content.length - 1);
-				stream.push({ type: "toolcall_start", contentIndex: output.content.length - 1, partial: output });
+			let open = toolCallsByKey.get(key);
+			if (!open) {
+				output.content.push({ type: "toolCall", id: callId, name: toolCall.function.name, arguments: {} });
+				open = { contentIndex: output.content.length - 1, arguments: new ToolCallArgumentsStream() };
+				toolCallsByKey.set(key, open);
+				stream.push({ type: "toolcall_start", contentIndex: open.contentIndex, partial: output });
 			}
 
 			const argsDelta =
 				typeof toolCall.function.arguments === "string"
 					? toolCall.function.arguments
 					: JSON.stringify(toolCall.function.arguments || {});
-			block.partialArgs = (block.partialArgs || "") + argsDelta;
-			block.arguments = parseStreamingJson<Record<string, unknown>>(block.partialArgs);
+
+			(output.content[open.contentIndex] as ToolCall).arguments = open.arguments.append(argsDelta);
+
 			stream.push({
 				type: "toolcall_delta",
-				contentIndex: toolBlocksByKey.get(key)!,
+				contentIndex: open.contentIndex,
 				delta: argsDelta,
 				partial: output,
 			});
@@ -737,18 +716,15 @@ async function consumeChatStream(
 	}
 
 	finishCurrentBlock(currentBlock);
-	for (const index of toolBlocksByKey.values()) {
-		const block = output.content[index];
-		if (block.type !== "toolCall") continue;
-		const toolBlock = block as ToolCall & { partialArgs?: string };
-		toolBlock.arguments = parseStreamingJson<Record<string, unknown>>(toolBlock.partialArgs);
-		// Finalize in-place and strip the scratch buffer so replay only
-		// carries parsed arguments.
-		delete toolBlock.partialArgs;
+
+	for (const open of toolCallsByKey.values()) {
+		const block = output.content[open.contentIndex] as ToolCall;
+		Object.assign(block, open.arguments.finish());
+
 		stream.push({
 			type: "toolcall_end",
-			contentIndex: index,
-			toolCall: toolBlock,
+			contentIndex: open.contentIndex,
+			toolCall: block,
 			partial: output,
 		});
 	}
