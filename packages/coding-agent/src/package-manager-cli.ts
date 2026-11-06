@@ -42,7 +42,13 @@ import { DefaultResourceLoader } from "./core/resource-loader.ts";
 import { type PackageSource, SettingsManager } from "./core/settings-manager.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "./core/trust-manager.ts";
 import { spawnProcess, spawnProcessSync } from "./utils/child-process.ts";
-import { runInstallerSelfUpdate } from "./utils/cli-self-update.ts";
+import {
+	expandSelfUpdateCommand,
+	getConfiguredSelfUpdateCommand,
+	readInstalledCliVersion,
+	runConfiguredSelfUpdate,
+	runInstallerSelfUpdate,
+} from "./utils/cli-self-update.ts";
 import { canonicalizePath, getCwdRelativePath } from "./utils/paths.ts";
 import { getPiUserAgent } from "./utils/pi-user-agent.ts";
 import { getGitHubReleaseDownloadUrl, getLatestPiRelease, isNewerPackageVersion } from "./utils/version-check.ts";
@@ -689,6 +695,36 @@ function printSelfUpdateFallback(command: SelfUpdateCommand): void {
 	console.error(chalk.dim(`If this keeps failing, run this command yourself: ${command.display}`));
 }
 
+async function runConfiguredSelfUpdateFlow(argv: string[], plan: SelfUpdatePlan): Promise<boolean> {
+	if (plan.note) {
+		printSelfUpdateNote(plan.note);
+	}
+	const expanded = expandSelfUpdateCommand(argv, {
+		packageName: plan.packageName,
+		version: plan.version,
+		installSpec: plan.installSpec,
+	});
+	console.log(chalk.dim(`Updating ${APP_NAME} with ${expanded[0]}...`));
+	const result = await runConfiguredSelfUpdate(expanded);
+	if (!result.ok) {
+		console.error(chalk.red(`${APP_NAME} update failed${result.error ? `: ${result.error}` : ""}.`));
+		process.exitCode = 1;
+		return true;
+	}
+	const installedVersion = await readInstalledCliVersion();
+	if (installedVersion === plan.version) {
+		console.log(chalk.green(`Updated ${APP_NAME} from ${VERSION} to ${plan.version}.`));
+		console.log(chalk.dim(`Restart ${APP_NAME} to use the new version.`));
+	} else {
+		console.warn(
+			chalk.yellow(
+				`Ran ${expanded[0]}, but ${APP_NAME} --version reports ${installedVersion ?? "no version"}, not ${plan.version}.`,
+			),
+		);
+	}
+	return true;
+}
+
 function printSelfUpdateNote(note: string): void {
 	const trimmedNote = note.trim();
 	if (!trimmedNote) {
@@ -1051,6 +1087,10 @@ export async function handlePackageCommand(
 					const selfUpdatePlan = await getSelfUpdatePlan(options.force);
 					if (!selfUpdatePlan.shouldRun) {
 						return true;
+					}
+					const configuredSelfUpdate = getConfiguredSelfUpdateCommand();
+					if (configuredSelfUpdate) {
+						return await runConfiguredSelfUpdateFlow(configuredSelfUpdate, selfUpdatePlan);
 					}
 					if (managedInstall) {
 						if (selfUpdatePlan.note) {

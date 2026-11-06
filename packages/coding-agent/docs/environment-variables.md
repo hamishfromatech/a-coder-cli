@@ -12,6 +12,16 @@ Provider API-key variables are documented separately in [Providers](providers.md
 
 The CLI and RPC entry points set `A_CODER_CLI_CODING_AGENT=true`. Child processes inherit it and can use it to detect that they run inside A-Coder. It is not session-specific and is not set automatically when A-Coder is embedded through the SDK.
 
+## Custom Update Command
+
+`A_CODER_SELF_UPDATE_COMMAND` (the upstream-compatible `PI_SELF_UPDATE_COMMAND` is also read) makes `a-coder-cli update` run your command instead of the built-in update path. Use it when a wrapper or another package manager owns the install, such as mise, Nix, or a pnpm shim. The value is split on whitespace; use `{packageName}`, `{version}`, and `{installSpec}` to interpolate the release.
+
+```sh
+export A_CODER_SELF_UPDATE_COMMAND="mise use -g npm:{packageName}@{version}"
+```
+
+After the command exits successfully, A-Coder checks the version that `a-coder-cli --version` reports and warns when it is not the release it asked for.
+
 ## Bash Tool Session Environment
 
 Commands run by the bash tool receive the current A-Coder session state:

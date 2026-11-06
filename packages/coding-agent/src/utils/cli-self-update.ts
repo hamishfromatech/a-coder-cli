@@ -225,3 +225,64 @@ export function relaunchSelf(): void {
 		process.exit(1);
 	});
 }
+
+// ---- Configured self-update command ---------------------------------------
+// A wrapper or package manager can own the CLI install (mise, Nix, a pnpm
+// shim). `A_CODER_SELF_UPDATE_COMMAND` (or the upstream-compatible
+// `PI_SELF_UPDATE_COMMAND`) replaces the built-in update path with user argv.
+// Placeholders come from the release: {packageName}, {version}, {installSpec}.
+
+export interface UpdateCommandPlaceholders {
+	packageName: string;
+	version: string;
+	installSpec: string;
+}
+
+/** Configured argv, or undefined when the environment does not set one. Split on whitespace. */
+export function getConfiguredSelfUpdateCommand(): string[] | undefined {
+	const raw = process.env.A_CODER_SELF_UPDATE_COMMAND ?? process.env.PI_SELF_UPDATE_COMMAND;
+	if (!raw?.trim()) return undefined;
+	const argv = raw.trim().split(/\s+/).filter(Boolean);
+	return argv.length > 0 ? argv : undefined;
+}
+
+/** Replace the release placeholders in every argv item. */
+export function expandSelfUpdateCommand(argv: string[], placeholders: UpdateCommandPlaceholders): string[] {
+	return argv.map((item) =>
+		item.replace(
+			/\{(packageName|version|installSpec)\}/g,
+			(_match, key: keyof UpdateCommandPlaceholders) => placeholders[key],
+		),
+	);
+}
+
+/** Run the configured command, inheriting stdio so the user sees its output. */
+export async function runConfiguredSelfUpdate(argv: string[]): Promise<InstallerResult> {
+	const [command, ...args] = argv;
+	if (!command) return { ok: false, error: "self-update command is empty" };
+	try {
+		const child = spawn(command, args, { stdio: "inherit", env: process.env });
+		const code = await awaitExit(child);
+		return code === 0 ? { ok: true } : { ok: false, error: `${command} exited with code ${code}` };
+	} catch (error) {
+		return { ok: false, error: error instanceof Error ? error.message : String(error) };
+	}
+}
+
+/** Version the installed CLI reports from PATH, or undefined when it cannot be run. */
+export async function readInstalledCliVersion(
+	command = process.env.A_CODER_CLI_BIN || "a-coder-cli",
+): Promise<string | undefined> {
+	return await new Promise((resolve) => {
+		const child = spawn(command, ["--version"], { stdio: ["ignore", "pipe", "ignore"] });
+		let output = "";
+		child.stdout?.on("data", (chunk: Buffer) => {
+			output += chunk.toString();
+		});
+		child.once("error", () => resolve(undefined));
+		child.once("close", () => {
+			const match = output.match(/\d+\.\d+\.\d+[\w.-]*/);
+			resolve(match?.[0]);
+		});
+	});
+}
