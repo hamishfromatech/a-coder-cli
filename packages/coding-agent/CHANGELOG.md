@@ -27,6 +27,7 @@
 
 ### Fixed
 
+- The `openai` and `openai-codex` providers now default to `gpt-6.1-sol` instead of `gpt-5.5`, including after `/login` and for `--provider openai` (#11467).
 - `/model` search no longer ranks an entry matched by scattered letters above a real contiguous match, e.g. `opus` listing `gpt-oss-120b` before `claude-opus-4.1` (#11220).
 - `/resume` search matches session names and working directories fuzzily but requires IDs and message text to appear as exact substrings, so `1024` no longer matches inside a session UUID (#11220, #11024).
 - The bash tool no longer reports only `Command timed out` when the command had already exited but a background process kept its output pipes open until the timeout; the error also reports the shell's exit code and when it exited (#11813).
