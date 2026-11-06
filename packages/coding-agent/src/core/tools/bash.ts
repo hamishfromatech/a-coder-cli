@@ -1,5 +1,6 @@
 import { constants } from "node:fs";
 import { access as fsAccess } from "node:fs/promises";
+import { constants as osConstants } from "node:os";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Container, Text, truncateToWidth } from "@earendil-works/pi-tui";
 import type { ChildProcess } from "child_process";
@@ -141,6 +142,20 @@ export interface BashOperations {
 }
 
 /**
+ * Timeout of the local shell backend. Its message keeps the `timeout:<seconds>` form custom operations throw.
+ * `shellExit` is set when the shell itself exited before the deadline, so the tool was only still waiting
+ * because background processes kept writing to the inherited stdout/stderr pipes (#11613).
+ */
+class ShellTimeoutError extends Error {
+	readonly shellExit: { exitCode: number; afterSeconds: number } | undefined;
+
+	constructor(timeout: number | undefined, shellExit: { exitCode: number; afterSeconds: number } | undefined) {
+		super(`timeout:${timeout}`);
+		this.shellExit = shellExit;
+	}
+}
+
+/**
  * Create bash operations using pi's built-in local shell execution backend.
  *
  * This is useful for extensions that intercept user_bash and still want pi's
@@ -173,7 +188,13 @@ export function createLocalBashOperations(options?: { shellPath?: string }): Bas
 				child.stdin?.end(command);
 			}
 			if (child.pid) trackDetachedChildPid(child.pid);
+			const startedAt = performance.now();
+			let shellExitedAfterMs: number | undefined;
+			child.once("exit", () => {
+				shellExitedAfterMs = performance.now() - startedAt;
+			});
 			let timedOut = false;
+			let exitedBeforeDeadlineAfterMs: number | undefined;
 			let timeoutHandle: NodeJS.Timeout | undefined;
 			const onAbort = () => {
 				if (child.pid) killProcessTree(child.pid);
@@ -184,6 +205,9 @@ export function createLocalBashOperations(options?: { shellPath?: string }): Bas
 				if (timeoutMs !== undefined) {
 					timeoutHandle = setTimeout(() => {
 						timedOut = true;
+						exitedBeforeDeadlineAfterMs = shellExitedAfterMs;
+						// Also when the shell already exited: on Unix the group kill still reaches background
+						// processes holding the pipes. Windows cannot find them once the shell pid is gone.
 						if (child.pid) killProcessTree(child.pid);
 					}, timeoutMs);
 				}
@@ -248,10 +272,20 @@ export function createLocalBashOperations(options?: { shellPath?: string }): Bas
 				if (signal?.aborted) {
 					throw new Error("aborted");
 				}
+
+				// A signal-killed shell has no exit code. Use the standard shell convention so
+				// callers do not mistake the termination for a successful command.
+				const signalCode = child.signalCode;
+				const resolvedExitCode = exitCode ?? (signalCode ? 128 + (osConstants.signals[signalCode] ?? 0) : 1);
 				if (timedOut) {
-					throw new Error(`timeout:${timeout}`);
+					throw new ShellTimeoutError(
+						timeout,
+						exitedBeforeDeadlineAfterMs !== undefined
+							? { exitCode: resolvedExitCode, afterSeconds: Math.round(exitedBeforeDeadlineAfterMs / 100) / 10 }
+							: undefined,
+					);
 				}
-				return { exitCode };
+				return { exitCode: resolvedExitCode };
 			} finally {
 				if (child.pid) untrackDetachedChildPid(child.pid);
 				if (timeoutHandle) clearTimeout(timeoutHandle);
@@ -779,7 +813,13 @@ export function createBashToolDefinition(
 					}
 					if (err instanceof Error && err.message.startsWith("timeout:")) {
 						const timeoutSecs = err.message.split(":")[1];
-						throw new Error(appendStatus(text, `Command timed out after ${timeoutSecs} seconds`));
+						let status = `Command timed out after ${timeoutSecs} seconds`;
+						if (err instanceof ShellTimeoutError && err.shellExit) {
+							// Both facts matter: the command's real result, and that its background processes
+							// were still writing output when the timeout hit (#11613).
+							status += `. The shell exited with code ${err.shellExit.exitCode} after ${err.shellExit.afterSeconds} seconds, but background processes it started kept writing output until the timeout.`;
+						}
+						throw new Error(appendStatus(text, status));
 					}
 					throw err;
 				}

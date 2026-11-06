@@ -27,6 +27,9 @@
 
 ### Fixed
 
+- The bash tool no longer reports only `Command timed out` when the command had already exited but a background process kept its output pipes open until the timeout; the error also reports the shell's exit code and when it exited (#11813).
+- `a-coder install` and `a-coder remove` pass the resolved real path to npm, so an agent directory reached through a symlink no longer writes ever-deeper nested entries into `package-lock.json` (#11396).
+- `a-coder update` no longer stops with `git clean -fdx failed with code 1` when another session holds a git extension's native module open; it warns, installs the dependencies anyway, and retries the clean next update (#11597).
 - Hidden thinking whose label is empty renders no rows, including no leading blank line (#11470).
 - `pi.exec()` no longer corrupts UTF-8 characters split across stdout or stderr chunks (#11312).
 - A failed session write (ENOSPC, EBUSY, ETIMEDOUT on network drives) no longer leaves the entry in memory as the leaf; later entries chain to the last entry actually on disk, so resuming keeps the full history and the system prompt/tools (#11460).
