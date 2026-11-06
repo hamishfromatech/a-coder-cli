@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- `Usage.cost.totalFromProvider` marks a total the provider reported itself, so callers can tell it apart from a computed estimate (#11178).
+- OpenRouter chat and image responses keep the provider-reported charge, including the upstream BYOK cost, instead of overwriting it with the catalog estimate (#9980).
 - Streamed tool-call arguments are parsed incrementally with `StreamingJsonParser` / `ToolCallArgumentsStream`: each delta is read once, snapshots share completed containers, and stream state stays off content blocks, so long argument streams cost time and memory linear in their length (#9265).
 - A finished tool call whose arguments text is not a JSON object now sets `argumentsError` (and `arguments: {}`) instead of silently sending empty arguments, so tool validation can report the malformed text back to the model.
 - Invalid `\u` escapes in tool arguments are preserved as literal text instead of dropping the rest of the value.
