@@ -168,4 +168,17 @@ describe("AssistantMessageComponent fold past thinking", () => {
 		component.flush();
 		expect(stripAnsi(component.render(60).join("\n"))).not.toContain("hidden by setting");
 	});
+
+	test("renders nothing for hidden thinking with an empty label", () => {
+		initTheme("dark");
+
+		const component = new AssistantMessageComponent(
+			createAssistantMessage([{ type: "thinking", thinking: "reasoning" }]),
+			true,
+			undefined,
+			"",
+		);
+
+		expect(component.render(80)).toEqual([]);
+	});
 });

@@ -27,6 +27,7 @@
 
 ### Fixed
 
+- Hidden thinking whose label is empty renders no rows, including no leading blank line (#11470).
 - `pi.exec()` no longer corrupts UTF-8 characters split across stdout or stderr chunks (#11312).
 - A failed session write (ENOSPC, EBUSY, ETIMEDOUT on network drives) no longer leaves the entry in memory as the leaf; later entries chain to the last entry actually on disk, so resuming keeps the full history and the system prompt/tools (#11460).
 - A saved "Do not trust" decision now wins for projects with no trust-requiring resources (for example a folder with only `AGENTS.md`); auto-trust applies only when no decision is saved (#10947).
