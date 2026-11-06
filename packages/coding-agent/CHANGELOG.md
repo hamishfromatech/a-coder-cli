@@ -27,6 +27,8 @@
 
 ### Fixed
 
+- `/model` search no longer ranks an entry matched by scattered letters above a real contiguous match, e.g. `opus` listing `gpt-oss-120b` before `claude-opus-4.1` (#11220).
+- `/resume` search matches session names and working directories fuzzily but requires IDs and message text to appear as exact substrings, so `1024` no longer matches inside a session UUID (#11220, #11024).
 - The bash tool no longer reports only `Command timed out` when the command had already exited but a background process kept its output pipes open until the timeout; the error also reports the shell's exit code and when it exited (#11813).
 - `a-coder install` and `a-coder remove` pass the resolved real path to npm, so an agent directory reached through a symlink no longer writes ever-deeper nested entries into `package-lock.json` (#11396).
 - `a-coder update` no longer stops with `git clean -fdx failed with code 1` when another session holds a git extension's native module open; it warns, installs the dependencies anyway, and retries the clean next update (#11597).
