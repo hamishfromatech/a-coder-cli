@@ -1254,7 +1254,20 @@ function convertMessages(
 ): ConvertedAnthropicMessages {
 	const params: MessageParam[] = [];
 	const assistantLevels = new Map<number, AnthropicEffort>();
+
+	// Later system messages are held back and emitted directly before the next assistant
+	// message that is sent (or at the end of the transcript). Assistant messages that convert to
+	// no blocks are dropped, so holding past them keeps an update from landing before a user
+	// message (#11091). Anthropic requires `tool_result` blocks to
+	// immediately follow their `tool_use`, so a system message between them is rejected; this
+	// also mirrors where the managed-effort system messages are inserted. As a result an
+	// update placed before a user message in the transcript lands after it on the wire.
 	const loadedToolNames = new Set<string>();
+	const pendingSystemMessages: MessageParam[] = [];
+	const flushPendingSystemMessages = (): void => {
+		params.push(...pendingSystemMessages);
+		pendingSystemMessages.length = 0;
+	};
 
 	for (let i = 0; i < transformedMessages.length; i++) {
 		const msg = transformedMessages[i];
@@ -1352,6 +1365,7 @@ function convertMessages(
 				}
 			}
 			if (blocks.length === 0) continue;
+			flushPendingSystemMessages();
 			const messageIndex = params.length;
 			params.push({
 				role: "assistant",

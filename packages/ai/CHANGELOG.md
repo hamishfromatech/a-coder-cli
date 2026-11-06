@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- Zhipu/Z.ai usage-limit error code `1308` (HTTP 429) is no longer retried as a transient rate limit; the plan cap resets only after hours (#11537).
+- LiteLLM's `ContextWindowExceededError` is recognized as context overflow (#11492).
+- Gemini tool schemas rewrite unsupported `const` keywords to single-value `enum` schemas without rewriting literal data in defaults, examples, or enum values, and without losing names such as `__proto__` (#11308).
+- Claude system updates are held until the next sendable assistant message (or the end of the transcript), so `role 'system' must precede an 'assistant' message` no longer rejects sessions where an update was followed by an empty or reasoning-only reply (#11091).
 - Claude models with mid-conversation effort no longer fail with `Invalid effort level` on accounts whose organization caps effort below `high`; the top-level effort is sent as `low` (#10063).
 
 
