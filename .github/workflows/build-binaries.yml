@@ -178,7 +178,10 @@ jobs:
   sign-darwin-artifacts:
     needs: build
     if: ${{ inputs.npm_publish_only != true }}
-    runs-on: macos-14
+    # macos-14 is not an available configuration for this repository
+    # ("macos-14-arm64-us-default is not supported"); macos-latest is the
+    # supported arm64 pool and is what the desktop build already uses.
+    runs-on: macos-latest
     permissions:
       actions: read
     env:
