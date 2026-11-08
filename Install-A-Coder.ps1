@@ -115,19 +115,54 @@ function Install-FromReleases {
         # theme/*.json and docs at runtime via fs.readFileSync, so those must
         # be on disk next to the binary.
         New-Item -ItemType Directory -Force -Path $LibDir | Out-Null
-        # The running a-coder-cli process holds LibDir\pi.exe open. Windows
-        # won't let us overwrite or delete a running .exe, but it DOES allow
-        # renaming it. Rename the live binary out of the way (the running
-        # process keeps using the renamed file via its open handle), then copy
-        # the new one in. Old backups no longer held by any process are cleaned
-        # up here; the one still in use simply fails to delete (harmless).
-        Get-ChildItem -Path $LibDir -Filter 'pi.exe.old.*' -ErrorAction SilentlyContinue |
-            Remove-Item -Force -ErrorAction SilentlyContinue
+        # If an earlier update renamed the live binary and then failed before
+        # writing the replacement, recover the newest backup first so the
+        # install never starts from a missing pi.exe.
         $stamp = Get-Date -Format 'yyyyMMddHHmmss'
         $LiveExe = Join-Path $LibDir 'pi.exe'
-        if (Test-Path $LiveExe) {
-            try { Move-Item -Path $LiveExe -Destination "$LiveExe.old.$stamp" -Force -ErrorAction Stop } catch {}
+        $StagedExe = "$LiveExe.new.$stamp"
+        if (-not (Test-Path $LiveExe)) {
+            $backup = Get-ChildItem -Path $LibDir -Filter 'pi.exe.old.*' -File -ErrorAction SilentlyContinue |
+                Sort-Object LastWriteTime -Descending | Select-Object -First 1
+            if ($backup) {
+                Copy-Item -Path $backup.FullName -Destination $LiveExe -Force -ErrorAction SilentlyContinue
+            }
         }
+
+        # Stage the new binary BEFORE touching the live one. If this copy fails
+        # (disk full, scanner lock, ...) the old pi.exe is still in place and
+        # the install aborts instead of ending up with no executable.
+        Copy-Item -Path $Src.FullName -Destination $StagedExe -Force -ErrorAction Stop
+        if (-not (Test-Path $StagedExe)) {
+            throw "Could not stage the new pi.exe at $StagedExe."
+        }
+
+        # Rename the live binary out of the way (the running process keeps
+        # using the renamed file through its open handle), then rename the
+        # staged binary into place. If the swap fails, restore the old binary.
+        $OldExe = "$LiveExe.old.$stamp"
+        if (Test-Path $LiveExe) {
+            Move-Item -Path $LiveExe -Destination $OldExe -Force -ErrorAction Stop
+        }
+        try {
+            Move-Item -Path $StagedExe -Destination $LiveExe -Force -ErrorAction Stop
+        } catch {
+            if ((Test-Path $OldExe) -and -not (Test-Path $LiveExe)) {
+                Move-Item -Path $OldExe -Destination $LiveExe -Force -ErrorAction SilentlyContinue
+            }
+            throw "Could not install pi.exe: $($_.Exception.Message)"
+        }
+        if (-not (Test-Path $LiveExe)) {
+            throw "pi.exe is missing after the swap."
+        }
+
+        # Old backups no longer held by any process are cleaned up only after
+        # the new binary is in place; the one still in use simply fails to
+        # delete (harmless).
+        Get-ChildItem -Path $LibDir -Filter 'pi.exe.old.*' -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -ne $OldExe } |
+            Remove-Item -Force -ErrorAction SilentlyContinue
+
         # Native addons (*.node) are also locked while loaded by a running
         # a-coder-cli (or the desktop); rename them out of the way too so the
         # copy can write fresh ones at the original names. Windows allows
@@ -143,17 +178,16 @@ function Install-FromReleases {
             Remove-Item -Force -ErrorAction SilentlyContinue
 
         # Copy the archive into LibDir one file at a time so a single in-use
-        # file can't abort the whole update. The renames above already move the
-        # running pi.exe and loaded *.node out of the way in the common case;
-        # this loop is the backstop for a file whose rename silently failed
-        # (held with a handle that blocks rename too). For such a file we stage
-        # the new content as <name>.new.<stamp> and defer it: the VERSION marker
-        # is NOT bumped, so re-running the installer (after closing A-Coder
-        # Desktop / all a-coder-cli terminals) retries the swap and finishes the
-        # update instead of leaving a half-installed tree and skipping desktop.
+        # file can't abort the whole update. pi.exe was swapped above, so skip
+        # it here. This loop is the backstop for a file whose rename silently
+        # failed (held with a handle that blocks rename too). For such a file
+        # we stage the new content as <name>.new.<stamp> and defer it: the
+        # VERSION marker is NOT bumped, and the installer reports failure, so
+        # the caller never relaunches into an incomplete tree.
         $deferred = [System.Collections.Generic.List[string]]::new()
         Get-ChildItem -Path $TempExtract -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
             $rel = $_.FullName.Substring($TempExtract.Length + 1)
+            if ($rel -eq 'pi.exe') { return }
             $dst = Join-Path $LibDir $rel
             $dstDir = Split-Path $dst -Parent
             if (-not (Test-Path $dstDir)) {
@@ -189,18 +223,19 @@ function Install-FromReleases {
         Add-Content -Path $BinShim -Value "`r`n" -Encoding ASCII
 
         if ($deferred.Count -gt 0) {
-            Write-Host "Downloaded $AssetName; $($deferred.Count) file(s) in use, staged as .new for next run." -ForegroundColor Yellow
-            Write-Host "Close all A-Coder Desktop windows and a-coder-cli terminals, then re-run this command to finish:" -ForegroundColor Yellow
+            Write-Host "Downloaded $AssetName; $($deferred.Count) file(s) are still in use." -ForegroundColor Yellow
+            Write-Host "Close all A-Coder Desktop windows and a-coder-cli terminals, then re-run with -Force to finish." -ForegroundColor Yellow
             $deferred | Select-Object -First 5 | ForEach-Object { Write-Host "  - $_" -ForegroundColor DarkGray }
-            # Do NOT bump VERSION: a re-run must retry replacing the deferred files.
-            return $true
+            # Do NOT bump VERSION and do NOT report success: the caller must
+            # not relaunch into a tree that is still missing files.
+            throw "Update incomplete: $($deferred.Count) file(s) could not be replaced."
         }
 
         Write-Host "Downloaded $AssetName and installed a-coder-cli." -ForegroundColor Green
         Set-Content -Path (Join-Path $InstallDir "VERSION") -Value $Tag -NoNewline
         return $true
     } catch {
-        Write-Host "Release download failed: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host "Release install failed: $($_.Exception.Message)" -ForegroundColor Yellow
         return $false
     } finally {
         Remove-Item -Path $TempArchive -Force -ErrorAction SilentlyContinue
@@ -273,7 +308,7 @@ Write-Header
 # still fall through to the desktop install below so a re-run also installs
 # (or updates) A-Coder Desktop without needing -Force.
 $CliAlreadyUpToDate = $false
-if ((Test-Path $BinShim) -and (-not $Force)) {
+if ((Test-Path $BinShim) -and (Test-Path (Join-Path $LibDir "pi.exe")) -and (-not $Force)) {
     $InstalledTag = ""
     $VersionFile = Join-Path $InstallDir "VERSION"
     if (Test-Path $VersionFile) { $InstalledTag = ((Get-Content $VersionFile -ErrorAction SilentlyContinue | Select-Object -First 1) -replace '\s','') }

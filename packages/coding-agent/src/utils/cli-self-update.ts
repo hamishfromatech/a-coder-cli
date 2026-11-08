@@ -15,7 +15,8 @@
  */
 
 import { type ChildProcess, spawn } from "node:child_process";
-import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { getAgentDir, getInstallerScriptUrl } from "../config.ts";
 
@@ -147,13 +148,66 @@ function awaitExit(child: ChildProcess): Promise<number> {
 export async function runInstallerSelfUpdate(version: string): Promise<InstallerResult> {
 	const tag = normalizeTag(version);
 	try {
-		if (process.platform === "win32") {
-			return await runWindowsInstaller(tag);
-		}
-		return await runUnixInstaller(tag);
+		const result = process.platform === "win32" ? await runWindowsInstaller(tag) : await runUnixInstaller(tag);
+		if (!result.ok) return result;
+		const verificationError = await verifyInstalledUpdate(tag);
+		return verificationError ? { ok: false, error: verificationError } : result;
 	} catch (error) {
 		return { ok: false, error: error instanceof Error ? error.message : String(error) };
 	}
+}
+
+/** Binary path the one-shot installers write for the official install layout. */
+function installedExecutablePath(): string {
+	return join(homedir(), ".a-coder", "cli", "lib", "a-coder-cli", process.platform === "win32" ? "pi.exe" : "pi");
+}
+
+/** Version marker the one-shot installers write after a complete install. */
+function readInstallerVersionMarker(): string | undefined {
+	for (const path of [join(homedir(), ".a-coder", "cli", "VERSION"), join(homedir(), ".a-coder", "VERSION")]) {
+		try {
+			const version = readFileSync(path, "utf8").trim().replace(/^v/, "");
+			if (version) return version;
+		} catch {
+			// try the next layout
+		}
+	}
+	return undefined;
+}
+
+function readExecutableVersion(execPath: string): Promise<string | undefined> {
+	return new Promise((resolve) => {
+		const child = spawn(execPath, ["--version"], { stdio: ["ignore", "pipe", "ignore"] });
+		let output = "";
+		child.stdout?.on("data", (chunk: Buffer) => {
+			output += chunk.toString();
+		});
+		child.once("error", () => resolve(undefined));
+		child.once("close", () => {
+			resolve(output.match(/\d+\.\d+\.\d+[\w.-]*/)?.[0]);
+		});
+	});
+}
+
+/**
+ * Confirm the installer actually placed the requested build. The Windows
+ * installer can defer a locked file and still exit 0; the old code then
+ * relaunched into a path that did not exist. The version marker is written
+ * only after a complete install, so trust it first, then probe the executable
+ * (the running path may be a deleted legacy inode after the installer moved
+ * the install to the product-nested layout).
+ */
+async function verifyInstalledUpdate(version: string): Promise<string | undefined> {
+	const expected = version.replace(/^v/, "");
+	const marker = readInstallerVersionMarker();
+	const probePath = existsSync(process.execPath) ? process.execPath : installedExecutablePath();
+	if (!existsSync(probePath)) {
+		return `installer finished but ${probePath} is missing (installed marker: ${marker ?? "missing"})`;
+	}
+	const probed = await readExecutableVersion(probePath);
+	if (probed === expected) return undefined;
+	const markerNote = marker === expected ? "marker matches but " : "";
+	return `installer finished but ${probePath} reports ${probed ?? "no version"} (${markerNote}expected ${expected})`;
 }
 
 async function runUnixInstaller(tag: string): Promise<InstallerResult> {
@@ -195,6 +249,15 @@ async function runWindowsInstaller(tag: string): Promise<InstallerResult> {
  * mirrors its exit status (re-raising signals) when it terminates.
  */
 export function relaunchSelf(): void {
+	// A legacy install can have its old lib tree removed by the installer; the
+	// running path then no longer exists. Prefer the live path, then fall back
+	// to the product-nested layout the installer writes.
+	const execPath = existsSync(process.execPath) ? process.execPath : installedExecutablePath();
+	if (!existsSync(execPath)) {
+		console.error(`Cannot relaunch: ${execPath} is missing.`);
+		console.error("Reinstall A-Coder CLI with the one-shot installer, then start it again.");
+		process.exit(1);
+	}
 	// argv layouts differ per runtime:
 	//   node / tsx:            [node, script, ...userArgs]
 	//   bun (compiled binary): ["bun", "/$bunfs/root/<entry>", ...userArgs]
@@ -209,7 +272,7 @@ export function relaunchSelf(): void {
 		.slice(1)
 		.find((arg) => arg.includes("$bunfs") || arg.includes("~BUN") || arg.includes("%7EBUN"));
 	const args = embeddedEntry ? process.argv.filter((arg) => arg !== embeddedEntry).slice(1) : process.argv.slice(1);
-	const child = spawn(process.execPath, args, { stdio: "inherit" });
+	const child = spawn(execPath, args, { stdio: "inherit" });
 	child.once("exit", (code, signal) => {
 		if (signal) {
 			// Mirror a signal death by killing ourselves with the same signal.
@@ -221,7 +284,8 @@ export function relaunchSelf(): void {
 		process.exit(code ?? 0);
 	});
 	child.once("error", (error) => {
-		console.error(`Failed to relaunch ${process.execPath}: ${error.message}`);
+		console.error(`Failed to relaunch ${execPath}: ${error.message}`);
+		console.error("Reinstall A-Coder CLI with the one-shot installer, then start it again.");
 		process.exit(1);
 	});
 }
