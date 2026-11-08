@@ -168,12 +168,104 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  # Bun's Mach-O signer (used by `bun build --compile --target=bun-darwin-*`)
+  # hashes the final code page as a zero-padded full page, while Apple's
+  # verifier hashes only the bytes up to `codeLimit`. The resulting ad-hoc
+  # signature is invalid: older macOS tolerated it, but macOS 27 kills the
+  # binary with SIGKILL (exit 137) at exec. The build job runs on Linux and
+  # has no codesign, so re-sign the darwin archives on a macOS runner before
+  # the desktop build bundles the engines and before the release is staged.
+  sign-darwin-artifacts:
+    needs: build
+    if: ${{ inputs.npm_publish_only != true }}
+    runs-on: macos-14
+    permissions:
+      actions: read
+    env:
+      RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - name: Resolve artifact name
+        id: artifact
+        env:
+          IS_RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
+        run: |
+          if [[ "$IS_RELEASE" == "true" ]]; then
+            echo "name=release-assets-${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=cli-binaries-${{ github.run_id }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download built artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: artifacts
+
+      - name: Re-sign darwin engines
+        run: |
+          set -euo pipefail
+
+          shopt -s nullglob
+          archives=(artifacts/pi-darwin-*.tar.gz)
+          if (( ${#archives[@]} == 0 )); then
+            echo "::error::No darwin archives found in ${{ steps.artifact.outputs.name }}."
+            exit 1
+          fi
+
+          for archive in "${archives[@]}"; do
+            work="$(mktemp -d)"
+            tar -xzf "$archive" -C "$work"
+            binaries=("$work"/*/pi)
+            if (( ${#binaries[@]} != 1 )); then
+              echo "::error::${archive}: expected exactly one <dir>/pi, found ${#binaries[@]}."
+              exit 1
+            fi
+            binary="${binaries[0]}"
+            # Ad-hoc signing is correct here: the CLI ships without a
+            # Developer ID. codesign is part of macOS.
+            codesign --force --sign - "$binary"
+            codesign --verify --strict "$binary"
+            # Preserve the archive's top-level directory layout.
+            top="$(basename "$(dirname "$binary")")"
+            tar -czf "$archive" -C "$work" "$top"
+            rm -rf "$work"
+            echo "Re-signed $(basename "$archive")"
+          done
+
+      - name: Refresh SHA256SUMS
+        run: |
+          set -euo pipefail
+
+          cd artifacts
+          if [[ ! -f SHA256SUMS ]]; then
+            exit 0
+          fi
+
+          for archive in pi-darwin-*.tar.gz; do
+            sum="$(shasum -a 256 "$archive" | awk '{print $1}')"
+            awk -v file="$archive" -v sum="$sum" '
+              $2 == file { print sum "  " file; found = 1; next }
+              { print }
+              END { if (!found) print sum "  " file }
+            ' SHA256SUMS > SHA256SUMS.tmp
+            mv SHA256SUMS.tmp SHA256SUMS
+          done
+
+      - name: Upload re-signed artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: artifacts/*
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
+
   # Desktop installers (macOS dmg, Linux deb/AppImage, Windows nsis/msi) are
   # built by the reusable desktop-build workflow and staged into the same
   # unified GitHub Release as the CLI binaries below. Needs the CLI build so
   # each desktop installer can bundle its platform engine (offline first launch).
   desktop-build:
-    needs: build
+    needs: [build, sign-darwin-artifacts]
     permissions:
       contents: write
       actions: read
@@ -188,7 +280,7 @@ jobs:
 
   stage-github-release:
     runs-on: ubuntu-latest
-    needs: [build, desktop-build]
+    needs: [build, sign-darwin-artifacts, desktop-build]
     if: ${{ (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && inputs.npm_publish_only != true }}
     permissions:
       actions: read

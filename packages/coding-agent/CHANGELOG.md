@@ -29,6 +29,7 @@
 
 ### Fixed
 
+- macOS engine binaries are re-signed with `codesign` after the Bun cross-compile, and the installer re-signs as a fallback. Bun's ad-hoc signature hashed the final code page as a zero-padded page, so the signature was invalid and macOS 27 killed the binary with `SIGKILL` at exec.
 - The `openai` and `openai-codex` providers now default to `gpt-6.1-sol` instead of `gpt-5.5`, including after `/login` and for `--provider openai` (#11467).
 - `/model` search no longer ranks an entry matched by scattered letters above a real contiguous match, e.g. `opus` listing `gpt-oss-120b` before `claude-opus-4.1` (#11220).
 - `/resume` search matches session names and working directories fuzzily but requires IDs and message text to appear as exact substrings, so `1024` no longer matches inside a session UUID (#11220, #11024).

@@ -197,6 +197,19 @@ install_from_release() {
     return 1
   fi
 
+  # macOS: the released engine can carry an invalid ad-hoc signature. Bun's
+  # cross-compiler hashes the final code page as a zero-padded full page,
+  # while Apple's verifier hashes only the bytes up to codeLimit. Older macOS
+  # tolerated it; macOS 27 kills such a binary with SIGKILL at exec. Re-sign
+  # here (codesign ships with macOS; ad-hoc is correct without a Developer ID).
+  if [[ "$PLATFORM" == "darwin" ]] && ! codesign --verify "$binary" >/dev/null 2>&1; then
+    if codesign --force --sign - "$binary" >/dev/null 2>&1; then
+      echo "Re-signed the macOS engine (ad-hoc)."
+    else
+      echo "WARNING: could not re-sign $binary; macOS may kill it on launch." >&2
+    fi
+  fi
+
   # Expose the command. The bun-compiled binary loads its sibling assets
   # (themes, native modules) relative to itself, so we keep it in LIB_DIR and
   # link/shim it from BIN_DIR.
