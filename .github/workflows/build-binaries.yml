@@ -276,6 +276,7 @@ jobs:
     uses: ./.github/workflows/desktop-build.yml
     with:
       engine_artifact: ${{ (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') && format('release-assets-{0}', github.event.inputs.tag || github.ref_name) || '' }}
+      concurrency_key: desktop-call-${{ github.run_id }}
     # Reusable workflows don't inherit secrets by default; forward them so
     # desktop-build gets TAURI_SIGNING_PRIVATE_KEY(_PASSWORD) for signing the
     # updater artifacts (and any Apple/Windows signing secrets).

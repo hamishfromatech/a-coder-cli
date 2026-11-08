@@ -25,14 +25,20 @@ on:
         description: 'Artifact name containing pi-<platform>-<arch> archives'
         required: false
         type: string
+      concurrency_key:
+        description: 'Unique concurrency key for this called build (the caller passes its run id)'
+        required: false
+        type: string
 
 concurrency:
-  # Called instances (workflow_call from build-binaries) key on the CALLER's
-  # run id, so the branch push and the tag push of a quick release each get
-  # their own build instead of cancelling each other's macOS jobs mid-run.
-  # Standalone (push) runs keep the ref group, so a redundant branch build
-  # still yields to the one doing the publishing work.
-  group: ${{ github.event_name == 'workflow_call' && format('desktop-{0}', github.run_id) || format('desktop-{0}', github.ref) }}
+  # Called instances pass their caller's run id, so a branch push and a tag
+  # (or a workflow_dispatch recovery) each get their own build instead of
+  # cancelling each other's desktop jobs mid-run. Standalone (push) runs keep
+  # the ref group, so a redundant branch build still yields to the publishing
+  # run. `github.event_name` inside a called reusable workflow is the caller's
+  # event (push/workflow_dispatch), not `workflow_call`, so it cannot be used
+  # to detect a called instance.
+  group: ${{ inputs.concurrency_key || format('desktop-{0}', github.ref) }}
   cancel-in-progress: true
 
 # Permissions required for the release job to create a GitHub Release and
