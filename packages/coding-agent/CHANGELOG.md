@@ -29,7 +29,7 @@
 
 ### Fixed
 
-- Windows self-update no longer leaves the install without `pi.exe`. The installer stages the new binary before renaming the live one, restores the old binary if the swap fails, reports failure instead of success when files are still locked, and the CLI verifies the installed version marker/executable before relaunching. Existing broken installs recover by re-running the installer.
+- Windows self-update no longer leaves the install without `pi.exe`. The installer checks the download exit code and archive integrity before touching the install (the old 60-second curl cap could truncate the 128 MB archive), stages the new binary before renaming the live one, restores the old binary if the swap fails, reports failure instead of success when files are still locked, and the CLI verifies the installed version marker/executable before relaunching. Existing broken installs recover by re-running the installer.
 - macOS engine binaries are re-signed with `codesign` after the Bun cross-compile, and the installer re-signs as a fallback. Bun's ad-hoc signature hashed the final code page as a zero-padded page, so the signature was invalid and macOS 27 killed the binary with `SIGKILL` at exec.
 - The `openai` and `openai-codex` providers now default to `gpt-6.1-sol` instead of `gpt-5.5`, including after `/login` and for `--provider openai` (#11467).
 - `/model` search no longer ranks an entry matched by scattered letters above a real contiguous match, e.g. `opus` listing `gpt-oss-120b` before `claude-opus-4.1` (#11220).

@@ -27,4 +27,16 @@ describe("Windows installer self-update", () => {
 	it("requires pi.exe before skipping an up-to-date install", () => {
 		expect(script).toContain('(Test-Path (Join-Path $LibDir "pi.exe"))');
 	});
+
+	it("does not truncate the 128 MB download at 60 seconds", () => {
+		expect(script).toContain("--max-time 600");
+		expect(script).toContain("if ($LASTEXITCODE -ne 0)");
+	});
+
+	it("validates the archive before touching the install", () => {
+		const validation = script.indexOf("System.IO.Compression.ZipFile");
+		const stage = script.indexOf("Copy-Item -Path $Src.FullName -Destination $StagedExe");
+		expect(validation).toBeGreaterThan(-1);
+		expect(stage).toBeGreaterThan(validation);
+	});
 });

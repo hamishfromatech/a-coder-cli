@@ -57,9 +57,18 @@ function Invoke-Download {
         [string]$OutFile
     )
     if (Test-CommandAvailable "curl") {
-        curl.exe -sSL --connect-timeout 5 --max-time 60 -o "$OutFile" "$Url"
+        # 128 MB archive: a 60-second total cap truncated the download on
+        # slower links. Check the exit code; the old code extracted whatever
+        # bytes arrived and then failed halfway through the file copy.
+        curl.exe -sSL --connect-timeout 10 --max-time 600 -o "$OutFile" "$Url"
+        if ($LASTEXITCODE -ne 0) {
+            throw "Download failed (curl exit $LASTEXITCODE)."
+        }
     } elseif (Test-CommandAvailable "wget") {
         wget.exe -qO "$OutFile" "$Url"
+        if ($LASTEXITCODE -ne 0) {
+            throw "Download failed (wget exit $LASTEXITCODE)."
+        }
     } else {
         try {
             Invoke-WebRequest -Uri "$Url" -OutFile "$OutFile" -UseBasicParsing -MaximumRedirection 10
@@ -87,7 +96,7 @@ function Install-FromReleases {
     # build-binaries.sh produces pi-windows-<arch>.zip containing pi.exe
     $AssetName = "pi-windows-$Arch.zip"
     $Url = "https://github.com/$Repo/releases/download/$Tag/$AssetName"
-    $TempArchive = Join-Path $env:TEMP "pi-windows-$Arch.zip"
+    $TempArchive = Join-Path $env:TEMP ("pi-windows-$Arch-" + [Guid]::NewGuid().ToString("N").Substring(0,8) + ".zip")
     $TempExtract = Join-Path $env:TEMP ("ac-extract-" + [Guid]::NewGuid().ToString("N").Substring(0,8))
 
     Write-Host "Downloading $AssetName from $Tag ..." -ForegroundColor Cyan
@@ -95,6 +104,27 @@ function Install-FromReleases {
         Invoke-Download -Url $Url -OutFile $TempArchive
         if (-not (Test-Path $TempArchive)) {
             throw "Download did not produce an archive."
+        }
+
+        # Validate the archive before touching an existing install. A partial
+        # download or a truncated zip must fail here, with the old binary still
+        # in place, not halfway through the copy loop.
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        try {
+            $zip = [System.IO.Compression.ZipFile]::OpenRead($TempArchive)
+            try {
+                $entry = $zip.GetEntry("pi.exe")
+                if (-not $entry) {
+                    throw "Downloaded archive does not contain pi.exe."
+                }
+                if ($entry.Length -lt (50 * 1024 * 1024)) {
+                    throw "Downloaded pi.exe is incomplete ($($entry.Length) bytes)."
+                }
+            } finally {
+                $zip.Dispose()
+            }
+        } catch {
+            throw "Downloaded archive is incomplete or invalid: $($_.Exception.Message)"
         }
 
         New-Item -ItemType Directory -Force -Path $TempExtract | Out-Null
@@ -108,6 +138,9 @@ function Install-FromReleases {
         }
         if (-not $Src) {
             throw "No pi.exe or a-coder-cli.exe found inside the release archive."
+        }
+        if ($Src.Length -lt (50 * 1024 * 1024)) {
+            throw "Extracted pi.exe is incomplete ($($Src.Length) bytes)."
         }
 
         # Install the whole archive (pi.exe + theme/ + docs/ + examples/) into
@@ -188,6 +221,9 @@ function Install-FromReleases {
         Get-ChildItem -Path $TempExtract -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
             $rel = $_.FullName.Substring($TempExtract.Length + 1)
             if ($rel -eq 'pi.exe') { return }
+            if (-not (Test-Path $_.FullName)) {
+                throw "Extracted archive is incomplete: $rel is missing."
+            }
             $dst = Join-Path $LibDir $rel
             $dstDir = Split-Path $dst -Parent
             if (-not (Test-Path $dstDir)) {
