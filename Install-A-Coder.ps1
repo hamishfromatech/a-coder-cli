@@ -140,6 +140,23 @@ function Install-FromReleases {
             }
         }
         if (-not $extracted) {
+            # Second chance: the .NET extractor used by Expand-Archive, called
+            # directly. Start from a clean directory because tar may have left
+            # a partial tree, and .NET Framework's overload requires a missing
+            # or empty destination.
+            Remove-Item -Path $TempExtract -Recurse -Force -ErrorAction SilentlyContinue
+            New-Item -ItemType Directory -Force -Path $TempExtract | Out-Null
+            try {
+                Add-Type -AssemblyName System.IO.Compression.FileSystem
+                [System.IO.Compression.ZipFile]::ExtractToDirectory($TempArchive, $TempExtract)
+                $extracted = $true
+            } catch {
+                $extracted = $false
+            }
+        }
+        if (-not $extracted) {
+            Remove-Item -Path $TempExtract -Recurse -Force -ErrorAction SilentlyContinue
+            New-Item -ItemType Directory -Force -Path $TempExtract | Out-Null
             Expand-Archive -Path $TempArchive -DestinationPath $TempExtract -Force
         }
 
