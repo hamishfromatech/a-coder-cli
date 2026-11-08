@@ -55,7 +55,7 @@
   "engines": {
     "node": ">=22.19.0"
   },
-  "version": "0.80.198",
+  "version": "0.80.199",
   "overrides": {
     "dompurify": "3.4.17",
     "postcss-selector-parser": "6.1.5",

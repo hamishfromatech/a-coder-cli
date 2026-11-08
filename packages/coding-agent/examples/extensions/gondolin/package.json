@@ -1,7 +1,7 @@
 {
 	"name": "pi-extension-gondolin",
 	"private": true,
-	"version": "0.80.198",
+	"version": "0.80.199",
 	"type": "module",
 	"scripts": {
 		"clean": "echo 'nothing to clean'",
