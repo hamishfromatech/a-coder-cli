@@ -128,7 +128,20 @@ function Install-FromReleases {
         }
 
         New-Item -ItemType Directory -Force -Path $TempExtract | Out-Null
-        Expand-Archive -Path $TempArchive -DestinationPath $TempExtract -Force
+        # Windows PowerShell 5.1's Expand-Archive can fail partway through this
+        # archive with "Cannot find path ... because it does not exist" even
+        # though the zip is valid. Prefer the bsdtar shipped with Windows 10+
+        # and fall back to Expand-Archive only when tar is unavailable.
+        $extracted = $false
+        if (Test-CommandAvailable "tar") {
+            & tar.exe -xf "$TempArchive" -C "$TempExtract"
+            if ($LASTEXITCODE -eq 0) {
+                $extracted = $true
+            }
+        }
+        if (-not $extracted) {
+            Expand-Archive -Path $TempArchive -DestinationPath $TempExtract -Force
+        }
 
         # Find pi.exe inside the archive (matches build-binaries.sh output)
         $Src = Get-ChildItem -Path $TempExtract -Filter "pi.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1

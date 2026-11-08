@@ -39,4 +39,11 @@ describe("Windows installer self-update", () => {
 		expect(validation).toBeGreaterThan(-1);
 		expect(stage).toBeGreaterThan(validation);
 	});
+
+	it("prefers bsdtar over the Windows PowerShell Expand-Archive bug", () => {
+		const tar = script.indexOf("tar.exe -xf");
+		const expand = script.indexOf("Expand-Archive -Path");
+		expect(tar).toBeGreaterThan(-1);
+		expect(expand).toBeGreaterThan(tar);
+	});
 });
