@@ -18,6 +18,14 @@ import http from "node:http";
 import https from "node:https";
 import type { Socket } from "node:net";
 import { type WebSocket, WebSocketServer } from "ws";
+import {
+	type DeviceIdentity,
+	type DeviceRecord,
+	type DeviceRegistryStore,
+	deviceFromFrame,
+	deviceFromHeaders,
+	deviceFromUrl,
+} from "./clients.ts";
 import { BRIDGE_CONTRACT, bridgeFrame } from "./control-frames.ts";
 import { bearerFromHeader, tokenFromUrl, tokenMatches } from "./pairing.ts";
 
@@ -37,6 +45,8 @@ const HIGH_WATER_BYTES = 1 * 1024 * 1024;
 const DEFAULT_PING_INTERVAL_MS = 5_000;
 const DEFAULT_PONG_TIMEOUT_MS = 2_000;
 const DEFAULT_CLOSE_DRAIN_MS = 1_000;
+/** Grace after answering a revoked `hello` with `device_revoked` before closing. */
+const DEVICE_REVOKED_CLOSE_GRACE_MS = 50;
 /** Grace after announcing `slow_client` before closing, then terminating. */
 const SLOW_CLIENT_CLOSE_GRACE_MS = 100;
 const SLOW_CLIENT_TERMINATE_MS = 2_000;
@@ -53,6 +63,8 @@ interface ClientState {
 	queueBytes: number;
 	slow: boolean;
 	lastPong: number;
+	/** Device identity presented on the upgrade, when one was presented. */
+	device?: DeviceIdentity;
 }
 
 /** Test hooks: shorten the timing constants without changing production behavior. */
@@ -77,6 +89,16 @@ export interface WsServerOptions {
 	onClientDisconnected: () => void;
 	/** Optional log hook for evictions (the bridge prefixes it on stderr). */
 	onSlowClient?: (info: { ip: string }) => void;
+	/**
+	 * Paired-device registry (bridge spec §5.4). When set, every upgrade that
+	 * presents a device identity is admitted only if its record is still in the
+	 * registry, and a record removed while the bridge runs is revoked durably.
+	 */
+	deviceRegistry?: DeviceRegistryStore;
+	/** Called after a device record was written or refreshed. */
+	onDeviceRegistered?: (device: DeviceRecord) => void;
+	/** Called when a removed device tried to connect; its socket is rejected. */
+	onDeviceRevoked?: (device: DeviceIdentity, via: "upgrade" | "hello") => void;
 	timing?: WsServerTiming;
 	/** PEM TLS material. When set the bridge serves https/wss instead of http/ws. */
 	tls?: { cert: string; key: string };
@@ -317,6 +339,15 @@ export class BridgeWsServer {
 				return;
 			}
 		}
+		// Device identity is optional (older clients present none) but, when it is
+		// presented, the registry decides: a removed record means 401 here, before
+		// the socket is upgraded.
+		const identity = this.presentedDevice(req.headers, url);
+		if (identity && !this.admitDevice(identity, "upgrade")) {
+			this.recordFailure(ip);
+			this.reject(socket, 401, "device revoked");
+			return;
+		}
 		// Reserve before the asynchronous handshake callback so two simultaneous
 		// upgrades cannot both pass the maxClients check.
 		if (this.clients.size + this.pendingUpgrades >= this.options.maxClients) {
@@ -328,7 +359,7 @@ export class BridgeWsServer {
 		try {
 			this.wss.handleUpgrade(req, socket, head, (ws) => {
 				this.pendingUpgrades = Math.max(0, this.pendingUpgrades - 1);
-				this.registerClient(ws, ip);
+				this.registerClient(ws, ip, identity);
 				this.options.onClientConnected(ws);
 				// Per-client handshake frame: the client treats this as auth-complete
 				// and starts its initial sync. `contract` lets the client verify it
@@ -342,6 +373,7 @@ export class BridgeWsServer {
 						contract: BRIDGE_CONTRACT,
 					}),
 				);
+				if (identity) this.recordDevice(ws, identity);
 			});
 		} catch (error) {
 			this.pendingUpgrades = Math.max(0, this.pendingUpgrades - 1);
@@ -349,18 +381,27 @@ export class BridgeWsServer {
 		}
 	}
 
-	private registerClient(ws: WebSocket, ip: string): void {
+	private registerClient(ws: WebSocket, ip: string, device?: DeviceIdentity): void {
 		const state: ClientState = {
 			ip,
 			queue: [],
 			queueBytes: 0,
 			slow: false,
 			lastPong: Date.now(),
+			...(device ? { device } : {}),
 		};
 		this.clients.set(ws, state);
 
 		ws.on("message", (data) => {
-			this.options.onClientMessage(data.toString(), ws);
+			const raw = data.toString();
+			// A `hello` frame is bridge-owned device identity, never an engine
+			// command: record the device and answer it instead of forwarding.
+			const identity = this.options.deviceRegistry ? deviceFromFrame(raw) : null;
+			if (identity) {
+				this.handleHello(ws, identity);
+				return;
+			}
+			this.options.onClientMessage(raw, ws);
 		});
 		ws.on("pong", () => {
 			const client = this.clients.get(ws);
@@ -373,6 +414,72 @@ export class BridgeWsServer {
 		ws.on("error", () => {
 			// Transport errors end in a close event; nothing further to do.
 		});
+	}
+
+	/** Device identity presented on the upgrade (headers win over query parameters). */
+	private presentedDevice(headers: IncomingMessage["headers"], url: string): DeviceIdentity | undefined {
+		if (!this.options.deviceRegistry) return undefined;
+		return deviceFromHeaders(headers) ?? deviceFromUrl(url) ?? undefined;
+	}
+
+	/**
+	 * Ask the registry whether this device may connect. A registry failure fails
+	 * open (the pairing token already authorized the client) and never throws
+	 * inside the upgrade path.
+	 */
+	private admitDevice(identity: DeviceIdentity, via: "upgrade" | "hello"): boolean {
+		const registry = this.options.deviceRegistry;
+		if (!registry) return true;
+		let admitted: boolean;
+		try {
+			admitted = registry.admit(identity);
+		} catch (error) {
+			this.debugLog(`device registry unavailable: ${error instanceof Error ? error.message : String(error)}`);
+			return true;
+		}
+		if (!admitted) this.options.onDeviceRevoked?.(identity, via);
+		return admitted;
+	}
+
+	/** Upsert the device record and tell the client it is on the registry. */
+	private recordDevice(ws: WebSocket, identity: DeviceIdentity): void {
+		const registry = this.options.deviceRegistry;
+		if (!registry) return;
+		try {
+			const device = registry.record(identity);
+			this.options.onDeviceRegistered?.(device);
+			this.sendTo(ws, bridgeFrame({ type: "bridge", event: "device_registered", id: device.id, name: device.name }));
+		} catch (error) {
+			this.debugLog(`device registry write failed: ${error instanceof Error ? error.message : String(error)}`);
+		}
+	}
+
+	/**
+	 * A `hello` frame names the device after the socket is open — the only path
+	 * for clients that cannot set upgrade headers (browser WebSocket, Flutter
+	 * web). A revoked device is told so and then closed with 4401.
+	 */
+	private handleHello(ws: WebSocket, identity: DeviceIdentity): void {
+		if (!this.admitDevice(identity, "hello")) {
+			this.sendTo(ws, bridgeFrame({ type: "bridge", event: "device_revoked", id: identity.id }));
+			const timer = setTimeout(() => {
+				try {
+					ws.close(4401, "device revoked");
+				} catch {
+					// best effort: the registry already refused this device
+				}
+			}, DEVICE_REVOKED_CLOSE_GRACE_MS);
+			timer.unref?.();
+			return;
+		}
+		const client = this.clients.get(ws);
+		if (client) client.device = identity;
+		this.recordDevice(ws, identity);
+	}
+
+	private debugLog(message: string): void {
+		if (!process.env.A_CODER_SERVE_DEBUG) return;
+		process.stderr.write(`[serve] ${message}\n`);
 	}
 
 	/** Reject an upgrade with a plain HTTP response before the WS handshake. */
