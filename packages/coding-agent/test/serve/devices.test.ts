@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import type { IncomingMessage } from "node:http";
 import os from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import {
@@ -11,6 +11,7 @@ import {
 	deviceFromHeaders,
 	deviceFromUrl,
 	MAX_DEVICES,
+	REVOKED_RETENTION_MS,
 	readRegistry,
 	writeRegistry,
 } from "../../src/serve/clients.ts";
@@ -187,6 +188,69 @@ describe("device registry file", () => {
 		expect(store.admit({ id: "phone-1" })).toBe(false);
 		expect(readRegistry(store.path).devices).toHaveLength(0);
 	});
+
+	it("does not turn a failed registry write into a revocation", () => {
+		const path = freshPath();
+		const store = new DeviceRegistryStore({ path });
+		store.record({ id: "phone-good" });
+
+		// Disk full / AV lock: the write throws after the record was built.
+		const directory = dirname(path);
+		fs.chmodSync(directory, 0o500);
+		try {
+			expect(() => store.record({ id: "phone-flaky" })).toThrow();
+		} finally {
+			fs.chmodSync(directory, 0o700);
+		}
+
+		// A transient failure must not read back as "the device was removed".
+		expect(store.admit({ id: "phone-flaky" })).toBe(true);
+		expect(readRegistry(path).revoked).toEqual([]);
+
+		// With the directory writable again the retry records it normally.
+		store.record({ id: "phone-flaky" });
+		expect(
+			readRegistry(path)
+				.devices.map((device) => device.id)
+				.sort(),
+		).toEqual(["phone-flaky", "phone-good"]);
+	});
+
+	it("does not leave an in-memory revocation behind when the tombstone write fails", () => {
+		const path = freshPath();
+		const store = new DeviceRegistryStore({ path });
+		store.record({ id: "phone-1" });
+
+		const directory = dirname(path);
+		fs.chmodSync(directory, 0o500);
+		try {
+			expect(() => store.revoke("phone-1")).toThrow();
+		} finally {
+			fs.chmodSync(directory, 0o700);
+		}
+
+		// The file still lists the device, so the process view must too.
+		expect(store.admit({ id: "phone-1" })).toBe(true);
+		expect(readRegistry(path).devices.map((device) => device.id)).toEqual(["phone-1"]);
+
+		// Once the directory is writable the revoke goes through for real.
+		expect(store.revoke("phone-1")).toBe(true);
+		expect(store.admit({ id: "phone-1" })).toBe(false);
+	});
+
+	it("prunes expired tombstones instead of growing the file forever", () => {
+		const clock = steppableClock();
+		const store = new DeviceRegistryStore({ path: freshPath(), now: clock.now });
+		store.record({ id: "phone-1" });
+		store.revoke("phone-1");
+		expect(readRegistry(store.path).revoked.map((entry) => entry.id)).toEqual(["phone-1"]);
+
+		clock.advance(REVOKED_RETENTION_MS + 1);
+		store.record({ id: "phone-2" });
+		expect(readRegistry(store.path).revoked).toEqual([]);
+		// Revocation expired with the tombstone, so the id may pair again.
+		expect(store.admit({ id: "phone-1" })).toBe(true);
+	});
 });
 
 describe("device identity parsing", () => {
@@ -213,6 +277,13 @@ describe("device identity parsing", () => {
 			id: "phone-abc",
 			name: "Pixel",
 			platform: "ios",
+		});
+	});
+
+	it("reads a hello frame with the id at the top level", () => {
+		expect(deviceFromFrame('{"type":"hello","id":"phone-top","name":"Pixel"}')).toEqual({
+			id: "phone-top",
+			name: "Pixel",
 		});
 	});
 

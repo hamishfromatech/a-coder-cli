@@ -34,6 +34,10 @@ export const REGISTRY_FILE = "clients.json";
 export const REGISTRY_VERSION = 1;
 /** Newest devices kept; older records are dropped so a buggy client cannot grow the file without bound. */
 export const MAX_DEVICES = 32;
+/** Tombstones older than this are forgotten on the next write (device churn cannot grow the file forever). */
+export const REVOKED_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+/** Hard cap on tombstones kept even inside the retention window. */
+export const MAX_REVOKED = 256;
 
 const MAX_ID_LENGTH = 128;
 const MAX_NAME_LENGTH = 64;
@@ -284,7 +288,7 @@ export class DeviceRegistryStore {
 		this.filePath = options.path ?? clientsPath();
 		this.now = options.now ?? (() => new Date());
 		this.observed = readRegistry(this.filePath);
-		this.seed(this.observed);
+		this.adopt(this.observed);
 	}
 
 	get path(): string {
@@ -312,19 +316,23 @@ export class DeviceRegistryStore {
 			if (present.has(id) || revoked.has(id)) continue;
 			const tombstone: RevokedDevice = { id, revokedAt: this.now().toISOString() };
 			revoked.set(id, tombstone);
-			this.tombstoned.add(id);
 			changed = true;
 		}
 		// A tombstone always wins over a leftover record.
 		const devices = fresh.devices.filter((device) => !revoked.has(device.id));
 		if (devices.length !== fresh.devices.length) changed = true;
 
-		this.observed = { version: REGISTRY_VERSION, devices, revoked: [...revoked.values()] };
-		this.seed(this.observed);
+		const keptRevoked = this.pruneRevoked([...revoked.values()]);
+		if (keptRevoked.length !== revoked.size) changed = true;
+
+		const next: DeviceRegistry = { version: REGISTRY_VERSION, devices, revoked: keptRevoked };
 		if (changed) {
-			// Persist the tombstone now: revocation must outlive this process.
-			writeRegistry(this.observed, this.filePath);
+			// Persist the tombstone before adopting the new view: if this write
+			// throws, the in-memory sets must still describe the file on disk.
+			writeRegistry(next, this.filePath);
 		}
+		this.observed = next;
+		this.adopt(next);
 		return this.snapshot();
 	}
 
@@ -357,21 +365,21 @@ export class DeviceRegistryStore {
 		if (index >= 0) devices[index] = record;
 		else devices.push(record);
 
-		const capped = this.cap(devices);
-		// A record evicted by the size cap was not revoked: forget it, so a later
-		// refresh does not turn the eviction into a permanent tombstone.
-		const kept = new Set(capped.map((device) => device.id));
-		for (const device of devices) {
-			if (!kept.has(device.id)) this.known.delete(device.id);
-		}
-
-		this.observed = {
+		const next: DeviceRegistry = {
 			version: REGISTRY_VERSION,
-			devices: capped,
-			revoked: this.observed.revoked,
+			// A record evicted by the size cap is forgotten, not revoked: `adopt`
+			// rebuilds `known` from this list, so a later refresh cannot read the
+			// eviction as a removal and tombstone it.
+			devices: this.cap(devices),
+			revoked: this.pruneRevoked(this.observed.revoked),
 		};
-		this.seed(this.observed);
-		writeRegistry(this.observed, this.filePath);
+		// Persist BEFORE committing in-memory state. If the write fails, `known`
+		// still matches the file, so the next admission cannot read the missing
+		// record as "this device was removed" and persist a durable tombstone
+		// from a transient write error (THE-61 finding 1).
+		writeRegistry(next, this.filePath);
+		this.observed = next;
+		this.adopt(next);
 		return record;
 	}
 
@@ -386,26 +394,47 @@ export class DeviceRegistryStore {
 		const alreadyGone =
 			this.tombstoned.has(deviceId) && !this.observed.devices.some((device) => device.id === deviceId);
 		if (alreadyGone) return false;
-		this.tombstoned.add(deviceId);
-		this.observed = {
+		const next: DeviceRegistry = {
 			version: REGISTRY_VERSION,
 			devices: this.observed.devices.filter((device) => device.id !== deviceId),
-			revoked: [
+			revoked: this.pruneRevoked([
 				...this.observed.revoked.filter((entry) => entry.id !== deviceId),
 				{
 					id: deviceId,
 					revokedAt: this.now().toISOString(),
 				},
-			],
+			]),
 		};
-		this.known.delete(deviceId);
-		writeRegistry(this.observed, this.filePath);
+		// Same rule as `record`: a failed write leaves the process view matching
+		// the file, so the device stays paired rather than becoming half-revoked.
+		writeRegistry(next, this.filePath);
+		this.observed = next;
+		this.adopt(next);
 		return true;
 	}
 
-	private seed(registry: DeviceRegistry): void {
+	/** Make the tracked sets describe exactly this registry view (not a cumulative history). */
+	private adopt(registry: DeviceRegistry): void {
+		this.known.clear();
+		this.tombstoned.clear();
 		for (const device of registry.devices) this.known.add(device.id);
 		for (const entry of registry.revoked) this.tombstoned.add(entry.id);
+	}
+
+	/**
+	 * Keep tombstones for `REVOKED_RETENTION_MS`, capped at `MAX_REVOKED`. Once a
+	 * tombstone is pruned the id may pair again; the retention window is what
+	 * makes removal revocable-but-finite instead of growing the file forever.
+	 * An unparseable timestamp is kept: never resurrect by accident.
+	 */
+	private pruneRevoked(revoked: RevokedDevice[]): RevokedDevice[] {
+		const cutoff = this.now().getTime() - REVOKED_RETENTION_MS;
+		const retained = revoked.filter((entry) => {
+			const at = Date.parse(entry.revokedAt);
+			return Number.isNaN(at) ? true : at >= cutoff;
+		});
+		if (retained.length <= MAX_REVOKED) return retained;
+		return [...retained].sort((left, right) => right.revokedAt.localeCompare(left.revokedAt)).slice(0, MAX_REVOKED);
 	}
 
 	/** Keep the newest MAX_DEVICES records, preferring the ones seen most recently. */
