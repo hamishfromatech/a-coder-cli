@@ -42,6 +42,7 @@ import {
 	type AgentEventDeps,
 } from "./agent-event-pipeline";
 import { useSessionStore } from "../stores/session-store";
+import { useToastStore } from "../stores/toast-store";
 import { clearSessionCache, getCachedSessionMessages, setCachedSessionMessages } from "./session-cache";
 import { useSessionTranscriptsStore } from "../stores/session-transcripts-store";
 import type * as rpc from "./rpc";
@@ -108,6 +109,7 @@ beforeEach(() => {
 	h.setSessionName.mockReset();
 	clearSessionCache();
 	useSessionStore.getState().resetSession();
+	useToastStore.getState().clear();
 	useSessionTranscriptsStore.setState({ transcripts: {}, subscribed: {} });
 });
 
@@ -129,6 +131,54 @@ describe("mergeUserEchoes", () => {
 	it("does not duplicate an echo the snapshot already contains", () => {
 		const merged = mergeUserEchoes([user("same text")], [user("same text")]);
 		expect(merged).toHaveLength(1);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Auto-continue toast
+// ---------------------------------------------------------------------------
+
+describe("auto-continue toast", () => {
+	it("uses human copy and never renders the raw diagnostic summary or a float latency", () => {
+		processAgentEvent(
+			{
+				type: "auto_continue_decision",
+				checkpoint: "agent_end",
+				action: "stop",
+				probabilities: { continue: 0.01, ask_user: 0.02, done: 0.96, blocked: 0.01 },
+				progress: 0.56,
+				completion: 0.96,
+				model: "clef:27b",
+				latencyMs: 533.381500000177,
+				reason: "model recommended stopping",
+				diagnostic: "next=done p=0.01 progress=0.56 completion=0.96",
+			} as unknown as rpc.RpcEvent,
+			makeDeps(),
+		);
+
+		const [t] = useToastStore.getState().toasts;
+		expect(t.title).toBe("Auto-continue stopped");
+		expect(t.message).toBe("model recommended stopping · progress 56% · done 96% · 533ms · clef:27b");
+		expect(t.message).not.toContain("next=");
+		expect(t.message).not.toContain("533.3815");
+	});
+
+	it("shows only the guard reason when no model call ran", () => {
+		processAgentEvent(
+			{
+				type: "auto_continue_decision",
+				checkpoint: "agent_end",
+				action: "stop",
+				probabilities: {},
+				progress: 0,
+				latencyMs: 0,
+				reason: "tool error streak reached (3)",
+			} as unknown as rpc.RpcEvent,
+			makeDeps(),
+		);
+
+		const [t] = useToastStore.getState().toasts;
+		expect(t.message).toBe("tool error streak reached (3)");
 	});
 });
 
