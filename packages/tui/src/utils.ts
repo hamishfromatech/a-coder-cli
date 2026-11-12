@@ -309,6 +309,21 @@ export function visibleWidth(str: string): number {
 	return width;
 }
 
+const INPUT_ESCAPE_SEQUENCE_REGEX = /\x1b\[[0-9;:<=>?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-_]/g;
+
+/**
+ * Remove ANSI, OSC, and two-byte escape sequences from terminal *input* (typed
+ * chunks and pastes).
+ *
+ * `stripTerminalSequences` only consumes the CSI finals the renderer emits; a
+ * sequence body it does not know (e.g. `[31m`, `]0;title`) would survive as
+ * text. This is the broader sweep used before input reaches the editor buffer.
+ */
+export function stripInputEscapeSequences(str: string): string {
+	if (!str.includes("\x1b")) return str;
+	return str.replace(INPUT_ESCAPE_SEQUENCE_REGEX, "");
+}
+
 /** Remove ANSI, OSC, and APC control sequences while preserving visible text. */
 export function stripTerminalSequences(str: string): string {
 	if (!str.includes("\x1b")) return str;
