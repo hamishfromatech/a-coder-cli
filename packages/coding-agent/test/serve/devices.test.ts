@@ -169,6 +169,22 @@ describe("device registry file", () => {
 		expect(restarted.admit({ id: "phone-2" })).toBe(true);
 	});
 
+	it("does not resurrect a device removed by another process", () => {
+		const path = freshPath();
+		const store = new DeviceRegistryStore({ path });
+		store.record({ id: "phone-1" });
+		store.record({ id: "phone-2" });
+
+		// The desktop card rewrites the file between admission and recording.
+		const onDisk = readRegistry(path);
+		writeRegistry({ ...onDisk, devices: onDisk.devices.filter((device) => device.id !== "phone-2") }, path);
+
+		expect(() => store.record({ id: "phone-2" })).toThrow(/revoked/);
+		expect(readRegistry(path).devices.map((device) => device.id)).toEqual(["phone-1"]);
+		expect(readRegistry(path).revoked.map((entry) => entry.id)).toContain("phone-2");
+		expect(store.admit({ id: "phone-2" })).toBe(false);
+	});
+
 	it("never revokes everything when the file is missing or corrupt", () => {
 		const path = freshPath();
 		const store = new DeviceRegistryStore({ path });

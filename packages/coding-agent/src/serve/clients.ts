@@ -344,6 +344,14 @@ export class DeviceRegistryStore {
 
 	/** Upsert the device record: adds on first sight, refreshes name/platform/lastSeen after. */
 	record(identity: DeviceIdentity): DeviceRecord {
+		// Re-read before writing. The desktop card removes records by rewriting
+		// this file from another process, so a list captured before admission can
+		// resurrect a device the user just removed. `refresh()` also persists the
+		// derived tombstone, so the refusal survives this process.
+		this.refresh();
+		if (this.tombstoned.has(identity.id)) {
+			throw new Error(`device ${identity.id} was revoked while connecting`);
+		}
 		const nowIso = this.now().toISOString();
 		const devices = [...this.observed.devices];
 		const index = devices.findIndex((device) => device.id === identity.id);

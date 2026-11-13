@@ -26,6 +26,7 @@
 - Inception's direct provider now refreshes its live `/v1/models` catalog on model refresh and session `/reload`; newly published Mercury models appear without waiting for a release.
 - `cron.model` setting (Settings → Models → Scheduled task model) pins the model used for scheduled runs. Precedence is `cron.model`, `subagentModel`, default chat model; a job session's pinned model is never inherited implicitly. Runs record the model and source, and the desktop shows both in run history.
 - `/cron model` subcommand (`<provider/model|clear>`) to view, set, or clear the scheduled-task model from the terminal — CLI parity with the desktop Settings picker. It validates the reference against the model catalog and warns when the provider has no credentials.
+- **Paired-device registry for `a-coder-cli serve`:** the mobile bridge records every paired client in `serve/clients.json` (`{version, devices, revoked}`, atomic owner-only write) from the `x-acoder-device-id` upgrade header, the `/rpc` `device_*` query parameters, or a `{"type":"hello"}` frame. Settings → Mobile access now lists real devices with `lastSeen` instead of an empty card, and removing one writes a durable tombstone: the bridge answers that device's next upgrade with 401 (hello-identified clients get `device_revoked` and close 4401) and keeps refusing it across restarts until the tombstone is pruned after 30 days. `serve --rotate` remains the revoke-everything path.
 
 ### Fixed
 
