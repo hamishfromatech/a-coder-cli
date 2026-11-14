@@ -249,6 +249,9 @@ export class CuaDriverClient {
 	private starting: Promise<void> | null = null;
 	private transportSuspect = false;
 	private disposed = false;
+	/** Last stderr lines from the child, for diagnostics when it dies. */
+	private stderrTail: string[] = [];
+	private stderrPartial = "";
 
 	/** True once tools/list has populated the tool map. */
 	get discovered(): boolean {
@@ -266,13 +269,17 @@ export class CuaDriverClient {
 
 	/**
 	 * Connect (or reconnect after a drop): spawn, initialize, discover tools.
-	 * Safe to call repeatedly — concurrent and repeat calls share one start.
+	 * Concurrent calls share one start. A failed start clears the memoized
+	 * promise so the next call retries instead of replaying the rejection.
 	 */
 	start(): Promise<void> {
 		if (this.disposed) {
 			throw new Error("cua-driver client has been disposed");
 		}
-		this.starting ??= this.startInternal();
+		this.starting ??= this.startInternal().catch((error) => {
+			this.starting = null;
+			throw error;
+		});
 		return this.starting;
 	}
 
@@ -292,6 +299,7 @@ export class CuaDriverClient {
 			stderr: "pipe",
 		});
 		this.transport = transport;
+		this.drainStderr(transport);
 		const client = new Client({ name: "a-coder-cli", version: "1.0" });
 		this.client = client;
 		try {
@@ -306,18 +314,57 @@ export class CuaDriverClient {
 
 	private async discoverTools(client: Client): Promise<void> {
 		this.tools.clear();
-		const listing = await client.listTools();
-		for (const tool of listing.tools) {
-			const schema = tool.inputSchema as { properties?: Record<string, unknown> } | undefined;
-			const capabilities = (tool as { capabilities?: unknown }).capabilities;
-			this.tools.set(tool.name, {
-				name: tool.name,
-				capabilities: new Set(
-					Array.isArray(capabilities) ? capabilities.filter((c): c is string => typeof c === "string") : [],
-				),
-				inputProperties: new Set(schema?.properties ? Object.keys(schema.properties) : []),
-			});
-		}
+		// listTools pages: a driver advertising more tools than one page must not
+		// end up with a half-populated map (that reads as "tool unavailable").
+		const seenCursors = new Set<string>();
+		let cursor: string | undefined;
+		do {
+			const listing = await client.listTools(cursor ? { cursor } : undefined);
+			for (const tool of listing.tools) {
+				const schema = tool.inputSchema as { properties?: Record<string, unknown> } | undefined;
+				const capabilities = (tool as { capabilities?: unknown }).capabilities;
+				this.tools.set(tool.name, {
+					name: tool.name,
+					capabilities: new Set(
+						Array.isArray(capabilities) ? capabilities.filter((c): c is string => typeof c === "string") : [],
+					),
+					inputProperties: new Set(schema?.properties ? Object.keys(schema.properties) : []),
+				});
+			}
+			cursor = listing.nextCursor;
+			if (cursor && seenCursors.has(cursor)) break;
+			if (cursor) seenCursors.add(cursor);
+		} while (cursor);
+	}
+
+	/**
+	 * Drain the child's stderr. `stderr: "pipe"` without a consumer back-pressures
+	 * the driver once its stderr buffer fills, so a chatty build can hang every
+	 * call. Keep only a bounded tail for diagnostics.
+	 */
+	private drainStderr(transport: StdioClientTransport): void {
+		this.stderrTail = [];
+		this.stderrPartial = "";
+		const stream = transport.stderr;
+		if (!stream) return;
+		stream.on("data", (chunk: Buffer | string) => {
+			this.stderrPartial += chunk.toString();
+			const lines = this.stderrPartial.split(/\r?\n/);
+			this.stderrPartial = lines.pop() ?? "";
+			for (const line of lines) {
+				if (!line.trim()) continue;
+				this.stderrTail.push(line);
+			}
+			if (this.stderrTail.length > 20) this.stderrTail.splice(0, this.stderrTail.length - 20);
+		});
+		stream.on("error", () => {
+			// A broken stderr pipe must never surface as an unhandled error.
+		});
+	}
+
+	/** Bounded stderr tail from the driver child (diagnostics only). */
+	stderrDiagnostics(): string {
+		return this.stderrTail.join("\n");
 	}
 
 	private async declareSession(client: Client): Promise<void> {
@@ -366,11 +413,16 @@ export class CuaDriverClient {
 				};
 			}
 			if (isTransportClosed(error)) {
+				const diagnostics = this.stderrDiagnostics();
+				const suffix = diagnostics ? ` Driver stderr: ${diagnostics.split("\n").slice(-3).join(" | ")}` : "";
 				this.teardownTransport();
 				if (READ_SAFE_TOOLS.has(name)) {
-					// Idempotent reads may replay once after a reconnect.
+					// Idempotent reads may replay once after a reconnect. Re-read the
+					// client: teardown nulled it and start() spawned a replacement.
 					await this.start();
-					const result = await client.callTool({ name, arguments: payload }, undefined, {
+					const reconnected = this.client;
+					if (!reconnected) throw new Error("cua-driver client is not connected");
+					const result = await reconnected.callTool({ name, arguments: payload }, undefined, {
 						timeout: CALL_TIMEOUT_MS,
 					});
 					return normalizeResult(result as CallToolResult);
@@ -380,7 +432,7 @@ export class CuaDriverClient {
 					structured: { ok: false, code: "transport_outcome_unknown", operation: name, next_step: "fresh_state" },
 					message:
 						`cua-driver transport failed during "${name}"; the action outcome is unknown, so it was not replayed. ` +
-						"Take fresh state before deciding whether to act again.",
+						`Take fresh state before deciding whether to act again.${suffix}`,
 					images: [],
 				};
 			}
@@ -402,6 +454,10 @@ export class CuaDriverClient {
 	private teardownTransport(): void {
 		this.transportSuspect = false;
 		this.client = null;
+		// Clear the memoized start with the transport: a dead transport means the
+		// next start() must spawn a new child, not resolve the old promise and
+		// leave `client` null.
+		this.starting = null;
 		if (this.transport) {
 			try {
 				this.transport.close();
