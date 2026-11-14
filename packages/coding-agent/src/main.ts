@@ -70,6 +70,7 @@ import {
 	handleResourcesCommand,
 } from "./package-manager-cli.ts";
 import { handleServeCommand } from "./serve/serve-command.ts";
+import { syncEngineVersionMarker } from "./utils/engine-version-marker.ts";
 import { isLocalPath, normalizePath, resolvePath } from "./utils/paths.ts";
 import { cleanupWindowsSelfUpdateQuarantine } from "./utils/windows-self-update.ts";
 
@@ -585,6 +586,10 @@ function emitAuthCredential(model: Model<Api>, auth: ResolvedRequestAuth): void 
 }
 export async function main(args: string[], options?: MainOptions) {
 	resetTimings();
+	// A CLI-only update replaces the binary but not the ENGINE_VERSION marker
+	// that a desktop bundle install left behind; refresh it before any surface
+	// can read a stale value. No-op when the install has no marker.
+	syncEngineVersionMarker();
 	// MCP servers commonly use npx/node/npm even though the engine itself is a
 	// Bun binary. Prepend the Node runtime shipped with release archives so
 	// those servers work without a system Node install.
