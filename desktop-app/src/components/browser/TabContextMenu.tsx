@@ -9,7 +9,7 @@ import { useBrowserStore } from "../../stores/browser-store";
 import { ESCAPE_PRIORITY, isTopEscapeLayer, pushEscapeLayer } from "../../lib/escape-layers";
 
 const MENU_WIDTH = 176;
-const MENU_HEIGHT = 148;
+const MENU_HEIGHT = 212;
 
 const menuItem =
 	"w-full cursor-pointer px-3 py-1.5 text-left text-xs text-pi-text transition-hover hover:bg-pi-surface-raised disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent";
@@ -33,6 +33,9 @@ export function TabContextMenu({
 	const closeOthers = useBrowserStore((state) => state.closeOthers);
 	const closeAll = useBrowserStore((state) => state.closeAll);
 	const copyUrl = useBrowserStore((state) => state.copyUrl);
+	const copyMarkdownLink = useBrowserStore((state) => state.copyMarkdownLink);
+	const openTab = useBrowserStore((state) => state.openTab);
+	const tabUrl = useBrowserStore((state) => state.tabs.find((tab) => tab.id === tabId)?.url ?? "");
 
 	useEffect(() => {
 		const unregister = pushEscapeLayer(ESCAPE_PRIORITY.contextMenu); // while open
@@ -94,11 +97,33 @@ export function TabContextMenu({
 				className={menuItem}
 				disabled={!hasUrl}
 				onClick={() => {
+					void openTab(tabUrl);
+					onClose();
+				}}
+			>
+				Duplicate tab
+			</button>
+			<button
+				role="menuitem"
+				className={menuItem}
+				disabled={!hasUrl}
+				onClick={() => {
 					void copyUrl(tabId);
 					onClose();
 				}}
 			>
 				Copy URL
+			</button>
+			<button
+				role="menuitem"
+				className={menuItem}
+				disabled={!hasUrl}
+				onClick={() => {
+					void copyMarkdownLink(tabId);
+					onClose();
+				}}
+			>
+				Copy as Markdown link
 			</button>
 			<button
 				role="menuitem"

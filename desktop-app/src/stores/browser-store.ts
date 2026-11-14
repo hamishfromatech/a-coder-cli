@@ -92,6 +92,8 @@ interface BrowserState {
 	closeAll: () => Promise<void>;
 	/** Copies a tab's URL to the clipboard and confirms with a toast. */
 	copyUrl: (tabId: string) => Promise<void>;
+	/** Copies the tab as a Markdown link (`[title](url)`) for notes and issues. */
+	copyMarkdownLink: (tabId: string) => Promise<void>;
 	/** Restores a persisted session on a fresh panel mount; no-ops once consumed. */
 	restoreSession: () => Promise<void>;
 	/** Queues a non-web-scheme external handoff for user confirmation. */
@@ -441,6 +443,15 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
 		if (!tab?.url) return;
 		await navigator.clipboard.writeText(tab.url).catch(() => {});
 		toast.success("URL copied", tab.url);
+	},
+
+	copyMarkdownLink: async (tabId) => {
+		const tab = get().tabs.find((entry) => entry.id === tabId);
+		if (!tab?.url) return;
+		// Escape `]` so a title like "[beta] Settings" stays one valid link.
+		const title = (tab.title || tab.url).replace(/\]/g, "\\]");
+		await navigator.clipboard.writeText(`[${title}](${tab.url})`).catch(() => {});
+		toast.success("Markdown link copied", tab.url);
 	},
 
 	restoreSession: async () => {
