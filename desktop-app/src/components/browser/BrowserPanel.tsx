@@ -106,7 +106,10 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 	const zoom = active?.zoom ?? 1;
 	const zoomPct = Math.round(zoom * 100);
 	const menusOpen = zoomOpen || downloadsOpen || overflowOpen;
-	const blocked = captureUrl != null || menusOpen;
+	// Any modal that is not inside the panel's excluded chrome must take all
+	// page input, or its buttons land on the page underneath.
+	const externalPrompt = useBrowserStore((s) => s.externalPrompt);
+	const blocked = captureUrl != null || menusOpen || externalPrompt != null;
 
 	// Find only applies to a live page; a start tab hides it (and must not
 	// keep the Escape layer registered behind nothing).
@@ -194,6 +197,19 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 			const root = panelRef.current;
 			const viewportWidth = window.innerWidth;
 			if (!root || !viewportWidth) return;
+			// The page area is authoritative for click-through on the Rust side:
+			// routing by this rect cannot drift from where the page is placed.
+			const area = pageAreaRef.current?.getBoundingClientRect();
+			const pageRect: ViewBounds | null =
+				area && area.width > 0 && area.height > 0
+					? {
+							x: area.left,
+							y: area.top,
+							width: area.width,
+							height: area.height,
+							viewportWidth,
+						}
+					: null;
 			const rects: ViewBounds[] = [];
 			// Viewport-relative: the router subtracts these from main-view points
 			// (point = WebKit CSS px); panel-relative is one rail drag off. Every
@@ -211,7 +227,7 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 					});
 				}
 			}
-			void browser.setPageInput(blocked, rects).catch(() => {});
+			void browser.setPageInput(blocked, rects, pageRect).catch(() => {});
 		};
 		report();
 		const observer = new ResizeObserver(report);
@@ -220,7 +236,7 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 		return () => {
 			observer.disconnect();
 		};
-	}, [layered, supported, activeId, blocked, downloads.length, captureUrl]);
+	}, [layered, supported, activeId, blocked, downloads.length, captureUrl, findOpen, contextTab, externalPrompt]);
 
 	const navigateTo = (url: string) => {
 		// No native views and no reading frame: the system browser is the only

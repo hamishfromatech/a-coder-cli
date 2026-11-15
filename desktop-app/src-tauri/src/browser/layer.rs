@@ -51,6 +51,7 @@ const PAGE: u8 = 2;
 static INPUT: Mutex<Input> = Mutex::new(Input {
 	blocked: false,
 	exclude: Vec::new(),
+	page: None,
 });
 
 /// Panel UI over the page, in the app's CSS pixels: `(x, y, w, h,
@@ -59,15 +60,23 @@ struct Input {
 	/// A menu or dialog is open: the panel takes all page input.
 	blocked: bool,
 	exclude: Vec<(f64, f64, f64, f64, f64)>,
+	/// The panel's page area, reported by the frontend. Authoritative when set:
+	/// it is the same rect Rust positions the page at, so routing does not have
+	/// to infer the page from the view tree (which differs by Tauri version and
+	/// wraps child webviews differently).
+	page: Option<(f64, f64, f64, f64, f64)>,
 }
 
-/// Sets which parts of the page the panel's UI covers; true when `blocked`
-/// changed (the caller routes moves again).
-pub fn set_input(blocked: bool, exclude: &[ViewBounds]) -> bool {
+/// Sets which parts of the page the panel's UI covers and where the page area
+/// is; true when `blocked` or the page rect changed (the caller routes moves
+/// again).
+pub fn set_input(blocked: bool, exclude: &[ViewBounds], page: Option<ViewBounds>) -> bool {
 	let mut input = INPUT.lock().unwrap();
-	let changed = input.blocked != blocked;
+	let page = page.map(|bounds| bounds.parts());
+	let changed = input.blocked != blocked || input.page != page;
 	input.blocked = blocked;
 	input.exclude = exclude.iter().map(ViewBounds::parts).collect();
+	input.page = page;
 	changed
 }
 
@@ -253,38 +262,47 @@ fn over_page(main: &NSView, point: NSPoint) -> bool {
 	if input.blocked {
 		return false;
 	}
+	let width = main.frame().size.width;
+	let in_page = match input.page {
+		Some(page) => point_in(scaled_rect(page, width), point),
+		// First paint, before the panel reported its page area: fall back to
+		// the view tree. A page view is a sibling of the app webview below it.
+		None => match visible_page_at(main, point) {
+			true => true,
+			false => return false,
+		},
+	};
+	if !in_page {
+		return false;
+	}
+	!input
+		.exclude
+		.iter()
+		.any(|&exclude| point_in(scaled_rect(exclude, width), point))
+}
+
+/// A reported rect in app-view points, scaled by any zoom the panel applied.
+fn scaled_rect((x, y, w, h, viewport): (f64, f64, f64, f64, f64), width: f64) -> NSRect {
+	let scale = if viewport > 0.0 { width / viewport } else { 1.0 };
+	NSRect::new(
+		NSPoint::new(x * scale, y * scale),
+		NSSize::new(w * scale, h * scale),
+	)
+}
+
+/// Legacy fallback: a visible sibling of the app webview whose frame contains
+/// the point. Used only until the frontend reports its page area.
+fn visible_page_at(main: &NSView, point: NSPoint) -> bool {
 	// Safety: the main thread's view tree.
 	let Some(parent) = (unsafe { main.superview() }) else {
 		return false;
 	};
 	let class = main.class();
-	let page = parent.subviews().iter().any(|view| {
+	parent.subviews().iter().any(|view| {
 		!std::ptr::eq(&*view, main)
 			&& std::ptr::eq(view.class(), class)
 			&& !view.isHidden()
-			&& point_in(
-				main.convertRect_fromView(view.frame(), Some(&parent)),
-				point,
-			)
-	});
-	if !page {
-		return false;
-	}
-	// The app view is flipped: its coordinates read like CSS px.
-	let width = main.frame().size.width;
-	!input.exclude.iter().any(|&(x, y, w, h, viewport)| {
-		let scale = if viewport > 0.0 {
-			width / viewport
-		} else {
-			1.0
-		};
-		point_in(
-			NSRect::new(
-				NSPoint::new(x * scale, y * scale),
-				NSSize::new(w * scale, h * scale),
-			),
-			point,
-		)
+			&& point_in(main.convertRect_fromView(view.frame(), Some(&parent)), point)
 	})
 }
 
@@ -355,6 +373,22 @@ mod tests {
 		assert!(point_in(rect, NSPoint::new(39.0, 59.0)));
 		assert!(!point_in(rect, NSPoint::new(40.0, 30.0)));
 		assert!(!point_in(rect, NSPoint::new(9.0, 20.0)));
+	}
+
+	#[test]
+	fn reported_page_rect_scales_with_zoom() {
+		let rect = scaled_rect((10.0, 20.0, 100.0, 50.0, 400.0), 800.0);
+		assert!(point_in(rect, NSPoint::new(20.0, 40.0)));
+		assert!(point_in(rect, NSPoint::new(219.0, 139.0)));
+		assert!(!point_in(rect, NSPoint::new(220.0, 40.0)));
+		assert!(!point_in(rect, NSPoint::new(20.0, 140.0)));
+	}
+
+	#[test]
+	fn reported_page_rect_without_viewport_does_not_scale() {
+		let rect = scaled_rect((10.0, 20.0, 100.0, 50.0, 0.0), 800.0);
+		assert!(point_in(rect, NSPoint::new(109.0, 69.0)));
+		assert!(!point_in(rect, NSPoint::new(110.0, 70.0)));
 	}
 
 	fn point_rect(x: f64, y: f64, w: f64, h: f64) -> NSRect {
