@@ -109,7 +109,15 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 	// Any modal that is not inside the panel's excluded chrome must take all
 	// page input, or its buttons land on the page underneath.
 	const externalPrompt = useBrowserStore((s) => s.externalPrompt);
-	const blocked = captureUrl != null || menusOpen || externalPrompt != null;
+	// Any panel surface that paints over the page area needs the app webview
+	// above the native page, or the page swallows its clicks (and hides it).
+	const blocked =
+		captureUrl != null ||
+		menusOpen ||
+		externalPrompt != null ||
+		findOpen ||
+		contextTab != null ||
+		downloads.length > 0;
 
 	// Find only applies to a live page; a start tab hides it (and must not
 	// keep the Escape layer registered behind nothing).

@@ -56,9 +56,13 @@ static COMPILED: Mutex<CompiledList> = Mutex::new(CompiledList(None));
 pub fn rule_json() -> String {
 	let mut rules = Vec::with_capacity(BLOCKED_HOSTS.len() + 1);
 	for host in BLOCKED_HOSTS {
+		// WebKit's content-blocker regex parser rejects disjunctions ("(/|$)"
+		// fails the whole list to compile, leaving the page uncovered). Real
+		// URLs always continue with "/" or a port ":" after the host.
+		let escaped = host.replace('.', "\\.");
 		rules.push(json!({
 			"trigger": {
-				"url-filter": format!("^[^:]+://[^/]*\\.{host}(/|$)"),
+				"url-filter": format!("^[^:]+://[^/]*\\.{escaped}([/:])"),
 			},
 			"action": { "type": "block" },
 		}));
@@ -132,10 +136,32 @@ mod tests {
 		let parsed: Value = serde_json::from_str(&json).expect("the rule list parses");
 		let rules = parsed.as_array().expect("top level is an array");
 		assert_eq!(rules.len(), BLOCKED_HOSTS.len() + 1);
+		let filters: Vec<&str> = rules
+			.iter()
+			.filter_map(|rule| rule["trigger"]["url-filter"].as_str())
+			.collect();
 		for host in BLOCKED_HOSTS {
-			assert!(json.contains(host), "{host} missing from the rule list");
+			// Dots are escaped in the regex, so match the escaped form.
+			let escaped = host.replace('.', "\\.");
+			assert!(
+				filters.iter().any(|filter| filter.contains(&escaped)),
+				"{host} missing from the rule list"
+			);
 		}
 		assert!(json.contains("if-top-url"));
 		assert!(json.contains("resource-type"));
+	}
+
+	#[test]
+	fn tracker_filters_use_syntax_webkit_accepts() {
+		let parsed: Value = serde_json::from_str(&rule_json()).expect("the rule list parses");
+		let rules = parsed.as_array().expect("top level is an array");
+		for rule in rules {
+			let filter = rule["trigger"]["url-filter"].as_str().expect("url-filter");
+			// WebKit rejects disjunctions in url-filter and then drops the
+			// whole compiled list, silently disabling every rule.
+			assert!(!filter.contains('|'), "disjunction in {filter}");
+			assert!(!filter.contains("(/|$)"), "unsupported group in {filter}");
+		}
 	}
 }
