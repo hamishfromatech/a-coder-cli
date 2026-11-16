@@ -39,6 +39,13 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Build
+        # The release branch is a long-lived fork snapshot, not a mainline that
+        # tracks models.dev, so a live refresh drifts from the committed
+        # catalogs and from the tests pinned to their model IDs. Test the
+        # committed snapshot as build-binaries.yml does; main keeps the live
+        # regeneration.
+        env:
+          PI_SKIP_GENERATE: ${{ github.base_ref == 'feat/desktop-unified-release' && '1' || '' }}
         run: npm run build
 
       - name: Check
