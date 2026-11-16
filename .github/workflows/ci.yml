@@ -1,10 +1,13 @@
 name: CI
 
+# Triggers on the release branch too: fork fixes land on
+# feat/desktop-unified-release, so a main-only pull_request trigger would never
+# run build/check/test on those PRs. Mirrors desktop-build.yml.
 on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, feat/desktop-unified-release]
 
 concurrency:
   group: ci-${{ github.ref }}
