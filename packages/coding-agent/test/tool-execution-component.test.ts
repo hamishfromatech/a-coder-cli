@@ -1,5 +1,5 @@
 import { join, resolve } from "node:path";
-import { Text, type TUI } from "@earendil-works/pi-tui";
+import { type Component, Text, type TUI } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { beforeAll, describe, expect, test } from "vitest";
 import { getReadmePath } from "../src/config.ts";
@@ -96,6 +96,42 @@ describe("ToolExecutionComponent parity", () => {
 		);
 
 		expect(component.render(120)).toEqual([]);
+	});
+
+	test("renders a very large self-rendered tool result without exceeding the argument limit", () => {
+		// A self-rendering tool can produce hundreds of thousands of lines (for example an
+		// edit diff of a file with multi-megabyte lines). Appending them with
+		// `lines.push(...contentLines)` overflows V8's argument limit and kills the renderer.
+		const lineCount = 200_000;
+		const hugeResult: Component = {
+			render: () => Array.from({ length: lineCount }, (_, index) => `line ${index}`),
+			invalidate: () => {},
+		};
+		const toolDefinition: ToolDefinition = {
+			...createBaseToolDefinition(),
+			renderShell: "self",
+			renderCall: () => new Text("call", 0, 0),
+			renderResult: () => hugeResult,
+		};
+
+		const component = new ToolExecutionComponent(
+			"custom_tool",
+			"tool-huge-self-render",
+			{},
+			{},
+			toolDefinition,
+			createFakeTui(),
+			process.cwd(),
+		);
+		component.updateResult({ content: [{ type: "text", text: "done" }], details: {}, isError: false }, false);
+
+		let rendered: string[] = [];
+		expect(() => {
+			rendered = component.render(120);
+		}).not.toThrow();
+		// Blank separator line, the call line, then every self-rendered line, none dropped.
+		expect(rendered.length).toBe(lineCount + 2);
+		expect(rendered[rendered.length - 1]).toBe(`line ${lineCount - 1}`);
 	});
 
 	test("uses built-in rendering for built-in overrides without custom renderers", () => {
