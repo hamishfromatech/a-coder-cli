@@ -31,6 +31,7 @@
 
 ### Fixed
 
+- `/copy` and RPC `get_last_assistant_text` skip assistant messages that have no text from a turn that ended aborted or failed, or that only called tools, so they return the last reply that actually has text instead of nothing (#12119).
 - **`computer` tool against current cua-driver builds:** capture now asks for the structured element list (`tree_format: "elements"`) instead of taking the driver's markdown-only default, which left click-by-index with no targets; element actions send the snapshot's `element_token` and omit `element_index` (current drivers refuse the index on action tools). Capture also reports the driver's `truncated` and `degraded_reason` instead of implying a clean view.
 - **`computer` verdicts match the driver's refusal codes:** `background_unavailable` escalates to `delivery_mode: "foreground"` (nothing was executed), `stale_element_token` tells the model to re-capture, and `ambiguous_window_target` / `window_id_not_found` / `window_target_not_found` point at `list_windows` instead of a generic retry hint.
 - **cua-driver transport recovery:** tearing the transport down now clears the memoized start, so the next call spawns a fresh child instead of throwing "not connected" for the rest of the session; a read replayed after a drop goes to the reconnected client, not the closed one. `tools/list` pagination is followed, and the child's stderr is drained (a chatty driver could back-pressure and hang calls) with its tail attached to transport-failure messages.
