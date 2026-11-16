@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 import { BridgeWsServer, type WsServerOptions } from "../../src/serve/ws-server.ts";
 
@@ -118,9 +118,11 @@ describe("slow client eviction", () => {
 		resumeClient(ws);
 		await waitForEvent(ws, ["close", "error"]);
 
-		// One eviction, not one per flood, and the server stays usable.
+		// One eviction, not one per flood, and the server stays usable. The client
+		// sees close before the server's close handler releases the slot, so wait
+		// for the server side instead of asserting the instant the client closes.
 		expect(slowClients).toHaveLength(1);
-		expect(server.clientCount).toBe(0);
+		await vi.waitFor(() => expect(server.clientCount).toBe(0));
 		expect(() => server.broadcast(`{"id":"after"}\n`)).not.toThrow();
 	}, 20_000);
 
