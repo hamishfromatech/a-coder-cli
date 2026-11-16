@@ -253,6 +253,7 @@ export type AgentSessionEvent =
 			model?: string;
 			latencyMs: number;
 			reason: string;
+			diagnostic?: string;
 	  }
 	| SessionStartEvent;
 
@@ -964,6 +965,7 @@ export class AgentSession {
 			...(decision.model ? { model: decision.model } : {}),
 			latencyMs: decision.latencyMs,
 			reason: decision.reason,
+			...(decision.diagnostic !== undefined ? { diagnostic: decision.diagnostic } : {}),
 		});
 		return decision;
 	}
