@@ -141,9 +141,20 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
 	"connection.?error",
 	"connection.?refused",
 	"connection.?lost",
+	// A gateway can relay a mid-stream drop as an Anthropic-style `api_error`
+	// event: {"type":"error","error":{"type":"api_error","message":"Connection closed."}} (#12064).
+	"connection.?closed",
 	"other side closed",
 	"fetch failed",
 	"getaddrinfo",
+	// Bare Node socket codes, e.g. "read ECONNRESET", "write EPIPE", or
+	// "connect ETIMEDOUT 1.2.3.4:443" when a transport reports only the code
+	// (#12128). The AWS SDK HTTP handler behind Bedrock passes Node's socket
+	// error through unchanged, so `formatBedrockError` can report just
+	// "read ECONNRESET". The guards keep a code that sits inside a longer
+	// identifier from matching.
+	"(?<![a-z0-9_])(?:ECONNRESET|ECONNABORTED|ECONNREFUSED|ETIMEDOUT|EPIPE)(?![a-z0-9_])",
+	"connection reset by peer",
 	"ENOTFOUND",
 	"EAI_AGAIN",
 	"upstream.?connect",

@@ -40,6 +40,12 @@ describe("provider retry classification", () => {
 		).toBe(true);
 	});
 
+	it("matches gateway wording for a closed connection", () => {
+		// Regression for #12064: a gateway ends the stream with an OpenAI-style payload.
+		const errorMessage = '{"type":"error","error":{"type":"api_error","message":"Connection closed."}}';
+		expect(isRetryableAssistantError(fauxAssistantMessage("", { stopReason: "error", errorMessage }))).toBe(true);
+	});
+
 	it("matches upstream request buffer exhaustion wording", () => {
 		expect(
 			isRetryableAssistantError(
@@ -59,6 +65,25 @@ describe("provider retry classification", () => {
 	])("matches DNS transport failure wording: %s", (errorMessage) => {
 		expect(isRetryableAssistantError(fauxAssistantMessage("", { stopReason: "error", errorMessage }))).toBe(true);
 	});
+
+	it.each([
+		// Regression for #12128: provider errors that report only a Node socket code.
+		"read ECONNRESET",
+		"connect ETIMEDOUT 140.82.113.3:443",
+		"write EPIPE",
+		"connect ECONNREFUSED 127.0.0.1:443",
+		"ECONNABORTED",
+		"Connection reset by peer",
+	])("matches provider errors that report only a Node socket code: %s", (errorMessage) => {
+		expect(isRetryableAssistantError(fauxAssistantMessage("", { stopReason: "error", errorMessage }))).toBe(true);
+	});
+
+	it.each(["Invalid value EXECONNRESET", "Unknown field ETIMEDOUTX", "Invalid key ERR_EPIPE_ID"])(
+		"does not match a socket code inside a longer identifier: %s",
+		(errorMessage) => {
+			expect(isRetryableAssistantError(fauxAssistantMessage("", { stopReason: "error", errorMessage }))).toBe(false);
+		},
+	);
 
 	it("matches OpenAI Responses streams that end before terminal events", () => {
 		expect(
