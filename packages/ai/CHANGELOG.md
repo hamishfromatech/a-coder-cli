@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- `opencode-go` declares the `google-generative-ai` API, so a live catalog that lists its Gemini models type-checks and streams instead of failing the build.
 - The identity User-Agent version (`PI_AI_VERSION`) stays in lockstep with `package.json`; `scripts/sync-versions.js` now updates it during a version bump.
 - `Usage.cost.totalFromProvider` marks a total the provider reported itself, so callers can tell it apart from a computed estimate (#11178).
 - OpenRouter chat and image responses keep the provider-reported charge, including the upstream BYOK cost, instead of overwriting it with the catalog estimate (#9980).
