@@ -457,7 +457,12 @@ export function buildContextEntries(
 			contextEntries.push(entry);
 		}
 	}
-	contextEntries.push(...path.slice(compactionIdx + 1));
+	// Append one at a time: spreading a long post-compaction tail exceeds the
+	// engine's maximum argument count and throws RangeError, which makes the
+	// whole session unloadable (#12154).
+	for (let i = compactionIdx + 1; i < path.length; i++) {
+		contextEntries.push(path[i]);
+	}
 	return contextEntries;
 }
 
