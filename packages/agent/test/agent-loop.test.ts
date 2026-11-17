@@ -86,7 +86,7 @@ async function runToolBatch(
 	config: Partial<AgentLoopConfig>,
 	signal: AbortSignal,
 ): Promise<{ events: AgentEvent[]; messages: AgentMessage[] }> {
-	const context: AgentContext = { messages: [], tools: [tool] };
+	const context: AgentContext = { systemPrompt: "", messages: [], tools: [tool] };
 	let callIndex = 0;
 	const stream = agentLoop(
 		[createUserMessage("run three")],
