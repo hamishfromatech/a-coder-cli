@@ -114,12 +114,16 @@ describe("computer tool conformance against a fake cua-driver MCP server", () =>
 		expect((text as { text: string }).text).toContain("#1");
 		expect((text as { text: string }).text).toContain("Submit");
 		const image = result.content.find((block) => block.type === "image");
-		expect(image).toMatchObject({ type: "image", data: "aGVsbG8=", mimeType: "image/png" });
+		expect(image).toMatchObject({ type: "image", mimeType: "image/png" });
+		expect((image as { data: string }).data.length).toBeGreaterThan(40);
 		// Frontmost (highest z_index) was targeted.
 		const gws = readCalls().find((call) => call.name === "get_window_state");
 		expect(gws?.args.pid).toBe(101);
 		expect(gws?.args.window_id).toBe(11);
 		expect(gws?.args.max_elements).toBeGreaterThan(0);
+		// Current drivers return the structured element list only when asked.
+		expect(gws?.args.tree_format).toBe("elements");
+		expect(gws?.args.include_screenshot).toBe(true);
 	});
 
 	it("routes clicks by element index with the snapshot token, then verdict done", async () => {
@@ -132,11 +136,13 @@ describe("computer tool conformance against a fake cua-driver MCP server", () =>
 		expect(payload.ok).toBe(true);
 		expect(payload.verdict.decision).toBe("done");
 		const click = readCalls().find((call) => call.name === "click");
-		expect(click?.args.element_index).toBe(1);
-		// The snapshot's element token rides along so the driver can report staleness.
+		// Current drivers identify elements by token and refuse element_index.
+		expect(click?.args.element_index).toBeUndefined();
 		expect(click?.args.element_token).toBe("sabc:1");
-		expect(click?.args.pid).toBe(101);
-		expect(click?.args.window_id).toBe(11);
+		// The preferred per-call target replaces legacy pid/window_id.
+		expect(click?.args.target).toEqual({ kind: "window", pid: 101, window_id: 11 });
+		expect(click?.args.pid).toBeUndefined();
+		expect(click?.args.window_id).toBeUndefined();
 	});
 
 	it("refuses input before any capture (no sticky target)", async () => {
@@ -202,6 +208,126 @@ describe("computer tool conformance against a fake cua-driver MCP server", () =>
 			expect(payload.verdict.hint).toContain("permission mode");
 		} finally {
 			delete process.env.FAKE_REFUSE_TOOLS;
+		}
+	});
+
+	it("escalates to foreground only when the driver reports background_unavailable", async () => {
+		process.env.FAKE_BACKGROUND_UNAVAILABLE = "click";
+		try {
+			await execute({ action: "capture" } as ComputerToolInput);
+			const result = await execute({ action: "click", element: 1 } as ComputerToolInput);
+			const payload = JSON.parse(result.content[0]?.type === "text" ? result.content[0].text : "{}") as {
+				ok: boolean;
+				verdict: { decision: string; code?: string; hint?: string };
+			};
+			expect(payload.ok).toBe(false);
+			expect(payload.verdict.decision).toBe("escalate");
+			expect(payload.verdict.code).toBe("background_unavailable");
+			expect(payload.verdict.hint).toContain("delivery_mode: 'foreground'");
+		} finally {
+			delete process.env.FAKE_BACKGROUND_UNAVAILABLE;
+		}
+	});
+
+	it("tells the model to re-capture on a stale element token", async () => {
+		process.env.FAKE_STALE_TOKEN = "click";
+		try {
+			await execute({ action: "capture" } as ComputerToolInput);
+			const result = await execute({ action: "click", element: 1 } as ComputerToolInput);
+			const payload = JSON.parse(result.content[0]?.type === "text" ? result.content[0].text : "{}") as {
+				verdict: { decision: string; code?: string; hint?: string };
+			};
+			expect(payload.verdict.decision).toBe("verify_fresh_state");
+			expect(payload.verdict.code).toBe("stale_element_token");
+			expect(payload.verdict.hint).toContain("Capture again");
+		} finally {
+			delete process.env.FAKE_STALE_TOKEN;
+		}
+	});
+
+	it("surfaces a degraded snapshot instead of implying a clean view", async () => {
+		process.env.FAKE_DEGRADED = "screen_locked";
+		try {
+			const result = await execute({ action: "capture" } as ComputerToolInput);
+			const text = result.content[0]?.type === "text" ? result.content[0].text : "";
+			expect(text).toContain("degraded snapshot");
+			expect(text).toContain("screen is locked");
+		} finally {
+			delete process.env.FAKE_DEGRADED;
+		}
+	});
+
+	it("ax mode asks the driver to skip the screenshot", async () => {
+		await execute({ action: "capture", mode: "ax" } as ComputerToolInput);
+		const gws = readCalls().find((call) => call.name === "get_window_state");
+		expect(gws?.args.tree_format).toBe("elements");
+		expect(gws?.args.include_screenshot).toBe(false);
+	});
+
+	it("reconnects and replays a read after the driver process dies", async () => {
+		process.env.FAKE_EXIT_ONCE = "list_apps";
+		process.env.FAKE_EXIT_SENTINEL = join(tempDir, "crashed");
+		try {
+			const result = await execute({ action: "list_apps" } as ComputerToolInput);
+			const payload = JSON.parse(result.content[0]?.type === "text" ? result.content[0].text : "{}") as {
+				ok: boolean;
+			};
+			expect(payload.ok, JSON.stringify(payload)).toBe(true);
+			// One call died with the process; the replay went to a fresh child.
+			expect(readCalls().filter((call) => call.name === "list_apps").length).toBeGreaterThanOrEqual(2);
+		} finally {
+			delete process.env.FAKE_EXIT_ONCE;
+			delete process.env.FAKE_EXIT_SENTINEL;
+		}
+	});
+
+	it("zooms a region and translates a follow-up coordinate click", async () => {
+		await execute({ action: "capture" } as ComputerToolInput);
+		const result = await execute({ action: "zoom", zoom_rect: [10, 20, 110, 70] } as ComputerToolInput);
+		expect(result.content.some((block) => block.type === "image")).toBe(true);
+		const zoom = readCalls().find((call) => call.name === "zoom");
+		expect(zoom?.args).toMatchObject({ window_id: 11, pid: 101, x1: 10, y1: 20, x2: 110, y2: 70 });
+
+		// A coordinate after a zoom refers to the crop; the driver must translate it.
+		await execute({ action: "click", coordinate: [50, 40] } as ComputerToolInput);
+		const click = readCalls().find((call) => call.name === "click");
+		expect(click?.args).toMatchObject({ x: 50, y: 40, from_zoom: true });
+	});
+
+	it("refuses zoom before any capture", async () => {
+		const result = await execute({ action: "zoom", zoom_rect: [0, 0, 10, 10] } as ComputerToolInput);
+		const payload = JSON.parse(result.content[0]?.type === "text" ? result.content[0].text : "{}") as {
+			ok: boolean;
+			code?: string;
+		};
+		expect(payload.ok).toBe(false);
+		expect(payload.code).toBe("no_target");
+	});
+
+	it("requests a diff for since_last captures and warns about stale tokens", async () => {
+		await execute({ action: "capture" } as ComputerToolInput);
+		const result = await execute({ action: "capture", since_last: true } as ComputerToolInput);
+		const reads = readCalls().filter((call) => call.name === "get_window_state");
+		expect(reads[1]?.args.since).toBe("s0000002a");
+		const text = result.content[0]?.type === "text" ? result.content[0].text : "";
+		expect(text).toContain("diff-since=s0000002a");
+		expect(text).toContain("re-capture without since_last");
+		const details = result.details as { diff?: boolean; snapshotId?: string };
+		expect(details.diff).toBe(true);
+		expect(details.snapshotId).toBe("s0000002b");
+	});
+
+	it("discovers tools across listTools pages", async () => {
+		process.env.FAKE_TOOL_PAGE_SIZE = "3";
+		try {
+			const result = await execute({ action: "doctor" } as ComputerToolInput);
+			const payload = JSON.parse(result.content[0]?.type === "text" ? result.content[0].text : "{}") as {
+				driverVersion?: string;
+			};
+			// health_report sits on a later page; only pagination exposes it.
+			expect(payload.driverVersion).toBe("0.0.0");
+		} finally {
+			delete process.env.FAKE_TOOL_PAGE_SIZE;
 		}
 	});
 

@@ -48,23 +48,50 @@ export function IdeWorkspace({ projectPath, cwd }: IdeWorkspaceProps): ReactNode
 	const workspace = cwd || projectPath;
 
 	// ⌘P quick open; Ctrl+` terminal toggle (Ctrl — ⌘` is a macOS native).
+	// ⌘B sidebar, ⌘J terminal, ⌘⇧E/F/G sidebar views — the IDE-mode bindings.
 	// Capture phase + stopImmediatePropagation: in IDE mode these keys belong
 	// to the IDE (quick open wins over the app-wide model-picker binding).
 	useEffect(() => {
 		const onKey = (event: KeyboardEvent): void => {
-			if (event.metaKey && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "p") {
+			if (event.defaultPrevented || event.altKey) return;
+			const key = event.key.toLowerCase();
+			if (event.metaKey && !event.shiftKey && key === "p") {
 				event.preventDefault();
 				event.stopImmediatePropagation();
 				setQuickOpenOpen(true);
-			} else if (event.ctrlKey && event.code === "Backquote") {
+				return;
+			}
+			if (event.ctrlKey && event.code === "Backquote") {
 				event.preventDefault();
 				event.stopImmediatePropagation();
 				setTerminalOpen(!useIdeStore.getState().terminalOpen);
+				return;
+			}
+			if (!event.metaKey) return;
+			if (!event.shiftKey && key === "b") {
+				event.preventDefault();
+				event.stopImmediatePropagation();
+				setSidebarTab(useIdeStore.getState().sidebarTab === null ? "explorer" : null);
+				return;
+			}
+			if (!event.shiftKey && key === "j") {
+				event.preventDefault();
+				event.stopImmediatePropagation();
+				setTerminalOpen(!useIdeStore.getState().terminalOpen);
+				return;
+			}
+			if (event.shiftKey) {
+				if (key === "e") setSidebarTab("explorer");
+				else if (key === "f") setSidebarTab("search");
+				else if (key === "g") setSidebarTab("git");
+				else return;
+				event.preventDefault();
+				event.stopImmediatePropagation();
 			}
 		};
 		window.addEventListener("keydown", onKey, true);
 		return () => window.removeEventListener("keydown", onKey, true);
-	}, [setTerminalOpen]);
+	}, [setTerminalOpen, setSidebarTab]);
 
 	// Status-bar branch chip: loads with the workspace; refreshes when the
 	// agent (or git ops elsewhere) touch files.

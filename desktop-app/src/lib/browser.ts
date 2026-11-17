@@ -80,8 +80,8 @@ const browser = {
 	close: (tabId: string) => invoke<void>("browser_close_tab", { tabId }),
 	find: (tabId: string, query: string, backwards: boolean) =>
 		invoke<boolean>("browser_find_in_page", { tabId, query, backwards }),
-	setPageInput: (blocked: boolean, exclude: ViewBounds[]) =>
-		invoke<void>("browser_set_page_input", { blocked, exclude }),
+	setPageInput: (blocked: boolean, exclude: ViewBounds[], page: ViewBounds | null) =>
+		invoke<void>("browser_set_page_input", { blocked, exclude, page }),
 	setMuted: (tabId: string, muted: boolean) => invoke<void>("browser_tab_mute", { tabId, muted }),
 	agent: (tabId: string, op: Record<string, unknown>, install = false) =>
 		invoke<AgentCommandResult>("browser_agent", {

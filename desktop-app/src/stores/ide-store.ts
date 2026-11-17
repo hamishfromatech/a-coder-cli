@@ -33,6 +33,10 @@ export interface IdeState {
 	editorMinimap: boolean;
 	editorWordWrap: boolean;
 	editorRenderWhitespace: boolean;
+	/** Save dirty tabs automatically after a pause in typing. */
+	editorAutoSave: boolean;
+	/** Indentation width for new and existing models. */
+	editorTabSize: number;
 	/** Consumed by the editor group; the editor clears it after revealing. */
 	pendingReveal: IdeRevealRequest | null;
 
@@ -48,6 +52,8 @@ export interface IdeState {
 	setEditorMinimap: (enabled: boolean) => void;
 	setEditorWordWrap: (enabled: boolean) => void;
 	setEditorRenderWhitespace: (enabled: boolean) => void;
+	setEditorAutoSave: (enabled: boolean) => void;
+	setEditorTabSize: (size: number) => void;
 	/** Drag reorder in the editor tab strip. */
 	moveTab: (path: string, beforePath: string) => void;
 	setPendingReveal: (request: IdeRevealRequest | null) => void;
@@ -69,6 +75,8 @@ export const useIdeStore = create<IdeState>()(
 			editorMinimap: true,
 			editorWordWrap: false,
 			editorRenderWhitespace: false,
+			editorAutoSave: false,
+			editorTabSize: 2,
 			pendingReveal: null,
 
 			openFile: (path, content) => {
@@ -104,6 +112,9 @@ export const useIdeStore = create<IdeState>()(
 			setEditorMinimap: (editorMinimap) => set({ editorMinimap }),
 			setEditorWordWrap: (editorWordWrap) => set({ editorWordWrap }),
 			setEditorRenderWhitespace: (editorRenderWhitespace) => set({ editorRenderWhitespace }),
+			setEditorAutoSave: (editorAutoSave) => set({ editorAutoSave }),
+			setEditorTabSize: (editorTabSize) =>
+				set({ editorTabSize: Math.min(8, Math.max(1, Math.round(editorTabSize))) }),
 			moveTab: (path, beforePath) =>
 				set((state) => {
 					const from = state.openTabs.findIndex((tab) => tab.path === path);
@@ -130,6 +141,8 @@ export const useIdeStore = create<IdeState>()(
 				editorMinimap: state.editorMinimap,
 				editorWordWrap: state.editorWordWrap,
 				editorRenderWhitespace: state.editorRenderWhitespace,
+				editorAutoSave: state.editorAutoSave,
+				editorTabSize: state.editorTabSize,
 			}),
 		},
 	),

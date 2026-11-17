@@ -62,6 +62,19 @@ export function BrowserFindBar({
 		};
 	}, [open, onClose]);
 
+	// Cmd+G / Cmd+Shift+G from the panel land here while the bar is open.
+	// Declared before the closed-bar early return: hooks must run unconditionally.
+	useEffect(() => {
+		if (!open || !tabId) return;
+		const onStep = (event: Event) => {
+			const backwards = (event as CustomEvent<{ backwards?: boolean }>).detail?.backwards === true;
+			if (!query.trim()) return;
+			void find(query, backwards).then(setFound);
+		};
+		window.addEventListener("a-coder:browser-find-step", onStep);
+		return () => window.removeEventListener("a-coder:browser-find-step", onStep);
+	}, [open, tabId, query, find]);
+
 	if (!open || !tabId) return null;
 
 	const step = (backwards: boolean) => {

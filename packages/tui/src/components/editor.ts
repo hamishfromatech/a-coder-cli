@@ -19,6 +19,7 @@ import {
 	getWordSegmenter,
 	isWhitespaceChar,
 	sliceByColumn,
+	stripInputEscapeSequences,
 	visibleWidth,
 } from "../utils.ts";
 import { findWordBackward, findWordForward } from "../word-navigation.ts";
@@ -37,6 +38,12 @@ const PASTE_MARKER_SINGLE = /^\[paste #(\d+)( (\+\d+ lines|\d+ chars))?\]$/;
 function isPasteMarker(segment: string): boolean {
 	return segment.length >= 10 && PASTE_MARKER_SINGLE.test(segment);
 }
+
+/** A bracketed paste that has not terminated by this age is treated as stuck. */
+const PASTE_TIMEOUT_MS = 10_000;
+
+/** Upper bound on buffered bracketed-paste input before it is flushed as a paste. */
+const MAX_PASTE_BUFFER_LENGTH = 1_000_000;
 
 /**
  * A segmenter that wraps Intl.Segmenter and merges graphemes that fall
@@ -340,6 +347,7 @@ export class Editor implements Component, Focusable {
 	// Bracketed paste mode buffering
 	private pasteBuffer: string = "";
 	private isInPaste: boolean = false;
+	private pasteStartedAt: number = 0;
 
 	// Prompt history for up/down navigation
 	private history: string[] = [];
@@ -725,10 +733,19 @@ export class Editor implements Component, Focusable {
 		if (data.includes("\x1b[200~")) {
 			this.isInPaste = true;
 			this.pasteBuffer = "";
+			this.pasteStartedAt = Date.now();
 			data = data.replace("\x1b[200~", "");
 		}
 
 		if (this.isInPaste) {
+			// Ctrl+C aborts a paste instead of being buffered with it, so a terminal
+			// that never sends the end marker cannot wedge the editor.
+			if (kb.matches(data, "tui.input.copy")) {
+				this.isInPaste = false;
+				this.pasteBuffer = "";
+				return;
+			}
+
 			this.pasteBuffer += data;
 			const endIndex = this.pasteBuffer.indexOf("\x1b[201~");
 			if (endIndex !== -1) {
@@ -743,6 +760,15 @@ export class Editor implements Component, Focusable {
 					this.handleInput(remaining);
 				}
 				return;
+			}
+
+			// Escape hatch: a paste that never terminates would otherwise buffer input
+			// forever. Flush what arrived, then leave paste mode.
+			if (this.pasteBuffer.length > MAX_PASTE_BUFFER_LENGTH || Date.now() - this.pasteStartedAt > PASTE_TIMEOUT_MS) {
+				const pasteContent = this.pasteBuffer;
+				this.isInPaste = false;
+				this.pasteBuffer = "";
+				this.handlePaste(pasteContent);
 			}
 			return;
 		}
@@ -993,9 +1019,13 @@ export class Editor implements Component, Focusable {
 			return;
 		}
 
-		// Regular characters
-		if (data.charCodeAt(0) >= 32) {
-			this.insertCharacter(data);
+		// Regular characters. Strip escape sequences before filtering: a chunk can
+		// start with a printable character and still carry ANSI codes (a paste a
+		// terminal delivered without bracketed-paste markers), which would put raw
+		// control bytes into the buffer.
+		const printableText = stripInputEscapeSequences(data).replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "");
+		if (printableText.length > 0) {
+			this.insertCharacter(printableText);
 		}
 	}
 
@@ -1266,8 +1296,6 @@ export class Editor implements Component, Focusable {
 		this.exitHistoryBrowsing();
 		this.lastAction = null;
 
-		this.pushUndoSnapshot();
-
 		// Some terminals (e.g. tmux popups with extended-keys-format=csi-u) re-encode
 		// control bytes inside bracketed paste as CSI-u Ctrl+<letter> sequences
 		// (ESC [ <codepoint> ; 5 u). Decode those back to their literal byte so the
@@ -1283,11 +1311,20 @@ export class Editor implements Component, Focusable {
 		// Clean the pasted text: normalize line endings, expand tabs
 		const cleanText = this.normalizeText(decodedText);
 
-		// Filter out non-printable characters except newlines
-		let filteredText = cleanText
+		// Strip escape sequences as whole units: the per-char filter below removes
+		// ESC but would keep the sequence body ("[31m", "]0;title") as text.
+		const strippedText = stripInputEscapeSequences(cleanText);
+
+		// Filter out remaining non-printable characters except newlines
+		let filteredText = strippedText
 			.split("")
 			.filter((char) => char === "\n" || char.charCodeAt(0) >= 32)
 			.join("");
+
+		// An ANSI-only paste leaves nothing to insert; do not record an empty undo step.
+		if (filteredText.length === 0) return;
+
+		this.pushUndoSnapshot();
 
 		// If pasting a file path (starts with /, ~, or .) and the character before
 		// the cursor is a word character, prepend a space for better readability

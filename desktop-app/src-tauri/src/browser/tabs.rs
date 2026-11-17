@@ -135,7 +135,15 @@ pub fn browser_layered<R: Runtime>(webview: Webview<R>) -> Result<bool, String> 
 	require_main(&webview)?;
 	#[cfg(target_os = "macos")]
 	{
-		if super::layer::set_input(false, &[]) {
+		if std::env::var_os("A_CODER_BROWSER_INPUT_DEBUG").is_some() {
+			eprintln!("[browser-input] browser_layered -> {}", native_pages_supported());
+		}
+		// Routing must be installed before the first human click, and the panel
+		// asks this once per load. Idempotent, so a page-created install is a
+		// no-op here; this also recovers a session whose pages predate the
+		// current frontend.
+		super::layer::install(&webview);
+		if super::layer::set_input(false, &[], None) {
 			let _ = webview.run_on_main_thread(super::layer::reroute_moves);
 		}
 		return Ok(native_pages_supported());
@@ -152,18 +160,27 @@ pub fn browser_set_page_input<R: Runtime>(
 	webview: Webview<R>,
 	blocked: bool,
 	exclude: Vec<ViewBounds>,
+	page: Option<ViewBounds>,
 ) -> Result<(), String> {
 	require_main(&webview)?;
 	#[cfg(target_os = "macos")]
 	{
-		if super::layer::set_input(blocked, &exclude) {
+		if std::env::var_os("A_CODER_BROWSER_INPUT_DEBUG").is_some() {
+			eprintln!(
+				"[browser-input] set_input blocked={} exclude={} page={:?}",
+				blocked,
+				exclude.len(),
+				page.map(|bounds| bounds.parts())
+			);
+		}
+		if super::layer::set_input(blocked, &exclude, page) {
 			let _ = webview.run_on_main_thread(super::layer::reroute_moves);
 		}
 		return Ok(());
 	}
 	#[cfg(not(target_os = "macos"))]
 	{
-		let _ = (blocked, exclude);
+		let _ = (blocked, exclude, page);
 		Ok(())
 	}
 }

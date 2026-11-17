@@ -14,6 +14,7 @@ import process from "node:process";
 import QRCode from "qrcode";
 import { getPackageJsonPath, VERSION } from "../config.ts";
 import { BridgeAnnounce } from "./announce.ts";
+import { DeviceRegistryStore } from "./clients.ts";
 import { bridgeFrame } from "./control-frames.ts";
 import { EngineProcess } from "./engine-process.ts";
 import { machineId, manualChunks, pairingPayload, resolveToken } from "./pairing.ts";
@@ -234,6 +235,9 @@ export async function handleServeCommand(args: string[]): Promise<boolean> {
 		}
 	}
 
+	/** Devices already announced in this process, so a reconnect does not re-log a pairing. */
+	const announcedDevices = new Set<string>();
+
 	const server = new BridgeWsServer({
 		port: flags.port ?? DEFAULT_PORT,
 		host: flags.bind,
@@ -243,6 +247,18 @@ export async function handleServeCommand(args: string[]): Promise<boolean> {
 		version,
 		machineId: id,
 		friendlyName,
+		// Paired-device registry for the desktop Settings → Mobile access card.
+		// Written on every authenticated connect; a record removed from
+		// serve/clients.json is rejected with 401 on that device's next upgrade.
+		deviceRegistry: new DeviceRegistryStore(),
+		onDeviceRegistered: (device) => {
+			if (announcedDevices.has(device.id)) return;
+			announcedDevices.add(device.id);
+			logLine(`device paired: ${device.name} (${device.id})`);
+		},
+		onDeviceRevoked: (device, via) => {
+			logLine(`rejected revoked device ${device.id} (${via})`);
+		},
 		// Without this the bridge keeps listening on plain http/ws while the
 		// banner and pairing QR advertise wss:// + a certificate pin.
 		tls: tlsMaterial,

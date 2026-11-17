@@ -44,6 +44,10 @@
 
 ### Fixed
 
+- **The guided-tour click and auto-continue copy fixes are actually in this release.** Both were authored on the 0.80.190 QA branch and merged there, but that branch was never merged back, so every release from 0.80.191 to 0.80.199 shipped the old code: the tour card still painted its spotlight as one ~20k-px `box-shadow` layer, which WKWebView mis-hit-tests on Retina — the reported "Back button ignores the mouse on step 2" is that class of bug, and Next/X only worked intermittently. The spotlight is now four viewport-sized dim panels and the card owns the keyboard, so Back / Next / X are all clickable on every step.
+
+- The auto-continue toast now shows human copy instead of the decision model's raw summary. `reason` is "model detected progress" / "model needs your input" / "model recommended stopping"; the `next=… p=… progress=…` string moved to an optional `diagnostic` field used for logs and telemetry, so the toast no longer prints the same numbers twice (or float timings such as `533.381500000177ms`), and local guard stops show only their reason instead of empty progress/latency fields.
+- The guided tour no longer dead-ends: the spotlight's 9999px `box-shadow` (a ~20k-px composited layer that WKWebView mis-hit-tested on Retina) is replaced with four viewport-sized dim panels, so the card's Next / Back / X buttons stay clickable on every step; and the card now owns the keyboard while the tour runs (Next is focused after each step and focus is pulled back from surfaces a step drives open), so Enter advances the tour instead of running the command palette's highlighted item ("Start guided tour", which restarted the tour) and a restart re-focuses Next.
 - The model dropdown on the composer's pill now has a working refresh button; the icon used to be decorative markup, so clicking it did nothing.
 
 - The model modal opened by `/model` and `⌘P` now lands centered on the screen; the dialog never had a position so its `left`/`top` coordinates were silently dropped and it rendered pinned to the window's top-left corner.

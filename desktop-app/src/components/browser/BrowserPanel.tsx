@@ -80,6 +80,7 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 	const chromeRef = useRef<HTMLDivElement | null>(null);
 	const pageAreaRef = useRef<HTMLDivElement | null>(null);
 	const addressRef = useRef<HTMLInputElement | null>(null);
+	const tabListRef = useRef<HTMLDivElement | null>(null);
 	const addressFocused = useRef(false);
 	const [address, setAddress] = useState("");
 	const [findOpen, setFindOpen] = useState(false);
@@ -105,7 +106,18 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 	const zoom = active?.zoom ?? 1;
 	const zoomPct = Math.round(zoom * 100);
 	const menusOpen = zoomOpen || downloadsOpen || overflowOpen;
-	const blocked = captureUrl != null || menusOpen;
+	// Any modal that is not inside the panel's excluded chrome must take all
+	// page input, or its buttons land on the page underneath.
+	const externalPrompt = useBrowserStore((s) => s.externalPrompt);
+	// Any panel surface that paints over the page area needs the app webview
+	// above the native page, or the page swallows its clicks (and hides it).
+	const blocked =
+		captureUrl != null ||
+		menusOpen ||
+		externalPrompt != null ||
+		findOpen ||
+		contextTab != null ||
+		downloads.length > 0;
 
 	// Find only applies to a live page; a start tab hides it (and must not
 	// keep the Escape layer registered behind nothing).
@@ -193,6 +205,19 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 			const root = panelRef.current;
 			const viewportWidth = window.innerWidth;
 			if (!root || !viewportWidth) return;
+			// The page area is authoritative for click-through on the Rust side:
+			// routing by this rect cannot drift from where the page is placed.
+			const area = pageAreaRef.current?.getBoundingClientRect();
+			const pageRect: ViewBounds | null =
+				area && area.width > 0 && area.height > 0
+					? {
+							x: area.left,
+							y: area.top,
+							width: area.width,
+							height: area.height,
+							viewportWidth,
+						}
+					: null;
 			const rects: ViewBounds[] = [];
 			// Viewport-relative: the router subtracts these from main-view points
 			// (point = WebKit CSS px); panel-relative is one rail drag off. Every
@@ -210,7 +235,7 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 					});
 				}
 			}
-			void browser.setPageInput(blocked, rects).catch(() => {});
+			void browser.setPageInput(blocked, rects, pageRect).catch(() => {});
 		};
 		report();
 		const observer = new ResizeObserver(report);
@@ -219,7 +244,7 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 		return () => {
 			observer.disconnect();
 		};
-	}, [layered, supported, activeId, blocked, downloads.length, captureUrl]);
+	}, [layered, supported, activeId, blocked, downloads.length, captureUrl, findOpen, contextTab, externalPrompt]);
 
 	const navigateTo = (url: string) => {
 		// No native views and no reading frame: the system browser is the only
@@ -265,19 +290,43 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 	// Panel shortcuts while the chrome has focus (the page keeps its keys
 	// while the page has focus, like any browser).
 	useEffect(() => {
+		const stepTab = (step: number) => {
+			if (tabs.length < 2) return;
+			const index = tabs.findIndex((tab) => tab.id === activeId);
+			const next = tabs[(index + step + tabs.length) % tabs.length];
+			if (next) void activate(next.id);
+		};
+		const stepFind = (backwards: boolean) => {
+			window.dispatchEvent(
+				new CustomEvent("a-coder:browser-find-step", { detail: { backwards } }),
+			);
+		};
 		const onKey = (event: KeyboardEvent) => {
 			if (event.defaultPrevented) return;
 			if (event.ctrlKey && !event.metaKey && event.key === "Tab") {
 				event.preventDefault();
-				if (tabs.length < 2) return;
-				const index = tabs.findIndex((tab) => tab.id === activeId);
-				const step = event.shiftKey ? -1 : 1;
-				const next = tabs[(index + step + tabs.length) % tabs.length];
-				if (next) void activate(next.id);
+				stepTab(event.shiftKey ? -1 : 1);
 				return;
 			}
-			if (!(event.metaKey || event.ctrlKey) || event.shiftKey) return;
+			if (!(event.metaKey || event.ctrlKey)) return;
 			const key = event.key.toLowerCase();
+			if (event.shiftKey) {
+				// Cmd+Shift+[ / ] cycle tabs; Cmd+Shift+T reopens the last closed;
+				// Cmd+Shift+G steps the find bar backwards.
+				if (event.code === "BracketLeft" || event.code === "BracketRight") {
+					event.preventDefault();
+					stepTab(event.code === "BracketLeft" ? -1 : 1);
+				} else if (key === "t") {
+					event.preventDefault();
+					if (useBrowserStore.getState().closedUrls.length > 0) {
+						void useBrowserStore.getState().reopenClosed();
+					}
+				} else if (key === "g" && findOpen) {
+					event.preventDefault();
+					stepFind(true);
+				}
+				return;
+			}
 			if (key === "l") {
 				event.preventDefault();
 				addressRef.current?.focus();
@@ -291,6 +340,9 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 			} else if (key === "f") {
 				event.preventDefault();
 				if (activeUrl) setFindOpen(true);
+			} else if (key === "g" && findOpen) {
+				event.preventDefault();
+				stepFind(false);
 			} else if (key === "r") {
 				event.preventDefault();
 				if (activeId) void useBrowserStore.getState().action(activeId, "reload");
@@ -304,7 +356,23 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 		};
 		document.addEventListener("keydown", onKey);
 		return () => document.removeEventListener("keydown", onKey);
-	}, [activeId, activeUrl, tabs, activate]);
+	}, [activeId, activeUrl, tabs, activate, findOpen]);
+
+	// Vertical wheel over the tab strip scrolls it horizontally (the strip can
+	// overflow once enough tabs are open). React's onWheel is passive, so the
+	// listener is attached natively to allow preventDefault.
+	useEffect(() => {
+		const strip = tabListRef.current;
+		if (!strip) return;
+		const onWheel = (event: WheelEvent) => {
+			if (event.deltaY === 0 || event.shiftKey) return;
+			if (strip.scrollWidth <= strip.clientWidth) return;
+			event.preventDefault();
+			strip.scrollLeft += event.deltaY;
+		};
+		strip.addEventListener("wheel", onWheel, { passive: false });
+		return () => strip.removeEventListener("wheel", onWheel);
+	}, []);
 
 	// Capture preview closes on Escape, under Find and palettes.
 	useEffect(() => {
@@ -381,7 +449,7 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
 			<div ref={chromeRef} className="flex shrink-0 flex-col border-b border-pi-border bg-pi-bg">
 				{/* Tab strip */}
 				<div data-browser-input className="flex items-center gap-0.5 px-2 pt-1.5">
-					<div role="tablist" aria-label="Browser tabs" className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
+					<div ref={tabListRef} role="tablist" aria-label="Browser tabs" className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
 					{tabs.map((tab) => {
 						const selected = tab.id === activeId;
 						return (

@@ -51,6 +51,7 @@ const PAGE: u8 = 2;
 static INPUT: Mutex<Input> = Mutex::new(Input {
 	blocked: false,
 	exclude: Vec::new(),
+	page: None,
 });
 
 /// Panel UI over the page, in the app's CSS pixels: `(x, y, w, h,
@@ -59,24 +60,36 @@ struct Input {
 	/// A menu or dialog is open: the panel takes all page input.
 	blocked: bool,
 	exclude: Vec<(f64, f64, f64, f64, f64)>,
+	/// The panel's page area, reported by the frontend. Authoritative when set:
+	/// it is the same rect Rust positions the page at, so routing does not have
+	/// to infer the page from the view tree (which differs by Tauri version and
+	/// wraps child webviews differently).
+	page: Option<(f64, f64, f64, f64, f64)>,
 }
 
-/// Sets which parts of the page the panel's UI covers; true when `blocked`
-/// changed (the caller routes moves again).
-pub fn set_input(blocked: bool, exclude: &[ViewBounds]) -> bool {
+/// Sets which parts of the page the panel's UI covers and where the page area
+/// is; true when `blocked` or the page rect changed (the caller routes moves
+/// again).
+pub fn set_input(blocked: bool, exclude: &[ViewBounds], page: Option<ViewBounds>) -> bool {
 	let mut input = INPUT.lock().unwrap();
-	let changed = input.blocked != blocked;
+	let page = page.map(|bounds| bounds.parts());
+	let changed = input.blocked != blocked || input.page != page;
 	input.blocked = blocked;
 	input.exclude = exclude.iter().map(ViewBounds::parts).collect();
+	input.page = page;
 	changed
 }
 
 /// Gives mouse moves to whichever view owns the pointer now, e.g. after a menu
-/// opened. Main thread.
+/// opened, and enforces the layer order: the page takes native input (clicks,
+/// wheel) while no panel overlay needs the surface, and the app webview rises
+/// above it whenever a menu, find bar or dialog must be visible and clickable.
+/// Main thread.
 pub fn reroute_moves() {
 	let Some(main) = main_view() else {
 		return;
 	};
+	order_layers(main, INPUT.lock().unwrap().blocked);
 	let Some(window) = main.window() else {
 		return;
 	};
@@ -86,6 +99,42 @@ pub fn reroute_moves() {
 		msg_send![&*window, convertPointFromScreen: screen]
 	};
 	route_moves(main, main.convertPoint_fromView(point, None));
+}
+
+/// App above every page (`app_on_top`) or every page above the app. The page
+/// must sit on top for native clicks/wheel — returning nil from the app's
+/// hitTest does not hand the event to a sibling page on every macOS build —
+/// and the app must sit on top while its own overlay covers the page area.
+fn order_layers(main: &NSView, app_on_top: bool) {
+	// Safety: the main thread's view tree.
+	let Some(parent) = (unsafe { main.superview() }) else {
+		return;
+	};
+	let class = main.class();
+	// Snapshot first: reordering mutates the subview array being iterated.
+	let pages: Vec<_> = parent
+		.subviews()
+		.iter()
+		.filter(|view| !std::ptr::eq(&**view, main) && std::ptr::eq(view.class(), class))
+		.collect();
+	if app_on_top {
+		// Climb above every page without disturbing unrelated siblings.
+		for view in &pages {
+			parent.addSubview_positioned_relativeTo(
+				main,
+				NSWindowOrderingMode::Above,
+				Some(view),
+			);
+		}
+		return;
+	}
+	for view in pages {
+		parent.addSubview_positioned_relativeTo(
+			&view,
+			NSWindowOrderingMode::Above,
+			Some(main),
+		);
+	}
 }
 
 fn route_moves(main: &NSView, point: NSPoint) {
@@ -147,8 +196,8 @@ pub fn install<R: Runtime>(main: &tauri::Webview<R>) {
 	});
 }
 
-/// Puts a page view below the app's webview, so the panel UI stays over
-/// the page.
+/// Puts a page view above the app's webview so it takes native input; the app
+/// webview rises back over it while an overlay is open (`order_layers`).
 pub fn place<R: Runtime>(page: &tauri::Webview<R>) {
 	let _ = page.with_webview(|platform| {
 		let Some(main) = main_view() else {
@@ -161,7 +210,7 @@ pub fn place<R: Runtime>(page: &tauri::Webview<R>) {
 				if page.superview().as_deref() == Some(&*parent) {
 					parent.addSubview_positioned_relativeTo(
 						page,
-						NSWindowOrderingMode::Below,
+						NSWindowOrderingMode::Above,
 						Some(main),
 					);
 					MOVES_TO.store(0, Ordering::Relaxed);
@@ -180,20 +229,30 @@ unsafe fn install_on(view: *mut AnyObject) {
 	};
 	// Pages share wry's class, so the overrides check for the main view by
 	// pointer and forward everything else to the originals.
-	let (Some(hit_test), Some(drag_hit_test)) = (
-		class_ref.instance_method(sel!(hitTest:)),
-		class_ref.instance_method(sel!(_hitTest:dragTypes:)),
-	) else {
+	//
+	// `hitTest:` is the click/scroll route and is required. `_hitTest:dragTypes:`
+	// is a private AppKit method that macOS releases rename or drop; when it is
+	// missing, drag pass-through is skipped but routing MUST still install, or
+	// every human click and wheel over a page dies.
+	let Some(hit_test) = class_ref.instance_method(sel!(hitTest:)) else {
 		log::warn!("browser pages stay under the panel: the webview class cannot be routed");
 		return;
 	};
+	let drag_hit_test = class_ref.instance_method(sel!(_hitTest:dragTypes:));
+	if drag_hit_test.is_none() {
+		log::info!(
+			"browser drag pass-through unavailable: _hitTest:dragTypes: is not on this macOS"
+		);
+	}
 	// Safety: same signatures; originals are stored before the swap uses them.
 	unsafe {
 		let _ =
 			HIT_TEST.get_or_init(|| std::mem::transmute::<Imp, HitTest>(hit_test.implementation()));
-		let _ = DRAG_HIT_TEST.get_or_init(|| {
-			std::mem::transmute::<Imp, DragHitTest>(drag_hit_test.implementation())
-		});
+		if let Some(drag_hit_test) = drag_hit_test {
+			let _ = DRAG_HIT_TEST.get_or_init(|| {
+				std::mem::transmute::<Imp, DragHitTest>(drag_hit_test.implementation())
+			});
+		}
 		let class = (class_ref as *const AnyClass).cast_mut();
 		objc2::ffi::class_replaceMethod(
 			class,
@@ -201,12 +260,14 @@ unsafe fn install_on(view: *mut AnyObject) {
 			std::mem::transmute::<HitTest, Imp>(routed_hit_test),
 			objc2::ffi::method_getTypeEncoding(hit_test),
 		);
-		objc2::ffi::class_replaceMethod(
-			class,
-			sel!(_hitTest:dragTypes:),
-			std::mem::transmute::<DragHitTest, Imp>(routed_drag_hit_test),
-			objc2::ffi::method_getTypeEncoding(drag_hit_test),
-		);
+		if let Some(drag_hit_test) = drag_hit_test {
+			objc2::ffi::class_replaceMethod(
+				class,
+				sel!(_hitTest:dragTypes:),
+				std::mem::transmute::<DragHitTest, Imp>(routed_drag_hit_test),
+				objc2::ffi::method_getTypeEncoding(drag_hit_test),
+			);
+		}
 		// Private KVC key, as wry's own `transparent` option sets.
 		let main = &*(view as *const NSView);
 		main.setValue_forKey(
@@ -251,40 +312,69 @@ unsafe fn install_on(view: *mut AnyObject) {
 fn over_page(main: &NSView, point: NSPoint) -> bool {
 	let input = INPUT.lock().unwrap();
 	if input.blocked {
+		trace_point(point, input.page, true, false);
 		return false;
 	}
+	let width = main.frame().size.width;
+	let in_page = match input.page {
+		Some(page) => point_in(scaled_rect(page, width), point),
+		// First paint, before the panel reported its page area: fall back to
+		// the view tree. A page view is a sibling of the app webview below it.
+		None => visible_page_at(main, point),
+	};
+	let excluded = in_page
+		&& input
+			.exclude
+			.iter()
+			.any(|&exclude| point_in(scaled_rect(exclude, width), point));
+	let decision = in_page && !excluded;
+	trace_point(point, input.page, input.blocked, decision);
+	decision
+}
+
+/// `A_CODER_BROWSER_INPUT_DEBUG=1` logs every routing decision (capped), so a
+/// dead click path can be diagnosed without a debugger.
+fn trace_point(point: NSPoint, page: Option<(f64, f64, f64, f64, f64)>, blocked: bool, decision: bool) {
+	static LOGGED: AtomicU8 = AtomicU8::new(0);
+	if std::env::var_os("A_CODER_BROWSER_INPUT_DEBUG").is_none() {
+		return;
+	}
+	if LOGGED.fetch_add(1, Ordering::Relaxed) > 250 {
+		return;
+	}
+	eprintln!(
+		"[browser-input] point={:.0},{:.0} page={:?} blocked={} -> {}",
+		point.x,
+		point.y,
+		page,
+		blocked,
+		if decision { "page" } else { "app" }
+	);
+}
+
+
+/// A reported rect in app-view points, scaled by any zoom the panel applied.
+fn scaled_rect((x, y, w, h, viewport): (f64, f64, f64, f64, f64), width: f64) -> NSRect {
+	let scale = if viewport > 0.0 { width / viewport } else { 1.0 };
+	NSRect::new(
+		NSPoint::new(x * scale, y * scale),
+		NSSize::new(w * scale, h * scale),
+	)
+}
+
+/// Legacy fallback: a visible sibling of the app webview whose frame contains
+/// the point. Used only until the frontend reports its page area.
+fn visible_page_at(main: &NSView, point: NSPoint) -> bool {
 	// Safety: the main thread's view tree.
 	let Some(parent) = (unsafe { main.superview() }) else {
 		return false;
 	};
 	let class = main.class();
-	let page = parent.subviews().iter().any(|view| {
+	parent.subviews().iter().any(|view| {
 		!std::ptr::eq(&*view, main)
 			&& std::ptr::eq(view.class(), class)
 			&& !view.isHidden()
-			&& point_in(
-				main.convertRect_fromView(view.frame(), Some(&parent)),
-				point,
-			)
-	});
-	if !page {
-		return false;
-	}
-	// The app view is flipped: its coordinates read like CSS px.
-	let width = main.frame().size.width;
-	!input.exclude.iter().any(|&(x, y, w, h, viewport)| {
-		let scale = if viewport > 0.0 {
-			width / viewport
-		} else {
-			1.0
-		};
-		point_in(
-			NSRect::new(
-				NSPoint::new(x * scale, y * scale),
-				NSSize::new(w * scale, h * scale),
-			),
-			point,
-		)
+			&& point_in(main.convertRect_fromView(view.frame(), Some(&parent)), point)
 	})
 }
 
@@ -355,6 +445,22 @@ mod tests {
 		assert!(point_in(rect, NSPoint::new(39.0, 59.0)));
 		assert!(!point_in(rect, NSPoint::new(40.0, 30.0)));
 		assert!(!point_in(rect, NSPoint::new(9.0, 20.0)));
+	}
+
+	#[test]
+	fn reported_page_rect_scales_with_zoom() {
+		let rect = scaled_rect((10.0, 20.0, 100.0, 50.0, 400.0), 800.0);
+		assert!(point_in(rect, NSPoint::new(20.0, 40.0)));
+		assert!(point_in(rect, NSPoint::new(219.0, 139.0)));
+		assert!(!point_in(rect, NSPoint::new(220.0, 40.0)));
+		assert!(!point_in(rect, NSPoint::new(20.0, 140.0)));
+	}
+
+	#[test]
+	fn reported_page_rect_without_viewport_does_not_scale() {
+		let rect = scaled_rect((10.0, 20.0, 100.0, 50.0, 0.0), 800.0);
+		assert!(point_in(rect, NSPoint::new(109.0, 69.0)));
+		assert!(!point_in(rect, NSPoint::new(110.0, 70.0)));
 	}
 
 	fn point_rect(x: f64, y: f64, w: f64, h: f64) -> NSRect {

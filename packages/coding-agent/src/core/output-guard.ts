@@ -1,3 +1,5 @@
+import { writeSync } from "node:fs";
+
 interface StdoutTakeoverState {
 	rawStdoutWrite: (chunk: string, callback?: (error?: Error | null) => void) => boolean;
 	rawStderrWrite: (chunk: string, callback?: (error?: Error | null) => void) => boolean;
@@ -7,6 +9,29 @@ interface StdoutTakeoverState {
 let stdoutTakeoverState: StdoutTakeoverState | undefined;
 
 const RAW_STDOUT_RETRY_DELAY_MS = 10;
+
+/**
+ * Bun buffers a piped stdout in userspace and releases it only when the buffer fills (megabytes)
+ * or the process exits, so one small frame can sit unseen for the life of the process. A
+ * synchronous write to fd 1 reaches the OS immediately. A terminal is never buffered, so the
+ * stream path stays for it.
+ *
+ * Scoped to win32 deliberately. macOS/Linux already reach the OS immediately on a pipe, and a
+ * synchronous write there would block the event loop while a slow consumer drains instead of
+ * letting the async write path apply backpressure. Widen this only with evidence that the other
+ * platforms regress the same way.
+ */
+function writesSynchronously(): boolean {
+	return process.platform === "win32" && !process.stdout.isTTY;
+}
+
+function writeAllSync(fd: number, text: string): void {
+	const bytes = Buffer.from(text, "utf8");
+	let offset = 0;
+	while (offset < bytes.length) {
+		offset += writeSync(fd, bytes, offset, bytes.length - offset);
+	}
+}
 
 let rawStdoutWriteTail: Promise<void> = Promise.resolve();
 
@@ -18,6 +43,10 @@ function getRawStdoutWrite(): StdoutTakeoverState["rawStdoutWrite"] {
 }
 
 async function writeRawStdoutChunk(text: string): Promise<void> {
+	if (writesSynchronously()) {
+		writeAllSync(1, text);
+		return;
+	}
 	while (true) {
 		try {
 			await new Promise<void>((resolve, reject) => {

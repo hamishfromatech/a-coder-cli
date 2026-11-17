@@ -49,6 +49,7 @@ const computerSchema = Type.Object(
 				"type",
 				"key",
 				"set_value",
+				"zoom",
 				"wait",
 				"list_apps",
 				"list_windows",
@@ -57,7 +58,7 @@ const computerSchema = Type.Object(
 			],
 			{
 				description:
-					"Which action to perform. capture (free, no side effects) returns a screenshot plus interactable elements; prefer clicking elements by index over pixel coordinates. doctor (free) reports driver health + TCC grants. All other actions except list/wait/focus/doctor require approval.",
+					"Which action to perform. capture (free, no side effects) returns a screenshot plus interactable elements; prefer clicking elements by index over pixel coordinates. zoom (free) crops a region of the last capture at native resolution for reading small text. doctor (free) reports driver health + TCC grants. All other actions except list/wait/focus/zoom/doctor require approval.",
 			},
 		),
 		mode: Type.Optional(
@@ -126,6 +127,20 @@ const computerSchema = Type.Object(
 			Type.Boolean({
 				description:
 					"Take a follow-up capture after a successful input action (saves a round-trip when verifying an effect).",
+			}),
+		),
+		since_last: Type.Optional(
+			Type.Boolean({
+				description:
+					"capture only: ask the driver for a diff since the previous snapshot of this window (changed elements only). A diff is for checking what changed — re-capture without this before clicking an element that is not listed.",
+			}),
+		),
+		zoom_rect: Type.Optional(
+			Type.Array(Type.Number(), {
+				minItems: 4,
+				maxItems: 4,
+				description:
+					"zoom: region [x1, y1, x2, y2] in the captured screenshot's pixels (top-left, bottom-right). Max 500px wide; the driver adds 20% padding.",
 			}),
 		),
 	},
@@ -226,6 +241,16 @@ export const COMPUTER_INPUT_ACTIONS: ReadonlySet<string> = new Set([
 const MAX_AX_ELEMENTS = 200;
 /** Cap on the element list surfaced in the response (dense UIs exceed context). */
 const MAX_VISIBLE_ELEMENTS = 100;
+/** What a degraded snapshot means for the next step (driver `degraded_reason`). */
+const DEGRADED_HINTS: Record<string, string> = {
+	ax_window_unresolved:
+		"the accessibility window could not be resolved — retry, or capture with mode='vision' for pixels only.",
+	ax_app_launching: "the app is still launching — wait a moment and capture again.",
+	screen_locked: "the screen is locked — nothing can be clicked until it is unlocked.",
+	px_frame_mismatch: "the pixel frame does not match the tree — capture again before using coordinates.",
+	px_capture_unavailable:
+		"pixel capture failed (check Screen Recording permission); the element list may still be usable.",
+};
 
 // ---------------------------------------------------------------------------
 // Session-cached driver + sticky target
@@ -251,6 +276,11 @@ interface WindowEntry {
 let cachedClient: CuaDriverClient | null = null;
 let stickyTarget: { pid: number; window_id: number | null; app: string } | null = null;
 let snapshotTokens = new Map<number, string>();
+/** Last snapshot published for `lastSnapshotTarget`, for `since` diffs and zoom context. */
+let lastSnapshotId: string | null = null;
+let lastSnapshotTarget = "";
+/** Target key whose pixels came from a `zoom` crop (coordinate actions set `from_zoom`). */
+let zoomActiveFor = "";
 
 // Screenshot dedup: a tight capture→act→capture loop on a static screen resends the
 // same image every step. When a capture of the SAME target (app, window) returns
@@ -271,9 +301,32 @@ function getClient(): CuaDriverClient {
 function clearTarget(): void {
 	stickyTarget = null;
 	snapshotTokens = new Map();
+	lastSnapshotId = null;
+	lastSnapshotTarget = "";
+	zoomActiveFor = "";
 	lastCaptureDigest = null;
 	lastCaptureTarget = "";
 	unchangedStreak = 0;
+}
+
+function targetKeyOf(target: { pid: number; window_id: number | null }): string {
+	return `${target.pid}:${target.window_id}`;
+}
+
+/**
+ * Per-call target. Current drivers prefer `target: {kind, pid, window_id}` and
+ * reject it combined with legacy `pid`/`window_id`; older schemas do not
+ * advertise it, so the legacy flat form stays the fallback.
+ */
+function targetArgs(
+	client: CuaDriverClient,
+	tool: string,
+	target: { pid: number; window_id: number | null },
+): Record<string, unknown> {
+	if (target.window_id !== null && client.supportsInputProperty(tool, "target")) {
+		return { target: { kind: "window", pid: target.pid, window_id: target.window_id } };
+	}
+	return { pid: target.pid, ...(target.window_id !== null ? { window_id: target.window_id } : {}) };
 }
 
 function positiveInt(value: unknown): number | null {
@@ -360,6 +413,62 @@ function classifyVerdict(result: {
 			return {
 				decision: "escalate",
 				hint: "The action's outcome is unknown — it may have landed. Capture fresh state before any retry; do not repeat the input.",
+			};
+		}
+		if (code === "background_unavailable") {
+			return {
+				decision: "escalate",
+				code,
+				hint: "Background delivery could not land on this target (occluded, or a surface that drops posted events). Nothing was executed — re-issue the same action with delivery_mode: 'foreground' (separate approval), then capture to verify.",
+			};
+		}
+		if (code === "stale_element_token") {
+			return {
+				decision: "verify_fresh_state",
+				code,
+				hint: "The element token is stale — a newer snapshot replaced it. Capture again and use the new element index/token.",
+			};
+		}
+		if (code === "ambiguous_window_target") {
+			const candidates = Array.isArray(structured.candidates) ? structured.candidates : null;
+			return {
+				decision: "verify_fresh_state",
+				code,
+				hint: `The pid owns several windows, so no input was sent.${candidates ? ` Candidates: ${JSON.stringify(candidates)}.` : ""} Retry with an exact window_id from list_windows.`,
+			};
+		}
+		if (
+			code === "window_id_not_found" ||
+			code === "window_target_not_found" ||
+			code === "window_owner_pid_mismatch"
+		) {
+			return {
+				decision: "verify_fresh_state",
+				code,
+				hint: "The target window is gone or belongs to a different pid. Call list_windows, then capture the window again before acting.",
+			};
+		}
+		if (code === "screenshot_context_missing") {
+			return {
+				decision: "verify_fresh_state",
+				code,
+				hint: "No current screenshot for this window in the session, so the driver refused. Capture the window, then retry the coordinate action (or the zoom).",
+			};
+		}
+		if (code === "zoom_context_missing") {
+			return {
+				decision: "verify_fresh_state",
+				code,
+				hint: "The zoom this action referred to was replaced. Capture, then zoom again before clicking inside the crop.",
+			};
+		}
+		// Explicit refusals execute nothing, so no capture is needed before choosing
+		// another approach.
+		if (structured.effect === "refused") {
+			return {
+				decision: "verify_fresh_state",
+				...(code ? { code } : {}),
+				hint: "The driver refused before executing, so nothing changed. Capture to confirm state, then choose another approach.",
 			};
 		}
 		// Driver-side authorization refusals happen BEFORE execution (no side
@@ -483,10 +592,27 @@ async function doCapture(args: ComputerToolInput): Promise<AgentToolResult<Recor
 	if (!target) {
 		return textResult({ ok: false, action: "capture", error });
 	}
-	const callArgs: Record<string, unknown> = { pid: target.pid, max_elements: MAX_AX_ELEMENTS };
+	const callArgs: Record<string, unknown> = { pid: target.pid };
 	if (target.window_id !== null) {
 		callArgs.window_id = target.window_id;
 	}
+	// Current cua-driver returns the structured element list only when asked: its
+	// default `tree_format: "markdown"` carries no `elements`, which would leave
+	// click-by-index with nothing to target. Older builds do not advertise these
+	// properties, so each one is gated on the live schema.
+	const supports = (property: string) => client.supportsInputProperty("get_window_state", property);
+	if (supports("tree_format")) callArgs.tree_format = "elements";
+	if (supports("max_elements")) callArgs.max_elements = MAX_AX_ELEMENTS;
+	if (supports("include_screenshot")) callArgs.include_screenshot = mode !== "ax";
+	if (mode === "vision" && supports("include_accessibility_tree")) callArgs.include_accessibility_tree = false;
+	// `since` returns only what changed since a previous snapshot of this window.
+	// It needs that snapshot to still be the one this tool published.
+	const key = targetKeyOf(target);
+	const diffSince =
+		args.since_last === true && lastSnapshotTarget === key && lastSnapshotId !== null && supports("since")
+			? lastSnapshotId
+			: null;
+	if (diffSince) callArgs.since = diffSince;
 	let result = await client.callTool("get_window_state", callArgs);
 	if (result.isError && !result.images.length) {
 		return textResult(actionPayload("capture", result));
@@ -498,10 +624,13 @@ async function doCapture(args: ComputerToolInput): Promise<AgentToolResult<Recor
 			result = shot;
 		}
 	}
-	// Sticky target + snapshot tokens are set by ANY successful capture.
+	// Sticky target + snapshot tokens are set by ANY successful capture. A diff
+	// does not re-list unchanged rows, so it merges into the existing token map
+	// instead of replacing it.
 	stickyTarget = target;
-	snapshotTokens = new Map();
+	zoomActiveFor = "";
 	const elements = mode === "vision" ? [] : parseElements(result.structured?.elements);
+	if (!diffSince) snapshotTokens = new Map();
 	for (const element of elements) {
 		if (element.token) {
 			snapshotTokens.set(element.index, element.token);
@@ -510,6 +639,15 @@ async function doCapture(args: ComputerToolInput): Promise<AgentToolResult<Recor
 	const visible = elements.slice(0, MAX_VISIBLE_ELEMENTS);
 	const image = result.images[0];
 	const truncated = elements.length - visible.length;
+	const structured = result.structured ?? {};
+	const snapshotId = typeof structured.snapshot_id === "string" ? structured.snapshot_id : null;
+	const degradedReason = typeof structured.degraded_reason === "string" ? structured.degraded_reason : null;
+	const driverTruncated = structured.truncated === true;
+	const sinceStatus = typeof structured.since_status === "string" ? structured.since_status : null;
+	if (snapshotId) {
+		lastSnapshotId = snapshotId;
+		lastSnapshotTarget = key;
+	}
 	// Dedup gate: omit the image when this frame is byte-identical to the last
 	// delivered one for the same target and the omission streak is under cap.
 	let omittedAsUnchanged = false;
@@ -526,12 +664,27 @@ async function doCapture(args: ComputerToolInput): Promise<AgentToolResult<Recor
 		}
 	}
 	const lines = [
-		`capture mode=${mode} app=${JSON.stringify(target.app || "frontmost")}`,
+		`capture mode=${mode} app=${JSON.stringify(target.app || "frontmost")}${diffSince ? ` diff-since=${diffSince}` : ""}`,
 		`${elements.length} interactable element(s):`,
 		...visible.map(elementLine),
 	];
+	if (diffSince) {
+		lines.push(
+			`diff: only changed rows are listed${sinceStatus ? ` (since_status=${sinceStatus})` : ""}. The driver publishes a new snapshot with this read, so tokens from the previous one are stale — re-capture without since_last before clicking an element that is not listed here.`,
+		);
+	}
 	if (truncated > 0) {
 		lines.push(`  (+${truncated} more; pass app= to narrow)`);
+	}
+	if (driverTruncated) {
+		lines.push(
+			`note: the driver truncated the accessibility tree at max_elements=${MAX_AX_ELEMENTS} — narrow with app=/window_id, or capture mode='vision' for pixels only.`,
+		);
+	}
+	if (degradedReason) {
+		lines.push(
+			`warning: degraded snapshot (${degradedReason}) — ${DEGRADED_HINTS[degradedReason] ?? "the view may be incomplete; verify before acting."}`,
+		);
 	}
 	if (omittedAsUnchanged) {
 		lines.push(
@@ -554,6 +707,9 @@ async function doCapture(args: ComputerToolInput): Promise<AgentToolResult<Recor
 			pid: target.pid,
 			windowId: target.window_id,
 			elementCount: elements.length,
+			...(snapshotId ? { snapshotId } : {}),
+			...(diffSince ? { since: diffSince, diff: true } : {}),
+			...(degradedReason ? { degradedReason } : {}),
 		},
 	};
 }
@@ -640,6 +796,86 @@ async function doDoctor(): Promise<AgentToolResult<Record<string, unknown>>> {
 	});
 }
 
+/**
+ * Crop a region of the last capture at native resolution (driver `zoom`).
+ * Free and read-only: it publishes no new snapshot, so element tokens stay
+ * valid. A coordinate action after a zoom sets `from_zoom` so the driver
+ * translates the point back into window space.
+ */
+async function doZoom(args: ComputerToolInput): Promise<AgentToolResult<Record<string, unknown>>> {
+	const client = getClient();
+	if (!stickyTarget) {
+		return textResult({
+			ok: false,
+			action: "zoom",
+			code: "no_target",
+			error: "No active window — call capture(app=...) first.",
+		});
+	}
+	if (!client.hasTool("zoom")) {
+		return textResult({
+			ok: false,
+			action: "zoom",
+			code: "driver_tool_unavailable",
+			error: "The connected cua-driver does not advertise a 'zoom' tool; update the driver to read small text at native resolution.",
+		});
+	}
+	const raw = args.zoom_rect;
+	const rect =
+		Array.isArray(raw) &&
+		raw.length === 4 &&
+		raw.every((value) => typeof value === "number" && Number.isFinite(value))
+			? raw
+			: null;
+	if (!rect) {
+		return textResult({
+			ok: false,
+			action: "zoom",
+			error: "zoom requires zoom_rect=[x1, y1, x2, y2] in the last capture's pixels (corners, not size).",
+		});
+	}
+	if (stickyTarget.window_id === null) {
+		return textResult({
+			ok: false,
+			action: "zoom",
+			error: "zoom needs an exact window; capture with app= or pid+window_id first.",
+		});
+	}
+	const callArgs: Record<string, unknown> = {
+		window_id: stickyTarget.window_id,
+		x1: rect[0],
+		y1: rect[1],
+		x2: rect[2],
+		y2: rect[3],
+	};
+	if (client.supportsInputProperty("zoom", "pid")) callArgs.pid = stickyTarget.pid;
+	const result = await client.callTool("zoom", callArgs);
+	if (result.isError) {
+		return textResult(actionPayload("zoom", result));
+	}
+	zoomActiveFor = targetKeyOf(stickyTarget);
+	const image = result.images[0];
+	const text = [
+		`zoom ${rect.join(",")} on ${JSON.stringify(stickyTarget.app)} — native resolution crop; coordinates in this image are zoom-local.`,
+		"A coordinate click after this sets from_zoom automatically; element indices and tokens are unchanged.",
+	].join("\n");
+	return {
+		content: image
+			? [
+					{ type: "text", text },
+					{ type: "image", data: image.data, mimeType: image.mimeType },
+				]
+			: [{ type: "text", text }],
+		details: {
+			action: "zoom",
+			rect,
+			app: stickyTarget.app,
+			pid: stickyTarget.pid,
+			windowId: stickyTarget.window_id,
+		},
+	};
+}
+
 async function doInput(args: ComputerToolInput): Promise<AgentToolResult<Record<string, unknown>>> {
 	const client = getClient();
 	const action = args.action;
@@ -666,13 +902,8 @@ async function doInput(args: ComputerToolInput): Promise<AgentToolResult<Record<
 			});
 		}
 	}
-	const base: Record<string, unknown> = { pid: stickyTarget.pid };
-	if (stickyTarget.window_id !== null) {
-		base.window_id = stickyTarget.window_id;
-	}
-
 	let tool = action;
-	const toolArgs: Record<string, unknown> = { ...base };
+	const toolArgs: Record<string, unknown> = {};
 
 	switch (action) {
 		case "click":
@@ -811,8 +1042,12 @@ async function doInput(args: ComputerToolInput): Promise<AgentToolResult<Record<
 	// explicit "stale" instead of silently re-resolving to a different element.
 	if (typeof toolArgs.element_index === "number") {
 		const token = snapshotTokens.get(toolArgs.element_index);
+		// Current drivers identify elements on action tools by snapshot token and
+		// refuse `element_index`; prefer the token and drop the index when sending
+		// both would be contradictory.
 		if (token && client.supportsInputProperty(tool, "element_token")) {
 			toolArgs.element_token = token;
+			delete toolArgs.element_index;
 		}
 	}
 	// A driver build may rename tools (e.g. "type" → "type_text"); calling an
@@ -840,7 +1075,19 @@ async function doInput(args: ComputerToolInput): Promise<AgentToolResult<Record<
 		toolArgs.delivery_mode = "foreground";
 	}
 
-	const result = await client.callTool(tool, toolArgs);
+	// Target addressing is per-tool: current drivers take `target`, older ones
+	// take legacy pid/window_id (the two cannot be combined).
+	const callArgs = { ...targetArgs(client, tool, stickyTarget), ...toolArgs };
+	// A coordinate after a zoom refers to the zoom crop; let the driver translate
+	// it back to window space.
+	if (
+		typeof toolArgs.x === "number" &&
+		zoomActiveFor === targetKeyOf(stickyTarget) &&
+		client.supportsInputProperty(tool, "from_zoom")
+	) {
+		callArgs.from_zoom = true;
+	}
+	const result = await client.callTool(tool, callArgs);
 	const payload = actionPayload(action, result);
 
 	// Optional follow-up capture — never after a failure (a normal-looking
@@ -877,6 +1124,9 @@ async function dispatch(action: string, params: ComputerToolInput): Promise<Agen
 	if (action === "doctor") {
 		return doDoctor();
 	}
+	if (action === "zoom") {
+		return doZoom(params);
+	}
 	return doInput(params);
 }
 
@@ -893,7 +1143,8 @@ export function createComputerToolDefinition(): ToolDefinition<typeof computerSc
 			"Input is background-first: it routes to the target window without stealing the user's cursor or focus, and each " +
 			"result carries a verdict telling you the next step (done / verify with a fresh capture / escalate). Workflow: " +
 			"action='capture' (mode 'som' gives numbered element overlays), then click by element index; re-capture after " +
-			"state-changing actions (or pass capture_after=true). Never repeat confirmed input, and re-capture to verify an " +
+			"state-changing actions (or pass capture_after=true), and use action='zoom' when small text needs native " +
+			"resolution. Never repeat confirmed input, and re-capture to verify an " +
 			"unverifiable one before retrying. Destructive system shortcuts and dangerous shell-payload typing are hard-blocked.",
 		promptSnippet: "Control the desktop (screenshots, mouse, keyboard) via cua-driver",
 		parameters: computerSchema,

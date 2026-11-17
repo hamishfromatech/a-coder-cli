@@ -1,5 +1,5 @@
 import { MacosPermissionHint } from "../MacosPermissionHint";
-import { memo, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useSessionViewStore } from "../../stores/session-view-store";
 import { formatToolProgress, useToolProgressStore } from "../../stores/tool-progress-store";
 import {
@@ -9,13 +9,23 @@ import {
 	Copy,
 	FastForward,
 	Hammer,
+	ImageIcon,
 	Loader2,
 } from "lucide-react";
 import type { ToolResultMessage } from "@earendil-works/pi-ai";
 import { backgroundRunningBash } from "../../lib/bash-background";
 import { useSessionStore, type UiRequest } from "../../stores/session-store";
+import { Badge } from "../ui/Badge";
 import { ToolApprovalBar } from "../ToolApprovalBar";
 import { diffStats, EditDiff } from "./EditDiff";
+import { ToolResultImage } from "./ToolResultImage";
+import {
+	parseJsonPayload,
+	readToolVerdict,
+	resultImages,
+	resultText,
+	summarizeToolArgs,
+} from "./toolResult";
 
 export interface RichToolCallProps {
 	toolCall: {
@@ -35,53 +45,6 @@ export interface RichToolCallProps {
 }
 
 type ToolStatus = "pending" | "running" | "success" | "error";
-
-/** One-line human summary of a tool's arguments, keyed by tool name. */
-function summarizeArgs(name: string, args: Record<string, unknown>): string {
-	const pick = (key: string): string | undefined => {
-		const v = args[key];
-		return typeof v === "string" && v.length > 0 ? v : undefined;
-	};
-	const num = (key: string): number | undefined =>
-		typeof args[key] === "number" ? (args[key] as number) : undefined;
-
-	switch (name) {
-		case "bash":
-			return pick("command") ?? pick("c") ?? "";
-		case "read":
-		case "write":
-			return pick("file_path") ?? pick("path") ?? "";
-		case "edit":
-		case "str_replace_based_edit_tool":
-		case "multi_edit": {
-			const path = pick("file_path") ?? pick("path") ?? "";
-			const edits = num("edits") ?? (Array.isArray(args.edits) ? (args.edits as unknown[]).length : undefined);
-			return path ? (edits ? `${path} · ${edits} edit${edits === 1 ? "" : "s"}` : path) : "";
-		}
-		case "grep":
-			return [pick("pattern"), pick("path")].filter(Boolean).join(" · ");
-		case "find":
-			return [pick("pattern"), pick("path")].filter(Boolean).join(" · ");
-		case "ls":
-			return pick("path") ?? ".";
-		case "todo":
-			return Array.isArray(args.todos) ? `${(args.todos as unknown[]).length} tasks` : "";
-		default: {
-			const firstKey = Object.keys(args)[0];
-			if (!firstKey) return "";
-			const v = args[firstKey];
-			return typeof v === "string" ? v : `${firstKey}: ${JSON.stringify(v)}`;
-		}
-	}
-}
-
-function resultText(result: ToolResultMessage | undefined): string {
-	if (!result) return "";
-	return result.content
-		.map((c) => (c.type === "text" ? c.text : ""))
-		.join("")
-		.trim();
-}
 
 /** Details shape emitted by the edit tool (`details.diff` holds the display diff). */
 interface EditToolResultDetails {
@@ -129,12 +92,25 @@ export const RichToolCall = memo(function RichToolCall({
 
 	const argsJson = useMemo(() => JSON.stringify(toolCall.arguments, null, 2), [toolCall.arguments]);
 	const summary = useMemo(
-		() => summarizeArgs(toolCall.name, toolCall.arguments),
+		() => summarizeToolArgs(toolCall.name, toolCall.arguments),
 		[toolCall.name, toolCall.arguments],
 	);
 	const output = useMemo(() => resultText(result), [result]);
 	const diff = useMemo(() => editResultDiff(result), [result]);
 	const stats = useMemo(() => (diff ? diffStats(diff) : undefined), [diff]);
+	const images = useMemo(() => resultImages(result), [result]);
+	const parsed = useMemo(() => parseJsonPayload(output), [output]);
+	const verdict = useMemo(
+		() => (toolCall.name === "computer" ? readToolVerdict(result, parsed?.value) : null),
+		[toolCall.name, result, parsed],
+	);
+	const verdictBadge = verdict
+		? verdict.decision === "done"
+			? { variant: "success" as const, label: "done" }
+			: verdict.decision === "escalate"
+				? { variant: "error" as const, label: "escalate" }
+				: { variant: "warning" as const, label: "verify" }
+		: undefined;
 
 	const onCopy = async (e: React.MouseEvent) => {
 		e.stopPropagation();
@@ -173,56 +149,76 @@ export const RichToolCall = memo(function RichToolCall({
 						{summary}
 					</span>
 				)}
-				{stats && (stats.added > 0 || stats.removed > 0) && (
-					<span className="ml-auto flex shrink-0 items-center gap-1.5 font-mono text-2xs">
-						{stats.added > 0 && <span className="text-pi-success">+{stats.added}</span>}
-						{stats.removed > 0 && <span className="text-pi-error">−{stats.removed}</span>}
-					</span>
-				)}
-				{status === "running" && progress?.progress && (
+				<span className="ml-auto flex shrink-0 items-center gap-1.5">
+					{stats && (stats.added > 0 || stats.removed > 0) && (
+						<span className="flex items-center gap-1.5 font-mono text-2xs">
+							{stats.added > 0 && <span className="text-pi-success">+{stats.added}</span>}
+							{stats.removed > 0 && <span className="text-pi-error">−{stats.removed}</span>}
+						</span>
+					)}
+					{status === "running" && progress?.progress && (
+						<span
+							className="max-w-48 truncate font-mono text-3xs text-pi-text-faint"
+							title={formatToolProgress(progress.progress)}
+						>
+							{formatToolProgress(progress.progress)}
+						</span>
+					)}
+					{verdictBadge && (
+						<Badge
+							variant={verdictBadge.variant}
+							size="sm"
+							title={verdict?.hint ?? verdict?.code ?? verdictBadge.label}
+						>
+							{verdictBadge.label}
+						</Badge>
+					)}
+					{images.length > 0 && (
+						<Badge
+							variant="muted"
+							size="sm"
+							icon={ImageIcon}
+							title={`${images.length} image${images.length === 1 ? "" : "s"} in the result`}
+						>
+							{images.length}
+						</Badge>
+					)}
+					{toolCall.name === "bash" && status === "running" && (
+						<span
+							onClick={(e) => {
+								e.stopPropagation();
+								void backgroundRunningBash();
+							}}
+							role="button"
+							tabIndex={0}
+							title="Background this command — it keeps running and the agent continues"
+							className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-3xs text-pi-text-faint opacity-0 transition-hover hover:bg-pi-surface-overlay hover:text-pi-text group-hover/tool:opacity-100 focus-visible:shadow-focus focus-visible:outline-none"
+							onKeyDown={(e) => {
+								if (e.key === "Enter" || e.key === " ") {
+									e.preventDefault();
+									e.stopPropagation();
+									void backgroundRunningBash();
+								}
+							}}
+						>
+							<FastForward className="h-3 w-3" />
+							Background
+						</span>
+					)}
 					<span
-						className="max-w-48 shrink-0 truncate font-mono text-3xs text-pi-text-faint"
-						title={formatToolProgress(progress.progress)}
-					>
-						{formatToolProgress(progress.progress)}
-					</span>
-				)}
-				{toolCall.name === "bash" && status === "running" && (
-					<span
-						onClick={(e) => {
-							e.stopPropagation();
-							void backgroundRunningBash();
-						}}
+						onClick={onCopy}
 						role="button"
 						tabIndex={0}
-						title="Background this command — it keeps running and the agent continues"
-						className="ml-auto flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-3xs text-pi-text-faint opacity-0 transition-hover hover:bg-pi-surface-overlay hover:text-pi-text group-hover/tool:opacity-100 focus-visible:shadow-focus focus-visible:outline-none"
+						className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-3xs text-pi-text-faint opacity-0 transition-hover hover:bg-pi-surface-overlay hover:text-pi-text group-hover/tool:opacity-100 focus-visible:shadow-focus focus-visible:outline-none"
 						onKeyDown={(e) => {
 							if (e.key === "Enter" || e.key === " ") {
 								e.preventDefault();
-								e.stopPropagation();
-								void backgroundRunningBash();
+								void onCopy(e as unknown as React.MouseEvent);
 							}
 						}}
 					>
-						<FastForward className="h-3 w-3" />
-						Background
+						{copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
 					</span>
-				)}
-				<span
-					onClick={onCopy}
-					role="button"
-					tabIndex={0}
-					className="ml-auto flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-3xs text-pi-text-faint opacity-0 transition-hover hover:bg-pi-surface-overlay hover:text-pi-text group-hover/tool:opacity-100 focus-visible:shadow-focus focus-visible:outline-none"
-
-					onKeyDown={(e) => {
-						if (e.key === "Enter" || e.key === " ") {
-							e.preventDefault();
-							void onCopy(e as unknown as React.MouseEvent);
-						}
-					}}
-				>
-					{copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
 				</span>
 				<ChevronRight
 					className={`h-3 w-3 shrink-0 text-pi-text-faint transition-transform ${
@@ -252,7 +248,7 @@ export const RichToolCall = memo(function RichToolCall({
 						</>
 					) : (
 						<>
-							{argsJson && (
+							{argsJson && argsJson !== "{}" && (
 								<div>
 									<div className="px-2.5 pt-1.5 text-4xs font-medium uppercase tracking-[0.08em] text-pi-text-faint">
 										Args
@@ -279,18 +275,35 @@ export const RichToolCall = memo(function RichToolCall({
 									)}
 								</div>
 							)}
-							{output && (
+							{(output || images.length > 0) && (
 								<div>
-									<div className="px-2.5 pt-1.5 text-4xs font-medium uppercase tracking-[0.08em] text-pi-text-faint">
-										{result?.isError ? "Error" : "Result"}
+									<div className="flex items-center justify-between gap-2 px-2.5 pt-1.5">
+										<span className="text-4xs font-medium uppercase tracking-[0.08em] text-pi-text-faint">
+											{result?.isError ? "Error" : "Result"}
+										</span>
+										<div className="flex items-center gap-1">
+											{parsed && (
+												<Badge variant="outline" size="sm">
+													json
+												</Badge>
+											)}
+											{output && <CopyTextButton text={output} label="Copy result" />}
+										</div>
 									</div>
-									<pre
-										className={`max-h-64 overflow-auto px-2.5 py-1.5 font-mono text-2xs leading-relaxed ${
-											result?.isError ? "text-pi-error" : "text-pi-text-secondary"
-										}`}
-									>
-										{output}
-									</pre>
+									{images.length > 0 && (
+										<div className="flex flex-wrap gap-2 px-2.5 py-1.5">
+											{images.map((image, index) => (
+												<ToolResultImage
+													key={image.attachment?.id ?? `image-${index}`}
+													image={image}
+													index={index}
+												/>
+											))}
+										</div>
+									)}
+									{output && (
+										<ResultText text={parsed?.pretty ?? output} isError={result?.isError === true} />
+									)}
 									{result?.isError && <MacosPermissionHint text={output} />}
 								</div>
 							)}
@@ -302,3 +315,68 @@ export const RichToolCall = memo(function RichToolCall({
 		</div>
 	);
 });
+/** Copy-to-clipboard action for a result payload (install commands, JSON, logs). */
+function CopyTextButton({ text, label }: { text: string; label: string }) {
+	const [copied, setCopied] = useState(false);
+	return (
+		<button
+			type="button"
+			aria-label={label}
+			title={label}
+			onClick={async (event) => {
+				event.stopPropagation();
+				try {
+					await navigator.clipboard.writeText(text);
+					setCopied(true);
+					setTimeout(() => setCopied(false), 1400);
+				} catch {
+					// Clipboard unavailable: leave the label unchanged.
+				}
+			}}
+			className="flex items-center gap-1 rounded px-1 py-0.5 text-3xs text-pi-text-faint transition-hover hover:bg-pi-surface-overlay hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+		>
+			{copied ? <Check className="h-3 w-3 text-pi-success" /> : <Copy className="h-3 w-3" />}
+			{copied ? "Copied" : "Copy"}
+		</button>
+	);
+}
+
+/**
+ * Result body: capped height with an explicit expand control instead of a bare
+ * scroll area, so a long screenshot element list does not swallow the fold.
+ */
+function ResultText({ text, isError }: { text: string; isError: boolean }) {
+	const ref = useRef<HTMLPreElement>(null);
+	const [expanded, setExpanded] = useState(false);
+	const [overflowing, setOverflowing] = useState(false);
+
+	useEffect(() => {
+		const element = ref.current;
+		if (!element) return;
+		setOverflowing(element.scrollHeight > element.clientHeight + 4);
+	}, [text, expanded]);
+
+	return (
+		<>
+			<pre
+				ref={ref}
+				className={`whitespace-pre-wrap break-words px-2.5 py-1.5 font-mono text-2xs leading-relaxed ${
+					expanded ? "" : "max-h-64 overflow-hidden"
+				} ${isError ? "text-pi-error" : "text-pi-text-secondary"}`}
+			>
+				{text}
+			</pre>
+			{(overflowing || expanded) && (
+				<div className="flex justify-center pb-1.5">
+					<button
+						type="button"
+						onClick={() => setExpanded(!expanded)}
+						className="rounded px-2 py-0.5 text-3xs text-pi-text-faint transition-hover hover:bg-pi-surface-overlay hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
+					>
+						{expanded ? "Show less" : "Show all"}
+					</button>
+				</div>
+			)}
+		</>
+	);
+}

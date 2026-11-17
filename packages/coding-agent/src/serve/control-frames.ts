@@ -28,7 +28,17 @@ export type BridgeEvent =
 	| { type: "bridge"; event: "engine_unavailable"; reason: "starting" | "backlog"; id?: string }
 	| { type: "bridge"; event: "shutting_down" }
 	/** The client's socket could not keep up; it is about to be closed (doc 04 §4). */
-	| { type: "bridge"; event: "slow_client"; ip: string };
+	| { type: "bridge"; event: "slow_client"; ip: string }
+	/**
+	 * The paired-device registry accepted this client (bridge spec §5.4). Sent
+	 * after the upgrade headers or a `hello` frame identified the device.
+	 */
+	| { type: "bridge"; event: "device_registered"; id: string; name: string }
+	/**
+	 * This device's record was removed from the registry, so its access is
+	 * revoked. The bridge sends this once and closes the socket with 4401.
+	 */
+	| { type: "bridge"; event: "device_revoked"; id: string };
 
 export function bridgeFrame(event: BridgeEvent): string {
 	// Control frames carry a schema version so mobile clients can evolve safely.

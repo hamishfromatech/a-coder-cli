@@ -14,7 +14,7 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use serde_json::Value;
@@ -278,6 +278,66 @@ fn remove_device_from_registry(value: &mut Value, device_id: &str) -> bool {
 	}
 }
 
+/// Persist a durable tombstone for a removed device.
+///
+/// The bridge derives tombstones by diffing the registry, so a removal only
+/// becomes durable if the bridge happens to be running when the record
+/// disappears. Writing the tombstone here closes that gap: the bridge reads
+/// `revoked`, lets a tombstone win over a leftover record, and keeps refusing
+/// the device across restarts until the tombstone is pruned.
+fn revoke_device_in_registry(value: &mut Value, device_id: &str, revoked_at: &str) {
+	if value.is_array() {
+		let devices = std::mem::take(value);
+		*value = serde_json::json!({ "version": 1, "devices": devices, "revoked": [] });
+	}
+	let Some(map) = value.as_object_mut() else {
+		return;
+	};
+	let entry = map
+		.entry("revoked")
+		.or_insert_with(|| Value::Array(Vec::new()));
+	if !entry.is_array() {
+		*entry = Value::Array(Vec::new());
+	}
+	let list = entry.as_array_mut().expect("revoked is an array");
+	if list
+		.iter()
+		.any(|item| item.get("id").and_then(Value::as_str) == Some(device_id))
+	{
+		return;
+	}
+	list.push(serde_json::json!({ "id": device_id, "revokedAt": revoked_at }));
+}
+
+/// RFC 3339 UTC (`2026-11-13T00:15:00Z`) from a `SystemTime`, so the bridge's
+/// `Date.parse` accepts it without pulling a date library into the crate.
+fn iso8601_utc(at: SystemTime) -> String {
+	let secs = at
+		.duration_since(UNIX_EPOCH)
+		.map(|duration| duration.as_secs())
+		.unwrap_or(0) as i64;
+	let days = secs.div_euclid(86_400);
+	let rem = secs.rem_euclid(86_400);
+	// Howard Hinnant's civil_from_days: shift the epoch to 0000-03-01 and undo
+	// the leap-day drift on the resulting 400-year era.
+	let z = days + 719_468;
+	let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+	let doe = z - era * 146_097;
+	let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+	let y = yoe + era * 400;
+	let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+	let mp = (5 * doy + 2) / 153;
+	let day = doy - (153 * mp + 2) / 5 + 1;
+	let month = if mp < 10 { mp + 3 } else { mp - 9 };
+	let year = if month <= 2 { y + 1 } else { y };
+	format!(
+		"{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z",
+		rem / 3_600,
+		(rem % 3_600) / 60,
+		rem % 60
+	)
+}
+
 fn write_registry(path: &PathBuf, value: &Value) -> Result<(), String> {
 	let bytes = serde_json::to_vec_pretty(value)
 		.map_err(|error| format!("Could not serialise the device registry: {error}"))?;
@@ -509,9 +569,10 @@ pub async fn serve_devices() -> Result<ServeRegistry, String> {
 	Ok(read_registry())
 }
 
-/// Remove one device record from the bridge registry. Access revocation is a
-/// token-level operation (`serve_start` with `rotate`); this only clears the
-/// pairing record shown in Settings.
+/// Remove one device record from the bridge registry and leave a durable
+/// tombstone. The bridge refuses that device's next upgrade with 401 and keeps
+/// refusing it across restarts until the tombstone is pruned (30 days) or the
+/// pairing token is rotated, which is the revoke-everything path.
 #[tauri::command]
 pub async fn serve_remove_device(device_id: String) -> Result<ServeRegistry, String> {
 	let path = registry_path()?;
@@ -526,6 +587,7 @@ pub async fn serve_remove_device(device_id: String) -> Result<ServeRegistry, Str
 	if !remove_device_from_registry(&mut value, &device_id) {
 		return Err("That device is no longer in the registry.".into());
 	}
+	revoke_device_in_registry(&mut value, &device_id, &iso8601_utc(SystemTime::now()));
 	write_registry(&path, &value)?;
 	Ok(read_registry())
 }
@@ -626,5 +688,39 @@ mod tests {
 	fn derives_a_key_without_an_id() {
 		let entry = json!({"name": "iPhone", "addedAt": "2026-11-01"});
 		assert_eq!(device_key(&entry, 0), "iPhone|2026-11-01|0");
+	}
+
+	#[test]
+	fn removal_writes_a_durable_tombstone() {
+		let mut value = json!({
+			"version": 1,
+			"devices": [{"id": "a", "name": "iPhone"}, {"id": "b", "name": "Pixel"}],
+			"revoked": []
+		});
+		assert!(remove_device_from_registry(&mut value, "a"));
+		revoke_device_in_registry(&mut value, "a", "2026-11-13T00:15:00Z");
+		assert_eq!(value["revoked"][0]["id"], "a");
+		assert_eq!(value["revoked"][0]["revokedAt"], "2026-11-13T00:15:00Z");
+		// The surviving device stays listed and is not tombstoned.
+		assert_eq!(value["devices"].as_array().unwrap().len(), 1);
+		assert_eq!(value["revoked"].as_array().unwrap().len(), 1);
+		// Idempotent: removing twice does not duplicate the tombstone.
+		revoke_device_in_registry(&mut value, "a", "2026-11-14T00:15:00Z");
+		assert_eq!(value["revoked"].as_array().unwrap().len(), 1);
+	}
+
+	#[test]
+	fn removal_upgrades_a_bare_array_registry() {
+		let mut value = json!([{"id": "a", "name": "iPhone"}]);
+		revoke_device_in_registry(&mut value, "a", "2026-11-13T00:15:00Z");
+		assert_eq!(value["version"], 1);
+		assert_eq!(value["devices"][0]["id"], "a");
+		assert_eq!(value["revoked"][0]["id"], "a");
+	}
+
+	#[test]
+	fn formats_utc_timestamps_without_a_date_library() {
+		let at = UNIX_EPOCH + Duration::from_secs(1_763_000_000);
+		assert_eq!(iso8601_utc(at), "2025-11-13T02:13:20Z");
 	}
 }

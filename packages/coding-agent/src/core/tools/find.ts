@@ -20,7 +20,8 @@ function toPosixPath(value: string): string {
 const findSchema = Type.Object(
 	{
 		pattern: Type.String({
-			description: "Glob pattern to match files, e.g. '*.ts', '**/*.json', or 'src/**/*.spec.ts'",
+			description:
+				"Glob pattern relative to the search directory, e.g. 'src/**/*.ts'. Without '/', e.g. '*.ts', it matches file names at any depth",
 		}),
 		path: Type.Optional(Type.String({ description: "Directory to search in (default: current directory)" })),
 		limit: Type.Optional(Type.Number({ minimum: 1, description: "Maximum number of results (default: 1000)" })),
@@ -264,13 +265,24 @@ export function createFindToolDefinition(
 						args.push("--max-results", String(effectiveLimit));
 
 						// fd --glob matches against the basename unless --full-path is set; in --full-path
-						// mode it matches against the absolute candidate path, so a path-containing
-						// pattern like 'src/**/*.spec.ts' needs a leading '**/' to match anything.
+						// mode it matches against the absolute candidate path.
 						let effectivePattern = pattern;
-						if (pattern.includes("/")) {
+						if (effectivePattern.includes("/")) {
 							args.push("--full-path");
-							if (!pattern.startsWith("/") && !pattern.startsWith("**/") && pattern !== "**") {
-								effectivePattern = `**/${pattern}`;
+							// fd's full paths never contain "/./", so "./src/*.ts" would find nothing; drop the "./".
+							effectivePattern = effectivePattern.replace(/^(?:\.\/)+/, "");
+							// fd's smart case: an all-lowercase pattern matches case-insensitively.
+							const ignoreCase = effectivePattern === effectivePattern.toLowerCase();
+							// A relative path pattern is anchored at the search path, like grep's glob (#12066):
+							// 'src/*.ts' finds 'src/a.ts' but not 'pkg/src/b.ts'; '**/src/*.ts' finds both.
+							// Absolute patterns are matched as given.
+							if (!path.isAbsolute(effectivePattern)) {
+								// fd matches the absolute path, so the pattern is prefixed with the glob-escaped
+								// search path. Smart case is decided by the user's pattern, not by the search
+								// path's letters, so it is set explicitly.
+								const escapedRoot = searchPath.replace(/\/+$/, "").replace(/[\\*?[\]{}]/g, "\\$&");
+								effectivePattern = `${escapedRoot}/${effectivePattern}`;
+								if (ignoreCase) args.push("--ignore-case");
 							}
 						}
 						args.push("--", effectivePattern, searchPath);

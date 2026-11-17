@@ -61,14 +61,21 @@ export function EditorGroup({ workspaceRoot }: EditorGroupProps): ReactNode {
 	const minimap = useIdeStore((s) => s.editorMinimap);
 	const wordWrap = useIdeStore((s) => s.editorWordWrap);
 	const renderWhitespace = useIdeStore((s) => s.editorRenderWhitespace);
+	const autoSave = useIdeStore((s) => s.editorAutoSave);
+	const tabSize = useIdeStore((s) => s.editorTabSize);
 	const setFontSize = useIdeStore((s) => s.setEditorFontSize);
 	const setMinimap = useIdeStore((s) => s.setEditorMinimap);
 	const setWordWrap = useIdeStore((s) => s.setEditorWordWrap);
 	const setRenderWhitespace = useIdeStore((s) => s.setEditorRenderWhitespace);
+	const setAutoSave = useIdeStore((s) => s.setEditorAutoSave);
+	const setTabSize = useIdeStore((s) => s.setEditorTabSize);
 
 	const containerRef = useRef<HTMLDivElement>(null);
 	const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
 	const modelsRef = useRef(new Map<string, monaco.editor.ITextModel>());
+	/** Debounce timer for auto-save; cleared on unmount and on every keystroke. */
+	const autoSaveTimerRef = useRef<number | null>(null);
+	const [tabMenu, setTabMenu] = useState<{ path: string; left: number; top: number } | null>(null);
 	/** The path whose model is attached; content listeners read this. */
 	const currentPathRef = useRef<string | null>(activePath);
 	/** Editor commands outlive renders; AI prompts must use the current root. */
@@ -179,7 +186,7 @@ export function EditorGroup({ workspaceRoot }: EditorGroupProps): ReactNode {
 				renderLineHighlight: "all",
 				renderWhitespace: useIdeStore.getState().editorRenderWhitespace ? "all" : "selection",
 				stickyScroll: { enabled: true },
-				tabSize: 2,
+				tabSize: useIdeStore.getState().editorTabSize,
 				padding: { top: 10 },
 				scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10 },
 			});
@@ -194,7 +201,15 @@ export function EditorGroup({ workspaceRoot }: EditorGroupProps): ReactNode {
 
 		const contentListener = editor.onDidChangeModelContent(() => {
 			const path = currentPathRef.current;
-			if (path) refreshDirty(path);
+			if (!path) return;
+			refreshDirty(path);
+			// Auto-save debounces off every edit, so a burst of typing writes once.
+			if (!useIdeStore.getState().editorAutoSave) return;
+			if (autoSaveTimerRef.current !== null) window.clearTimeout(autoSaveTimerRef.current);
+			autoSaveTimerRef.current = window.setTimeout(() => {
+				autoSaveTimerRef.current = null;
+				if (dirtyRef.current.has(path)) void savePath(path);
+			}, 900);
 		});
 		// Cursor/selection updates are coalesced to one per frame: a fast typist
 		// would otherwise repaint the status bar on every keystroke.
@@ -259,6 +274,10 @@ export function EditorGroup({ workspaceRoot }: EditorGroupProps): ReactNode {
 
 		return () => {
 			if (frame !== null) cancelAnimationFrame(frame);
+			if (autoSaveTimerRef.current !== null) {
+				window.clearTimeout(autoSaveTimerRef.current);
+				autoSaveTimerRef.current = null;
+			}
 			contentListener.dispose();
 			cursorListener.dispose();
 			editor.dispose();
@@ -276,8 +295,14 @@ export function EditorGroup({ workspaceRoot }: EditorGroupProps): ReactNode {
 			minimap: { enabled: minimap, renderCharacters: false },
 			wordWrap: wordWrap ? "on" : "off",
 			renderWhitespace: renderWhitespace ? "all" : "selection",
+			tabSize,
 		});
-	}, [fontSize, minimap, wordWrap, renderWhitespace]);
+	}, [fontSize, minimap, wordWrap, renderWhitespace, tabSize]);
+
+	// Tab size lives on the model too (it drives indentation, not just display).
+	useEffect(() => {
+		for (const model of modelsRef.current.values()) model.updateOptions({ tabSize });
+	}, [tabSize]);
 
 	// Load content for tabs that have no model yet (opened from the explorer),
 	// and focus the active model.
@@ -332,7 +357,7 @@ export function EditorGroup({ workspaceRoot }: EditorGroupProps): ReactNode {
 		if (!useIdeStore.getState().openTabs.some((tab) => tab.path === path)) return;
 		const language = languageForPath(path) ?? "plaintext";
 		const model = monaco.editor.createModel(content, language, monaco.Uri.file(path));
-		model.updateOptions({ tabSize: 2 });
+		model.updateOptions({ tabSize: useIdeStore.getState().editorTabSize });
 		modelsRef.current.set(path, model);
 		useIdeStore.getState().setSaved(path, content);
 		if (useIdeStore.getState().activePath === path) editorRef.current?.setModel(model);
@@ -484,6 +509,10 @@ export function EditorGroup({ workspaceRoot }: EditorGroupProps): ReactNode {
 									requestClose([tab.path]);
 								}
 							}}
+							onContextMenu={(event) => {
+								event.preventDefault();
+								setTabMenu({ path: tab.path, left: event.clientX, top: event.clientY });
+							}}
 							className={cn(
 								"group flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-t-md border-b-2 px-3 text-xs transition-smooth",
 								isActive
@@ -596,11 +625,26 @@ export function EditorGroup({ workspaceRoot }: EditorGroupProps): ReactNode {
 						onWordWrap={setWordWrap}
 						renderWhitespace={renderWhitespace}
 						onRenderWhitespace={setRenderWhitespace}
+						autoSave={autoSave}
+						onAutoSave={setAutoSave}
+						tabSize={tabSize}
+						onTabSize={setTabSize}
 						onSaveAll={() => void saveAll()}
 						onCloseAll={() => requestClose(openTabs.map((tab) => tab.path))}
 					/>
 				)}
 			</div>
+
+			{tabMenu && (
+				<EditorTabMenu
+					path={tabMenu.path}
+					left={tabMenu.left}
+					top={tabMenu.top}
+					workspaceRoot={workspaceRoot}
+					onClose={() => setTabMenu(null)}
+					onRequestClose={requestClose}
+				/>
+			)}
 
 			{pendingClose && (
 				<ModalBackdrop onClick={() => void finishClose("cancel")}>
@@ -715,6 +759,10 @@ function EditorSettingsPopover({
 	onWordWrap,
 	renderWhitespace,
 	onRenderWhitespace,
+	autoSave,
+	onAutoSave,
+	tabSize,
+	onTabSize,
 	onSaveAll,
 	onCloseAll,
 }: {
@@ -727,6 +775,10 @@ function EditorSettingsPopover({
 	onWordWrap: (value: boolean) => void;
 	renderWhitespace: boolean;
 	onRenderWhitespace: (value: boolean) => void;
+	autoSave: boolean;
+	onAutoSave: (value: boolean) => void;
+	tabSize: number;
+	onTabSize: (size: number) => void;
 	onSaveAll: () => void;
 	onCloseAll: () => void;
 }): ReactNode {
@@ -795,6 +847,29 @@ function EditorSettingsPopover({
 			{check(minimap, "Minimap", onMinimap)}
 			{check(wordWrap, "Word wrap", onWordWrap)}
 			{check(renderWhitespace, "Render whitespace", onRenderWhitespace)}
+			{check(autoSave, "Auto-save after pause", onAutoSave)}
+			<div className="flex items-center justify-between px-2 py-1">
+				<span className="text-xs text-pi-text-secondary">Tab size</span>
+				<div className="flex items-center gap-1">
+					{[2, 4, 8].map((size) => (
+						<button
+							key={size}
+							type="button"
+							onClick={() => onTabSize(size)}
+							aria-label={`Tab size ${size}`}
+							aria-pressed={tabSize === size}
+							className={cn(
+								"h-5 w-5 rounded font-mono text-3xs transition-hover",
+								tabSize === size
+									? "bg-pi-accent-soft text-pi-accent"
+									: "text-pi-text-muted hover:bg-pi-surface-raised hover:text-pi-text",
+							)}
+						>
+							{size}
+						</button>
+					))}
+				</div>
+			</div>
 			<div className="my-1 h-px bg-pi-border" />
 			<button
 				type="button"
@@ -809,6 +884,111 @@ function EditorSettingsPopover({
 				className="flex w-full items-center gap-2 rounded px-2 py-1 text-xs text-pi-text-secondary transition-hover hover:bg-pi-error-soft hover:text-pi-error"
 			>
 				Close all editors
+			</button>
+		</div>
+	);
+}
+
+/** Right-click menu for an editor tab: close variants plus path copying. */
+function EditorTabMenu({
+	path,
+	left,
+	top,
+	workspaceRoot,
+	onClose,
+	onRequestClose,
+}: {
+	path: string;
+	left: number;
+	top: number;
+	workspaceRoot: string;
+	onClose: () => void;
+	onRequestClose: (paths: string[]) => void;
+}): ReactNode {
+	const ref = useRef<HTMLDivElement | null>(null);
+	const openPaths = useIdeStore((state) => state.openTabs).map((tab) => tab.path);
+
+	useEffect(() => {
+		const onDown = (event: MouseEvent): void => {
+			if (ref.current && !ref.current.contains(event.target as Node)) onClose();
+		};
+		const onKey = (event: KeyboardEvent): void => {
+			if (event.key === "Escape") onClose();
+		};
+		document.addEventListener("mousedown", onDown);
+		document.addEventListener("keydown", onKey);
+		return () => {
+			document.removeEventListener("mousedown", onDown);
+			document.removeEventListener("keydown", onKey);
+		};
+	}, [onClose]);
+
+	const item =
+		"flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs text-pi-text-secondary transition-hover hover:bg-pi-surface-raised hover:text-pi-text";
+	const copy = (text: string, label: string) => {
+		void navigator.clipboard.writeText(text).catch(() => {});
+		toast.success(label, text);
+		onClose();
+	};
+	const width = 208;
+	const height = 186;
+	const x = Math.max(8, Math.min(left, window.innerWidth - width - 8));
+	const y = Math.max(8, Math.min(top, window.innerHeight - height - 8));
+	const others = openPaths.filter((entry) => entry !== path);
+
+	return (
+		<div
+			ref={ref}
+			role="menu"
+			aria-label="Editor tab actions"
+			className="fixed z-popover w-52 rounded-lg border border-pi-border bg-pi-surface-overlay p-1 shadow-overlay"
+			style={{ left: x, top: y }}
+		>
+			<button
+				type="button"
+				role="menuitem"
+				className={item}
+				onClick={() => {
+					onClose();
+					onRequestClose([path]);
+				}}
+			>
+				Close
+			</button>
+			<button
+				type="button"
+				role="menuitem"
+				className={item}
+				disabled={others.length === 0}
+				onClick={() => {
+					onClose();
+					onRequestClose(others);
+				}}
+			>
+				Close others
+			</button>
+			<button
+				type="button"
+				role="menuitem"
+				className={item}
+				onClick={() => {
+					onClose();
+					onRequestClose(openPaths);
+				}}
+			>
+				Close all
+			</button>
+			<div className="my-1 h-px bg-pi-border" />
+			<button type="button" role="menuitem" className={item} onClick={() => copy(path, "Path copied")}>
+				Copy path
+			</button>
+			<button
+				type="button"
+				role="menuitem"
+				className={item}
+				onClick={() => copy(relativeToRoot(path, workspaceRoot) || path, "Relative path copied")}
+			>
+				Copy relative path
 			</button>
 		</div>
 	);
