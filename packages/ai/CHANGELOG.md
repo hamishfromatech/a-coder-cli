@@ -49,6 +49,7 @@
 - Added GPT-6 Astra for OpenAI API keys and OpenAI Codex subscriptions.
 - Added the `supportsExplicitPromptCacheMode` OpenAI Responses compatibility setting for explicit prompt caching via `prompt_cache_options` (`ttl: "30m"` for long-cache GPT-5.6+/GPT-6 Astra requests, `mode: "explicit"` for cache-disabled requests).
 - `AssistantMessage.retryAfterMs`: provider-requested retry delay (milliseconds), extracted from `Retry-After` / `Retry-After-Ms` response headers (or SDK `retryAfter`/`retryAfterMs` fields) and attached to error assistant messages by every API adapter. The OpenAI Codex adapter's inner retry loop now preserves the hint on its final throw so outer retry policies can honor it too. Callers implementing their own retry/backoff should prefer this over their default schedule.
+- A provider stream cut short after the reply had begun (an upstream Anthropic stream relayed by gateways) matches the retryable-error classifier and enters the normal auto-retry path ([earendil-works/pi#11885](https://github.com/earendil-works/pi/pull/11885)).
 
 
 ### Changed
