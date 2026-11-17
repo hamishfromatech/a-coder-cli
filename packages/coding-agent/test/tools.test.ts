@@ -677,23 +677,42 @@ describe("Coding Agent Tools", () => {
 		});
 
 		it("should coalesce streaming updates for chatty output", async () => {
-			const operations: BashOperations = {
-				exec: async (_command, _cwd, { onData }) => {
-					for (let i = 0; i < 5000; i++) {
-						onData(Buffer.from(`line ${i}\n`, "utf-8"));
-					}
-					return { exitCode: 0 };
-				},
-			};
-			const updates: Array<{ content: Array<{ type: string; text?: string }>; details?: unknown }> = [];
-			const bash = createBashTool(testDir, { operations });
+			// Coalescing is time-based, so a real clock made the update count a
+			// function of host speed: a contended runner spent >100ms inside the
+			// synchronous loop and crossed extra windows, pushing the count past
+			// the old wall-clock bound (THE-82). Virtual time pins the windows so
+			// the assertion measures the throttle, not the machine.
+			vi.useFakeTimers();
+			try {
+				const chunkCount = 5000;
+				const chunksPerWindow = 500;
+				const windowCount = chunkCount / chunksPerWindow;
+				const operations: BashOperations = {
+					exec: async (_command, _cwd, { onData }) => {
+						for (let i = 0; i < chunkCount; i++) {
+							onData(Buffer.from(`line ${i}\n`, "utf-8"));
+							if ((i + 1) % chunksPerWindow === 0) {
+								await vi.advanceTimersByTimeAsync(100);
+							}
+						}
+						return { exitCode: 0 };
+					},
+				};
+				const updates: Array<{ content: Array<{ type: string; text?: string }>; details?: unknown }> = [];
+				const bash = createBashTool(testDir, { operations });
 
-			const result = await bash.execute("test-call-chatty-updates", { command: "chatty" }, undefined, (update) =>
-				updates.push(update),
-			);
+				const result = await bash.execute("test-call-chatty-updates", { command: "chatty" }, undefined, (update) =>
+					updates.push(update),
+				);
 
-			expect(updates.length).toBeLessThan(25);
-			expect(getTextOutput(result)).toContain("line 4999");
+				// One update per 100ms window (plus the initial and final flushes),
+				// never one per chunk.
+				expect(updates.length).toBeLessThanOrEqual(windowCount + 2);
+				expect(updates.length).toBeLessThan(chunkCount);
+				expect(getTextOutput(result)).toContain("line 4999");
+			} finally {
+				vi.useRealTimers();
+			}
 		});
 
 		it("should not count a trailing newline as an extra truncated bash output line", async () => {
