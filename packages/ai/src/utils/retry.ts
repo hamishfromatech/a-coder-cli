@@ -175,6 +175,9 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
 	"ended without",
 	"stream ended before message_stop",
 	"stream ended before a terminal response event",
+	// Magpie gateway relaying a dropped upstream Anthropic stream, e.g.
+	// "Claude Code's stream from Anthropic was cut short after the reply had begun" (#11879).
+	"cut short after the reply had begun",
 	"http2 request did not get a response",
 
 	// Provider-requested retry delay cap failures should flow through the outer
