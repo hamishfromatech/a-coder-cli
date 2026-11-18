@@ -24,6 +24,7 @@
 
 ### Added
 
+- Added GPT-6.2 Astra and GPT-6.2 Sol to the OpenAI, Azure OpenAI Responses, and OpenAI Codex providers with official pricing (Astra: $8 input, $0.40 cached input, $10 cache writes, $40 output; Sol: $2, $0.10, $2.50, $10; long-context tier above 272k on OpenAI), tool search, and additional tools. Both reject reasoning effort `none` and `minimal`, so `off` is unavailable. Azure serves them with a 1.05M context window; Codex serves GPT-6.2 Sol with 500K and GPT-6.2 Astra with 272K.
 - Device-code auth info gains optional `openBrowserOnConfirm` and `copyCodeOnConfirm` (both default to true), so clients can honor a provider that does not want the browser opened or the code copied (#9282).
 - Export `getSystemMessageText()` and `renderSystemMessageUpdate()` so consumers can render system messages the same way the model receives them.
 
