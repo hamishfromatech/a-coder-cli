@@ -583,3 +583,108 @@ describe("Anthropic raw SSE parsing", () => {
 		expect(result.content).toEqual([{ type: "text", text: "Hello" }]);
 	});
 });
+
+describe("Anthropic server-tool iteration usage (#12293)", () => {
+	it("sets totalTokens from the last message iteration and keeps billed sums", async () => {
+		const events = [
+			{
+				event: "message_start",
+				data: JSON.stringify({
+					type: "message_start",
+					message: {
+						id: "msg_iterations",
+						usage: {
+							input_tokens: 8,
+							output_tokens: 0,
+							cache_read_input_tokens: 400_506,
+							cache_creation_input_tokens: 2_484,
+							iterations: [
+								{
+									type: "message",
+									input_tokens: 4,
+									output_tokens: 100,
+									cache_read_input_tokens: 199_444,
+									cache_creation_input_tokens: 0,
+								},
+								{
+									type: "message",
+									input_tokens: 4,
+									output_tokens: 0,
+									cache_read_input_tokens: 201_062,
+									cache_creation_input_tokens: 2_484,
+								},
+							],
+						},
+					},
+				}),
+			},
+			{
+				event: "content_block_start",
+				data: JSON.stringify({
+					type: "content_block_start",
+					index: 0,
+					content_block: { type: "text", text: "" },
+				}),
+			},
+			{
+				event: "content_block_delta",
+				data: JSON.stringify({
+					type: "content_block_delta",
+					index: 0,
+					delta: { type: "text_delta", text: "ok" },
+				}),
+			},
+			{
+				event: "content_block_stop",
+				data: JSON.stringify({ type: "content_block_stop", index: 0 }),
+			},
+			{
+				event: "message_delta",
+				data: JSON.stringify({
+					type: "message_delta",
+					delta: { stop_reason: "end_turn" },
+					usage: {
+						input_tokens: 8,
+						output_tokens: 500,
+						cache_read_input_tokens: 400_506,
+						cache_creation_input_tokens: 2_484,
+						iterations: [
+							{
+								type: "message",
+								input_tokens: 4,
+								output_tokens: 100,
+								cache_read_input_tokens: 199_444,
+								cache_creation_input_tokens: 0,
+							},
+							{
+								type: "message",
+								input_tokens: 4,
+								output_tokens: 400,
+								cache_read_input_tokens: 201_062,
+								cache_creation_input_tokens: 2_484,
+							},
+						],
+					},
+				}),
+			},
+			{ event: "message_stop", data: JSON.stringify({ type: "message_stop" }) },
+		];
+
+		const model = getModel("anthropic", "claude-haiku-4-5");
+		const context: Context = {
+			messages: [{ role: "user", content: "Hello", timestamp: 1 }],
+		};
+		const result = await streamAnthropic(model, context, {
+			client: createFakeAnthropicClient(createSseResponse(events)),
+		}).result();
+
+		expect(result.usage.input).toBe(8);
+		expect(result.usage.output).toBe(500);
+		expect(result.usage.cacheRead).toBe(400_506);
+		expect(result.usage.cacheWrite).toBe(2_484);
+		expect(result.usage.totalTokens).toBe(4 + 400 + 201_062 + 2_484);
+		expect(result.usage.input + result.usage.output + result.usage.cacheRead + result.usage.cacheWrite).toBe(
+			8 + 500 + 400_506 + 2_484,
+		);
+	});
+});
