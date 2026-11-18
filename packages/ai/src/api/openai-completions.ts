@@ -1662,6 +1662,10 @@ function mapStopReason(reason: ChatCompletionChunk.Choice["finish_reason"] | str
 			return { stopReason: "error", errorMessage: "Provider finish_reason: content_filter" };
 		case "network_error":
 			return { stopReason: "error", errorMessage: "Provider finish_reason: network_error" };
+		case "error":
+			// OpenAI-compatible providers (e.g. github-copilot) report transient server
+			// failures this way; "server error" makes the message retryable (#12206).
+			return { stopReason: "error", errorMessage: "Provider finish_reason: error (server error)" };
 		default:
 			return {
 				stopReason: "error",
