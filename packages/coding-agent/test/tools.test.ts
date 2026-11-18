@@ -34,6 +34,34 @@ function getTextOutput(result: any): string {
 	);
 }
 
+const PERSISTED_OUTPUT_TIMEOUT_MS = 5_000;
+const PERSISTED_OUTPUT_POLL_MS = 10;
+
+/**
+ * Reads a persisted full-output file once it carries `expectedFragments`.
+ *
+ * The accumulator flushes through a Node WriteStream, so the temp file can
+ * exist before its contents land. Waiting on content with a bounded deadline
+ * keeps the full-persistence assertions while removing the read-before-flush
+ * race (THE-112).
+ */
+async function waitForPersistedOutput(filePath: string, expectedFragments: readonly string[]): Promise<string> {
+	const deadline = Date.now() + PERSISTED_OUTPUT_TIMEOUT_MS;
+	let content = "";
+	while (Date.now() < deadline) {
+		try {
+			content = readFileSync(filePath, "utf-8");
+		} catch {
+			content = "";
+		}
+		if (expectedFragments.every((fragment) => content.includes(fragment))) {
+			return content;
+		}
+		await new Promise((resolve) => setTimeout(resolve, PERSISTED_OUTPUT_POLL_MS));
+	}
+	return content;
+}
+
 function createTinyBmp1x1Red24bpp(): Buffer {
 	const buffer = Buffer.alloc(58);
 	buffer.write("BM", 0, "ascii");
@@ -551,8 +579,8 @@ describe("Coding Agent Tools", () => {
 				expect(message).not.toContain("Full output: undefined");
 				const fullOutputPath = message.match(/Full output: ([^\]\n]+)/)?.[1];
 				expect(fullOutputPath).toBeDefined();
+				const fullOutput = await waitForPersistedOutput(fullOutputPath!, ["1\n2\n3", "2998\n2999\n3000"]);
 				expect(existsSync(fullOutputPath!)).toBe(true);
-				const fullOutput = readFileSync(fullOutputPath!, "utf-8");
 				expect(fullOutput).toContain("1\n2\n3");
 				expect(fullOutput).toContain("2998\n2999\n3000");
 			}
@@ -789,13 +817,8 @@ describe("Coding Agent Tools", () => {
 			expect(output).toMatch(/\[Showing lines \d+-\d+ of \d+\. Full output: /);
 			expect(output).not.toContain("Full output: undefined");
 
-			for (let i = 0; i < 20 && (!fullOutputPath || !existsSync(fullOutputPath)); i++) {
-				await new Promise((resolve) => setTimeout(resolve, 10));
-			}
-
-			expect(fullOutputPath).toBeDefined();
+			const fullOutput = await waitForPersistedOutput(fullOutputPath!, ["1\n2\n3", "2998\n2999\n3000"]);
 			expect(existsSync(fullOutputPath!)).toBe(true);
-			const fullOutput = readFileSync(fullOutputPath!, "utf-8");
 			expect(fullOutput).toContain("1\n2\n3");
 			expect(fullOutput).toContain("2998\n2999\n3000");
 		});
@@ -807,13 +830,8 @@ describe("Coding Agent Tools", () => {
 			expect(result.truncated).toBe(true);
 			expect(fullOutputPath).toBeDefined();
 
-			for (let i = 0; i < 20 && (!fullOutputPath || !existsSync(fullOutputPath)); i++) {
-				await new Promise((resolve) => setTimeout(resolve, 10));
-			}
-
-			expect(fullOutputPath).toBeDefined();
+			const fullOutput = await waitForPersistedOutput(fullOutputPath!, ["1\n2\n3", "2998\n2999\n3000"]);
 			expect(existsSync(fullOutputPath!)).toBe(true);
-			const fullOutput = readFileSync(fullOutputPath!, "utf-8");
 			expect(fullOutput).toContain("1\n2\n3");
 			expect(fullOutput).toContain("2998\n2999\n3000");
 		});
