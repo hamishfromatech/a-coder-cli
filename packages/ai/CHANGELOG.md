@@ -5,6 +5,7 @@
 ### Fixed
 
 - Fixed responses that end with `finish_reason: "error"` not being retried: `openai-completions` streams ([#12206](https://github.com/earendil-works/pi/issues/12206)) and Mistral streams ([#10487](https://github.com/earendil-works/pi/issues/10487)) now report the stop as `(server error)`, which the retry classifier treats as transient.
+- Anthropic usage after a server-tool loop is billed across executor steps, so `totalTokens` now comes from the last `message` (or terminal `fallback_message`) iteration instead of the summed top-level fields; the context estimate no longer doubles and the next request is not clamped to `max_tokens: 1` (#12293).
 - `opencode-go` declares the `google-generative-ai` API, so a live catalog that lists its Gemini models type-checks and streams instead of failing the build.
 - The identity User-Agent version (`PI_AI_VERSION`) stays in lockstep with `package.json`; `scripts/sync-versions.js` now updates it during a version bump.
 - `Usage.cost.totalFromProvider` marks a total the provider reported itself, so callers can tell it apart from a computed estimate (#11178).
