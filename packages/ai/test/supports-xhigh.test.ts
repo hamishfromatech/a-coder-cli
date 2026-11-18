@@ -52,14 +52,64 @@ describe("getSupportedThinkingLevels", () => {
 		expect(getSupportedThinkingLevels(model!)).not.toContain("max");
 	});
 
-	it.each(["gpt-5.4", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra"] as const)(
-		"includes xhigh for openai-codex %s models",
+	it.each([
+		"gpt-5.4",
+		"gpt-5.5",
+		"gpt-5.6-sol",
+		"gpt-5.6-terra",
+		"gpt-5.6-luna",
+		"gpt-6-astra",
+		"gpt-6.2-astra",
+		"gpt-6.2-sol",
+	] as const)("includes xhigh for openai-codex %s models", (modelId) => {
+		const model = getModel("openai-codex", modelId);
+		expect(model).toBeDefined();
+		expect(getSupportedThinkingLevels(model!)).toContain("xhigh");
+	});
+
+	it.each([
+		["gpt-6.2-astra", { input: 8, output: 40, cacheRead: 0.4, cacheWrite: 10 }, 272000],
+		["gpt-6.2-sol", { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 }, 500000],
+	] as const)("includes official metadata for OpenAI and Codex %s", (modelId, cost, codexContextWindow) => {
+		const openai = getModel("openai", modelId);
+		expect(openai).toBeDefined();
+		expect(openai!.cost).toMatchObject(cost);
+		expect(openai!.contextWindow).toBe(272000);
+		// Above 272k, input-side prices double and output rises 1.5x.
+		expect(openai!.cost.tiers?.[0]).toMatchObject({
+			inputTokensAbove: 272000,
+			input: cost.input * 2,
+			cacheRead: cost.cacheRead * 2,
+			cacheWrite: cost.cacheWrite * 2,
+		});
+
+		const codex = getModel("openai-codex", modelId);
+		expect(codex).toBeDefined();
+		expect(codex!.cost).toMatchObject(cost);
+		expect(codex!.contextWindow).toBe(codexContextWindow);
+	});
+
+	it.each(["gpt-6.2-astra", "gpt-6.2-sol"] as const)(
+		"uses the Azure Foundry 1.05M context window for %s",
 		(modelId) => {
-			const model = getModel("openai-codex", modelId);
-			expect(model).toBeDefined();
-			expect(getSupportedThinkingLevels(model!)).toContain("xhigh");
+			expect(getModel("azure-openai-responses", modelId)?.contextWindow).toBe(1050000);
 		},
 	);
+
+	// OpenAI, Azure, and Codex reject reasoning.effort "none" for GPT-6.2.
+	it.each(["gpt-6.2-astra", "gpt-6.2-sol"] as const)("does not support off for %s", (modelId) => {
+		const expected = {
+			openai: ["low", "medium", "high", "xhigh", "max"],
+			"azure-openai-responses": ["low", "medium", "high", "xhigh", "max"],
+			"openai-codex": ["minimal", "low", "medium", "high", "xhigh", "max"],
+		} as const;
+		for (const [provider, levels] of Object.entries(expected)) {
+			const model = getModel(provider as keyof typeof expected, modelId);
+			expect(model).toBeDefined();
+			expect(getSupportedThinkingLevels(model!)).toEqual(levels);
+			expect(model!.thinkingLevelMap?.off).toBeNull();
+		}
+	});
 
 	it.each(["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] as const)(
 		"includes xhigh and max for OpenAI %s models",
