@@ -16,6 +16,8 @@
 - Gemini tool schemas rewrite unsupported `const` keywords to single-value `enum` schemas without rewriting literal data in defaults, examples, or enum values, and without losing names such as `__proto__` (#11308).
 - Claude system updates are held until the next sendable assistant message (or the end of the transcript), so `role 'system' must precede an 'assistant' message` no longer rejects sessions where an update was followed by an empty or reasoning-only reply (#11091).
 - Claude models with mid-conversation effort no longer fail with `Invalid effort level` on accounts whose organization caps effort below `high`; the top-level effort is sent as `low` (#10063).
+- Provider retry classification now recognizes capacity/overload (`model is at capacity`, `model is currently at capacity`, `server_busy`, `servers are currently busy`, `currently experiencing high demand`), gateway/stream-drop (`unable to forward upstream`, `upstream request failed`, `upstream_stream_read_error`, `stream was interrupted`, `http/2 stream failed`, `stream disconnected before completion`, `pending stream has been canceled`), `service unavailable`, node-fetch `request to ... failed, reason:`, and temporary `subscription_sharing_usage_unavailable` / `subscription_sharing_user_unavailable` ChatGPT errors (#10278, #12289, #10842, #10920, #10379, #10965, #10996).
+- HTTP status-code matching in retry classification is anchored, so digits inside request ids or longer numbers no longer retry permanent errors, and `520` is recognized (#11057).
 
 
 
