@@ -36,6 +36,7 @@ import {
 	type DecisionsModel,
 	type DecisionsModels,
 	getSupportedThinkingLevels,
+	isCodexWebSocketConnectionLimitError,
 	isContextOverflow,
 	isRecoverableLength,
 	isRetryableAssistantError,
@@ -426,7 +427,8 @@ export function isOverloadedAssistantError(message: AssistantMessage): boolean {
 /**
  * Whether a failed assistant message already streamed output the user has
  * seen (non-empty text, non-empty thinking, or any tool call). Auto-retry
- * refuses to replay such a turn — easy-agent's streamed-output replay guard.
+ * refuses to replay such a turn — easy-agent's streamed-output replay guard —
+ * except for the Codex WebSocket lifetime limit (see `_prepareRetry`).
  */
 export function hasVisibleStreamedOutput(message: AssistantMessage): boolean {
 	if (!Array.isArray(message.content)) return false;
@@ -4591,7 +4593,15 @@ export class AgentSession {
 		// already streamed visible output (text/thinking/tool calls) the user saw
 		// it — silently re-running the whole turn would duplicate that output.
 		// Surface the error instead and let the user decide to resend.
-		if (hasVisibleStreamedOutput(message)) {
+		//
+		// Exception: the Codex WebSocket 60-minute lifetime limit kills the response
+		// mid-stream (#12124). Codex runs with `store: false`, so the interrupted
+		// response cannot be resumed and its partial reasoning cannot be sent back;
+		// the official Codex client also recovers by retrying the whole stream on a
+		// fresh connection. That is safe here because the failed attempt is removed
+		// from agent state below, so the partial thinking is never replayed into the
+		// retried turn's context (it stays in the session file and the transcript).
+		if (hasVisibleStreamedOutput(message) && !isCodexWebSocketConnectionLimitError(message.errorMessage)) {
 			return false;
 		}
 

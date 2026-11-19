@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { fauxAssistantMessage } from "../src/providers/faux.ts";
-import { isRetryableAssistantError, type RetryPolicy, retryAssistantCall } from "../src/utils/retry.ts";
+import {
+	isCodexWebSocketConnectionLimitError,
+	isRetryableAssistantError,
+	type RetryPolicy,
+	retryAssistantCall,
+} from "../src/utils/retry.ts";
 
 const openAIExplicitRetryMessage =
 	"An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists. Please include the request ID req_******** in your message.";
@@ -12,8 +17,36 @@ const bunFetchSocketClosedMessage =
 const openAIResponsesEarlyEofMessage = "OpenAI Responses stream ended before a terminal response event";
 const wrappedDnsLookupError =
 	"The pending stream has been canceled (caused by: getaddrinfo ENOTFOUND bedrock-runtime.us-east-1.amazonaws.com)";
+const codexConnectionLimitError =
+	"Codex error: Responses websocket connection limit reached (60 minutes). Create a new websocket connection to continue.";
 
 describe("provider retry classification", () => {
+	// Regression for #12124: the Codex WebSocket lifetime limit is recoverable on a fresh connection.
+	it.each([codexConnectionLimitError, "Codex error: websocket_connection_limit_reached"])(
+		"matches the Codex websocket connection lifetime limit: %s",
+		(errorMessage) => {
+			expect(isRetryableAssistantError(fauxAssistantMessage("", { stopReason: "error", errorMessage }))).toBe(true);
+		},
+	);
+
+	it("does not match a generic connection limit", () => {
+		expect(
+			isRetryableAssistantError(
+				fauxAssistantMessage("", { stopReason: "error", errorMessage: "connection limit reached" }),
+			),
+		).toBe(false);
+	});
+
+	// Only the Codex lifetime limit may bypass the streamed-output replay guard; a generic
+	// connection limit must keep it.
+	it("identifies only the Codex websocket lifetime limit for the streamed-output exemption", () => {
+		expect(isCodexWebSocketConnectionLimitError(codexConnectionLimitError)).toBe(true);
+		expect(isCodexWebSocketConnectionLimitError("Codex error: websocket_connection_limit_reached")).toBe(true);
+		expect(isCodexWebSocketConnectionLimitError("connection limit reached")).toBe(false);
+		expect(isCodexWebSocketConnectionLimitError("WebSocket closed 1006")).toBe(false);
+		expect(isCodexWebSocketConnectionLimitError(undefined)).toBe(false);
+	});
+
 	it("matches explicit provider retry guidance", () => {
 		expect(
 			isRetryableAssistantError(
