@@ -586,6 +586,50 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 		// The active session's events flow through the main subscription; drop a
 		// background subscription for the same file to avoid duplicate frames.
 		if (boundSessionFile) stopBackgroundSubscription(boundSessionFile);
+		// Subscribe before binding so events emitted by session_start handlers (e.g.
+		// appended entries) reach the client, at startup and on every replacement.
+		unsubscribe?.();
+		unsubscribeBackpressure?.();
+		unsubscribeBackgroundProcesses?.();
+		unsubscribe = session.subscribe((event) => {
+			eventStream.push(event as unknown as Record<string, unknown>);
+			// Push stats at natural boundaries instead of making every client poll.
+			if (
+				(event.type === "agent_end" && event.willRetry !== true) ||
+				(event.type === "compaction_end" && event.willRetry !== true)
+			) {
+				eventStream.pushImmediate({
+					type: "session_stats",
+					stats: session.getSessionStats(),
+				} satisfies RpcSessionStatsEvent);
+			}
+			// Session events double as cron event triggers: a finished turn
+			// (natural end, not a retry-in-progress) may fire `on:turn-end` jobs
+			// for this project. CronService coalesces via cooldowns.
+			if (event.type === "agent_end" && event.willRetry !== true) {
+				cronService?.notifyEvent({ type: "turn_end", cwd: session.sessionManager.getCwd() });
+				if (pendingMcpReconnect !== undefined) {
+					const requested = pendingMcpReconnect;
+					pendingMcpReconnect = undefined;
+					void reconnectMcpServer(requested ?? undefined).catch(() => {});
+				}
+			}
+		});
+		unsubscribeBackpressure = session.agent.subscribe(async () => {
+			await waitForRawStdoutBackpressure();
+		});
+		// Stream background bash-process updates to the desktop (live viewer).
+		unsubscribeBackgroundProcesses = subscribeBackgroundProcesses(() => {
+			output({ type: "background_processes_update", processes: getBackgroundProcesses() });
+		});
+		// Emit an initial snapshot so the desktop has the current state on (re)bind.
+		output({ type: "background_processes_update", processes: getBackgroundProcesses() });
+		// Stream workflow run summaries (live per-run status for the desktop's
+		// Running tasks panel).
+		unsubscribeWorkflowRuns = subscribeWorkflowRuns(() => {
+			output({ type: "workflows_update", runs: getWorkflowRunSummaries() });
+		});
+		output({ type: "workflows_update", runs: getWorkflowRunSummaries() });
 		await session.bindExtensions({
 			uiContext: createExtensionUIContext(boundSessionFile),
 			mode: "rpc",
@@ -665,49 +709,6 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 				output({ type: "extension_error", extensionPath: err.extensionPath, event: err.event, error: err.error });
 			},
 		});
-
-		unsubscribe?.();
-		unsubscribeBackpressure?.();
-		unsubscribeBackgroundProcesses?.();
-		unsubscribe = session.subscribe((event) => {
-			eventStream.push(event as unknown as Record<string, unknown>);
-			// Push stats at natural boundaries instead of making every client poll.
-			if (
-				(event.type === "agent_end" && event.willRetry !== true) ||
-				(event.type === "compaction_end" && event.willRetry !== true)
-			) {
-				eventStream.pushImmediate({
-					type: "session_stats",
-					stats: session.getSessionStats(),
-				} satisfies RpcSessionStatsEvent);
-			}
-			// Session events double as cron event triggers: a finished turn
-			// (natural end, not a retry-in-progress) may fire `on:turn-end` jobs
-			// for this project. CronService coalesces via cooldowns.
-			if (event.type === "agent_end" && event.willRetry !== true) {
-				cronService?.notifyEvent({ type: "turn_end", cwd: session.sessionManager.getCwd() });
-				if (pendingMcpReconnect !== undefined) {
-					const requested = pendingMcpReconnect;
-					pendingMcpReconnect = undefined;
-					void reconnectMcpServer(requested ?? undefined).catch(() => {});
-				}
-			}
-		});
-		unsubscribeBackpressure = session.agent.subscribe(async () => {
-			await waitForRawStdoutBackpressure();
-		});
-		// Stream background bash-process updates to the desktop (live viewer).
-		unsubscribeBackgroundProcesses = subscribeBackgroundProcesses(() => {
-			output({ type: "background_processes_update", processes: getBackgroundProcesses() });
-		});
-		// Emit an initial snapshot so the desktop has the current state on (re)bind.
-		output({ type: "background_processes_update", processes: getBackgroundProcesses() });
-		// Stream workflow run summaries (live per-run status for the desktop's
-		// Running tasks panel).
-		unsubscribeWorkflowRuns = subscribeWorkflowRuns(() => {
-			output({ type: "workflows_update", runs: getWorkflowRunSummaries() });
-		});
-		output({ type: "workflows_update", runs: getWorkflowRunSummaries() });
 	};
 
 	const registerSignalHandlers = (): void => {
@@ -976,25 +977,19 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 					cwd: command.cwd,
 				};
 				const result = await runtimeHost.newSession(options.parentSession || options.cwd ? options : undefined);
-				if (!result.cancelled) {
-					await rebindSession();
-					if (session.sessionFile) {
-						output({
-							type: "session_changed",
-							event: "created",
-							sessionPath: session.sessionFile,
-							name: session.sessionName,
-						});
-					}
+				if (!result.cancelled && session.sessionFile) {
+					output({
+						type: "session_changed",
+						event: "created",
+						sessionPath: session.sessionFile,
+						name: session.sessionName,
+					});
 				}
 				return success(id, "new_session", { ...result, activationId });
 			}
 
 			case "clear_conversation": {
 				const result = await runtimeHost.clearConversation();
-				if (!result.cancelled) {
-					await rebindSession();
-				}
 				return success(id, "clear_conversation", result);
 			}
 
@@ -1324,9 +1319,6 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 
 			case "import_jsonl": {
 				const result = await runtimeHost.importFromJsonl(command.inputPath);
-				if (!result.cancelled) {
-					await rebindSession();
-				}
 				return success(id, "import_jsonl", result);
 			}
 
@@ -1339,9 +1331,6 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 					command.sessionPath,
 					command.cwd ? { cwdOverride: command.cwd } : undefined,
 				);
-				if (!result.cancelled) {
-					await rebindSession();
-				}
 				// Authoritative session identity in the response: clients that adopt
 				// it immediately (tab labels, workspace indicator) stay correct even
 				// when the session_start event races the optimistic UI update.
@@ -1424,9 +1413,6 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 
 			case "fork": {
 				const result = await runtimeHost.fork(command.entryId);
-				if (!result.cancelled) {
-					await rebindSession();
-				}
 				return success(id, "fork", { text: result.selectedText, cancelled: result.cancelled, activationId });
 			}
 
@@ -1436,9 +1422,6 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 					return error(id, "clone", "Cannot clone session: no current entry selected");
 				}
 				const result = await runtimeHost.fork(leafId, { position: "at" });
-				if (!result.cancelled) {
-					await rebindSession();
-				}
 				return success(id, "clone", { cancelled: result.cancelled, activationId });
 			}
 
