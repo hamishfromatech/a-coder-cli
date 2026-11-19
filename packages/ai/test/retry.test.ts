@@ -58,6 +58,80 @@ describe("provider retry classification", () => {
 	});
 
 	it.each([
+		// Regression for #10278.
+		"Selected model is at capacity. Please try a different model.",
+		// Regression for #12289: fork-original, no upstream patch.
+		"The model is currently at capacity due to high demand.",
+		// Capacity/overload family.
+		"server_busy",
+		"All servers are currently busy. Please try again.",
+		"The system is currently experiencing high demand and cannot process your request.",
+		"Our servers are currently overloaded. Please try again later.",
+	])("matches capacity and overload wording: %s", (errorMessage) => {
+		expect(isRetryableAssistantError(fauxAssistantMessage("", { stopReason: "error", errorMessage }))).toBe(true);
+	});
+
+	it("does not match a bare at-capacity phrase", () => {
+		// @smithy/node-http-handler emits "socket usage at capacity=..." for
+		// unrelated client-side limits.
+		const errorMessage = "socket usage at capacity=10";
+		expect(isRetryableAssistantError(fauxAssistantMessage("", { stopReason: "error", errorMessage }))).toBe(false);
+	});
+
+	it.each([
+		// Regression for #10842.
+		"The upstream provider returned an error",
+		// Regressions for #10920: gateway upstream failures sent as `response.failed` error codes.
+		"unknown: Unable to forward upstream stream",
+		"upstream_error: Upstream request failed",
+		"upstream_stream_read_error: Upstream response stream was interrupted",
+		"Upstream HTTP/2 stream failed",
+		// Regression for #11057: Codex CLI mid-stream disconnect relayed by a proxy.
+		"stream disconnected before completion: stream closed before response.completed",
+		// Regression for #10379: Node ERR_HTTP2_STREAM_CANCEL.
+		"The pending stream has been canceled",
+	])("matches gateway and stream-drop wording: %s", (errorMessage) => {
+		expect(isRetryableAssistantError(fauxAssistantMessage("", { stopReason: "error", errorMessage }))).toBe(true);
+	});
+
+	it.each([
+		// Regression for #10965 (provider unknown, no status code in the message).
+		"The service is temporarily unavailable. Please retry later.",
+		// Bedrock ServiceUnavailableException as formatted by formatBedrockError.
+		"Service unavailable: The service is temporarily unavailable.",
+		// Regression for #10996: node-fetch errors from the google-vertex OAuth token refresh.
+		"request to https://oauth2.googleapis.com/token failed, reason:",
+		"request to https://oauth2.googleapis.com/token failed, reason: connect ECONNREFUSED 127.0.0.1:9",
+	])("matches service unavailable and node-fetch failure wording: %s", (errorMessage) => {
+		expect(isRetryableAssistantError(fauxAssistantMessage("", { stopReason: "error", errorMessage }))).toBe(true);
+	});
+
+	it.each([
+		"subscription_sharing_usage_unavailable: Usage cannot be checked.",
+		"subscription_sharing_user_unavailable: User cannot be loaded.",
+	])("retries temporary ChatGPT subscription errors: %s", (errorMessage) => {
+		expect(isRetryableAssistantError(fauxAssistantMessage("", { stopReason: "error", errorMessage }))).toBe(true);
+	});
+
+	it.each(["HTTP 429 response", "HTTP 520 response", "HTTP 524 response"])(
+		"matches anchored HTTP status codes: %s",
+		(errorMessage) => {
+			expect(isRetryableAssistantError(fauxAssistantMessage("", { stopReason: "error", errorMessage }))).toBe(true);
+		},
+	);
+
+	it.each([
+		// Regression for #11057: status codes inside ids or other numbers are not status codes.
+		"invalid_request_error: unknown model (request id 14290)",
+		"exceeded byte count 5001234",
+		"account 5023 has no access",
+		'401 {"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"},"request_id":"req_011CU503xyz"}',
+		"400 image exceeds 5 MB maximum: 5316784 bytes > 5242880 bytes",
+	])("does not match status codes inside ids or longer numbers: %s", (errorMessage) => {
+		expect(isRetryableAssistantError(fauxAssistantMessage("", { stopReason: "error", errorMessage }))).toBe(false);
+	});
+
+	it.each([
 		wrappedDnsLookupError,
 		"connect ENOTFOUND api.example.com",
 		"EAI_AGAIN api.example.com",
