@@ -239,4 +239,24 @@ describe("AgentSessionRuntime session lifecycle events", () => {
 		expect(cancelAtResult).toEqual({ cancelled: true });
 		expect(events).toEqual([{ type: "session_before_fork", entryId: "missing-entry", position: "at" }]);
 	});
+
+	it("emits session_start after reload when extensions were bound without bindings", async () => {
+		const events: RecordedSessionEvent[] = [];
+		const { runtimeHost } = await createRuntimeHost((pi) => {
+			pi.on("session_shutdown", (event) => {
+				events.push(event);
+			});
+			pi.on("session_start", (event) => {
+				events.push(event);
+			});
+		});
+		events.length = 0;
+
+		await runtimeHost.session.reload();
+
+		expect(events).toEqual([
+			{ type: "session_shutdown", reason: "reload" },
+			{ type: "session_start", reason: "reload" },
+		]);
+	});
 });
