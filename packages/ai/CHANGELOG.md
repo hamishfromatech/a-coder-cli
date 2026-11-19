@@ -5,6 +5,7 @@
 ### Fixed
 
 - Fixed responses that end with `finish_reason: "error"` not being retried: `openai-completions` streams ([#12206](https://github.com/earendil-works/pi/issues/12206)) and Mistral streams ([#10487](https://github.com/earendil-works/pi/issues/10487)) now report the stop as `(server error)`, which the retry classifier treats as transient.
+- Anthropic usage after a server-tool loop is billed across executor steps, so `totalTokens` now comes from the last `message` (or terminal `fallback_message`) iteration instead of the summed top-level fields; the context estimate no longer doubles and the next request is not clamped to `max_tokens: 1` (#12293).
 - `opencode-go` declares the `google-generative-ai` API, so a live catalog that lists its Gemini models type-checks and streams instead of failing the build.
 - The identity User-Agent version (`PI_AI_VERSION`) stays in lockstep with `package.json`; `scripts/sync-versions.js` now updates it during a version bump.
 - `Usage.cost.totalFromProvider` marks a total the provider reported itself, so callers can tell it apart from a computed estimate (#11178).
@@ -19,6 +20,7 @@
 - Claude models with mid-conversation effort no longer fail with `Invalid effort level` on accounts whose organization caps effort below `high`; the top-level effort is sent as `low` (#10063).
 - Provider errors that report only a Node socket error code, such as `read ECONNRESET`, `write EPIPE`, or `connect ETIMEDOUT`, are retried instead of ending the turn (#12128).
 - Provider errors reading `Connection closed.` are retried (#12064).
+- Fixed the OpenAI Codex WebSocket 60-minute connection limit failing the turn when it hit mid-stream, for example during long thinking. The error is now retried on a fresh connection, and new requests stop reusing a cached connection after 45 minutes instead of 55, so a long response is less likely to reach the limit ([#12124](https://github.com/earendil-works/pi/issues/12124))
 - Provider retry classification now recognizes capacity/overload (`model is at capacity`, `model is currently at capacity`, `server_busy`, `servers are currently busy`, `currently experiencing high demand`), gateway/stream-drop (`unable to forward upstream`, `upstream request failed`, `upstream_stream_read_error`, `stream was interrupted`, `http/2 stream failed`, `stream disconnected before completion`, `pending stream has been canceled`), `service unavailable`, node-fetch `request to ... failed, reason:`, and temporary `subscription_sharing_usage_unavailable` / `subscription_sharing_user_unavailable` ChatGPT errors (#10278, #12289, #10842, #10920, #10379, #10965, #10996).
 - HTTP status-code matching in retry classification is anchored, so digits inside request ids or longer numbers no longer retry permanent errors, and `520` is recognized (#11057).
 
