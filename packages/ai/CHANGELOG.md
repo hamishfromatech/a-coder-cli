@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Fixed responses that end with `finish_reason: "error"` not being retried: `openai-completions` streams ([#12206](https://github.com/earendil-works/pi/issues/12206)) and Mistral streams ([#10487](https://github.com/earendil-works/pi/issues/10487)) now report the stop as `(server error)`, which the retry classifier treats as transient.
 - `opencode-go` declares the `google-generative-ai` API, so a live catalog that lists its Gemini models type-checks and streams instead of failing the build.
 - The identity User-Agent version (`PI_AI_VERSION`) stays in lockstep with `package.json`; `scripts/sync-versions.js` now updates it during a version bump.
 - `Usage.cost.totalFromProvider` marks a total the provider reported itself, so callers can tell it apart from a computed estimate (#11178).
@@ -16,6 +17,8 @@
 - Gemini tool schemas rewrite unsupported `const` keywords to single-value `enum` schemas without rewriting literal data in defaults, examples, or enum values, and without losing names such as `__proto__` (#11308).
 - Claude system updates are held until the next sendable assistant message (or the end of the transcript), so `role 'system' must precede an 'assistant' message` no longer rejects sessions where an update was followed by an empty or reasoning-only reply (#11091).
 - Claude models with mid-conversation effort no longer fail with `Invalid effort level` on accounts whose organization caps effort below `high`; the top-level effort is sent as `low` (#10063).
+- Provider errors that report only a Node socket error code, such as `read ECONNRESET`, `write EPIPE`, or `connect ETIMEDOUT`, are retried instead of ending the turn (#12128).
+- Provider errors reading `Connection closed.` are retried (#12064).
 
 
 
