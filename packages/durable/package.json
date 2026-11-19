@@ -107,7 +107,7 @@
 	"scripts": {
 		"clean": "shx rm -rf dist",
 		"build": "tsc -p tsconfig.build.json",
-		"test": "vitest --run && PI_DURABLE_DOCUMENT_RETENTION_MS=0 vitest --run",
+		"test": "vitest --run && PI_DURABLE_DOCUMENT_RETENTION_MS=0 vitest --run && npm run test:workers",
 		"test:workers": "vitest --run --config test-workers/vitest.config.ts",
 		"bench:storage": "vitest bench --config vitest.benchmark.config.ts",
 		"bench:storage:memory": "node --conditions=source --experimental-strip-types test/storage-memory.ts",
@@ -144,5 +144,9 @@
 		"@silvia-odwyer/photon": "0.3.3",
 		"diff": "8.0.4",
 		"typebox": "1.3.27"
+	},
+	"devDependencies": {
+		"@cloudflare/vitest-plugin": "1.4.10",
+		"vitest": "4.1.12"
 	}
 }
