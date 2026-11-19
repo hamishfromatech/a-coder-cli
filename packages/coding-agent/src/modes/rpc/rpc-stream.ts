@@ -2,13 +2,18 @@
  * Outbound RPC stream shaping.
  *
  * Contract-1 clients get exactly the AgentSessionEvent stream (plus additive
- * session identity). Contract-2 clients opt into:
+ * session identity), including the `tool_execution_start` /
+ * `tool_execution_update` / `tool_execution_end` lifecycle. Contract-2 clients
+ * opt into:
  *
  *   - `message_delta` / `message_snapshot` instead of full-message
  *     `message_update` per token;
  *   - `event_batch` frames at ~30Hz;
  *   - a monotonic `seq` and `sessionId`/`sessionFile`/`activationId` on every
- *     session frame so late frames from a prior switch can be discarded.
+ *     session frame so late frames from a prior switch can be discarded;
+ *   - `tool-progress`, which swaps the raw tool lifecycle for the compact
+ *     `tool_start` / `tool_delta` / `tool_progress` / `tool_end` frames (one
+ *     representation per tool call, never both).
  *
  * Responses and extension UI requests bypass batching; pending events are
  * flushed first so ordering on the wire never changes.
@@ -47,6 +52,10 @@ const IMMEDIATE_EVENTS = new Set([
 	"thinking_level_changed",
 	"plan_mode_changed",
 	"tool_permission_update",
+	// Contract-1 tool lifecycle boundaries. Contract-2 `tool-progress` clients
+	// receive the compact `tool_start` / `tool_end` frames instead.
+	"tool_execution_start",
+	"tool_execution_end",
 ]);
 
 export class RpcSessionEventStream {
@@ -264,23 +273,50 @@ export class RpcSessionEventStream {
 		}
 
 		if (type === "tool_execution_start") {
-			if (!toolProgress) return [];
 			const toolCallId = String(event.toolCallId ?? "");
 			if (!toolCallId) return [];
 			this.toolStreams.delete(`${sessionKey}:${toolCallId}`);
+			if (!toolProgress) {
+				// Contract-1: the raw AgentSessionEvent, so card UIs get the args.
+				return [this.envelope({ type, toolCallId, toolName: event.toolName, args: event.args }, override)];
+			}
 			return [
 				this.envelope({ type: "tool_start", toolCallId, toolName: event.toolName, args: event.args }, override),
 			];
 		}
 
 		if (type === "tool_execution_update") {
-			return toolProgress ? this.toolDeltas(sessionKey, event, override) : [];
+			if (toolProgress) return this.toolDeltas(sessionKey, event, override);
+			const toolCallId = String(event.toolCallId ?? "");
+			if (!toolCallId) return [];
+			// Contract-1: keep `partialResult` for streaming-output consumers.
+			return [
+				this.envelope(
+					{ type, toolCallId, toolName: event.toolName, args: event.args, partialResult: event.partialResult },
+					override,
+				),
+			];
 		}
 
 		if (type === "tool_execution_end") {
-			if (!toolProgress) return [];
 			const toolCallId = String(event.toolCallId ?? "");
 			this.toolStreams.delete(`${sessionKey}:${toolCallId}`);
+			if (!toolProgress) {
+				// Contract-1: carry the result so cards can render it directly.
+				return [
+					this.envelope(
+						{
+							type,
+							toolCallId,
+							toolName: event.toolName,
+							result: event.result,
+							isError: event.isError === true,
+						},
+						override,
+					),
+				];
+			}
+			if (!toolCallId) return [];
 			return [
 				this.envelope(
 					{

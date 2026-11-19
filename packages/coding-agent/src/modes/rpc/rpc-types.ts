@@ -871,7 +871,9 @@ export type RpcCapability =
 	| "delta"
 	/** Coalesce events into `event_batch` frames at ~30Hz. */
 	| "batch"
-	/** Live `tool_execution_*` progress events (not emitted by default). */
+	/** Compact live tool frames (`tool_start`/`tool_delta`/`tool_progress`/
+	 *  `tool_end`) in place of the raw `tool_execution_*` lifecycle, which every
+	 *  client gets otherwise. */
 	| "tool-progress"
 	/** History pages replace inline image data with `attachment` refs. */
 	| "attachments";
@@ -919,7 +921,8 @@ export interface RpcMessageSnapshotEvent {
 	message: unknown;
 }
 
-/** Tool call started (contract 2 with `tool-progress`). */
+/** Tool call started (contract 2 with `tool-progress`; replaces
+ *  `tool_execution_start` for those clients). */
 export interface RpcToolStartEvent {
 	type: "tool_start";
 	toolCallId: string;
@@ -952,8 +955,9 @@ export interface RpcToolProgressEvent {
 	message?: string;
 }
 
-/** Tool call finished; the authoritative result still arrives as a
- *  `toolResult` message. */
+/** Tool call finished (contract 2 with `tool-progress`). The authoritative
+ *  result still arrives as a `toolResult` message; clients that did not
+ *  negotiate `tool-progress` get `tool_execution_end` with the result. */
 export interface RpcToolEndEvent {
 	type: "tool_end";
 	toolCallId: string;

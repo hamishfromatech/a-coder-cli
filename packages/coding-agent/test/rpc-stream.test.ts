@@ -60,7 +60,6 @@ describe("RpcSessionEventStream", () => {
 			message: { role: "assistant", content: [] },
 			assistantMessageEvent: { type: "toolcall_delta", contentIndex: 1, delta: '{"a"' },
 		});
-		h.stream.push({ type: "tool_execution_start", toolCallId: "t1", toolName: "bash", args: {} });
 
 		expect(h.frames.map((f) => f.type)).toEqual(["message_start", "message_delta", "message_delta"]);
 		expect(h.frames[1]).toMatchObject({ kind: "text", contentIndex: 0, delta: "Hel", messageId: "message-1" });
@@ -248,8 +247,61 @@ describe("tool progress and agent_end summary", () => {
 		expect(h.frames.filter((frame) => frame.type === "tool_delta")).toHaveLength(1);
 	});
 
-	it("keeps contract-1 clients free of tool execution events", () => {
+	it("emits the raw tool lifecycle to contract-1 clients", () => {
 		const h = makeStream();
+		h.stream.push({ type: "tool_execution_start", toolCallId: "t1", toolName: "bash", args: { command: "ls" } });
+		h.stream.push({
+			type: "tool_execution_update",
+			toolCallId: "t1",
+			toolName: "bash",
+			args: { command: "ls" },
+			partialResult: { content: [{ type: "text", text: "abc" }] },
+		});
+		h.stream.push({
+			type: "tool_execution_end",
+			toolCallId: "t1",
+			toolName: "bash",
+			result: { content: [{ type: "text", text: "the48-tls-ok" }] },
+			isError: false,
+		});
+
+		expect(h.frames.map((f) => f.type)).toEqual([
+			"tool_execution_start",
+			"tool_execution_update",
+			"tool_execution_end",
+		]);
+		expect(h.frames[0]).toMatchObject({
+			toolCallId: "t1",
+			toolName: "bash",
+			args: { command: "ls" },
+			sessionId: "s1",
+		});
+		expect(h.frames[1]).toMatchObject({
+			toolCallId: "t1",
+			partialResult: { content: [{ type: "text", text: "abc" }] },
+		});
+		expect(h.frames[2]).toMatchObject({
+			toolCallId: "t1",
+			toolName: "bash",
+			result: { content: [{ type: "text", text: "the48-tls-ok" }] },
+			isError: false,
+		});
+	});
+
+	it("drops an uncorrelatable start and normalizes isError on the end", () => {
+		const h = makeStream();
+		h.stream.push({ type: "tool_execution_start", toolName: "bash", args: {} });
+		h.stream.push({ type: "tool_execution_end", toolCallId: "t1", toolName: "bash", isError: true });
+
+		// A frame with no id cannot be correlated, so it is dropped rather than
+		// emitted as an anonymous card.
+		expect(h.frames.map((f) => f.type)).toEqual(["tool_execution_end"]);
+		expect(h.frames[0]).toMatchObject({ toolCallId: "t1", isError: true, result: undefined });
+	});
+
+	it("does not emit both representations to tool-progress clients", () => {
+		const h = makeStream();
+		h.stream.setCapabilities(["tool-progress"]);
 		h.stream.push({ type: "tool_execution_start", toolCallId: "t1", toolName: "bash", args: {} });
 		h.stream.push({
 			type: "tool_execution_update",
@@ -257,8 +309,15 @@ describe("tool progress and agent_end summary", () => {
 			toolName: "bash",
 			partialResult: { content: [{ type: "text", text: "abc" }] },
 		});
-		h.stream.push({ type: "tool_execution_end", toolCallId: "t1", toolName: "bash", isError: false });
-		expect(h.frames).toHaveLength(0);
+		h.stream.push({
+			type: "tool_execution_end",
+			toolCallId: "t1",
+			toolName: "bash",
+			result: { ok: true },
+			isError: false,
+		});
+
+		expect(h.frames.map((f) => f.type)).toEqual(["tool_start", "tool_delta", "tool_end"]);
 	});
 
 	it("replaces agent_end messages with a summary for delta clients", () => {
