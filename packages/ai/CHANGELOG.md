@@ -19,6 +19,7 @@
 - Claude models with mid-conversation effort no longer fail with `Invalid effort level` on accounts whose organization caps effort below `high`; the top-level effort is sent as `low` (#10063).
 - Provider errors that report only a Node socket error code, such as `read ECONNRESET`, `write EPIPE`, or `connect ETIMEDOUT`, are retried instead of ending the turn (#12128).
 - Provider errors reading `Connection closed.` are retried (#12064).
+- Fixed the OpenAI Codex WebSocket 60-minute connection limit failing the turn when it hit mid-stream, for example during long thinking. The error is now retried on a fresh connection, and new requests stop reusing a cached connection after 45 minutes instead of 55, so a long response is less likely to reach the limit ([#12124](https://github.com/earendil-works/pi/issues/12124))
 
 
 

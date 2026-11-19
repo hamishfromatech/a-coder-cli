@@ -114,6 +114,12 @@ const NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN = buildProviderErrorPattern([
 	'"code"\\s*:\\s*"?1308(?![0-9])',
 ]);
 
+// Codex closes a Responses WebSocket after 60 minutes, even mid-response (#12124). The
+// server reports it as code `websocket_connection_limit_reached` or as text "Responses
+// websocket connection limit reached", so one pattern covers both.
+const CODEX_WEBSOCKET_CONNECTION_LIMIT_SOURCE = "websocket.?connection.?limit.?reached";
+const CODEX_WEBSOCKET_CONNECTION_LIMIT_PATTERN = new RegExp(CODEX_WEBSOCKET_CONNECTION_LIMIT_SOURCE, "i");
+
 const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
 	// Generic provider load, HTTP status, and server-side transient failures.
 	"overloaded",
@@ -168,6 +174,7 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
 	// WebSocket transports can report close/error text instead of HTTP/fetch text.
 	"websocket.?closed",
 	"websocket.?error",
+	CODEX_WEBSOCKET_CONNECTION_LIMIT_SOURCE,
 
 	// Premature stream endings from SDKs and transports. Anthropic can throw
 	// "stream ended without ..." and "Anthropic stream ended before message_stop"
@@ -341,4 +348,14 @@ export function isRetryableAssistantError(message: AssistantMessage): boolean {
 	const errorMessage = message.errorMessage;
 	if (NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN.test(errorMessage)) return false;
 	return RETRYABLE_PROVIDER_ERROR_PATTERN.test(errorMessage);
+}
+
+/**
+ * Whether a failed assistant message is the Codex WebSocket 60-minute lifetime limit
+ * (#12124). That limit kills the response mid-stream, and Codex runs with `store: false`,
+ * so the interrupted response cannot be resumed; callers that normally refuse to replay
+ * a turn with visible output may retry this one on a fresh connection.
+ */
+export function isCodexWebSocketConnectionLimitError(errorMessage: string | undefined): boolean {
+	return typeof errorMessage === "string" && CODEX_WEBSOCKET_CONNECTION_LIMIT_PATTERN.test(errorMessage);
 }

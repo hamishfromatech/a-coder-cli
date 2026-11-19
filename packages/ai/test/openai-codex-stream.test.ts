@@ -10,8 +10,10 @@ import {
 	stream as streamOpenAICodexResponses,
 	streamSimple as streamSimpleOpenAICodexResponses,
 } from "../src/api/openai-codex-responses.ts";
-import type { Context, Model } from "../src/types.ts";
+import type { AssistantMessage, Context, Model } from "../src/types.ts";
 import { headersToRecord } from "../src/utils/headers.ts";
+import { retryAssistantCall } from "../src/utils/retry.ts";
+import { normalizeContext } from "../src/utils/transcript.ts";
 
 const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
 
@@ -1307,6 +1309,137 @@ describe("openai-codex streaming", () => {
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
+	// Regression for #12124: metadata and thinking already mark the provider stream as
+	// started, so the in-provider reconnect is skipped and the turn-level retry has to
+	// recover on a fresh socket. The interrupted response cannot be resumed (`store: false`),
+	// so the retry redoes it from the start.
+	it.each([
+		{
+			name: "response metadata",
+			events: [{ type: "response.created", response: { id: "resp_expired" } }],
+		},
+		{
+			name: "rate-limit metadata",
+			events: [{ type: "codex.rate_limits", rate_limits: { allowed: true, limit_reached: false } }],
+		},
+		{
+			name: "partial thinking",
+			events: [
+				{ type: "response.output_item.added", item: { type: "reasoning", id: "rs_1", summary: [] } },
+				{ type: "response.reasoning_summary_part.added", part: { type: "summary_text", text: "" } },
+				{ type: "response.reasoning_summary_text.delta", delta: "unfinished thinking" },
+			],
+		},
+	])("retries a connection lifetime limit after $name on a fresh websocket", async ({ name, events }) => {
+		let connections = 0;
+		const closed: number[] = [];
+		const sentBodies: Array<{ previous_response_id?: string }> = [];
+		const fetchMock = vi.fn();
+		vi.stubGlobal("fetch", fetchMock);
+
+		class MockWebSocket extends EventTarget {
+			private readonly connectionId = ++connections;
+			readyState = 1;
+
+			constructor() {
+				super();
+				queueMicrotask(() => this.dispatchEvent(new Event("open")));
+			}
+
+			send(data: string): void {
+				sentBodies.push(JSON.parse(data) as { previous_response_id?: string });
+				const responseEvents =
+					this.connectionId === 1
+						? [
+								...events,
+								{
+									type: "error",
+									error: {
+										code: "websocket_connection_limit_reached",
+										message:
+											"Responses websocket connection limit reached (60 minutes). Create a new websocket connection to continue.",
+									},
+								},
+							]
+						: [
+								{
+									type: "response.output_item.added",
+									item: { type: "message", id: "msg_2", role: "assistant", content: [] },
+								},
+								{
+									type: "response.output_item.done",
+									item: {
+										type: "message",
+										id: "msg_2",
+										role: "assistant",
+										content: [{ type: "output_text", text: "Recovered" }],
+									},
+								},
+								{
+									type: "response.completed",
+									response: {
+										id: "resp_2",
+										status: "completed",
+										usage: { input_tokens: 5, output_tokens: 3, total_tokens: 8 },
+									},
+								},
+							];
+				queueMicrotask(() => {
+					for (const event of responseEvents) {
+						this.dispatchEvent(Object.assign(new Event("message"), { data: JSON.stringify(event) }));
+					}
+				});
+			}
+
+			close(): void {
+				closed.push(this.connectionId);
+				this.readyState = 3;
+			}
+		}
+
+		vi.stubGlobal("WebSocket", MockWebSocket);
+		const model: Model<"openai-codex-responses"> = {
+			id: "gpt-5.1-codex",
+			name: "GPT-5.1 Codex",
+			api: "openai-codex-responses",
+			provider: "openai-codex",
+			baseUrl: "https://chatgpt.com/backend-api",
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 400000,
+			maxTokens: 128000,
+		};
+		const context: Context = { systemPrompt: "", messages: [] };
+		const attempts: AssistantMessage[] = [];
+		const result = await retryAssistantCall(
+			async () => {
+				const message = await streamOpenAICodexResponses(model, context, {
+					apiKey: mockToken(),
+					sessionId: `connection-limit-${name}`,
+					transport: "websocket-cached",
+				}).result();
+				attempts.push(message);
+				return message;
+			},
+			{ enabled: true, maxRetries: 1, baseDelayMs: 0 },
+			undefined,
+		);
+
+		expect(result.stopReason).toBe("stop");
+		expect(result.content).toMatchObject([{ type: "text", text: "Recovered" }]);
+		expect(attempts).toHaveLength(2);
+		expect(attempts[0].stopReason).toBe("error");
+		if (name === "partial thinking") {
+			expect(attempts[0].content).toMatchObject([{ type: "thinking", thinking: "unfinished thinking" }]);
+		}
+		expect(connections).toBe(2);
+		expect(closed).toContain(1);
+		expect(sentBodies).toHaveLength(2);
+		expect(sentBodies[1].previous_response_id).toBeUndefined();
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
 	it("falls back to SSE when a websocket is idle before the first event", async () => {
 		vi.useFakeTimers();
 		const token = mockToken();
@@ -1492,6 +1625,111 @@ describe("openai-codex streaming", () => {
 		expect(result.stopReason).toBe("error");
 		expect(result.errorMessage).toBe("WebSocket idle timeout after 50ms");
 		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it("opens a fresh cached websocket before the backend connection age limit", async () => {
+		vi.useFakeTimers();
+		const startedAt = new Date("2026-07-03T00:00:00Z");
+		vi.setSystemTime(startedAt);
+		const token = mockToken();
+		const sentConnectionIds: number[] = [];
+		let connections = 0;
+
+		class MockWebSocket {
+			static OPEN = 1;
+			static CLOSED = 3;
+			readyState = MockWebSocket.OPEN;
+			private readonly connectionId = ++connections;
+			private listeners = new Map<string, Set<(event: unknown) => void>>();
+
+			constructor(_url: string, _protocols?: string | string[] | { headers?: Record<string, string> }) {
+				queueMicrotask(() => this.dispatch("open", {}));
+			}
+
+			addEventListener(type: string, listener: (event: unknown) => void): void {
+				let listeners = this.listeners.get(type);
+				if (!listeners) {
+					listeners = new Set();
+					this.listeners.set(type, listeners);
+				}
+				listeners.add(listener);
+			}
+
+			removeEventListener(type: string, listener: (event: unknown) => void): void {
+				this.listeners.get(type)?.delete(listener);
+			}
+
+			send(): void {
+				sentConnectionIds.push(this.connectionId);
+				const responseId = `resp_${this.connectionId}`;
+				queueMicrotask(() => {
+					this.dispatch("message", {
+						data: JSON.stringify({
+							type: "response.completed",
+							response: {
+								id: responseId,
+								status: "completed",
+								usage: { input_tokens: 5, output_tokens: 3, total_tokens: 8 },
+							},
+						}),
+					});
+				});
+			}
+
+			close(): void {
+				this.readyState = MockWebSocket.CLOSED;
+			}
+
+			private dispatch(type: string, event: unknown): void {
+				for (const listener of this.listeners.get(type) ?? []) {
+					listener(event);
+				}
+			}
+		}
+
+		vi.stubGlobal("WebSocket", MockWebSocket);
+
+		const model: Model<"openai-codex-responses"> = {
+			id: "gpt-5.1-codex",
+			name: "GPT-5.1 Codex",
+			api: "openai-codex-responses",
+			provider: "openai-codex",
+			baseUrl: "https://chatgpt.com/backend-api",
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 400000,
+			maxTokens: 128000,
+		};
+		const sessionId = "aged-ws-session";
+		const firstContext = normalizeContext({
+			systemPrompt: "You are a helpful assistant.",
+			messages: [{ role: "user", content: "Say hello", timestamp: 1 }],
+		});
+
+		const first = await streamOpenAICodexResponses(model, firstContext, {
+			apiKey: token,
+			sessionId,
+			transport: "websocket-cached",
+		}).result();
+		// 45 minutes, not 55: the server closes a socket at 60 minutes even mid-response.
+		vi.setSystemTime(new Date(startedAt.getTime() + 46 * 60 * 1000));
+		const secondContext = normalizeContext({
+			messages: [...firstContext.messages, first, { role: "user", content: "Now finish", timestamp: 2 }],
+		});
+
+		await streamOpenAICodexResponses(model, secondContext, {
+			apiKey: token,
+			sessionId,
+			transport: "websocket-cached",
+		}).result();
+
+		expect(connections).toBe(2);
+		expect(sentConnectionIds).toEqual([1, 2]);
+		expect(getOpenAICodexWebSocketDebugStats(sessionId)).toMatchObject({
+			connectionsCreated: 2,
+			connectionsReused: 0,
+		});
 	});
 
 	it("sends only response input deltas in websocket-cached mode", async () => {
