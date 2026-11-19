@@ -9,6 +9,10 @@
 - Output-cap recovery ladder in the agent loop: when a tool-less turn ends with `stopReason: "length"` and the output saturated the model's `maxTokens` cap, the truncated output is committed and a bounded continuation prompt ("Resume directly — no apology, no recap …", max 3 per run) is injected so long answers are not silently cut off. Clamped request caps (output below the model cap) remain handled upstream by overflow/compaction recovery.
 - Safety cap on the agent loop's assistant turns per run (`AgentLoopConfig.maxToolTurns`, default 200, overridable via `A_CODER_CLI_MAX_TOOL_TURNS` / `PI_MAX_TOOL_TURNS`): a model stuck calling tools forever now ends the run after the current tool batch instead of looping indefinitely.
 
+### Fixed
+
+- Aborting a tool batch no longer leaves tool calls the loop had not reached without a tool result in the transcript; each remaining call gets an "Operation aborted" error result, in the original call order (upstream #9986). With an aborted signal, `prepareToolCall` now returns that result before looking up the tool or calling `beforeToolCall`, and a parallel call that was prepared but not yet started is not executed.
+
 ## [0.80.26] - 2026-08-22
 
 ## [0.80.25] - 2026-08-22

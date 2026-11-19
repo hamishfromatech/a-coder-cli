@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Fixed responses that end with `finish_reason: "error"` not being retried: `openai-completions` streams ([#12206](https://github.com/earendil-works/pi/issues/12206)) and Mistral streams ([#10487](https://github.com/earendil-works/pi/issues/10487)) now report the stop as `(server error)`, which the retry classifier treats as transient.
 - Anthropic usage after a server-tool loop is billed across executor steps, so `totalTokens` now comes from the last `message` (or terminal `fallback_message`) iteration instead of the summed top-level fields; the context estimate no longer doubles and the next request is not clamped to `max_tokens: 1` (#12293).
 - `opencode-go` declares the `google-generative-ai` API, so a live catalog that lists its Gemini models type-checks and streams instead of failing the build.
 - The identity User-Agent version (`PI_AI_VERSION`) stays in lockstep with `package.json`; `scripts/sync-versions.js` now updates it during a version bump.
@@ -17,11 +18,14 @@
 - Gemini tool schemas rewrite unsupported `const` keywords to single-value `enum` schemas without rewriting literal data in defaults, examples, or enum values, and without losing names such as `__proto__` (#11308).
 - Claude system updates are held until the next sendable assistant message (or the end of the transcript), so `role 'system' must precede an 'assistant' message` no longer rejects sessions where an update was followed by an empty or reasoning-only reply (#11091).
 - Claude models with mid-conversation effort no longer fail with `Invalid effort level` on accounts whose organization caps effort below `high`; the top-level effort is sent as `low` (#10063).
+- Provider errors that report only a Node socket error code, such as `read ECONNRESET`, `write EPIPE`, or `connect ETIMEDOUT`, are retried instead of ending the turn (#12128).
+- Provider errors reading `Connection closed.` are retried (#12064).
 
 
 
 ### Added
 
+- Added GPT-6.2 Astra and GPT-6.2 Sol to the OpenAI, Azure OpenAI Responses, and OpenAI Codex providers with official pricing (Astra: $8 input, $0.40 cached input, $10 cache writes, $40 output; Sol: $2, $0.10, $2.50, $10; long-context tier above 272k on OpenAI), tool search, and additional tools. Both reject reasoning effort `none` and `minimal`, so `off` is unavailable. Azure serves them with a 1.05M context window; Codex serves GPT-6.2 Sol with 500K and GPT-6.2 Astra with 272K.
 - Device-code auth info gains optional `openBrowserOnConfirm` and `copyCodeOnConfirm` (both default to true), so clients can honor a provider that does not want the browser opened or the code copied (#9282).
 - Export `getSystemMessageText()` and `renderSystemMessageUpdate()` so consumers can render system messages the same way the model receives them.
 
