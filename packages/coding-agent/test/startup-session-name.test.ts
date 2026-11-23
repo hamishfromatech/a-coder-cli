@@ -63,6 +63,11 @@ function readSessionInfoNames(sessionFile: string): string[] {
 		.map((entry) => entry.name ?? "");
 }
 
+// The CLI gets transpiled by tsx before it can reject the model, so startup
+// time tracks host load. Keep the bound generous, and report a timeout as an
+// explicit error rather than a SIGKILL that surfaces as `code: null` (THE-131).
+const CLI_SPAWN_TIMEOUT_MS = 30_000;
+
 async function runCli(args: string[], dirs: CliDirs): Promise<CliResult> {
 	let stderr = "";
 	const child = spawn(process.execPath, [cliPath, ...args], {
@@ -80,15 +85,19 @@ async function runCli(args: string[], dirs: CliDirs): Promise<CliResult> {
 	});
 
 	return new Promise((resolvePromise, reject) => {
+		let timedOut = false;
 		const timeout = setTimeout(() => {
+			timedOut = true;
 			child.kill("SIGKILL");
-		}, 10_000);
+			reject(new Error(`CLI did not exit within ${CLI_SPAWN_TIMEOUT_MS}ms (stderr: ${stderr.trim() || "<empty>"})`));
+		}, CLI_SPAWN_TIMEOUT_MS);
 		child.on("error", (error) => {
 			clearTimeout(timeout);
 			reject(error);
 		});
 		child.on("close", (code, signal) => {
 			clearTimeout(timeout);
+			if (timedOut) return;
 			resolvePromise({ code, signal, stderr });
 		});
 	});
@@ -107,7 +116,8 @@ function setup(): CliDirs {
 	return dirs;
 }
 
-describe("startup session name", () => {
+// Each test spawns the real CLI; allow for the spawn bound plus the assertion work.
+describe("startup session name", { timeout: 45_000 }, () => {
 	it("sets --name on the selected session before runtime model validation", async () => {
 		const dirs = setup();
 		const result = await runCli(
