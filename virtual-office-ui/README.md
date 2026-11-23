@@ -10,7 +10,7 @@ with live activity, and status auras (thinking / tool calling).
 ## Layout
 
 - `src/types.ts` — the feed contract (`VirtualOfficeFeed`) the host provides
-- `src/geometry.ts` — zones, desk slots, meeting seats, walk paths (pure)
+- `src/geometry.ts` — zones, desk slots, meeting seats (six table chairs plus eighteen standing spots), walk paths (pure)
 - `src/store.ts` — zustand store: derives status/bubbles/links from the feed,
   animates walks with one rAF loop per store. Motion is written in a single
   batched state update per frame; `visualVersion` changes only on feeds, so

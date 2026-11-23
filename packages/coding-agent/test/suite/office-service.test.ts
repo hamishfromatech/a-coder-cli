@@ -223,6 +223,45 @@ describe("OfficeService chat backend", () => {
 		expect(data?.data.running).toBeUndefined();
 	});
 
+	it("seats a large huddle and rejects more than the hard cap", async () => {
+		const { service } = await createService();
+		const ids = Array.from({ length: 24 }, (_, index) => `c${index}`);
+		const huddle = await service.createHuddle("All hands", ids);
+		expect(huddle.members).toHaveLength(24);
+		await expect(service.createHuddle("Too many", [...ids, "c24"])).rejects.toThrow(/24/);
+	});
+
+	it("bounds a 24-person huddle to 18 model turns and advances the speaker cursor", async () => {
+		const { service, faux } = await createService();
+		const coworkers = [];
+		for (let index = 0; index < 24; index += 1) {
+			coworkers.push(await service.createCoworker({ name: `Coworker ${index}`, title: "Specialist" }));
+		}
+		const huddle = await service.createHuddle(
+			"All hands",
+			coworkers.map((coworker) => coworker.id),
+		);
+
+		let calls = 0;
+		faux.setResponses(
+			Array.from(
+				{ length: 30 },
+				() =>
+					((_context) => {
+						calls += 1;
+						return fauxAssistantMessage("(pass)");
+					}) satisfies FauxResponseFactory,
+			),
+		);
+
+		await service.sendToHuddle(huddle.id, "Anyone have a view?");
+		expect(await service.waitForHuddleIdle(huddle.id, 5_000)).toBe(true);
+		expect(calls).toBe(18);
+		const data = await service.getHuddle(huddle.id);
+		expect(data?.data.log.filter((message) => message.from.kind === "coworker")).toHaveLength(0);
+		expect(data?.data.speakerCursor).toBe(18);
+	});
+
 	it("recovers interrupted drive state on startup", async () => {
 		const { service, runtime, officeDir } = await createService();
 		await service.dispose();

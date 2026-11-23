@@ -112,6 +112,9 @@ export interface HuddleData {
 	running?: { startedAt: number; current?: string; thread: number };
 	/** Late-reply markers: coworker id → { legacy log index, drive id, turn capture id }. */
 	stranded?: Record<string, { before: number; thread: number; turnId?: string }>;
+	/** Next coworker index to lead a drive. Lets a large room rotate which
+	 *  members get a turn when a drive cannot fit everyone. */
+	speakerCursor?: number;
 }
 
 /** Schedule kinds for errands. */
@@ -294,7 +297,13 @@ export const OFFICE_HISTORY_LIMIT = 24;
 /** Stored log cap per huddle. Older lines are dropped with watermarks shifted;
  *  the full-file JSON write and the payload stay bounded on long-running rooms. */
 export const OFFICE_MAX_LOG_MESSAGES = 500;
-export const OFFICE_MAX_MEMBERS = 6;
+/** Hard seat cap. The floor has six table seats plus eighteen standing spots;
+ *  larger rooms than this are not rendered distinctly. */
+export const OFFICE_MAX_MEMBERS = 24;
+/** Maximum model turns one user message may spend, including passes. Keeps a
+ *  large room from fanning out into 3×N serial turns; the next message
+ *  continues from `HuddleData.speakerCursor`. */
+export const OFFICE_MAX_TURNS_PER_DRIVE = 18;
 export const OFFICE_TURN_TIMEOUT_MS = 20 * 60_000;
 /** @deprecated Use OFFICE_TURN_TIMEOUT_MS. Kept as an alias for callers that
  *  still name the hard cap directly. */

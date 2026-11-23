@@ -5,7 +5,16 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DESK_SLOTS, deskSlot, HOT_DESK_SLOTS } from "../../../../virtual-office-ui/src/geometry.ts";
+import {
+	DESK_SLOTS,
+	deskSlot,
+	HOT_DESK_SLOTS,
+	MEETING_CAPACITY,
+	MEETING_OVERFLOW_SLOTS,
+	MEETING_TABLES,
+	meetingSeat,
+	SEATS_PER_TABLE,
+} from "../../../../virtual-office-ui/src/geometry.ts";
 import {
 	createFloorStore,
 	deriveActivity,
@@ -176,5 +185,20 @@ describe("deskSlot overflow", () => {
 		const keys = new Set(spots.map((p) => `${p.x},${p.y}`));
 		expect(keys.size).toBe(spots.length);
 		expect(deskSlot(DESK_SLOTS.length)).toEqual(HOT_DESK_SLOTS[0]);
+	});
+});
+
+describe("meeting seat overflow", () => {
+	it("gives every seat up to capacity a distinct spot", () => {
+		const spots = Array.from({ length: MEETING_CAPACITY }, (_, index) =>
+			meetingSeat(Math.floor(index / SEATS_PER_TABLE), index % SEATS_PER_TABLE),
+		);
+		const keys = new Set(spots.map((point) => `${point.x},${point.y}`));
+		expect(spots).toHaveLength(MEETING_CAPACITY);
+		expect(keys.size).toBe(spots.length);
+	});
+
+	it("puts the seventh member in standing room instead of back at table one", () => {
+		expect(meetingSeat(MEETING_TABLES.length, 0)).toEqual(MEETING_OVERFLOW_SLOTS[0]);
 	});
 });

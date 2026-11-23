@@ -39,6 +39,14 @@ export interface SettingsState {
 	permissionMode: PermissionMode;
 	setPermissionMode: (mode: PermissionMode) => void;
 
+	// ---- Office (local UI prefs; persisted) ----
+	/** Desktop guard for huddle seating. The engine hard cap is 24. */
+	officeMaxHuddleMembers: number;
+	setOfficeMaxHuddleMembers: (value: number) => void;
+	/** Autonomy preselected when hiring a coworker. */
+	officeDefaultAutonomy: "supervised" | "auto";
+	setOfficeDefaultAutonomy: (value: "supervised" | "auto") => void;
+
 	// ---- completion sound (local UI pref; persisted) ----
 	/** Whether to chime at the end of an agent turn. */
 	completionSoundEnabled: boolean;
@@ -191,6 +199,12 @@ export const useSettingsStore = create<SettingsState>()(
 			permissionMode: "allow",
 			setPermissionMode: (permissionMode) => set({ permissionMode }),
 
+			officeMaxHuddleMembers: 24,
+			setOfficeMaxHuddleMembers: (value) =>
+				set({ officeMaxHuddleMembers: Math.max(6, Math.min(24, Math.round(value))) }),
+			officeDefaultAutonomy: "supervised",
+			setOfficeDefaultAutonomy: (officeDefaultAutonomy) => set({ officeDefaultAutonomy }),
+
 			completionSoundEnabled: true,
 			setCompletionSoundEnabled: (completionSoundEnabled) => set({ completionSoundEnabled }),
 			completionSoundVariantId: 1,
@@ -284,6 +298,8 @@ export const useSettingsStore = create<SettingsState>()(
 				reopenLastProject: state.reopenLastProject,
 				startupModel: state.startupModel,
 				permissionMode: state.permissionMode,
+				officeMaxHuddleMembers: state.officeMaxHuddleMembers,
+				officeDefaultAutonomy: state.officeDefaultAutonomy,
 				completionSoundEnabled: state.completionSoundEnabled,
 				completionSoundVariantId: state.completionSoundVariantId,
 				hapticsEnabled: state.hapticsEnabled,

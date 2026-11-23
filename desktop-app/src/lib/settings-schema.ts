@@ -85,6 +85,7 @@ export type SettingsSectionId =
 	| "local-providers"
 	| "look-and-feel"
 	| "chat-behaviour"
+	| "office"
 	| "browser"
 	| "privacy"
 	| "tools-and-permissions"
@@ -622,6 +623,16 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
 		],
 	},
 
+	// ---- Office ----------------------------------------------------------
+	// Desktop-only preferences for the virtual office: huddle limits and
+	// coworker defaults. They live in the desktop UI store, not settings.json.
+	{
+		id: "office",
+		navId: "office",
+		label: "Office",
+		description: "Huddle size and coworker defaults for the virtual office.",
+	},
+
 	// ---- Browser ---------------------------------------------------------
 	// The panel's own preferences: they live in the same settings file under
 	// the "browser" object, but are desktop-only (the engine ignores them).
@@ -938,7 +949,7 @@ const NAV_GROUPS: { label: string; ids: string[] }[] = [
 	},
 	{
 		label: "Workspace",
-		ids: ["look-and-feel", "chat-behaviour", "browser", "voice", "mobile"],
+		ids: ["look-and-feel", "chat-behaviour", "office", "browser", "voice", "mobile"],
 	},
 	{
 		label: "System",

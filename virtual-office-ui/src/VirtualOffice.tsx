@@ -247,9 +247,15 @@ export function VirtualOffice({
 	const theme = THEMES[themeName];
 	const roomLabel = feed.roomRunning ? feed.roomName : undefined;
 	const roomId = feed.roomRunning ? feed.roomId : undefined;
-	const activeTable = feed.roomRunning
-		? Math.floor((feed.roomMembers.length - 1) / 3) % MEETING_TABLES.length
-		: -1;
+	const activeTables = useMemo(
+		() =>
+			feed.roomRunning
+				? [...new Set(feed.roomMembers.map((_, index) => Math.floor(index / SEATS_PER_TABLE)))].filter(
+						(index) => index < MEETING_TABLES.length,
+					)
+				: [],
+		[feed.roomRunning, feed.roomMembers],
+	);
 	const wallNow = useMemo(() => new Date(now), [now]);
 
 	const defs = useMemo(() => <SceneDefs theme={theme} themeName={themeName} />, [theme, themeName]);
@@ -350,7 +356,8 @@ export function VirtualOffice({
 	const meetingPods = useMemo(
 		() =>
 			MEETING_TABLES.map((table, i) => {
-				const openRoom = i === activeTable && roomId && onHuddleClick ? () => onHuddleClick(roomId) : undefined;
+				const active = activeTables.includes(i);
+				const openRoom = active && roomId && onHuddleClick ? () => onHuddleClick(roomId) : undefined;
 				return (
 				<g
 					key={`table-${i}`}
@@ -369,17 +376,17 @@ export function VirtualOffice({
 					}
 					style={openRoom ? { cursor: "pointer" } : undefined}
 				>
-					<Pendant x={table.x} y={table.y - 9.4} theme={theme} on={i === activeTable && feed.roomRunning} />
+					<Pendant x={table.x} y={table.y - 9.4} theme={theme} on={active && feed.roomRunning} />
 					{Array.from({ length: SEATS_PER_TABLE }, (_, seat) => {
 						const pos = meetingSeat(i, seat);
 						const angle = (Math.atan2(table.y - pos.y, table.x - pos.x) * 180) / Math.PI;
 						return <Chair key={seat} x={pos.x} y={pos.y} theme={theme} angle={angle} />;
 					})}
-					<MeetingTable x={table.x} y={table.y} theme={theme} active={i === activeTable && feed.roomRunning} />
+					<MeetingTable x={table.x} y={table.y} theme={theme} active={active && feed.roomRunning} />
 				</g>
 				);
 			}),
-		[theme, activeTable, feed.roomRunning, roomId, onHuddleClick],
+		[theme, activeTables, feed.roomRunning, roomId, onHuddleClick],
 	);
 
 	const interactive = Boolean(onCoworkerClick);

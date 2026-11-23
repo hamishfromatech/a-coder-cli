@@ -1,6 +1,7 @@
 import {
 	AlertCircle,
 	Brain,
+	Building2,
 	Check,
 	ChevronDown,
 	ChevronRight,
@@ -76,6 +77,7 @@ import { McpServersEditor } from "./panels/widgets/McpServersEditor";
 import { PackagesEditor } from "./panels/widgets/PackagesEditor";
 import { ComputerUseWidget } from "./panels/widgets/ComputerUseWidget";
 import { BrowserSettingsWidget } from "./panels/widgets/BrowserSettingsWidget";
+import { OfficeSection } from "./panels/widgets/OfficeSection";
 import { PathListInput } from "./panels/widgets/PathListInput";
 import { PermissionPoliciesEditor } from "./panels/widgets/PermissionPoliciesEditor";
 import { ResourcesSection } from "./panels/widgets/ResourcesSection";
@@ -102,6 +104,7 @@ const NAV_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
 	"ai-model": Sparkles,
 	"look-and-feel": Palette,
 	"chat-behaviour": MessagesSquare,
+	office: Building2,
 	browser: Globe,
 	voice: Mic,
 	mobile: Smartphone,
@@ -1836,7 +1839,9 @@ export function SettingsPanel({
 													</p>
 												</header>
 											)}
-											{s.id === "account" ? (
+											{s.id === "office" ? (
+												<OfficeSection />
+											) : s.id === "account" ? (
 												<AccountSection />
 											) : s.id === "custom-providers" ? (
 												<CustomProvidersSection />

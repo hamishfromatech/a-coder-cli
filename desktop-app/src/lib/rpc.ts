@@ -102,6 +102,8 @@ export interface OfficeHuddleData {
 	holds: Record<string, number>;
 	running?: { startedAt: number; current?: string; thread: number };
 	stranded?: Record<string, { before: number; thread: number }>;
+	/** Next coworker index to lead a drive in a large room. */
+	speakerCursor?: number;
 }
 
 export interface OfficeHuddleSummary {

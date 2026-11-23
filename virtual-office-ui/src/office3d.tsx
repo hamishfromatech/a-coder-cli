@@ -13,7 +13,7 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import { DESK_SLOTS, MEETING_TABLES, meetingSeat } from "./geometry.ts";
+import { DESK_SLOTS, MEETING_TABLES, SEATS_PER_TABLE, meetingSeat } from "./geometry.ts";
 import { STATUS_COLORS, THEMES, type Palette } from "./palette.ts";
 import { type CoworkerVisual, type FloorStore, createFloorStore, useFloorSelector } from "./store.ts";
 import type { VirtualOfficeProps } from "./types.ts";
@@ -1137,7 +1137,7 @@ function Scene({
 	store,
 	theme,
 	themeName,
-	activeTable,
+	activeTables,
 	idleOrbit,
 	onCoworkerClick,
 	onOpenRoom,
@@ -1145,7 +1145,7 @@ function Scene({
 	store: FloorStore;
 	theme: Palette;
 	themeName: "dark" | "light";
-	activeTable: number;
+	activeTables: number[];
 	idleOrbit: boolean;
 	onCoworkerClick?: (coworkerId: string) => void;
 	onOpenRoom?: () => void;
@@ -1192,8 +1192,8 @@ function Scene({
 				key={`m${i}`}
 				index={i}
 				theme={theme}
-				active={i === activeTable}
-				onOpen={i === activeTable ? onOpenRoom : undefined}
+				active={activeTables.includes(i)}
+				onOpen={activeTables.includes(i) ? onOpenRoom : undefined}
 			/>
 			))}
 			<Rug3D x={122} y={83.4} theme={theme} r={2.15} />
@@ -1263,7 +1263,13 @@ export function Office3D({
 					store={store}
 					theme={theme}
 					themeName={themeName}
-					activeTable={feed.roomRunning ? Math.floor((feed.roomMembers.length - 1) / 3) % MEETING_TABLES.length : -1}
+					activeTables={
+						feed.roomRunning
+							? [...new Set(feed.roomMembers.map((_, index) => Math.floor(index / SEATS_PER_TABLE)))].filter(
+									(index) => index < MEETING_TABLES.length,
+								)
+							: []
+					}
 					idleOrbit={!reducedMotion}
 					onCoworkerClick={onCoworkerClick}
 					onOpenRoom={feed.roomRunning && feed.roomId && onHuddleClick ? () => onHuddleClick(feed.roomId as string) : undefined}

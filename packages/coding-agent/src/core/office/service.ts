@@ -65,6 +65,7 @@ import {
 	OFFICE_MAX_MEMBERS,
 	OFFICE_MAX_MESSAGES,
 	OFFICE_MAX_ROUNDS,
+	OFFICE_MAX_TURNS_PER_DRIVE,
 	OFFICE_PASS_TEXT,
 	OFFICE_TURN_HARD_CAP_MS,
 	type OfficeActivityEvent,
@@ -836,10 +837,17 @@ export class OfficeService {
 		});
 		const startEpoch = start.epoch;
 		const driveStopToken = this.stopTokens.get(huddleId) ?? 0;
+		const driveOffset = Math.max(0, Math.trunc(start.speakerCursor ?? 0)) % members.length;
 		await this.emitHuddle(huddleId, start);
 
 		let posted = 0;
 		let continuations = 0;
+		/** Model turns spent by this drive. Passes consume a turn slot; members
+		 *  skipped before the model (held, no delta, stale queue) do not. */
+		let turns = 0;
+		/** Last member processed, so the next drive starts where this one
+		 *  stopped instead of always at the top of the roster. */
+		let lastMemberIndex = -1;
 		try {
 			for (let round = 0; round < OFFICE_MAX_ROUNDS; round++) {
 				if (this.disposed) return;
@@ -850,15 +858,26 @@ export class OfficeService {
 				if (data.epoch !== startEpoch) return;
 
 				const stranded = data.stranded ?? {};
-				const responders = rotateSpeakers(resolveResponders(data.log, members), round).filter(
+				const responders = rotateSpeakers(resolveResponders(data.log, members), round + driveOffset).filter(
 					(member) => !Object.hasOwn(stranded, member.id),
 				);
+				const remaining = OFFICE_MAX_TURNS_PER_DRIVE - turns;
+				if (remaining <= 0) break;
+				let batch = responders;
+				if (batch.length > remaining) {
+					// The first round may take a slice of a large room; later
+					// rounds are all-or-nothing so a drive never ends mid-round.
+					if (round > 0) break;
+					batch = batch.slice(0, remaining);
+				}
 
 				let spoke = 0;
-				for (const member of responders) {
+				for (const member of batch) {
 					if (posted >= OFFICE_MAX_MESSAGES) return;
 					const outcome = await this.runMemberTurn(huddleId, huddle.name, isDm, members, member, startEpoch);
 					if (outcome.cancelled) return;
+					lastMemberIndex = members.findIndex((entry) => entry.id === member.id);
+					if (outcome.attempted) turns += 1;
 					if (outcome.spoke) {
 						posted += 1;
 						spoke += 1;
@@ -882,8 +901,11 @@ export class OfficeService {
 							.filter((m) => !Object.hasOwn(strandedNow, m.id));
 						for (const member of cited) {
 							if (posted >= OFFICE_MAX_MESSAGES) break;
+							if (turns >= OFFICE_MAX_TURNS_PER_DRIVE) break;
 							const outcome = await this.runMemberTurn(huddleId, huddle.name, isDm, members, member, startEpoch);
 							if (outcome.cancelled) return;
+							lastMemberIndex = members.findIndex((entry) => entry.id === member.id);
+							if (outcome.attempted) turns += 1;
 							if (outcome.spoke) {
 								posted += 1;
 								spoke += 1;
@@ -899,6 +921,7 @@ export class OfficeService {
 		} finally {
 			const data = await store.updateHuddleData(huddleId, (room) => {
 				room.running = undefined;
+				room.speakerCursor = lastMemberIndex >= 0 ? (lastMemberIndex + 1) % members.length : driveOffset;
 			});
 			await this.emitHuddle(huddleId, data);
 			await this.emitUpdate();
@@ -916,7 +939,8 @@ export class OfficeService {
 	/** Run one member's turn inside a drive: skip conditions, prompt build,
 	 *  session turn, commit. Shared by the main round loop and continuation
 	 *  rounds. `cancelled` means the drive went stale (epoch moved) and must
-	 *  exit; `spoke` means the coworker posted a reply to the room. */
+	 *  exit; `spoke` means the coworker posted a reply to the room; `attempted`
+	 *  means a model turn was actually spent (held/empty deltas are not). */
 	private async runMemberTurn(
 		huddleId: string,
 		huddleName: string,
@@ -924,9 +948,9 @@ export class OfficeService {
 		members: Coworker[],
 		member: Coworker,
 		startEpoch: number,
-	): Promise<{ cancelled: boolean; spoke: boolean }> {
+	): Promise<{ cancelled: boolean; spoke: boolean; attempted: boolean }> {
 		const fresh = await store.loadHuddleData(huddleId);
-		if (fresh.epoch !== startEpoch) return { cancelled: true, spoke: false };
+		if (fresh.epoch !== startEpoch) return { cancelled: true, spoke: false, attempted: false };
 
 		// A coworker the user told to stop is HELD — no turn until an explicit
 		// release (re-mention / "@all resume"). Consume the delta exactly once
@@ -938,11 +962,11 @@ export class OfficeService {
 					room.watermarks[member.id] = advance;
 				});
 			}
-			return { cancelled: false, spoke: false };
+			return { cancelled: false, spoke: false, attempted: false };
 		}
 
 		const delta = deltaFor(fresh, member.id);
-		if (delta.length === 0) return { cancelled: false, spoke: false };
+		if (delta.length === 0) return { cancelled: false, spoke: false, attempted: false };
 		const lastUser = [...fresh.log].reverse().find((entry) => entry.from.kind === "user");
 		const requiresResponse = Boolean(lastUser && isRoomAddress(lastUser.text));
 		const logLengthAtDispatch = fresh.log.length;
@@ -971,6 +995,7 @@ export class OfficeService {
 
 		let cancelled = false;
 		let spoke = false;
+		let attempted = false;
 		try {
 			const deltaImages = delta.flatMap((entry) => entry.images ?? []);
 			const outcome = await this.enqueueTurn(member.id, async (): Promise<TurnOutcome> => {
@@ -991,11 +1016,12 @@ export class OfficeService {
 
 			if (outcome.skipped) {
 				cancelled = true;
-				return { cancelled, spoke };
+				return { cancelled, spoke, attempted };
 			}
+			attempted = true;
 			if (this.disposed) {
 				cancelled = true;
-				return { cancelled, spoke };
+				return { cancelled, spoke, attempted };
 			}
 
 			if (outcome.timedOut) {
@@ -1015,7 +1041,7 @@ export class OfficeService {
 						this.activeTurn.delete(this.sessionKey(member.id));
 					}
 				}
-				return { cancelled, spoke };
+				return { cancelled, spoke, attempted };
 			}
 
 			if (outcome.error) {
@@ -1033,7 +1059,7 @@ export class OfficeService {
 					const reason = outcome.error.length > 160 ? `${outcome.error.slice(0, 160)}…` : outcome.error;
 					await this.appendSystemLine(huddleId, `${member.name}'s turn failed: ${reason}`);
 				}
-				return { cancelled, spoke };
+				return { cancelled, spoke, attempted };
 			}
 
 			const reply = outcome.reply && !isPassText(outcome.reply) ? outcome.reply : null;
@@ -1051,7 +1077,7 @@ export class OfficeService {
 			if (result === "silent" && requiresResponse) {
 				await this.appendSystemLine(huddleId, `${member.name} had nothing to add.`);
 			}
-			return { cancelled, spoke };
+			return { cancelled, spoke, attempted };
 		} finally {
 			const currentStatus = this.statuses.get(member.id);
 			if (currentStatus) {

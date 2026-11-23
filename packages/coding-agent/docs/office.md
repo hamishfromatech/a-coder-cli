@@ -7,7 +7,7 @@ Your Office gives A-Coder a society of **named coworkers** — agents with their
 | Concept    | What it is                                                                                                     |
 | ---------- | -------------------------------------------------------------------------------------------------------------- |
 | Coworker   | A named agent with a handle (`@atlas`), a role, a soul (persona), a face, and its own canonical session per project |
-| Huddle     | A group conversation between coworkers and you (max 6 seated)                                                     |
+| Huddle     | A group conversation between coworkers and you (up to 24 seated; six at the tables, the rest standing)              |
 | DM         | A coworker's 1:1 chat with you — the same huddle machinery with one member                                       |
 | Errand     | A scheduled job for one coworker: every N minutes, daily at HH:MM, or once                                        |
 | Soul       | The persona text pinned into a coworker's session at first contact (identity + collaboration protocol)             |
@@ -16,7 +16,7 @@ Your Office gives A-Coder a society of **named coworkers** — agents with their
 ## Where things live
 
 - Roster: `~/.a-coder/cli/office/coworkers.json`
-- Huddles: `~/.a-coder/cli/office/huddles.json` + `huddles-data/<id>.log.jsonl` (append-only messages) and `huddles-data/<id>.state.json` (epoch, watermarks, holds, running, stranded). Legacy `huddles-data/<id>.json` files are read and migrated on the next write.
+- Huddles: `~/.a-coder/cli/office/huddles.json` + `huddles-data/<id>.log.jsonl` (append-only messages) and `huddles-data/<id>.state.json` (epoch, watermarks, holds, running, stranded, speaker cursor). Legacy `huddles-data/<id>.json` files are read and migrated on the next write.
 - Errands: `~/.a-coder/cli/office/errands.json`
 - Coworker sessions: normal agent session files in a hidden `.office` directory inside each project's session folder (the pointer is stored per coworker per project cwd). They are excluded from the composer session list, session picker, and resume flow, and legacy files are migrated at startup.
 
@@ -27,10 +27,11 @@ Set `A_CODER_CLI_OFFICE_DIR` to relocate the office root.
 The **Office** panel is the third tab in the right sidebar (next to Files and Git). From there you can:
 
 - Hire a coworker (name, role, mission, soul, face palette + shape, model override, TTS voice, autonomy)
-- Seat huddles and watch them talk; @handle chips address specific coworkers
+- Seat huddles (up to 24) and watch them talk; @handle chips address specific coworkers. Large rooms show standing space on the floor and rotate speakers between messages.
 - DM any coworker from the roster
 - Schedule errands — with **continuity**, each run happens in the coworker's own session, so scheduled agents learn between runs
 - Answer supervised prompts (approvals/questions) inline
+- Set the desktop huddle limit and the default autonomy for new coworkers in Settings → Office. The engine hard cap remains 24.
 - Start a **voice call in a huddle or DM**: your speech is transcribed into a
   huddle message, the room's normal drive runs, and every new coworker reply
   is spoken in order with the speaker named first. The mic parks while the
@@ -87,7 +88,8 @@ Extras:
 - **Stop**: published before any file read, aborts only the turn that belongs to that room, and commits through the same transaction as a normal reply. A stopped room cannot receive a late partial answer.
 - **Recovery**: startup clears `running`/`stranded` state left by a crashed process, so a room does not show a typing indicator forever.
 - **Drive coalescing**: sends during a running drive mark the room dirty and share one pending drive instead of stacking a full drive per message. Queued turns re-check epoch, holds, and membership before calling the model.
-- **Caps**: 3 rounds, 10 messages, 24-line history window per turn, 20-minute hard turn cap. Prompts are also capped at 24,000 characters (6,000 per room line) with an explicit omitted-history marker. Attachments are limited to 4 per message, 8 MiB each, 16 MiB total.
+- **Caps**: 3 rounds, 10 messages, 18 model turns per drive, 24-line history window per turn, 20-minute hard turn cap. Prompts are also capped at 24,000 characters (6,000 per room line) with an explicit omitted-history marker. Attachments are limited to 4 per message, 8 MiB each, 16 MiB total.
+- **Large rooms**: a huddle seats up to 24. The first six get table seats; the rest stand in the meeting area. A drive spends at most 18 model turns, so a 9-person room runs two rounds, a 12-person room runs one full round, and the next message continues from a persisted speaker cursor instead of always starting with the first coworker. `@mention` still takes priority and gets the normal three rounds. `@all` is bounded by the same turn budget.
 - **Log cap**: 500 stored lines per huddle; older lines drop with every read pointer shifted, so a long-running room cannot grow without bound.
 
 ## Autonomy

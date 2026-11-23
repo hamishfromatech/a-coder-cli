@@ -8,6 +8,7 @@ import { ModalBackdrop, ModalPanel } from "../ui/Modal";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { useOfficeStore } from "../../stores/office-store";
+import { useSettingsStore } from "../../stores/settings-store";
 import { getAvailableModels, officeDeleteCoworker, officeSaveCoworker, type OfficeCoworker } from "../../lib/rpc";
 import { FACE_PALETTE, Face, type FaceShapeName } from "./Face";
 import { COWORKER_TEMPLATES, type CoworkerTemplate } from "../../lib/coworker-templates";
@@ -53,6 +54,7 @@ interface Props {
 
 export function CoworkerEditor({ editing, onClose }: Props) {
 	const refresh = useOfficeStore((s) => s.refresh);
+	const defaultAutonomy = useSettingsStore((s) => s.officeDefaultAutonomy);
 	const [name, setName] = useState(editing?.name ?? "");
 	const [title, setTitle] = useState(editing?.title ?? "");
 	const [description, setDescription] = useState(editing?.description ?? "");
@@ -65,7 +67,7 @@ export function CoworkerEditor({ editing, onClose }: Props) {
 	const [model, setModel] = useState(editing?.model ?? "");
 	const [voice, setVoice] = useState(editing?.voice ?? "");
 	const [models, setModels] = useState<Array<{ value: string; label: string }>>([]);
-	const [autonomy, setAutonomy] = useState<"supervised" | "auto">(editing?.autonomy ?? "supervised");
+	const [autonomy, setAutonomy] = useState<"supervised" | "auto">(editing?.autonomy ?? defaultAutonomy);
 	const [busy, setBusy] = useState(false);
 	const [confirmDelete, setConfirmDelete] = useState(false);
 	const [error, setError] = useState<string | null>(null);

@@ -137,7 +137,7 @@ export async function deleteHuddle(id: string, root?: string): Promise<void> {
 }
 
 export function emptyHuddleData(): HuddleData {
-	return { epoch: 0, log: [], watermarks: {}, holds: {} };
+	return { epoch: 0, log: [], watermarks: {}, holds: {}, speakerCursor: 0 };
 }
 
 /** Read a JSONL message log, skipping blank or torn lines (a crash mid-append
@@ -178,6 +178,7 @@ function stateOf(data: HuddleData): Omit<HuddleData, "log"> {
 		holds: data.holds,
 		running: data.running,
 		stranded: data.stranded,
+		speakerCursor: data.speakerCursor,
 	};
 }
 
@@ -189,6 +190,7 @@ function normalizeData(state: Omit<HuddleData, "log"> | null, log: OfficeMessage
 		holds: state?.holds ?? {},
 		running: state?.running,
 		stranded: state?.stranded,
+		speakerCursor: typeof state?.speakerCursor === "number" ? state.speakerCursor : 0,
 	};
 }
 

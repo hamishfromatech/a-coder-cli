@@ -29,15 +29,54 @@ export const MEETING_TABLES: Point[] = [
 
 export const SEATS_PER_TABLE = 3;
 
-/** Where a coworker sits around table `tableIndex`, seat `seat` (0..2). */
+/** Standing room around the meeting zone once both tables are full. The first
+ *  six members get chairs; the next eighteen stand along the walls and the
+ *  bottom of the room. The floor renders up to MEETING_CAPACITY members. */
+export const MEETING_OVERFLOW_SLOTS: Point[] = [
+	// between the two tables
+	{ x: 104, y: 29.5 },
+	{ x: 110, y: 29.5 },
+	{ x: 116, y: 29.5 },
+	{ x: 128, y: 29.5 },
+	{ x: 134, y: 29.5 },
+	{ x: 140, y: 29.5 },
+	// left wall
+	{ x: 94, y: 24 },
+	{ x: 94, y: 36 },
+	{ x: 94, y: 48 },
+	{ x: 94, y: 58 },
+	// right wall
+	{ x: 148, y: 20 },
+	{ x: 148, y: 30 },
+	{ x: 148, y: 52 },
+	{ x: 148, y: 60 },
+	// bottom of the meeting zone
+	{ x: 104, y: 62 },
+	{ x: 116, y: 62 },
+	{ x: 128, y: 62 },
+	{ x: 140, y: 62 },
+];
+
+/** Total distinct meeting spots: table chairs plus standing overflow. */
+export const MEETING_CAPACITY = MEETING_TABLES.length * SEATS_PER_TABLE + MEETING_OVERFLOW_SLOTS.length;
+
+/** Where a coworker sits or stands around the meeting zone. The first six
+ *  take a table seat; later members stand in the overflow ring. */
 export function meetingSeat(tableIndex: number, seat: number): Point {
-	const table = MEETING_TABLES[tableIndex] ?? MEETING_TABLES[0];
-	if (!table) return { x: 122, y: 18 };
-	const angle = (-90 + seat * 120) * (Math.PI / 180);
-	return {
-		x: table.x + Math.cos(angle) * 11.5,
-		y: table.y + Math.sin(angle) * 11.5,
-	};
+	if (tableIndex < MEETING_TABLES.length) {
+		const table = MEETING_TABLES[tableIndex] ?? MEETING_TABLES[0];
+		if (!table) return { x: 122, y: 18 };
+		const angle = (-90 + seat * 120) * (Math.PI / 180);
+		return {
+			x: table.x + Math.cos(angle) * 11.5,
+			y: table.y + Math.sin(angle) * 11.5,
+		};
+	}
+	const overflowIndex = (tableIndex - MEETING_TABLES.length) * SEATS_PER_TABLE + seat;
+	return (
+		MEETING_OVERFLOW_SLOTS[overflowIndex] ??
+		MEETING_OVERFLOW_SLOTS[MEETING_OVERFLOW_SLOTS.length - 1] ?? { x: 122, y: 62 }
+	);
 }
 
 /** Overflow standing spots along the corridor for roster members past the

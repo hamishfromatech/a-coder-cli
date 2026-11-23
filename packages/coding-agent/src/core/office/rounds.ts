@@ -107,7 +107,7 @@ export function rotateSpeakers(members: Coworker[], round: number): Coworker[] {
 	return [...members.slice(shift), ...members.slice(0, shift)];
 }
 
-/** Seat cap: the last members win (the editor enforces this too). */
+/** Seat cap: only the first members are eligible (the editor enforces this too). */
 export function seatMembers(members: Coworker[]): Coworker[] {
 	return members.slice(0, OFFICE_MAX_MEMBERS);
 }
