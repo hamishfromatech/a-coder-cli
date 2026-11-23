@@ -25,7 +25,9 @@ import type {
 	ExtensionWidgetOptions,
 	WorkingIndicatorOptions,
 } from "../../core/extensions/index.ts";
+import { getMcpAppCatalog } from "../../core/mcp/builtin-app-servers.ts";
 import { reconnectMcpServer } from "../../core/mcp/inline-extension.ts";
+import { clearMcpOAuth, startMcpOAuthFlow } from "../../core/mcp/oauth.ts";
 import { getMcpServerStates } from "../../core/mcp/status-store.ts";
 import { summarizeCoworkerSession } from "../../core/office/coworker-stats.ts";
 import { OfficeService } from "../../core/office/service.ts";
@@ -149,6 +151,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 	let unsubscribeBackpressure: (() => void) | undefined;
 	/** A reconnect requested while a turn was running; applied at agent_end. */
 	let pendingMcpReconnect: string | null | undefined;
+	let mcpOAuthFlow: Promise<void> | null = null;
 	let unsubscribeBackgroundProcesses: (() => void) | undefined;
 	let unsubscribeWorkflowRuns: (() => void) | undefined;
 
@@ -1189,6 +1192,87 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime, options?: { l
 
 			case "mcp_status": {
 				return success(id, "mcp_status", { servers: getMcpServerStates() });
+			}
+
+			case "mcp_catalog": {
+				return success(id, "mcp_catalog", { servers: getMcpAppCatalog() });
+			}
+
+			case "reload": {
+				if (session.isStreaming) {
+					return error(id, "reload", "Wait for the current turn to finish before reloading.");
+				}
+				await session.reload();
+				return success(id, "reload");
+			}
+
+			case "mcp_oauth_start": {
+				const name = typeof command.name === "string" ? command.name.trim() : "";
+				if (!name) return error(id, "mcp_oauth_start", "Server name is required.");
+				if (session.isStreaming) {
+					return error(
+						id,
+						"mcp_oauth_start",
+						"Wait for the current turn to finish before connecting an OAuth MCP server.",
+					);
+				}
+				if (mcpOAuthFlow) return error(id, "mcp_oauth_start", "Another MCP OAuth sign-in is already in progress.");
+				// Pick up the settings file the desktop just wrote (the UI debounces
+				// its save before calling this command).
+				await session.settingsManager.reload();
+				const server = session.settingsManager.getMcpServers().find((entry) => entry.name === name);
+				if (!server) return error(id, "mcp_oauth_start", `Unknown MCP server: ${name}`);
+				if (server.disabled)
+					return error(id, "mcp_oauth_start", `Enable MCP server "${name}" and Apply before signing in.`);
+				if (server.transport === "stdio" || !server.oauth) {
+					return error(id, "mcp_oauth_start", `MCP server "${name}" does not use HTTP/SSE OAuth.`);
+				}
+				mcpOAuthFlow = startMcpOAuthFlow(server, (event) => {
+					output({ type: "mcp_oauth_status", name, phase: event.phase, url: event.url });
+				})
+					.then(async () => {
+						if (session.isStreaming) {
+							output({
+								type: "mcp_oauth_status",
+								name,
+								phase: "success",
+								message: "Signed in. Finish the current turn, then reconnect the server.",
+							});
+							return;
+						}
+						let reconnected = await reconnectMcpServer(name);
+						if (!reconnected.ok) {
+							// The session may still hold the pre-sign-in config (e.g. the
+							// server was enabled or switched to OAuth right before Connect).
+							await session.reload();
+							reconnected = await reconnectMcpServer(name);
+						}
+						if (!reconnected.ok) {
+							throw new Error(reconnected.error ?? "MCP server did not reconnect after sign-in.");
+						}
+						output({ type: "mcp_oauth_status", name, phase: "success" });
+					})
+					.catch((reason: unknown) => {
+						output({
+							type: "mcp_oauth_status",
+							name,
+							phase: "error",
+							error: reason instanceof Error ? reason.message : String(reason),
+						});
+					})
+					.finally(() => {
+						mcpOAuthFlow = null;
+					});
+				return success(id, "mcp_oauth_start", { started: true, name });
+			}
+
+			case "mcp_oauth_disconnect": {
+				const name = typeof command.name === "string" ? command.name.trim() : "";
+				if (!name) return error(id, "mcp_oauth_disconnect", "Server name is required.");
+				if (mcpOAuthFlow) return error(id, "mcp_oauth_disconnect", "Wait for the current MCP sign-in to finish.");
+				clearMcpOAuth(name);
+				if (!session.isStreaming) await session.reload();
+				return success(id, "mcp_oauth_disconnect", { ok: true, name });
 			}
 
 			case "mcp_reconnect": {

@@ -17,6 +17,8 @@ export interface McpServerState {
 	error?: string;
 	/** Discovered tool count after a successful connect. */
 	toolCount?: number;
+	/** The server rejected the request and needs OAuth sign-in. */
+	authRequired?: boolean;
 	/** Where the server's config came from (project settings override globals by name). */
 	source?: "global" | "project";
 }

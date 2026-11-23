@@ -98,6 +98,15 @@ describe("MCP config converter", () => {
 			const cli = ideMcpToCli(ide, existing);
 			expect(cli[0].disabled).toBe(true);
 		});
+
+		it("preserves OAuth settings from existing CLI config", () => {
+			const ide: IdeMcpConfigFile = { mcpServers: { figma: { url: "https://mcp.figma.com/mcp" } } };
+			const existing: McpServerConfig[] = [
+				{ name: "figma", transport: "http", commandOrUrl: "https://mcp.figma.com/mcp", oauth: true },
+			];
+			const cli = ideMcpToCli(ide, existing);
+			expect(cli[0]?.oauth).toBe(true);
+		});
 	});
 
 	describe("mergeIdeMcpIntoCli", () => {
@@ -179,6 +188,24 @@ describe("MCP config converter", () => {
 				nullish: null,
 			});
 			expect(servers).toEqual([{ name: "tools", transport: "stdio", commandOrUrl: "node", args: ["tools.js"] }]);
+		});
+
+		it("preserves OAuth boolean and settings objects", () => {
+			const servers = normalizeMcpServers([
+				{ name: "figma", transport: "http", commandOrUrl: "https://mcp.figma.com/mcp", oauth: true },
+				{
+					name: "private",
+					transport: "http",
+					commandOrUrl: "https://example.test/mcp",
+					oauth: { scopes: ["read"], clientId: "cid", clientSecret: "$" + "{MCP_SECRET}" },
+				},
+			]);
+			expect(servers?.[0]?.oauth).toBe(true);
+			expect(servers?.[1]?.oauth).toEqual({
+				scopes: ["read"],
+				clientId: "cid",
+				clientSecret: "$" + "{MCP_SECRET}",
+			});
 		});
 
 		it("returns undefined for absent or non-object values", () => {

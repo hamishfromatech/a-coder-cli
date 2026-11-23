@@ -16,7 +16,7 @@
  * A-Coder IDE, a-coder-cli, and A-Coder Desktop.
  */
 
-import type { McpServerConfig } from "./types.ts";
+import type { McpOAuthSettings, McpServerConfig } from "./types.ts";
 
 /** IDE-side MCP config file entry (mirrors A-Coder IDE's MCPConfigFileEntryJSON). */
 export interface IdeMcpConfigEntry {
@@ -78,6 +78,7 @@ export function ideMcpToCli(config: IdeMcpConfigFile, existing?: McpServerConfig
 				args: entry.args,
 				env: entry.env,
 				disabled: existingByName.get(name)?.disabled,
+				oauth: existingByName.get(name)?.oauth,
 			});
 		} else if (entry.url) {
 			servers.push({
@@ -86,6 +87,7 @@ export function ideMcpToCli(config: IdeMcpConfigFile, existing?: McpServerConfig
 				commandOrUrl: entry.url,
 				headers: entry.headers,
 				disabled: existingByName.get(name)?.disabled,
+				oauth: existingByName.get(name)?.oauth,
 			});
 		}
 	}
@@ -108,6 +110,22 @@ function asStringArray(value: unknown): string[] | undefined {
 	if (!Array.isArray(value)) return undefined;
 	const out = value.filter((entry): entry is string => typeof entry === "string");
 	return out.length > 0 ? out : undefined;
+}
+
+function asOAuth(value: unknown): boolean | McpOAuthSettings | undefined {
+	if (value === true) return true;
+	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+	const entry = value as Record<string, unknown>;
+	const settings: McpOAuthSettings = {};
+	const scopes = asStringArray(entry.scopes);
+	if (scopes) settings.scopes = scopes;
+	if (typeof entry.clientId === "string" && entry.clientId.trim()) settings.clientId = entry.clientId.trim();
+	if (typeof entry.clientSecret === "string" && entry.clientSecret.trim())
+		settings.clientSecret = entry.clientSecret.trim();
+	if (typeof entry.clientMetadataUrl === "string" && entry.clientMetadataUrl.trim()) {
+		settings.clientMetadataUrl = entry.clientMetadataUrl.trim();
+	}
+	return Object.keys(settings).length > 0 ? settings : undefined;
 }
 
 function asStringRecord(value: unknown): Record<string, string> | undefined {
@@ -153,6 +171,7 @@ function toServer(name: string, raw: unknown): McpServerConfig | undefined {
 	const args = asStringArray(entry.args);
 	const env = asStringRecord(entry.env);
 	const headers = asStringRecord(entry.headers);
+	const oauth = asOAuth(entry.oauth);
 	// Keep an explicit `[]`: it opts a server out of the built-in defaults.
 	const suppress = Array.isArray(entry.suppressStderrPatterns)
 		? entry.suppressStderrPatterns.filter((item): item is string => typeof item === "string")
@@ -165,6 +184,7 @@ function toServer(name: string, raw: unknown): McpServerConfig | undefined {
 		...(env ? { env } : {}),
 		...(headers ? { headers } : {}),
 		...(entry.disabled === true ? { disabled: true } : {}),
+		...(oauth ? { oauth } : {}),
 		...(typeof entry.timeoutMs === "number" ? { timeoutMs: entry.timeoutMs } : {}),
 		...(suppress ? { suppressStderrPatterns: suppress } : {}),
 		...(entry.forwardStderr === true ? { forwardStderr: true } : {}),

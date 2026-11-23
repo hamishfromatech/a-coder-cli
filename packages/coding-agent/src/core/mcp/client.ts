@@ -9,6 +9,7 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { CallToolResult, ListToolsResult, ReadResourceResult } from "@modelcontextprotocol/sdk/types.js";
 import { ListRootsRequestSchema, ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import { getMcpLogsDir, VERSION } from "../../config.ts";
+import { FileOAuthProvider } from "./oauth.ts";
 import type { McpServerConfig } from "./types.ts";
 
 /**
@@ -314,10 +315,16 @@ export class McpClient {
 	}
 }
 
+function oauthProviderFor(config: McpServerConfig): FileOAuthProvider | undefined {
+	if (!config.oauth || config.transport === "stdio") return undefined;
+	return new FileOAuthProvider({ server: config, interactive: false });
+}
+
 function createTransport(config: McpServerConfig): TransportBundle {
 	const headers = resolveHeaderPlaceholders(config.headers);
 	switch (config.transport) {
 		case "stdio": {
+			const env = resolveEnvPlaceholders(config.env);
 			const suppress = config.suppressStderrPatterns?.filter((p) => p.length > 0);
 			// Pipe (instead of inherit) so we also keep a raw stderr tail for
 			// connect-failure error messages; matching lines and live forwarding
@@ -329,7 +336,7 @@ function createTransport(config: McpServerConfig): TransportBundle {
 				// overrides: the SDK default env allowlist breaks npx-based servers
 				// when any per-server env is set, since values passed here REPLACE
 				// the default environment entirely.
-				env: { ...(process.env as Record<string, string>), ...(config.env ?? {}) },
+				env: { ...(process.env as Record<string, string>), ...(env ?? {}) },
 				stderr: "pipe",
 			});
 			const getStderrTail = pipeStderr(transport, suppress ?? [], config.name, config.forwardStderr === true);
@@ -339,6 +346,7 @@ function createTransport(config: McpServerConfig): TransportBundle {
 			const url = new URL(config.commandOrUrl);
 			return {
 				transport: new SSEClientTransport(url, {
+					authProvider: oauthProviderFor(config),
 					requestInit: { headers },
 					// The SSE event stream is a separate long-lived GET; without a
 					// fetch override only the POSTs carry custom headers (e.g. auth),
@@ -357,6 +365,7 @@ function createTransport(config: McpServerConfig): TransportBundle {
 			const url = new URL(config.commandOrUrl);
 			return {
 				transport: new StreamableHTTPClientTransport(url, {
+					authProvider: oauthProviderFor(config),
 					requestInit: { headers },
 				}),
 			};
@@ -364,6 +373,28 @@ function createTransport(config: McpServerConfig): TransportBundle {
 		default:
 			throw new Error(`Unsupported MCP transport: ${(config as McpServerConfig).transport}`);
 	}
+}
+
+/**
+ * Expand `${ENV_VAR}` placeholders in stdio environment values against the
+ * parent environment. A missing variable drops the key (the server then sees
+ * its own default or reports a clear missing-credential error) instead of
+ * receiving the literal placeholder. Non-placeholder values pass through so
+ * ordinary per-server environment entries keep working.
+ */
+export function resolveEnvPlaceholders(env: Record<string, string> | undefined): Record<string, string> | undefined {
+	if (!env) return undefined;
+	const resolved: Record<string, string> = {};
+	for (const [name, value] of Object.entries(env)) {
+		const match = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(value);
+		if (match) {
+			const envValue = process.env[match[1]];
+			if (envValue !== undefined) resolved[name] = envValue;
+		} else {
+			resolved[name] = value;
+		}
+	}
+	return Object.keys(resolved).length > 0 ? resolved : undefined;
 }
 
 /**

@@ -15,6 +15,7 @@ import { withFileLockRetrySync } from "../utils/file-retry.ts";
 import { normalizePath, resolvePath } from "../utils/paths.ts";
 import { stripBom } from "../utils/text.ts";
 import { DEFAULT_HTTP_IDLE_TIMEOUT_MS, parseHttpIdleTimeoutMs } from "./http-dispatcher.ts";
+import { defaultAppMcpServers } from "./mcp/builtin-app-servers.ts";
 import { normalizeMcpServers } from "./mcp/config-converter.ts";
 import type { McpServerConfig } from "./mcp/types.ts";
 import { defaultStderrSuppressPatterns } from "./mcp/types.ts";
@@ -691,7 +692,8 @@ export class SettingsManager {
 		if (!content) {
 			// Fresh installation: no global settings file yet. Seed the built-in
 			// browser-control MCP server so Chrome/DevTools tooling works out of
-			// the box, and persist the seed immediately — settings saves merge
+			// the box, plus the app-integration catalog disabled, and persist the
+			// seed immediately — settings saves merge
 			// only MODIFIED fields onto the stored file, so an in-memory-only
 			// seed would be lost on the first partial save and the default
 			// would vanish mid-session. The persisted entry is user-owned from
@@ -700,7 +702,7 @@ export class SettingsManager {
 			// are not affected.
 			if (scope === "global") {
 				const seeded: Settings = {
-					mcpServers: [defaultChromeDevtoolsMcpServer(), defaultComposioMcpServer()],
+					mcpServers: [defaultChromeDevtoolsMcpServer(), defaultComposioMcpServer(), ...defaultAppMcpServers()],
 				};
 				storage.withLock(scope, (current) => (current ? undefined : JSON.stringify(seeded, null, 2)));
 				return seeded;

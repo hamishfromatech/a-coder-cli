@@ -3,6 +3,7 @@ import type { CallToolResult, ContentBlock, ReadResourceResult } from "@modelcon
 import type { ExtensionFactory, ExtensionUIContext } from "../extensions/types.ts";
 import type { McpDiscoveredTool } from "./client.ts";
 import { McpClient } from "./client.ts";
+import { McpOAuthRequiredError } from "./oauth.ts";
 import { jsonSchemaToTypeBox } from "./schema.ts";
 import { clearMcpServerStates, countMcpServerErrors, getMcpServerStates, setMcpServerState } from "./status-store.ts";
 import type { McpServerConfig } from "./types.ts";
@@ -401,7 +402,13 @@ export function createMcpExtensionFactory(options: McpExtensionFactoryOptions): 
 					return { tools: discoveredTools };
 				} catch (err) {
 					discoveryError = err instanceof Error ? err.message : String(err);
-					setMcpServerState(client.serverName, { status: "error", error: discoveryError });
+					setMcpServerState(client.serverName, {
+						status: "error",
+						error: discoveryError,
+						authRequired:
+							err instanceof McpOAuthRequiredError ||
+							(err instanceof Error && err.name === "McpOAuthRequiredError"),
+					});
 					recomputeMcpChip();
 					return { tools: [], error: discoveryError };
 				}

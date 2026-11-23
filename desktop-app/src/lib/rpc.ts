@@ -401,6 +401,7 @@ export type RpcEvent =
 	| AutoContinueDecisionEvent
 	| CompactionStartEvent
 	| OAuthLoginEvent
+	| McpOAuthStatusEvent
 	| CompactionEndEvent
 	| SessionsUpdateEvent
 	| ThinkingLevelChangedEvent
@@ -1264,11 +1265,60 @@ export interface McpServerState {
 	status: "ok" | "error" | "connecting" | "disabled";
 	toolCount?: number;
 	error?: string;
+	/** The server rejected the request and needs OAuth sign-in. */
+	authRequired?: boolean;
 	source?: "global" | "project";
 }
 
 export const getMcpStatus = () =>
 	sendCommand({ type: "mcp_status" }) as Promise<{ servers: McpServerState[] }>;
+
+export interface McpCatalogConfig {
+	name: string;
+	transport: "stdio" | "http" | "sse";
+	commandOrUrl: string;
+	args?: string[];
+	env?: Record<string, string>;
+	headers?: Record<string, string>;
+	timeoutMs?: number;
+	disabled?: boolean;
+	oauth?: boolean | Record<string, unknown>;
+}
+
+/** A ready-made integration the engine can seed and the desktop can add. */
+export interface McpCatalogEntry {
+	id: string;
+	name: string;
+	title: string;
+	description: string;
+	requirements: string;
+	docsUrl: string;
+	config: McpCatalogConfig;
+}
+
+export const getMcpCatalog = () =>
+	sendCommand({ type: "mcp_catalog" }) as Promise<{ servers: McpCatalogEntry[] }>;
+
+export const startMcpOAuth = (name: string) =>
+	sendCommand({ type: "mcp_oauth_start", name }) as Promise<{ started: boolean; name: string }>;
+
+export const disconnectMcpOAuth = (name: string) =>
+	sendCommand({ type: "mcp_oauth_disconnect", name }) as Promise<{ ok: boolean; name: string }>;
+
+/** OAuth progress for an MCP server; browser URLs are opened by the desktop. */
+export interface McpOAuthStatusEvent {
+	type: "mcp_oauth_status";
+	name: string;
+	phase: "browser" | "success" | "error";
+	url?: string;
+	error?: string;
+	message?: string;
+}
+
+/** Reload the engine's settings and resources, including MCP server clients.
+ *  Deferred by the caller while a turn is running. */
+export const reloadEngine = () =>
+	sendCommand({ type: "reload" }) as Promise<{ success: boolean }>;
 
 /** Reconnect one server, or every server when `name` is omitted. A call made
  *  during a turn is deferred by the engine and applied at the natural turn end. */

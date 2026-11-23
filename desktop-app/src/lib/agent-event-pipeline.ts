@@ -663,6 +663,20 @@ export function processAgentEvent(event: rpc.RpcEvent, deps: AgentEventDeps): vo
 			window.dispatchEvent(new CustomEvent("a-coder:oauth-status", { detail: oauth }));
 			break;
 		}
+		case "mcp_oauth_status": {
+			const oauth = event as import("./rpc").McpOAuthStatusEvent;
+			if (oauth.phase === "browser" && oauth.url) {
+				openExternalLink(oauth.url, { forceDefault: true });
+			}
+			if (oauth.phase === "error" && oauth.error) {
+				toast.error("MCP sign-in failed", oauth.error);
+			}
+			if (oauth.phase === "success") {
+				toast.success("MCP server connected", oauth.name);
+			}
+			window.dispatchEvent(new CustomEvent("a-coder:mcp-oauth-status", { detail: oauth }));
+			break;
+		}
 		case "compaction_start":
 			// Show the compacting state immediately. isCompacting only used
 			// to sync via syncEngineState (connect / session switch), so a

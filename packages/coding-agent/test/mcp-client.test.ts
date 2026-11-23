@@ -9,7 +9,12 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { CallToolRequestSchema, type JSONRPCMessage, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { McpClient, type McpDiscoveredTool, resolveHeaderPlaceholders } from "../src/core/mcp/client.ts";
+import {
+	McpClient,
+	type McpDiscoveredTool,
+	resolveEnvPlaceholders,
+	resolveHeaderPlaceholders,
+} from "../src/core/mcp/client.ts";
 import { firstClassToolName, formatMcpResult, MAX_FIRST_CLASS_TOOLS } from "../src/core/mcp/inline-extension.ts";
 import type { McpServerConfig } from "../src/core/mcp/types.ts";
 
@@ -342,6 +347,34 @@ describe("resolveHeaderPlaceholders", () => {
 	it("returns undefined for absent headers", () => {
 		expect(resolveHeaderPlaceholders(undefined)).toBeUndefined();
 		expect(resolveHeaderPlaceholders({})).toBeUndefined();
+	});
+});
+
+describe("resolveEnvPlaceholders", () => {
+	const PH = (name: string): string => ["$", "{", name, "}"].join("");
+
+	it("expands stdio environment placeholders and drops missing variables", () => {
+		const previous = process.env.MCP_TEST_FIGMA_KEY;
+		process.env.MCP_TEST_FIGMA_KEY = "figd_from_env";
+		try {
+			expect(resolveEnvPlaceholders({ FIGMA_API_KEY: PH("MCP_TEST_FIGMA_KEY") })).toEqual({
+				FIGMA_API_KEY: "figd_from_env",
+			});
+			expect(
+				resolveEnvPlaceholders({
+					FIGMA_API_KEY: PH("MCP_TEST_MISSING_KEY"),
+					GODOT_PATH: "/Applications/Godot.app",
+				}),
+			).toEqual({ GODOT_PATH: "/Applications/Godot.app" });
+		} finally {
+			if (previous === undefined) delete process.env.MCP_TEST_FIGMA_KEY;
+			else process.env.MCP_TEST_FIGMA_KEY = previous;
+		}
+	});
+
+	it("returns undefined when there is nothing to pass", () => {
+		expect(resolveEnvPlaceholders(undefined)).toBeUndefined();
+		expect(resolveEnvPlaceholders({})).toBeUndefined();
 	});
 });
 

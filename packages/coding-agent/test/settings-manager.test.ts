@@ -849,10 +849,10 @@ describe("SettingsManager", () => {
 	});
 
 	describe("fresh-install MCP server seed", () => {
-		it("seeds the built-in browser-control and Composio servers into a fresh agent dir and persists them", async () => {
+		it("seeds browser, Composio and the disabled app integrations into a fresh agent dir and persists them", async () => {
 			const manager = SettingsManager.create(projectDir, agentDir);
 			const servers = manager.getMcpServers();
-			expect(servers).toHaveLength(2);
+			expect(servers).toHaveLength(8);
 			const byName = new Map(servers.map((s) => [s.name, s]));
 
 			const chrome = byName.get("chrome-devtools");
@@ -872,12 +872,22 @@ describe("SettingsManager", () => {
 			expect(composio?.headers?.["x-consumer-api-key"]).toBe(PH);
 			expect(composio?.timeoutMs).toBe(300000);
 
+			for (const name of ["blender", "unity", "unreal-engine", "figma", "godot", "roblox-studio"]) {
+				expect(byName.get(name)?.disabled).toBe(true);
+			}
+			expect(byName.get("blender")?.commandOrUrl).toBe("uvx");
+			expect(byName.get("blender")?.args).toEqual(["mcp-for-blender"]);
+			expect(byName.get("figma")?.transport).toBe("stdio");
+			expect(byName.get("figma")?.env?.FIGMA_API_KEY).toBe("$" + "{FIGMA_API_KEY}");
+			expect(byName.get("figma-oauth")).toBeUndefined();
+
 			// The seed persists immediately: later partial saves must not drop it.
 			await manager.flush();
 			const persisted = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8"));
-			expect(persisted.mcpServers).toHaveLength(2);
+			expect(persisted.mcpServers).toHaveLength(8);
 			expect(persisted.mcpServers.map((s: { name: string }) => s.name)).toContain("chrome-devtools");
 			expect(persisted.mcpServers.map((s: { name: string }) => s.name)).toContain("composio");
+			expect(persisted.mcpServers.map((s: { name: string }) => s.name)).toContain("roblox-studio");
 		});
 
 		it("survives a subsequent unrelated settings save", async () => {
@@ -896,7 +906,7 @@ describe("SettingsManager", () => {
 			await SettingsManager.create(projectDir, agentDir).flush();
 
 			const manager = SettingsManager.create(projectDir, agentDir);
-			expect(manager.getMcpServers()).toHaveLength(2);
+			expect(manager.getMcpServers()).toHaveLength(8);
 			manager.setMcpServers([]);
 			await manager.flush();
 

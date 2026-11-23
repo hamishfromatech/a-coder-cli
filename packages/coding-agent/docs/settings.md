@@ -83,7 +83,7 @@ Use `/trust` in interactive mode to save a project trust decision for future ses
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `mcpServers` | array | chrome-devtools + composio on fresh installs | MCP servers (stdio/http/sse) exposed as `mcp__<server>__<tool>` tools; each entry supports `timeoutMs`, `env`, `headers` (with `${ENV_VAR}` placeholders), `disabled`, `suppressStderrPatterns` (the chrome-devtools stderr noise is auto-suppressed when unset), and `forwardStderr` (default `false`; stdio server stderr is written to `~/.a-coder/cli/agent/logs/mcp/<server>.log` instead of the terminal). See [Built-in MCP servers](#built-in-mcp-servers) |
+| `mcpServers` | array | chrome-devtools + composio enabled, six app integrations disabled on fresh installs | MCP servers (stdio/http/sse) exposed as `mcp__<server>__<tool>` tools; each entry supports `timeoutMs`, `env`, `headers` (both support `${ENV_VAR}` placeholders), `disabled`, `oauth` (HTTP/SSE browser sign-in), `suppressStderrPatterns` (the chrome-devtools stderr noise is auto-suppressed when unset), and `forwardStderr` (default `false`; stdio server stderr is written to `~/.a-coder/cli/agent/logs/mcp/<server>.log` instead of the terminal). See [Built-in MCP servers](#built-in-mcp-servers) |
 
 MCP server lists merge across scopes: the union of the global agent settings and the project `.a-coder-cli/settings.json` loads, keyed by name — a project entry with the same name fully replaces the global one (and vice versa: project servers never shadow globals they don't define). Every server is annotated with its `source` (`global` | `project`); `/mcp` shows project-defined servers with a `(project)` label. Untrusted projects contribute no servers.
 
@@ -444,8 +444,10 @@ Project settings (`.a-coder-cli/settings.json`) override global settings. Nested
 
 ## Built-in MCP servers
 
-Fresh installations (a global settings file that does not exist yet) are seeded with two MCP servers so
-browser control and the Composio app gateway work out of the box.
+Fresh installations (a global settings file that does not exist yet) are seeded with eight MCP servers:
+chrome-devtools and Composio are enabled, while six app integrations are seeded **disabled**. Existing
+settings files are not modified; the desktop MCP editor's **App integrations** catalog can add any of
+the six to an existing install.
 
 ### Chrome DevTools
 
@@ -483,6 +485,56 @@ endpoint): set `COMPOSIO_API_KEY` in the environment, or edit the entry's header
 servers editor. Header values support exactly one `${ENV_VAR}` placeholder; a placeholder with no
 matching environment variable is dropped (the connection then fails with the server's 401) and no
 half-substituted value is ever sent.
+
+### App integrations
+
+These are third-party MCP servers; their code is not bundled. They are shipped disabled because each
+needs the matching app (and often a plugin or token). Enable one only when the app is ready, then click
+**Apply** in the MCP editor to reload the engine.
+
+| Name | Transport | Launch | Prerequisites |
+| --- | --- | --- | --- |
+| `blender` | stdio | `uvx mcp-for-blender` | uv, Blender 4.x, MCP for Blender add-on enabled |
+| `unity` | stdio | `uvx --from mcpforunityserver mcp-for-unity --transport stdio` | Unity Editor + MCP for Unity package, Python 3.10+ and uv |
+| `unreal-engine` | http | `http://127.0.0.1:3000/mcp` | Unreal Engine 5 + EngineWire plugin; Native MCP Server on port 3000 |
+| `figma` | stdio | `npx -y figma-developer-mcp --stdio` | `FIGMA_API_KEY` personal access token |
+| `godot` | stdio | `npx -y @coding-solo/godot-mcp` | Node.js/npx; optional `GODOT_PATH` |
+| `roblox-studio` | stdio | `npx -y robloxstudio-mcp@latest` | Roblox Studio plugin; Allow HTTP Requests enabled |
+
+The Figma and Godot entries ship with `${ENV_VAR}` placeholders in `env`; a missing environment
+variable is dropped, so the server sees its own default or reports the missing credential instead of
+receiving the literal placeholder. You can also replace the value in the editor's Environment variables
+section. Keep the Blender socket on localhost; it has no authentication.
+
+The desktop editor also shows each entry's setup requirements and a link to its upstream guide.
+
+The catalog also includes an optional `figma-oauth` entry for the official
+`https://mcp.figma.com/mcp` server. Figma's dynamic client registration endpoint currently rejects
+generic clients, so the default `figma` entry uses the token-based server; use `figma-oauth` only if
+your Figma setup accepts a generic OAuth client or you supply `oauth.clientId` / `clientSecret`.
+
+### OAuth MCP servers
+
+HTTP and SSE servers can use the standard MCP OAuth 2.1 authorization-code flow with PKCE:
+
+```json
+{
+  "name": "figma-oauth",
+  "transport": "http",
+  "commandOrUrl": "https://mcp.figma.com/mcp",
+  "oauth": true
+}
+```
+
+Set `oauth` to an object to add `scopes`, a pre-registered `clientId` / `clientSecret` (the secret may
+be `${ENV_VAR}`), or a SEP-991 `clientMetadataUrl`. Without a pre-registered client the engine uses
+dynamic client registration. The engine binds a loopback callback at
+`http://127.0.0.1:45454/oauth/callback`; override the port with
+`A_CODER_CLI_MCP_OAUTH_PORT` before starting the engine (changing it after registration may require
+**Reset sign-in**). Tokens and client registration are stored in
+`~/.a-coder/cli/agent/mcp-oauth/<server>.json` with owner-only permissions, never in settings.json.
+Access tokens refresh automatically. Use **Connect** / **Reset sign-in** in the desktop MCP editor;
+the CLI/RPC surface is `mcp_oauth_start` and `mcp_oauth_disconnect`.
 
 The seed is written to `~/.a-coder/cli/agent/settings.json` on first run; from then on the entries are
 ordinary — edit or remove them in the desktop app's MCP servers editor or in the file itself. Existing

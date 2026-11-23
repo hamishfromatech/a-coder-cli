@@ -1,9 +1,26 @@
+/** Optional OAuth settings for an HTTP/SSE MCP server. `true` uses the
+ *  engine's loopback callback and dynamic client registration. */
+export interface McpOAuthSettings {
+	/** Requested scopes; merged with the server's advertised scopes by the SDK. */
+	scopes?: string[];
+	/** Pre-registered client id. Omit to use dynamic client registration. */
+	clientId?: string;
+	/** Pre-registered client secret. Supports a single `${ENV_VAR}` placeholder. */
+	clientSecret?: string;
+	/** SEP-991 client metadata document URL, when the server supports it. */
+	clientMetadataUrl?: string;
+}
+
 export interface McpServerConfig {
 	name: string;
 	transport: "stdio" | "http" | "sse";
 	commandOrUrl: string;
 	args?: string[];
+	/** Environment entries. A value that is exactly `${ENV_VAR}` is resolved
+	 *  from the parent environment at connect time; a missing variable drops
+	 *  the key rather than passing the literal placeholder. */
 	env?: Record<string, string>;
+	/** HTTP/SSE headers. Values support the same single `${ENV_VAR}` form. */
 	headers?: Record<string, string>;
 	/**
 	 * Regex sources (tested per stderr line) whose matching lines are dropped
@@ -26,6 +43,8 @@ export interface McpServerConfig {
 	 */
 	timeoutMs?: number;
 	disabled?: boolean;
+	/** Enable OAuth for an HTTP/SSE server. */
+	oauth?: boolean | McpOAuthSettings;
 	/**
 	 * Where this server's effective config came from: the project
 	 * `.a-coder-cli/settings.json` (same-name project overrides global) or the

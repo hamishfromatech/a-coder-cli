@@ -22,6 +22,7 @@ import type {
 	CronVariable,
 } from "../../core/cron/types.ts";
 import type { InProcessSubAgentRecord } from "../../core/extensions/types.ts";
+import type { McpAppCatalogEntry } from "../../core/mcp/builtin-app-servers.ts";
 import type { McpServerState } from "../../core/mcp/status-store.ts";
 import type {
 	Coworker,
@@ -111,7 +112,11 @@ export type RpcCommand =
 
 	// MCP
 	| { id?: string; type: "mcp_status" }
+	| { id?: string; type: "mcp_catalog" }
 	| { id?: string; type: "mcp_reconnect"; name?: string }
+	| { id?: string; type: "mcp_oauth_start"; name: string }
+	| { id?: string; type: "mcp_oauth_disconnect"; name: string }
+	| { id?: string; type: "reload" }
 
 	// Queue modes
 	| { id?: string; type: "set_steering_mode"; mode: "all" | "one-at-a-time" }
@@ -495,10 +500,32 @@ export type RpcResponse =
 	| {
 			id?: string;
 			type: "response";
+			command: "mcp_catalog";
+			success: true;
+			data: { servers: McpAppCatalogEntry[] };
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "mcp_oauth_start";
+			success: true;
+			data: { started: boolean; name: string };
+	  }
+	| {
+			id?: string;
+			type: "response";
+			command: "mcp_oauth_disconnect";
+			success: true;
+			data: { ok: boolean; name: string };
+	  }
+	| {
+			id?: string;
+			type: "response";
 			command: "mcp_reconnect";
 			success: true;
 			data: { ok: boolean; error?: string; deferred: boolean; name?: string };
 	  }
+	| { id?: string; type: "response"; command: "reload"; success: true }
 
 	// Queue modes
 	| { id?: string; type: "response"; command: "set_steering_mode"; success: true }

@@ -462,7 +462,77 @@ Return the process-wide MCP connection snapshot:
 ]}}
 ```
 
-Status is one of `connecting`, `ok`, `error`, or `disabled`; errors carry `error`, and successful servers carry `toolCount`.
+Status is one of `connecting`, `ok`, `error`, or `disabled`; errors carry `error`, successful servers carry `toolCount`, and an OAuth server that needs sign-in sets `authRequired: true`.
+
+#### mcp_catalog
+
+Return the built-in app integrations the desktop can add to the MCP server list:
+
+```json
+{"type": "mcp_catalog"}
+```
+
+```json
+{"type": "response", "command": "mcp_catalog", "success": true, "data": {"servers": [
+  {
+    "id": "blender",
+    "name": "blender",
+    "title": "Blender",
+    "description": "Model, dress and light scenes through the MCP for Blender add-on.",
+    "requirements": "uv, Blender 4.x, and the MCP for Blender add-on enabled in Blender.",
+    "docsUrl": "https://github.com/ahujasid/mcp-for-blender",
+    "config": {"name": "blender", "transport": "stdio", "commandOrUrl": "uvx", "args": ["mcp-for-blender"]}
+  }
+]}}
+```
+
+Entries are metadata plus a ready-to-save `config`; the desktop adds them disabled.
+
+#### mcp_oauth_start
+
+Start the browser OAuth flow for one HTTP/SSE server. Returns immediately; progress arrives as
+`mcp_oauth_status` events:
+
+```json
+{"type": "mcp_oauth_start", "name": "figma"}
+```
+
+```json
+{"type": "response", "command": "mcp_oauth_start", "success": true,
+ "data": {"started": true, "name": "figma"}}
+```
+
+```json
+{"type": "mcp_oauth_status", "name": "figma", "phase": "browser", "url": "https://..."}
+{"type": "mcp_oauth_status", "name": "figma", "phase": "success"}
+{"type": "mcp_oauth_status", "name": "figma", "phase": "error", "error": "..."}
+```
+
+The desktop opens the URL. The engine stores tokens under `mcp-oauth/`, reconnects the server, and
+reports success. Sign-in is rejected while a turn is streaming.
+
+#### mcp_oauth_disconnect
+
+Clear stored OAuth credentials for a server and reload the session:
+
+```json
+{"type": "mcp_oauth_disconnect", "name": "figma"}
+```
+
+#### reload
+
+Reload the engine's settings and resources, including MCP server clients, after changing
+`mcpServers`:
+
+```json
+{"type": "reload"}
+```
+
+```json
+{"type": "response", "command": "reload", "success": true}
+```
+
+The command is rejected while a turn is streaming so a live tool call is never interrupted.
 
 #### mcp_reconnect
 
@@ -1356,6 +1426,7 @@ Events are streamed to stdout as JSON lines during agent operation. Events do NO
 | `office_activity` | Office activity feed entry (errand/huddle activity for the Activity inbox) |
 | `background_processes_update` | Background process list changed (bash background jobs and their states) |
 | `oauth_login_status` | OAuth login progress for `oauth_login`: `phase` is `started`, `browser`, `device_code`, `progress`, `success`, or `error` |
+| `mcp_oauth_status` | MCP OAuth progress for `mcp_oauth_start`: `{name, phase: "browser" \| "success" \| "error", url?, error?, message?}` |
 
 ### Contract 2: identity, deltas, and batches
 
