@@ -2,7 +2,7 @@ import { openAICompletionsApi } from "../api/openai-completions.lazy.ts";
 import { defaultProviderAuthContext } from "../auth/context.ts";
 import { envApiKeyAuth } from "../auth/helpers.ts";
 import { createProvider, type Provider } from "../models.ts";
-import type { Model } from "../types.ts";
+import type { Model, OpenAICompletionsCompat } from "../types.ts";
 import { OLLAMA_CLOUD_MODELS } from "./ollama-cloud.models.ts";
 import {
 	fetchOllamaShowCaps,
@@ -10,6 +10,29 @@ import {
 	type OllamaTagsResponse,
 	parseContextLengthFromModelInfo,
 } from "./ollama-context.ts";
+
+const OLLAMA_CLOUD_COMPAT: OpenAICompletionsCompat = {
+	supportsStore: false,
+	supportsDeveloperRole: false,
+	// Ollama maps `reasoning_effort: "none"` to thinking disabled and accepts
+	// the other levels as thinking on (verified against ollama.com, 2026-11).
+	supportsReasoningEffort: true,
+	maxTokensField: "max_tokens",
+	supportsStrictMode: false,
+	supportsLongCacheRetention: false,
+	// Ollama Cloud's gateway rejects request bodies above ~16MB with 400
+	// "failed to read request body". Images accumulate in history (every
+	// turn re-sends the full conversation), so cap the total image payload
+	// per request and elide the oldest images beyond it.
+	maxImageBytesPerRequest: 12 * 1024 * 1024,
+};
+
+export interface OllamaCloudModelCaps {
+	contextWindow?: number;
+	maxTokens?: number;
+	/** Server-reported capability tags (`vision`, `thinking`, `tools`, ...). */
+	capabilities?: readonly string[];
+}
 
 export async function resolveOllamaCloudModelCaps(
 	id: string,
@@ -23,10 +46,7 @@ export async function resolveOllamaCloudModelCaps(
 	});
 }
 
-export function createOllamaCloudModel(
-	id: string,
-	caps?: { contextWindow?: number; maxTokens?: number; vision?: boolean },
-): Model<"openai-completions"> {
+export function createOllamaCloudModel(id: string, caps?: OllamaCloudModelCaps): Model<"openai-completions"> {
 	const idLower = id.toLowerCase();
 	const isKimi = idLower.includes("kimi");
 	const defaultContextWindow = isKimi ? 1048576 : 128000;
@@ -44,27 +64,18 @@ export function createOllamaCloudModel(
 			: idLower.includes("deepseek")
 				? Math.min(65536, contextWindow)
 				: contextWindow;
+	const vision = caps?.capabilities?.includes("vision") ?? false;
+	const reasoning = caps?.capabilities?.includes("thinking") ?? false;
 	return {
 		id,
 		name: `Ollama Cloud: ${id}`,
 		api: "openai-completions",
 		provider: "ollama-cloud",
 		baseUrl: "https://ollama.com/v1",
-		compat: {
-			supportsStore: false,
-			supportsDeveloperRole: false,
-			supportsReasoningEffort: false,
-			maxTokensField: "max_tokens",
-			supportsStrictMode: false,
-			supportsLongCacheRetention: false,
-			// Ollama Cloud's gateway rejects request bodies above ~16MB with 400
-			// "failed to read request body". Images accumulate in history (every
-			// turn re-sends the full conversation), so cap the total image payload
-			// per request and elide the oldest images beyond it.
-			maxImageBytesPerRequest: 12 * 1024 * 1024,
-		},
-		reasoning: false,
-		input: caps?.vision ? ["text", "image"] : ["text"],
+		compat: { ...OLLAMA_CLOUD_COMPAT },
+		reasoning,
+		thinkingLevelMap: reasoning ? { off: "none" } : undefined,
+		input: vision ? ["text", "image"] : ["text"],
 		cost: {
 			input: 0,
 			output: 0,
@@ -97,20 +108,19 @@ export async function fetchOllamaCloudModels(
 	const tagsJson = (await tagsRes.json()) as OllamaTagsResponse;
 	const tags = tagsJson.models ?? [];
 
-	// Ollama Cloud `/api/tags` carries no `capabilities`, so vision support is
-	// read from `/api/show` per model (the source of truth). Probe every model
-	// in parallel — `/api/show` also gives a more accurate context window.
+	// Ollama Cloud `/api/tags` reports capabilities on current servers, but
+	// `/api/show` remains the only source for the context window (and stays
+	// authoritative for capabilities). Probe every model in parallel; fall back
+	// to the tag list when a probe fails.
 	const models = await Promise.all(
 		tags.map(async (tag) => {
 			const name = tag.name || tag.model;
 			if (!name) return undefined;
 			const tagsContextWindow = parseContextLengthFromModelInfo(tag.model_info);
-			const tagsVision = tag.capabilities?.includes("vision") ?? false;
 			const caps = await resolveOllamaCloudModelCaps(name, apiKey, signal);
-			const vision = caps?.capabilities?.includes("vision") ?? tagsVision;
 			return createOllamaCloudModel(name, {
 				contextWindow: caps?.contextWindow ?? tagsContextWindow,
-				vision,
+				capabilities: caps?.capabilities ?? tag.capabilities,
 			});
 		}),
 	);

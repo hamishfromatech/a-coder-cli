@@ -1,13 +1,29 @@
 import { openAICompletionsApi } from "../api/openai-completions.lazy.ts";
 import type { ApiKeyAuth } from "../auth/types.ts";
 import { createProvider, type Provider } from "../models.ts";
-import type { Model } from "../types.ts";
+import type { Model, OpenAICompletionsCompat } from "../types.ts";
 import {
-	fetchOllamaContextWindow,
+	fetchOllamaShowCaps,
 	type OllamaTagsResponse,
 	ollamaNativeOrigin,
 	parseContextLengthFromModelInfo,
 } from "./ollama-context.ts";
+
+/**
+ * Ollama's OpenAI-compatible endpoint maps `reasoning_effort: "none"` to
+ * thinking disabled and accepts the other effort levels as thinking on
+ * (checked against Ollama 0.40 and ollama.com, 2026-11). Models without the
+ * `thinking` capability never receive the parameter because `reasoning` stays
+ * false for them.
+ */
+const OLLAMA_COMPAT: OpenAICompletionsCompat = {
+	supportsStore: false,
+	supportsDeveloperRole: false,
+	supportsReasoningEffort: true,
+	maxTokensField: "max_tokens",
+	supportsStrictMode: false,
+	supportsLongCacheRetention: false,
+};
 
 const PLACEHOLDER_MODEL: Model<"openai-completions"> = {
 	id: "local",
@@ -15,14 +31,7 @@ const PLACEHOLDER_MODEL: Model<"openai-completions"> = {
 	api: "openai-completions",
 	provider: "ollama",
 	baseUrl: "http://localhost:11434/v1",
-	compat: {
-		supportsStore: false,
-		supportsDeveloperRole: false,
-		supportsReasoningEffort: false,
-		maxTokensField: "max_tokens",
-		supportsStrictMode: false,
-		supportsLongCacheRetention: false,
-	},
+	compat: { ...OLLAMA_COMPAT },
 	reasoning: false,
 	input: ["text", "image"],
 	cost: {
@@ -58,7 +67,12 @@ export function resolveOllamaBaseUrl(override?: string): string {
 	return DEFAULT_BASE_URL;
 }
 
-export function createOllamaModel(id: string, baseUrl?: string, contextWindow?: number): Model<"openai-completions"> {
+export function createOllamaModel(
+	id: string,
+	baseUrl?: string,
+	contextWindow?: number,
+	capabilities?: readonly string[],
+): Model<"openai-completions"> {
 	const resolvedContextWindow = contextWindow && contextWindow > 0 ? contextWindow : 128000;
 	// `:cloud` models run on Ollama's hosted backend — the same servers as the
 	// ollama-cloud provider, where the per-model output cap equals the context
@@ -67,21 +81,20 @@ export function createOllamaModel(id: string, baseUrl?: string, contextWindow?: 
 	// layer still retries without max_tokens if the server rejects the budget.
 	const isCloudModel = id.toLowerCase().endsWith(":cloud");
 	const maxTokens = isCloudModel ? resolvedContextWindow : 4096;
+	// `/api/tags` and `/api/show` report `thinking` for reasoning models. Only
+	// enable reasoning when the server says so; older servers omit capabilities.
+	const reasoning = capabilities?.includes("thinking") ?? false;
 	return {
 		id,
 		name: `Ollama: ${id}`,
 		api: "openai-completions",
 		provider: "ollama",
 		baseUrl: resolveOllamaBaseUrl(baseUrl),
-		compat: {
-			supportsStore: false,
-			supportsDeveloperRole: false,
-			supportsReasoningEffort: false,
-			maxTokensField: "max_tokens",
-			supportsStrictMode: false,
-			supportsLongCacheRetention: false,
-		},
-		reasoning: false,
+		compat: { ...OLLAMA_COMPAT },
+		reasoning,
+		thinkingLevelMap: reasoning ? { off: "none" } : undefined,
+		// Kept permissive on purpose: servers that omit `capabilities` would
+		// otherwise drop images for models the user knows are vision-capable.
 		input: ["text", "image"],
 		cost: {
 			input: 0,
@@ -99,10 +112,10 @@ export async function fetchOllamaModels(
 	signal?: AbortSignal,
 ): Promise<Model<"openai-completions">[]> {
 	// The local Ollama server serves model tags at the native /api/tags endpoint.
-	// The OpenAI-compatible /v1/models list is also available but doesn't carry
-	// context windows, so we prefer /api/tags (model_info.context_length) and
-	// fill in details from /api/show when the server omits them — mirroring
-	// Ollama Cloud.
+	// The OpenAI-compatible /v1/models list is also available but carries neither
+	// context windows nor capabilities. Older servers include model_info on
+	// /api/tags; current ones omit it and report capabilities instead, so probe
+	// /api/show for whichever signal is missing — mirroring Ollama Cloud.
 	const resolvedBaseUrl = resolveOllamaBaseUrl(baseUrl);
 	const origin = ollamaNativeOrigin(resolvedBaseUrl);
 	if (!origin) {
@@ -123,25 +136,22 @@ export async function fetchOllamaModels(
 		const name = tag.name || tag.model;
 		if (!name) continue;
 
-		// Start with whatever /api/tags already tells us.
-		const contextWindow = parseContextLengthFromModelInfo(tag.model_info);
-		const base = createOllamaModel(name, baseUrl, contextWindow);
-
-		// Probe /api/show for a more accurate context window when /api/tags
-		// didn't include model_info or omitted context_length.
-		if (!contextWindow) {
-			const probed = await fetchOllamaContextWindow(resolvedBaseUrl, name, { signal });
-			if (probed && probed > 0) {
-				base.contextWindow = probed;
-				// :cloud models budget output to the (probed) context window; the
-				// constructed default was derived from the assumed 128k context.
-				if (name.toLowerCase().endsWith(":cloud")) {
-					base.maxTokens = probed;
+		// /api/tags carries context_length and capabilities on older servers;
+		// current ones omit model_info and report capabilities. Probe /api/show
+		// whenever either signal is missing (it returns both).
+		let contextWindow = parseContextLengthFromModelInfo(tag.model_info);
+		let capabilities = tag.capabilities;
+		if (!contextWindow || !capabilities) {
+			const caps = await fetchOllamaShowCaps(resolvedBaseUrl, name, { signal });
+			if (caps) {
+				if (!contextWindow && caps.contextWindow && caps.contextWindow > 0) {
+					contextWindow = caps.contextWindow;
 				}
+				capabilities = caps.capabilities ?? capabilities;
 			}
 		}
 
-		models.push(base);
+		models.push(createOllamaModel(name, baseUrl, contextWindow, capabilities));
 	}
 	return models;
 }

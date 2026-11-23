@@ -635,7 +635,7 @@ describe("Ollama provider", () => {
 	});
 
 	it("fetches models from the native /api/tags endpoint and probes /api/show for context windows", async () => {
-		const fetchMock = vi.fn(async (input: unknown): Promise<Response> => {
+		const fetchMock = vi.fn(async (input: unknown, init?: RequestInit): Promise<Response> => {
 			const url = typeof input === "string" ? input : (input as Request).url;
 			if (url === "http://localhost:11434/api/tags") {
 				return new Response(
@@ -657,26 +657,48 @@ describe("Ollama provider", () => {
 				);
 			}
 			if (url === "http://localhost:11434/api/show") {
-				return new Response(JSON.stringify({ model_info: { "llama.context_length": 32768 } }), {
-					status: 200,
-					headers: { "content-type": "application/json" },
-				});
+				const body = init?.body ? JSON.parse(init.body as string) : {};
+				const isQwen = String(body.model ?? "").startsWith("qwen");
+				return new Response(
+					JSON.stringify({
+						model_info: { "llama.context_length": 32768 },
+						capabilities: isQwen ? ["completion", "thinking", "tools"] : ["completion", "vision"],
+					}),
+					{ status: 200, headers: { "content-type": "application/json" } },
+				);
 			}
 			throw new Error(`Unexpected fetch: ${url}`);
 		});
 		vi.stubGlobal("fetch", fetchMock);
 
 		const models = await fetchOllamaModels();
-		expect(fetchMock).toHaveBeenCalledTimes(2); // 1 tags + 1 show (only qwen2.5 probed)
+		// 1 tags + 2 show: /api/tags has context_length for llama but no
+		// capabilities, and neither for qwen2.5:7b.
+		expect(fetchMock).toHaveBeenCalledTimes(3);
 		expect(models.map((m) => m.id)).toEqual(["llama3.2:latest", "qwen2.5:7b"]);
 		expect(models[0]?.contextWindow).toBe(131072); // from /api/tags model_info
+		expect(models[0]?.reasoning).toBe(false);
 		expect(models[1]?.contextWindow).toBe(32768); // from /api/show probe
+		expect(models[1]?.reasoning).toBe(true);
+		expect(models[1]?.thinkingLevelMap?.off).toBe("none");
 		expect(fetchMock).toHaveBeenCalledWith(
 			"http://localhost:11434/api/tags",
 			expect.objectContaining({ headers: { accept: "application/json" } }),
 		);
 
 		vi.unstubAllGlobals();
+	});
+
+	it("createOllamaModel derives thinking support from capabilities", () => {
+		const thinking = createOllamaModel("qwen3.5:4b", undefined, 32768, ["completion", "thinking", "tools"]);
+		expect(thinking.reasoning).toBe(true);
+		expect(thinking.thinkingLevelMap?.off).toBe("none");
+		expect(thinking.compat?.supportsReasoningEffort).toBe(true);
+
+		// Servers without capability tags keep the previous behavior.
+		const unknown = createOllamaModel("llama3.2:latest");
+		expect(unknown.reasoning).toBe(false);
+		expect(unknown.thinkingLevelMap).toBeUndefined();
 	});
 
 	it("createOllamaModel applies a discovered context window", () => {

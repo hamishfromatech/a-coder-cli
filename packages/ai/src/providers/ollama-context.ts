@@ -26,9 +26,10 @@ export interface OllamaShowResponse {
 	/** Low-level architecture metadata; keys like "<arch>.context_length". */
 	model_info?: Record<string, unknown>;
 	/**
-	 * Server-reported capability tags, e.g. ["completion","tools","vision"].
-	 * Only present on `/api/show` (Ollama Cloud `/api/tags` omits it); this is the
-	 * authoritative source for vision support.
+	 * Server-reported capability tags, e.g. ["completion","thinking","tools","vision"].
+	 * Also returned by `/api/tags` on current servers (Ollama >= 0.40 and
+	 * ollama.com, checked 2026-11), but `/api/show` stays the authoritative
+	 * source because older servers omit them from the tag list.
 	 */
 	capabilities?: string[];
 }
@@ -48,7 +49,16 @@ export interface OllamaTagsModel {
 		parameter_size: string;
 		quantization_level: string;
 	};
+	/**
+	 * Capability tags. Current servers report these directly on `/api/tags`;
+	 * older ones omit them, in which case `/api/show` is needed.
+	 */
 	capabilities?: string[];
+	/**
+	 * Architecture metadata. Current servers omit this from `/api/tags` (their
+	 * `details.context_length` is the GGUF maximum, not the runtime `num_ctx`),
+	 * so callers fall back to `/api/show`.
+	 */
 	model_info?: Record<string, unknown>;
 }
 
@@ -151,10 +161,10 @@ export interface OllamaShowCaps {
 
 /**
  * Fetch `/api/show` caps for an Ollama model: the effective context window AND
- * the server-reported capabilities (the source of truth for vision support —
- * Ollama Cloud `/api/tags` omits capabilities, so `/api/show` is required).
- * Best-effort: returns undefined on any network/parse failure so callers can
- * fall back to the static catalog value.
+ * the server-reported capabilities (authoritative for vision and thinking —
+ * `/api/tags` also reports capabilities on current servers, but older ones do
+ * not). Best-effort: returns undefined on any network/parse failure so callers
+ * can fall back to the static catalog value.
  */
 export async function fetchOllamaShowCaps(
 	baseUrl: string,

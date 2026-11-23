@@ -20,6 +20,8 @@
 
 ### Added
 
+- Ollama and Ollama Cloud models derive `reasoning` from the server's `thinking` capability (`/api/tags` and `/api/show`) instead of hardcoding it off, so thinking models expose the thinking controls and send `reasoning_effort: "none"` when thinking is off. Discovery now also probes `/api/show` when `/api/tags` omits capability tags, as current servers do, and keeps using `/api/show` for the context window because `details.context_length` is the GGUF maximum rather than the runtime `num_ctx`.
+
 - Device-code auth info gains optional `openBrowserOnConfirm` and `copyCodeOnConfirm` (both default to true), so clients can honor a provider that does not want the browser opened or the code copied (#9282).
 - Export `getSystemMessageText()` and `renderSystemMessageUpdate()` so consumers can render system messages the same way the model receives them.
 

@@ -43,6 +43,8 @@ describe("Ollama Cloud", () => {
 				const contextLength = body.model === "qwen2.5-coder" ? 32768 : 128000;
 				return jsonResponse({
 					model_info: { "llama.context_length": contextLength },
+					capabilities:
+						body.model === "qwen2.5-coder" ? ["completion", "thinking", "tools"] : ["completion", "vision"],
 				});
 			}
 			throw new Error(`Unexpected fetch: ${url}`);
@@ -55,12 +57,49 @@ describe("Ollama Cloud", () => {
 		expect(refreshed.map((m) => m.id)).toEqual(["llama3.3", "qwen2.5-coder"]);
 		expect(refreshed[0]?.contextWindow).toBe(128000);
 		expect(refreshed[0]?.maxTokens).toBe(128000);
+		expect(refreshed[0]?.reasoning).toBe(false);
+		expect(refreshed[0]?.input).toContain("image");
 		expect(refreshed[1]?.contextWindow).toBe(32768);
 		expect(refreshed[1]?.maxTokens).toBe(32768);
+		expect(refreshed[1]?.reasoning).toBe(true);
+		expect(refreshed[1]?.thinkingLevelMap?.off).toBe("none");
+		expect(refreshed[1]?.input).toEqual(["text"]);
 		for (const model of refreshed) {
 			expect(model.baseUrl).toBe("https://ollama.com/v1");
 			expect(model.provider).toBe("ollama-cloud");
 		}
+	});
+
+	it("falls back to /api/tags capabilities when /api/show fails", async () => {
+		const fetchMock = vi.fn(async (input: unknown): Promise<Response> => {
+			const url = getUrl(input);
+			if (url === "https://ollama.com/api/tags") {
+				return jsonResponse({
+					models: [
+						{
+							name: "glm-5.3-flash",
+							model: "glm-5.3-flash",
+							modified_at: "",
+							size: 0,
+							digest: "",
+							details: {},
+							capabilities: ["completion", "thinking", "tools", "vision"],
+						},
+					],
+				});
+			}
+			if (url === "https://ollama.com/api/show") {
+				return new Response("unavailable", { status: 503 });
+			}
+			throw new Error(`Unexpected fetch: ${url}`);
+		});
+
+		vi.stubGlobal("fetch", fetchMock);
+
+		const refreshed = await fetchOllamaCloudModels("test-key");
+		expect(refreshed[0]?.reasoning).toBe(true);
+		expect(refreshed[0]?.thinkingLevelMap?.off).toBe("none");
+		expect(refreshed[0]?.input).toContain("image");
 	});
 
 	it("caps DeepSeek models' maxTokens at the Ollama Cloud output limit", () => {
@@ -77,10 +116,18 @@ describe("Ollama Cloud", () => {
 		// model's context_length with 400 "max_tokens (1100000) exceeds model's
 		// maximum output tokens (1048576) for model glm-5.3-flash", so the real
 		// output cap equals the context window.
-		const glm = createOllamaCloudModel("glm-5.3-flash", { contextWindow: 1048576, vision: true });
+		const glm = createOllamaCloudModel("glm-5.3-flash", {
+			contextWindow: 1048576,
+			capabilities: ["completion", "thinking", "tools", "vision"],
+		});
 		expect(glm.maxTokens).toBe(1048576);
+		expect(glm.reasoning).toBe(true);
+		expect(glm.thinkingLevelMap?.off).toBe("none");
+		expect(glm.input).toContain("image");
 		// Without a probed context window, the per-family default applies.
 		const fallback = createOllamaCloudModel("llama3.3");
 		expect(fallback.maxTokens).toBe(128000);
+		expect(fallback.reasoning).toBe(false);
+		expect(fallback.input).toEqual(["text"]);
 	});
 });
