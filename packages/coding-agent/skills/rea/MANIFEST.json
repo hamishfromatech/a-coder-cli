@@ -1,0 +1,14 @@
+{
+	"source": "https://github.com/sgunin/reverseengineeranything",
+	"sourceCommit": "92617f965720aaa74ec20ad67291adc5e83677a1",
+	"license": "MIT",
+	"author": "morluto",
+	"generatedBy": "scripts/sync-external-skills.mjs",
+	"skills": [
+		{
+			"name": "reverse-engineer-anything",
+			"sourcePath": "skills/reverse-engineer-anything",
+			"sha256": "189303c05fcddf24b2c5bff2d43991d9aa5b7a26fb578fd87323f95f35d42425"
+		}
+	]
+}

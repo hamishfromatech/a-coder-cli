@@ -1,0 +1,123 @@
+{
+	"source": "https://github.com/NousResearch/hermes-agent",
+	"sourceCommit": "8f555f4f920066d088096718309e8e14a504009a",
+	"license": "MIT",
+	"generatedBy": "scripts/sync-hermes-skills.mjs",
+	"skills": [
+		{
+			"name": "computer-use",
+			"sourcePath": "skills/autonomous-ai-agents/computer-use",
+			"sha256": "4649b51a9f9502eb44a411c5c5a9b0251a95bfd58a05f14416917df3f3c669da"
+		},
+		{
+			"name": "architecture-diagram",
+			"sourcePath": "skills/creative/architecture-diagram",
+			"sha256": "0addf868879d458b726b0be323d7ac611dc8ca31757cde122cb60cad5c350f01"
+		},
+		{
+			"name": "baoyu-infographic",
+			"sourcePath": "skills/creative/baoyu-infographic",
+			"sha256": "e6278563a1d3928a6c2b4cd0880a42c0cfc4aab09c75dc52380a305f6a3453cd"
+		},
+		{
+			"name": "claude-design",
+			"sourcePath": "skills/creative/claude-design",
+			"sha256": "9f90c286d72e9c5eac55fb28e3eb311d7e6fd01180754a255f54944a7fd1753e"
+		},
+		{
+			"name": "design-md",
+			"sourcePath": "skills/creative/design-md",
+			"sha256": "e0a4cc66f10a183ed611b5d7e15454662b1d6801599e729dc40dbd2612a3c559"
+		},
+		{
+			"name": "humanizer",
+			"sourcePath": "skills/creative/humanizer",
+			"sha256": "c9bb020e12e9ab228a742ed2bd636875208a6603988e89365debe9e4f773c935"
+		},
+		{
+			"name": "p5js",
+			"sourcePath": "skills/creative/p5js",
+			"sha256": "d63dc51fa79de1a7a05137bc48f30adae04846c7bc88d9db006d351341036cdc"
+		},
+		{
+			"name": "popular-web-designs",
+			"sourcePath": "skills/creative/popular-web-designs",
+			"sha256": "65dd1f1c6e66ed6d6f5d99df23d1eb406be88b3efab992d018d7fc448dee6217"
+		},
+		{
+			"name": "youtube-content",
+			"sourcePath": "skills/media/youtube-content",
+			"sha256": "4bfe1badbe304f40e1bb516ecbe8ee643644c192827380c597e2fbd442ad2520"
+		},
+		{
+			"name": "competitor-news-monitor",
+			"sourcePath": "skills/research/competitor-news-monitor",
+			"sha256": "0b969e3ba6f9249f65febbab8aa352581f1106b90d800c5b5742242b8b0256e4"
+		},
+		{
+			"name": "grounded-citations",
+			"sourcePath": "skills/research/grounded-citations",
+			"sha256": "176e85b21b379f9f8e69d259a4b894e2d9e0a59dfdb06e26763d0769fca6ac31"
+		},
+		{
+			"name": "xurl",
+			"sourcePath": "skills/social-media/xurl",
+			"sha256": "cb85881b6faae36b27a6d8e63fd79fc5735909fb899fa6f195d46c1cace5bbcb"
+		},
+		{
+			"name": "codebase-inspection",
+			"sourcePath": "skills/software-development/codebase-inspection",
+			"sha256": "7f984a83f970a49b40a661b0d5f87fb2ac3e8b4d81e0299bcecadd1148457a59"
+		},
+		{
+			"name": "dogfood",
+			"sourcePath": "skills/software-development/dogfood",
+			"sha256": "cc1f9b0b1177b8085e683433183316498179439d5157147f6c99c8cc37fb6610"
+		},
+		{
+			"name": "github",
+			"sourcePath": "skills/software-development/github",
+			"sha256": "909ce13eca0a9c1d0bcf8fca7da9032340de4e790a2817e3d213c16f9143a162"
+		},
+		{
+			"name": "node-inspect-debugger",
+			"sourcePath": "skills/software-development/node-inspect-debugger",
+			"sha256": "0339e0e09fbc5e60d5c28d60d248cbc8408eda1e2b4811f840ee76bbbf0a5681"
+		},
+		{
+			"name": "python-debugpy",
+			"sourcePath": "skills/software-development/python-debugpy",
+			"sha256": "287f0375d3072c9bdd286f1e14d148aeaef4fe2cf283c42082939cc8e9b56554"
+		},
+		{
+			"name": "requesting-code-review",
+			"sourcePath": "skills/software-development/requesting-code-review",
+			"sha256": "c4a578186acdf4ff17c415dbe859fb0eaa12378e0b17f99db06f5b25f4a2a933"
+		},
+		{
+			"name": "simplify-code",
+			"sourcePath": "skills/software-development/simplify-code",
+			"sha256": "b911517ecafa40ed253d6a90aad766ea5de81fb064aec92166edfa8b6cc9c76b"
+		},
+		{
+			"name": "spike",
+			"sourcePath": "skills/software-development/spike",
+			"sha256": "aaaa0ae50c9681f482c9f0adcd50588d38a731420ffeb6d5a90ea910d292b2b1"
+		},
+		{
+			"name": "systematic-debugging",
+			"sourcePath": "skills/software-development/systematic-debugging",
+			"sha256": "44588ef24ada599e489bd052bb570aba286b5bc1e3bf4005b92b1aec78077a1d"
+		},
+		{
+			"name": "test-driven-development",
+			"sourcePath": "skills/software-development/test-driven-development",
+			"sha256": "4615f24466d938502ecf17b46e3602d87782fd9b07138317f03a10a3f2a3a777"
+		},
+		{
+			"name": "blocked-page-recovery",
+			"sourcePath": "skills/web/blocked-page-recovery",
+			"sha256": "b2d93491fde2cabc3dfca3c7f0437e0c9301ac293c5074e811dbc3e9ab28834b"
+		}
+	]
+}

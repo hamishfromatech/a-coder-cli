@@ -1,0 +1,39 @@
+{
+	"source": "https://github.com/DietrichGebert/ponytail",
+	"sourceCommit": "ebd8654c2c627f721eb8f9c0d1bd4090a29f9e10",
+	"license": "MIT",
+	"author": "DietrichGebert",
+	"generatedBy": "scripts/sync-external-skills.mjs",
+	"skills": [
+		{
+			"name": "ponytail",
+			"sourcePath": "skills/ponytail",
+			"sha256": "b40d655883ea462755ae12373b59833fce20ba256bc06b0bc4e08dc59ba2ca5d"
+		},
+		{
+			"name": "ponytail-audit",
+			"sourcePath": "skills/ponytail-audit",
+			"sha256": "e06adf4f4ee04dc135b8ff0ce9f168590c0540c69c02fc76400b6ad3bb11f10e"
+		},
+		{
+			"name": "ponytail-debt",
+			"sourcePath": "skills/ponytail-debt",
+			"sha256": "576b8ad55b041a9b87e50719534a7148e68752ca02ceec4b1afdf364bf142aa4"
+		},
+		{
+			"name": "ponytail-gain",
+			"sourcePath": "skills/ponytail-gain",
+			"sha256": "9b28a69ecb63598424d7176e347d2e8d374ec4c1e5ba22665a310e75444a1af4"
+		},
+		{
+			"name": "ponytail-help",
+			"sourcePath": "skills/ponytail-help",
+			"sha256": "249f52da4d11b7d3184ed8c6025bf85d6667262009ca6738b7806b6df345b8b9"
+		},
+		{
+			"name": "ponytail-review",
+			"sourcePath": "skills/ponytail-review",
+			"sha256": "0a56beb5b3b9b89b363ce5d0a9ae5263cd431a6ecc9b3f57d7e795a889d626fd"
+		}
+	]
+}

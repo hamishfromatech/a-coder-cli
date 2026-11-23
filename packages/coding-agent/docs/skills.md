@@ -32,7 +32,7 @@ a-coder-cli loads skills from:
 - Packages: `skills/` directories or `pi.skills` entries in `package.json`
 - Settings: `skills` array with files or directories
 - CLI: `--skill <path>` (repeatable, additive even with `--no-skills`)
-- Bundled (ships with the package, lowest precedence): the vendored skills at the package root — currently `lemo-opuscar`, the code-driven film directing skill (styles and tools by Lemomo, MIT; the style library self-downloads to `~/lemo-opuscar` on first use). A user or project skill of the same name overrides it
+- Bundled (ships with the package, lowest precedence): the vendored skills at the package root — `lemo-opuscar`, the code-driven film directing skill (styles and tools by Lemomo, MIT; the style library self-downloads to `~/lemo-opuscar` on first use); the curated Hermes set under `skills/hermes/` (23 skills for coding, engineering, marketing, computer and browser use; MIT; refresh with `node scripts/sync-hermes-skills.mjs`); the six Ponytail skills under `skills/ponytail/` (lazy-senior-dev ruleset, audit, review, debt, gain, help; MIT; refresh with `node scripts/sync-external-skills.mjs`); and REA's `reverse-engineer-anything` under `skills/rea/` (reverse-engineering MCP workflow; MIT). Each source records its upstream commit in its `MANIFEST.json`. A user or project skill of the same name overrides them
 
 Discovery rules:
 - In `~/.a-coder/cli/agent/skills/` and `.a-coder-cli/skills/`, direct root `.md` files are discovered as individual skills
