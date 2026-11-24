@@ -24,6 +24,7 @@ import {
 	readToolVerdict,
 	resultImages,
 	resultText,
+	summarizeComputerResult,
 	summarizeToolArgs,
 } from "./toolResult";
 
@@ -104,6 +105,10 @@ export const RichToolCall = memo(function RichToolCall({
 		() => (toolCall.name === "computer" ? readToolVerdict(result, parsed?.value) : null),
 		[toolCall.name, result, parsed],
 	);
+	const computerResult = useMemo(
+		() => (toolCall.name === "computer" ? summarizeComputerResult(result, parsed?.value) : null),
+		[toolCall.name, result, parsed],
+	);
 	const verdictBadge = verdict
 		? verdict.decision === "done"
 			? { variant: "success" as const, label: "done" }
@@ -126,10 +131,12 @@ export const RichToolCall = memo(function RichToolCall({
 	const statusGlyph =
 		status === "running" ? (
 			<Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-pi-accent" />
+		) : toolCall.name === "computer" && computerResult?.tone === "warning" ? (
+			<AlertTriangle className="h-3.5 w-3.5 shrink-0 text-pi-warning" />
+		) : status === "error" || (toolCall.name === "computer" && computerResult?.tone === "error") ? (
+			<AlertTriangle className="h-3.5 w-3.5 shrink-0 text-pi-error" />
 		) : status === "success" ? (
 			<Check className="h-3.5 w-3.5 shrink-0 text-pi-success" strokeWidth={2.5} />
-		) : status === "error" ? (
-			<AlertTriangle className="h-3.5 w-3.5 shrink-0 text-pi-error" />
 		) : (
 			<Hammer className="h-3.5 w-3.5 shrink-0 text-pi-text-faint" />
 		);
@@ -164,7 +171,7 @@ export const RichToolCall = memo(function RichToolCall({
 							{formatToolProgress(progress.progress)}
 						</span>
 					)}
-					{verdictBadge && (
+					{verdictBadge && !computerResult && (
 						<Badge
 							variant={verdictBadge.variant}
 							size="sm"
@@ -226,6 +233,28 @@ export const RichToolCall = memo(function RichToolCall({
 					}`}
 				/>
 			</button>
+			{computerResult && (
+				<div className="flex items-start gap-2 border-t border-pi-border/60 px-2.5 py-1 text-3xs">
+					<span
+						className={`shrink-0 font-medium ${
+							computerResult.tone === "success"
+								? "text-pi-success"
+								: computerResult.tone === "warning"
+									? "text-pi-warning"
+									: computerResult.tone === "error"
+										? "text-pi-error"
+										: "text-pi-text-faint"
+						}`}
+					>
+						{computerResult.label}
+					</span>
+					{computerResult.detail && (
+						<span className="min-w-0 flex-1 truncate text-pi-text-faint" title={computerResult.detail}>
+							{computerResult.detail}
+						</span>
+					)}
+				</div>
+			)}
 			{open && (
 				<div className="border-t border-pi-border bg-pi-bg/40">
 					{diff ? (

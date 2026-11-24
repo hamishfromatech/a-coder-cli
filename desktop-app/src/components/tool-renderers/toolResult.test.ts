@@ -6,6 +6,7 @@ import {
 	readToolVerdict,
 	resultImages,
 	resultText,
+	summarizeComputerResult,
 	summarizeToolArgs,
 } from "./toolResult";
 
@@ -21,21 +22,57 @@ function toolResult(overrides: Partial<ToolResultMessage>): ToolResultMessage {
 }
 
 describe("summarizeToolArgs", () => {
-	it("summarizes computer actions by intent, not raw JSON", () => {
+	it("summarizes computer actions by intent, target and coordinates", () => {
 		expect(summarizeToolArgs("computer", { action: "capture", app: "Safari", mode: "som" })).toBe(
-			"capture Safari (som)",
+			"capture Safari · SOM",
 		);
-		expect(summarizeToolArgs("computer", { action: "click", element: 3 })).toBe("click #3");
-		expect(summarizeToolArgs("computer", { action: "click", coordinate: [10, 20] })).toBe("click 10,20");
-		expect(summarizeToolArgs("computer", { action: "type", text: "hello world" })).toBe('type "hello world"');
-		expect(summarizeToolArgs("computer", { action: "key", keys: "cmd+s" })).toBe("key cmd+s");
-		expect(summarizeToolArgs("computer", { action: "zoom", zoom_rect: [1, 2, 30, 40] })).toBe("zoom 1,2,30,40");
+		expect(summarizeToolArgs("computer", { action: "capture", app: "Safari", since_last: true })).toBe(
+			"capture Safari · SOM · diff",
+		);
+		expect(summarizeToolArgs("computer", { action: "click", app: "Safari", element: 3 })).toBe(
+			"click Safari · #3",
+		);
+		expect(summarizeToolArgs("computer", { action: "click", app: "Safari", coordinate: [10, 20] })).toBe(
+			"click Safari · (10, 20)",
+		);
+		expect(
+			summarizeToolArgs("computer", {
+				action: "click",
+				app: "Safari",
+				element: 4,
+				button: "right",
+				modifiers: ["cmd", "shift"],
+			}),
+		).toBe("cmd+shift+right-click Safari · #4");
+		expect(summarizeToolArgs("computer", { action: "type", app: "Safari", text: "hello world" })).toBe(
+			'type into Safari · "hello world"',
+		);
+		expect(summarizeToolArgs("computer", { action: "key", app: "Safari", keys: "cmd+s" })).toBe(
+			"press cmd+s in Safari",
+		);
+		expect(
+			summarizeToolArgs("computer", { action: "set_value", app: "Safari", element: 5, value: "United States" }),
+		).toBe('set "United States" on Safari · #5');
+		expect(summarizeToolArgs("computer", { action: "drag", app: "Safari", from_coordinate: [1, 2], to_coordinate: [30, 40] })).toBe(
+			"drag Safari · (1, 2) → (30, 40)",
+		);
+		expect(summarizeToolArgs("computer", { action: "zoom", app: "Safari", zoom_rect: [1, 2, 30, 40] })).toBe(
+			"zoom Safari · (1, 2) → (30, 40) · native crop",
+		);
+		expect(summarizeToolArgs("computer", { action: "scroll", direction: "up", amount: 5 })).toBe(
+			"scroll current window · up 5",
+		);
 		expect(summarizeToolArgs("computer", { action: "doctor" })).toBe("doctor");
+		expect(summarizeToolArgs("computer", { action: "click", app: "Safari\u001b[31m", element: 1 })).toBe(
+			"click Safari · #1",
+		);
 	});
 
 	it("truncates long typed text and keeps existing tool summaries", () => {
 		const long = "x".repeat(60);
-		expect(summarizeToolArgs("computer", { action: "type", text: long })).toMatch(/^type "x+…"$/);
+		expect(summarizeToolArgs("computer", { action: "type", text: long })).toMatch(
+			/^type into current window · "x+…"$/,
+		);
 		expect(summarizeToolArgs("bash", { command: "ls -la" })).toBe("ls -la");
 		expect(summarizeToolArgs("edit", { path: "a.ts", edits: [{}, {}] })).toBe("a.ts · 2 edits");
 	});
@@ -67,6 +104,63 @@ describe("readToolVerdict", () => {
 		});
 		expect(readToolVerdict(undefined, { verdict: { decision: "maybe" } })).toBeNull();
 		expect(readToolVerdict(undefined, null)).toBeNull();
+	});
+});
+
+describe("summarizeComputerResult", () => {
+	it("describes captures with element and screenshot counts", () => {
+		const result = toolResult({
+			content: [
+				{ type: "text", text: "capture mode=som app=\"Safari\"\n12 interactable element(s):" },
+				{ type: "image", data: "aGVsbG8=", mimeType: "image/png" },
+			] as ToolResultMessage["content"],
+			details: { ok: true, action: "capture", app: "Safari", mode: "som", elementCount: 12 },
+		});
+		expect(summarizeComputerResult(result, null)).toEqual({
+			label: "Captured Safari",
+			detail: "12 elements · SOM",
+			tone: "success",
+		});
+	});
+
+	it("surfaces verdicts, errors and list/wait outcomes", () => {
+		const verify = toolResult({
+			details: {
+				ok: true,
+				action: "click",
+				app: "Safari",
+				verdict: { decision: "verify_fresh_state", hint: "Re-capture before retrying." },
+			},
+		});
+		expect(summarizeComputerResult(verify, null)).toEqual({
+			label: "Verify · Safari",
+			detail: "Re-capture before retrying.",
+			tone: "warning",
+		});
+
+		const failed = toolResult({
+			isError: true,
+			details: { ok: false, action: "type", code: "input_target_mismatch", error: "Wrong window." },
+		});
+		expect(summarizeComputerResult(failed, null)).toEqual({
+			label: "Failed · input_target_mismatch",
+			detail: "Wrong window.",
+			tone: "error",
+		});
+
+		expect(
+			summarizeComputerResult(
+				toolResult({ details: { ok: true, action: "list_apps", count: 3 } }),
+				null,
+			),
+		).toEqual({ label: "Listed 3 apps", tone: "success" });
+		expect(
+			summarizeComputerResult(
+				toolResult({ details: { ok: true, action: "wait", seconds: 2 } }),
+				null,
+			),
+		).toEqual({ label: "Waited 2s", tone: "success" });
+		expect(summarizeComputerResult(undefined, null)).toBeNull();
 	});
 });
 

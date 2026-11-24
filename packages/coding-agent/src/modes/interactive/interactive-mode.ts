@@ -134,6 +134,7 @@ export { createInteractiveTui, createInteractiveTuiReference } from "./tui-rende
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
 import {
+	clearAllBackgroundProcesses,
 	completeBackgroundProcess,
 	getBackgroundProcesses,
 	requestBackground,
@@ -169,6 +170,7 @@ import { AssistantMessageComponent } from "./components/assistant-message.ts";
 import { BashExecutionComponent } from "./components/bash-execution.ts";
 import { BorderedLoader } from "./components/bordered-loader.ts";
 import { BranchSummaryMessageComponent } from "./components/branch-summary-message.ts";
+import { CommandHelpComponent, type CommandHelpItem } from "./components/command-help.ts";
 import { CompactionSummaryMessageComponent } from "./components/compaction-summary-message.ts";
 import { CustomEditor } from "./components/custom-editor.ts";
 import { CustomEntryComponent } from "./components/custom-entry.ts";
@@ -443,6 +445,7 @@ export class InteractiveMode {
 	private keybindings: KeybindingsManager;
 	private version: string;
 	private isInitialized = false;
+	private isReloading = false;
 	private onInputCallback?: (text: string) => void;
 	private pendingUserInputs: string[] = [];
 	private activeStatusIndicator: StatusIndicator | undefined = undefined;
@@ -1202,6 +1205,7 @@ export class InteractiveMode {
 
 			const expandedInstructions = [
 				hint("app.interrupt", "to interrupt"),
+				hint("app.help", "for command help"),
 				hint("app.clear", "to clear"),
 				rawKeyHint(`${keyText("app.clear")} twice`, "to exit"),
 				hint("app.exit", "to exit (empty)"),
@@ -1888,6 +1892,51 @@ export class InteractiveMode {
 		return lines.join("\n");
 	}
 
+	private summarizeDiagnostics(diagnostics: readonly ResourceDiagnostic[]): string {
+		const collisionNames = new Set<string>();
+		let errors = 0;
+		let warnings = 0;
+		for (const diagnostic of diagnostics) {
+			if (diagnostic.type === "collision" && diagnostic.collision) {
+				collisionNames.add(diagnostic.collision.name);
+			} else if (diagnostic.type === "error") {
+				errors++;
+			} else {
+				warnings++;
+			}
+		}
+		const parts: string[] = [];
+		if (collisionNames.size > 0) {
+			parts.push(`${collisionNames.size} name collision${collisionNames.size === 1 ? "" : "s"}`);
+		}
+		if (errors > 0) parts.push(`${errors} error${errors === 1 ? "" : "s"}`);
+		if (warnings > 0) parts.push(`${warnings} warning${warnings === 1 ? "" : "s"}`);
+		if (parts.length === 0) return "";
+		return theme.fg("dim", `${parts.join(" · ")}  ${keyText("app.tools.expand")} to expand`);
+	}
+
+	private addDiagnosticsSection(
+		container: Container,
+		title: string,
+		diagnostics: readonly ResourceDiagnostic[],
+		sourceInfos: Map<string, SourceInfo>,
+	): void {
+		if (diagnostics.length === 0) return;
+		const heading = theme.fg("warning", `[${title}]`);
+		const full = `${heading}\n${this.formatDiagnostics(diagnostics, sourceInfos)}`;
+		const summary = `${heading} ${this.summarizeDiagnostics(diagnostics)}`;
+		container.addChild(
+			new ExpandableText(
+				() => summary,
+				() => full,
+				this.getStartupExpansionState(),
+				0,
+				0,
+			),
+		);
+		container.addChild(new Spacer(1));
+	}
+
 	private showLoadedResources(options?: {
 		extensions?: Array<{ path: string; sourceInfo?: SourceInfo }>;
 		force?: boolean;
@@ -2041,23 +2090,18 @@ export class InteractiveMode {
 		}
 
 		if (showDiagnostics) {
-			const skillDiagnostics = skillsResult.diagnostics;
-			if (skillDiagnostics.length > 0) {
-				const warningLines = this.formatDiagnostics(skillDiagnostics, sourceInfos);
-				this.loadedResourcesContainer.addChild(
-					new Text(`${theme.fg("warning", "[Skill conflicts]")}\n${warningLines}`, 0, 0),
-				);
-				this.loadedResourcesContainer.addChild(new Spacer(1));
-			}
-
-			const promptDiagnostics = promptsResult.diagnostics;
-			if (promptDiagnostics.length > 0) {
-				const warningLines = this.formatDiagnostics(promptDiagnostics, sourceInfos);
-				this.loadedResourcesContainer.addChild(
-					new Text(`${theme.fg("warning", "[Prompt conflicts]")}\n${warningLines}`, 0, 0),
-				);
-				this.loadedResourcesContainer.addChild(new Spacer(1));
-			}
+			this.addDiagnosticsSection(
+				this.loadedResourcesContainer,
+				"Skill conflicts",
+				skillsResult.diagnostics,
+				sourceInfos,
+			);
+			this.addDiagnosticsSection(
+				this.loadedResourcesContainer,
+				"Prompt conflicts",
+				promptsResult.diagnostics,
+				sourceInfos,
+			);
 
 			const extensionDiagnostics: ResourceDiagnostic[] = [];
 			const extensionErrors = this.session.resourceLoader.getExtensions().errors;
@@ -2074,22 +2118,18 @@ export class InteractiveMode {
 			const shortcutDiagnostics = this.session.extensionRunner.getShortcutDiagnostics();
 			extensionDiagnostics.push(...shortcutDiagnostics);
 
-			if (extensionDiagnostics.length > 0) {
-				const warningLines = this.formatDiagnostics(extensionDiagnostics, sourceInfos);
-				this.loadedResourcesContainer.addChild(
-					new Text(`${theme.fg("warning", "[Extension issues]")}\n${warningLines}`, 0, 0),
-				);
-				this.loadedResourcesContainer.addChild(new Spacer(1));
-			}
-
-			const themeDiagnostics = themesResult.diagnostics;
-			if (themeDiagnostics.length > 0) {
-				const warningLines = this.formatDiagnostics(themeDiagnostics, sourceInfos);
-				this.loadedResourcesContainer.addChild(
-					new Text(`${theme.fg("warning", "[Theme conflicts]")}\n${warningLines}`, 0, 0),
-				);
-				this.loadedResourcesContainer.addChild(new Spacer(1));
-			}
+			this.addDiagnosticsSection(
+				this.loadedResourcesContainer,
+				"Extension issues",
+				extensionDiagnostics,
+				sourceInfos,
+			);
+			this.addDiagnosticsSection(
+				this.loadedResourcesContainer,
+				"Theme conflicts",
+				themesResult.diagnostics,
+				sourceInfos,
+			);
 		}
 	}
 
@@ -3300,6 +3340,7 @@ export class InteractiveMode {
 		};
 
 		// Register app action handlers
+		this.defaultEditor.onAction("app.help", () => this.showCommandHelp());
 		this.defaultEditor.onAction("app.clear", () => this.handleCtrlC());
 		this.defaultEditor.onCtrlD = () => this.handleCtrlD();
 		this.defaultEditor.onAction("app.suspend", () => this.handleCtrlZ());
@@ -3413,6 +3454,12 @@ export class InteractiveMode {
 			if (!text) return;
 
 			// Handle commands
+			if (text === "/" || text === "/help" || text.startsWith("/help ")) {
+				const query = text.startsWith("/help ") ? text.slice("/help ".length).trim() : "";
+				this.editor.setText("");
+				this.showCommandHelp(query);
+				return;
+			}
 			if (text === "/settings") {
 				this.showSettingsSelector();
 				this.editor.setText("");
@@ -3677,6 +3724,20 @@ export class InteractiveMode {
 				this.editor.setText("");
 				await this.shutdown();
 				return;
+			}
+
+			// A leading slash is a command namespace. Sending an unknown command
+			// to the model silently turns a typo into a paid turn, so report it and
+			// keep the user in the editor. Absolute paths (e.g. /tmp/file) are not
+			// commands and still fall through as ordinary prompts.
+			const unknown = /^\/([^\s/]+)(?:\s|$)/.exec(text);
+			if (unknown && !this.getKnownSlashCommandNames().has(unknown[1])) {
+				const firstToken = text.split(/\s+/, 1)[0] ?? "";
+				if (!firstToken || !fs.existsSync(firstToken)) {
+					this.editor.setText(text);
+					this.showError(`Unknown command: /${unknown[1]}. Type / to browse commands or /help to search.`);
+					return;
+				}
 			}
 
 			// Handle bash command (! for normal, !! for excluded from context)
@@ -4647,6 +4708,7 @@ export class InteractiveMode {
 		this.isShuttingDown = true;
 		this.unregisterSignalHandlers();
 		killTrackedDetachedChildren();
+		clearAllBackgroundProcesses();
 		// The terminal is gone. Do not run normal shutdown because TUI and
 		// extension cleanup can write restore sequences and re-trigger EIO.
 		process.exit(129);
@@ -4673,6 +4735,7 @@ export class InteractiveMode {
 		} catch {}
 		try {
 			killTrackedDetachedChildren();
+			clearAllBackgroundProcesses();
 		} catch {}
 		try {
 			this.ui.stop();
@@ -4705,6 +4768,7 @@ export class InteractiveMode {
 				// surfaces as an EIO on the restore writes, which the stdout/stderr
 				// error handler converts into emergencyTerminalExit (see #4144, #5080).
 				killTrackedDetachedChildren();
+				clearAllBackgroundProcesses();
 				void this.shutdown({ fromSignal: true });
 			};
 			process.prependListener(signal, handler);
@@ -5309,6 +5373,94 @@ export class InteractiveMode {
 		this.editor.setText("");
 		this.updatePendingMessagesDisplay();
 		this.showStatus("Queued message for after compaction");
+	}
+
+	private getCommandHelpItems(): CommandHelpItem[] {
+		const items: CommandHelpItem[] = [];
+		const seen = new Set<string>();
+		const add = (item: CommandHelpItem): void => {
+			if (seen.has(item.name)) return;
+			seen.add(item.name);
+			items.push(item);
+		};
+
+		for (const command of BUILTIN_SLASH_COMMANDS) {
+			add({ name: command.name, description: command.description, source: "builtin" });
+		}
+		for (const template of this.session.promptTemplates) {
+			add({
+				name: template.name,
+				description: template.description,
+				argumentHint: template.argumentHint,
+				source: "prompt",
+			});
+		}
+
+		const builtinNames = new Set(BUILTIN_SLASH_COMMANDS.map((command) => command.name));
+		for (const command of this.session.extensionRunner.getRegisteredCommands()) {
+			// An extension command that loses a built-in name collision is only
+			// reachable through its invocation name, and is omitted entirely when
+			// it has no alias.
+			if (builtinNames.has(command.name) && command.invocationName === command.name) continue;
+			add({
+				name: command.invocationName,
+				description: command.description,
+				source: "extension",
+			});
+		}
+
+		if (this.settingsManager.getEnableSkillCommands()) {
+			for (const skill of this.session.resourceLoader.getSkills().skills) {
+				add({ name: `skill:${skill.name}`, description: skill.description, source: "skill" });
+			}
+		}
+
+		return items;
+	}
+
+	private getKnownSlashCommandNames(): Set<string> {
+		const names = new Set<string>();
+		for (const command of BUILTIN_SLASH_COMMANDS) names.add(command.name);
+		for (const template of this.session.promptTemplates) names.add(template.name);
+		for (const command of this.session.extensionRunner.getRegisteredCommands()) {
+			names.add(command.name);
+			names.add(command.invocationName);
+		}
+		if (this.settingsManager.getEnableSkillCommands()) {
+			for (const skill of this.session.resourceLoader.getSkills().skills) {
+				names.add(`skill:${skill.name}`);
+			}
+		}
+		// Easter-egg commands handled by the interactive submit chain but not
+		// advertised in autocomplete.
+		names.add("arminsayshi");
+		names.add("dementedelves");
+		return names;
+	}
+
+	private showCommandHelp(query = ""): void {
+		const commands = this.getCommandHelpItems();
+		if (commands.length === 0) {
+			this.showStatus("No commands are available.");
+			return;
+		}
+		this.showSelector((done) => {
+			const component = new CommandHelpComponent(
+				commands,
+				(name) => {
+					done();
+					this.defaultEditor.setText(`/${name}`);
+					this.ui.setFocus(this.defaultEditor);
+					this.ui.requestRender();
+				},
+				() => {
+					done();
+					this.ui.requestRender();
+				},
+				query,
+			);
+			return { component, focus: component };
+		});
 	}
 
 	private isExtensionCommand(text: string): boolean {
@@ -6922,6 +7074,10 @@ export class InteractiveMode {
 	// =========================================================================
 
 	private async handleReloadCommand(): Promise<void> {
+		if (this.isReloading) {
+			this.showWarning("A reload is already in progress.");
+			return;
+		}
 		if (this.session.isStreaming) {
 			this.showWarning("Wait for the current response to finish before reloading.");
 			return;
@@ -6931,60 +7087,94 @@ export class InteractiveMode {
 			return;
 		}
 
-		this.resetExtensionUI();
-
-		const reloadBox = new Container();
-		const borderColor = (s: string) => theme.fg("border", s);
-		reloadBox.addChild(new DynamicBorder(borderColor));
-		reloadBox.addChild(new Spacer(1));
-		reloadBox.addChild(
-			new Text(
-				theme.fg("muted", "Reloading keybindings, extensions, skills, prompts, themes, MCP servers..."),
-				1,
-				0,
-			),
-		);
-		reloadBox.addChild(new Spacer(1));
-		reloadBox.addChild(new DynamicBorder(borderColor));
-
-		const previousEditor = this.editor;
-		this.editorContainer.clear();
-		this.editorContainer.addChild(reloadBox);
-		this.ui.setFocus(reloadBox);
-		this.ui.requestRender(true);
-		await new Promise((resolve) => process.nextTick(resolve));
-
-		const dismissReloadBox = (editor: Component) => {
+		this.isReloading = true;
+		const startedAt = Date.now();
+		let draftText = "";
+		const snapshot = () => ({
+			extensions: this.session.resourceLoader.getExtensions().extensions.length,
+			skills: this.session.resourceLoader.getSkills().skills.length,
+			prompts: this.session.resourceLoader.getPrompts().prompts.length,
+			themes: this.session.resourceLoader.getThemes().themes.length,
+		});
+		const editorBeforeReload = this.editor;
+		let previousEditor = editorBeforeReload;
+		let reloadBoxDismissed = false;
+		let phase = "preparing";
+		const dismissReloadBox = (editor: EditorComponent) => {
 			this.editorContainer.clear();
 			this.editorContainer.addChild(editor);
 			this.ui.setFocus(editor);
 			this.ui.requestRender();
 		};
-
-		let chatRestoredBeforeSessionStart = false;
-		let reloadBoxDismissed = false;
-		const restoreChatBeforeSessionStart = () => {
-			if (chatRestoredBeforeSessionStart) {
-				return;
+		const restoreDraft = (editor: EditorComponent) => {
+			if (draftText.length > 0 && (editor.getText?.() ?? "").length === 0) {
+				editor.setText?.(draftText);
 			}
-			this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
-			this.outputPad = this.settingsManager.getOutputPad();
-			this.rebuildChatFromMessages();
-			chatRestoredBeforeSessionStart = true;
 		};
 
 		try {
+			draftText = this.editor.getText?.() ?? "";
+			const before = snapshot();
+			this.resetExtensionUI();
+			previousEditor = this.editor;
+
+			const reloadBox = new Container();
+			const borderColor = (s: string) => theme.fg("border", s);
+			reloadBox.addChild(new DynamicBorder(borderColor));
+			reloadBox.addChild(new Spacer(1));
+			reloadBox.addChild(
+				new Text(
+					theme.fg("muted", "Reloading keybindings, extensions, skills, prompts, themes, MCP servers..."),
+					1,
+					0,
+				),
+			);
+			reloadBox.addChild(new Spacer(1));
+			reloadBox.addChild(new DynamicBorder(borderColor));
+
+			this.editorContainer.clear();
+			this.editorContainer.addChild(reloadBox);
+			this.ui.setFocus(reloadBox);
+			this.ui.requestRender(true);
+			await new Promise((resolve) => process.nextTick(resolve));
+
+			let chatRestoredBeforeSessionStart = false;
+			const restoreChatBeforeSessionStart = () => {
+				if (chatRestoredBeforeSessionStart) {
+					return;
+				}
+				this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
+				this.outputPad = this.settingsManager.getOutputPad();
+				this.rebuildChatFromMessages();
+				chatRestoredBeforeSessionStart = true;
+			};
+
+			phase = "session resources";
 			await this.session.reload({ beforeSessionStart: restoreChatBeforeSessionStart });
 			restoreChatBeforeSessionStart();
 			configureHttpDispatcher(this.settingsManager.getHttpIdleTimeoutMs());
-			this.keybindings.reload();
+
+			phase = "keybindings";
+			try {
+				this.keybindings.reload();
+			} catch (error) {
+				this.showWarning(
+					`Keybindings were not reloaded: ${error instanceof Error ? error.message : String(error)}`,
+				);
+			}
+
+			phase = "startup display";
 			const activeHeader = this.customHeader ?? this.builtInHeader;
 			if (isExpandable(activeHeader)) {
 				activeHeader.setExpanded(this.toolOutputExpanded);
 			}
 			setRegisteredThemes(this.session.resourceLoader.getThemes().themes);
 			this.applyRuntimeSettings();
+
+			phase = "theme";
 			await this.themeController.applyFromSettings();
+
+			phase = "editor settings";
 			const editorPaddingX = this.settingsManager.getEditorPaddingX();
 			const autocompleteMaxVisible = this.settingsManager.getAutocompleteMaxVisible();
 			this.defaultEditor.setPaddingX(editorPaddingX);
@@ -6999,30 +7189,64 @@ export class InteractiveMode {
 			if (!clearOnShrink && !this.activeStatusIndicator) {
 				this.statusContainer.clear();
 			}
+
+			phase = "extensions";
 			this.setupAutocompleteProvider();
 			const runner = this.session.extensionRunner;
 			this.setupExtensionShortcuts(runner);
+
+			phase = "startup resources";
 			this.showLoadedResources({
 				force: false,
 				showDiagnosticsWhenQuiet: true,
 			});
+
+			phase = "finalizing";
 			const savedImplicitProjectTrust = this.maybeSaveImplicitProjectTrustAfterReload();
 			const modelsJsonError = this.session.modelRegistry.getError();
 			if (modelsJsonError) {
 				this.showError(`models.json error: ${modelsJsonError}`);
 			}
+			restoreDraft(this.editor);
+			this.updateEditorBorderColor();
+
+			const after = snapshot();
+			const count = (label: string, oldValue: number, newValue: number): string => {
+				const delta = newValue - oldValue;
+				return `${label} ${newValue}${delta === 0 ? "" : ` (${delta > 0 ? "+" : ""}${delta})`}`;
+			};
+			const parts: string[] = [];
+			const addCount = (label: string, oldValue: number, newValue: number): void => {
+				if (oldValue === 0 && newValue === 0) return;
+				parts.push(count(label, oldValue, newValue));
+			};
+			addCount("extensions", before.extensions, after.extensions);
+			addCount("skills", before.skills, after.skills);
+			addCount("prompts", before.prompts, after.prompts);
+			addCount("themes", before.themes, after.themes);
+			const mcpStates = getMcpServerStates();
+			if (mcpStates.length > 0) {
+				const down = mcpStates.filter((state) => state.status === "error").length;
+				const connecting = mcpStates.filter((state) => state.status === "connecting").length;
+				const mcpState = down > 0 ? `${down} down` : connecting > 0 ? `${connecting} connecting` : "";
+				parts.push(`MCP ${mcpStates.length}${mcpState ? ` (${mcpState})` : ""}`);
+			}
+			const elapsedMs = Date.now() - startedAt;
+			const elapsed = elapsedMs < 1000 ? `${elapsedMs}ms` : `${(elapsedMs / 1000).toFixed(1)}s`;
+			const details = parts.join(" · ");
 			this.showStatus(
-				savedImplicitProjectTrust
-					? "Reloaded keybindings, extensions, skills, prompts, themes, MCP servers; saved project trust"
-					: "Reloaded keybindings, extensions, skills, prompts, themes, MCP servers",
+				`Reloaded in ${elapsed}${details ? ` · ${details}` : ""}${savedImplicitProjectTrust ? " · project trust saved" : ""}`,
 			);
-			dismissReloadBox(this.editor as Component);
+			dismissReloadBox(this.editor);
 			reloadBoxDismissed = true;
 		} catch (error) {
 			if (!reloadBoxDismissed) {
-				dismissReloadBox(previousEditor as Component);
+				restoreDraft(previousEditor);
+				dismissReloadBox(previousEditor);
 			}
-			this.showError(`Reload failed: ${error instanceof Error ? error.message : String(error)}`);
+			this.showError(`Reload failed during ${phase}: ${error instanceof Error ? error.message : String(error)}`);
+		} finally {
+			this.isReloading = false;
 		}
 	}
 
@@ -7956,6 +8180,7 @@ export class InteractiveMode {
 		const tab = this.getEditorKeyDisplay("tui.input.tab");
 
 		// App keybindings
+		const help = this.getAppKeyDisplay("app.help");
 		const interrupt = this.getAppKeyDisplay("app.interrupt");
 		const clear = this.getAppKeyDisplay("app.clear");
 		const exit = this.getAppKeyDisplay("app.exit");
@@ -7973,6 +8198,18 @@ export class InteractiveMode {
 		const selectPermissionMode = this.getAppKeyDisplay("app.permissionMode.select");
 		const togglePlanMode = this.getAppKeyDisplay("app.planMode.toggle");
 		const toggleTranscript = this.getAppKeyDisplay("app.transcript.toggle");
+		const historySearch = this.getAppKeyDisplay("app.history.search");
+		const copyMessage = this.getAppKeyDisplay("app.message.copy");
+		const expandAllTools = this.getAppKeyDisplay("app.tools.expandAll");
+		const backgroundsView = this.getAppKeyDisplay("app.backgrounds.view");
+		const subagentsView = this.getAppKeyDisplay("app.subagents.view");
+		const tasksToggle = this.getAppKeyDisplay("app.tasks.toggle");
+		const tasksView = this.getAppKeyDisplay("app.tasks.view");
+		const transcriptSearch = this.getEditorKeyDisplay("tui.altScreen.search");
+		const previousPrompt = this.getEditorKeyDisplay("tui.altScreen.previousPrompt");
+		const nextPrompt = this.getEditorKeyDisplay("tui.altScreen.nextPrompt");
+		const transcriptTop = this.getEditorKeyDisplay("tui.altScreen.top");
+		const transcriptBottom = this.getEditorKeyDisplay("tui.altScreen.bottom");
 
 		let hotkeys = `
 **Navigation**
@@ -7999,10 +8236,18 @@ export class InteractiveMode {
 | \`${yankPop}\` | Cycle through the deleted text after pasting |
 | \`${undo}\` | Undo |
 
+**Fullscreen transcript**
+| Key | Action |
+|-----|--------|
+| \`${previousPrompt}\` / \`${nextPrompt}\` | Jump to the previous / next message |
+| \`${transcriptSearch}\` | Search the transcript |
+| \`${transcriptTop}\` / \`${transcriptBottom}\` | Jump to the top / bottom |
+
 **Other**
 | Key | Action |
 |-----|--------|
 | \`${tab}\` | Path completion / accept autocomplete |
+| \`${help}\` | Open command help |
 | \`${interrupt}\` | Cancel autocomplete / abort streaming |
 | \`${clear}\` | Clear editor (first) / exit (second) |
 | \`${exit}\` | Exit (when editor is empty) |
@@ -8011,12 +8256,19 @@ export class InteractiveMode {
 | \`${cycleModelForward}\` / \`${cycleModelBackward}\` | Cycle models |
 | \`${selectModel}\` | Open model selector |
 | \`${expandTools}\` | Toggle tool output expansion |
+| \`${expandAllTools}\` | Expand or collapse every tool result |
 | \`${toggleTranscript}\` | Toggle transcript overlay |
+| \`${historySearch}\` | Search prompt history |
 | \`${toggleThinking}\` | Toggle thinking block visibility |
 | \`${externalEditor}\` | Edit message in external editor |
 | \`${followUp}\` | Queue follow-up message |
 | \`${dequeue}\` | Restore queued messages |
 | \`${pasteImage}\` | Paste image from clipboard |
+| \`${copyMessage}\` | Copy the last agent message |
+| \`${backgroundsView}\` | Open background processes |
+| \`${subagentsView}\` | Open running sub-agents |
+| \`${tasksToggle}\` | Expand or collapse the task list |
+| \`${tasksView}\` (empty editor) | Open running tasks |
 | \`${selectPermissionMode}\` | Open permission mode selector |
 | \`${togglePlanMode}\` | Toggle plan mode |
 | \`/\` | Slash commands |

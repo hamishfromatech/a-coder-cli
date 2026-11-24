@@ -2,8 +2,9 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import { join } from "node:path";
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ENV_AGENT_DIR } from "../../src/config.ts";
+import type { ToolRenderContext } from "../../src/core/extensions/types.ts";
 import {
 	COMPUTER_INPUT_ACTIONS,
 	type ComputerToolInput,
@@ -12,6 +13,8 @@ import {
 	rejectUnsafe,
 	resetComputerToolState,
 } from "../../src/core/tools/computer-use/computer.ts";
+import { initTheme, theme } from "../../src/modes/interactive/theme/theme.ts";
+import { stripAnsi } from "../../src/utils/ansi.ts";
 
 const FAKE_SERVER = join(import.meta.dirname, "fixtures", "fake-cua-driver.mjs");
 
@@ -54,6 +57,112 @@ describe("hard blocks (pre-approval)", () => {
 		expect(COMPUTER_INPUT_ACTIONS.has("list_apps")).toBe(false);
 		expect(COMPUTER_INPUT_ACTIONS.has("type")).toBe(true);
 		expect(COMPUTER_INPUT_ACTIONS.has("focus_app")).toBe(true);
+	});
+});
+
+describe("computer TUI rendering", () => {
+	beforeAll(() => {
+		initTheme("dark");
+	});
+
+	function render(component: { render(width: number): string[] } | undefined): string {
+		return stripAnsi(component?.render(120).join("\n") ?? "")
+			.replace(/[ \t]+/g, " ")
+			.trim();
+	}
+
+	function renderContext(
+		args: Record<string, unknown>,
+		overrides: Partial<ToolRenderContext> = {},
+	): ToolRenderContext {
+		return {
+			args,
+			toolCallId: "test-call",
+			invalidate: () => {},
+			state: {},
+			cwd: "/tmp",
+			executionStarted: true,
+			argsComplete: true,
+			isPartial: false,
+			expanded: false,
+			showImages: true,
+			isError: false,
+			...overrides,
+		} as unknown as ToolRenderContext;
+	}
+
+	it("describes actions with the app, element/coordinate and text", () => {
+		const tool = createComputerToolDefinition();
+		const capture = render(
+			tool.renderCall?.(
+				{ action: "capture", app: "Safari", mode: "som" } as ComputerToolInput,
+				theme,
+				renderContext({}),
+			),
+		);
+		expect(capture).toContain("capture");
+		expect(capture).toContain("Safari");
+		expect(capture).toContain("SOM");
+
+		const click = render(
+			tool.renderCall?.(
+				{ action: "click", app: "Safari", element: 12 } as ComputerToolInput,
+				theme,
+				renderContext({}),
+			),
+		);
+		expect(click).toContain("click Safari · #12");
+
+		const typed = render(
+			tool.renderCall?.(
+				{ action: "type", app: "Safari", text: "hello" } as ComputerToolInput,
+				theme,
+				renderContext({}),
+			),
+		);
+		expect(typed).toContain('type into Safari · "hello"');
+	});
+
+	it("shows a descriptive result headline instead of raw JSON", () => {
+		const tool = createComputerToolDefinition();
+		const capture = tool.renderResult?.(
+			{
+				content: [
+					{ type: "text", text: 'capture mode=som app="Safari"\n12 interactable element(s):' },
+					{ type: "image", data: "aGVsbG8=", mimeType: "image/png" },
+				],
+				details: { ok: true, action: "capture", app: "Safari", mode: "som", elementCount: 12 },
+			} as Parameters<NonNullable<typeof tool.renderResult>>[0],
+			{ expanded: false, isPartial: false },
+			theme,
+			renderContext({ action: "capture", app: "Safari", mode: "som" }),
+		);
+		expect(render(capture)).toContain("12 elements");
+		expect(render(capture)).toContain("screenshot");
+		expect(render(capture)).not.toContain('"elementCount"');
+
+		const click = tool.renderResult?.(
+			{
+				content: [{ type: "text", text: '{"ok":true,"verdict":{"decision":"done"}}' }],
+				details: { ok: true, action: "click", app: "Safari", verdict: { decision: "done" } },
+			} as Parameters<NonNullable<typeof tool.renderResult>>[0],
+			{ expanded: false, isPartial: false },
+			theme,
+			renderContext({ action: "click", app: "Safari", element: 3 }),
+		);
+		expect(render(click)).toContain("click · done · Safari");
+
+		const failed = tool.renderResult?.(
+			{
+				content: [{ type: "text", text: '{"ok":false,"error":"No active window"}' }],
+				details: { ok: false, action: "type", code: "no_target", error: "No active window" },
+			} as Parameters<NonNullable<typeof tool.renderResult>>[0],
+			{ expanded: false, isPartial: false },
+			theme,
+			renderContext({ action: "type" }, { isError: true }),
+		);
+		expect(render(failed)).toContain("✗ type · current window · no_target");
+		expect(render(failed)).toContain("No active window");
 	});
 });
 
@@ -135,6 +244,7 @@ describe("computer tool conformance against a fake cua-driver MCP server", () =>
 		};
 		expect(payload.ok).toBe(true);
 		expect(payload.verdict.decision).toBe("done");
+		expect(payload).toMatchObject({ app: "Safari", pid: 101, windowId: 11 });
 		const click = readCalls().find((call) => call.name === "click");
 		// Current drivers identify elements by token and refuse element_index.
 		expect(click?.args.element_index).toBeUndefined();

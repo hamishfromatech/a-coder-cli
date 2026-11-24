@@ -16,9 +16,11 @@ export interface BuiltinSlashCommand {
 }
 
 export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
+	{ name: "help", description: "Browse and search commands (/help [filter])" },
 	{ name: "settings", description: "Open settings menu" },
 	{ name: "model", description: "Select model (opens selector UI)" },
 	{ name: "permission", description: "Open permission mode selector" },
+	{ name: "plan", description: "Toggle plan mode" },
 	{ name: "permissions", description: "Manage permission policy rules (allow / soft-deny / hard-deny)" },
 	{ name: "output-style", description: "Switch output style (reshapes how the agent answers)" },
 	{ name: "theme", description: "Preview and choose a theme (opens selector UI)" },

@@ -49,6 +49,30 @@ The bridge between this tool and the driver is discovery-driven: every optional 
 - `capture since_last=true` asks for a diff since the previous snapshot of the same window: only changed rows are listed, and the tool says explicitly that the new snapshot invalidates the previous tokens, so re-capture before acting on an unlisted element.
 - `zoom` crops a region of the last capture at native resolution (`zoom_rect: [x1, y1, x2, y2]`, corners not size, max 500 px wide, 20% padding). A coordinate click afterwards carries `from_zoom: true`, so the driver maps it back into window space; element indices and tokens are unchanged.
 
+## Reading a tool card
+
+The TUI and desktop cards summarize the action before the payload:
+
+```text
+computer capture Safari · SOM · diff
+computer cmd+shift+click Safari · #12
+computer type into Safari · "hello world"
+computer drag Safari · (10, 20) → (30, 40)
+```
+
+Settled results lead with the outcome:
+
+```text
+✓ Safari · 42 elements · SOM · screenshot
+✓ click · done · Safari
+⚠ click · verify · Safari
+  Re-capture and check the result BEFORE any retry.
+✗ type · current window · no_target
+  No active window — call capture(app=...) first.
+```
+
+Expanding the card shows the full driver payload; the collapsed view never dumps raw JSON.
+
 ## Diagnostics
 
 ```text

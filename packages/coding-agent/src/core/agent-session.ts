@@ -4535,10 +4535,13 @@ export class AgentSession {
 
 	async reload(options?: { beforeSessionStart?: () => void | Promise<void> }): Promise<void> {
 		const previousFlagValues = this._extensionRunner.getFlagValues();
-		await emitSessionShutdownEvent(this._extensionRunner, { type: "session_shutdown", reason: "reload" });
+		// Validate settings before tearing down the live extension runtime. A
+		// malformed settings.json should leave the working session intact
+		// instead of closing its extensions and then failing to rebuild them.
 		await this.settingsManager.reload();
 		this.syncQueueModesFromSettings();
 		resetApiProviders();
+		await emitSessionShutdownEvent(this._extensionRunner, { type: "session_shutdown", reason: "reload" });
 		await this._resourceLoader.reload();
 		// Model catalogs are provider-owned and cache live additions (Inception,
 		// OpenRouter, local servers). A reload should refresh them in the
@@ -5930,9 +5933,10 @@ export class AgentSession {
 		}
 		const tail = record.output.trim();
 		const body = meta.length > 0 ? `\n${meta.join(" · ")}` : "";
+		const error = record.error ? `\nError: ${record.error}` : "";
 		const output = tail ? `\nOutput tail:\n${tail}` : "";
 		const log = record.fullOutputPath ? `\nFull output: ${record.fullOutputPath}` : "";
-		return `${header}${body}${output}${log}`;
+		return `${header}${body}${error}${output}${log}`;
 	}
 
 	private _formatSubAgentNotification(record: InProcessSubAgentRecord): string {

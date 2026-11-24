@@ -507,6 +507,22 @@ describe("InteractiveMode.showLoadedResources", () => {
 			getBuiltInCommandConflictDiagnostics: () => [],
 		};
 
+		fakeThis.summarizeDiagnostics = (diagnostics: unknown[]) =>
+			(InteractiveMode as any).prototype.summarizeDiagnostics.call(fakeThis, diagnostics);
+		fakeThis.addDiagnosticsSection = (
+			container: Container,
+			title: string,
+			diagnostics: unknown[],
+			sourceInfos: Map<string, SourceInfo>,
+		) =>
+			(InteractiveMode as any).prototype.addDiagnosticsSection.call(
+				fakeThis,
+				container,
+				title,
+				diagnostics,
+				sourceInfos,
+			);
+
 		if (options.useRealScopeGroups) {
 			fakeThis.getScopeGroup = (sourceInfo?: SourceInfo) =>
 				(InteractiveMode as any).prototype.getScopeGroup.call(fakeThis, sourceInfo);

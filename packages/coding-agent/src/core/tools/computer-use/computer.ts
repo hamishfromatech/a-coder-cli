@@ -21,8 +21,13 @@
 import { createHash } from "node:crypto";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { StringEnum } from "@earendil-works/pi-ai";
+import { Text } from "@earendil-works/pi-tui";
 import { type Static, Type } from "typebox";
+import type { Theme } from "../../../modes/interactive/theme/theme.ts";
+import { stripAnsi } from "../../../utils/ansi.ts";
 import type { ToolDefinition } from "../../extensions/types.ts";
+import { getTextOutput } from "../render-utils.ts";
+import { formatHeadline } from "../result-headline.ts";
 import { wrapToolDefinition } from "../tool-definition-wrapper.ts";
 import {
 	CuaDriverClient,
@@ -1088,7 +1093,14 @@ async function doInput(args: ComputerToolInput): Promise<AgentToolResult<Record<
 		callArgs.from_zoom = true;
 	}
 	const result = await client.callTool(tool, callArgs);
-	const payload = actionPayload(action, result);
+	const payload = {
+		...actionPayload(action, result),
+		// Make the card and the model's own result text name the window that
+		// actually received the input, not just the optional app argument.
+		app: stickyTarget.app,
+		pid: stickyTarget.pid,
+		...(stickyTarget.window_id !== null ? { windowId: stickyTarget.window_id } : {}),
+	};
 
 	// Optional follow-up capture — never after a failure (a normal-looking
 	// screenshot would suggest success).
@@ -1131,6 +1143,300 @@ async function dispatch(action: string, params: ComputerToolInput): Promise<Agen
 }
 
 // ---------------------------------------------------------------------------
+// TUI rendering
+// ---------------------------------------------------------------------------
+
+type ComputerRenderResult = {
+	content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
+	details?: unknown;
+};
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+	return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+}
+
+function stringField(record: Record<string, unknown> | undefined, key: string): string | undefined {
+	const value = record?.[key];
+	return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function numberField(record: Record<string, unknown> | undefined, key: string): number | undefined {
+	const value = record?.[key];
+	return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function point(value: unknown): [number, number] | undefined {
+	return Array.isArray(value) &&
+		value.length >= 2 &&
+		typeof value[0] === "number" &&
+		typeof value[1] === "number" &&
+		Number.isFinite(value[0]) &&
+		Number.isFinite(value[1])
+		? [value[0], value[1]]
+		: undefined;
+}
+
+function pointLabel(value: unknown): string | undefined {
+	const p = point(value);
+	return p ? `(${p[0]}, ${p[1]})` : undefined;
+}
+
+function rectLabel(value: unknown): string | undefined {
+	if (
+		!Array.isArray(value) ||
+		value.length < 4 ||
+		value.slice(0, 4).some((part) => typeof part !== "number" || !Number.isFinite(part))
+	) {
+		return undefined;
+	}
+	return `(${value[0]}, ${value[1]}) → (${value[2]}, ${value[3]})`;
+}
+
+function oneLine(value: string, max = 80): string {
+	const plain = stripAnsi(value).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "");
+	const compact = plain.replace(/\s+/g, " ").trim();
+	return compact.length > max ? `${compact.slice(0, max - 1)}…` : compact;
+}
+
+function quoted(value: string, max = 36): string {
+	return JSON.stringify(oneLine(value, max));
+}
+
+function computerTarget(action: string, args: Record<string, unknown>): string {
+	const app = oneLine(stringField(args, "app") ?? "", 80) || undefined;
+	const pid = numberField(args, "pid");
+	const windowId = numberField(args, "window_id");
+	let base = app;
+	if (!base) {
+		if (windowId !== undefined) base = `window ${windowId}`;
+		else if (pid !== undefined) base = `pid ${pid}`;
+		else base = action === "capture" ? "frontmost window" : "current window";
+	}
+	const parts = [base];
+	if (app && windowId !== undefined) parts.push(`window ${windowId}`);
+	else if (app && pid !== undefined) parts.push(`pid ${pid}`);
+	else if (!app && windowId !== undefined && pid !== undefined) parts.push(`pid ${pid}`);
+	return parts.join(" · ");
+}
+
+function formatComputerCall(args: Record<string, unknown>, theme: Theme): string {
+	const action = oneLine(stringField(args, "action") ?? "", 32) || undefined;
+	const title = theme.fg("toolTitle", theme.bold("computer"));
+	if (!action) return title;
+	const target = computerTarget(action, args);
+	const prefix = (verb: string, targetText = target) =>
+		`${title} ${theme.fg("accent", verb)}${targetText ? ` ${theme.fg("toolOutput", targetText)}` : ""}`;
+	const suffix = (detail: string | undefined) => (detail ? theme.fg("muted", ` · ${detail}`) : "");
+	const delivery = stringField(args, "delivery_mode") === "foreground" ? "foreground" : undefined;
+	const after = args.capture_after === true ? "capture after" : undefined;
+	const element = numberField(args, "element");
+	const at = element !== undefined ? `#${element}` : pointLabel(args.coordinate);
+
+	switch (action) {
+		case "capture": {
+			const mode = oneLine(stringField(args, "mode") ?? "som", 16).toUpperCase();
+			return (
+				prefix("capture") +
+				suffix([mode, args.since_last === true ? "diff" : undefined].filter(Boolean).join(" · "))
+			);
+		}
+		case "click":
+		case "double_click":
+		case "right_click":
+		case "middle_click": {
+			const button = oneLine(stringField(args, "button") ?? "", 12) || undefined;
+			let verb =
+				action === "double_click"
+					? "double-click"
+					: action === "right_click"
+						? "right-click"
+						: action === "middle_click"
+							? "middle-click"
+							: button && button !== "left"
+								? `${button}-click`
+								: "click";
+			const modifiers = Array.isArray(args.modifiers)
+				? args.modifiers
+						.filter((value): value is string => typeof value === "string" && value.length > 0)
+						.map((value) => oneLine(value, 12))
+				: [];
+			if (modifiers.length > 0) verb = `${modifiers.join("+")}+${verb}`;
+			return prefix(verb) + suffix([at, delivery, after].filter(Boolean).join(" · "));
+		}
+		case "drag": {
+			const from = pointLabel(args.from_coordinate);
+			const to = pointLabel(args.to_coordinate);
+			const span = from && to ? `${from} → ${to}` : undefined;
+			return prefix("drag") + suffix([span, delivery, after].filter(Boolean).join(" · "));
+		}
+		case "scroll": {
+			const direction = oneLine(stringField(args, "direction") ?? "down", 12) || "down";
+			const amount = numberField(args, "amount") ?? 3;
+			return prefix("scroll") + suffix([`${direction} ${amount}`, at, delivery, after].filter(Boolean).join(" · "));
+		}
+		case "type": {
+			const text = stringField(args, "text");
+			return (
+				prefix("type", target ? `into ${target}` : undefined) +
+				suffix([text ? quoted(text) : undefined, delivery, after].filter(Boolean).join(" · "))
+			);
+		}
+		case "key": {
+			const keys = stringField(args, "keys");
+			return (
+				prefix("press", target ? `in ${target}` : undefined) +
+				suffix([keys ? oneLine(keys, 48) : undefined, delivery, after].filter(Boolean).join(" · "))
+			);
+		}
+		case "set_value": {
+			const value = stringField(args, "value");
+			return (
+				prefix("set") +
+				suffix(
+					[
+						element !== undefined
+							? `#${element}${value ? ` = ${quoted(value, 28)}` : ""}`
+							: value
+								? quoted(value, 28)
+								: undefined,
+						delivery,
+						after,
+					]
+						.filter(Boolean)
+						.join(" · "),
+				)
+			);
+		}
+		case "focus_app": {
+			return prefix("focus") + suffix(args.raise_window === true ? "raise window" : undefined);
+		}
+		case "zoom": {
+			return prefix("zoom") + suffix([rectLabel(args.zoom_rect), "native crop"].filter(Boolean).join(" · "));
+		}
+		case "wait": {
+			const seconds = numberField(args, "seconds") ?? 1;
+			return `${title} ${theme.fg("accent", "wait")} ${theme.fg("toolOutput", `${seconds}s`)}`;
+		}
+		case "list_apps":
+			return `${title} ${theme.fg("accent", "list apps")}`;
+		case "list_windows":
+			return `${title} ${theme.fg("accent", "list windows")}`;
+		case "doctor":
+			return `${title} ${theme.fg("accent", "doctor")}`;
+		default:
+			return prefix(action);
+	}
+}
+
+function parseResultDetails(result: ComputerRenderResult): Record<string, unknown> | undefined {
+	const direct = asRecord(result.details);
+	if (direct) return direct;
+	const output = getTextOutput(result, false).trim();
+	if (!output.startsWith("{") && !output.startsWith("[")) return undefined;
+	try {
+		return asRecord(JSON.parse(output));
+	} catch {
+		return undefined;
+	}
+}
+
+function prettyComputerOutput(output: string): string {
+	const trimmed = output.trim();
+	if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return output;
+	try {
+		const value: unknown = JSON.parse(trimmed);
+		return value && typeof value === "object" ? JSON.stringify(value, null, 2) : output;
+	} catch {
+		return output;
+	}
+}
+
+function formatComputerResult(
+	args: Record<string, unknown>,
+	result: ComputerRenderResult,
+	options: { expanded: boolean; isPartial: boolean },
+	theme: Theme,
+	isError: boolean,
+	showImages: boolean,
+): string {
+	const details = parseResultDetails(result);
+	const action = oneLine(stringField(details, "action") ?? stringField(args, "action") ?? "computer", 32);
+	const app = oneLine(stringField(details, "app") ?? computerTarget(action, args), 80);
+	const verdict = asRecord(details?.verdict);
+	const decision = stringField(verdict, "decision");
+	const code = oneLine(stringField(details, "code") ?? "", 40) || undefined;
+	const error = stringField(details, "error") ?? stringField(details, "message");
+	const hint = stringField(verdict, "hint");
+	const degradedReason = stringField(details, "degradedReason");
+	const degraded = degradedReason ? oneLine(degradedReason, 60) : undefined;
+	const ok = !isError && details?.ok !== false && !error;
+	const hasImage = result.content.some((block) => block.type === "image");
+	const elements = numberField(details, "elementCount") ?? 0;
+	const count = numberField(details, "count") ?? 0;
+	const seconds = numberField(details, "seconds") ?? 1;
+	const mode = oneLine(stringField(details, "mode") ?? stringField(args, "mode") ?? "som", 16).toUpperCase();
+	const isDiff = details?.diff === true || stringField(details, "since") !== undefined;
+	let headline: string;
+
+	if (!ok) {
+		const summary = [action, app, code ?? "failed"].filter(Boolean).join(" · ");
+		headline = formatHeadline("error", theme, summary);
+	} else if (decision) {
+		const glyph =
+			decision === "done"
+				? theme.fg("success", "✓")
+				: decision === "escalate"
+					? theme.fg("error", "!")
+					: theme.fg("warning", "⚠");
+		const label = decision === "done" ? "done" : decision === "escalate" ? "escalate" : "verify";
+		headline = `${glyph} ${theme.fg("toolOutput", [action, label, app].filter(Boolean).join(" · "))}`;
+	} else {
+		let stats: string;
+		switch (action) {
+			case "capture":
+				stats = `${app} · ${elements} ${isDiff ? "changed " : ""}element${elements === 1 ? "" : "s"} · ${mode}${hasImage ? " · screenshot" : ""}${isDiff ? " · diff" : ""}${degraded ? " · degraded" : ""}`;
+				break;
+			case "zoom": {
+				const rect = rectLabel(details?.rect);
+				stats = `${app}${rect ? ` · ${rect}` : ""} · native crop${hasImage ? " · screenshot" : ""}`;
+				break;
+			}
+			case "list_apps":
+				stats = `${count} app${count === 1 ? "" : "s"}`;
+				break;
+			case "list_windows":
+				stats = `${count} window${count === 1 ? "" : "s"}`;
+				break;
+			case "wait":
+				stats = `waited ${seconds}s`;
+				break;
+			case "focus_app":
+				stats = `focused ${app}`;
+				break;
+			case "doctor":
+				stats = "driver report";
+				break;
+			default:
+				stats = `${action} delivered${app ? ` · ${app}` : ""}`;
+				break;
+		}
+		headline = formatHeadline("success", theme, stats);
+	}
+
+	let text = headline;
+	const detail = !ok ? [error, hint].filter(Boolean).join(" — ") : hint;
+	if (detail) {
+		const color = !ok || decision === "escalate" ? "error" : decision === "verify_fresh_state" ? "warning" : "muted";
+		text += `\n${theme.fg(color, oneLine(detail, 160))}`;
+	}
+	if (options.expanded) {
+		const output = getTextOutput(result, showImages).trim();
+		if (output) text += `\n${theme.fg("toolOutput", prettyComputerOutput(output))}`;
+	}
+	return text;
+}
+
+// ---------------------------------------------------------------------------
 // Tool definition
 // ---------------------------------------------------------------------------
 
@@ -1148,6 +1454,25 @@ export function createComputerToolDefinition(): ToolDefinition<typeof computerSc
 			"unverifiable one before retrying. Destructive system shortcuts and dangerous shell-payload typing are hard-blocked.",
 		promptSnippet: "Control the desktop (screenshots, mouse, keyboard) via cua-driver",
 		parameters: computerSchema,
+		renderCall(args, theme, context) {
+			const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+			text.setText(formatComputerCall(args as Record<string, unknown>, theme));
+			return text;
+		},
+		renderResult(result, options, theme, context) {
+			const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+			text.setText(
+				formatComputerResult(
+					context.args as Record<string, unknown>,
+					result as ComputerRenderResult,
+					options,
+					theme,
+					context.isError,
+					context.showImages,
+				),
+			);
+			return text;
+		},
 		async execute(_toolCallId, params: ComputerToolInput) {
 			const action = params.action;
 			const blocked = rejectUnsafe(action, params);

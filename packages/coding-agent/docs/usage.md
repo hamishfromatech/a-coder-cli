@@ -33,10 +33,11 @@ See [Keybindings](keybindings.md) for all shortcuts and customization.
 
 ## Slash Commands
 
-Type `/` in the editor to open command completion. Extensions can register custom commands, skills are available as `/skill:name`, and prompt templates expand via `/templatename`.
+Type `/` in the editor to open command completion. Extensions can register custom commands, skills are available as `/skill:name`, and prompt templates expand via `/templatename`. `/help` opens a searchable command list; an unknown slash command is reported in the editor instead of being sent to the model.
 
 | Command | Description |
 |---------|-------------|
+| `/help [filter]` | Browse and search every built-in, prompt, extension, and skill command |
 | `/login`, `/logout` | Manage OAuth or API-key credentials, including provider base URLs for local servers |
 | `/model` | Switch models |
 | `/scoped-models` | Enable/disable models for Ctrl+P cycling |
@@ -74,10 +75,9 @@ Type `/` in the editor to open command completion. Extensions can register custo
 | `/context` | Show context-window usage |
 | `/doctor` | Diagnose version, config, auth, MCP, and the session store |
 | `/debug` | Show the current debug/status dump |
-| `/apps` | Show the apps dashboard |
-| `/clear` | Clear the terminal |
+| `/clear` | Clear the conversation in place |
 | `/diff` | Show working-tree changes the session made |
-| `/reload` | Reload keybindings, extensions, skills, prompts, and context files |
+| `/reload` | Re-read settings, keybindings, extensions, skills, prompts, themes, and MCP servers; reports elapsed time and resource changes |
 | `/hotkeys` | Show all keyboard shortcuts |
 | `/changelog` | Display version history |
 | `/quit` | Quit a-coder-cli |

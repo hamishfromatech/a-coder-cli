@@ -12,6 +12,7 @@ import { getAgentDir } from "../config.ts";
 import { stripBom } from "../utils/text.ts";
 
 export interface AppKeybindings {
+	"app.help": true;
 	"app.interrupt": true;
 	"app.clear": true;
 	"app.exit": true;
@@ -100,6 +101,7 @@ export const KEYBINDINGS = {
 		...TUI_KEYBINDINGS["tui.altScreen.search"],
 		defaultKeys: windowsKeybindings ? "ctrl+f" : "ctrl+shift+f",
 	},
+	"app.help": { defaultKeys: "f1", description: "Open command help" },
 	"app.interrupt": { defaultKeys: "escape", description: "Cancel or abort" },
 	"app.clear": { defaultKeys: "ctrl+c", description: "Clear editor" },
 	"app.exit": { defaultKeys: "ctrl+d", description: "Exit when editor is empty" },

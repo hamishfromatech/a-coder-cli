@@ -71,6 +71,13 @@ type LoadedResourcesContext = {
 	formatDisplayPath: (resourcePath: string) => string;
 	formatContextPath: (resourcePath: string) => string;
 	getBuiltInCommandConflictDiagnostics: (extensionRunner: LoadedResourcesContext["session"]["extensionRunner"]) => [];
+	summarizeDiagnostics: (diagnostics: unknown[]) => string;
+	addDiagnosticsSection: (
+		container: Container,
+		title: string,
+		diagnostics: unknown[],
+		sourceInfos: Map<string, unknown>,
+	) => void;
 };
 
 type RebindContext = {
@@ -90,7 +97,7 @@ type ReloadCommandContext = {
 		isStreaming: boolean;
 		isCompacting: boolean;
 		reload: (options?: { beforeSessionStart?: () => void | Promise<void> }) => Promise<void>;
-		resourceLoader: { getThemes: () => { themes: [] } };
+		resourceLoader: LoadedResourcesContext["session"]["resourceLoader"];
 		extensionRunner: unknown;
 		modelRegistry: { getError: () => string | undefined };
 	};
@@ -116,6 +123,10 @@ type ReloadCommandContext = {
 	editor: unknown;
 	defaultEditor: { setPaddingX: (padding: number) => void; setAutocompleteMaxVisible: (maxVisible: number) => void };
 	themeController: { applyFromSettings: () => Promise<void> };
+	applyRuntimeSettings: () => void;
+	statusContainer: { clear: () => void };
+	activeStatusIndicator?: unknown;
+	updateEditorBorderColor: () => void;
 	resetExtensionUI: () => void;
 	rebuildChatFromMessages: () => void;
 	setupAutocompleteProvider: () => void;
@@ -161,7 +172,13 @@ function createReloadCommandContext(overrides: ReloadCommandContextOverrides = {
 			reload: async (options) => {
 				await options?.beforeSessionStart?.();
 			},
-			resourceLoader: { getThemes: () => ({ themes: [] }) },
+			resourceLoader: {
+				getAgentsFiles: () => ({ agentsFiles: [], diagnostics: [] }),
+				getSkills: () => ({ skills: [], diagnostics: [] }),
+				getPrompts: () => ({ prompts: [], diagnostics: [] }),
+				getThemes: () => ({ themes: [], diagnostics: [] }),
+				getExtensions: () => ({ extensions: [], errors: [] }),
+			},
 			extensionRunner: {},
 			modelRegistry: { getError: () => undefined },
 			...overrides.session,
@@ -188,6 +205,10 @@ function createReloadCommandContext(overrides: ReloadCommandContextOverrides = {
 		editor,
 		defaultEditor: { setPaddingX: () => {}, setAutocompleteMaxVisible: () => {}, ...overrides.defaultEditor },
 		themeController: { applyFromSettings: async () => {}, ...overrides.themeController },
+		applyRuntimeSettings: overrides.applyRuntimeSettings ?? (() => {}),
+		statusContainer: overrides.statusContainer ?? { clear: () => {} },
+		activeStatusIndicator: overrides.activeStatusIndicator,
+		updateEditorBorderColor: overrides.updateEditorBorderColor ?? (() => {}),
 		customHeader: overrides.customHeader,
 		builtInHeader: overrides.builtInHeader,
 		resetExtensionUI: overrides.resetExtensionUI ?? (() => {}),
@@ -245,6 +266,8 @@ function createLoadedResourcesContext(): LoadedResourcesContext {
 		formatDisplayPath: (resourcePath) => resourcePath,
 		formatContextPath: (resourcePath) => resourcePath.replace("/repo/", ""),
 		getBuiltInCommandConflictDiagnostics: () => [],
+		summarizeDiagnostics: () => "",
+		addDiagnosticsSection: () => {},
 	};
 }
 

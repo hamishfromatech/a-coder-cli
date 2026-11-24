@@ -195,7 +195,7 @@ export class ToolExecutionComponent extends Container {
 		}
 		// Collapsed settled MCP/extension fallback: outcome headline + small
 		// preview instead of the raw output dump.
-		const isError = this.result?.isError ?? false;
+		const isError = this.isResultError();
 		return new Text(formatPreviewResult(output.replace(/\r/g, "").split("\n"), isError, theme), 0, 0);
 	}
 
@@ -364,11 +364,14 @@ export class ToolExecutionComponent extends Container {
 	}
 
 	private updateDisplay(): void {
+		const verdictDecision = this.getVerdictDecision();
 		const bgFn = this.isPartial
 			? (text: string) => theme.bg("toolPendingBg", text)
-			: this.result?.isError
+			: this.isResultError() || verdictDecision === "escalate"
 				? (text: string) => theme.bg("toolErrorBg", text)
-				: (text: string) => theme.bg("toolSuccessBg", text);
+				: verdictDecision === "verify_fresh_state"
+					? (text: string) => theme.bg("toolPendingBg", text)
+					: (text: string) => theme.bg("toolSuccessBg", text);
 
 		let hasContent = false;
 		this.hideComponent = false;
@@ -478,6 +481,19 @@ export class ToolExecutionComponent extends Container {
 		}
 	}
 
+	private isResultError(): boolean {
+		if (this.result?.isError) return true;
+		const details = this.result?.details as { ok?: unknown; error?: unknown } | undefined;
+		return details?.ok === false || (typeof details?.error === "string" && details.error.length > 0);
+	}
+
+	private getVerdictDecision(): string | undefined {
+		if (this.toolName !== "computer") return undefined;
+		const details = this.result?.details as { verdict?: { decision?: unknown } } | undefined;
+		const decision = details?.verdict?.decision;
+		return typeof decision === "string" ? decision : undefined;
+	}
+
 	private getTextOutput(): string {
 		return getRenderedTextOutput(this.result, this.showImages);
 	}
@@ -495,7 +511,7 @@ export class ToolExecutionComponent extends Container {
 		if (output) {
 			text += expanded
 				? `\n${output}`
-				: formatPreviewResult(output.replace(/\r/g, "").split("\n"), this.result?.isError ?? false, theme);
+				: formatPreviewResult(output.replace(/\r/g, "").split("\n"), this.isResultError(), theme);
 		}
 		return text;
 	}
