@@ -189,6 +189,13 @@ We treat npm dependency changes as reviewed code changes.
 - CI installs with `npm ci --ignore-scripts` from the committed lockfiles (npm's publish-date window is disabled in CI because the lockfile — not fresh resolution — is the vetted artifact), and a scheduled GitHub workflow runs `npm audit --omit=dev` plus `npm audit signatures --omit=dev`.
 - Shrinkwrap generation has an explicit allowlist for dependency lifecycle scripts; new lifecycle-script deps fail checks until reviewed.
 
+## Join the community
+
+Building with local AI? Join the **Open Source AI Builders Club** - courses, builds
+and support for people running open models on their own hardware:
+[skool.com/open-source-ai-builders-club](https://www.skool.com/open-source-ai-builders-club/about)
+
+
 ## License
 
 Dual-licensed by The A-Tech Corporation PTY LTD:

@@ -114,25 +114,45 @@ const NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN = buildProviderErrorPattern([
 	'"code"\\s*:\\s*"?1308(?![0-9])',
 ]);
 
+// Codex closes a Responses WebSocket after 60 minutes, even mid-response (#12124). The
+// server reports it as code `websocket_connection_limit_reached` or as text "Responses
+// websocket connection limit reached", so one pattern covers both.
+const CODEX_WEBSOCKET_CONNECTION_LIMIT_SOURCE = "websocket.?connection.?limit.?reached";
+const CODEX_WEBSOCKET_CONNECTION_LIMIT_PATTERN = new RegExp(CODEX_WEBSOCKET_CONNECTION_LIMIT_SOURCE, "i");
+
 const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
 	// Generic provider load, HTTP status, and server-side transient failures.
 	"overloaded",
+	"server_busy",
+	"servers are currently busy",
+	"currently experiencing high demand",
+	"model is at capacity",
+	// #12289 has no upstream patch. Keep the matcher narrow: a bare "at capacity"
+	// also matches unrelated text such as `socket usage at capacity=...` from
+	// @smithy/node-http-handler.
+	"model is currently at capacity",
 	"rate.?limit",
 	"too many requests",
-	"429",
-	"500",
-	"502",
-	"503",
-	"504",
-	"524",
-	"service.?unavailable",
+	// Status codes must not be part of a longer word or number, e.g. a request id or byte count (#11057).
+	"(?<![a-z0-9])(?:429|500|502|503|504|520|524)(?![a-z0-9])",
+	// Also matches "The service is temporarily unavailable" (#10965).
+	"service.?(?:is.?)?(?:temporarily.?)?unavailable",
 	"server.?error",
 	"internal.?error",
 
 	// Wrapper/provider text for transient upstream failures, including OpenRouter
-	// "Provider returned error" responses (#2264).
-	"provider.?returned.?error",
+	// "Provider returned error" responses (#2264) and gateway wording such as
+	// "The upstream provider returned an error" (#10842).
+	"provider.?returned.?(?:an.?)?error",
 	"exceeded request buffer limit while retrying upstream",
+	// Gateway failure relaying the upstream response stream, sent as an OpenAI
+	// Responses `response.failed` event without an error code (#10920).
+	"unable to forward upstream",
+	// Other gateway upstream failures relayed as `response.failed` error codes (#10920).
+	"upstream.?request.?failed",
+	"upstream_stream_read_error",
+	"stream was interrupted",
+	"http/?2 stream failed",
 
 	// Network, proxy, and fetch transport failures. This includes OpenAI Codex
 	// raw-fetch failures such as "upstream connect", "connection refused", and
@@ -141,9 +161,23 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
 	"connection.?error",
 	"connection.?refused",
 	"connection.?lost",
+	// A gateway can relay a mid-stream drop as an Anthropic-style `api_error`
+	// event: {"type":"error","error":{"type":"api_error","message":"Connection closed."}} (#12064).
+	"connection.?closed",
 	"other side closed",
 	"fetch failed",
+	// node-fetch system errors, e.g. the Google ADC OAuth token refresh used by
+	// google-vertex. The reason is often empty (#10996).
+	"request to \\S+ failed, reason:",
 	"getaddrinfo",
+	// Bare Node socket codes, e.g. "read ECONNRESET", "write EPIPE", or
+	// "connect ETIMEDOUT 1.2.3.4:443" when a transport reports only the code
+	// (#12128). The AWS SDK HTTP handler behind Bedrock passes Node's socket
+	// error through unchanged, so `formatBedrockError` can report just
+	// "read ECONNRESET". The guards keep a code that sits inside a longer
+	// identifier from matching.
+	"(?<![a-z0-9_])(?:ECONNRESET|ECONNABORTED|ECONNREFUSED|ETIMEDOUT|EPIPE)(?![a-z0-9_])",
+	"connection reset by peer",
 	"ENOTFOUND",
 	"EAI_AGAIN",
 	"upstream.?connect",
@@ -157,6 +191,7 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
 	// WebSocket transports can report close/error text instead of HTTP/fetch text.
 	"websocket.?closed",
 	"websocket.?error",
+	CODEX_WEBSOCKET_CONNECTION_LIMIT_SOURCE,
 
 	// Premature stream endings from SDKs and transports. Anthropic can throw
 	// "stream ended without ..." and "Anthropic stream ended before message_stop"
@@ -165,6 +200,15 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
 	"stream ended before message_stop",
 	"stream ended before a terminal response event",
 	"http2 request did not get a response",
+	// Codex CLI mid-stream disconnect, relayed by proxies that wrap the Codex CLI,
+	// e.g. "stream disconnected before completion: stream closed before response.completed" (#11057).
+	"stream disconnected before completion",
+	// Magpie gateway relaying a dropped upstream Anthropic stream, e.g.
+	// "Claude Code's stream from Anthropic was cut short after the reply had begun" (#11879).
+	"cut short after the reply had begun",
+	// Node ERR_HTTP2_STREAM_CANCEL: the HTTP/2 session died before the request was
+	// sent, e.g. after the Bedrock SDK's 5-minute session timeout (#10379).
+	"pending stream has been canceled",
 
 	// Provider-requested retry delay cap failures should flow through the outer
 	// retry policy so callers can surface/abort the backoff (#1123).
@@ -178,6 +222,11 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
 
 	// gRPC based providers (e.g. NVIDIA NIM)
 	"ResourceExhausted",
+
+	// Sign in with ChatGPT: usage or user data temporarily unavailable. Usage
+	// failures can arrive mid-stream without an HTTP 503 in the message.
+	"subscription_sharing_usage_unavailable",
+	"subscription_sharing_user_unavailable",
 ]);
 
 /**
@@ -327,4 +376,14 @@ export function isRetryableAssistantError(message: AssistantMessage): boolean {
 	const errorMessage = message.errorMessage;
 	if (NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN.test(errorMessage)) return false;
 	return RETRYABLE_PROVIDER_ERROR_PATTERN.test(errorMessage);
+}
+
+/**
+ * Whether a failed assistant message is the Codex WebSocket 60-minute lifetime limit
+ * (#12124). That limit kills the response mid-stream, and Codex runs with `store: false`,
+ * so the interrupted response cannot be resumed; callers that normally refuse to replay
+ * a turn with visible output may retry this one on a fresh connection.
+ */
+export function isCodexWebSocketConnectionLimitError(errorMessage: string | undefined): boolean {
+	return typeof errorMessage === "string" && CODEX_WEBSOCKET_CONNECTION_LIMIT_PATTERN.test(errorMessage);
 }

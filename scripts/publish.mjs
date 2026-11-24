@@ -52,7 +52,9 @@ function assertBuildOutputExists(directory) {
 
 function validatePack(directory) {
 	const result = run("npm", ["pack", "--dry-run", "--ignore-scripts", "--json"], { capture: true, cwd: directory });
-	const packed = JSON.parse(result.stdout)[0];
+	// npm <11.6 returns an array; newer npm returns an object keyed by package name.
+	const parsed = JSON.parse(result.stdout);
+	const packed = Array.isArray(parsed) ? parsed[0] : Object.values(parsed)[0];
 	console.log(`  ${packed.filename}: ${packed.files.length} files, ${packed.size} bytes packed, ${packed.unpackedSize} bytes unpacked`);
 }
 

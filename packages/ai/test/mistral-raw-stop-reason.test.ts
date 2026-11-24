@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { stream as streamMistral } from "../src/api/mistral-conversations.ts";
 import { getModel } from "../src/compat.ts";
 import type { Context, FetchFunction } from "../src/types.ts";
+import { isRetryableAssistantError } from "../src/utils/retry.ts";
 
 const model = getModel("mistral", "devstral-medium-latest");
 const context: Context = {
@@ -45,7 +46,9 @@ describe("Mistral raw stop reasons", () => {
 
 		expect(message.stopReason).toBe("error");
 		expect(message.rawStopReason).toBe("error");
-		expect(message.errorMessage).toBe("Provider stopped with: error");
+		expect(message.errorMessage).toBe("Provider stopped with: error (server error)");
+		// #10487: the message must reach the retry classifier.
+		expect(isRetryableAssistantError(message)).toBe(true);
 	});
 
 	it("treats unknown Mistral finish reasons as provider error stops", async () => {
@@ -57,5 +60,6 @@ describe("Mistral raw stop reasons", () => {
 		expect(message.stopReason).toBe("error");
 		expect(message.rawStopReason).toBe("unmapped_error");
 		expect(message.errorMessage).toBe("Provider stopped with: unmapped_error");
+		expect(isRetryableAssistantError(message)).toBe(false);
 	});
 });

@@ -34,6 +34,34 @@ function getTextOutput(result: any): string {
 	);
 }
 
+const PERSISTED_OUTPUT_TIMEOUT_MS = 5_000;
+const PERSISTED_OUTPUT_POLL_MS = 10;
+
+/**
+ * Reads a persisted full-output file once it carries `expectedFragments`.
+ *
+ * The accumulator flushes through a Node WriteStream, so the temp file can
+ * exist before its contents land. Waiting on content with a bounded deadline
+ * keeps the full-persistence assertions while removing the read-before-flush
+ * race (THE-112).
+ */
+async function waitForPersistedOutput(filePath: string, expectedFragments: readonly string[]): Promise<string> {
+	const deadline = Date.now() + PERSISTED_OUTPUT_TIMEOUT_MS;
+	let content = "";
+	while (Date.now() < deadline) {
+		try {
+			content = readFileSync(filePath, "utf-8");
+		} catch {
+			content = "";
+		}
+		if (expectedFragments.every((fragment) => content.includes(fragment))) {
+			return content;
+		}
+		await new Promise((resolve) => setTimeout(resolve, PERSISTED_OUTPUT_POLL_MS));
+	}
+	return content;
+}
+
 function createTinyBmp1x1Red24bpp(): Buffer {
 	const buffer = Buffer.alloc(58);
 	buffer.write("BM", 0, "ascii");
@@ -551,8 +579,8 @@ describe("Coding Agent Tools", () => {
 				expect(message).not.toContain("Full output: undefined");
 				const fullOutputPath = message.match(/Full output: ([^\]\n]+)/)?.[1];
 				expect(fullOutputPath).toBeDefined();
+				const fullOutput = await waitForPersistedOutput(fullOutputPath!, ["1\n2\n3", "2998\n2999\n3000"]);
 				expect(existsSync(fullOutputPath!)).toBe(true);
-				const fullOutput = readFileSync(fullOutputPath!, "utf-8");
 				expect(fullOutput).toContain("1\n2\n3");
 				expect(fullOutput).toContain("2998\n2999\n3000");
 			}
@@ -677,23 +705,42 @@ describe("Coding Agent Tools", () => {
 		});
 
 		it("should coalesce streaming updates for chatty output", async () => {
-			const operations: BashOperations = {
-				exec: async (_command, _cwd, { onData }) => {
-					for (let i = 0; i < 5000; i++) {
-						onData(Buffer.from(`line ${i}\n`, "utf-8"));
-					}
-					return { exitCode: 0 };
-				},
-			};
-			const updates: Array<{ content: Array<{ type: string; text?: string }>; details?: unknown }> = [];
-			const bash = createBashTool(testDir, { operations });
+			// Coalescing is time-based, so a real clock made the update count a
+			// function of host speed: a contended runner spent >100ms inside the
+			// synchronous loop and crossed extra windows, pushing the count past
+			// the old wall-clock bound (THE-82). Virtual time pins the windows so
+			// the assertion measures the throttle, not the machine.
+			vi.useFakeTimers();
+			try {
+				const chunkCount = 5000;
+				const chunksPerWindow = 500;
+				const windowCount = chunkCount / chunksPerWindow;
+				const operations: BashOperations = {
+					exec: async (_command, _cwd, { onData }) => {
+						for (let i = 0; i < chunkCount; i++) {
+							onData(Buffer.from(`line ${i}\n`, "utf-8"));
+							if ((i + 1) % chunksPerWindow === 0) {
+								await vi.advanceTimersByTimeAsync(100);
+							}
+						}
+						return { exitCode: 0 };
+					},
+				};
+				const updates: Array<{ content: Array<{ type: string; text?: string }>; details?: unknown }> = [];
+				const bash = createBashTool(testDir, { operations });
 
-			const result = await bash.execute("test-call-chatty-updates", { command: "chatty" }, undefined, (update) =>
-				updates.push(update),
-			);
+				const result = await bash.execute("test-call-chatty-updates", { command: "chatty" }, undefined, (update) =>
+					updates.push(update),
+				);
 
-			expect(updates.length).toBeLessThan(25);
-			expect(getTextOutput(result)).toContain("line 4999");
+				// One update per 100ms window (plus the initial and final flushes),
+				// never one per chunk.
+				expect(updates.length).toBeLessThanOrEqual(windowCount + 2);
+				expect(updates.length).toBeLessThan(chunkCount);
+				expect(getTextOutput(result)).toContain("line 4999");
+			} finally {
+				vi.useRealTimers();
+			}
 		});
 
 		it("should not count a trailing newline as an extra truncated bash output line", async () => {
@@ -770,13 +817,8 @@ describe("Coding Agent Tools", () => {
 			expect(output).toMatch(/\[Showing lines \d+-\d+ of \d+\. Full output: /);
 			expect(output).not.toContain("Full output: undefined");
 
-			for (let i = 0; i < 20 && (!fullOutputPath || !existsSync(fullOutputPath)); i++) {
-				await new Promise((resolve) => setTimeout(resolve, 10));
-			}
-
-			expect(fullOutputPath).toBeDefined();
+			const fullOutput = await waitForPersistedOutput(fullOutputPath!, ["1\n2\n3", "2998\n2999\n3000"]);
 			expect(existsSync(fullOutputPath!)).toBe(true);
-			const fullOutput = readFileSync(fullOutputPath!, "utf-8");
 			expect(fullOutput).toContain("1\n2\n3");
 			expect(fullOutput).toContain("2998\n2999\n3000");
 		});
@@ -788,13 +830,8 @@ describe("Coding Agent Tools", () => {
 			expect(result.truncated).toBe(true);
 			expect(fullOutputPath).toBeDefined();
 
-			for (let i = 0; i < 20 && (!fullOutputPath || !existsSync(fullOutputPath)); i++) {
-				await new Promise((resolve) => setTimeout(resolve, 10));
-			}
-
-			expect(fullOutputPath).toBeDefined();
+			const fullOutput = await waitForPersistedOutput(fullOutputPath!, ["1\n2\n3", "2998\n2999\n3000"]);
 			expect(existsSync(fullOutputPath!)).toBe(true);
-			const fullOutput = readFileSync(fullOutputPath!, "utf-8");
 			expect(fullOutput).toContain("1\n2\n3");
 			expect(fullOutput).toContain("2998\n2999\n3000");
 		});

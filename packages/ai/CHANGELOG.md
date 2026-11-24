@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Fixed responses that end with `finish_reason: "error"` not being retried: `openai-completions` streams ([#12206](https://github.com/earendil-works/pi/issues/12206)) and Mistral streams ([#10487](https://github.com/earendil-works/pi/issues/10487)) now report the stop as `(server error)`, which the retry classifier treats as transient.
+- Anthropic usage after a server-tool loop is billed across executor steps, so `totalTokens` now comes from the last `message` (or terminal `fallback_message`) iteration instead of the summed top-level fields; the context estimate no longer doubles and the next request is not clamped to `max_tokens: 1` (#12293).
+- `opencode-go` declares the `google-generative-ai` API, so a live catalog that lists its Gemini models type-checks and streams instead of failing the build.
 - The identity User-Agent version (`PI_AI_VERSION`) stays in lockstep with `package.json`; `scripts/sync-versions.js` now updates it during a version bump.
 - `Usage.cost.totalFromProvider` marks a total the provider reported itself, so callers can tell it apart from a computed estimate (#11178).
 - OpenRouter chat and image responses keep the provider-reported charge, including the upstream BYOK cost, instead of overwriting it with the catalog estimate (#9980).
@@ -15,13 +18,18 @@
 - Gemini tool schemas rewrite unsupported `const` keywords to single-value `enum` schemas without rewriting literal data in defaults, examples, or enum values, and without losing names such as `__proto__` (#11308).
 - Claude system updates are held until the next sendable assistant message (or the end of the transcript), so `role 'system' must precede an 'assistant' message` no longer rejects sessions where an update was followed by an empty or reasoning-only reply (#11091).
 - Claude models with mid-conversation effort no longer fail with `Invalid effort level` on accounts whose organization caps effort below `high`; the top-level effort is sent as `low` (#10063).
+- Provider errors that report only a Node socket error code, such as `read ECONNRESET`, `write EPIPE`, or `connect ETIMEDOUT`, are retried instead of ending the turn (#12128).
+- Provider errors reading `Connection closed.` are retried (#12064).
+- Fixed the OpenAI Codex WebSocket 60-minute connection limit failing the turn when it hit mid-stream, for example during long thinking. The error is now retried on a fresh connection, and new requests stop reusing a cached connection after 45 minutes instead of 55, so a long response is less likely to reach the limit ([#12124](https://github.com/earendil-works/pi/issues/12124))
+- Provider retry classification now recognizes capacity/overload (`model is at capacity`, `model is currently at capacity`, `server_busy`, `servers are currently busy`, `currently experiencing high demand`), gateway/stream-drop (`unable to forward upstream`, `upstream request failed`, `upstream_stream_read_error`, `stream was interrupted`, `http/2 stream failed`, `stream disconnected before completion`, `pending stream has been canceled`), `service unavailable`, node-fetch `request to ... failed, reason:`, and temporary `subscription_sharing_usage_unavailable` / `subscription_sharing_user_unavailable` ChatGPT errors (#10278, #12289, #10842, #10920, #10379, #10965, #10996).
+- HTTP status-code matching in retry classification is anchored, so digits inside request ids or longer numbers no longer retry permanent errors, and `520` is recognized (#11057).
 
 
 
 ### Added
 
 - Ollama and Ollama Cloud models derive `reasoning` from the server's `thinking` capability (`/api/tags` and `/api/show`) instead of hardcoding it off, so thinking models expose the thinking controls and send `reasoning_effort: "none"` when thinking is off. Discovery now also probes `/api/show` when `/api/tags` omits capability tags, as current servers do, and keeps using `/api/show` for the context window because `details.context_length` is the GGUF maximum rather than the runtime `num_ctx`.
-
+- Added GPT-6.2 Astra and GPT-6.2 Sol to the OpenAI, Azure OpenAI Responses, and OpenAI Codex providers with official pricing (Astra: $8 input, $0.40 cached input, $10 cache writes, $40 output; Sol: $2, $0.10, $2.50, $10; long-context tier above 272k on OpenAI), tool search, and additional tools. Both reject reasoning effort `none` and `minimal`, so `off` is unavailable. Azure serves them with a 1.05M context window; Codex serves GPT-6.2 Sol with 500K and GPT-6.2 Astra with 272K.
 - Device-code auth info gains optional `openBrowserOnConfirm` and `copyCodeOnConfirm` (both default to true), so clients can honor a provider that does not want the browser opened or the code copied (#9282).
 - Export `getSystemMessageText()` and `renderSystemMessageUpdate()` so consumers can render system messages the same way the model receives them.
 
@@ -50,6 +58,7 @@
 - Added GPT-6 Astra for OpenAI API keys and OpenAI Codex subscriptions.
 - Added the `supportsExplicitPromptCacheMode` OpenAI Responses compatibility setting for explicit prompt caching via `prompt_cache_options` (`ttl: "30m"` for long-cache GPT-5.6+/GPT-6 Astra requests, `mode: "explicit"` for cache-disabled requests).
 - `AssistantMessage.retryAfterMs`: provider-requested retry delay (milliseconds), extracted from `Retry-After` / `Retry-After-Ms` response headers (or SDK `retryAfter`/`retryAfterMs` fields) and attached to error assistant messages by every API adapter. The OpenAI Codex adapter's inner retry loop now preserves the hint on its final throw so outer retry policies can honor it too. Callers implementing their own retry/backoff should prefer this over their default schedule.
+- A provider stream cut short after the reply had begun (an upstream Anthropic stream relayed by gateways) matches the retryable-error classifier and enters the normal auto-retry path ([earendil-works/pi#11885](https://github.com/earendil-works/pi/pull/11885)).
 
 
 ### Changed

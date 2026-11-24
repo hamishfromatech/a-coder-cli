@@ -36,6 +36,7 @@ import {
 	type DecisionsModel,
 	type DecisionsModels,
 	getSupportedThinkingLevels,
+	isCodexWebSocketConnectionLimitError,
 	isContextOverflow,
 	isRecoverableLength,
 	isRetryableAssistantError,
@@ -253,6 +254,7 @@ export type AgentSessionEvent =
 			model?: string;
 			latencyMs: number;
 			reason: string;
+			diagnostic?: string;
 	  }
 	| SessionStartEvent;
 
@@ -425,7 +427,8 @@ export function isOverloadedAssistantError(message: AssistantMessage): boolean {
 /**
  * Whether a failed assistant message already streamed output the user has
  * seen (non-empty text, non-empty thinking, or any tool call). Auto-retry
- * refuses to replay such a turn — easy-agent's streamed-output replay guard.
+ * refuses to replay such a turn — easy-agent's streamed-output replay guard —
+ * except for the Codex WebSocket lifetime limit (see `_prepareRetry`).
  */
 export function hasVisibleStreamedOutput(message: AssistantMessage): boolean {
 	if (!Array.isArray(message.content)) return false;
@@ -964,6 +967,7 @@ export class AgentSession {
 			...(decision.model ? { model: decision.model } : {}),
 			latencyMs: decision.latencyMs,
 			reason: decision.reason,
+			...(decision.diagnostic !== undefined ? { diagnostic: decision.diagnostic } : {}),
 		});
 		return decision;
 	}
@@ -1053,6 +1057,8 @@ export class AgentSession {
 	private _extensionShutdownHandler?: ShutdownHandler;
 	private _extensionErrorListener?: ExtensionErrorListener;
 	private _extensionErrorUnsubscriber?: () => void;
+	// Set by bindExtensions(): reload() restarts extensions only if the host started them.
+	private _extensionsBound = false;
 
 	// Permission mode state
 	private _permissionMode: PermissionMode;
@@ -4059,6 +4065,7 @@ export class AgentSession {
 			this._extensionErrorListener = bindings.onError;
 		}
 
+		this._extensionsBound = true;
 		this._applyExtensionBindings(this._extensionRunner);
 		await this._extensionRunner.emit(this._sessionStartEvent);
 		await this.extendResourcesFromExtensions(this._sessionStartEvent.reason === "reload" ? "reload" : "startup");
@@ -4554,12 +4561,7 @@ export class AgentSession {
 			includeAllExtensionTools: !this._noTools,
 		});
 
-		const hasBindings =
-			this._extensionUIContext ||
-			this._extensionCommandContextActions ||
-			this._extensionShutdownHandler ||
-			this._extensionErrorListener;
-		if (hasBindings) {
+		if (this._extensionsBound) {
 			await options?.beforeSessionStart?.();
 			await this._extensionRunner.emit({ type: "session_start", reason: "reload" });
 			await this.extendResourcesFromExtensions("reload");
@@ -4594,7 +4596,15 @@ export class AgentSession {
 		// already streamed visible output (text/thinking/tool calls) the user saw
 		// it — silently re-running the whole turn would duplicate that output.
 		// Surface the error instead and let the user decide to resend.
-		if (hasVisibleStreamedOutput(message)) {
+		//
+		// Exception: the Codex WebSocket 60-minute lifetime limit kills the response
+		// mid-stream (#12124). Codex runs with `store: false`, so the interrupted
+		// response cannot be resumed and its partial reasoning cannot be sent back;
+		// the official Codex client also recovers by retrying the whole stream on a
+		// fresh connection. That is safe here because the failed attempt is removed
+		// from agent state below, so the partial thinking is never replayed into the
+		// retried turn's context (it stays in the session file and the transcript).
+		if (hasVisibleStreamedOutput(message) && !isCodexWebSocketConnectionLimitError(message.errorMessage)) {
 			return false;
 		}
 
@@ -5933,10 +5943,9 @@ export class AgentSession {
 		}
 		const tail = record.output.trim();
 		const body = meta.length > 0 ? `\n${meta.join(" · ")}` : "";
-		const error = record.error ? `\nError: ${record.error}` : "";
 		const output = tail ? `\nOutput tail:\n${tail}` : "";
 		const log = record.fullOutputPath ? `\nFull output: ${record.fullOutputPath}` : "";
-		return `${header}${body}${error}${output}${log}`;
+		return `${header}${body}${output}${log}`;
 	}
 
 	private _formatSubAgentNotification(record: InProcessSubAgentRecord): string {
@@ -6068,9 +6077,9 @@ export class AgentSession {
 	// =========================================================================
 
 	/**
-	 * Get text content of last assistant message.
+	 * Get text content of the last assistant reply.
 	 * Useful for /copy command.
-	 * @returns Text content, or undefined if no assistant message exists
+	 * @returns Text content, or undefined if no assistant message exists or the last reply has no text
 	 */
 	getLastAssistantText(): string | undefined {
 		const lastAssistant = this.messages
@@ -6079,8 +6088,9 @@ export class AgentSession {
 			.find((m) => {
 				if (m.role !== "assistant") return false;
 				const msg = m as AssistantMessage;
-				// Skip aborted messages with no content
-				if (msg.stopReason === "aborted" && msg.content.length === 0) return false;
+				// Skip messages without text from a turn that did not end normally: aborted, failed or only
+				// calling tools (#12119). A reply that ended normally stays the last reply even without text.
+				if (msg.stopReason !== "stop" && !msg.content.some((c) => c.type === "text" && c.text.trim())) return false;
 				return true;
 			});
 

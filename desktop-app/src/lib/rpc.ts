@@ -572,7 +572,10 @@ export interface AutoContinueDecisionEvent {
 	confidence?: number;
 	model?: string;
 	latencyMs: number;
+	/** Human-readable explanation suitable for UI copy. */
 	reason: string;
+	/** Machine-readable decision summary, for logs/telemetry only. */
+	diagnostic?: string;
 }
 
 export interface CompactionStartEvent {
