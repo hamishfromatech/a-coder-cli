@@ -1,6 +1,6 @@
 [package]
 name = "a-coder-desktop"
-version = "0.80.202"
+version = "0.80.203"
 description = "Desktop wrapper for a-coder-cli"
 authors = ["The A-Tech Corporation PTY LTD"]
 edition = "2021"
@@ -16,6 +16,7 @@ tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-opener = "2"
+tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["unbounded_depth"] }
 serde_stacker = "0.1"
@@ -68,6 +69,7 @@ objc2-web-kit = { version = "0.3", default-features = false, features = [
 webview2-com = "0.39"
 windows-core = "0.62"
 windows-sys = { version = "=0.61.2", features = ["Win32_System_Power"] }
+winreg = "0.55"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = { version = "=2.0.2", features = ["v2_38"] }

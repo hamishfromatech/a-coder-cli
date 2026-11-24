@@ -4,7 +4,7 @@ version = 3
 
 [[package]]
 name = "a-coder-desktop"
-version = "0.80.201"
+version = "0.80.203"
 dependencies = [
  "base64 0.22.1",
  "block2",
@@ -32,6 +32,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-process",
  "tauri-plugin-shell",
+ "tauri-plugin-single-instance",
  "tauri-plugin-updater",
  "tempfile",
  "tokio",
@@ -44,6 +45,7 @@ dependencies = [
  "which",
  "windows-core 0.62.2",
  "windows-sys 0.61.2",
+ "winreg 0.55.0",
  "xcap",
 ]
 
@@ -5191,6 +5193,22 @@ dependencies = [
  "tauri-plugin",
  "thiserror 2.0.18",
  "tokio",
+]
+
+[[package]]
+name = "tauri-plugin-single-instance"
+version = "2.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "726b6da0dd5bd1344f84f4108a622c07d01923baacb5c803a605189672c5352f"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tauri",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "windows-sys 0.61.2",
+ "zbus",
 ]
 
 [[package]]
