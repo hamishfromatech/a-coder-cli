@@ -62,6 +62,20 @@ describe("AssistantMessageComponent", () => {
 		expect(rendered.includes(OSC133_ZONE_FINAL)).toBe(false);
 	});
 
+	test("renders the message timestamp above the first content block", () => {
+		initTheme("dark");
+
+		const message = createAssistantMessage([{ type: "text", text: "hello" }]);
+		message.timestamp = Date.now();
+		const component = new AssistantMessageComponent(message);
+		component.flush();
+		const lines = component.render(60).map(stripAnsi);
+		const timestampIndex = lines.findIndex((line) => /\d{1,2}:\d{2}/.test(line));
+
+		expect(timestampIndex).toBeGreaterThanOrEqual(0);
+		expect(lines.slice(timestampIndex + 1).join("\n")).toContain("hello");
+	});
+
 	test("renders length stops as visible errors", () => {
 		initTheme("dark");
 

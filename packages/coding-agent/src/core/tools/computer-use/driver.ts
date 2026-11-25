@@ -13,6 +13,9 @@
  *   (e.g. `delivery_mode`, `element_token`).
  * - `start_session {session}` declares a run identity (cursor color, config
  *   owner); `end_session` on teardown. Every call carries `session`.
+ * - Sessions expire after five minutes idle. A call rejected with
+ *   "session ... has ended" is revived with `start_session` and retried once;
+ *   the rejected call never executed, so the replay is safe.
  * - `get_window_state` captures pixels + AX elements; element actions take
  *   `element_index` (+ the snapshot's `element_token` so the driver reports
  *   "stale" instead of silently re-resolving to a different element).
@@ -377,6 +380,31 @@ export class CuaDriverClient {
 		}
 	}
 
+	private async invokeTool(client: Client, name: string, payload: Record<string, unknown>): Promise<DriverToolResult> {
+		const result = await client.callTool({ name, arguments: payload }, undefined, {
+			timeout: CALL_TIMEOUT_MS,
+		});
+		return normalizeResult(result as CallToolResult);
+	}
+
+	/**
+	 * cua-driver sessions have a five-minute idle TTL. Only `start_session`
+	 * revives an ended public label, and the rejected call did not execute, so
+	 * replaying it after revival is safe for both reads and mutations.
+	 */
+	private async reviveSession(client: Client): Promise<void> {
+		const result = await client.callTool(
+			{ name: "start_session", arguments: { session: this.sessionId } },
+			undefined,
+			{ timeout: CALL_TIMEOUT_MS },
+		);
+		const normalized = normalizeResult(result as CallToolResult);
+		if (normalized.isError || normalized.structured?.ok === false) {
+			const detail = normalized.message || "start_session failed";
+			throw new Error(`cua-driver session '${this.sessionId}' ended and could not be revived: ${detail}`);
+		}
+	}
+
 	/** Stable per-process run label sent as `session` on every call. */
 	readonly sessionId = `acoder-${Math.random().toString(36).slice(2, 14)}`;
 
@@ -395,10 +423,33 @@ export class CuaDriverClient {
 		if (!client) {
 			throw new Error("cua-driver client is not connected");
 		}
+		let result: DriverToolResult;
 		try {
-			const result = await client.callTool({ name, arguments: payload }, undefined, { timeout: CALL_TIMEOUT_MS });
+			result = await this.performCall(client, name, payload);
+		} catch (error) {
+			if (!LIFECYCLE_TOOLS.has(name) && isSessionEndedError(error)) {
+				await this.reviveSession(client);
+				return await this.performCall(client, name, payload);
+			}
+			throw error;
+		}
+		if (!LIFECYCLE_TOOLS.has(name) && isSessionEndedResult(result)) {
+			await this.reviveSession(client);
+			return await this.performCall(client, name, payload);
+		}
+		return result;
+	}
+
+	/** One tool call, with transport recovery but no session revival. */
+	private async performCall(
+		client: Client,
+		name: string,
+		payload: Record<string, unknown>,
+	): Promise<DriverToolResult> {
+		try {
+			const result = await this.invokeTool(client, name, payload);
 			this.transportSuspect = false;
-			return normalizeResult(result as CallToolResult);
+			return result;
 		} catch (error) {
 			if (isTimeout(error)) {
 				// Fail closed: the action may have taken effect. Never replay it.
@@ -422,10 +473,7 @@ export class CuaDriverClient {
 					await this.start();
 					const reconnected = this.client;
 					if (!reconnected) throw new Error("cua-driver client is not connected");
-					const result = await reconnected.callTool({ name, arguments: payload }, undefined, {
-						timeout: CALL_TIMEOUT_MS,
-					});
-					return normalizeResult(result as CallToolResult);
+					return await this.invokeTool(reconnected, name, payload);
 				}
 				return {
 					isError: true,
@@ -485,4 +533,22 @@ function isTransportClosed(error: unknown): boolean {
 			`${error.name}: ${error.message}`,
 		) || /Connection closed/i.test(error.message)
 	);
+}
+
+function sessionEndedMessage(value: unknown): boolean {
+	return typeof value === "string" && /session\b[^\n]*\bhas ended\b/i.test(value);
+}
+
+function isSessionEndedResult(result: DriverToolResult): boolean {
+	const structured = result.structured;
+	if (structured?.code === "session_ended") return true;
+	return (
+		sessionEndedMessage(result.message) ||
+		sessionEndedMessage(structured?.message) ||
+		sessionEndedMessage(structured?.error)
+	);
+}
+
+function isSessionEndedError(error: unknown): boolean {
+	return error instanceof Error && /session\b[^\n]*\bhas ended\b|session_ended/i.test(error.message);
 }

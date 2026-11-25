@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { UserMessageComponent } from "../src/modes/interactive/components/user-message.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
+import { stripAnsi } from "../src/utils/ansi.ts";
 
 const OSC133_ZONE_START = "\x1b]133;A\x07";
 const OSC133_ZONE_END = "\x1b]133;B\x07";
@@ -21,6 +22,16 @@ describe("UserMessageComponent", () => {
 		expect(lines[1]).toContain("hello");
 		expect(lines[2].startsWith(OSC133_ZONE_END + OSC133_ZONE_FINAL)).toBe(true);
 		expect(lines[2].endsWith(BG_RESET)).toBe(true);
+	});
+
+	test("renders the message timestamp above the bubble when supplied", () => {
+		initTheme("dark");
+
+		const component = new UserMessageComponent("hello", undefined, 1, [], Date.now());
+		const lines = component.render(80).map(stripAnsi);
+
+		expect(lines[0]).toMatch(/\d{1,2}:\d{2}/);
+		expect(lines.join("\n")).toContain("hello");
 	});
 });
 

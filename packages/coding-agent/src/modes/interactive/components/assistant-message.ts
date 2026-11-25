@@ -5,6 +5,7 @@ import { type Component, Container, Markdown, type MarkdownTheme, Spacer, Text }
 import type { MarkdownTransformer } from "../../../core/extensions/types.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
 import { createMarkdownTransform } from "./markdown-transform.ts";
+import { formatMessageTimestamp } from "./message-time.ts";
 
 const OSC133_ZONE_START = "\x1b]133;A\x07";
 const OSC133_ZONE_END = "\x1b]133;B\x07";
@@ -160,10 +161,28 @@ export class AssistantMessageComponent extends Container {
 		// Clear content container
 		this.contentContainer.clear();
 
+		const hasToolCalls = message.content.some((c) => c.type === "toolCall");
+		this.hasToolCalls = hasToolCalls;
+		const hasText = message.content.some((c) => c.type === "text" && c.text.trim());
+		const hasThinking = message.content.some((c) => c.type === "thinking" && c.thinking.trim());
+		const showsThinking =
+			hasThinking && (this.hideThinkingBlock ? this.hiddenThinkingLabel.trim().length > 0 : !this.foldPastThinking);
+		const showsStopMessage =
+			message.stopReason === "length" ||
+			(!hasToolCalls && (message.stopReason === "aborted" || message.stopReason === "error"));
+		const timestamp = formatMessageTimestamp(message.timestamp);
+		const showTimestamp = Boolean(timestamp) && (hasText || showsThinking || hasToolCalls || showsStopMessage);
+
 		// Spacers are added lazily, right before the next visible content block. This puts a blank
 		// line before the first visible block and after each visible thinking run that is followed
 		// by more visible content, while hidden thinking runs without a label contribute nothing.
+		// The timestamp takes that leading slot when present, so it sits directly above the body.
 		let needsSpacer = true;
+		if (showTimestamp) {
+			this.contentContainer.addChild(new Spacer(1));
+			this.contentContainer.addChild(new Text(theme.fg("muted", timestamp), this.outputPad, 0));
+			needsSpacer = false;
+		}
 		const addVisibleChild = (child: Component) => {
 			if (needsSpacer) {
 				this.contentContainer.addChild(new Spacer(1));
@@ -231,8 +250,6 @@ export class AssistantMessageComponent extends Container {
 		// Check if incomplete/failed - show after partial content.
 		// For aborted/error tool calls, tool execution components show the error.
 		// Length stops can happen before a tool call is complete, so surface them here too.
-		const hasToolCalls = message.content.some((c) => c.type === "toolCall");
-		this.hasToolCalls = hasToolCalls;
 		if (message.stopReason === "length") {
 			this.contentContainer.addChild(new Spacer(1));
 			this.contentContainer.addChild(

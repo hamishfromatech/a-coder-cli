@@ -391,6 +391,22 @@ describe("computer tool conformance against a fake cua-driver MCP server", () =>
 		}
 	});
 
+	it("revives an idle-expired driver session and retries the rejected call", async () => {
+		process.env.FAKE_SESSION_ENDED_ONCE = "list_apps";
+		try {
+			const result = await execute({ action: "list_apps" } as ComputerToolInput);
+			const payload = JSON.parse(result.content[0]?.type === "text" ? result.content[0].text : "{}") as {
+				ok: boolean;
+			};
+			expect(payload.ok, JSON.stringify(payload)).toBe(true);
+			const calls = readCalls();
+			expect(calls.filter((call) => call.name === "list_apps")).toHaveLength(2);
+			expect(calls.filter((call) => call.name === "start_session").length).toBeGreaterThanOrEqual(2);
+		} finally {
+			delete process.env.FAKE_SESSION_ENDED_ONCE;
+		}
+	});
+
 	it("zooms a region and translates a follow-up coordinate click", async () => {
 		await execute({ action: "capture" } as ComputerToolInput);
 		const result = await execute({ action: "zoom", zoom_rect: [10, 20, 110, 70] } as ComputerToolInput);

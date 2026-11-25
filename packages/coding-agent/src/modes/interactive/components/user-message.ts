@@ -2,6 +2,7 @@ import { Box, Container, Markdown, type MarkdownTheme, Spacer, Text } from "@ear
 import type { MarkdownTransformer } from "../../../core/extensions/types.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
 import { createMarkdownTransform } from "./markdown-transform.ts";
+import { formatMessageTimestamp } from "./message-time.ts";
 import { parseTaskNotificationMessage, type TaskNotificationNote } from "./task-notification-pill.ts";
 
 const OSC133_ZONE_START = "\x1b]133;A\x07";
@@ -16,18 +17,21 @@ export class UserMessageComponent extends Container {
 	private markdownTheme: MarkdownTheme;
 	private outputPad: number;
 	private markdownTransformers: readonly MarkdownTransformer[];
+	private timestamp?: number;
 
 	constructor(
 		text: string,
 		markdownTheme: MarkdownTheme = getMarkdownTheme(),
 		outputPad = 1,
 		markdownTransformers: readonly MarkdownTransformer[] = [],
+		timestamp?: number,
 	) {
 		super();
 		this.text = text;
 		this.markdownTheme = markdownTheme;
 		this.outputPad = outputPad;
 		this.markdownTransformers = markdownTransformers;
+		this.timestamp = timestamp;
 		this.rebuild();
 	}
 
@@ -38,6 +42,11 @@ export class UserMessageComponent extends Container {
 
 	private rebuild(): void {
 		this.clear();
+
+		const timestamp = formatMessageTimestamp(this.timestamp);
+		if (timestamp) {
+			this.addChild(new Text(theme.fg("muted", timestamp), this.outputPad, 0));
+		}
 
 		// Background-task notifications render as compact pills above the actual
 		// user text instead of raw multi-line notes inside the bubble.

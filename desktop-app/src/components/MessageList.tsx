@@ -11,6 +11,7 @@ import { loadOlderHistory } from "../lib/history";
 import { useSessionViewStore } from "../stores/session-view-store";
 import { useSwitchStore } from "../stores/switch-store";
 import { messageKey } from "../lib/message-key";
+import { formatMessageTimestamp } from "../lib/message-time";
 import { inlineDataUrl, loadAttachmentDataUrl } from "../lib/attachment-cache";
 import { toast } from "../stores/toast-store";
 import { Loader } from "./ui/Loader";
@@ -610,25 +611,30 @@ function UserMessageItem({
 	const images = extractUserImages(message);
 
 	return (
-		<div className="group/msg flex items-start justify-end gap-2">
-			{text.length > 0 && !readOnly && (
-				<UserMessageActions
-					text={text}
-					messageIndex={index}
-					disabled={streaming}
-				/>
-			)}
-			<div className="pi-glass max-w-[min(88%,42rem)] min-w-0 space-y-2 break-words rounded-xl border border-pi-border px-3.5 py-2.5 text-[13px] leading-relaxed text-pi-text">
-				{text.length > 0 && (
-					<MarkdownTextContent text={text} isRunning={false} />
-				)}
-				{images.length > 0 && (
-					<div className="flex flex-wrap gap-2">
-						{images.map((img, idx) => (
-							<ImageBlock key={idx} image={img} />
-						))}
+		<div className="flex max-w-[min(88%,42rem)] flex-col items-end gap-1.5">
+			<div className="group/msg flex min-w-0 max-w-full flex-col items-end">
+				<MessageTimestamp timestamp={message.timestamp} align="end" className="pr-1" />
+				<div className="flex max-w-full items-start justify-end gap-2">
+					{text.length > 0 && !readOnly && (
+						<UserMessageActions
+							text={text}
+							messageIndex={index}
+							disabled={streaming}
+						/>
+					)}
+					<div className="pi-glass w-fit min-w-0 max-w-full space-y-2 break-words rounded-xl border border-pi-border px-3.5 py-2.5 text-[13px] leading-relaxed text-pi-text">
+						{text.length > 0 && (
+							<MarkdownTextContent text={text} isRunning={false} />
+						)}
+						{images.length > 0 && (
+							<div className="flex flex-wrap gap-2">
+								{images.map((img, idx) => (
+									<ImageBlock key={idx} image={img} />
+								))}
+							</div>
+						)}
 					</div>
-				)}
+				</div>
 			</div>
 		</div>
 	);
@@ -755,6 +761,31 @@ function UserMessageActions({
 	);
 }
 
+function MessageTimestamp({
+	timestamp,
+	align = "start",
+	className = "",
+}: {
+	timestamp: number | null | undefined;
+	align?: "start" | "end";
+	className?: string;
+}) {
+	const label = formatMessageTimestamp(timestamp);
+	if (!label || typeof timestamp !== "number") return null;
+	const date = new Date(timestamp);
+	return (
+		<time
+			dateTime={date.toISOString()}
+			title={date.toLocaleString()}
+			className={`block select-none text-3xs font-medium tracking-tight text-pi-text-muted pi-tabular ${
+				align === "end" ? "text-right" : "text-left"
+			} ${className}`}
+		>
+			{label}
+		</time>
+	);
+}
+
 function ImageBlock({ image }: { image: DisplayImage }) {
 	const [open, setOpen] = useState(false);
 	const [src, setSrc] = useState<string | undefined>(() =>
@@ -852,6 +883,7 @@ function AssistantMessageItem({
 				<Bot className="h-3.5 w-3.5" />
 			</div>
 			<div className="relative flex min-w-0 flex-1 flex-col gap-2.5">
+				<MessageTimestamp timestamp={message.timestamp} className="px-1" />
 				<div className="relative min-w-0">
 					{text.length > 0 && !isStreaming && <CopyReplyButton text={text} />}
 					{thinking.length > 0 && !hideThinkingBlock && (

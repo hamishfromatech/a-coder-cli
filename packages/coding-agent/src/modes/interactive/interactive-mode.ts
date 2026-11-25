@@ -4405,6 +4405,7 @@ export class InteractiveMode {
 								this.getMarkdownThemeWithSettings(),
 								this.outputPad,
 								this.getMarkdownTransformers(),
+								message.timestamp,
 							);
 							this.chatContainer.addChild(userComponent);
 						}
@@ -4414,6 +4415,7 @@ export class InteractiveMode {
 							this.getMarkdownThemeWithSettings(),
 							this.outputPad,
 							this.getMarkdownTransformers(),
+							message.timestamp,
 						);
 						this.chatContainer.addChild(userComponent);
 					}

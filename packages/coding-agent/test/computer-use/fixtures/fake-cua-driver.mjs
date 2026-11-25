@@ -19,7 +19,9 @@ const LOG = process.argv[2] ?? "";
 // driver's standard-mode permission refusal (exercises verdict translation).
 // FAKE_BACKGROUND_UNAVAILABLE / FAKE_STALE_TOKEN answer with those structured
 // refusals; FAKE_DEGRADED adds a degraded_reason; FAKE_EXIT_ONCE makes the
-// driver die on the first call of a tool (sentinel file guards the restart).
+// driver die on the first call of a tool (sentinel file guards the restart);
+// FAKE_SESSION_ENDED_ONCE rejects the first call of a tool with the driver's
+// idle-TTL `session has ended` payload, then accepts it after start_session.
 const HIDE = new Set((process.env.FAKE_HIDE_TOOLS ?? "").split(",").filter(Boolean));
 const REFUSE = new Set((process.env.FAKE_REFUSE_TOOLS ?? "").split(",").filter(Boolean));
 const BACKGROUND_UNAVAILABLE = new Set(
@@ -29,6 +31,11 @@ const STALE_TOKEN = new Set((process.env.FAKE_STALE_TOKEN ?? "").split(",").filt
 const DEGRADED = process.env.FAKE_DEGRADED ?? "";
 const EXIT_ONCE = new Set((process.env.FAKE_EXIT_ONCE ?? "").split(",").filter(Boolean));
 const EXIT_SENTINEL = process.env.FAKE_EXIT_SENTINEL ?? "";
+const SESSION_ENDED_ONCE = new Set(
+	(process.env.FAKE_SESSION_ENDED_ONCE ?? "").split(",").filter(Boolean),
+);
+let sessionEnded = false;
+let sessionRevivals = 0;
 
 const tools = [
 	{ name: "start_session", inputSchema: { type: "object", properties: { session: { type: "string" } } } },
@@ -101,6 +108,19 @@ const IMAGE = {
 
 function handleCall(name, args) {
 	appendFileSync(LOG, `${JSON.stringify({ name, args })}\n`);
+	if (SESSION_ENDED_ONCE.has(name) && !sessionEnded) {
+		sessionEnded = true;
+		return {
+			content: [],
+			structuredContent: {
+				ok: false,
+				action: name,
+				message: `session '${args.session}' has ended; tool call '${name}' was rejected. Call start_session with this id to revive it before issuing further actions, or use a new session id.`,
+				code: "tool_invocation_failed",
+				exit_code: 1,
+			},
+		};
+	}
 	if (EXIT_ONCE.has(name) && EXIT_SENTINEL) {
 		let crashed = false;
 		try {
@@ -132,6 +152,17 @@ function handleCall(name, args) {
 		};
 	}
 	switch (name) {
+		case "start_session": {
+			sessionRevivals++;
+			sessionEnded = false;
+			return {
+				content: [],
+				structuredContent: { ok: true, session: args.session, revived: sessionRevivals > 1 },
+			};
+		}
+		case "end_session":
+			sessionEnded = true;
+			return { content: [], structuredContent: { ok: true, session: args.session } };
 		case "list_apps":
 			return {
 				content: [],
