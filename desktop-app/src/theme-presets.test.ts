@@ -26,6 +26,7 @@ describe("built-in desktop skins", () => {
 
 	it("new skins ship tuned palettes for both modes", () => {
 		for (const name of [
+			"a-tech",
 			"nord",
 			"dracula",
 			"gruvbox",
@@ -48,6 +49,15 @@ describe("built-in desktop skins", () => {
 			expect(skin, name).not.toBeNull();
 			expect(skin?.darkColors, `${name} darkColors`).toBeTruthy();
 		}
+	});
+
+	it("A-Tech uses the house paper, ink and lime palette", () => {
+		const skin = resolveHermesTheme("a-tech");
+		expect(skin, "a-tech").not.toBeNull();
+		expect(skin?.colors.background).toBe("#f4f1ea");
+		expect(skin?.colors.foreground).toBe("#11110d");
+		expect(skin?.darkColors?.background).toBe("#11110d");
+		expect(skin?.darkColors?.ring).toBe("#d7ff4f");
 	});
 
 	it("new skins keep text readable on their backgrounds in both modes", () => {

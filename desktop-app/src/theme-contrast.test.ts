@@ -18,6 +18,7 @@ function contrast(a: string, b: string): number {
 
 /** Palettes added in the theme expansion — held to the stricter bar. */
 const NEW_SKINS = new Set([
+	"a-tech",
 	"graphite",
 	"paper",
 	"ocean",
