@@ -151,6 +151,9 @@ export function createWorkflowExtensionFactory(options: WorkflowExtensionOptions
 			description:
 				"Execute a saved workflow script: a .js file (meta block + top-level-await body) that orchestrates background subagents through agent()/pipeline()/parallel(), with JSON-Schema structured outputs, loop-until patterns written in plain JavaScript, and per-agent resume. Runs many background subagents; intermediate data stays inside the run, the final report returns to you. Use for work larger than one context window (codebase audits, batch migrations, cross-checked research). Launching requires the user's permission; agents inherit this session's permission rules. Monitor with /workflows; pass resume to continue an earlier run.",
 			promptSnippet: "Execute a saved multi-agent workflow",
+			promptGuidelines: [
+				"Use run_workflow for saved multi-agent scripts; use spawn_subagent for a single focused delegation.",
+			],
 			parameters: RUN_WORKFLOW_SCHEMA,
 			async execute(_toolCallId, params, signal, onUpdate, ctx) {
 				const { workflow: spec } = findWorkflow(params.workflow, loaderOptions(options));

@@ -93,6 +93,9 @@ export function createTeamCreateToolDefinition(): ToolDefinition<
 		description:
 			"Spin up a new Agent Teams session; the current agent becomes the team lead. After this you can spawn named teammates via Agent({ name, team_name, ... }) and message them with send_message. Only ONE team can be active at a time — call team_delete first to start over. Use this when the task splits naturally into long-running parallel roles; for a single short subtask prefer plain Agent(...) without a team.",
 		promptSnippet: "Start or manage an Agent Teams session",
+		promptGuidelines: [
+			"Use Agent Teams when teammates need to message each other; a single subagent is enough for one-off delegation.",
+		],
 		parameters: TEAM_CREATE_SCHEMA,
 		async execute(_toolCallId, input: TeamCreateInput) {
 			const teamName = input.team_name.trim();

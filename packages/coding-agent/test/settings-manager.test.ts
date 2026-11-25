@@ -50,6 +50,29 @@ describe("SettingsManager", () => {
 		});
 	});
 
+	describe("defaultTools", () => {
+		it("resolves additions against the full default tool set", () => {
+			const tools = SettingsManager.inMemory({ defaultTools: ["+grep"] }).getDefaultTools();
+			expect(tools).toEqual(
+				expect.arrayContaining([
+					"read",
+					"bash",
+					"edit",
+					"write",
+					"plan_mode",
+					"schedule_task",
+					"team_create",
+					"grep",
+				]),
+			);
+		});
+
+		it("lets a plain list replace the default tool set", () => {
+			const tools = SettingsManager.inMemory({ defaultTools: ["read", "bash"] }).getDefaultTools();
+			expect(tools).toEqual(["read", "bash"]);
+		});
+	});
+
 	describe("cron model", () => {
 		it("reads and clears the scheduled-task model", () => {
 			const manager = SettingsManager.inMemory({ cron: { model: "ollama-cloud/beam" } });

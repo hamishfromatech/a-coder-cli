@@ -79,6 +79,7 @@ impl RpcClient {
 		let mut child = tokio::process::Command::from(build_cli_command(&cli_path, &args)?)
 			.current_dir(cwd.unwrap_or_else(|| ".".into()))
 			.env("PATH", reconstructed_path())
+			.env("A_CODER_SURFACE", "desktop")
 			.stdin(Stdio::piped())
 			.stdout(Stdio::piped())
 			.stderr(Stdio::piped())

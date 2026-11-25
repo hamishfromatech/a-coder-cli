@@ -68,6 +68,7 @@ export function createSubagentExtensionFactory(options: SubagentToolOptions = {}
 		pi.registerTool({
 			name: "spawn_subagent",
 			label: "Spawn subagent",
+			promptSnippet: "Delegate a focused subtask to a sub-agent",
 			description:
 				"Start a subagent to work on an independent task. If detached is false (default), the subagent runs in-process as a nested agent loop and this call returns its final output. If detached is true, the subagent runs in the background and this call returns immediately with a subagent id usable with wait_subagent, get_subagent_status, and kill_subagent.",
 			parameters: Type.Object({

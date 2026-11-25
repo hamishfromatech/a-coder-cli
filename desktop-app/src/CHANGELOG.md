@@ -4,6 +4,8 @@
 
 ### Changed
 
+- **The shared system prompt now describes the current product.** It identifies as A-Coder, points at the documentation index, and covers desktop, MCP, computer use, office, workflows, and subagents. The default tool inventory now includes plan mode, agent teams, and scheduled tasks, matching the documentation. Desktop-spawned engines now receive a dedicated desktop prompt section covering the IDE, browser, office, session tabs, MCP settings, and the boundary between app surfaces and agent tools.
+
 - **Confirmations render above Settings.** Rotating the mobile token or removing a paired device from Settings now shows its confirmation dialog on top of the Settings modal instead of behind it; the shared confirm host moved up the z-order ladder.
 
 - **The explorer is keyboard-first.** ↑/↓ walk rows, →/← expand, collapse and step into/out of folders, Enter opens, F2 renames, Delete deletes (with a confirmation), and Esc clears the filter or selection; clicking a row focuses it so arrows work immediately. Rows show indentation guides, file-type icons and colors, git letters with deleted files struck through, a change dot on folders with dirty descendants, and hover actions for new file / rename / delete. Expanded folders persist per workspace, folders report "Empty folder" or a retryable error inline, the filter auto-expands loaded folders, and the tree background offers a root context menu.

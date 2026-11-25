@@ -93,7 +93,7 @@ a-coder-cli
 /login  # Then select provider
 ```
 
-Then just talk to the agent. By default, a-coder-cli enables `read`, `bash`, `edit`, `write`, `plan_mode`, `task_*` (a persistent task graph), `memory`, `team_*`/`send_message` (agent teams), and `ask_user_question`; `grep`, `find`, `ls`, `todo`, `computer`, and `skill` are registered but off until needed — enable them via the `defaultTools` setting or `--tools`. The model uses these tools to fulfill your requests. Add capabilities via [skills](#skills), [prompt templates](#prompt-templates), [extensions](#extensions), or [packages](#packages).
+Then just talk to the agent. By default, a-coder-cli enables `read`, `bash`, `edit`, `write`, `plan_mode`, `task_*` (a persistent task graph), `memory`, `schedule_task`, `team_*`/`send_message` (agent teams), and `ask_user_question`; `grep`, `find`, `ls`, `todo`, `computer`, and `skill` are registered but off until needed — enable them via the `defaultTools` setting or `--tools`. The model uses these tools to fulfill your requests. Add capabilities via [skills](#skills), [prompt templates](#prompt-templates), [extensions](#extensions), or [packages](#packages).
 
 **Platform notes:** [Windows](docs/windows.md) | [Termux (Android)](docs/termux.md) | [tmux](docs/tmux.md) | [Terminal setup](docs/terminal-setup.md) | [Shell aliases](docs/shell-aliases.md)
 

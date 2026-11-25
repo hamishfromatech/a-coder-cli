@@ -27,7 +27,7 @@ describe("AgentSession system-prompt addendum", () => {
 		}
 	});
 
-	async function createSession() {
+	async function createSession(surface?: "cli" | "desktop" | "rpc") {
 		const settingsManager = SettingsManager.create(tempDir, agentDir);
 		const sessionManager = SessionManager.inMemory();
 		const authStorage = AuthStorage.create(join(agentDir, "auth.json"));
@@ -43,6 +43,7 @@ describe("AgentSession system-prompt addendum", () => {
 			cwd: tempDir,
 			agentDir,
 			model,
+			surface,
 			settingsManager,
 			sessionManager,
 			authStorage,
@@ -50,6 +51,25 @@ describe("AgentSession system-prompt addendum", () => {
 		});
 		return { session };
 	}
+
+	it("adds desktop-specific guidance when the surface is desktop", async () => {
+		const { session } = await createSession("desktop");
+		try {
+			expect(session.systemPrompt).toContain("A-Coder Desktop session:");
+			expect(session.systemPrompt).toContain("app surfaces, not agent tools");
+		} finally {
+			session.dispose();
+		}
+	});
+
+	it("does not add desktop guidance on the cli surface", async () => {
+		const { session } = await createSession("cli");
+		try {
+			expect(session.systemPrompt).not.toContain("A-Coder Desktop session:");
+		} finally {
+			session.dispose();
+		}
+	});
 
 	it("composes the addendum on top of the base system prompt and clears on null", async () => {
 		const { session } = await createSession();

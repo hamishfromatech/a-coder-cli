@@ -417,7 +417,23 @@ function deepMergeObjects(base: Record<string, unknown>, overrides: Record<strin
 }
 
 /** Tools enabled at startup when `defaultTools` does not change them. */
-export const DEFAULT_TOOL_NAMES: readonly string[] = ["read", "bash", "edit", "write"];
+export const DEFAULT_TOOL_NAMES: readonly string[] = [
+	"read",
+	"bash",
+	"edit",
+	"write",
+	"ask_user_question",
+	"task_create",
+	"task_get",
+	"task_list",
+	"task_update",
+	"memory",
+	"schedule_task",
+	"plan_mode",
+	"team_create",
+	"team_delete",
+	"send_message",
+];
 
 function isToolModifier(entry: unknown): boolean {
 	return typeof entry === "string" && (entry.startsWith("+") || entry.startsWith("-"));

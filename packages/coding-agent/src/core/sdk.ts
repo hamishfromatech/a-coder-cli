@@ -15,7 +15,8 @@ import { mergeProviderAttributionHeaders } from "./provider-attribution.ts";
 import type { ResourceLoader } from "./resource-loader.ts";
 import { DefaultResourceLoader } from "./resource-loader.ts";
 import { getDefaultSessionDir, SessionManager } from "./session-manager.ts";
-import { SettingsManager } from "./settings-manager.ts";
+import { DEFAULT_TOOL_NAMES, SettingsManager } from "./settings-manager.ts";
+import type { AgentSurface } from "./system-prompt.ts";
 import { time } from "./timings.ts";
 import {
 	createBashTool,
@@ -32,6 +33,8 @@ import {
 } from "./tools/index.ts";
 
 export interface CreateAgentSessionOptions {
+	/** Runtime surface used to tailor the system prompt. Default: cli. */
+	surface?: AgentSurface;
 	/** Working directory for project-local discovery. Default: process.cwd() */
 	cwd?: string;
 	/** Global config directory. Default: ~/.pi/agent */
@@ -246,24 +249,17 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	}
 
 	const defaultActiveToolNames: ToolName[] = [
-		"read",
-		"bash",
-		"edit",
-		"write",
-		"ask_user_question",
-		"task_create",
-		"task_get",
-		"task_list",
-		"task_update",
-		"memory",
-		"schedule_task",
+		...(DEFAULT_TOOL_NAMES as readonly ToolName[]),
 		...(settingsManager.getComputerUseEnabled() ? (["computer"] as ToolName[]) : []),
 	];
+	const configuredDefaultTools =
+		options.tools === undefined && options.noTools === undefined ? settingsManager.getDefaultTools() : undefined;
+	const requestedToolNames = options.tools ?? configuredDefaultTools;
 	const allowedToolNames = options.tools ?? (options.noTools === "all" ? [] : undefined);
 	const excludedToolNames = options.excludeTools;
 	const excludedToolNameSet = excludedToolNames ? new Set(excludedToolNames) : undefined;
 	const initialActiveToolNames: string[] = (
-		options.tools ? [...options.tools] : options.noTools ? [] : defaultActiveToolNames
+		requestedToolNames ? [...requestedToolNames] : options.noTools ? [] : defaultActiveToolNames
 	).filter((name) => !excludedToolNameSet?.has(name));
 
 	let agent: Agent;
@@ -400,6 +396,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		resourceLoader,
 		customTools: options.customTools,
 		modelRegistry,
+		surface: options.surface,
 		initialActiveToolNames,
 		allowedToolNames,
 		excludedToolNames,

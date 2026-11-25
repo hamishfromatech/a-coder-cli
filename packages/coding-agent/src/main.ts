@@ -903,9 +903,11 @@ export async function main(args: string[], options?: MainOptions) {
 			}
 		}
 
+		const surface = process.env.A_CODER_SURFACE === "desktop" ? "desktop" : parsed.mode === "rpc" ? "rpc" : "cli";
 		const created = await createAgentSessionFromServices({
 			services,
 			sessionManager,
+			surface,
 			sessionStartEvent,
 			model: sessionOptions.model,
 			thinkingLevel: sessionOptions.thinkingLevel,

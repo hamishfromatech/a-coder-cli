@@ -2,11 +2,16 @@
  * System prompt construction and project context loading
  */
 
+import { join } from "node:path";
 import { getDocsPath, getExamplesPath, getReadmePath } from "../config.ts";
 import { type AgentDefinition, formatAgentsSystemReminder } from "./agents/index.ts";
 import { formatSkillsForPrompt, type Skill } from "./skills.ts";
 
+export type AgentSurface = "cli" | "desktop" | "rpc";
+
 export interface BuildSystemPromptOptions {
+	/** Runtime surface: terminal CLI, desktop GUI, or a generic RPC client. Default: cli. */
+	surface?: AgentSurface;
 	/** Custom system prompt (replaces default). */
 	customPrompt?: string;
 	/** Tools to include in prompt. Default: [read, bash, edit, write] */
@@ -32,6 +37,7 @@ export interface BuildSystemPromptOptions {
 /** Build the system prompt with tools, guidelines, and context */
 export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	const {
+		surface = "cli",
 		customPrompt,
 		selectedTools,
 		toolSnippets,
@@ -90,6 +96,10 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 			prompt += formatSkillsForPrompt(skills, skillFileReadTool);
 		}
 
+		if (surface === "desktop") {
+			prompt += formatDesktopSection();
+		}
+
 		// Add date and working directory last
 		prompt += `\nCurrent date: ${date}`;
 		prompt += `\nCurrent working directory: ${promptCwd}`;
@@ -100,6 +110,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	// Get absolute paths to documentation and examples
 	const readmePath = getReadmePath();
 	const docsPath = getDocsPath();
+	const docsIndexPath = join(docsPath, "index.md");
 	const examplesPath = getExamplesPath();
 
 	// Build tools list based on selected tools.
@@ -120,6 +131,9 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	};
 
 	const hasBash = tools.includes("bash");
+	const hasMcpTools = tools.some(
+		(name) => name.startsWith("mcp__") || name === "mcp_list_resources" || name === "mcp_read_resource",
+	);
 	const hasGrep = tools.includes("grep");
 	const hasFind = tools.includes("find");
 	const hasLs = tools.includes("ls");
@@ -136,6 +150,39 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 		}
 	}
 
+	// Cross-tool policy for the systems that are active in this session. Tool
+	// definitions cover mechanics; these lines cover when to reach for them.
+	if (tools.some((name) => name.startsWith("task_"))) {
+		addGuideline(
+			"Use the task graph for work that needs three or more steps, spans sessions, or has dependencies; keep one task list per project.",
+		);
+	}
+	if (tools.includes("spawn_subagent")) {
+		addGuideline(
+			"Use subagents for context-heavy exploration or independent work. Give each a self-contained task; use background mode only when you can continue independently.",
+		);
+	}
+	if (tools.includes("run_workflow")) {
+		addGuideline(
+			"Use run_workflow for saved multi-agent scripts; use spawn_subagent for a single focused delegation.",
+		);
+	}
+	if (tools.includes("team_create")) {
+		addGuideline(
+			"Use Agent Teams when teammates need to message each other; a single subagent is enough for one-off delegation.",
+		);
+	}
+	if (hasMcpTools) {
+		addGuideline(
+			"When a connected MCP tool fits the task, use it directly instead of shelling out to the same service. Use mcp_list_resources / mcp_read_resource for MCP resources when they are available.",
+		);
+	}
+	if (tools.includes("computer")) {
+		addGuideline(
+			"For computer use, capture before acting, prefer background delivery, and re-capture after mutations; never repeat unverified input without checking state.",
+		);
+	}
+
 	// Always include these
 	addGuideline("Be concise in your responses");
 	addGuideline("Show file paths clearly when working with files");
@@ -145,24 +192,26 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
 	const guidelines = guidelinesList.map((g) => `- ${g}`).join("\n");
 
-	let prompt = `You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.
+	let prompt = `You are A-Coder, an expert coding and computer-use assistant. A-Coder CLI runs in the terminal; A-Coder Desktop wraps the same engine in a native GUI. You help users by reading files, executing commands, editing code, writing new files, and operating the desktop or connected tools when those capabilities are available.
 
-Available tools:
+Available tools in this session:
 ${toolsList}
 
-In addition to the tools above, you may have access to other custom tools depending on the project.
+The tool definitions in this request are authoritative. They may include extension, sub-agent, team, workflow, and MCP tools that are not repeated above; MCP tools are named mcp__<server>__<tool>, and connected servers may also expose mcp_list_resources / mcp_read_resource.
 
 Guidelines:
 ${guidelines}
 
-A-Coder CLI documentation (read only when the user asks about a-coder-cli itself, its SDK, extensions, themes, skills, or TUI):
-- Main documentation: ${readmePath}
+A-Coder documentation (read only when the user asks about A-Coder itself, its SDK, extensions, skills, desktop, MCP, computer use, office, workflows, or TUI):
+- Documentation index: ${docsIndexPath}
 - Additional docs: ${docsPath}
+- Main README: ${readmePath}
 - Examples: ${examplesPath} (extensions, custom tools, SDK)
+- Start at the documentation index; it links quickstart, usage, settings, providers, sessions, subagents, skills, workflows/SOPs, computer use, office, RPC, SDK, and the desktop app.
 - When reading a-coder-cli docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory
-- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), packages (docs/packages.md), environment variables (docs/environment-variables.md)
-- When working on a-coder-cli topics, read the docs and examples, and follow .md cross-references before implementing
-- Always read a-coder-cli .md files completely and follow links to related docs (e.g., tui.md for TUI API details)`;
+- When asked about: extensions, themes, skills, prompt templates, subagents, workflows/SOPs, computer use, office, MCP/OAuth (settings.md), keybindings, TUI components, SDK integrations, custom providers, models, packages, environment variables, security, troubleshooting
+- When working on A-Coder topics, read the docs and examples, and follow .md cross-references before implementing
+- Always read A-Coder .md files completely and follow links to related docs (e.g., tui.md for TUI API details). UI surfaces in A-Coder Desktop are not tools; do not claim to click them unless a tool is available.`;
 
 	if (appendSection) {
 		prompt += appendSection;
@@ -191,11 +240,25 @@ A-Coder CLI documentation (read only when the user asks about a-coder-cli itself
 		prompt += formatSkillsForPrompt(skills, skillFileReadTool);
 	}
 
+	if (surface === "desktop") {
+		prompt += formatDesktopSection();
+	}
+
 	// Add date and working directory last
 	prompt += `\nCurrent date: ${date}`;
 	prompt += `\nCurrent working directory: ${promptCwd}`;
 
 	return prompt;
+}
+
+function formatDesktopSection(): string {
+	return `
+
+A-Coder Desktop session:
+- This session is running in the A-Coder Desktop app. The IDE, browser panel, office, session tabs, and MCP settings are app surfaces, not agent tools; do not claim to click or change them unless a tool is available.
+- Prefer output that renders well in the desktop transcript: Markdown, fenced code, diffs, and images.
+- For settings, pairing, or account changes that need the GUI, point the user to the relevant Settings page instead of claiming to perform the UI action.
+- Use the available browser, MCP, or computer tools for page and desktop actions; do not assume the embedded browser or editor can be driven directly.`;
 }
 
 /**

@@ -168,6 +168,7 @@ export function createMcpExtensionFactory(options: McpExtensionFactoryOptions): 
 			pi.registerTool({
 				name: "mcp_list_resources",
 				label: "MCP: List resources",
+				promptSnippet: "List resources exposed by connected MCP servers",
 				description:
 					"List resources exposed by MCP servers. Optionally filter by server name. " +
 					"Returns server, display name, URI, MIME type and description per resource.",
@@ -221,6 +222,7 @@ export function createMcpExtensionFactory(options: McpExtensionFactoryOptions): 
 			pi.registerTool({
 				name: "mcp_read_resource",
 				label: "MCP: Read resource",
+				promptSnippet: "Read a resource from an MCP server",
 				description:
 					"Read one resource from an MCP server. Pass the server name and the resource URI (from mcp_list_resources). " +
 					"Text contents are returned inline; binary contents are reported but not rendered.",

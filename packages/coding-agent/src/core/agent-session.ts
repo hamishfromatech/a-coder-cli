@@ -146,12 +146,13 @@ import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.t
 import { redactSecrets } from "./secret-redaction.ts";
 import type { BranchSummaryEntry, CompactionEntry, SessionEntry, SessionManager } from "./session-manager.ts";
 import { CURRENT_SESSION_VERSION, getLatestCompactionEntry, type SessionHeader } from "./session-manager.ts";
-import type {
-	PermissionMode,
-	PermissionPolicyConfig,
-	PermissionRule,
-	ResolvedAutoContinueSettings,
-	SettingsManager,
+import {
+	DEFAULT_TOOL_NAMES,
+	type PermissionMode,
+	type PermissionPolicyConfig,
+	type PermissionRule,
+	type ResolvedAutoContinueSettings,
+	type SettingsManager,
 } from "./settings-manager.ts";
 import type { Skill } from "./skills.ts";
 import type { SlashCommandInfo } from "./slash-commands.ts";
@@ -169,7 +170,7 @@ import {
 	previewToolResult,
 	truncateSubagentResult,
 } from "./subagents/task-output.ts";
-import { type BuildSystemPromptOptions, buildSystemPrompt } from "./system-prompt.ts";
+import { type AgentSurface, type BuildSystemPromptOptions, buildSystemPrompt } from "./system-prompt.ts";
 import { drainUnreadMessages, formatMailboxAttachment } from "./teams/mailbox.ts";
 import { addTeamMember, formatAgentId, setMemberActive } from "./teams/team-file.ts";
 import { type BashOperations, createLocalBashOperations } from "./tools/bash.ts";
@@ -306,6 +307,8 @@ export interface AgentSessionConfig {
 	customTools?: ToolDefinition[];
 	/** Model registry for API key resolution and model discovery */
 	modelRegistry: ModelRegistry;
+	/** Runtime surface used to tailor the system prompt. Default: cli. */
+	surface?: AgentSurface;
 	/** Initial active built-in tool names. Default: [read, bash, edit, write] */
 	initialActiveToolNames?: string[];
 	/** Optional allowlist of tool names. When provided, only these tool names are exposed. */
@@ -1044,6 +1047,7 @@ export class AgentSession {
 	private _customTools: ToolDefinition[];
 	private _baseToolDefinitions: Map<string, ToolDefinition> = new Map();
 	private _cwd: string;
+	private _surface?: AgentSurface;
 	private _extensionRunnerRef?: { current?: ExtensionRunner };
 	private _initialActiveToolNames?: string[];
 	private _allowedToolNames?: Set<string>;
@@ -1128,6 +1132,7 @@ export class AgentSession {
 		this._resourceLoader = config.resourceLoader;
 		this._customTools = config.customTools ?? [];
 		this._cwd = config.cwd;
+		this._surface = config.surface;
 		this._modelRegistry = config.modelRegistry;
 		this._extensionRunnerRef = config.extensionRunnerRef;
 		this._initialActiveToolNames = config.initialActiveToolNames;
@@ -2455,6 +2460,7 @@ export class AgentSession {
 			selectedTools: validToolNames,
 			toolSnippets,
 			promptGuidelines,
+			surface: this._surface,
 		};
 		return buildSystemPrompt(this._baseSystemPromptOptions);
 	}
@@ -4515,23 +4521,7 @@ export class AgentSession {
 
 		const defaultActiveToolNames = this._baseToolsOverride
 			? Object.keys(this._baseToolsOverride)
-			: [
-					"read",
-					"bash",
-					"edit",
-					"write",
-					"ask_user_question",
-					"task_create",
-					"task_get",
-					"task_list",
-					"task_update",
-					"memory",
-					"plan_mode",
-					"team_create",
-					"team_delete",
-					"send_message",
-					...(this.settingsManager.getComputerUseEnabled() ? ["computer"] : []),
-				];
+			: [...DEFAULT_TOOL_NAMES, ...(this.settingsManager.getComputerUseEnabled() ? ["computer"] : [])];
 		const baseActiveToolNames = options.activeToolNames ?? defaultActiveToolNames;
 		this._refreshToolRegistry({
 			activeToolNames: baseActiveToolNames,

@@ -299,9 +299,9 @@ cat README.md | a-coder-cli -p "Summarize this text"
 | `--no-builtin-tools`, `-nbt` | Disable built-in tools but keep extension/custom tools enabled |
 | `--no-tools`, `-nt` | Disable all tools |
 
-Built-in tools: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`, `todo`, `plan_mode`, `memory`, `ask_user_question`, `task_create`, `task_get`, `task_list`, `task_update`, `team_create`, `team_delete`, `send_message`, `skill`, and the opt-in `computer`.
+Built-in tools: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`, `todo`, `plan_mode`, `memory`, `schedule_task`, `ask_user_question`, `task_create`, `task_get`, `task_list`, `task_update`, `team_create`, `team_delete`, `send_message`, `skill`, and the opt-in `computer`.
 
-Default-enabled in a new session: `read`, `bash`, `edit`, `write`, `plan_mode`, `memory`, `ask_user_question`, the `task_*` set, and the `team_*`/`send_message` pair. Enable the rest via `--tools` or the `defaultTools` setting (and `computer` via `computerUse` or `A_CODER_CLI_COMPUTER_USE=1`).
+Default-enabled in a new session: `read`, `bash`, `edit`, `write`, `plan_mode`, `memory`, `schedule_task`, `ask_user_question`, the `task_*` set, and the `team_*`/`send_message` pair. Enable the rest via `--tools` or the `defaultTools` setting (and `computer` via `computerUse` or `A_CODER_CLI_COMPUTER_USE=1`).
 
 ### Resource Options
 

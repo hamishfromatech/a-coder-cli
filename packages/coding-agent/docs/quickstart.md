@@ -93,6 +93,7 @@ By default, a-coder-cli enables these tools:
 - `plan_mode` - enter plan mode before larger changes
 - `ask_user_question` - ask the user structured questions
 - `task_*` and `memory` - persistent task graph and cross-session memory
+- `schedule_task` - scheduled and recurring work
 - `team_create` / `team_delete` / `send_message` - agent teams
 
 Registered but not enabled by default: `grep`, `find`, `ls`, `todo`, `skill`, and the opt-in `computer` (desktop control). Enable them with `defaultTools` in settings or `--tools`. a-coder-cli runs in your current working directory and can modify files there. Use git or another checkpointing workflow if you want easy rollback.

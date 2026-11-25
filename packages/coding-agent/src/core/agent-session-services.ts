@@ -121,6 +121,8 @@ export interface CreateAgentSessionServicesOptions {
  */
 export interface CreateAgentSessionFromServicesOptions {
 	services: AgentSessionServices;
+	/** Runtime surface used to tailor the system prompt. */
+	surface?: CreateAgentSessionOptions["surface"];
 	sessionManager: SessionManager;
 	sessionStartEvent?: SessionStartEvent;
 	model?: Model<any>;
@@ -295,6 +297,7 @@ export async function createAgentSessionFromServices(
 		modelRegistry: options.services.modelRegistry,
 		resourceLoader: options.services.resourceLoader,
 		sessionManager: options.sessionManager,
+		surface: options.surface,
 		model: options.model,
 		thinkingLevel: options.thinkingLevel,
 		scopedModels: options.scopedModels,

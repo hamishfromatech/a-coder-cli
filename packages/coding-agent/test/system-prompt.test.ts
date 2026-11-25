@@ -22,7 +22,7 @@ describe("buildSystemPrompt", () => {
 				cwd: process.cwd(),
 			});
 
-			expect(prompt).toContain("Available tools:\n(none)");
+			expect(prompt).toContain("Available tools in this session:\n(none)");
 		});
 
 		test("shows file paths guideline even with no tools", () => {
@@ -57,17 +57,77 @@ describe("buildSystemPrompt", () => {
 			expect(prompt).toContain("- write:");
 		});
 
-		test("instructs models to resolve pi docs and examples under absolute base paths", () => {
+		test("identifies as A-Coder and points at the current documentation index", () => {
 			const prompt = buildSystemPrompt({
 				contextFiles: [],
 				skills: [],
 				cwd: process.cwd(),
 			});
 
+			expect(prompt).toContain("You are A-Coder");
+			expect(prompt).not.toContain("inside pi");
+			expect(prompt).toContain("Documentation index:");
+			expect(prompt).toContain("index.md");
+			expect(prompt).toContain("A-Coder Desktop");
+			expect(prompt).toContain("mcp__<server>__<tool>");
 			expect(prompt).toContain(
 				"- When reading a-coder-cli docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory",
 			);
-			expect(prompt).toContain("environment variables (docs/environment-variables.md)");
+			expect(prompt).toContain("environment variables");
+		});
+
+		test("adds desktop guidance only on the desktop surface", () => {
+			const desktop = buildSystemPrompt({
+				surface: "desktop",
+				selectedTools: ["read"],
+				contextFiles: [],
+				skills: [],
+				cwd: process.cwd(),
+			});
+			const cli = buildSystemPrompt({
+				surface: "cli",
+				selectedTools: ["read"],
+				contextFiles: [],
+				skills: [],
+				cwd: process.cwd(),
+			});
+
+			expect(desktop).toContain("A-Coder Desktop session:");
+			expect(desktop).toContain("app surfaces, not agent tools");
+			expect(cli).not.toContain("A-Coder Desktop session:");
+		});
+
+		test("adds cross-tool guidance only for active systems", () => {
+			const prompt = buildSystemPrompt({
+				selectedTools: [
+					"read",
+					"task_create",
+					"spawn_subagent",
+					"run_workflow",
+					"team_create",
+					"computer",
+					"mcp_list_resources",
+				],
+				toolSnippets: {
+					read: "Read file contents",
+					task_create: "Maintain a persistent task graph",
+					spawn_subagent: "Delegate a focused subtask",
+					run_workflow: "Execute a saved workflow",
+					team_create: "Start a team",
+					computer: "Control the desktop",
+					mcp_list_resources: "List MCP resources",
+				},
+				contextFiles: [],
+				skills: [],
+				cwd: process.cwd(),
+			});
+
+			expect(prompt).toContain("Use the task graph for work that needs three or more steps");
+			expect(prompt).toContain("Use subagents for context-heavy exploration");
+			expect(prompt).toContain("Use run_workflow for saved multi-agent scripts");
+			expect(prompt).toContain("Use Agent Teams when teammates need to message each other");
+			expect(prompt).toContain("When a connected MCP tool fits the task");
+			expect(prompt).toContain("For computer use, capture before acting");
 		});
 	});
 

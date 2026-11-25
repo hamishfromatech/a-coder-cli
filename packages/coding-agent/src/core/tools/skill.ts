@@ -76,6 +76,7 @@ export function createSkillToolDefinition(options: SkillToolOptions): ToolDefini
 		description:
 			"Load a skill's full instructions by name. Use when the task matches a skill from the available_skills list: pass its name and, when the user gave details, an args string. The returned instructions replace the need to read the skill file directly.",
 		parameters: skillSchema,
+		promptSnippet: "Load a skill's instructions by name",
 		promptGuidelines: [
 			"Prefer the skill tool over reading SKILL.md files: it resolves the skill by name and substitutes $ARGUMENTS correctly.",
 		],

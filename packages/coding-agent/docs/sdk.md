@@ -490,12 +490,14 @@ const { session } = await createAgentSession({ resourceLoader: loader });
 
 > See [examples/sdk/03-custom-prompt.ts](../examples/sdk/03-custom-prompt.ts)
 
+Set `surface: "desktop"` on `createAgentSession()` to add the desktop-specific guidance used by A-Coder Desktop (IDE, browser panel, office, session tabs, and MCP settings are app surfaces, not agent tools). The default is `"cli"`; generic RPC clients use `"rpc"`.
+
 ### Tools
 
 Specify which built-in tools to enable:
 
-- Built-in tool names: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`
-- Default built-ins: `read`, `bash`, `edit`, `write`
+- Built-in tool names: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`, `todo`, `plan_mode`, `memory`, `ask_user_question`, `schedule_task`, `task_create`, `task_get`, `task_list`, `task_update`, `team_create`, `team_delete`, `send_message`, `skill`, and opt-in `computer`
+- Default built-ins: `read`, `bash`, `edit`, `write`, `ask_user_question`, `task_*`, `memory`, `schedule_task`, `plan_mode`, `team_*`/`send_message`; `computer` is opt-in
 - `noTools: "all"` disables all tools
 - `noTools: "builtin"` disables default built-ins while keeping extension and custom tools enabled
 - `excludeTools` disables specific built-in, extension, or custom tool names after any `tools` allowlist is applied
