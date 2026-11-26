@@ -9,6 +9,7 @@ dependencies = [
  "base64 0.22.1",
  "block2",
  "dirs 6.0.0",
+ "dunce",
  "flate2",
  "glib",
  "image",

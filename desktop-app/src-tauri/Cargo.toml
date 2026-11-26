@@ -33,6 +33,10 @@ reqwest = { version = "0.13", features = ["json", "multipart"] }
 flate2 = "1"
 url = "2"
 dirs = "6"
+# Windows canonicalize() returns verbatim \\?\ paths. Those do not compare
+# equal to the C:\... spelling the engine stores, and the '?' breaks the
+# encoded session directory, so project switching must resolve to a plain path.
+dunce = "1"
 # The gateway's streaming HTML rewriter (reading-frame fallback mode).
 lol_html = "1"
 libc = "0.2"

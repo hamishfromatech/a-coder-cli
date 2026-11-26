@@ -11,7 +11,11 @@ use crate::macos_permissions::fs_error;
 /// against stored ones. Returns None when the path does not exist.
 #[tauri::command]
 pub fn canonicalize_path(path: String) -> Option<String> {
-	fs::canonicalize(&path)
+	// std::fs::canonicalize returns `\\?\C:\...` on Windows. The engine stores
+	// session cwds as `C:\...`, so a verbatim target never matches the resume
+	// filter and its `?` is invalid in the encoded session directory name.
+	// dunce strips the prefix where it is safe to do so.
+	dunce::canonicalize(&path)
 		.ok()
 		.map(|resolved| resolved.to_string_lossy().into_owned())
 }
@@ -374,6 +378,13 @@ mod tests {
 	use std::fs::{self, File};
 	use std::io::Write;
 	use tempfile::tempdir;
+
+	#[test]
+	fn canonicalize_path_has_no_windows_verbatim_prefix() {
+		let dir = tempdir().expect("temp dir");
+		let resolved = canonicalize_path(dir.path().to_string_lossy().into_owned()).expect("canonical path");
+		assert!(!resolved.starts_with(r"\\?\"), "verbatim path leaked: {resolved}");
+	}
 
 	#[test]
 	fn test_read_text_file_returns_content() {

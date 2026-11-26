@@ -52,6 +52,7 @@
 
 ### Fixed
 
+- **Windows project switching no longer strands the virtual office in the previous project.** `canonicalize_path` now strips the Windows verbatim `\\?\` prefix before the target reaches project switching, so it matches the engine's stored `C:\...` session paths instead of falling through to a new session with a `?` in its encoded directory. Path comparison also normalizes separators, casing, trailing slashes, and verbatim/UNC spellings.
 - **Computer use no longer stops working after an idle pause.** cua-driver ends its session after five minutes without a call; the next computer action now revives the same session and retries once instead of failing every subsequent action until the agent restarts.
 - **The guided-tour click and auto-continue copy fixes are actually in this release.** Both were authored on the 0.80.190 QA branch and merged there, but that branch was never merged back, so every release from 0.80.191 to 0.80.199 shipped the old code: the tour card still painted its spotlight as one ~20k-px `box-shadow` layer, which WKWebView mis-hit-tests on Retina — the reported "Back button ignores the mouse on step 2" is that class of bug, and Next/X only worked intermittently. The spotlight is now four viewport-sized dim panels and the card owns the keyboard, so Back / Next / X are all clickable on every step.
 

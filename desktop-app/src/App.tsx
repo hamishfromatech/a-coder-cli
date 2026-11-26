@@ -14,6 +14,7 @@ import { triggerHaptic } from "./lib/haptics";
 import { rafCoalesce } from "./lib/raf-coalesce";
 import { applyKeepAwake, keepAwakeWanted, useKeepAwakeStore } from "./lib/keep-awake";
 import { performSessionSwitch } from "./lib/session-switch";
+import { samePath } from "./lib/path-compare";
 import { useSwitchStore } from "./stores/switch-store";
 import { isAuthoritativeSession, setAuthoritativeSession } from "./lib/session-authority";
 import { useRuntimeStatusStore } from "./stores/runtime-status-store";
@@ -1021,9 +1022,8 @@ export default function App() {
 	// per-runtime services), so a project switch is a session switch: resume
 	// that project's most recent session, or start a new session in it.
 	// Session headers and dialogs spell the same folder differently often
-	// enough (real paths, casing) that compares must be normalization-tolerant.
-	const normalizeCwdLike = (a: string | undefined, b: string) =>
-		(a ?? "").replace(/\/+$/, "").toLowerCase() === b.replace(/\/+$/, "").toLowerCase();
+	// enough (real paths, casing, Windows verbatim paths) that compares must be
+	// normalization-tolerant.
 	const switchProject = useCallback(
 		async (path: string) => {
 			// Canonicalize once and use the resolved path everywhere: the folder
@@ -1036,8 +1036,8 @@ export default function App() {
 				toast.error("Cannot open project", `${path} no longer exists.`);
 				return;
 			}
-			const current = projectPath.replace(/\/+$/, "");
-			if (current && current.toLowerCase() === target.toLowerCase()) return;
+			const current = projectPath;
+			if (current && samePath(current, target)) return;
 			// One switch at a time across every surface: a second project click
 			// while the engine is still moving is a no-op, not a race.
 			if (useSwitchStore.getState().pending) return;
@@ -1053,7 +1053,7 @@ export default function App() {
 				}
 				const res = await rpc.listSessions();
 				const latest = (res.sessions ?? [])
-					.filter((s) => normalizeCwdLike(s.cwd, target))
+					.filter((s) => samePath(s.cwd, target))
 					.sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime())[0];
 				if (latest) {
 					pushCurrentToClosedTabs();
@@ -1104,7 +1104,7 @@ export default function App() {
 	// session's own cwd is the truth for "where does this session run".
 	useEffect(() => {
 		const dir = cwd?.replace(/\/+$/, "");
-		if (dir && dir !== projectPath) {
+		if (dir && !samePath(dir, projectPath)) {
 			setProjectPath(dir);
 		}
 	}, [cwd, projectPath, setProjectPath]);
