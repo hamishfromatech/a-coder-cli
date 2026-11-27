@@ -452,6 +452,8 @@ const BUILTIN_THEME_FILES: readonly string[] = [
 	"tokyo-night",
 	"solarized-dark",
 	"solarized-light",
+	"a-tech",
+	"a-tech-light",
 ];
 
 let BUILTIN_THEMES: Record<string, ThemeJson> | undefined;

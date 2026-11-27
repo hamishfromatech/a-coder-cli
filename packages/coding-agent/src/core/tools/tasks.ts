@@ -249,7 +249,7 @@ export function createTaskCreateToolDefinition(): ToolDefinition<typeof TASK_CRE
 		name: "task_create",
 		label: "Task Create",
 		description:
-			"Create one or more tasks in the session's persistent task graph. Pass a tasks array to create a full task list in one call. Tasks survive restarts and conversation clears, and support dependencies via blocks/blockedBy (wire them afterwards with task_update). Use proactively for 3+ step work, multi-step plans, and any task list the user would want to see across sessions. " +
+			"Create one or more tasks in the session's persistent task graph. Pass the complete tasks array in one call when planning; do not call task_create once per task. Tasks survive restarts and conversation clears, and support dependencies via blocks/blockedBy (wire them afterwards with task_update). Use proactively for 3+ step work, multi-step plans, and any task list the user would want to see across sessions. " +
 			"Lifecycle: completed tasks are history — the most recent ones stay visible, older completed tasks auto-archive to read-only history.",
 		promptSnippet: "Maintain a persistent task graph for multi-session work",
 		parameters: TASK_CREATE_SCHEMA,
@@ -279,7 +279,13 @@ export function createTaskCreateToolDefinition(): ToolDefinition<typeof TASK_CRE
 		},
 		renderCall(args, theme, context) {
 			const specs = Array.isArray(args.tasks) ? args.tasks : [];
-			const summary = specs.length === 1 ? String(specs[0]?.subject ?? "") : `${specs.length} tasks`;
+			const summary =
+				specs.length === 1
+					? String(specs[0]?.subject ?? "")
+					: `${specs.length} tasks: ${specs
+							.slice(0, 2)
+							.map((spec) => String(spec?.subject ?? ""))
+							.join(", ")}${specs.length > 2 ? ", …" : ""}`;
 			return renderToolCallRow("task_create", summary, theme, context);
 		},
 		renderResult(result, _options, theme, context) {

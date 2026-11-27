@@ -13,9 +13,15 @@
  *   (e.g. `delivery_mode`, `element_token`).
  * - `start_session {session}` declares a run identity (cursor color, config
  *   owner); `end_session` on teardown. Every call carries `session`.
- * - Sessions expire after five minutes idle. A call rejected with
- *   "session ... has ended" is revived with `start_session` and retried once;
- *   the rejected call never executed, so the replay is safe.
+ * - Sessions expire after five minutes idle. The next session-requiring call
+ *   restarts the session automatically (`start_session` is optional); only an
+ *   explicit `end_session` makes the label refuse, and that refusal is revived
+ *   with `start_session` and retried once. The rejected call never executed, so
+ *   the replay is safe. Snapshots and element tokens from before the end stay
+ *   retired.
+ * - Another live connection holding the label is refused with
+ *   `session_owned_by_other_transport` (+ `owner_transport`): that is not an
+ *   ended session, so it is reported instead of revived.
  * - `get_window_state` captures pixels + AX elements; element actions take
  *   `element_index` (+ the snapshot's `element_token` so the driver reports
  *   "stale" instead of silently re-resolving to a different element).
@@ -241,20 +247,44 @@ const READ_SAFE_TOOLS = new Set([
 	"get_displays",
 	"get_screen_size",
 	"get_cursor_position",
+	// Reads with no effect on the target: a transport drop may replay them so a
+	// blip does not surface as "outcome unknown" for a call that changed nothing.
+	"zoom",
+	"screenshot",
+	"health_report",
+	"check_permissions",
+	"get_session",
 ]);
 const LIFECYCLE_TOOLS = new Set(["start_session", "end_session"]);
 const CALL_TIMEOUT_MS = 30_000;
+/**
+ * Bound on spawn + `initialize` + tools/list + session declaration. Every tool
+ * call is bounded, but a wedged child (or a macOS `mcp` proxy waiting on a
+ * daemon that is not answering) would otherwise hang the first call forever.
+ */
+const START_TIMEOUT_MS = 20_000;
+/** Grace for the closing `end_session`, which cannot outlive the transport. */
+const END_SESSION_GRACE_MS = 250;
 
 export class CuaDriverClient {
 	private client: Client | null = null;
 	private transport: StdioClientTransport | null = null;
 	private readonly tools = new Map<string, DriverTool>();
 	private starting: Promise<void> | null = null;
+	private stopping: Promise<void> | null = null;
 	private transportSuspect = false;
 	private disposed = false;
+	/** Bumped on every teardown; a start that spans one must not resurrect it. */
+	private transportEpoch = 0;
 	/** Last stderr lines from the child, for diagnostics when it dies. */
 	private stderrTail: string[] = [];
 	private stderrPartial = "";
+	/** Overridable for tests so a stalled start can be proved without a 20 s wait. */
+	private readonly startTimeoutMs: number;
+
+	constructor(startTimeoutMs: number = START_TIMEOUT_MS) {
+		this.startTimeoutMs = startTimeoutMs;
+	}
 
 	/** True once tools/list has populated the tool map. */
 	get discovered(): boolean {
@@ -273,20 +303,49 @@ export class CuaDriverClient {
 	/**
 	 * Connect (or reconnect after a drop): spawn, initialize, discover tools.
 	 * Concurrent calls share one start. A failed start clears the memoized
-	 * promise so the next call retries instead of replaying the rejection.
+	 * promise so the next call retries instead of replaying the rejection, and a
+	 * stalled child fails the start instead of blocking the caller indefinitely.
 	 */
 	start(): Promise<void> {
 		if (this.disposed) {
 			throw new Error("cua-driver client has been disposed");
 		}
-		this.starting ??= this.startInternal().catch((error) => {
-			this.starting = null;
-			throw error;
-		});
+		this.starting ??= this.beginStart();
 		return this.starting;
 	}
 
-	private async startInternal(): Promise<void> {
+	private async beginStart(): Promise<void> {
+		const epoch = this.transportEpoch;
+		const attempt = this.startInternal(epoch);
+		// A timeout wins the race but the attempt keeps running: consume its late
+		// rejection so it never surfaces as an unhandled rejection.
+		attempt.catch(() => {});
+		try {
+			await withTimeout(attempt, this.startTimeoutMs, "cua-driver start");
+		} catch (error) {
+			// Bump the epoch before tearing down so a late success from the abandoned
+			// attempt cannot install a client on a transport we already closed.
+			this.teardownTransport();
+			this.starting = null;
+			throw this.startFailure(error);
+		}
+	}
+
+	/** Startup diagnostics: a child that dies on spawn reports its stderr tail. */
+	private startFailure(error: unknown): Error {
+		const message = error instanceof Error ? error.message : String(error);
+		const diagnostics = this.stderrDiagnostics();
+		if (!diagnostics) {
+			return error instanceof Error ? error : new Error(message);
+		}
+		const suffix = ` Driver stderr: ${diagnostics.split("\n").slice(-3).join(" | ")}`;
+		return new Error(`${message}${suffix}`);
+	}
+
+	private async startInternal(epoch: number): Promise<void> {
+		// Clear the previous child's tail: this failure (if any) is about this child.
+		this.stderrTail = [];
+		this.stderrPartial = "";
 		const availability = resolveDriverCommand();
 		if (!availability.installed || !availability.command) {
 			throw new Error(
@@ -307,6 +366,9 @@ export class CuaDriverClient {
 		this.client = client;
 		try {
 			await client.connect(transport);
+			if (epoch !== this.transportEpoch) {
+				throw new Error("cua-driver start was abandoned");
+			}
 			await this.discoverTools(client);
 			await this.declareSession(client);
 		} catch (error) {
@@ -399,6 +461,19 @@ export class CuaDriverClient {
 			{ timeout: CALL_TIMEOUT_MS },
 		);
 		const normalized = normalizeResult(result as CallToolResult);
+		// Ownership is not an ended session: start_session cannot take the label
+		// back while another live connection holds it, so name the holder instead
+		// of reporting a failed revival.
+		if (isOwnedByOtherTransport(normalized)) {
+			const owner =
+				typeof normalized.structured?.owner_transport === "string"
+					? normalized.structured.owner_transport
+					: "another transport";
+			throw new Error(
+				`cua-driver session '${this.sessionId}' is held by ${owner}; this connection cannot act on it. ` +
+					"Close that connection, or start a different session label.",
+			);
+		}
 		if (normalized.isError || normalized.structured?.ok === false) {
 			const detail = normalized.message || "start_session failed";
 			throw new Error(`cua-driver session '${this.sessionId}' ended and could not be revived: ${detail}`);
@@ -488,18 +563,36 @@ export class CuaDriverClient {
 		}
 	}
 
-	stop(): void {
-		if (this.client && !this.disposed) {
-			// Best-effort end_session BEFORE disposing: callTool refuses when
-			// disposed, so this must run while the client is still usable.
-			this.callTool("end_session", {}).catch(() => {});
+	/**
+	 * Best-effort teardown. `end_session` is bounded and awaited before the
+	 * transport closes — queueing it and closing in the same tick would drop it.
+	 * Closing the connection performs the same driver-side cleanup, so a failed or
+	 * late send is harmless; callers may ignore the returned promise.
+	 */
+	stop(): Promise<void> {
+		if (this.disposed) {
+			return this.stopping ?? Promise.resolve();
 		}
 		this.disposed = true;
+		this.stopping = this.finish();
+		return this.stopping;
+	}
+
+	private async finish(): Promise<void> {
+		const client = this.client;
+		if (client) {
+			await withTimeout(
+				this.invokeTool(client, "end_session", { session: this.sessionId }),
+				END_SESSION_GRACE_MS,
+				"cua-driver end_session",
+			).catch(() => {});
+		}
 		this.teardownTransport();
 		this.tools.clear();
 	}
 
 	private teardownTransport(): void {
+		this.transportEpoch++;
 		this.transportSuspect = false;
 		this.client = null;
 		// Clear the memoized start with the transport: a dead transport means the
@@ -515,6 +608,17 @@ export class CuaDriverClient {
 			this.transport = null;
 		}
 	}
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+	let timer: NodeJS.Timeout | undefined;
+	const expiry = new Promise<never>((_resolve, reject) => {
+		timer = setTimeout(() => reject(new Error(`${label} did not finish within ${ms} ms`)), ms);
+		timer.unref?.();
+	});
+	return Promise.race([promise, expiry]).finally(() => {
+		if (timer) clearTimeout(timer);
+	});
 }
 
 function isTimeout(error: unknown): boolean {
@@ -546,6 +650,14 @@ function isSessionEndedResult(result: DriverToolResult): boolean {
 		sessionEndedMessage(result.message) ||
 		sessionEndedMessage(structured?.message) ||
 		sessionEndedMessage(structured?.error)
+	);
+}
+
+/** Another live connection holds this session label (`owner_transport`). */
+function isOwnedByOtherTransport(result: DriverToolResult): boolean {
+	return (
+		result.structured?.code === "session_owned_by_other_transport" ||
+		/session_owned_by_other_transport/.test(result.message)
 	);
 }
 

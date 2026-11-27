@@ -12,7 +12,6 @@ import {
 	estimateContextTokens,
 	type ThinkingLevel as SessionThinkingLevel,
 } from "@earendil-works/pi-agent-core";
-import type { ThinkingLevel } from "@earendil-works/pi-ai";
 import {
 	type AssistantMessage,
 	getProviders,
@@ -241,6 +240,7 @@ import { CronTui } from "./cron-commands.ts";
 import { runDiffCommand } from "./diff-command.ts";
 import { getModelSearchText } from "./model-search.ts";
 import { OfficeTui } from "./office-commands.ts";
+import { suggestSlashCommandName } from "./slash-command-suggestions.ts";
 import {
 	getAvailableThemes,
 	getAvailableThemesWithPaths,
@@ -616,6 +616,8 @@ export class InteractiveMode {
 
 	// Built-in header (logo + keybinding hints + changelog)
 	private builtInHeader: Component | undefined = undefined;
+	// Welcome banner model line, updated when the session model changes.
+	private welcomeBanner: WelcomeBannerComponent | undefined;
 
 	// Custom header from extension (undefined = use built-in header)
 	private customHeader: (Component & { dispose?(): void }) | undefined = undefined;
@@ -1091,6 +1093,12 @@ export class InteractiveMode {
 	async init(): Promise<void> {
 		if (this.isInitialized) return;
 
+		// The renderer is not mounted yet, so a slow resource/MCP load otherwise
+		// leaves a blank terminal with no sign that anything is happening.
+		if (process.stdout.isTTY && (this.options.verbose || !this.settingsManager.getQuietStartup())) {
+			process.stdout.write(`${chalk.dim("Starting A-Coder CLI — loading session, skills and MCP servers…")}\n`);
+		}
+
 		this.registerSignalHandlers();
 
 		// Load changelog (only show new entries, skip for resumed sessions)
@@ -1193,7 +1201,7 @@ export class InteractiveMode {
 		// Add header with keybindings from config (unless silenced)
 		if (this.options.verbose || !this.settingsManager.getQuietStartup()) {
 			// Welcome banner: ASCII art wordmark + model/mode/cwd info block
-			const welcomeBanner = new WelcomeBannerComponent({
+			this.welcomeBanner = new WelcomeBannerComponent({
 				version: this.version,
 				modelId: this.session.model?.id,
 				permissionMode: this.session.permissionMode,
@@ -1253,7 +1261,7 @@ export class InteractiveMode {
 
 			// Setup UI layout
 			this.headerContainer.addChild(new Spacer(1));
-			this.headerContainer.addChild(welcomeBanner);
+			this.headerContainer.addChild(this.welcomeBanner);
 			this.headerContainer.addChild(new Spacer(1));
 			this.headerContainer.addChild(this.builtInHeader);
 			this.headerContainer.addChild(new Spacer(1));
@@ -3475,6 +3483,14 @@ export class InteractiveMode {
 				await this.showModelsSelector();
 				return;
 			}
+			// `/models` is the common plural spelling; keep it as a hidden
+			// alias so a reasonable guess does not become an error.
+			if (text === "/models" || text.startsWith("/models ")) {
+				const searchTerm = text.startsWith("/models ") ? text.slice("/models ".length).trim() : undefined;
+				this.editor.setText("");
+				await this.handleModelCommand(searchTerm);
+				return;
+			}
 			if (text === "/model" || text.startsWith("/model ")) {
 				const searchTerm = text.startsWith("/model ") ? text.slice(7).trim() : undefined;
 				this.editor.setText("");
@@ -3504,12 +3520,6 @@ export class InteractiveMode {
 			}
 			if (text === "/plan") {
 				this.togglePlanMode();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/think" || text.startsWith("/think ")) {
-				const arg = text.startsWith("/think ") ? text.slice("/think ".length).trim() : undefined;
-				this.handleThinkCommand(arg);
 				this.editor.setText("");
 				return;
 			}
@@ -3735,7 +3745,9 @@ export class InteractiveMode {
 				const firstToken = text.split(/\s+/, 1)[0] ?? "";
 				if (!firstToken || !fs.existsSync(firstToken)) {
 					this.editor.setText(text);
-					this.showError(`Unknown command: /${unknown[1]}. Type / to browse commands or /help to search.`);
+					const suggestion = suggestSlashCommandName(unknown[1], this.getKnownSlashCommandNames());
+					const hint = suggestion ? ` Did you mean /${suggestion}?` : "";
+					this.showError(`Unknown command: /${unknown[1]}.${hint} Type / to browse commands or /help to search.`);
 					return;
 				}
 			}
@@ -3798,6 +3810,7 @@ export class InteractiveMode {
 				this.onInputCallback(text);
 			} else {
 				this.pendingUserInputs.push(text);
+				this.showStatus?.("Message queued — finishing startup");
 			}
 			this.editor.addToHistory?.(text);
 		};
@@ -4904,28 +4917,6 @@ export class InteractiveMode {
 		}
 	}
 
-	/** /think [level]: show or set the model's thinking level. */
-	private handleThinkCommand(arg: string | undefined): void {
-		if (!this.session.supportsThinking()) {
-			this.showStatus("Current model does not support thinking");
-			return;
-		}
-		const levels = this.session.getAvailableThinkingLevels();
-		if (!arg) {
-			this.showStatus(`Thinking level: ${this.session.thinkingLevel} (available: ${levels.join(", ")})`);
-			return;
-		}
-		const requested = arg.toLowerCase() as ThinkingLevel;
-		if (!levels.includes(requested)) {
-			this.showStatus(`Unknown thinking level "${arg}" — available: ${levels.join(", ")}`);
-			return;
-		}
-		this.session.setThinkingLevel(requested);
-		this.footer.invalidate();
-		this.updateEditorBorderColor();
-		this.showStatus(`Thinking level: ${requested}`);
-	}
-
 	/** /thinking [level]: open the thinking selector, or set the level directly. */
 	private handleThinkingCommand(searchTerm?: string): void {
 		const availableLevels = this.session.getAvailableThinkingLevels();
@@ -4985,6 +4976,7 @@ export class InteractiveMode {
 			} else {
 				this.footer.invalidate();
 				this.updateEditorBorderColor();
+				this.updateWelcomeBannerModel();
 				const thinkingStr =
 					result.model.reasoning && result.thinkingLevel !== "off" ? ` (thinking: ${result.thinkingLevel})` : "";
 				this.showStatus(`Switched to ${result.model.name || result.model.id}${thinkingStr}`);
@@ -4993,6 +4985,13 @@ export class InteractiveMode {
 		} catch (error) {
 			this.showError(error instanceof Error ? error.message : String(error));
 		}
+	}
+
+	/** Keep the startup banner's model line in sync with the live session. */
+	private updateWelcomeBannerModel(): void {
+		if (!this.welcomeBanner) return;
+		this.welcomeBanner.setModelId(this.session.model?.id);
+		this.ui.requestRender();
 	}
 
 	private toggleToolOutputExpansion(): void {
@@ -5927,6 +5926,7 @@ export class InteractiveMode {
 				await this.session.setModel(model);
 				this.footer.invalidate();
 				this.updateEditorBorderColor();
+				this.updateWelcomeBannerModel();
 				this.showStatus(`Model: ${model.id}`);
 				void this.maybeWarnAboutAnthropicSubscriptionAuth(model);
 				this.checkDaxnutsEasterEgg(model);
@@ -6060,6 +6060,7 @@ export class InteractiveMode {
 						await this.session.setModel(model);
 						this.footer.invalidate();
 						this.updateEditorBorderColor();
+						this.updateWelcomeBannerModel();
 						done();
 						this.showStatus(`Model: ${model.id}`);
 						void this.maybeWarnAboutAnthropicSubscriptionAuth(model);
@@ -6799,6 +6800,7 @@ export class InteractiveMode {
 				} else {
 					try {
 						await this.session.setModel(selectedModel);
+						this.updateWelcomeBannerModel();
 					} catch (error: unknown) {
 						selectedModel = undefined;
 						const errorMessage = error instanceof Error ? error.message : String(error);

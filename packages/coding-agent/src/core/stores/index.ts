@@ -4,6 +4,7 @@ export {
 	type BackgroundProcessStatus,
 	clearAllBackgroundProcesses,
 	completeBackgroundProcess,
+	failBackgroundProcess,
 	getBackgroundProcess,
 	getBackgroundProcesses,
 	removeBackgroundProcess,

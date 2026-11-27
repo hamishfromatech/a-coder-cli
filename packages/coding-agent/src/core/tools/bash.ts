@@ -25,6 +25,7 @@ import {
 	clearBackgroundRequest,
 	completeBackgroundProcess,
 	completeBashProgress,
+	failBackgroundProcess,
 	isBackgroundRequested,
 	startBackgroundProcess,
 	startBashProgress,
@@ -628,8 +629,8 @@ export function createBashToolDefinition(
 				bgChild.stdout?.on("data", bgOnData);
 				bgChild.stderr?.on("data", bgOnData);
 
-				bgChild.on("error", () => {
-					completeBackgroundProcess(toolCallId, undefined, false);
+				bgChild.on("error", (error) => {
+					failBackgroundProcess(toolCallId, error.message);
 					if (bgChild.pid) untrackDetachedChildPid(bgChild.pid);
 				});
 				bgChild.on("close", (code) => {
@@ -788,9 +789,18 @@ export function createBashToolDefinition(
 						};
 						bgChild.stdout?.on("data", bgOnData);
 						bgChild.stderr?.on("data", bgOnData);
+						bgChild.on("error", (error) => {
+							failBackgroundProcess(toolCallId, error.message);
+							if (bgChild.pid) untrackDetachedChildPid(bgChild.pid);
+						});
 						bgChild.on("close", (code) => {
 							completeBackgroundProcess(toolCallId, code ?? undefined, false);
+							if (bgChild.pid) untrackDetachedChildPid(bgChild.pid);
 						});
+						// The local backend untacks the pid in its backgroundCheck
+						// handoff; re-own tracking here so shutdown cleanup
+						// (killTrackedDetachedChildren) reaches this process.
+						if (bgChild.pid) trackDetachedChildPid(bgChild.pid);
 						clearBackgroundRequest(toolCallId);
 						completeBashProgress(toolCallId);
 						const partialOutput = output.snapshot({ persistIfTruncated: true });
@@ -798,7 +808,7 @@ export function createBashToolDefinition(
 							content: [
 								{
 									type: "text",
-									text: `Command backgrounded (pid ${bgChild.pid ?? "unknown"}). The process is still running. Output so far:\n${sanitizeToolText(partialOutput.content || "(no output yet)")}`,
+									text: `Command backgrounded (pid ${bgChild.pid ?? "unknown"}). The process is still running. Output so far:\n${sanitizeToolText(partialOutput.content || "(no output yet)")}${bgSnapshot.fullOutputPath ? `\nFull output: ${bgSnapshot.fullOutputPath}` : ""}`,
 								},
 							],
 							details: undefined,

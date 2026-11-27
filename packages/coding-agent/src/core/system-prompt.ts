@@ -156,6 +156,9 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 		addGuideline(
 			"Use the task graph for work that needs three or more steps, spans sessions, or has dependencies; keep one task list per project.",
 		);
+		addGuideline(
+			"Create the whole plan in one task_create call with the tasks array, then wire dependencies with task_update. Do not create tasks one at a time.",
+		);
 	}
 	if (tools.includes("spawn_subagent")) {
 		addGuideline(

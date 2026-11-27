@@ -147,14 +147,14 @@ describe("RunningTasksViewerComponent", () => {
 		expect(lines).toContain("running goal");
 		expect(lines).not.toContain("finished goal");
 		expect(lines).not.toContain("echo done-task");
-		expect(lines).toContain("show done");
+		expect(lines).toContain("show finished");
 
 		// Toggle back.
 		component.handleInput("h");
 		lines = renderComponent(component).join("\n");
 		expect(lines).toContain("finished goal");
 		expect(lines).toContain("echo done-task");
-		expect(lines).toContain("hide done");
+		expect(lines).toContain("hide finished");
 	});
 
 	it("hides finished tasks when everything is done, with a hint to toggle", () => {
@@ -197,6 +197,51 @@ describe("RunningTasksViewerComponent", () => {
 		expect(renderComponent(component).join("\n")).toContain("finished goal");
 	});
 
+	it("reflows rows to the render width without wrapping metadata", () => {
+		ensureTheme();
+		const component = new RunningTasksViewerComponent(
+			[
+				makeAgent({
+					goal: "A very long goal that should be truncated instead of pushing metadata onto its own line",
+					toolUseCount: 12,
+					turnCount: 4,
+				}),
+			],
+			[],
+			() => {},
+			() => {},
+		);
+		const lines = component.render(80).map((line) => line.replace(/\x1b\[[0-9;]*m/g, ""));
+		expect(Math.max(...lines.map((line) => line.length))).toBeLessThanOrEqual(80);
+		expect(lines.join("\n")).toContain("12 tools");
+		expect(lines.join("\n")).toContain("4t");
+	});
+
+	it("groups active above finished, shows counts, and previews the selection", () => {
+		ensureTheme();
+		const component = new RunningTasksViewerComponent(
+			[
+				makeAgent({ id: "agent-done", status: "completed", goal: "finished goal" }),
+				makeAgent({ id: "agent-run", goal: "running goal", toolUseCount: 1, turnCount: 1 }),
+			],
+			[],
+			() => {},
+			() => {},
+		);
+		const lines = renderComponent(component).join("\n");
+		expect(lines).toContain("Background tasks");
+		expect(lines).toContain("1 active · 1 finished");
+		expect(lines).toContain("ACTIVE 1");
+		expect(lines).toContain("FINISHED 1");
+		expect(lines).toContain("running goal");
+		expect(lines.indexOf("ACTIVE 1")).toBeLessThan(lines.indexOf("FINISHED 1"));
+
+		component.handleInput("\r");
+		const detail = renderComponent(component).join("\n");
+		expect(detail).toContain("1 tool · 1 turn");
+		expect(detail).toContain("Timeline");
+	});
+
 	it("renders the picker with both kinds and honors kill routing", () => {
 		ensureTheme();
 		const killed: string[] = [];
@@ -207,7 +252,7 @@ describe("RunningTasksViewerComponent", () => {
 			(item) => killed.push(`${item.kind}:${item.record.id}`),
 		);
 		const lines = renderComponent(component).join("\n");
-		expect(lines).toContain("Running tasks");
+		expect(lines).toContain("Background tasks");
 		expect(lines).toContain("agent");
 		expect(lines).toContain("bash");
 		expect(lines).toContain("fix the bug");

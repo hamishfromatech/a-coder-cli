@@ -29,6 +29,11 @@ const BACKGROUND_UNAVAILABLE = new Set(
 );
 const STALE_TOKEN = new Set((process.env.FAKE_STALE_TOKEN ?? "").split(",").filter(Boolean));
 const DEGRADED = process.env.FAKE_DEGRADED ?? "";
+// FAKE_PARTIAL claims a truncated walk; FAKE_NO_TOKEN drops element_token from
+// the structured rows; FAKE_OWNED rejects calls as held by another transport.
+const PARTIAL = process.env.FAKE_PARTIAL === "1";
+const NO_TOKEN = process.env.FAKE_NO_TOKEN === "1";
+const OWNED = process.env.FAKE_OWNED === "1";
 const EXIT_ONCE = new Set((process.env.FAKE_EXIT_ONCE ?? "").split(",").filter(Boolean));
 const EXIT_SENTINEL = process.env.FAKE_EXIT_SENTINEL ?? "";
 const SESSION_ENDED_ONCE = new Set(
@@ -53,6 +58,7 @@ const tools = [
 				include_screenshot: {},
 				include_accessibility_tree: {},
 				since: {},
+				timeout_ms: {},
 				session: {},
 			},
 		},
@@ -60,7 +66,7 @@ const tools = [
 	{
 		// Live schema advertises element_token + delivery_mode (driver 0.21+ contract).
 		name: "click",
-		inputSchema: { type: "object", properties: { target: {}, pid: {}, window_id: {}, button: {}, element_index: {}, element_token: {}, x: {}, y: {}, modifier: {}, delivery_mode: {}, from_zoom: {}, session: {} } },
+		inputSchema: { type: "object", properties: { target: {}, pid: {}, window_id: {}, button: {}, element_index: {}, element_token: {}, snapshot_id: {}, capture_id: {}, x: {}, y: {}, modifier: {}, delivery_mode: {}, from_zoom: {}, session: {} } },
 	},
 	{
 		// press_key deliberately omits delivery_mode: the tool must refuse
@@ -94,8 +100,15 @@ const WINDOWS = [
 ];
 
 const ELEMENTS = [
-	{ element_index: 1, role: "button", label: "Submit", frame: { x: 10, y: 20, w: 80, h: 24 }, element_token: "sabc:1" },
-	{ element_index: 2, role: "textfield", label: "Search", frame: { x: 10, y: 60, w: 200, h: 24 }, element_token: "sabc:2" },
+	{
+		element_index: 1,
+		role: "button",
+		label: "Submit",
+		frame: { x: 410, y: 320, w: 80, h: 24 },
+		screenshot_frame: { x: 10, y: 20, w: 40, h: 12 },
+		element_token: "sabc:1",
+	},
+	{ element_index: 2, role: "textfield", label: "Search", frame: { x: 410, y: 360, w: 200, h: 24 }, element_token: "sabc:2" },
 ];
 
 // A real 1x1 PNG, so the desktop preview and provider image validation see
@@ -108,6 +121,17 @@ const IMAGE = {
 
 function handleCall(name, args) {
 	appendFileSync(LOG, `${JSON.stringify({ name, args })}\n`);
+	if (OWNED) {
+		return {
+			content: [{ type: "text", text: `session '${args.session}' is owned by another transport` }],
+			structuredContent: {
+				ok: false,
+				code: "session_owned_by_other_transport",
+				owner_transport: "pid-4242",
+			},
+			isError: true,
+		};
+	}
 	if (SESSION_ENDED_ONCE.has(name) && !sessionEnded) {
 		sessionEnded = true;
 		return {
@@ -177,10 +201,25 @@ function handleCall(name, args) {
 			const diff = typeof args.since === "string";
 			const structuredContent = {
 				snapshot_id: diff ? "s0000002b" : "s0000002a",
+				capture_id: "cap-0001",
 				truncated: false,
+				elements_complete: PARTIAL ? false : true,
+				...(PARTIAL ? { truncation_reason: "walk_timeout" } : {}),
 				...(diff ? { since_status: "ok" } : {}),
 				...(DEGRADED ? { degraded_reason: DEGRADED } : {}),
-				...(wantsElements ? { elements: diff ? [ELEMENTS[0]] : ELEMENTS } : { tree_markdown: "tree", window_title: "Front" }),
+				...(wantsElements
+					? {
+							elements: NO_TOKEN
+								? ELEMENTS.map((element) => {
+										const copy = { ...element };
+										delete copy.element_token;
+										return copy;
+									})
+								: diff
+									? [ELEMENTS[0]]
+									: ELEMENTS,
+						}
+					: { tree_markdown: "tree", window_title: "Front" }),
 			};
 			const content = args.include_screenshot === false ? [] : [IMAGE];
 			return { content, structuredContent };

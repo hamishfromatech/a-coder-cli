@@ -244,6 +244,12 @@ export const COMPUTER_INPUT_ACTIONS: ReadonlySet<string> = new Set([
 
 /** Default accessibility-walk bound (driver-side `max_elements`). */
 const MAX_AX_ELEMENTS = 200;
+/**
+ * AX-walk budget for a capture. The driver defaults to 1000 ms (2000 ms cold
+ * start), which truncates a MAX_AX_ELEMENTS walk on large apps; the tree is
+ * bounded anyway, so the wider budget only buys completeness.
+ */
+const AX_WALK_TIMEOUT_MS = 2_000;
 /** Cap on the element list surfaced in the response (dense UIs exceed context). */
 const MAX_VISIBLE_ELEMENTS = 100;
 /** What a degraded snapshot means for the next step (driver `degraded_reason`). */
@@ -265,7 +271,10 @@ interface UiElement {
 	index: number;
 	role: string;
 	label: string;
+	/** Screen coordinates (the driver's `frame`), not screenshot pixels. */
 	frame: { x: number; y: number; w: number; h: number } | null;
+	/** The same box in the delivered PNG's pixels — the only space x/y accepts. */
+	screenshotFrame: { x: number; y: number; w: number; h: number } | null;
 	token: string | null;
 }
 
@@ -284,6 +293,11 @@ let snapshotTokens = new Map<number, string>();
 /** Last snapshot published for `lastSnapshotTarget`, for `since` diffs and zoom context. */
 let lastSnapshotId: string | null = null;
 let lastSnapshotTarget = "";
+/**
+ * Capture the next coordinate action may be admitted against (`capture_id`).
+ * Scoped to the target it was taken from and consumed by the first action.
+ */
+let captureBinding: { key: string; id: string } | null = null;
 /** Target key whose pixels came from a `zoom` crop (coordinate actions set `from_zoom`). */
 let zoomActiveFor = "";
 
@@ -307,6 +321,7 @@ function clearTarget(): void {
 	stickyTarget = null;
 	snapshotTokens = new Map();
 	lastSnapshotId = null;
+	captureBinding = null;
 	lastSnapshotTarget = "";
 	zoomActiveFor = "";
 	lastCaptureDigest = null;
@@ -338,6 +353,16 @@ function positiveInt(value: unknown): number | null {
 	return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : null;
 }
 
+function parseRect(raw: unknown): { x: number; y: number; w: number; h: number } | null {
+	if (typeof raw !== "object" || raw === null) {
+		return null;
+	}
+	const f = raw as Record<string, unknown>;
+	const num = (value: unknown) =>
+		typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.round(value) : 0;
+	return { x: num(f.x), y: num(f.y), w: num(f.w), h: num(f.h) };
+}
+
 function parseElements(raw: unknown): UiElement[] {
 	if (!Array.isArray(raw)) {
 		return [];
@@ -355,16 +380,14 @@ function parseElements(raw: unknown): UiElement[] {
 		const role = typeof rec.role === "string" ? rec.role : "";
 		const label = typeof rec.label === "string" ? rec.label : "";
 		const token = typeof rec.element_token === "string" && rec.element_token ? rec.element_token : null;
-		let frame: UiElement["frame"] = null;
-		if (typeof rec.frame === "object" && rec.frame !== null) {
-			const f = rec.frame as Record<string, unknown>;
-			const x = positiveInt(f.x) ?? 0;
-			const y = positiveInt(f.y) ?? 0;
-			const w = positiveInt(f.w) ?? 0;
-			const h = positiveInt(f.h) ?? 0;
-			frame = { x, y, w, h };
-		}
-		elements.push({ index, role, label, frame, token });
+		elements.push({
+			index,
+			role,
+			label,
+			frame: parseRect(rec.frame),
+			screenshotFrame: parseRect(rec.screenshot_frame),
+			token,
+		});
 	}
 	return elements;
 }
@@ -432,6 +455,22 @@ function classifyVerdict(result: {
 				decision: "verify_fresh_state",
 				code,
 				hint: "The element token is stale — a newer snapshot replaced it. Capture again and use the new element index/token.",
+			};
+		}
+		if (code === "stale_revision") {
+			return {
+				decision: "verify_fresh_state",
+				code,
+				hint: "The accessibility tree changed since this action was planned, so the driver refused before sending input. Capture again and re-plan.",
+			};
+		}
+		if (code === "session_owned_by_other_transport") {
+			const owner =
+				typeof structured.owner_transport === "string" ? structured.owner_transport : "another transport";
+			return {
+				decision: "verify_fresh_state",
+				code,
+				hint: `Another driver connection (${owner}) holds this session label, so nothing was executed. Close that connection or retry once it is released.`,
 			};
 		}
 		if (code === "ambiguous_window_target") {
@@ -527,8 +566,11 @@ function classifyVerdict(result: {
 
 function elementLine(element: UiElement): string {
 	const label = element.label.replace(/\s+/g, " ").slice(0, 60);
-	const where = element.frame
-		? ` @ ${element.frame.x},${element.frame.y} ${element.frame.w}x${element.frame.h}`
+	// `frame` is screen coordinates; only `screenshot_frame` may be handed back
+	// as a coordinate, so prefer it and label the fallback so it is not copied.
+	const box = element.screenshotFrame ?? element.frame;
+	const where = box
+		? ` @ ${box.x},${box.y} ${box.w}x${box.h} ${element.screenshotFrame ? "px" : "screen-px"}`
 		: " @ bounds-unknown";
 	return `  #${element.index} ${element.role} ${JSON.stringify(label)}${where}`;
 }
@@ -608,6 +650,7 @@ async function doCapture(args: ComputerToolInput): Promise<AgentToolResult<Recor
 	const supports = (property: string) => client.supportsInputProperty("get_window_state", property);
 	if (supports("tree_format")) callArgs.tree_format = "elements";
 	if (supports("max_elements")) callArgs.max_elements = MAX_AX_ELEMENTS;
+	if (supports("timeout_ms")) callArgs.timeout_ms = AX_WALK_TIMEOUT_MS;
 	if (supports("include_screenshot")) callArgs.include_screenshot = mode !== "ax";
 	if (mode === "vision" && supports("include_accessibility_tree")) callArgs.include_accessibility_tree = false;
 	// `since` returns only what changed since a previous snapshot of this window.
@@ -622,6 +665,9 @@ async function doCapture(args: ComputerToolInput): Promise<AgentToolResult<Recor
 	if (result.isError && !result.images.length) {
 		return textResult(actionPayload("capture", result));
 	}
+	// The standalone screenshot fallback below drops structuredContent, so read
+	// the capture handle from the window-state result that actually produced it.
+	const captureId = typeof result.structured?.capture_id === "string" ? result.structured.capture_id : null;
 	// vision: pixels only — prefer the cheaper standalone screenshot tool when advertised.
 	if (mode === "vision" && client.hasTool("screenshot")) {
 		const shot = await client.callTool("screenshot", { window_id: target.window_id, format: "jpeg", quality: 85 });
@@ -634,6 +680,9 @@ async function doCapture(args: ComputerToolInput): Promise<AgentToolResult<Recor
 	// instead of replacing it.
 	stickyTarget = target;
 	zoomActiveFor = "";
+	// Bind the next coordinate action to this exact capture: the driver admits
+	// x/y against that PNG and refuses stale/mismatched points before dispatch.
+	captureBinding = captureId ? { key, id: captureId } : null;
 	const elements = mode === "vision" ? [] : parseElements(result.structured?.elements);
 	if (!diffSince) snapshotTokens = new Map();
 	for (const element of elements) {
@@ -647,7 +696,10 @@ async function doCapture(args: ComputerToolInput): Promise<AgentToolResult<Recor
 	const structured = result.structured ?? {};
 	const snapshotId = typeof structured.snapshot_id === "string" ? structured.snapshot_id : null;
 	const degradedReason = typeof structured.degraded_reason === "string" ? structured.degraded_reason : null;
-	const driverTruncated = structured.truncated === true;
+	// `truncated` is the legacy flag; `elements_complete:false` is the explicit
+	// "this tree is partial" claim (with a reason) on current builds.
+	const treePartial = structured.truncated === true || structured.elements_complete === false;
+	const truncationReason = typeof structured.truncation_reason === "string" ? structured.truncation_reason : null;
 	const sinceStatus = typeof structured.since_status === "string" ? structured.since_status : null;
 	if (snapshotId) {
 		lastSnapshotId = snapshotId;
@@ -681,9 +733,9 @@ async function doCapture(args: ComputerToolInput): Promise<AgentToolResult<Recor
 	if (truncated > 0) {
 		lines.push(`  (+${truncated} more; pass app= to narrow)`);
 	}
-	if (driverTruncated) {
+	if (treePartial) {
 		lines.push(
-			`note: the driver truncated the accessibility tree at max_elements=${MAX_AX_ELEMENTS} — narrow with app=/window_id, or capture mode='vision' for pixels only.`,
+			`note: the element tree is partial${truncationReason ? ` (${truncationReason})` : ` at max_elements=${MAX_AX_ELEMENTS}`} — element indices are incomplete; narrow with app=/window_id, or capture mode='vision' for pixels only.`,
 		);
 	}
 	if (degradedReason) {
@@ -1047,12 +1099,28 @@ async function doInput(args: ComputerToolInput): Promise<AgentToolResult<Record<
 	// explicit "stale" instead of silently re-resolving to a different element.
 	if (typeof toolArgs.element_index === "number") {
 		const token = snapshotTokens.get(toolArgs.element_index);
+		const acceptsToken = client.supportsInputProperty(tool, "element_token");
 		// Current drivers identify elements on action tools by snapshot token and
-		// refuse `element_index`; prefer the token and drop the index when sending
-		// both would be contradictory.
-		if (token && client.supportsInputProperty(tool, "element_token")) {
+		// refuse a bare `element_index` (indices are snapshot-scoped). Prefer the
+		// token; when none is held, fail closed with the fix instead of sending an
+		// index the driver cannot resolve.
+		if (token && acceptsToken) {
 			toolArgs.element_token = token;
 			delete toolArgs.element_index;
+		} else if (acceptsToken) {
+			return textResult({
+				ok: false,
+				action,
+				code: "stale_element_token",
+				error: `No current element token for #${toolArgs.element_index} — a newer snapshot (or a since_last diff) retired it. Capture again without since_last, then use the new element index.`,
+			});
+		} else if (
+			typeof lastSnapshotId === "string" &&
+			lastSnapshotTarget === targetKeyOf(stickyTarget) &&
+			client.supportsInputProperty(tool, "snapshot_id")
+		) {
+			// Older builds take index + snapshot_id, which pins the same snapshot.
+			toolArgs.snapshot_id = lastSnapshotId;
 		}
 	}
 	// A driver build may rename tools (e.g. "type" → "type_text"); calling an
@@ -1091,6 +1159,24 @@ async function doInput(args: ComputerToolInput): Promise<AgentToolResult<Record<
 		client.supportsInputProperty(tool, "from_zoom")
 	) {
 		callArgs.from_zoom = true;
+	}
+	// Coordinate actions are admitted against the exact capture they were planned
+	// from (stale, mismatched, or out-of-bounds points are refused before any
+	// input). The driver consumes the id, so the binding is one-shot; zoom-relative
+	// points are not capture-bound and keep `from_zoom` instead.
+	const sendsPoint = typeof callArgs.x === "number" && typeof callArgs.y === "number";
+	const boundCapture =
+		sendsPoint &&
+		callArgs.from_zoom !== true &&
+		stickyTarget.window_id !== null &&
+		captureBinding !== null &&
+		captureBinding.key === targetKeyOf(stickyTarget) &&
+		client.supportsInputProperty(tool, "capture_id")
+			? captureBinding.id
+			: null;
+	if (boundCapture) {
+		callArgs.capture_id = boundCapture;
+		captureBinding = null;
 	}
 	const result = await client.callTool(tool, callArgs);
 	const payload = {

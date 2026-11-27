@@ -9,6 +9,7 @@ import {
 	resetComputerToolState,
 } from "../../src/core/tools/computer-use/computer.ts";
 import {
+	CuaDriverClient,
 	DRIVER_RELEASE_TAG,
 	getCuaBinDir,
 	getDriverInstallGuidance,
@@ -120,6 +121,57 @@ describe("install guidance", () => {
 	it("returns null on unsupported platforms", () => {
 		stubPlatform("freebsd" as NodeJS.Platform, "x64");
 		expect(getDriverInstallGuidance()).toBeNull();
+	});
+});
+
+describe("client start bounding", () => {
+	it("fails a stalled driver start instead of hanging the first call", async () => {
+		const tempRoot = fs.mkdtempSync(join(os.tmpdir(), "acoder-cua-stall-"));
+		const stalled = join(tempRoot, "cua-driver");
+		// A child that never answers `initialize`: without a bound, start() would
+		// await it forever and the tool would never return.
+		fs.writeFileSync(stalled, "#!/bin/sh\nsleep 30\n");
+		fs.chmodSync(stalled, 0o755);
+		const savedOverride = process.env.A_CODER_CUA_DRIVER_CMD;
+		process.env.A_CODER_CUA_DRIVER_CMD = stalled;
+		const client = new CuaDriverClient(150);
+		const began = Date.now();
+		try {
+			await expect(client.start()).rejects.toThrow(/did not finish within 150 ms/);
+			expect(Date.now() - began).toBeLessThan(5_000);
+		} finally {
+			await client.stop();
+			if (savedOverride === undefined) {
+				delete process.env.A_CODER_CUA_DRIVER_CMD;
+			} else {
+				process.env.A_CODER_CUA_DRIVER_CMD = savedOverride;
+			}
+			fs.rmSync(tempRoot, { recursive: true, force: true });
+		}
+	});
+
+	it("retries after a stalled start is cleared", async () => {
+		const tempRoot = fs.mkdtempSync(join(os.tmpdir(), "acoder-cua-retry-"));
+		const stalled = join(tempRoot, "cua-driver");
+		fs.writeFileSync(stalled, "#!/bin/sh\nsleep 30\n");
+		fs.chmodSync(stalled, 0o755);
+		const savedOverride = process.env.A_CODER_CUA_DRIVER_CMD;
+		process.env.A_CODER_CUA_DRIVER_CMD = stalled;
+		const client = new CuaDriverClient(100);
+		try {
+			await expect(client.start()).rejects.toThrow(/did not finish within/);
+			// The memoized rejection is cleared, so a second call starts a fresh
+			// attempt rather than replaying the first failure.
+			await expect(client.start()).rejects.toThrow(/did not finish within/);
+		} finally {
+			await client.stop();
+			if (savedOverride === undefined) {
+				delete process.env.A_CODER_CUA_DRIVER_CMD;
+			} else {
+				process.env.A_CODER_CUA_DRIVER_CMD = savedOverride;
+			}
+			fs.rmSync(tempRoot, { recursive: true, force: true });
+		}
 	});
 });
 

@@ -230,6 +230,9 @@ describe("computer tool conformance against a fake cua-driver MCP server", () =>
 		expect(gws?.args.pid).toBe(101);
 		expect(gws?.args.window_id).toBe(11);
 		expect(gws?.args.max_elements).toBeGreaterThan(0);
+		// The AX walk is bounded by the driver's own budget; give it enough to fit
+		// the requested element count instead of the 1 s default.
+		expect(gws?.args.timeout_ms).toBeGreaterThanOrEqual(1000);
 		// Current drivers return the structured element list only when asked.
 		expect(gws?.args.tree_format).toBe("elements");
 		expect(gws?.args.include_screenshot).toBe(true);
@@ -428,6 +431,116 @@ describe("computer tool conformance against a fake cua-driver MCP server", () =>
 		};
 		expect(payload.ok).toBe(false);
 		expect(payload.code).toBe("no_target");
+	});
+
+	it("binds a coordinate click to the capture it was planned from, once", async () => {
+		await execute({ action: "capture" } as ComputerToolInput);
+		await execute({ action: "click", coordinate: [12, 22] } as ComputerToolInput);
+		const first = readCalls().find((call) => call.name === "click");
+		expect(first?.args).toMatchObject({ x: 12, y: 22, capture_id: "cap-0001" });
+
+		// The driver consumes the binding, so a second click is not pinned to a
+		// capture the screen has already moved past.
+		await execute({ action: "click", coordinate: [12, 22] } as ComputerToolInput);
+		const clicks = readCalls().filter((call) => call.name === "click");
+		expect(clicks).toHaveLength(2);
+		expect(clicks[1]?.args.capture_id).toBeUndefined();
+	});
+
+	it("does not capture-bind zoom-relative coordinates", async () => {
+		await execute({ action: "capture" } as ComputerToolInput);
+		await execute({ action: "zoom", zoom_rect: [10, 20, 110, 70] } as ComputerToolInput);
+		await execute({ action: "click", coordinate: [50, 40] } as ComputerToolInput);
+		const click = readCalls().find((call) => call.name === "click");
+		expect(click?.args.from_zoom).toBe(true);
+		expect(click?.args.capture_id).toBeUndefined();
+	});
+
+	it("fails closed instead of sending an element index without a live token", async () => {
+		process.env.FAKE_NO_TOKEN = "1";
+		try {
+			await execute({ action: "capture" } as ComputerToolInput);
+			const result = await execute({ action: "click", element: 1 } as ComputerToolInput);
+			const payload = JSON.parse(result.content[0]?.type === "text" ? result.content[0].text : "{}") as {
+				ok: boolean;
+				code?: string;
+				error?: string;
+			};
+			expect(payload.ok).toBe(false);
+			expect(payload.code).toBe("stale_element_token");
+			expect(payload.error).toContain("Capture again without since_last");
+			// Nothing was dispatched with an unactionable index.
+			expect(readCalls().filter((call) => call.name === "click")).toHaveLength(0);
+		} finally {
+			delete process.env.FAKE_NO_TOKEN;
+		}
+	});
+
+	it("prints screenshot-frame pixels, not screen frames, for element coordinates", async () => {
+		const result = await execute({ action: "capture" } as ComputerToolInput);
+		const text = result.content[0]?.type === "text" ? result.content[0].text : "";
+		// Element 1 carries both: frame is screen space (410,320), screenshot_frame
+		// is the delivered PNG's pixels (10,20) — only the latter may be passed as x/y.
+		expect(text).toContain("@ 10,20 40x12 px");
+		expect(text).not.toContain("@ 410,320");
+		// Element 2 has no screenshot_frame, so the fallback is labelled as screen space.
+		expect(text).toContain("@ 410,360 200x24 screen-px");
+	});
+
+	it("reports a partial element tree instead of implying a complete one", async () => {
+		process.env.FAKE_PARTIAL = "1";
+		try {
+			const result = await execute({ action: "capture" } as ComputerToolInput);
+			const text = result.content[0]?.type === "text" ? result.content[0].text : "";
+			expect(text).toContain("element tree is partial");
+			expect(text).toContain("walk_timeout");
+		} finally {
+			delete process.env.FAKE_PARTIAL;
+		}
+	});
+
+	it("names the transport holding the session label", async () => {
+		process.env.FAKE_OWNED = "1";
+		try {
+			const result = await execute({ action: "list_apps" } as ComputerToolInput);
+			const payload = JSON.parse(result.content[0]?.type === "text" ? result.content[0].text : "{}") as {
+				ok: boolean;
+				code?: string;
+				verdict: { decision: string; code?: string; hint?: string };
+			};
+			expect(payload.ok).toBe(false);
+			expect(payload.code).toBe("session_owned_by_other_transport");
+			expect(payload.verdict.code).toBe("session_owned_by_other_transport");
+			expect(payload.verdict.hint).toContain("pid-4242");
+		} finally {
+			delete process.env.FAKE_OWNED;
+		}
+	});
+
+	it("replays a read-only zoom after the driver process dies", async () => {
+		process.env.FAKE_EXIT_ONCE = "zoom";
+		process.env.FAKE_EXIT_SENTINEL = join(tempDir, "zoom-crashed");
+		try {
+			await execute({ action: "capture" } as ComputerToolInput);
+			const result = await execute({ action: "zoom", zoom_rect: [10, 20, 110, 70] } as ComputerToolInput);
+			// A zoom changes nothing on the target, so a transport blip must replay it
+			// instead of reporting an unknown outcome.
+			expect(result.content.some((block) => block.type === "image")).toBe(true);
+			expect(readCalls().filter((call) => call.name === "zoom").length).toBeGreaterThanOrEqual(2);
+		} finally {
+			delete process.env.FAKE_EXIT_ONCE;
+			delete process.env.FAKE_EXIT_SENTINEL;
+		}
+	});
+
+	it("delivers end_session before the transport closes", async () => {
+		await execute({ action: "list_apps" } as ComputerToolInput);
+		resetComputerToolState();
+		await new Promise((resolve) => setTimeout(resolve, 400));
+		const calls = readCalls();
+		// end_session must actually reach the driver; queueing it and closing in
+		// the same tick would drop it on the floor.
+		expect(calls.some((call) => call.name === "end_session")).toBe(true);
 	});
 
 	it("requests a diff for since_last captures and warns about stale tokens", async () => {

@@ -84,6 +84,11 @@ export class WelcomeBannerComponent implements Component {
 		// Stateless — nothing to invalidate.
 	}
 
+	/** Update the model shown in the startup info block after a model switch. */
+	setModelId(modelId: string | undefined): void {
+		this.modelId = modelId;
+	}
+
 	render(width: number): string[] {
 		const innerWidth = Math.max(1, width - 4); // border (2) + padding (2)
 		const lines: string[] = [];

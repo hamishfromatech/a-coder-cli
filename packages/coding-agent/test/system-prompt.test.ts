@@ -123,6 +123,7 @@ describe("buildSystemPrompt", () => {
 			});
 
 			expect(prompt).toContain("Use the task graph for work that needs three or more steps");
+			expect(prompt).toContain("Create the whole plan in one task_create call");
 			expect(prompt).toContain("Use subagents for context-heavy exploration");
 			expect(prompt).toContain("Use run_workflow for saved multi-agent scripts");
 			expect(prompt).toContain("Use Agent Teams when teammates need to message each other");

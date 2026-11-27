@@ -24,17 +24,58 @@ function makeTask(over: Partial<Task>): Task {
 	};
 }
 
+function visible(panel: TaskPanelComponent, width = 120): string {
+	return panel
+		.render(width)
+		.join("\n")
+		.replace(/\x1b\[[0-9;]*m/g, "");
+}
+
 describe("TaskPanelComponent", () => {
 	it("renders an expanded board with todos and tasks when content exists", () => {
 		const panel = new TaskPanelComponent();
 		panel.update([todo("alpha", "in_progress"), todo("beta")], [{ ...makeTask({ id: "3", status: "completed" }) }]);
-		const out = panel.render(120).join("\n");
+		const out = visible(panel);
 		expect(out).toContain("TASKS");
 		expect(out).toContain("0/2 todos");
-		expect(out).toContain("1/1 tasks");
+		expect(out).toContain("1/1 done");
 		expect(out).toContain("TODOS");
-		expect(out).toContain("TASK GRAPH");
+		expect(out).toContain("DONE 1");
 		expect(out).toContain("#3 wire auth");
+	});
+
+	it("groups the task graph and labels dependencies", () => {
+		const panel = new TaskPanelComponent();
+		panel.update(
+			[],
+			[
+				makeTask({ id: "1", subject: "scaffold", status: "completed", blocks: ["2"] }),
+				makeTask({
+					id: "2",
+					subject: "wire auth",
+					activeForm: "wiring auth",
+					status: "in_progress",
+					owner: "backend",
+					blocks: ["3"],
+				}),
+				makeTask({ id: "3", subject: "add tests", status: "pending", blockedBy: ["2"] }),
+				makeTask({ id: "4", subject: "write docs", status: "pending", blockedBy: ["2", "3"] }),
+				makeTask({ id: "5", subject: "ship it", status: "pending" }),
+			],
+		);
+		const out = visible(panel);
+		expect(out).toContain("☰ TASKS");
+		expect(out).toContain("1/5 done");
+		expect(out).toContain("1 active");
+		expect(out).toContain("2 blocked");
+		expect(out).toContain("IN PROGRESS 1");
+		expect(out).toContain("NEXT 1");
+		expect(out).toContain("BLOCKED 2");
+		expect(out).toContain("DONE 1");
+		expect(out).toContain("#2 wiring auth");
+		expect(out).toContain("@backend");
+		expect(out).toContain("⤷ #2, #3");
+		expect(out.indexOf("IN PROGRESS")).toBeLessThan(out.indexOf("BLOCKED"));
 	});
 
 	it("renders nothing when empty", () => {
@@ -48,7 +89,7 @@ describe("TaskPanelComponent", () => {
 		const todos = Array.from({ length: 9 }, (_, i) => todo(`item ${i}`));
 		todos[2] = todo("the active one", "in_progress");
 		panel.update(todos, []);
-		const out = panel.render(120).join("\n");
+		const out = visible(panel);
 		expect(out).toContain("9 todos");
 		// Collapsed: in-progress row visible, the rest hidden
 		expect(out).toContain("the active one");
@@ -59,11 +100,11 @@ describe("TaskPanelComponent", () => {
 		const todos = Array.from({ length: 10 }, (_, i) => todo(`item ${i}`));
 		const panel = new TaskPanelComponent();
 		panel.update(todos, []);
-		expect(panel.render(120).join("\n")).not.toContain("item 0"); // auto-collapsed
+		expect(visible(panel)).not.toContain("item 0"); // auto-collapsed
 		panel.toggle();
-		expect(panel.render(120).join("\n")).toContain("item 0");
+		expect(visible(panel)).toContain("item 0");
 		panel.toggle();
-		expect(panel.render(120).join("\n")).not.toContain("item 0");
+		expect(visible(panel)).not.toContain("item 0");
 	});
 
 	it("manual toggle overrides auto-collapse until the board shrinks", () => {
@@ -78,7 +119,7 @@ describe("TaskPanelComponent", () => {
 			Array.from({ length: 10 }, (_, i) => todo(`item ${i} v2`)),
 			[],
 		);
-		expect(panel.render(120).join("\n")).toContain("item 0 v2");
+		expect(visible(panel)).toContain("item 0 v2");
 	});
 
 	it("clears on empty update", () => {

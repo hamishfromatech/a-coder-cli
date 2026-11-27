@@ -299,5 +299,6 @@ See the built-in themes:
 - [catppuccin-mocha](../src/modes/interactive/theme/catppuccin-mocha.json) / [catppuccin-latte](../src/modes/interactive/theme/catppuccin-latte.json)
 - [tokyo-night](../src/modes/interactive/theme/tokyo-night.json)
 - [solarized-dark](../src/modes/interactive/theme/solarized-dark.json) / [solarized-light](../src/modes/interactive/theme/solarized-light.json)
+- [a-tech](../src/modes/interactive/theme/a-tech.json) / [a-tech-light](../src/modes/interactive/theme/a-tech-light.json) — the A-Tech house palette (paper/ink with signal lime)
 
 Switch with `/theme` or `settings.theme`; `dark` and `light` stay the automatic-pairing defaults.

@@ -15,7 +15,7 @@
  * cannot spawn children), so the list is flat — no tree.
  */
 
-import { Container, getKeybindings, Spacer, Text, truncateToWidth } from "@earendil-works/pi-tui";
+import { Container, getKeybindings, Spacer, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { InProcessSubAgentRecord, SubAgentProgressEvent } from "../../../core/extensions/types.ts";
 import type {
 	BackgroundProcessRecord,
@@ -149,14 +149,13 @@ function itemLabel(item: TaskItem): string {
 	return `$ ${truncateText(item.record.command, 56)}`;
 }
 
-function itemMeta(item: TaskItem): string {
+/** Compact right-hand metadata for the picker row. */
+function shortItemMeta(item: TaskItem): string {
 	const meta: string[] = [];
 	if (item.kind === "agent") {
 		const r = item.record;
-		if (r.model) meta.push(r.model);
-		if (r.turnCount > 0) meta.push(`${r.turnCount} turns`);
-		if (r.toolUseCount > 0) meta.push(`${r.toolUseCount} tools`);
-		if (r.lastToolName) meta.push(`last ${r.lastToolName}`);
+		if (r.turnCount > 0) meta.push(`${r.turnCount}t`);
+		if (r.toolUseCount > 0) meta.push(`${r.toolUseCount} tool${r.toolUseCount === 1 ? "" : "s"}`);
 		const tokens = formatTokens(r.totalTokens);
 		if (tokens) meta.push(tokens);
 		meta.push(formatDuration((r.status === "running" ? Date.now() : r.updatedAt) - r.startedAt));
@@ -166,7 +165,25 @@ function itemMeta(item: TaskItem): string {
 		meta.push(formatDuration((r.endedAt ?? Date.now()) - r.startedAt));
 		if (r.exitCode !== undefined) meta.push(`exit ${r.exitCode}`);
 	}
-	return meta.join(", ");
+	return meta.join(" · ");
+}
+
+function statusGlyph(item: TaskItem): string {
+	const status = item.record.status;
+	if (status === "running") return theme.fg("accent", "●");
+	if (status === "completed" || status === "done") return theme.fg("success", "✓");
+	if (status === "failed" || status === "error") return theme.fg("error", "✗");
+	return theme.fg("warning", "■");
+}
+
+function itemSummary(item: TaskItem): string {
+	if (item.kind === "agent") {
+		const r = item.record;
+		const text = r.error ?? r.finalText;
+		if (text?.trim()) return text.trim().split("\n")[0] ?? "";
+		return r.goal ?? "";
+	}
+	return item.record.error ?? item.record.command;
 }
 
 /** Whether the picker should include finished tasks. Remembered across opens. */
@@ -177,6 +194,8 @@ function isTaskRunning(item: TaskItem): boolean {
 }
 
 export class RunningTasksViewerComponent extends Container {
+	/** Last render width; used for full-row selection and dividers. */
+	private width = 120;
 	/** Full snapshot (running + finished). */
 	private allItems: TaskItem[] = [];
 	/** Visible slice (respects the hide-finished toggle). */
@@ -327,61 +346,125 @@ export class RunningTasksViewerComponent extends Container {
 		else this.renderView();
 	}
 
+	render(width: number): string[] {
+		const nextWidth = Math.max(20, width);
+		// The body is built before the first render (constructor), when the
+		// terminal width is not known yet. Reflow it when the real width arrives
+		// or the window is resized, so the selection bar and aligned metadata use
+		// the full pane instead of the 120-column bootstrap width.
+		if (nextWidth !== this.width) {
+			this.width = nextWidth;
+			this.rerender();
+		}
+		return super.render(width);
+	}
+
 	private renderPicker(): void {
-		this.bodyContainer.addChild(new Text(theme.fg("accent", theme.bold("Running tasks")), 1, 1));
+		const activeCount = this.allItems.filter(isTaskRunning).length;
+		const finishedCount = this.allItems.length - activeCount;
+		const countText = this.showFinished
+			? `${activeCount} active${finishedCount > 0 ? ` · ${finishedCount} finished` : ""}`
+			: `${activeCount} active · finished hidden`;
+		this.bodyContainer.addChild(
+			new Text(`${theme.fg("accent", theme.bold("Background tasks"))}  ${theme.fg("muted", countText)}`, 1, 0),
+		);
 		if (this.items.length === 0) {
+			this.bodyContainer.addChild(new Spacer(1));
 			this.bodyContainer.addChild(
 				new Text(
 					theme.fg(
 						"muted",
 						this.showFinished
-							? "No background processes or sub-agents."
+							? "No background tasks. Run a command with background: true or spawn a sub-agent."
 							: "No running tasks — press h to show finished runs.",
 					),
 					1,
-					1,
+					0,
 				),
 			);
+			this.bodyContainer.addChild(
+				new Text(theme.fg("dim", "Background bash and sub-agents will appear here while they run."), 1, 0),
+			);
 		}
-		// Windowed list: the viewport follows the cursor so the viewer stays
-		// inside the terminal window no matter how many tasks exist.
+
+		// Keep the active group first, then finished. The flat item indexes still
+		// drive selection; the headings are presentation only.
+		const activeItems = this.items.filter(isTaskRunning);
+		const finishedItems = this.items.filter((item) => !isTaskRunning(item));
 		const viewRows = this.getViewportRows();
 		this.scrollOffset = Math.max(0, Math.min(this.scrollOffset, this.items.length - viewRows));
 		const first = this.scrollOffset;
 		const last = Math.min(this.items.length, first + viewRows);
+		const contentWidth = Math.max(24, this.width - 2);
+		const renderItem = (item: TaskItem, index: number): void => {
+			const isCursor = index === this.selectedIndex;
+			const prefix = isCursor ? "▸ " : "  ";
+			const status = statusGlyph(item);
+			const kind = item.kind === "agent" ? "agent" : "bash";
+			const meta = shortItemMeta(item);
+			const headWidth = visibleWidth(status) + 1 + kind.length + 2;
+			const labelWidth = Math.max(8, contentWidth - visibleWidth(prefix) - headWidth - visibleWidth(meta) - 2);
+			const label = truncateText(itemLabel(item), labelWidth);
+			const head = `${status} ${theme.fg("dim", kind)} ${theme.fg("text", label)}`;
+			const gap = Math.max(1, contentWidth - visibleWidth(prefix) - visibleWidth(head) - visibleWidth(meta));
+			const row = `${prefix}${head}${" ".repeat(gap)}${theme.fg("dim", meta)}`;
+			const padded = row + " ".repeat(Math.max(0, contentWidth - visibleWidth(row)));
+			this.bodyContainer.addChild(
+				isCursor
+					? new Text(theme.bg("selectedBg", padded), 0, 0)
+					: new Text(`  ${head}${" ".repeat(gap)}${theme.fg("dim", meta)}`, 0, 0),
+			);
+			if (isCursor) {
+				const summary = truncateText(itemSummary(item), Math.max(16, contentWidth - 6));
+				if (summary) {
+					this.bodyContainer.addChild(new Text(theme.fg("dim", `    ${summary}`), 0, 0));
+				}
+			}
+		};
+
 		if (first > 0) {
-			this.bodyContainer.addChild(new Text(theme.fg("dim", `… ${first} more above`), 1, 1));
+			this.bodyContainer.addChild(new Text(theme.fg("dim", `… ${first} more above`), 1, 0));
 		}
-		for (let i = first; i < last; i++) {
-			const item = this.items[i];
-			const isCursor = i === this.selectedIndex;
-			const kindTag = item.kind === "agent" ? theme.fg("dim", "agent") : theme.fg("dim", "bash");
-			const status = itemStatus(item);
-			const line =
-				`${theme.fg("muted", "[")}${kindTag} ${status}${theme.fg("muted", "]")} ` +
-				`${theme.fg("text", itemLabel(item))} ${theme.fg("dim", itemMeta(item))}`;
-			this.bodyContainer.addChild(new Text(isCursor ? `${theme.fg("accent", "→ ")}${line}` : `  ${line}`, 1, 1));
+
+		if (activeItems.length > 0 && first < activeItems.length) {
+			this.bodyContainer.addChild(new Text(theme.fg("dim", `ACTIVE ${activeItems.length}`), 1, 0));
+			for (let i = first; i < Math.min(last, activeItems.length); i++) {
+				renderItem(activeItems[i]!, i);
+			}
 		}
+
+		if (finishedItems.length > 0 && last > activeItems.length) {
+			if (first < activeItems.length) this.bodyContainer.addChild(new Spacer(1));
+			this.bodyContainer.addChild(new Text(theme.fg("dim", `FINISHED ${finishedItems.length}`), 1, 0));
+			const start = Math.max(0, first - activeItems.length);
+			for (let i = start; i < last - activeItems.length; i++) {
+				renderItem(finishedItems[i]!, activeItems.length + i);
+			}
+		}
+
 		if (last < this.items.length) {
-			this.bodyContainer.addChild(new Text(theme.fg("dim", `… ${this.items.length - last} more below`), 1, 1));
+			this.bodyContainer.addChild(new Text(theme.fg("dim", `… ${this.items.length - last} more below`), 1, 0));
 		}
 		if (this.notice) {
 			this.bodyContainer.addChild(new Spacer(1));
-			this.bodyContainer.addChild(new Text(theme.fg("muted", this.notice), 1, 1));
+			this.bodyContainer.addChild(new Text(theme.fg("muted", this.notice), 1, 0));
 		}
-		this.hint.setText(
-			rawKeyHint("↑↓", "navigate") +
-				"  " +
-				keyHint("tui.select.confirm", "view") +
-				"  " +
-				rawKeyHint("k", "kill") +
-				"  " +
-				rawKeyHint("h", this.showFinished ? "hide done" : "show done") +
-				"  " +
-				rawKeyHint("x", "dismiss") +
-				"  " +
-				keyHint("tui.select.cancel", "close"),
+
+		const selected = this.selectedItem();
+		const hints: string[] = [rawKeyHint("↑↓", "move"), keyHint("tui.select.confirm", "view")];
+		if (selected && isTaskRunning(selected)) hints.push(rawKeyHint("k", "kill"));
+		if (selected?.kind === "agent" && !isTaskRunning(selected)) {
+			hints.push(rawKeyHint("r", "rerun"), rawKeyHint("x", "dismiss"));
+		}
+		hints.push(
+			rawKeyHint("h", this.showFinished ? "hide finished" : "show finished"),
+			keyHint("tui.select.cancel", "close"),
 		);
+		this.hint.setText(hints.join("  "));
+	}
+
+	private divider(): Text {
+		return new Text(theme.fg("borderMuted", "─".repeat(Math.max(12, this.width - 4))), 1, 0);
 	}
 
 	private renderView(): void {
@@ -398,20 +481,20 @@ export class RunningTasksViewerComponent extends Container {
 		}
 		if (this.notice) {
 			this.bodyContainer.addChild(new Spacer(1));
-			this.bodyContainer.addChild(new Text(theme.fg("muted", this.notice), 1, 1));
+			this.bodyContainer.addChild(new Text(theme.fg("muted", this.notice), 1, 0));
 		}
-		this.hint.setText(
-			[
-				rawKeyHint("↑↓", "scroll"),
-				rawKeyHint("c", "copy result"),
-				rawKeyHint("o", "open log"),
-				rawKeyHint("y", "copy path"),
-				rawKeyHint("d", "diff"),
-				rawKeyHint("r", "rerun"),
-				rawKeyHint("k", "kill"),
-				keyHint("tui.select.cancel", "back"),
-			].join("  "),
-		);
+		const hints: string[] = [rawKeyHint("↑↓", "scroll")];
+		if (item.record.status === "running") hints.push(rawKeyHint("k", "kill"));
+		if (this.itemPath(item)) hints.push(rawKeyHint("o", "open log"), rawKeyHint("y", "copy path"));
+		if (item.kind === "agent") {
+			if (item.record.finalText?.trim() || item.record.error?.trim()) hints.push(rawKeyHint("c", "copy result"));
+			if (item.record.worktreePath) hints.push(rawKeyHint("d", "diff"));
+			if (item.record.status !== "running") hints.push(rawKeyHint("r", "rerun"), rawKeyHint("x", "dismiss"));
+		} else if (item.record.output.trim()) {
+			hints.push(rawKeyHint("c", "copy output"));
+		}
+		hints.push(keyHint("tui.select.cancel", "back"));
+		this.hint.setText(hints.join("  "));
 	}
 
 	private renderAgentView(record: InProcessSubAgentRecord): void {
@@ -420,9 +503,9 @@ export class RunningTasksViewerComponent extends Container {
 			: `${record.id} · ${record.agentType}`;
 		this.bodyContainer.addChild(
 			new Text(
-				`${theme.fg("accent", theme.bold(header))} ${theme.fg("dim", `[${itemStatus({ kind: "agent", record })}]`)}`,
+				`${statusGlyph({ kind: "agent", record })} ${itemStatus({ kind: "agent", record })}  ${theme.fg("accent", theme.bold(header))}`,
 				1,
-				1,
+				0,
 			),
 		);
 		if (record.goal) {
@@ -430,18 +513,23 @@ export class RunningTasksViewerComponent extends Container {
 		}
 		const meta: string[] = [];
 		if (record.model) meta.push(record.model);
-		if (record.toolUseCount > 0) meta.push(`${record.toolUseCount} tools`);
-		if (record.turnCount > 0) meta.push(`${record.turnCount} turns`);
+		if (record.toolUseCount > 0) meta.push(`${record.toolUseCount} tool${record.toolUseCount === 1 ? "" : "s"}`);
+		if (record.turnCount > 0) meta.push(`${record.turnCount} turn${record.turnCount === 1 ? "" : "s"}`);
 		if (record.lastToolName) meta.push(`last ${record.lastToolName}`);
 		const tokens = formatTokens(record.totalTokens);
 		if (tokens) meta.push(tokens);
 		meta.push(formatDuration((record.status === "running" ? Date.now() : record.updatedAt) - record.startedAt));
-		this.bodyContainer.addChild(new Text(theme.fg("muted", meta.join(" · ")), 1, 1));
+		if (record.status !== "running") {
+			meta.push(`updated ${formatDuration(Date.now() - record.updatedAt)} ago`);
+		}
+		this.bodyContainer.addChild(new Text(theme.fg("muted", meta.join(" · ")), 1, 0));
 		if (record.outputFile) this.bodyContainer.addChild(new Text(theme.fg("dim", `log: ${record.outputFile}`), 1, 1));
 		if (record.worktreePath)
 			this.bodyContainer.addChild(new Text(theme.fg("dim", `worktree: ${record.worktreePath}`), 1, 1));
 		this.renderOutcome(record);
 		this.bodyContainer.addChild(new Spacer(1));
+		this.bodyContainer.addChild(new Text(theme.fg("dim", "Timeline"), 1, 0));
+		this.bodyContainer.addChild(this.divider());
 
 		const timelineTail = 12;
 		// ↑/↓ scroll back through the FULL timeline (easy-agent TeammateViewer
@@ -634,9 +722,9 @@ export class RunningTasksViewerComponent extends Container {
 		const cmd = truncateText(record.command, 80);
 		this.bodyContainer.addChild(
 			new Text(
-				`${theme.fg("accent", theme.bold(`$ ${cmd}`))} ${theme.fg("dim", `[${itemStatus({ kind: "bash", record })}]`)}`,
+				`${statusGlyph({ kind: "bash", record })} ${itemStatus({ kind: "bash", record })}  ${theme.fg("accent", theme.bold(`$ ${cmd}`))}`,
 				1,
-				1,
+				0,
 			),
 		);
 		const meta: string[] = [];
@@ -645,10 +733,14 @@ export class RunningTasksViewerComponent extends Container {
 		if (record.totalBytes > 0) meta.push(formatBytes(record.totalBytes));
 		meta.push(formatDuration((record.endedAt ?? Date.now()) - record.startedAt));
 		if (record.exitCode !== undefined) meta.push(`exit ${record.exitCode}`);
-		this.bodyContainer.addChild(new Text(theme.fg("muted", meta.join(" · ")), 1, 1));
+		if (record.endedAt !== undefined) meta.push(`ended ${formatDuration(Date.now() - record.endedAt)} ago`);
+		this.bodyContainer.addChild(new Text(theme.fg("muted", meta.join(" · ")), 1, 0));
+		if (record.error) this.bodyContainer.addChild(new Text(theme.fg("error", record.error), 1, 1));
 		if (record.fullOutputPath)
-			this.bodyContainer.addChild(new Text(theme.fg("dim", `log: ${record.fullOutputPath}`), 1, 1));
+			this.bodyContainer.addChild(new Text(theme.fg("dim", `log: ${record.fullOutputPath}`), 1, 0));
 		this.bodyContainer.addChild(new Spacer(1));
+		this.bodyContainer.addChild(new Text(theme.fg("dim", "Output"), 1, 0));
+		this.bodyContainer.addChild(this.divider());
 
 		const bashTailLines = 15;
 		const lines = record.output.split("\n").filter((l) => l.length > 0);

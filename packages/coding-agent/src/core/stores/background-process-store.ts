@@ -45,6 +45,8 @@ export interface BackgroundProcessRecord {
 	totalBytes: number;
 	/** Path to the full output temp file (if retained). */
 	fullOutputPath: string | undefined;
+	/** Error message, set when the process failed without an exit code. */
+	error?: string;
 }
 
 const MAX_TAIL_LINES = 20;
@@ -112,6 +114,17 @@ export function completeBackgroundProcess(id: string, exitCode: number | undefin
 		...cur,
 		status: killed ? "killed" : exitCode !== 0 && exitCode !== undefined ? "error" : "done",
 		exitCode,
+		endedAt: Date.now(),
+	});
+}
+
+export function failBackgroundProcess(id: string, error?: string): void {
+	const cur = store.get(id);
+	if (!cur) return;
+	store.set(id, {
+		...cur,
+		status: "error",
+		error: error ?? undefined,
 		endedAt: Date.now(),
 	});
 }
