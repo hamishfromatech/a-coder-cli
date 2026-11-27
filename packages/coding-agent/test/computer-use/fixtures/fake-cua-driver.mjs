@@ -66,7 +66,7 @@ const tools = [
 	{
 		// Live schema advertises element_token + delivery_mode (driver 0.21+ contract).
 		name: "click",
-		inputSchema: { type: "object", properties: { target: {}, pid: {}, window_id: {}, button: {}, element_index: {}, element_token: {}, snapshot_id: {}, capture_id: {}, x: {}, y: {}, modifier: {}, delivery_mode: {}, from_zoom: {}, session: {} } },
+		inputSchema: { type: "object", properties: { target: {}, pid: {}, window_id: {}, button: {}, count: {}, element_index: {}, element_token: {}, snapshot_id: {}, capture_id: {}, x: {}, y: {}, modifier: {}, delivery_mode: {}, from_zoom: {}, ui_tree_revision: {}, session: {} } },
 	},
 	{
 		// press_key deliberately omits delivery_mode: the tool must refuse
@@ -80,7 +80,7 @@ const tools = [
 	},
 	{
 		name: "type_text",
-		inputSchema: { type: "object", properties: { target: {}, pid: {}, window_id: {}, text: {}, delivery_mode: {}, from_zoom: {}, session: {} } },
+		inputSchema: { type: "object", properties: { target: {}, pid: {}, window_id: {}, text: {}, element_index: {}, element_token: {}, snapshot_id: {}, delivery_mode: {}, from_zoom: {}, ui_tree_revision: {}, session: {} } },
 	},
 	{
 		name: "check_permissions",
@@ -202,6 +202,7 @@ function handleCall(name, args) {
 			const structuredContent = {
 				snapshot_id: diff ? "s0000002b" : "s0000002a",
 				capture_id: "cap-0001",
+				ui_tree_revision: diff ? 8 : 7,
 				truncated: false,
 				elements_complete: PARTIAL ? false : true,
 				...(PARTIAL ? { truncation_reason: "walk_timeout" } : {}),

@@ -290,6 +290,44 @@ describe("computer tool conformance against a fake cua-driver MCP server", () =>
 		expect(calls[0]?.args.text).toBe("hello world");
 	});
 
+	it("targets an element when typing into a Windows UIA control", async () => {
+		await execute({ action: "capture" } as ComputerToolInput);
+		const result = await execute({ action: "type", element: 1, text: "hello" } as ComputerToolInput);
+		const payload = JSON.parse(result.content[0]?.type === "text" ? result.content[0].text : "{}") as {
+			ok: boolean;
+		};
+		expect(payload.ok).toBe(true);
+		const call = readCalls().find((entry) => entry.name === "type_text");
+		expect(call?.args.element_token).toBe("sabc:1");
+		expect(call?.args.text).toBe("hello");
+	});
+
+	it("sends the tree revision on element actions", async () => {
+		await execute({ action: "capture" } as ComputerToolInput);
+		await execute({ action: "click", element: 1 } as ComputerToolInput);
+		const click = readCalls().find((call) => call.name === "click");
+		expect(click?.args.ui_tree_revision).toBe(7);
+	});
+
+	it("uses click(count: 2) when the driver has no double_click tool", async () => {
+		await execute({ action: "capture" } as ComputerToolInput);
+		const result = await execute({ action: "double_click", element: 1 } as ComputerToolInput);
+		const payload = JSON.parse(result.content[0]?.type === "text" ? result.content[0].text : "{}") as {
+			ok: boolean;
+		};
+		expect(payload.ok).toBe(true);
+		const click = readCalls().find((call) => call.name === "click");
+		expect(click?.args.count).toBe(2);
+		expect(click?.args.element_token).toBe("sabc:1");
+	});
+
+	it("does not bind vision pixels to the window-state capture id", async () => {
+		await execute({ action: "capture", mode: "vision" } as ComputerToolInput);
+		await execute({ action: "click", coordinate: [12, 22] } as ComputerToolInput);
+		const click = readCalls().find((call) => call.name === "click");
+		expect(click?.args.capture_id).toBeUndefined();
+	});
+
 	it("fails with driver_tool_unavailable when the driver no longer advertises a mapped tool", async () => {
 		process.env.FAKE_HIDE_TOOLS = "type_text";
 		try {

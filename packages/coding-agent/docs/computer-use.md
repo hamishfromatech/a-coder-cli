@@ -43,6 +43,10 @@ The bridge between this tool and the driver is discovery-driven: every optional 
 
 - `capture` asks for `tree_format: "elements"` (the driver's default is a markdown tree with no structured list), `include_screenshot: false` in `ax` mode, and `max_elements` when supported. The response's `degraded_reason` and `truncated` flag are surfaced in the capture text.
 - Element actions send the snapshot's `element_token` and omit `element_index`, matching the driver's rule that action tools refuse an index from a newer snapshot. A stale token is reported as `stale_element_token`, which the tool turns into "capture again".
+- Element actions also send the read's `ui_tree_revision` when the driver advertises it, so a tree that changed after the capture is refused with `stale_revision` before any input is delivered.
+- `type` can target an element (`element` + `text`), which maps to `type_text`'s `element_token` and writes the UIA value. This is required for Windows XAML / WinUI3 / UWP controls, whose CoreInput dispatcher does not receive background `WM_CHAR`.
+- `double_click` uses `click(count: 2)` when the driver advertises that field but has no separate `double_click` tool.
+- In `vision` mode the standalone screenshot fallback does not inherit the window-state `capture_id`; its pixels are a different image and cannot be admitted against the tree capture.
 - A `background_unavailable` refusal means nothing was executed; the verdict says to re-issue the same action with `delivery_mode: "foreground"` (a separate approval), never to retry blind.
 - `tools/list` is followed across pages, and a driver process that dies is respawned: read-only calls replay once, mutations report an unknown outcome and are never replayed.
 - Driver sessions expire after five minutes idle. If a call is rejected with `session ... has ended`, the client calls `start_session` with the same label and retries that rejected call once. The driver did not execute the rejected call, so replaying it is safe for reads and input actions alike.

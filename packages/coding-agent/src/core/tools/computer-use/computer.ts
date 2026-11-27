@@ -298,6 +298,12 @@ let lastSnapshotTarget = "";
  * Scoped to the target it was taken from and consumed by the first action.
  */
 let captureBinding: { key: string; id: string } | null = null;
+/**
+ * Tree revision from the latest `get_window_state` for this target. Element
+ * actions send it back so the driver can refuse a tree that changed after the
+ * read, before any input is delivered.
+ */
+let treeRevisionBinding: { key: string; revision: number } | null = null;
 /** Target key whose pixels came from a `zoom` crop (coordinate actions set `from_zoom`). */
 let zoomActiveFor = "";
 
@@ -322,6 +328,7 @@ function clearTarget(): void {
 	snapshotTokens = new Map();
 	lastSnapshotId = null;
 	captureBinding = null;
+	treeRevisionBinding = null;
 	lastSnapshotTarget = "";
 	zoomActiveFor = "";
 	lastCaptureDigest = null;
@@ -667,12 +674,18 @@ async function doCapture(args: ComputerToolInput): Promise<AgentToolResult<Recor
 	}
 	// The standalone screenshot fallback below drops structuredContent, so read
 	// the capture handle from the window-state result that actually produced it.
-	const captureId = typeof result.structured?.capture_id === "string" ? result.structured.capture_id : null;
+	let captureId = typeof result.structured?.capture_id === "string" ? result.structured.capture_id : null;
+	const rawRevision = result.structured?.ui_tree_revision;
+	const treeRevision =
+		typeof rawRevision === "number" && Number.isInteger(rawRevision) && rawRevision >= 0 ? rawRevision : null;
 	// vision: pixels only — prefer the cheaper standalone screenshot tool when advertised.
+	// That image is a different capture, so it must not inherit the window-state
+	// capture id: coordinates read from it would be admitted against the wrong PNG.
 	if (mode === "vision" && client.hasTool("screenshot")) {
 		const shot = await client.callTool("screenshot", { window_id: target.window_id, format: "jpeg", quality: 85 });
 		if (!shot.isError && shot.images.length > 0) {
 			result = shot;
+			captureId = null;
 		}
 	}
 	// Sticky target + snapshot tokens are set by ANY successful capture. A diff
@@ -683,6 +696,7 @@ async function doCapture(args: ComputerToolInput): Promise<AgentToolResult<Recor
 	// Bind the next coordinate action to this exact capture: the driver admits
 	// x/y against that PNG and refuses stale/mismatched points before dispatch.
 	captureBinding = captureId ? { key, id: captureId } : null;
+	treeRevisionBinding = treeRevision !== null ? { key, revision: treeRevision } : null;
 	const elements = mode === "vision" ? [] : parseElements(result.structured?.elements);
 	if (!diffSince) snapshotTokens = new Map();
 	for (const element of elements) {
@@ -1026,6 +1040,9 @@ async function doInput(args: ComputerToolInput): Promise<AgentToolResult<Record<
 			}
 			tool = "type_text";
 			toolArgs.text = args.text;
+			// Windows XAML / WinUI3 / UWP controls need the UIA element; background
+			// WM_CHAR does not reach their CoreInput dispatcher.
+			if (args.element !== undefined) toolArgs.element_index = args.element;
 			break;
 		}
 		case "key": {
@@ -1077,6 +1094,7 @@ async function doInput(args: ComputerToolInput): Promise<AgentToolResult<Record<
 			}
 			stickyTarget = target;
 			snapshotTokens = new Map();
+			treeRevisionBinding = null;
 			if (args.raise_window === true && client.hasTool("bring_to_front") && target.window_id !== null) {
 				const focused = await client.callTool("bring_to_front", { pid: target.pid, window_id: target.window_id });
 				if (focused.isError) {
@@ -1093,6 +1111,14 @@ async function doInput(args: ComputerToolInput): Promise<AgentToolResult<Record<
 		}
 		default:
 			return textResult({ ok: false, action, error: `unknown action ${action}` });
+	}
+
+	// Older Windows builds expose `click` with a count but no `double_click`
+	// tool. Prefer the dedicated tool when present, otherwise express the same
+	// action as `click(count: 2)`.
+	if (tool === "double_click" && !client.hasTool("double_click") && client.supportsInputProperty("click", "count")) {
+		tool = "click";
+		toolArgs.count = 2;
 	}
 
 	// Snapshot freshness: attach the element's token so the driver reports an
@@ -1160,6 +1186,21 @@ async function doInput(args: ComputerToolInput): Promise<AgentToolResult<Record<
 	) {
 		callArgs.from_zoom = true;
 	}
+	// The tree revision protects element actions the same way capture_id protects
+	// coordinates: if a later read changed the tree, refuse before delivering input.
+	const usesElement =
+		typeof callArgs.element_token === "string" ||
+		typeof callArgs.element_index === "number" ||
+		typeof callArgs.snapshot_id === "string";
+	if (
+		usesElement &&
+		treeRevisionBinding !== null &&
+		treeRevisionBinding.key === targetKeyOf(stickyTarget) &&
+		client.supportsInputProperty(tool, "ui_tree_revision")
+	) {
+		callArgs.ui_tree_revision = treeRevisionBinding.revision;
+	}
+
 	// Coordinate actions are admitted against the exact capture they were planned
 	// from (stale, mismatched, or out-of-bounds points are refused before any
 	// input). The driver consumes the id, so the binding is one-shot; zoom-relative

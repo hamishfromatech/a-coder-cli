@@ -45,6 +45,7 @@
 
 ### Fixed
 
+- **Windows computer use now uses the driver's UIA contracts.** Element actions send `ui_tree_revision` so a changed tree is refused with `stale_revision` before input; `type` can target an element (required for XAML/WinUI3/UWP controls that ignore background `WM_CHAR`); `double_click` falls back to `click(count: 2)` when the driver has no dedicated tool; and the vision screenshot fallback no longer binds its pixels to a different window-state `capture_id`.
 - **`--help` and `--list-models` no longer wait for the full runtime.** Both commands now exit before extensions, MCP servers, and the session runtime are created, which removes the multi-minute hang when an MCP server or model endpoint was unreachable. Dynamic model discovery now refreshes providers in parallel with a three-second timeout per provider, so one black-holed local server cannot stall `--list-models`.
 - **One thinking command, and `/models` works.** Removed the duplicate `/think` command; `/thinking` remains the single selector/direct-set command. `/models` is now accepted as an alias for `/model`, and unknown commands get a nearest-command suggestion such as “Did you mean /model?”.
 - **The welcome banner keeps up with model switches.** Switching model from `/model`, the picker, the login flow, or the cycle shortcut now updates the startup banner's model line, not just the footer.
