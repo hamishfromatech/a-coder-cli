@@ -728,6 +728,22 @@ export async function main(args: string[], options?: MainOptions) {
 	validateForkFlags(parsed);
 	validateSessionIdFlags(parsed);
 
+	// Metadata commands must not pay for runtime services. Creating the full
+	// session here used to initialise extensions, MCP servers and the session
+	// runtime before printing help or the model list, which could hang for
+	// minutes when an MCP server or a local provider endpoint was unreachable.
+	if (isPlainRuntimeMetadataCommand(parsed)) {
+		if (parsed.help) {
+			printHelp();
+			process.exit(0);
+		}
+		if (parsed.listModels !== undefined) {
+			const searchPattern = typeof parsed.listModels === "string" ? parsed.listModels : undefined;
+			await listModels(ModelRegistry.create(createReadOnlyAuthStorage()), searchPattern);
+			process.exit(0);
+		}
+	}
+
 	// Coworker conversations are agent sessions, but they must not appear in
 	// the composer/session pickers. Move any pre-fix files out of the main
 	// store before session lookup (idempotent; no-op without office data).

@@ -441,6 +441,8 @@ export class ModelRegistry {
 	private ollamaCloudLastAttempt = 0;
 	private static readonly OLLAMA_CLOUD_REFRESH_MS = 5 * 60 * 1000;
 	private static readonly OLLAMA_CLOUD_FAILURE_RETRY_MS = 30 * 1000;
+	/** One unreachable local or cloud endpoint must not stall model discovery. */
+	private static readonly DYNAMIC_MODEL_REFRESH_TIMEOUT_MS = 3_000;
 	private openadapterRefreshPromise: Promise<void> | undefined;
 	private openadapterLastSuccess = 0;
 	private openadapterLastAttempt = 0;
@@ -879,27 +881,22 @@ export class ModelRegistry {
 	 * @returns An error message if a forced refresh failed, otherwise undefined.
 	 */
 	async refreshDynamicModels(force = false): Promise<string | undefined> {
-		const errors: string[] = [];
-		const ollamaError = await this.refreshOllamaCloudModels(force);
-		if (ollamaError) errors.push(ollamaError);
-		const openadapterError = await this.refreshOpenAdapterModels(force);
-		if (openadapterError) errors.push(openadapterError);
-		const openrouterError = await this.refreshOpenRouterModels(force);
-		if (openrouterError) errors.push(openrouterError);
-		const inceptionError = await this.refreshInceptionModels(force);
-		if (inceptionError) errors.push(inceptionError);
-		const lmStudioError = await this.refreshLMStudioModels(force);
-		if (lmStudioError) errors.push(lmStudioError);
-		const llamaCppError = await this.refreshLlamaCppModels(force);
-		if (llamaCppError) errors.push(llamaCppError);
-		const unslothError = await this.refreshUnslothModels(force);
-		if (unslothError) errors.push(unslothError);
-		const vllmError = await this.refreshVllmModels(force);
-		if (vllmError) errors.push(vllmError);
-		const sgLangError = await this.refreshSgLangModels(force);
-		if (sgLangError) errors.push(sgLangError);
-		const ollamaLocalError = await this.refreshOllamaModels(force);
-		if (ollamaLocalError) errors.push(ollamaLocalError);
+		// Providers are independent. Run them together so one slow endpoint does
+		// not add to every other provider's latency, and bound each request so a
+		// black-holed host (or an MCP-heavy startup) cannot hang `--list-models`.
+		const results = await Promise.all([
+			this.refreshOllamaCloudModels(force),
+			this.refreshOpenAdapterModels(force),
+			this.refreshOpenRouterModels(force),
+			this.refreshInceptionModels(force),
+			this.refreshLMStudioModels(force),
+			this.refreshLlamaCppModels(force),
+			this.refreshUnslothModels(force),
+			this.refreshVllmModels(force),
+			this.refreshSgLangModels(force),
+			this.refreshOllamaModels(force),
+		]);
+		const errors = results.filter((error): error is string => typeof error === "string" && error.length > 0);
 		return errors.length > 0 ? errors.join("; ") : undefined;
 	}
 
@@ -935,7 +932,10 @@ export class ModelRegistry {
 				const apiKey = await this.getApiKeyForProvider("ollama-cloud");
 				if (!apiKey) return;
 
-				const refreshed = await fetchOllamaCloudModels(apiKey);
+				const refreshed = await fetchOllamaCloudModels(
+					apiKey,
+					AbortSignal.timeout(ModelRegistry.DYNAMIC_MODEL_REFRESH_TIMEOUT_MS),
+				);
 				if (refreshed.length === 0) return;
 
 				// Replace existing ollama-cloud models with the refreshed list.
@@ -990,7 +990,10 @@ export class ModelRegistry {
 			}
 			try {
 				const apiKey = await this.getApiKeyForProvider("openrouter");
-				const refreshed = await fetchOpenRouterModels(apiKey);
+				const refreshed = await fetchOpenRouterModels(
+					apiKey,
+					AbortSignal.timeout(ModelRegistry.DYNAMIC_MODEL_REFRESH_TIMEOUT_MS),
+				);
 				if (refreshed.length === 0) return;
 
 				// Additive merge: keep the generated catalog and any models.json
@@ -1046,7 +1049,10 @@ export class ModelRegistry {
 			}
 			try {
 				const apiKey = await this.getApiKeyForProvider("inception");
-				const refreshed = await fetchInceptionModels(apiKey);
+				const refreshed = await fetchInceptionModels(
+					apiKey,
+					AbortSignal.timeout(ModelRegistry.DYNAMIC_MODEL_REFRESH_TIMEOUT_MS),
+				);
 				if (refreshed.length === 0) return;
 
 				// Additive merge, like OpenRouter: preserve the generated catalog
@@ -1105,7 +1111,10 @@ export class ModelRegistry {
 				const apiKey = await this.getApiKeyForProvider("openadapter");
 				if (!apiKey) return;
 
-				const refreshed = await fetchOpenAdapterModels(apiKey);
+				const refreshed = await fetchOpenAdapterModels(
+					apiKey,
+					AbortSignal.timeout(ModelRegistry.DYNAMIC_MODEL_REFRESH_TIMEOUT_MS),
+				);
 				if (refreshed.length === 0) return;
 
 				// Replace existing openadapter models with the refreshed list.
@@ -1156,7 +1165,10 @@ export class ModelRegistry {
 			}
 			try {
 				const env = this.authStorage.getProviderEnv("lm-studio");
-				const refreshed = await fetchLMStudioModels(resolveLocalProviderBaseUrl("lm-studio", env));
+				const refreshed = await fetchLMStudioModels(
+					resolveLocalProviderBaseUrl("lm-studio", env),
+					AbortSignal.timeout(ModelRegistry.DYNAMIC_MODEL_REFRESH_TIMEOUT_MS),
+				);
 				if (refreshed.length === 0) return;
 				this.models = this.models.filter((m) => m.provider !== "lm-studio");
 				this.models.push(...refreshed);
@@ -1193,7 +1205,10 @@ export class ModelRegistry {
 			}
 			try {
 				const env = this.authStorage.getProviderEnv("llama-cpp");
-				const refreshed = await fetchLlamaCppModels(resolveLocalProviderBaseUrl("llama-cpp", env));
+				const refreshed = await fetchLlamaCppModels(
+					resolveLocalProviderBaseUrl("llama-cpp", env),
+					AbortSignal.timeout(ModelRegistry.DYNAMIC_MODEL_REFRESH_TIMEOUT_MS),
+				);
 				if (refreshed.length === 0) return;
 				this.models = this.models.filter((m) => m.provider !== "llama-cpp");
 				this.models.push(...refreshed.map((model) => this.applyStoredOverrides(model, "llama-cpp")));
@@ -1230,7 +1245,10 @@ export class ModelRegistry {
 			}
 			try {
 				const env = this.authStorage.getProviderEnv("unsloth");
-				const refreshed = await fetchUnslothModels(resolveLocalProviderBaseUrl("unsloth", env));
+				const refreshed = await fetchUnslothModels(
+					resolveLocalProviderBaseUrl("unsloth", env),
+					AbortSignal.timeout(ModelRegistry.DYNAMIC_MODEL_REFRESH_TIMEOUT_MS),
+				);
 				if (refreshed.length === 0) return;
 				this.models = this.models.filter((m) => m.provider !== "unsloth");
 				this.models.push(...refreshed);
@@ -1269,7 +1287,10 @@ export class ModelRegistry {
 			this.vllmLastAttempt = Date.now();
 			try {
 				const env = this.authStorage.getProviderEnv("vllm");
-				const refreshed = await fetchVllmModels(resolveLocalProviderBaseUrl("vllm", env));
+				const refreshed = await fetchVllmModels(
+					resolveLocalProviderBaseUrl("vllm", env),
+					AbortSignal.timeout(ModelRegistry.DYNAMIC_MODEL_REFRESH_TIMEOUT_MS),
+				);
 				if (refreshed.length === 0) return;
 				this.models = this.models.filter((m) => m.provider !== "vllm");
 				this.models.push(...refreshed);
@@ -1307,7 +1328,10 @@ export class ModelRegistry {
 			this.sgLangLastAttempt = Date.now();
 			try {
 				const env = this.authStorage.getProviderEnv("sglang");
-				const refreshed = await fetchSgLangModels(resolveLocalProviderBaseUrl("sglang", env));
+				const refreshed = await fetchSgLangModels(
+					resolveLocalProviderBaseUrl("sglang", env),
+					AbortSignal.timeout(ModelRegistry.DYNAMIC_MODEL_REFRESH_TIMEOUT_MS),
+				);
 				if (refreshed.length === 0) return;
 				this.models = this.models.filter((m) => m.provider !== "sglang");
 				this.models.push(...refreshed);
@@ -1345,7 +1369,10 @@ export class ModelRegistry {
 			}
 			try {
 				const env = this.authStorage.getProviderEnv("ollama");
-				const refreshed = await fetchOllamaModels(resolveLocalProviderBaseUrl("ollama", env));
+				const refreshed = await fetchOllamaModels(
+					resolveLocalProviderBaseUrl("ollama", env),
+					AbortSignal.timeout(ModelRegistry.DYNAMIC_MODEL_REFRESH_TIMEOUT_MS),
+				);
 				if (refreshed.length === 0) return;
 				this.models = this.models.filter((m) => m.provider !== "ollama");
 				this.models.push(...refreshed);

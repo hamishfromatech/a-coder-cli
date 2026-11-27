@@ -45,6 +45,7 @@
 
 ### Fixed
 
+- **`--help` and `--list-models` no longer wait for the full runtime.** Both commands now exit before extensions, MCP servers, and the session runtime are created, which removes the multi-minute hang when an MCP server or model endpoint was unreachable. Dynamic model discovery now refreshes providers in parallel with a three-second timeout per provider, so one black-holed local server cannot stall `--list-models`.
 - **One thinking command, and `/models` works.** Removed the duplicate `/think` command; `/thinking` remains the single selector/direct-set command. `/models` is now accepted as an alias for `/model`, and unknown commands get a nearest-command suggestion such as “Did you mean /model?”.
 - **The welcome banner keeps up with model switches.** Switching model from `/model`, the picker, the login flow, or the cycle shortcut now updates the startup banner's model line, not just the footer.
 - **Slow startup is visible, and early messages are acknowledged.** The CLI prints a dim starting line before the first render, and a prompt submitted while the session is still finishing startup now shows “Message queued — finishing startup” instead of silently disappearing into the queue.
