@@ -112,6 +112,12 @@ const computerSchema = Type.Object(
 			}),
 		),
 		text: Type.Optional(Type.String({ description: "Text to type (action='type')." })),
+		delay_ms: Type.Optional(
+			Type.Number({
+				description:
+					"type only: milliseconds between characters (Linux, 0–200) for debounced search boxes and autocomplete.",
+			}),
+		),
 		keys: Type.Optional(
 			Type.String({ description: "Key or combo, e.g. 'return', 'escape', 'cmd+s'. Use '+' to combine a chord." }),
 		),
@@ -161,35 +167,67 @@ export type ComputerToolInput = Static<typeof computerSchema>;
 const KEY_ALIASES: Record<string, string> = {
 	command: "cmd",
 	control: "ctrl",
-	alt: "option",
+	option: "alt",
 	"⌘": "cmd",
-	"⌥": "option",
-	windows: "win",
-	super: "win",
-	meta: "win",
+	"⌥": "alt",
+	windows: "super",
+	win: "super",
+	super: "super",
+	meta: "super",
 };
+const MODIFIER_KEYS = new Set(["cmd", "ctrl", "alt", "shift", "super", "fn"]);
 
 /** Destructive system shortcuts, hard-blocked regardless of approval level. */
 const BLOCKED_KEY_COMBOS: ReadonlySet<string> = new Set(
 	[
 		["cmd", "shift", "backspace"], // empty trash
-		["cmd", "option", "backspace"], // force delete
+		["cmd", "alt", "backspace"], // force delete
 		["cmd", "ctrl", "q"], // log out
 		["cmd", "shift", "q"], // log out (macOS)
-		["cmd", "option", "shift", "q"], // force log out
-		["win", "l"], // lock screen
-		["ctrl", "option", "delete"], // force quit dialog / log out
-		["option", "f4"], // close app / shutdown dialog
+		["cmd", "alt", "shift", "q"], // force log out
+		["super", "l"], // lock screen (Linux / Windows)
+		["ctrl", "alt", "delete"], // force quit dialog / log out
+		["alt", "f4"], // close app / shutdown dialog
 	].map((combo) => [...combo].sort().join("+")),
 );
 
-/** Canonicalize a key combo: aliases resolved, split on + AND -, order-insensitive. */
-export function canonKeyCombo(keys: string): string[] {
-	return keys
+interface ParsedKeyCombo {
+	mods: string[];
+	key: string;
+}
+
+/** Parse a combo without sorting so the non-modifier key cannot be mistaken for one. */
+function parseKeyCombo(keys: string): ParsedKeyCombo | null {
+	const parts = keys
 		.split(/[+-]/)
 		.map((part) => KEY_ALIASES[part.trim().toLowerCase()] ?? part.trim().toLowerCase())
-		.filter((part) => part.length > 0)
-		.sort();
+		.filter((part) => part.length > 0);
+	const mods = parts.filter((part) => MODIFIER_KEYS.has(part));
+	const nonModifiers = parts.filter((part) => !MODIFIER_KEYS.has(part));
+	if (nonModifiers.length !== 1) return null;
+	return { mods, key: nonModifiers[0] };
+}
+
+/** Canonicalize a key combo for comparison: aliases resolved, split on + AND -, sorted. */
+export function canonKeyCombo(keys: string): string[] {
+	const parsed = parseKeyCombo(keys);
+	return parsed ? [...parsed.mods, parsed.key].sort() : [];
+}
+
+/** Translate canonical modifiers to the connected platform's driver vocabulary. */
+function driverModifiers(mods: string[]): string[] {
+	return mods.map((mod) => {
+		if (mod === "alt") return process.platform === "darwin" ? "option" : "alt";
+		if (mod === "super") {
+			return process.platform === "win32" ? "win" : process.platform === "darwin" ? "cmd" : "super";
+		}
+		// Linux has no Command key. Command-style agents on Linux conventionally
+		// mean Super; on Windows they mean Ctrl.
+		if (mod === "cmd") {
+			return process.platform === "linux" ? "super" : process.platform === "win32" ? "ctrl" : "cmd";
+		}
+		return mod;
+	});
 }
 
 const BLOCKED_TYPE_PATTERNS = [
@@ -1043,33 +1081,37 @@ async function doInput(args: ComputerToolInput): Promise<AgentToolResult<Record<
 			// Windows XAML / WinUI3 / UWP controls need the UIA element; background
 			// WM_CHAR does not reach their CoreInput dispatcher.
 			if (args.element !== undefined) toolArgs.element_index = args.element;
+			// Linux/Electron inputs that the AX path cannot focus: pixel-click the
+			// field first, then type into it.
+			if (
+				Array.isArray(args.coordinate) &&
+				args.coordinate.length === 2 &&
+				client.supportsInputProperty(tool, "x") &&
+				client.supportsInputProperty(tool, "y")
+			) {
+				toolArgs.x = args.coordinate[0];
+				toolArgs.y = args.coordinate[1];
+			}
+			if (typeof args.delay_ms === "number" && client.supportsInputProperty(tool, "delay_ms")) {
+				toolArgs.delay_ms = Math.max(0, Math.min(200, Math.trunc(args.delay_ms)));
+			}
 			break;
 		}
 		case "key": {
 			if (typeof args.keys !== "string" || args.keys.length === 0) {
 				return textResult({ ok: false, action, error: "key requires keys (e.g. 'return', 'cmd+s')." });
 			}
-			const parts = canonKeyCombo(args.keys);
-			if (parts.length === 0) {
+			const combo = parseKeyCombo(args.keys);
+			if (!combo) {
 				return textResult({ ok: false, action, error: `Could not parse key from '${args.keys}'.` });
 			}
-			const chordRoots = new Set(["cmd", "option", "ctrl", "win", "shift", "fn"]);
-			const key = parts[parts.length - 1];
-			const mods = parts.slice(0, -1);
-			if (mods.length > 0 || chordRoots.has(key)) {
-				// hotkey requires at least one modifier + one key.
-				if (mods.length === 0) {
-					return textResult({
-						ok: false,
-						action,
-						error: "hotkey requires a non-modifier key alongside the modifier (e.g. 'cmd+s').",
-					});
-				}
+			const mods = driverModifiers(combo.mods);
+			if (mods.length > 0) {
 				tool = "hotkey";
-				toolArgs.keys = [...mods, key];
+				toolArgs.keys = [...mods, combo.key];
 			} else {
 				tool = "press_key";
-				toolArgs.key = key;
+				toolArgs.key = combo.key;
 			}
 			break;
 		}

@@ -22,9 +22,9 @@ describe("key combo canonicalization", () => {
 	it("resolves aliases, splits on + and -, and orders segments", () => {
 		expect(canonKeyCombo("cmd+shift+backspace")).toEqual(["backspace", "cmd", "shift"]);
 		expect(canonKeyCombo("command-shift-Backspace")).toEqual(["backspace", "cmd", "shift"]);
-		expect(canonKeyCombo("alt+s")).toEqual(["option", "s"]);
+		expect(canonKeyCombo("alt+s")).toEqual(["alt", "s"]);
 		expect(canonKeyCombo("⌘+s")).toEqual(["cmd", "s"]);
-		expect(canonKeyCombo("windows+l")).toEqual(["l", "win"]);
+		expect(canonKeyCombo("windows+l")).toEqual(["l", "super"]);
 	});
 });
 
@@ -193,7 +193,7 @@ describe("computer tool conformance against a fake cua-driver MCP server", () =>
 		if (SAVED_ENV !== undefined) {
 			process.env.A_CODER_CUA_DRIVER_CMD = SAVED_ENV;
 		}
-		fs.rmSync(tempDir, { recursive: true, force: true });
+		fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
 	});
 
 	afterAll(() => {
@@ -319,6 +319,20 @@ describe("computer tool conformance against a fake cua-driver MCP server", () =>
 		const click = readCalls().find((call) => call.name === "click");
 		expect(click?.args.count).toBe(2);
 		expect(click?.args.element_token).toBe("sabc:1");
+	});
+
+	it("does not mistake an early-alphabet key for a modifier", async () => {
+		await execute({ action: "capture" } as ComputerToolInput);
+		await execute({ action: "key", keys: "cmd+a" } as ComputerToolInput);
+		const hotkey = readCalls().find((call) => call.name === "hotkey");
+		expect(hotkey?.args.keys).toEqual(["cmd", "a"]);
+	});
+
+	it("types at a pixel target with an optional inter-character delay", async () => {
+		await execute({ action: "capture" } as ComputerToolInput);
+		await execute({ action: "type", coordinate: [12, 22], text: "abc", delay_ms: 50 } as ComputerToolInput);
+		const typed = readCalls().find((call) => call.name === "type_text");
+		expect(typed?.args).toMatchObject({ x: 12, y: 22, delay_ms: 50, text: "abc" });
 	});
 
 	it("does not bind vision pixels to the window-state capture id", async () => {

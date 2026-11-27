@@ -80,7 +80,7 @@ const tools = [
 	},
 	{
 		name: "type_text",
-		inputSchema: { type: "object", properties: { target: {}, pid: {}, window_id: {}, text: {}, element_index: {}, element_token: {}, snapshot_id: {}, delivery_mode: {}, from_zoom: {}, ui_tree_revision: {}, session: {} } },
+		inputSchema: { type: "object", properties: { target: {}, pid: {}, window_id: {}, text: {}, x: {}, y: {}, delay_ms: {}, element_index: {}, element_token: {}, snapshot_id: {}, delivery_mode: {}, from_zoom: {}, ui_tree_revision: {}, session: {} } },
 	},
 	{
 		name: "check_permissions",
