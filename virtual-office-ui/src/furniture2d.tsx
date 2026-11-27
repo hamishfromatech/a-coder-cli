@@ -38,6 +38,9 @@ export function Desk({
 			<rect x={-9.8} y={-4.6} width={19.6} height={8.8} rx={1.6} fill={theme.wood} />
 			<rect x={-9.2} y={-4.6} width={18.4} height={2.2} rx={1.1} fill={theme.woodTop} />
 			<rect x={-9.2} y={-2.7} width={18.4} height={0.5} rx={0.25} fill="#000" opacity={0.14} />
+			{/* acoustic desk screen behind the monitor */}
+			<rect x={-9.4} y={-5.8} width={18.8} height={1.15} rx={0.35} fill={theme.partition} />
+			<rect x={-9.4} y={-5.8} width={18.8} height={0.25} rx={0.12} fill={theme.partitionFrame} opacity={0.55} />
 			{/* desk mat under keyboard */}
 			<rect x={-5.2} y={-1.4} width={10.4} height={5.2} rx={1} fill={theme.chairSeat} opacity={0.45} />
 			{/* monitor */}
@@ -64,6 +67,10 @@ export function Desk({
 				<rect x={-3.4} y={3.6} width={6.4} height={1.7} rx={0.7} fill={theme.metal} opacity={0.75} />
 				<line x1={-2.6} y1={4.45} x2={2.2} y2={4.45} stroke={theme.monitorBezel} strokeWidth={0.35} opacity={0.7} />
 				<circle cx={4.3} cy={4.45} r={0.75} fill={theme.metal} opacity={0.75} />
+				{/* notebook + pen cup */}
+				<rect x={-8.3} y={2.1} width={3.4} height={2.1} rx={0.35} fill={theme.cushion} opacity={0.8} transform="rotate(-5 -6.6 3.15)" />
+				<rect x={-7.9} y={2.5} width={2.7} height={0.35} rx={0.15} fill={theme.bubbleBg} opacity={0.55} transform="rotate(-5 -6.6 3.15)" />
+				<circle cx={-5.3} cy={3.1} r={0.62} fill={theme.partitionFrame} opacity={0.8} />
 			</g>
 			{/* mug with steam */}
 			<g>
@@ -481,6 +488,202 @@ export function Pendant({ x, y, theme, on = false }: { x: number; y: number; the
 			<path d="M -2.5 0 A 2.5 2.5 0 0 0 2.5 0 Z" fill={theme.chair} />
 			<ellipse cx={0} cy={0.25} rx={2.4} ry={0.65} fill={on ? theme.lampGlow : theme.screenGlow} opacity={on ? 0.95 : 0.5} />
 			{on && <ellipse cx={0} cy={2} rx={5.2} ry={1.8} fill={theme.lightPool} opacity={0.12} />}
+		</g>
+	);
+}
+/** Glass partition run with a slim aluminium rail and mullions. */
+function GlassRun({
+	x1,
+	y1,
+	x2,
+	y2,
+	theme,
+}: {
+	x1: number;
+	y1: number;
+	x2: number;
+	y2: number;
+	theme: Palette;
+}) {
+	const length = Math.hypot(x2 - x1, y2 - y1);
+	const mullions = Math.max(1, Math.round(length / 7));
+	return (
+		<g>
+			<line x1={x1} y1={y1} x2={x2} y2={y2} stroke={theme.glass} strokeWidth={2.8} strokeLinecap="round" />
+			<line x1={x1} y1={y1} x2={x2} y2={y2} stroke={theme.glassEdge} strokeWidth={0.48} />
+			<line x1={x1} y1={y1} x2={x2} y2={y2} stroke={theme.partitionFrame} strokeWidth={0.18} opacity={0.7} />
+			{Array.from({ length: mullions + 1 }, (_, i) => {
+				const t = i / mullions;
+				return (
+					<circle
+						key={i}
+						cx={x1 + (x2 - x1) * t}
+						cy={y1 + (y2 - y1) * t}
+						r={0.28}
+						fill={theme.partitionFrame}
+						opacity={0.9}
+					/>
+				);
+			})}
+		</g>
+	);
+}
+
+/**
+ * Two glass meeting rooms fill the right side of the plan. The doors open
+ * toward the workstation aisle so the rooms read as enclosed, bookable spaces
+ * rather than two tables floating on carpet.
+ */
+export function GlassMeetingRooms({ theme }: { theme: Palette }) {
+	return (
+		<g>
+			{/* top room */}
+			<GlassRun x1={88} y1={5} x2={154} y2={5} theme={theme} />
+			<GlassRun x1={154} y1={5} x2={154} y2={32.5} theme={theme} />
+			<GlassRun x1={88} y1={32.5} x2={154} y2={32.5} theme={theme} />
+			<GlassRun x1={88} y1={5} x2={88} y2={23} theme={theme} />
+			<GlassRun x1={88} y1={30} x2={88} y2={32.5} theme={theme} />
+			{/* bottom room */}
+			<GlassRun x1={154} y1={32.5} x2={154} y2={64.5} theme={theme} />
+			<GlassRun x1={88} y1={64.5} x2={154} y2={64.5} theme={theme} />
+			<GlassRun x1={88} y1={32.5} x2={88} y2={52} theme={theme} />
+			<GlassRun x1={88} y1={58} x2={88} y2={64.5} theme={theme} />
+			{/* ajar glass leaves + handles */}
+			<line x1={88} y1={23} x2={94.6} y2={25.8} stroke={theme.glassEdge} strokeWidth={0.55} />
+			<circle cx={94.2} cy={25.6} r={0.35} fill={theme.partitionFrame} />
+			<line x1={88} y1={52} x2={94.6} y2={49.2} stroke={theme.glassEdge} strokeWidth={0.55} />
+			<circle cx={94.2} cy={49.4} r={0.35} fill={theme.partitionFrame} />
+			<text x={151} y={30.8} textAnchor="end" fontSize={2.3} letterSpacing={0.7} fill={theme.labelMuted} opacity={0.7} fontFamily="system-ui, sans-serif">
+				MEETING 01
+			</text>
+			<text x={151} y={62.8} textAnchor="end" fontSize={2.3} letterSpacing={0.7} fill={theme.labelMuted} opacity={0.7} fontFamily="system-ui, sans-serif">
+				MEETING 02
+			</text>
+		</g>
+	);
+}
+
+/** Reception desk by the entry, with a low logo wall, monitor and guest chair. */
+export function Reception({ x, y, theme }: { x: number; y: number; theme: Palette }) {
+	return (
+		<g transform={`translate(${x}, ${y})`}>
+			<Shadow w={19} y={3.8} opacity={0.2} />
+			<path d="M -9.3 -0.6 L 9.3 -0.6 Q 10.6 4.8 7 4.8 L -7 4.8 Q -10.6 4.8 -9.3 -0.6 Z" fill={theme.reception} />
+			<path d="M -9.6 -0.8 L 9.6 -0.8 Q 10.8 1.2 7.4 1.2 L -7.4 1.2 Q -10.8 1.2 -9.6 -0.8 Z" fill={theme.woodTop} />
+			<rect x={-8.8} y={5.2} width={17.6} height={1.4} rx={0.6} fill={theme.wallEdge} opacity={0.18} />
+			<rect x={-2.8} y={-4.5} width={5.6} height={3.7} rx={0.55} fill={theme.monitorBezel} />
+			<rect x={-2.35} y={-4.1} width={4.7} height={2.9} rx={0.35} fill={theme.monitorOn} />
+			<rect x={-1.8} y={-3.7} width={3.1} height={0.5} rx={0.2} fill={theme.accent} opacity={0.65} />
+			<rect x={-1.8} y={-2.8} width={2.1} height={0.45} rx={0.2} fill={theme.whiteboardInk} opacity={0.5} />
+			<circle cx={5.8} cy={-1.8} r={1.05} fill={theme.chairBack} />
+			<circle cx={5.8} cy={-1.8} r={0.6} fill={theme.screenGlow} opacity={0.5} />
+			<Plant x={6.8} y={1.8} theme={theme} size={0.65} variant={2} />
+		</g>
+	);
+}
+
+/** Galley kitchen along the right wall: counter, sink, cooktop, fridge, stools. */
+export function Kitchen({ x, y, theme }: { x: number; y: number; theme: Palette }) {
+	return (
+		<g transform={`translate(${x}, ${y})`}>
+			<Shadow w={12} y={0} opacity={0.14} />
+			{/* tall fridge */}
+			<rect x={-4.8} y={-13} width={9.6} height={3.4} rx={0.7} fill={theme.appliance} />
+			<rect x={-4.2} y={-12.5} width={8.4} height={0.5} rx={0.25} fill={theme.monitorBezel} opacity={0.5} />
+			<rect x={3.4} y={-11.6} width={0.5} height={1.6} rx={0.25} fill={theme.metal} />
+			{/* counter run */}
+			<rect x={-5} y={-9.2} width={10} height={21.6} rx={1.2} fill={theme.counter} />
+			<rect x={-5} y={-9.2} width={4.1} height={21.6} rx={1.2} fill={theme.counterTop} />
+			<rect x={-5} y={-9.2} width={10} height={0.55} rx={0.28} fill={theme.woodTop} opacity={0.9} />
+			{/* sink */}
+			<rect x={-3.8} y={-5.6} width={5.6} height={3.2} rx={0.7} fill={theme.appliance} />
+			<rect x={-3.2} y={-5.1} width={4.4} height={2.2} rx={0.5} fill={theme.monitorBezel} opacity={0.65} />
+			<path d="M -1 -4.4 Q 0.4 -3.6 -0.2 -2.8" fill="none" stroke={theme.metal} strokeWidth={0.35} />
+			{/* cooktop */}
+			<rect x={-3.8} y={4.2} width={5.8} height={4.8} rx={0.7} fill={theme.monitor} opacity={0.8} />
+			{[0, 1, 2, 3].map((i) => (
+				<circle key={i} cx={-2.4 + (i % 2) * 2.6} cy={5.6 + Math.floor(i / 2) * 2.1} r={0.62} fill={theme.metal} opacity={0.7} />
+			))}
+			{/* upper cabinets in dotted projection */}
+			<rect x={2.2} y={-9} width={2.3} height={13.4} rx={0.5} fill="none" stroke={theme.counterTop} strokeWidth={0.35} strokeDasharray="0.9 0.7" opacity={0.7} />
+			{/* stools */}
+			{[0, 1].map((i) => (
+				<g key={i} transform={`translate(${-7.3}, ${-4 + i * 7})`}>
+					<circle r={1.55} fill={theme.chairBack} />
+					<circle r={1.05} fill={theme.chairSeat} />
+					<line x1={1.4} y1={0} x2={2.2} y2={0} stroke={theme.metal} strokeWidth={0.3} />
+				</g>
+			))}
+		</g>
+	);
+}
+
+/** Staff lockers against the left wall. */
+export function Lockers({ x, y, theme }: { x: number; y: number; theme: Palette }) {
+	return (
+		<g transform={`translate(${x}, ${y})`}>
+			<rect x={-2.4} y={-9} width={4.8} height={18} rx={0.6} fill={theme.reception} />
+			{[0, 1, 2, 3].map((row) => (
+				<g key={row}>
+					<rect x={-2} y={-8.4 + row * 4.2} width={4} height={3.7} rx={0.3} fill={theme.partition} />
+					<rect x={-1.5} y={-8 + row * 4.2} width={3} height={0.28} fill={theme.metal} opacity={0.55} />
+					<circle cx={1.45} cy={-6.8 + row * 4.2} r={0.22} fill={theme.metal} />
+				</g>
+			))}
+		</g>
+	);
+}
+
+/** Print / supply station at the edge of the workstation zone. */
+export function PrinterStation({ x, y, theme }: { x: number; y: number; theme: Palette }) {
+	return (
+		<g transform={`translate(${x}, ${y})`}>
+			<Shadow w={9} y={3} opacity={0.16} />
+			<rect x={-4.2} y={-1.4} width={8.4} height={5} rx={0.8} fill={theme.wood} />
+			<rect x={-4} y={-1.7} width={8} height={1} rx={0.4} fill={theme.woodTop} />
+			<rect x={-2.8} y={-4.2} width={5.6} height={2.6} rx={0.45} fill={theme.appliance} />
+			<rect x={-2.2} y={-3.7} width={3.4} height={0.8} rx={0.25} fill={theme.monitorBezel} opacity={0.6} />
+			<rect x={-1.7} y={-2.6} width={3.4} height={0.45} rx={0.2} fill={theme.whiteboard} opacity={0.8} />
+			<rect x={2.3} y={-1.2} width={2.1} height={1.5} rx={0.25} fill={theme.chairSeat} opacity={0.8} />
+		</g>
+	);
+}
+
+/** Long woven runner between the two desk columns. */
+export function WorkRunner({ x, y, w, h, theme }: { x: number; y: number; w: number; h: number; theme: Palette }) {
+	return (
+		<g transform={`translate(${x}, ${y})`}>
+			<rect x={-w / 2} y={-h / 2} width={w} height={h} rx={1.2} fill={theme.rug} opacity={0.68} />
+			<rect x={-w / 2 + 0.9} y={-h / 2 + 0.9} width={w - 1.8} height={h - 1.8} rx={0.8} fill="none" stroke={theme.rugRing} strokeWidth={0.4} opacity={0.6} />
+		</g>
+	);
+}
+
+/** Standing-height collaboration table between the desk columns. */
+export function CollabTable({ x, y, theme }: { x: number; y: number; theme: Palette }) {
+	return (
+		<g transform={`translate(${x}, ${y})`}>
+			<Shadow w={11} opacity={0.18} />
+			<circle r={4.1} fill={theme.table} />
+			<circle r={4.1} cy={-0.35} fill={theme.tableTop} />
+			<circle r={4.1} cy={-0.35} fill="none" stroke={theme.wood} strokeWidth={0.45} opacity={0.75} />
+			<circle r={1.15} cy={-0.35} fill={theme.rugRing} opacity={0.28} />
+			{/* open laptop + notebook + mugs */}
+			<rect x={-1.6} y={-2.4} width={3.2} height={2.2} rx={0.35} fill={theme.monitorBezel} />
+			<rect x={-1.15} y={-2.1} width={2.3} height={1.45} rx={0.2} fill={theme.screenGlow} opacity={0.85} />
+			<rect x={1.8} y={0.4} width={1.9} height={1.2} rx={0.25} fill={theme.cushion} opacity={0.8} />
+			<circle cx={-1.8} cy={1.4} r={0.62} fill={theme.chairBack} />
+			<circle cx={2.1} cy={-1.3} r={0.58} fill={theme.chairBack} />
+			{/* stools */}
+			{[-90, 0, 90, 180].map((deg) => {
+				const rad = (deg * Math.PI) / 180;
+				return (
+					<g key={deg} transform={`translate(${(Math.cos(rad) * 6.2).toFixed(2)}, ${(Math.sin(rad) * 6.2 - 0.3).toFixed(2)})`}>
+						<circle r={1.5} fill={theme.chairBack} />
+						<circle r={1.05} fill={theme.chairSeat} />
+					</g>
+				);
+			})}
 		</g>
 	);
 }

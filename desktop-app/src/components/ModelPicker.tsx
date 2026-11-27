@@ -108,20 +108,27 @@ export function ModelPicker({
 		const recentSet = new Set(recent.map((model) => modelKey(model.provider, model.id)));
 		const rest = filtered.filter((model) => !recentSet.has(modelKey(model.provider, model.id)));
 		const providers = [...new Set(rest.map((model) => model.provider))];
-		return [
-			...(recent.length > 0 ? [{ label: "Recent", models: recent, start: 0 }] : []),
+		const currentKey = currentModel ? modelKey(currentModel.provider, currentModel.id) : null;
+		const currentMissing =
+			!searching &&
+			currentModel !== null &&
+			currentKey !== null &&
+			!models.some((model) => modelKey(model.provider, model.id) === currentKey);
+		const baseGroups = [
+			...(currentMissing ? [{ label: "Current model", models: [currentModel] }] : []),
+			...(recent.length > 0 ? [{ label: "Recent", models: recent }] : []),
 			...providers.map((provider) => ({
 				label: provider,
 				models: rest.filter((model) => model.provider === provider),
-				start: 0,
 			})),
-		].map((group, _index, all) => {
-			const start = all
-				.slice(0, _index)
-				.reduce((total, entry) => total + entry.models.length, 0);
-			return { ...group, start };
-		});
-	}, [filtered, filter, recentModels]);
+		];
+		return baseGroups.map((group, index) => ({
+			...group,
+			start: baseGroups
+				.slice(0, index)
+				.reduce((total, entry) => total + entry.models.length, 0),
+		}));
+	}, [filtered, filter, recentModels, currentModel, models]);
 	const ordered = useMemo(() => groups.flatMap((group) => group.models), [groups]);
 
 	const choose = (model: AnyModel) => {

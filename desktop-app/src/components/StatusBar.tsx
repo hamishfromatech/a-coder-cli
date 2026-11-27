@@ -446,7 +446,7 @@ function PermissionModePicker({ mode }: { mode: PermissionMode }) {
 				variant={current.variant}
 				size="sm"
 				icon={Icon}
-				className="cursor-pointer transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none"
+				className="shrink-0 cursor-pointer whitespace-nowrap transition-hover active-press focus-visible:shadow-focus focus-visible:outline-none"
 				onClick={() => setOpen((v) => !v)}
 
 				aria-haspopup="listbox"

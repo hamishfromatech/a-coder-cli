@@ -2,6 +2,8 @@ import {
 	AlertTriangle,
 	CheckCircle2,
 	ExternalLink,
+	Eye,
+	EyeOff,
 	Loader2,
 	Plus,
 	Power,
@@ -389,6 +391,7 @@ export function McpServersEditor({ value, onChange, scope = "global" }: Props) {
 					<div
 						role="button"
 						tabIndex={0}
+						aria-expanded={expanded === idx}
 						onClick={() => setExpanded((cur) => (cur === idx ? null : idx))}
 						onKeyDown={(event) => {
 							if (event.key === "Enter" || event.key === " ") {
@@ -588,7 +591,7 @@ export function McpServersEditor({ value, onChange, scope = "global" }: Props) {
 								label="Arguments"
 								values={server.args ?? []}
 								onChange={(args) => updateServer(idx, { args })}
-								placeholder="-y chrome-devtools-mcp@latest"
+								placeholder="--flag value"
 							/>
 
 							<KeyValueEditor
@@ -790,6 +793,8 @@ function StringListEditor({
 	);
 }
 
+const SECRET_KEY = /(^|_)(token|secret|key|password|authorization|auth|credential)(_|$)/i;
+
 function KeyValueEditor({
 	label,
 	entries,
@@ -800,6 +805,7 @@ function KeyValueEditor({
 	onChange: (next: Record<string, string>) => void;
 }) {
 	const pairs = Object.entries(entries);
+	const [revealed, setRevealed] = useState<Set<number>>(() => new Set());
 
 	const update = useCallback(
 		(nextPairs: Array<[string, string]>) => {
@@ -820,7 +826,10 @@ function KeyValueEditor({
 			{pairs.length === 0 && (
 				<p className="text-2xs text-pi-text-faint">No entries.</p>
 			)}
-			{pairs.map(([k, v], i) => (
+			{pairs.map(([k, v], i) => {
+				const sensitive = SECRET_KEY.test(k);
+				const visible = revealed.has(i);
+				return (
 				<div key={i} className="flex gap-2">
 					<input
 						type="text"
@@ -834,7 +843,7 @@ function KeyValueEditor({
 						className="min-w-0 flex-1 rounded-md bg-pi-bg px-2.5 py-1.5 font-mono text-2xs text-pi-text shadow-ring focus:shadow-focus focus:outline-none"
 					/>
 					<input
-						type="text"
+						type={sensitive && !visible ? "password" : "text"}
 						value={v}
 						onChange={(e) => {
 							const next = [...pairs];
@@ -842,17 +851,39 @@ function KeyValueEditor({
 							update(next);
 						}}
 						placeholder="value"
+						autoComplete="off"
+						spellCheck={false}
 						className="min-w-0 flex-1 rounded-md bg-pi-bg px-2.5 py-1.5 text-2xs text-pi-text shadow-ring focus:shadow-focus focus:outline-none"
 					/>
+					{sensitive && (
+						<button
+							type="button"
+							onClick={() =>
+								setRevealed((current) => {
+									const next = new Set(current);
+									if (next.has(i)) next.delete(i);
+									else next.add(i);
+									return next;
+								})
+							}
+							aria-label={visible ? "Hide value" : "Show value"}
+							title={visible ? "Hide value" : "Show value"}
+							className="flex h-7 w-7 items-center justify-center rounded text-pi-text-muted transition-hover hover:bg-pi-surface-raised hover:text-pi-text"
+						>
+							{visible ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+						</button>
+					)}
 					<button
 						type="button"
 						onClick={() => update(pairs.filter((_, j) => j !== i))}
+						aria-label={`Remove ${k || "entry"}`}
 						className="flex h-7 w-7 items-center justify-center rounded text-pi-text-muted transition-hover hover:bg-pi-error-soft hover:text-pi-error"
 					>
 						<X className="h-3 w-3" />
 					</button>
 				</div>
-			))}
+				);
+			})}
 			<button
 				type="button"
 				onClick={() => update([...pairs, ["", ""]])}

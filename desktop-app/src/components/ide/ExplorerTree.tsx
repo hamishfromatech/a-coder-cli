@@ -26,6 +26,7 @@ import {
 	FolderPlus,
 	ListCollapse,
 	Palette,
+	Paperclip,
 	Pencil,
 	RefreshCw,
 	Search,
@@ -46,16 +47,19 @@ import {
 	type IdeDirEntry,
 } from "../../lib/rpc.ts";
 import { openWorkspaceFile, writeTextFile } from "../../lib/ide.ts";
+import { FILE_ATTACHMENT_MIME } from "../../lib/composer-attachments";
 import { invalidateQuickOpenIndex } from "./QuickOpen";
 import {
 	decorationFor,
 	fileKind,
 	flattenVisible,
+	isNoisyDir,
 	parentOf,
 	relativeToRoot,
 	type FileKind,
 } from "../../lib/explorer.ts";
 import { toast } from "../../stores/toast-store";
+import { triggerHaptic } from "../../lib/haptics";
 import { confirm } from "../../stores/confirm-store";
 import { useIdeStore } from "../../stores/ide-store";
 import { Tip } from "../ui/Tip";
@@ -114,9 +118,26 @@ interface MenuItem {
 
 interface ExplorerProps {
 	root: string;
+	/** Header label; the sidebar uses "Files". */
+	title?: string;
+	/** Defaults to opening the file in an IDE tab. */
+	onOpenFile?: (path: string) => void;
+	/** Show attach-to-chat affordances (sidebar only). */
+	onAttachFile?: (path: string) => void;
+	/** Expand the tree to an IDE active file; sidebar keeps its own selection. */
+	revealActivePath?: boolean;
+	/** Hide node_modules, dist, target and other generated directories. */
+	hideNoise?: boolean;
 }
 
-export function ExplorerTree({ root }: ExplorerProps): ReactNode {
+export function ExplorerTree({
+	root,
+	title = "Explorer",
+	onOpenFile,
+	onAttachFile,
+	revealActivePath = true,
+	hideNoise = false,
+}: ExplorerProps): ReactNode {
 	const [children, setChildren] = useState<Map<string, IdeDirEntry[]>>(new Map());
 	const [expanded, setExpanded] = useState<Set<string>>(new Set());
 	const [loadingDirs, setLoadingDirs] = useState<Set<string>>(new Set());
@@ -143,6 +164,15 @@ export function ExplorerTree({ root }: ExplorerProps): ReactNode {
 	const rowsRef = useRef(rows);
 	rowsRef.current = rows;
 
+	const triggerAttachFeedback = (): void => {
+		triggerHaptic("selection");
+	};
+
+	const openFile = (path: string): void => {
+		if (onOpenFile) onOpenFile(path);
+		else void openWorkspaceFile(root, path);
+	};
+
 	const persistExpanded = useCallback(
 		(next: Set<string>) => {
 			useIdeStore.getState().setExplorerExpanded(root, [...next]);
@@ -154,7 +184,7 @@ export function ExplorerTree({ root }: ExplorerProps): ReactNode {
 		async (path: string): Promise<void> => {
 			setLoadingDirs((prev) => new Set(prev).add(path));
 			try {
-				const entries = await listDir(path);
+				const entries = (await listDir(path)).filter((entry) => !hideNoise || !isNoisyDir(entry));
 				setChildren((prev) => new Map(prev).set(path, entries));
 				setErrors((prev) => {
 					if (!prev.has(path)) return prev;
@@ -174,7 +204,7 @@ export function ExplorerTree({ root }: ExplorerProps): ReactNode {
 				});
 			}
 		},
-		[],
+		[hideNoise],
 	);
 
 	const refreshGit = useCallback(async (): Promise<void> => {
@@ -261,7 +291,7 @@ export function ExplorerTree({ root }: ExplorerProps): ReactNode {
 	// Auto-reveal the active file: expand ancestors (loading each level), select
 	// and reveal the row without taking focus from the editor.
 	useEffect(() => {
-		if (!activePath || !activePath.startsWith(root)) return;
+		if (!revealActivePath || !activePath || !activePath.startsWith(root)) return;
 		let cancelled = false;
 		const reveal = async (): Promise<void> => {
 			const relative = relativeToRoot(activePath, root);
@@ -281,7 +311,7 @@ export function ExplorerTree({ root }: ExplorerProps): ReactNode {
 		return () => {
 			cancelled = true;
 		};
-	}, [activePath, root, loadDir, expand, scrollToRow]);
+	}, [activePath, root, loadDir, expand, scrollToRow, revealActivePath]);
 
 	function selectRow(path: string | null, focus = true): void {
 		setSelectedPath(path);
@@ -335,7 +365,7 @@ export function ExplorerTree({ root }: ExplorerProps): ReactNode {
 			if (!current) return;
 			event.preventDefault();
 			if (current.entry.is_dir) expand(current.entry.path, !expandedRef.current.has(current.entry.path));
-			else void openWorkspaceFile(root, current.entry.path);
+			else openFile(current.entry.path);
 		} else if (event.key === "F2") {
 			if (!current || current.entry.path === root) return;
 			event.preventDefault();
@@ -370,7 +400,7 @@ export function ExplorerTree({ root }: ExplorerProps): ReactNode {
 			} else {
 				await createFile(target);
 				await writeTextFile(target, "");
-				await openWorkspaceFile(root, target);
+				openFile(target);
 			}
 			toast.success("Created", name);
 		} catch (e) {
@@ -390,7 +420,7 @@ export function ExplorerTree({ root }: ExplorerProps): ReactNode {
 			await renamePath(path, to);
 			const store = useIdeStore.getState();
 			store.closeTab(path);
-			if (store.activePath === path) await openWorkspaceFile(root, to);
+			if (store.activePath === path) openFile(to);
 			toast.success("Renamed", name);
 		} catch (e) {
 			toast.error("Rename failed", e instanceof Error ? e.message : String(e));
@@ -457,7 +487,7 @@ export function ExplorerTree({ root }: ExplorerProps): ReactNode {
 					Icon: FileText,
 					run: () => {
 						setMenu(null);
-						void openWorkspaceFile(root, state.path);
+						openFile(state.path);
 					},
 				},
 				{
@@ -470,6 +500,16 @@ export function ExplorerTree({ root }: ExplorerProps): ReactNode {
 					},
 				},
 			);
+		}
+		if (!state.isDir && onAttachFile) {
+			items.push({
+				label: "Attach to chat",
+				Icon: Paperclip,
+				run: () => {
+					setMenu(null);
+					onAttachFile(state.path);
+				},
+			});
 		}
 		items.push(
 			{
@@ -536,10 +576,10 @@ export function ExplorerTree({ root }: ExplorerProps): ReactNode {
 	) : null;
 
 	return (
-		<div className="relative flex min-h-0 flex-1 flex-col">
+		<div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
 			<div className="flex h-8 shrink-0 items-center gap-1.5 border-b border-pi-border px-3">
 				<span className="text-2xs font-semibold uppercase tracking-widest text-pi-text-muted">
-					Explorer
+					{title}
 				</span>
 				<div className="ml-auto flex items-center gap-0.5">
 					<Tip content="New file" placement="toolbar">
@@ -642,7 +682,7 @@ export function ExplorerTree({ root }: ExplorerProps): ReactNode {
 						name: root.split(/[/\\]/).filter(Boolean).at(-1) ?? root,
 					});
 				}}
-				className="min-h-0 flex-1 overflow-auto py-1 outline-none"
+				className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden py-1 outline-none"
 			>
 				{rootError && (
 					<div className="mx-2 mb-1 flex items-center gap-2 rounded border border-pi-error/40 bg-pi-error-soft px-2 py-1.5 text-2xs text-pi-error">
@@ -669,7 +709,7 @@ export function ExplorerTree({ root }: ExplorerProps): ReactNode {
 					const { entry, depth } = row;
 					const isOpen = expanded.has(entry.path);
 					const selected = selectedPath === entry.path;
-					const isActive = activePath === entry.path;
+					const isActive = !onOpenFile && activePath === entry.path;
 					const { letter, dirtyDir } = decorationFor(entry.path, entry.is_dir, root, gitByPath);
 					const kind = entry.is_dir
 						? null
@@ -712,12 +752,20 @@ export function ExplorerTree({ root }: ExplorerProps): ReactNode {
 								aria-expanded={entry.is_dir ? isOpen : undefined}
 								tabIndex={-1}
 								data-ide-entry={entry.path}
+								draggable={!entry.is_dir && Boolean(onAttachFile)}
+								onDragStart={(event) => {
+									if (entry.is_dir || !onAttachFile) return;
+									event.dataTransfer.setData(FILE_ATTACHMENT_MIME, entry.path);
+									event.dataTransfer.setData("text/plain", entry.path);
+									event.dataTransfer.effectAllowed = "copy";
+									triggerAttachFeedback();
+								}}
 								onClick={(event) => {
 									event.stopPropagation();
 									setSelectedPath(entry.path);
 									event.currentTarget.focus({ preventScroll: true });
 									if (entry.is_dir) expand(entry.path, !isOpen);
-									else void openWorkspaceFile(root, entry.path);
+									else openFile(entry.path);
 								}}
 								onContextMenu={(event) => {
 									event.preventDefault();
@@ -780,6 +828,14 @@ export function ExplorerTree({ root }: ExplorerProps): ReactNode {
 								{dirtyDir && <span className="size-1.5 shrink-0 rounded-full bg-pi-warning/80" aria-label="changes inside" />}
 								{/* Hover actions: discoverable without the context menu. */}
 								<span className="flex shrink-0 items-center gap-px opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+									{!entry.is_dir && onAttachFile && (
+										<RowAction
+											label="Attach to chat"
+											onClick={() => onAttachFile(entry.path)}
+										>
+											<Paperclip className="size-3" />
+										</RowAction>
+									)}
 									{entry.is_dir && (
 										<RowAction
 											label="New file"

@@ -572,7 +572,9 @@ function SessionRow({
 		!editing && density !== "compact" && Boolean(session.name?.trim()) && preview.length > 0 && preview !== title;
 	const model = meta.includes("model") ? modelLabel(session.model) : null;
 	const figures = [
-		meta.includes("messages") && session.messageCount > 0 ? `${session.messageCount}m` : null,
+		meta.includes("messages") && session.messageCount > 0
+			? `${compactNumber(session.messageCount)} msg`
+			: null,
 		meta.includes("tokens") && session.totalTokens ? `${compactNumber(session.totalTokens)} tok` : null,
 		meta.includes("cost") ? costLabel(session.totalCost) : null,
 	].filter((value): value is string => Boolean(value));

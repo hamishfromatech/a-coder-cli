@@ -45,6 +45,8 @@ export interface CoworkerVisual {
 	status: FloorStatus;
 	currentTool: string | null;
 	bubble: SpeechBubble | null;
+	/** Only the newest few bubbles are painted; the rest stay in state. */
+	bubbleVisible: boolean;
 	pos: Point;
 	deskIndex: number;
 	inMeeting: boolean;
@@ -77,6 +79,8 @@ export type FloorStore = StoreApi<FloorState> & { dispose: () => void };
 const LINK_TIMEOUT_MS = 60_000;
 const SPEECH_MS = 12_000;
 const ERROR_MS = 20_000;
+/** Speech cards are large in a narrow sidebar; paint only the newest speaker. */
+const MAX_VISIBLE_BUBBLES = 1;
 /** After this much silence, a retained status (whose events fell out of the
  *  host's ring buffer) stops claiming the coworker is still working. */
 const STATUS_STALE_MS = 5 * 60_000;
@@ -252,7 +256,7 @@ export function createFloorStore(): FloorStore {
 		store.setState((state) => {
 			const previous = new Map(state.coworkers.map((c) => [c.id, c]));
 			const present = new Set(feed.coworkers.map((c) => c.id));
-			const coworkers = feed.coworkers.map((coworker, index) => {
+			const coworkers: CoworkerVisual[] = feed.coworkers.map((coworker, index) => {
 				const shape = coworker.face.shape;
 				const prior = previous.get(coworker.id);
 				const activity = derived.get(coworker.id) ??
@@ -297,13 +301,27 @@ export function createFloorStore(): FloorStore {
 					status: settled.status,
 					currentTool: settled.currentTool,
 					bubble: settled.bubble && settled.bubble.until > now ? settled.bubble : null,
+					bubbleVisible: false,
 					pos: prior?.pos ?? CORRIDOR_SPAWN,
 					deskIndex,
 					inMeeting,
 					walkT: prior?.walkT ?? null,
 					spawnUntil: prior?.spawnUntil ?? spawnedAt.get(coworker.id) ?? 0,
-				} satisfies CoworkerVisual;
+				};
 			});
+
+			// The newest active speaker owns the speech card. Old cards keep
+			// their text but stop painting, leaving the floor readable.
+			const visibleBubbles = new Set(
+				coworkers
+					.filter((coworker) => coworker.bubble)
+					.sort((a, b) => (b.bubble?.until ?? 0) - (a.bubble?.until ?? 0))
+					.slice(0, MAX_VISIBLE_BUBBLES)
+					.map((coworker) => coworker.id),
+			);
+			for (const coworker of coworkers) {
+				coworker.bubbleVisible = visibleBubbles.has(coworker.id);
+			}
 
 			// Drop bookkeeping for coworkers who left the roster, so a later
 			// re-add starts from a clean slate.

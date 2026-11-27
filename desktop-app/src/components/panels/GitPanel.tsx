@@ -9,6 +9,7 @@ import {
 import {
 	gitDiff,
 	gitStatus,
+	readTextFile,
 	type GitFileChange,
 	type GitStatus,
 } from "../../lib/rpc";
@@ -45,7 +46,12 @@ export function GitPanel({ projectPath }: Props) {
 		useUiStore();
 
 	const load = useCallback(async () => {
-		if (!projectPath) return;
+		if (!projectPath) {
+			setStatus(null);
+			setError(null);
+			setLoading(false);
+			return;
+		}
 		setLoading(true);
 		setError(null);
 		try {
@@ -63,21 +69,69 @@ export function GitPanel({ projectPath }: Props) {
 		void load();
 	}, [load]);
 
+	// Agent writes should not leave the panel showing a stale change set.
+	useEffect(() => {
+		let timer: number | null = null;
+		const handler = (): void => {
+			if (timer !== null) window.clearTimeout(timer);
+			timer = window.setTimeout(() => {
+				timer = null;
+				void load();
+			}, 300);
+		};
+		window.addEventListener("a-coder:agent-files-changed", handler);
+		return () => {
+			window.removeEventListener("a-coder:agent-files-changed", handler);
+			if (timer !== null) window.clearTimeout(timer);
+		};
+	}, [load]);
+
 	useEffect(() => {
 		if (!projectPath || !selectedGitFile) {
 			setDiff(null);
+			setDiffError(null);
+			setDiffLoading(false);
 			return;
 		}
+		let cancelled = false;
 		setDiffLoading(true);
 		setDiffError(null);
+		const untracked = status?.untracked.some((file) => file.path === selectedGitFile) ?? false;
+		if (untracked) {
+			const absolute = `${projectPath.replace(/[\\/]$/, "")}/${selectedGitFile}`;
+			readTextFile(absolute)
+				.then((content) => {
+					if (cancelled) return;
+					setDiff(content.split("\n").map((line) => `+${line}`).join("\n"));
+				})
+				.catch(() => {
+					if (cancelled) return;
+					setDiff(null);
+					setDiffError("This new file cannot be previewed as text.");
+				})
+				.finally(() => {
+					if (!cancelled) setDiffLoading(false);
+				});
+			return () => {
+				cancelled = true;
+			};
+		}
 		gitDiff(projectPath, selectedGitFile, selectedGitStaged)
-			.then((d) => setDiff(d))
+			.then((d) => {
+				if (!cancelled) setDiff(d);
+			})
 			.catch((e) => {
+				if (cancelled) return;
 				setDiff(null);
 				setDiffError(e instanceof Error ? e.message : String(e));
 			})
-			.finally(() => setDiffLoading(false));
-	}, [projectPath, selectedGitFile, selectedGitStaged]);
+			.finally(() => {
+				if (!cancelled) setDiffLoading(false);
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [projectPath, selectedGitFile, selectedGitStaged, status]);
 
 	const totalChanges =
 		(status?.staged.length ?? 0) +
@@ -104,11 +158,31 @@ export function GitPanel({ projectPath }: Props) {
 
 			{/* Header */}
 			<div className="flex items-center justify-between border-b border-pi-border px-3 py-2">
-				<div className="flex items-center gap-2">
-					<span className="text-2xs font-semibold tracking-tight">Git</span>
-					<span className="rounded bg-pi-surface-overlay px-1.5 py-0.5 font-mono text-3xs text-pi-text-muted">
+				<div className="flex min-w-0 items-center gap-2">
+					<span className="shrink-0 text-2xs font-semibold tracking-tight">Git</span>
+					<span className="shrink-0 rounded bg-pi-surface-overlay px-1.5 py-0.5 font-mono text-3xs text-pi-text-muted">
 						{totalChanges}
 					</span>
+					{status?.branch && (
+						<span
+							className="min-w-0 truncate font-mono text-3xs text-pi-text-faint"
+							title={[
+								status.branch.name,
+								status.branch.ahead > 0 ? `ahead ${status.branch.ahead}` : null,
+								status.branch.behind > 0 ? `behind ${status.branch.behind}` : null,
+							]
+								.filter(Boolean)
+								.join(" · ")}
+						>
+							{status.branch.name}
+							{status.branch.ahead > 0 && (
+								<span className="ml-1 text-pi-text-muted">↑{status.branch.ahead}</span>
+							)}
+							{status.branch.behind > 0 && (
+								<span className="ml-1 text-pi-text-muted">↓{status.branch.behind}</span>
+							)}
+						</span>
+					)}
 				</div>
 				<button
 					onClick={() => void load()}

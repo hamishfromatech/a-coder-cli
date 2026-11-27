@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decorationFor, fileKind, flattenVisible, parentOf, relativeToRoot, sortEntries } from "./explorer";
+import { decorationFor, fileKind, flattenVisible, isNoisyDir, parentOf, relativeToRoot, sortEntries } from "./explorer";
 
 const root = "/w";
 const tree = new Map<string, Array<{ path: string; name: string; is_dir: boolean }>>([
@@ -71,11 +71,26 @@ describe("git decorations", () => {
 	});
 });
 
+describe("sidebar noise filter", () => {
+	it("hides generated directories but keeps dot config and source folders", () => {
+		expect(isNoisyDir({ name: "node_modules", is_dir: true })).toBe(true);
+		expect(isNoisyDir({ name: ".git", is_dir: true })).toBe(true);
+		expect(isNoisyDir({ name: "dist", is_dir: true })).toBe(true);
+		expect(isNoisyDir({ name: ".github", is_dir: true })).toBe(false);
+		expect(isNoisyDir({ name: "src", is_dir: true })).toBe(false);
+		expect(isNoisyDir({ name: "node_modules", is_dir: false })).toBe(false);
+	});
+});
+
 describe("path helpers", () => {
 	it("derives relative paths and parents", () => {
 		expect(relativeToRoot("/w/src/a.ts", "/w")).toBe("src/a.ts");
 		expect(relativeToRoot("/w", "/w/")).toBe("");
+		expect(relativeToRoot("C:\\work\\src\\a.ts", "C:\\work")).toBe("src/a.ts");
+		expect(relativeToRoot("C:/work/src/a.ts", "C:\\work\\")).toBe("src/a.ts");
+		expect(relativeToRoot("/w-other/a.ts", "/w")).toBe("/w-other/a.ts");
 		expect(parentOf("/w/src/a.ts")).toBe("/w/src");
+		expect(parentOf("C:\\work\\src\\a.ts")).toBe("C:\\work\\src");
 		expect(parentOf("/w/")).toBe("/w");
 	});
 });

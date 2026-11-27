@@ -19,9 +19,9 @@ interface ModeOption {
 
 /**
  * Two-part appearance picker:
- *   1. Skin — the accent/identity palette, grouped into classic working
+ *   1. Mode — light/dark/system brightness, always the first control.
+ *   2. Skin — the accent/identity palette, grouped into classic working
  *      palettes and expressive artistic ones.
- *   2. Mode — light/dark/system brightness.
  *
  * Both apply instantly to the document and persist to settings.json.
  */
@@ -94,36 +94,6 @@ export function ThemePicker() {
 
 	return (
 		<div className="flex flex-col gap-5">
-			{/* ─── Skin ─────────────────────────────────────────── */}
-			<section>
-				<div className="mb-2 flex items-baseline justify-between">
-					<h4 className="text-2xs font-semibold uppercase tracking-wider text-pi-text-muted">
-						Skin
-					</h4>
-					<span className="text-3xs text-pi-text-faint">
-						{SKIN_LIST.length} themes
-					</span>
-				</div>
-				<SkinGroup
-					title="Classic"
-					hint="Neutral palettes for everyday work"
-					skins={classicSkins}
-					skin={skin}
-					mode={resolveMode(theme as SkinMode)}
-					onChoose={chooseSkin}
-				/>
-				<div className="mt-4">
-					<SkinGroup
-						title="Artistic & modern"
-						hint="Expressive color, still tuned for readability"
-						skins={artisticSkins}
-						skin={skin}
-						mode={resolveMode(theme as SkinMode)}
-						onChoose={chooseSkin}
-					/>
-				</div>
-			</section>
-
 			{/* ─── Mode ─────────────────────────────────────────── */}
 			<section>
 				<h4 className="mb-2 text-2xs font-semibold uppercase tracking-wider text-pi-text-muted">
@@ -181,6 +151,36 @@ export function ThemePicker() {
 							</button>
 						);
 					})}
+				</div>
+			</section>
+
+			{/* ─── Skin ─────────────────────────────────────────── */}
+			<section>
+				<div className="mb-2 flex items-baseline justify-between">
+					<h4 className="text-2xs font-semibold uppercase tracking-wider text-pi-text-muted">
+						Skin
+					</h4>
+					<span className="text-3xs text-pi-text-faint">
+						{SKIN_LIST.length} themes
+					</span>
+				</div>
+				<SkinGroup
+					title="Classic"
+					hint="Neutral palettes for everyday work"
+					skins={classicSkins}
+					skin={skin}
+					mode={resolveMode(theme as SkinMode)}
+					onChoose={chooseSkin}
+				/>
+				<div className="mt-4">
+					<SkinGroup
+						title="Artistic & modern"
+						hint="Expressive color, still tuned for readability"
+						skins={artisticSkins}
+						skin={skin}
+						mode={resolveMode(theme as SkinMode)}
+						onChoose={chooseSkin}
+					/>
 				</div>
 			</section>
 		</div>

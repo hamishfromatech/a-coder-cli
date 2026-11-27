@@ -15,10 +15,37 @@ export interface ExplorerRow {
 	depth: number;
 }
 
-/** Repo-relative path for git decoration lookups. */
+/** Repo-relative path using `/` separators, for git decorations and previews. */
 export function relativeToRoot(path: string, root: string): string {
-	const base = root.replace(/[/\\]+$/, "");
-	return path.startsWith(base) ? path.slice(base.length).replace(/^[/\\]/, "") : path;
+	const normalizedPath = path.replace(/\\/g, "/");
+	const base = root.replace(/\\/g, "/").replace(/\/+$/, "");
+	const lowerPath = normalizedPath.toLowerCase();
+	const lowerBase = base.toLowerCase();
+	if (lowerPath === lowerBase) return "";
+	const prefix = `${lowerBase}/`;
+	return lowerPath.startsWith(prefix) ? normalizedPath.slice(base.length + 1) : path;
+}
+
+/** Build and cache directories that only add noise to the sidebar tree. */
+const NOISY_DIRS = new Set([
+	".cache",
+	".git",
+	".gradle",
+	".next",
+	".turbo",
+	".venv",
+	"__pycache__",
+	"build",
+	"dist",
+	"node_modules",
+	"out",
+	"target",
+	"vendor",
+]);
+
+/** Sidebar-only filter for generated directories. */
+export function isNoisyDir(entry: { name: string; is_dir: boolean }): boolean {
+	return entry.is_dir && NOISY_DIRS.has(entry.name);
 }
 
 /** Directories first, then case-insensitive name, matching the backend. */

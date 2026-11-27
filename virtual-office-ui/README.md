@@ -3,9 +3,11 @@
 A "digital twin" floor view for Your Office — inspired by openclaw-office
 (MIT, WW-AI-Lab), freshly implemented for a-coder-cli's engine contract.
 
-One SVG scene: desk rows, meeting pods, lounge decor, walk animations,
-collaboration links between coworkers who talk to each other, speech bubbles
-with live activity, and status auras (thinking / tool calling).
+One floor plan in two renderers: glass-walled meeting rooms, reception,
+a galley kitchen, staff lockers, a print station, a central collaboration
+table and lounge decor around the desk rows. Both views share walk animations,
+collaboration links, live speech (newest speaker only), and status auras
+(thinking / tool calling).
 
 ## Layout
 
@@ -25,10 +27,12 @@ with live activity, and status auras (thinking / tool calling).
 - `src/palette.ts` — themes + status hues shared by both views (idle loops
   respect `prefers-reduced-motion`)
 - `src/office3d.tsx` — the 3D scene (three + @react-three/fiber, no drei):
-  capsule characters with walk bob and status auras, emissive monitors,
-  windowed walls, canvas-texture labels, drag/zoom orbit camera. Scene
-  re-renders follow `visualVersion`, not positions; bubbles expire on
-  wall-clock time; rendering pauses while the document is hidden.
+  glass meeting rooms with acoustic lower panels, ceiling beams and linear
+  pendants, reception/kitchen/lockers, capsule characters with walk bob and
+  status auras, emissive monitors, canvas-texture labels, soft shadow maps and
+  a stable drag/zoom orbit camera. Scene re-renders follow `visualVersion`,
+  not positions; bubbles expire on wall-clock time; rendering pauses while the
+  document is hidden.
 - `src/OfficeView.tsx` — 2D/3D switcher (3D is lazy-loaded). It owns one floor
   store for both renderers, remembers the last view per client, and draws the
   status legend. `onCoworkerClick` makes avatars clickable in both views.

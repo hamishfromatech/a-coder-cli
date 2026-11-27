@@ -29,5 +29,25 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<!-- Finder: right-click a folder -> Open With -> A-Coder Desktop.
+	     Alternate rank adds the app to the menu without claiming the default
+	     folder handler (double-clicking a folder still opens Finder). The app
+	     receives the folder through RunEvent::Opened and opens it as its
+	     workspace. -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Folder</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.folder</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

@@ -18,6 +18,15 @@ interface Props {
 	projectPath: string | null;
 }
 
+/** Panels that render their own header; avoid stacking two titles. */
+const PANELS_WITH_OWN_HEADER = new Set<RightSidebarTab>([
+	"files",
+	"git",
+	"office",
+	"cron",
+	"activity",
+]);
+
 const TABS: {
 	id: RightSidebarTab;
 	label: string;
@@ -106,14 +115,14 @@ export function RightSidebar({ projectPath }: Props) {
 			{/* Content: a slim active-panel header (the browser brings its own
 			    chrome), then the panel itself. */}
 			<div className="flex min-w-0 flex-1 flex-col">
-				{rightSidebarTab !== "browser" && (
+				{rightSidebarTab !== "browser" && !PANELS_WITH_OWN_HEADER.has(rightSidebarTab) && (
 					<div className="flex h-8 shrink-0 items-center border-b border-pi-border px-3">
 						<span className="text-3xs font-medium uppercase tracking-wide text-pi-text-muted">
 							{activeLabel}
 						</span>
 					</div>
 				)}
-				<div className="min-h-0 w-full min-w-0 flex-1">
+				<div className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden">
 					{rightSidebarTab === "files" &&
 						(selectedArtifactPath ? (
 							<ArtifactViewer projectPath={projectPath} path={selectedArtifactPath} />

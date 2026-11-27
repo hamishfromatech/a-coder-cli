@@ -8,6 +8,7 @@ mod cli;
 mod fs;
 mod git;
 mod ide;
+mod launch;
 mod menu;
 mod macos_permissions;
 mod power;
@@ -53,7 +54,20 @@ fn main() {
 		let _: () = msg_send![app, activateIgnoringOtherApps: true];
 	}
 
+	// A second launch (Explorer "Open with", terminal) forwards its path
+	// arguments to the running instance instead of starting a rival window.
+	#[cfg(windows)]
+	launch::register_explorer_verbs();
+
 	let app = tauri::Builder::default()
+		.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+			for argument in argv.iter().skip(1) {
+				launch::deliver(app, argument);
+			}
+			// A bare second launch (double-click on the icon) still has to
+			// surface the running window.
+			launch::focus_main(app);
+		}))
 		.plugin(tauri_plugin_shell::init())
 		.plugin(tauri_plugin_dialog::init())
 		.plugin(tauri_plugin_updater::Builder::new().build())
@@ -320,6 +334,19 @@ fn main() {
 			}
 			if let Err(e) = tray::build_tray(app_handle) {
 				eprintln!("linux: failed to build tray: {e}");
+			}
+		}
+
+		// Finder's "Open With A-Coder Desktop" (and any file-open handoff)
+		// arrives as URLs after the app is running.
+		#[cfg(target_os = "macos")]
+		if let tauri::RunEvent::Opened { urls } = &event {
+			for url in urls {
+				if let Ok(path) = url.to_file_path() {
+					if launch::deliver(app_handle, path.to_string_lossy().as_ref()) {
+						launch::focus_main(app_handle);
+					}
+				}
 			}
 		}
 

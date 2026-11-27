@@ -322,6 +322,13 @@ function Desk3D({ x, y, theme, on, flip }: { x: number; y: number; theme: Palett
 			<Box position={[0.92, 0.34, -0.42]} args={[0.1, 0.68, 0.1]} color={theme.metal} metalness={0.5} roughness={0.35} />
 			<Box position={[-0.92, 0.34, 0.42]} args={[0.1, 0.68, 0.1]} color={theme.metal} metalness={0.5} roughness={0.35} />
 			<Box position={[0.92, 0.34, 0.42]} args={[0.1, 0.68, 0.1]} color={theme.metal} metalness={0.5} roughness={0.35} />
+			{/* acoustic desk screen behind the monitor */}
+			<Box position={[0, 1.12, -0.52]} args={[2.02, 0.56, 0.035]} color={theme.partition} roughness={0.9} />
+			<Box position={[0, 1.41, -0.52]} args={[2.06, 0.045, 0.06]} color={theme.partitionFrame} roughness={0.5} />
+			{/* cable tray + drawer pedestal */}
+			<Box position={[0, 0.66, 0.08]} args={[1.55, 0.035, 0.3]} color={theme.metal} roughness={0.4} metalness={0.35} />
+			<Box position={[0.72, 0.36, 0.18]} args={[0.38, 0.56, 0.58]} color={theme.wood} roughness={0.65} />
+			<Box position={[0.72, 0.57, 0.48]} args={[0.28, 0.025, 0.035]} color={theme.metal} roughness={0.4} />
 			{/* monitor */}
 			<Box position={[0, 1.16, -0.34]} args={[0.98, 0.62, 0.06]} color={theme.monitorBezel} roughness={0.4} />
 			<mesh position={[0, 1.16, -0.3]}>
@@ -342,10 +349,19 @@ function Desk3D({ x, y, theme, on, flip }: { x: number; y: number; theme: Palett
 				<sphereGeometry args={[0.055, 12, 8]} />
 				<meshStandardMaterial color={theme.metal} roughness={0.4} metalness={0.35} />
 			</mesh>
-			{/* mug */}
+			{/* mug + notebook + desk plant */}
 			<mesh position={[0.78, 0.9, -0.24]} castShadow>
 				<cylinderGeometry args={[0.075, 0.065, 0.13, 12]} />
 				<meshStandardMaterial color={theme.chairBack} roughness={0.6} />
+			</mesh>
+			<Box position={[-0.74, 0.83, 0.18]} args={[0.3, 0.025, 0.22]} color={theme.cushion} roughness={0.8} rotation={[0, -0.08, 0]} />
+			<mesh position={[-0.88, 0.92, -0.25]} castShadow>
+				<cylinderGeometry args={[0.075, 0.06, 0.1, 10]} />
+				<meshStandardMaterial color={theme.plantPot} roughness={0.7} />
+			</mesh>
+			<mesh position={[-0.88, 1.02, -0.25]} castShadow>
+				<sphereGeometry args={[0.1, 10, 8]} />
+				<meshStandardMaterial color={theme.plant} roughness={0.75} />
 			</mesh>
 			{/* chair: seat, back, stem, five-star base */}
 			<group position={[0, 0, 0.95]}>
@@ -636,7 +652,7 @@ function Whiteboard3D({ theme }: { theme: Palette }) {
 	const face = useMemo(() => whiteboardTexture(theme), [theme]);
 	useEffect(() => () => face.dispose(), [face]);
 	return (
-		<group position={[-6.3, 1.75, -halfD + 0.1]}>
+		<group position={[3.1, 1.75, -halfD + 0.1]}>
 			<Box position={[0, 0, 0.04]} args={[2.5, 1.5, 0.08]} color={theme.metal} roughness={0.4} metalness={0.3} />
 			<mesh position={[0, 0, 0.09]}>
 				<planeGeometry args={[2.3, 1.32]} />
@@ -679,17 +695,395 @@ function Bookshelf3D({ theme }: { theme: Palette }) {
 	);
 }
 
+
+// ── architecture ─────────────────────────────────────────────────────────────
+
+/** A framed glass partition between two floor points. */
+function GlassWall3D({
+	x1,
+	y1,
+	x2,
+	y2,
+	theme,
+	height = 2.7,
+}: {
+	x1: number;
+	y1: number;
+	x2: number;
+	y2: number;
+	theme: Palette;
+	height?: number;
+}) {
+	const [ax, , az] = to3d(x1, y1);
+	const [bx, , bz] = to3d(x2, y2);
+	const dx = bx - ax;
+	const dz = bz - az;
+	const length = Math.hypot(dx, dz);
+	const angle = Math.atan2(-dz, dx);
+	const mullions = Math.max(1, Math.round(length / 2.6));
+	return (
+		<group position={[(ax + bx) / 2, 0, (az + bz) / 2]} rotation={[0, angle, 0]}>
+			<Box position={[0, 0.45, 0]} args={[length, 0.9, 0.075]} color={theme.partition} roughness={0.88} />
+			<mesh position={[0, 0.9 + (height - 0.9) / 2, 0]}>
+				<boxGeometry args={[length, height - 0.9, 0.035]} />
+				<meshPhysicalMaterial
+					color={theme.windowGlass}
+					transparent
+					opacity={0.2}
+					roughness={0.08}
+					metalness={0.02}
+					side={THREE.DoubleSide}
+					depthWrite={false}
+				/>
+			</mesh>
+			<Box position={[0, 0.92, 0]} args={[length, 0.035, 0.07]} color={theme.partitionFrame} roughness={0.4} metalness={0.3} />
+			<Box position={[0, 0.08, 0]} args={[length, 0.12, 0.09]} color={theme.partitionFrame} roughness={0.45} metalness={0.25} />
+			<Box position={[0, height - 0.04, 0]} args={[length, 0.08, 0.09]} color={theme.partitionFrame} roughness={0.45} metalness={0.25} />
+			{Array.from({ length: mullions + 1 }, (_, i) => {
+				const t = i / mullions - 0.5;
+				return (
+					<Box
+						key={i}
+						position={[length * t, height / 2, 0]}
+						args={[0.035, height, 0.065]}
+						color={theme.partitionFrame}
+						roughness={0.4}
+						metalness={0.35}
+					/>
+				);
+			})}
+		</group>
+	);
+}
+
+/** Two bookable glass meeting rooms, matching the 2D plan. */
+function MeetingRooms3D({ theme }: { theme: Palette }) {
+	return (
+		<group>
+			{/* room 01 */}
+			<GlassWall3D x1={88} y1={5} x2={154} y2={5} theme={theme} />
+			<GlassWall3D x1={154} y1={5} x2={154} y2={32.5} theme={theme} />
+			<GlassWall3D x1={88} y1={32.5} x2={154} y2={32.5} theme={theme} />
+			<GlassWall3D x1={88} y1={5} x2={88} y2={23} theme={theme} />
+			<GlassWall3D x1={88} y1={30} x2={88} y2={32.5} theme={theme} />
+			{/* room 02 */}
+			<GlassWall3D x1={154} y1={32.5} x2={154} y2={64.5} theme={theme} />
+			<GlassWall3D x1={88} y1={64.5} x2={154} y2={64.5} theme={theme} />
+			<GlassWall3D x1={88} y1={32.5} x2={88} y2={52} theme={theme} />
+			<GlassWall3D x1={88} y1={58} x2={88} y2={64.5} theme={theme} />
+			{/* ajar leaves */}
+			<GlassWall3D x1={88} y1={23} x2={94.8} y2={25.6} theme={theme} height={2.35} />
+			<GlassWall3D x1={88} y1={52} x2={94.8} y2={49.4} theme={theme} height={2.35} />
+		</group>
+	);
+}
+
+/** Galley kitchen along the right wall: counter, sink, cooktop, fridge, stools. */
+function Kitchen3D({ theme }: { theme: Palette }) {
+	const [wx, , wz] = to3d(150, 80);
+	return (
+		<group position={[wx, 0, wz]}>
+			<Box position={[0, 0.88, 0]} args={[1.45, 0.09, 3.9]} color={theme.counterTop} roughness={0.5} />
+			<Box position={[0, 0.43, 0]} args={[1.3, 0.84, 3.72]} color={theme.counter} roughness={0.7} />
+			<Box position={[0, 0.07, 0]} args={[1.18, 0.14, 3.55]} color={theme.partition} roughness={0.7} />
+			<Box position={[0.1, 2.1, 0]} args={[0.5, 0.9, 2.55]} color={theme.counterTop} roughness={0.65} />
+			<Box position={[0.1, 1.62, 0]} args={[0.56, 0.06, 2.5]} color={theme.wood} roughness={0.6} />
+			{/* fridge */}
+			<Box position={[0.02, 1.04, -1.82]} args={[1.28, 2.08, 0.72]} color={theme.appliance} roughness={0.4} metalness={0.35} />
+			<Box position={[-0.48, 0.95, -1.45]} args={[0.035, 0.34, 0.05]} color={theme.metal} roughness={0.3} metalness={0.55} />
+			<Box position={[-0.48, 1.38, -1.45]} args={[0.035, 0.2, 0.05]} color={theme.metal} roughness={0.3} metalness={0.55} />
+			{/* sink + cooktop */}
+			<Box position={[-0.12, 0.925, 0.4]} args={[0.68, 0.03, 0.62]} color={theme.appliance} roughness={0.35} />
+			<mesh position={[-0.12, 0.9, 0.4]}>
+				<boxGeometry args={[0.48, 0.02, 0.42]} />
+				<meshStandardMaterial color={theme.monitor} roughness={0.35} metalness={0.3} />
+			</mesh>
+			<Box position={[-0.02, 0.94, 1.42]} args={[0.7, 0.035, 0.66]} color={theme.monitor} roughness={0.4} />
+			{[0, 1, 2, 3].map((i) => (
+				<mesh key={i} position={[-0.18 + (i % 2) * 0.3, 0.965, 1.28 + Math.floor(i / 2) * 0.28]}>
+					<cylinderGeometry args={[0.07, 0.07, 0.012, 14]} />
+					<meshStandardMaterial color={theme.metal} roughness={0.35} metalness={0.45} />
+				</mesh>
+			))}
+			{/* kettle + jars */}
+			<mesh position={[0.15, 1.02, 2.05]} castShadow>
+				<cylinderGeometry args={[0.1, 0.12, 0.2, 14]} />
+				<meshStandardMaterial color={theme.metal} roughness={0.35} metalness={0.45} />
+			</mesh>
+			<Box position={[0.12, 1.02, 2.38]} args={[0.14, 0.2, 0.14]} color={theme.cushion} roughness={0.65} />
+			{/* stools */}
+			{[-0.7, 0.85].map((z) => (
+				<group key={z} position={[-1.1, 0, z]}>
+					<mesh position={[0, 0.52, 0]} castShadow>
+						<cylinderGeometry args={[0.2, 0.22, 0.08, 16]} />
+						<meshStandardMaterial color={theme.chairSeat} roughness={0.65} />
+					</mesh>
+					<mesh position={[0, 0.26, 0]}>
+						<cylinderGeometry args={[0.035, 0.035, 0.48, 8]} />
+						<meshStandardMaterial color={theme.metal} roughness={0.35} metalness={0.55} />
+					</mesh>
+					<mesh position={[0, 0.04, 0]}>
+						<cylinderGeometry args={[0.16, 0.18, 0.04, 14]} />
+						<meshStandardMaterial color={theme.chair} roughness={0.5} metalness={0.3} />
+					</mesh>
+				</group>
+			))}
+		</group>
+	);
+}
+
+/** Reception desk by the front door. */
+function Reception3D({ theme }: { theme: Palette }) {
+	const [wx, , wz] = to3d(32, 89.5);
+	return (
+		<group position={[wx, 0, wz]}>
+			<Box position={[0, 0.52, 0]} args={[3.1, 0.09, 1.02]} color={theme.counterTop} roughness={0.5} />
+			<Box position={[0, 0.96, -0.08]} args={[3.35, 0.07, 0.95]} color={theme.woodTop} roughness={0.55} />
+			<Box position={[0, 0.46, 0.42]} args={[2.92, 0.86, 0.22]} color={theme.reception} roughness={0.75} />
+			<Box position={[-0.58, 1.18, -0.1]} args={[0.76, 0.42, 0.055]} color={theme.monitorBezel} roughness={0.4} />
+			<mesh position={[-0.58, 1.18, -0.07]}>
+				<planeGeometry args={[0.62, 0.3]} />
+				<meshStandardMaterial color={theme.monitorOn} emissive={theme.accent} emissiveIntensity={0.25} roughness={0.35} />
+			</mesh>
+			<mesh position={[0.7, 1.06, 0.08]} castShadow>
+				<cylinderGeometry args={[0.08, 0.07, 0.14, 12]} />
+				<meshStandardMaterial color={theme.chairBack} roughness={0.6} />
+			</mesh>
+			<mesh position={[0, 0.08, 1.05]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+				<planeGeometry args={[2.6, 0.9]} />
+				<meshStandardMaterial color={theme.rug} roughness={0.95} />
+			</mesh>
+			<group position={[0.9, 0, -0.72]}>
+				<mesh position={[0, 0.46, 0]} castShadow>
+					<cylinderGeometry args={[0.24, 0.27, 0.08, 16]} />
+					<meshStandardMaterial color={theme.chairSeat} roughness={0.65} />
+				</mesh>
+				<Box position={[0, 0.78, -0.2]} args={[0.42, 0.5, 0.07]} color={theme.chairBack} roughness={0.6} />
+			</group>
+			{/* logo planter wall */}
+			<Box position={[-2.0, 0.44, -0.2]} args={[0.55, 0.88, 0.55]} color={theme.plantPot} roughness={0.7} />
+			<mesh position={[-2.0, 1.12, -0.2]} castShadow>
+				<sphereGeometry args={[0.38, 14, 10]} />
+				<meshStandardMaterial color={theme.plant} roughness={0.75} />
+			</mesh>
+		</group>
+	);
+}
+
+/** Staff lockers on the left wall. */
+function Lockers3D({ theme }: { theme: Palette }) {
+	const [wx, , wz] = to3d(4.8, 52);
+	return (
+		<group position={[wx, 0, wz]}>
+			<Box position={[0, 1.05, 0]} args={[0.62, 2.1, 3.35]} color={theme.reception} roughness={0.7} />
+			{[-1.24, -0.41, 0.42, 1.25].map((z) => (
+				<group key={z}>
+					<Box position={[0.33, 1.04, z]} args={[0.035, 1.9, 0.76]} color={theme.partition} roughness={0.7} />
+					<Box position={[0.36, 1.45, z]} args={[0.025, 0.04, 0.28]} color={theme.metal} roughness={0.35} metalness={0.5} />
+					<Box position={[0.36, 0.58, z]} args={[0.025, 0.03, 0.3]} color={theme.metal} roughness={0.35} metalness={0.5} />
+				</group>
+			))}
+		</group>
+	);
+}
+
+/** Printer / supply station. */
+function Printer3D({ theme }: { theme: Palette }) {
+	const [wx, , wz] = to3d(82, 71);
+	return (
+		<group position={[wx, 0, wz]}>
+			<Box position={[0, 0.42, 0]} args={[1.45, 0.08, 0.9]} color={theme.woodTop} roughness={0.55} />
+			<Box position={[0, 0.2, 0]} args={[1.35, 0.38, 0.8]} color={theme.wood} roughness={0.65} />
+			<Box position={[0, 0.65, -0.12]} args={[0.72, 0.4, 0.5]} color={theme.appliance} roughness={0.4} />
+			<Box position={[0, 0.72, 0.14]} args={[0.48, 0.05, 0.22]} color={theme.monitorBezel} roughness={0.4} />
+			<Box position={[0.32, 0.5, 0.18]} args={[0.3, 0.12, 0.25]} color={theme.chairSeat} roughness={0.7} />
+		</group>
+	);
+}
+
+/** Perimeter beams + recessed light panels, kept open in the middle so the
+ *  camera still reads the whole floor. */
+function CeilingRig3D({ theme }: { theme: Palette }) {
+	const halfW = 80 * SCALE;
+	const halfD = 50 * SCALE;
+	return (
+		<group>
+			<Box position={[0, WALL_H - 0.08, -halfD + 0.13]} args={[halfW * 2, 0.16, 0.26]} color={theme.ceilingBeam} roughness={0.8} />
+			<Box position={[-halfW + 0.13, WALL_H - 0.08, 0]} args={[0.26, 0.16, halfD * 2]} color={theme.ceilingBeam} roughness={0.8} />
+			<Box position={[halfW - 0.13, WALL_H - 0.08, 0]} args={[0.26, 0.16, halfD * 2]} color={theme.ceilingBeam} roughness={0.8} />
+			{[32.5, 64.5].map((floorY) => {
+				const z = (floorY - 50) * SCALE;
+				return (
+					<Box key={floorY} position={[0, WALL_H - 0.09, z]} args={[halfW * 2, 0.1, 0.14]} color={theme.ceilingBeam} roughness={0.8} />
+				);
+			})}
+			{([
+				[-6.2, -2.2, 2.4],
+				[6.2, -2.8, 2.2],
+				[5.8, 5.4, 2.4],
+			] as Array<[number, number, number]>).map(([x, z, w]) => (
+				<group key={`${x}-${z}`} position={[x, WALL_H - 0.13, z]}>
+					<Box position={[0, 0, 0]} args={[w, 0.035, 0.34]} color={theme.ceilingLight} emissive={theme.ceilingLight} emissiveIntensity={1.35} />
+					<mesh position={[0, -0.03, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+						<planeGeometry args={[w + 0.2, 0.48]} />
+						<meshBasicMaterial color={theme.ceilingLight} transparent opacity={0.1} depthWrite={false} />
+					</mesh>
+				</group>
+			))}
+		</group>
+	);
+}
+
+/** Soft light pool on the floor, used beneath the skylights/windows. */
+function LightPool3D({ x, y, r, color, opacity = 0.075 }: { x: number; y: number; r: number; color: string; opacity?: number }) {
+	const [wx, , wz] = to3d(x, y);
+	return (
+		<mesh position={[wx, 0.045, wz]} rotation={[-Math.PI / 2, 0, 0]}>
+			<circleGeometry args={[r, 28]} />
+			<meshBasicMaterial color={color} transparent opacity={opacity} depthWrite={false} />
+		</mesh>
+	);
+}
+
+
+
+/** Flat woven runner on the work-zone aisle. */
+function RectRug3D({ x, y, w, h, theme }: { x: number; y: number; w: number; h: number; theme: Palette }) {
+	const [wx, , wz] = to3d(x, y);
+	return (
+		<group position={[wx, 0, wz]}>
+			<mesh position={[0, 0.016, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+				<planeGeometry args={[w * SCALE, h * SCALE]} />
+				<meshStandardMaterial color={theme.rug} roughness={0.95} />
+			</mesh>
+			<mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+				<planeGeometry args={[(w - 2) * SCALE, (h - 2) * SCALE]} />
+				<meshBasicMaterial color={theme.rugRing} transparent opacity={0.45} />
+			</mesh>
+		</group>
+	);
+}
+
+/** Standing-height collaboration table on the work-zone runner. */
+function CollabTable3D({ theme }: { theme: Palette }) {
+	const [wx, , wz] = to3d(44, 55);
+	return (
+		<group position={[wx, 0, wz]}>
+			<mesh position={[0, 0.98, 0]} castShadow receiveShadow>
+				<cylinderGeometry args={[0.82, 0.86, 0.08, 28]} />
+				<meshStandardMaterial color={theme.tableTop} roughness={0.55} />
+			</mesh>
+			<mesh position={[0, 0.55, 0]}>
+				<cylinderGeometry args={[0.09, 0.12, 0.82, 12]} />
+				<meshStandardMaterial color={theme.metal} roughness={0.35} metalness={0.5} />
+			</mesh>
+			<mesh position={[0, 0.06, 0]}>
+				<cylinderGeometry args={[0.38, 0.44, 0.06, 20]} />
+				<meshStandardMaterial color={theme.chair} roughness={0.5} metalness={0.3} />
+			</mesh>
+			<Box position={[-0.18, 1.04, -0.18]} args={[0.46, 0.02, 0.3]} color={theme.monitorBezel} roughness={0.4} />
+			<Box position={[-0.18, 1.16, -0.3]} args={[0.46, 0.26, 0.02]} color={theme.monitorBezel} roughness={0.4} />
+			<mesh position={[-0.18, 1.17, -0.285]} rotation={[-0.12, 0, 0]}>
+				<planeGeometry args={[0.39, 0.2]} />
+				<meshStandardMaterial color={theme.screenGlow} emissive={theme.screenGlow} emissiveIntensity={0.85} />
+			</mesh>
+			<Box position={[0.25, 1.04, 0.2]} args={[0.3, 0.035, 0.22]} color={theme.cushion} roughness={0.8} />
+			{/* stools */}
+			{[0, 1, 2, 3].map((i) => {
+				const rad = (i * Math.PI) / 2;
+				const x = Math.cos(rad) * 1.15;
+				const z = Math.sin(rad) * 1.15;
+				return (
+					<group key={i} position={[x, 0, z]}>
+						<mesh position={[0, 0.5, 0]} castShadow>
+							<cylinderGeometry args={[0.19, 0.21, 0.07, 14]} />
+							<meshStandardMaterial color={theme.chairSeat} roughness={0.65} />
+						</mesh>
+						<mesh position={[0, 0.25, 0]}>
+							<cylinderGeometry args={[0.03, 0.03, 0.46, 8]} />
+							<meshStandardMaterial color={theme.metal} roughness={0.35} metalness={0.55} />
+						</mesh>
+					</group>
+				);
+			})}
+			<pointLight position={[0, 2.35, 0]} intensity={1.8} distance={5} decay={2} color={theme.lampGlow} />
+			<group position={[0, 2.8, 0]}>
+				<mesh position={[0, 0.3, 0]}>
+					<cylinderGeometry args={[0.012, 0.012, 0.6, 6]} />
+					<meshStandardMaterial color={theme.metal} roughness={0.4} metalness={0.5} />
+				</mesh>
+				<mesh position={[0, 0, 0]}>
+					<cylinderGeometry args={[0.34, 0.52, 0.16, 20, 1, true]} />
+					<meshStandardMaterial color={theme.partitionFrame} roughness={0.55} side={THREE.DoubleSide} />
+				</mesh>
+				<mesh position={[0, -0.08, 0]}>
+					<sphereGeometry args={[0.1, 12, 8]} />
+					<meshStandardMaterial color={theme.lampGlow} emissive={theme.lampGlow} emissiveIntensity={1.2} />
+				</mesh>
+			</group>
+		</group>
+	);
+}
+
+/** Subtle vertical wall panelling + a chair rail on the window wall. */
+function WallPanels3D({ theme }: { theme: Palette }) {
+	const halfD = 50 * SCALE;
+	return (
+		<group>
+			{Array.from({ length: 14 }, (_, i) => (
+				<Box
+					key={i}
+					position={[-13.2 + i * 2.05, 1.75, -halfD + 0.035]}
+					args={[0.035, 2.55, 0.035]}
+					color={theme.wallEdge}
+					roughness={0.75}
+				/>
+			))}
+			<Box position={[0, 0.98, -halfD + 0.04]} args={[29.2, 0.05, 0.06]} color={theme.ceilingBeam} roughness={0.7} />
+			<Box position={[0, 2.7, -halfD + 0.04]} args={[29.2, 0.06, 0.06]} color={theme.ceilingBeam} roughness={0.7} />
+		</group>
+	);
+}
+
+/** Linear fixtures floating above the work tables and reception. */
+function LinearPendants3D({ theme }: { theme: Palette }) {
+	const rows: Array<[number, number, number]> = [
+		[-6.4, -2.4, 3.1],
+		[6.4, -2.4, 3.1],
+		[0.1, 0.55, 2.4],
+		[8.0, 5.0, 2.2],
+	];
+	return (
+		<group>
+			{rows.map(([x, z, w]) => (
+				<group key={`${x}-${z}`} position={[x, 2.88, z]}>
+					<Box position={[0, 0, 0]} args={[w, 0.055, 0.14]} color={theme.partitionFrame} roughness={0.45} metalness={0.35} />
+					<Box position={[0, -0.04, 0]} args={[w - 0.1, 0.02, 0.1]} color={theme.ceilingLight} emissive={theme.ceilingLight} emissiveIntensity={1.25} />
+					{[-w / 2 + 0.35, w / 2 - 0.35].map((cx) => (
+						<mesh key={cx} position={[cx, 0.3, 0]}>
+							<cylinderGeometry args={[0.008, 0.008, 0.58, 6]} />
+							<meshStandardMaterial color={theme.metal} roughness={0.4} metalness={0.5} />
+						</mesh>
+					))}
+				</group>
+			))}
+		</group>
+	);
+}
+
 // ── characters ──────────────────────────────────────────────────────────────
 
 function Character({
 	visual,
 	store,
 	theme,
+	bubbleVisible,
 	onCoworkerClick,
 }: {
 	visual: CoworkerVisual;
 	store: FloorStore;
 	theme: Palette;
+	bubbleVisible: boolean;
 	onCoworkerClick?: (coworkerId: string) => void;
 }) {
 	const group = useRef<THREE.Group>(null);
@@ -743,7 +1137,7 @@ function Character({
 		// Bubbles expire on wall-clock time; the sprite is hidden here so a
 		// quiet floor does not need a React update to clear it.
 		const liveBubble = live.bubble && Date.now() < live.bubble.until ? live.bubble : null;
-		if (bubbleSprite.current) bubbleSprite.current.visible = Boolean(liveBubble);
+		if (bubbleSprite.current) bubbleSprite.current.visible = Boolean(liveBubble) && bubbleVisible;
 		const [tx, , tz] = to3d(live.pos.x, live.pos.y);
 		const lerp = 1 - Math.pow(0.02, delta);
 		const pos = group.current.position;
@@ -884,9 +1278,51 @@ function Character({
 	);
 }
 
+
+/** Wall clock on the left wall, keeping the office in real time. */
+function Clock3D({ theme }: { theme: Palette }) {
+	const halfW = 80 * SCALE;
+	const now = new Date();
+	const hour = (now.getHours() % 12) * 30 + now.getMinutes() * 0.5;
+	const minute = now.getMinutes() * 6;
+	return (
+		<group position={[-halfW + 0.075, 2.18, -1.3]} rotation={[0, Math.PI / 2, 0]}>
+			<mesh>
+				<circleGeometry args={[0.28, 36]} />
+				<meshStandardMaterial color={theme.whiteboard} roughness={0.5} />
+			</mesh>
+			<mesh position={[0, 0, 0.01]}>
+				<ringGeometry args={[0.25, 0.29, 36]} />
+				<meshBasicMaterial color={theme.partitionFrame} />
+			</mesh>
+			{Array.from({ length: 12 }, (_, i) => {
+				const angle = (i / 12) * Math.PI * 2;
+				return (
+					<mesh key={i} position={[Math.sin(angle) * 0.22, Math.cos(angle) * 0.22, 0.02]}>
+						<circleGeometry args={[i % 3 === 0 ? 0.012 : 0.006, 8]} />
+						<meshBasicMaterial color={theme.labelMuted} />
+					</mesh>
+				);
+			})}
+			<mesh position={[0, 0.075, 0.025]} rotation={[0, 0, -((hour * Math.PI) / 180)]}>
+				<boxGeometry args={[0.012, 0.16, 0.008]} />
+				<meshBasicMaterial color={theme.label} />
+			</mesh>
+			<mesh position={[0, 0.11, 0.03]} rotation={[0, 0, -((minute * Math.PI) / 180)]}>
+				<boxGeometry args={[0.007, 0.23, 0.008]} />
+				<meshBasicMaterial color={theme.label} />
+			</mesh>
+			<mesh position={[0, 0, 0.035]}>
+				<circleGeometry args={[0.018, 12]} />
+				<meshBasicMaterial color={theme.accent} />
+			</mesh>
+		</group>
+	);
+}
+
 // ── camera rig ──────────────────────────────────────────────────────────────
 
-const CAMERA_DEFAULTS = { azimuth: 0.66, polar: 1.02, radius: 21 };
+const CAMERA_DEFAULTS = { azimuth: 0.42, polar: 0.92, radius: 26 };
 
 function CameraRig({ target = [0, 0, 0] as [number, number, number], idleOrbit = true }: { target?: [number, number, number]; idleOrbit?: boolean }) {
 	const { camera, size } = useThree();
@@ -895,11 +1331,16 @@ function CameraRig({ target = [0, 0, 0] as [number, number, number], idleOrbit =
 	// two desks; the scene background covers the remaining margin.
 	const fitRadius = useMemo(() => {
 		const aspect = size.width / Math.max(1, size.height);
-		return Math.min(52, Math.max(21, 21 * (1.35 / Math.max(0.35, aspect))));
-	}, [size.width, size.height]);
+		const fov = (camera as THREE.PerspectiveCamera).fov ?? 38;
+		const vFov = (fov * Math.PI) / 180;
+		const hFov = 2 * Math.atan(Math.tan(vFov / 2) * aspect);
+		const widthFit = 29 / (2 * Math.tan(hFov / 2));
+		const depthFit = 18 / (2 * Math.tan(vFov / 2));
+		return Math.min(48, Math.max(22, Math.max(widthFit, depthFit) * 1.15));
+	}, [camera, size.width, size.height]);
 	const fitRadiusRef = useRef(fitRadius);
 	fitRadiusRef.current = fitRadius;
-	const state = useRef({ ...CAMERA_DEFAULTS, radius: fitRadius, dragging: false, lx: 0, ly: 0 });
+	const state = useRef({ ...CAMERA_DEFAULTS, radius: fitRadius, dragging: false, lx: 0, ly: 0, lastInteraction: 0 });
 	const manualZoom = useRef(false);
 
 	useEffect(() => {
@@ -916,9 +1357,11 @@ function CameraRig({ target = [0, 0, 0] as [number, number, number], idleOrbit =
 					dragging: false,
 					lx: 0,
 					ly: 0,
+					lastInteraction: performance.now(),
 				};
 				manualZoom.current = false;
 			}
+			if (action === "zoom-in" || action === "zoom-out") state.current.lastInteraction = performance.now();
 			if (action === "zoom-in") {
 				manualZoom.current = true;
 				state.current.radius = Math.max(8, state.current.radius - 2);
@@ -938,6 +1381,7 @@ function CameraRig({ target = [0, 0, 0] as [number, number, number], idleOrbit =
 		if (!dom || !el) return;
 		const down = (e: PointerEvent) => {
 			state.current.dragging = true;
+			state.current.lastInteraction = performance.now();
 			state.current.lx = e.clientX;
 			state.current.ly = e.clientY;
 		};
@@ -953,6 +1397,7 @@ function CameraRig({ target = [0, 0, 0] as [number, number, number], idleOrbit =
 		};
 		const wheel = (e: WheelEvent) => {
 			e.preventDefault();
+			state.current.lastInteraction = performance.now();
 			manualZoom.current = true;
 			state.current.radius = Math.min(80, Math.max(8, state.current.radius + e.deltaY * 0.012));
 		};
@@ -968,9 +1413,13 @@ function CameraRig({ target = [0, 0, 0] as [number, number, number], idleOrbit =
 		};
 	}, [camera]);
 
-	useFrame((_, delta) => {
+	useFrame(() => {
 		const s = state.current;
-		if (!s.dragging && idleOrbit) s.azimuth += delta * 0.02; // gentle idle orbit
+		// A tiny breathing sway, and only until the viewer first takes control.
+		// Continuous drift eventually put the camera outside a wall.
+		if (!s.dragging && idleOrbit && s.lastInteraction === 0) {
+			s.azimuth = CAMERA_DEFAULTS.azimuth + Math.sin(performance.now() / 16_000) * 0.025;
+		}
 		const [tx, ty, tz] = target;
 		camera.position.set(
 			tx + s.radius * Math.sin(s.polar) * Math.sin(s.azimuth),
@@ -984,7 +1433,7 @@ function CameraRig({ target = [0, 0, 0] as [number, number, number], idleOrbit =
 
 // ── environment ─────────────────────────────────────────────────────────────
 
-function Window3D({ x, w = 3.6, theme }: { x: number; w?: number; theme: Palette }) {
+function Window3D({ x, w = 3.6, theme, dark }: { x: number; w?: number; theme: Palette; dark: boolean }) {
 	return (
 		<group position={[x, 1.95, 0]}>
 			<mesh>
@@ -992,7 +1441,7 @@ function Window3D({ x, w = 3.6, theme }: { x: number; w?: number; theme: Palette
 				<meshStandardMaterial
 					color={theme.windowGlass}
 					emissive={theme.windowGlass}
-					emissiveIntensity={theme.floor === "#0e1626" ? 0.55 : 0.3}
+					emissiveIntensity={dark ? 0.85 : 0.55}
 					roughness={0.15}
 				/>
 			</mesh>
@@ -1039,7 +1488,7 @@ function WallArt3D({ x, theme, variant = 0 }: { x: number; theme: Palette; varia
 	);
 }
 
-function Environment3D({ theme }: { theme: Palette }) {
+function Environment3D({ theme, dark }: { theme: Palette; dark: boolean }) {
 	const halfW = 80 * SCALE;
 	const halfD = 50 * SCALE;
 	// Zone texture tiles — recreated per theme, disposed with the scene.
@@ -1108,9 +1557,9 @@ function Environment3D({ theme }: { theme: Palette }) {
 			<Box position={[halfW + 0.15, WALL_H / 2, 0]} args={[0.3, WALL_H, halfD * 2]} color={theme.wall} roughness={0.8} />
 			{/* framed windows on the back wall */}
 			<group position={[0, 0, -halfD + 0.04]}>
-				<Window3D x={-9.1} w={2.4} theme={theme} />
-				<Window3D x={-0.7} w={2.4} theme={theme} />
-				<Window3D x={4.7} w={1.8} theme={theme} />
+				<Window3D x={-9.1} w={2.4} theme={theme} dark={dark} />
+				<Window3D x={-0.7} w={2.4} theme={theme} dark={dark} />
+				<Window3D x={4.7} w={1.8} theme={theme} dark={dark} />
 			</group>
 			{/* whiteboard mounted in the window gap */}
 			<Whiteboard3D theme={theme} />
@@ -1160,16 +1609,18 @@ function Scene({
 	return (
 		<>
 			<color attach="background" args={[bg]} />
-			<fog attach="fog" args={[bg, 30, 62]} />
-			<ambientLight intensity={dark ? 0.5 : 0.58} />
-			<hemisphereLight intensity={dark ? 0.45 : 0.32} color={dark ? "#cdd9ec" : "#ffffff"} groundColor={theme.floor} />
+			<fog attach="fog" args={[bg, 38, 100]} />
+			<ambientLight intensity={dark ? 0.95 : 0.6} />
+			<hemisphereLight intensity={dark ? 0.68 : 0.38} color={dark ? "#d8e4f5" : "#ffffff"} groundColor={theme.floor} />
 			<directionalLight
-				position={[9, 13, 7]}
-				intensity={dark ? 1.45 : 1.15}
+				position={[10, 15, 8]}
+				intensity={dark ? 2.0 : 1.2}
 				color={dark ? "#e8f0ff" : "#fff6e6"}
 				castShadow
-				shadow-mapSize-width={1024}
-				shadow-mapSize-height={1024}
+				shadow-mapSize-width={2048}
+				shadow-mapSize-height={2048}
+				shadow-bias={-0.0004}
+				shadow-normalBias={0.02}
 				shadow-camera-left={-18}
 				shadow-camera-right={18}
 				shadow-camera-top={14}
@@ -1179,8 +1630,18 @@ function Scene({
 			<pointLight position={[-7, 4.6, -3.4]} intensity={dark ? 5 : 3} distance={14} decay={2} color={dark ? "#ffdcae" : "#fff2d8"} />
 			<pointLight position={[7.4, 4.6, -2.8]} intensity={dark ? 5 : 3} distance={14} decay={2} color={dark ? "#ffdcae" : "#fff2d8"} />
 			<pointLight position={[0.5, 4.2, 3.2]} intensity={dark ? 3.5 : 2} distance={11} decay={2} color={dark ? "#ffdcae" : "#fff2d8"} />
-			<CameraRig idleOrbit={idleOrbit} />
-			<Environment3D theme={theme} />
+			<CameraRig target={[0, 0.2, 1.0]} idleOrbit={idleOrbit} />
+			<Environment3D theme={theme} dark={dark} />
+			<CeilingRig3D theme={theme} />
+			<WallPanels3D theme={theme} />
+			<LinearPendants3D theme={theme} />
+			<MeetingRooms3D theme={theme} />
+			<RectRug3D x={44} y={42} w={9} h={62} theme={theme} />
+			<CollabTable3D theme={theme} />
+			<LightPool3D x={44} y={24} r={7} color={theme.lightPool} opacity={0.05} />
+			<LightPool3D x={122} y={18} r={6} color={theme.lightPool} opacity={0.06} />
+			<LightPool3D x={122} y={46} r={6} color={theme.lightPool} opacity={0.06} />
+			<LightPool3D x={122} y={82} r={5} color={theme.lightPool} opacity={0.07} />
 			{DESK_SLOTS.map((slot, i) => {
 				const owner = coworkers.find((c) => c.deskIndex === i);
 				const on = owner?.status === "tool_calling" || owner?.status === "thinking";
@@ -1200,13 +1661,20 @@ function Scene({
 			<FloorLamp3D x={108.4} y={78.6} theme={theme} />
 			<Sofa3D theme={theme} />
 			<CoffeeTable3D theme={theme} />
-			<Plant3D x={146} y={90} theme={theme} size={1.1} />
+			<Plant3D x={101} y={92} theme={theme} size={1.1} />
 			<Plant3D x={99} y={88} theme={theme} size={1.2} />
 			<Plant3D x={10.6} y={13.4} theme={theme} />
 			<Plant3D x={78} y={12.5} theme={theme} size={0.8} />
+			<Plant3D x={82} y={32} theme={theme} size={0.85} />
+			<Plant3D x={82} y={56} theme={theme} size={0.9} />
 			<Plant3D x={88} y={60} theme={theme} />
 			<Plant3D x={152} y={10.6} theme={theme} size={0.9} />
 			<CoffeeBar3D theme={theme} />
+			<Kitchen3D theme={theme} />
+			<Reception3D theme={theme} />
+			<Lockers3D theme={theme} />
+			<Printer3D theme={theme} />
+			<Clock3D theme={theme} />
 			<Bookshelf3D theme={theme} />
 			{coworkers.map((visual) => (
 				<Character
@@ -1214,6 +1682,7 @@ function Scene({
 					visual={visual}
 					store={store}
 					theme={theme}
+					bubbleVisible={visual.bubbleVisible}
 					onCoworkerClick={onCoworkerClick}
 				/>
 			))}
@@ -1256,7 +1725,7 @@ export function Office3D({
 				shadows="percentage"
 				frameloop={visible ? "always" : "never"}
 				gl={{ antialias: true, alpha: false }}
-				camera={{ fov: 42, position: [16, 15, 16], near: 0.1, far: 120 }}
+				camera={{ fov: 38, position: [16, 15, 16], near: 0.1, far: 140 }}
 				dpr={[1, 1.5]}
 			>
 				<Scene

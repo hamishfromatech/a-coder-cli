@@ -20,18 +20,25 @@ import {
 	Chair,
 	CoffeeMachine,
 	CoffeeTable,
+	CollabTable,
 	Desk,
 	Entrance,
 	FloorLamp,
+	GlassMeetingRooms,
+	Kitchen,
+	Lockers,
 	MeetingTable,
 	Pendant,
 	Plant,
+	PrinterStation,
+	Reception,
 	Rug,
 	Sofa,
 	WallArt,
 	WallClock,
 	Whiteboard,
 	Window,
+	WorkRunner,
 } from "./furniture2d.tsx";
 import { DESK_SLOTS, MEETING_TABLES, SEATS_PER_TABLE, meetingSeat } from "./geometry.ts";
 import { SCENE_STYLES, THEMES, type Palette } from "./palette.ts";
@@ -72,8 +79,8 @@ function SpeechBubbleTag({
 	theme: Palette;
 	originX: number;
 }) {
-	const lines = wrapText(text, 34, 3);
-	const width = Math.min(64, Math.max(26, ...lines.map((line) => line.length * 2.1 + 6)));
+	const lines = wrapText(text, 17, 3);
+	const width = Math.min(38, Math.max(22, ...lines.map((line) => line.length * 2.1 + 6)));
 	const height = lines.length * 4.4 + 5;
 	// Keep the bubble inside the floor: nudge it when it would clip an edge.
 	let dx = 0;
@@ -104,7 +111,7 @@ function SpeechBubbleTag({
 					key={`${i}-${line.slice(0, 6)}`}
 					x={-width / 2 + 4}
 					y={-height / 2 + 4.8 + i * 4.4}
-					fontSize={3.6}
+					fontSize={3.4}
 					fill={theme.bubbleText}
 					fontFamily="system-ui, sans-serif"
 				>
@@ -288,9 +295,6 @@ export function VirtualOffice({
 				<text x={17} y={13.1} fontSize={2.7} fontWeight={700} letterSpacing={0.7} fill={theme.labelMuted} opacity={0.85} fontFamily="system-ui, sans-serif">
 					WORKSTATIONS
 				</text>
-				<text x={151} y={61.2} textAnchor="end" fontSize={2.7} fontWeight={700} letterSpacing={0.7} fill={theme.labelMuted} opacity={0.85} fontFamily="system-ui, sans-serif">
-					MEETING PODS
-				</text>
 				<text x={151} y={69.6} textAnchor="end" fontSize={2.7} fontWeight={700} letterSpacing={0.7} fill={theme.labelMuted} opacity={0.85} fontFamily="system-ui, sans-serif">
 					LOUNGE
 				</text>
@@ -315,16 +319,25 @@ export function VirtualOffice({
 				<FloorLamp x={108.4} y={78.6} theme={theme} />
 				<Sofa x={126} y={85.4} theme={theme} />
 				<CoffeeTable x={124} y={92.6} theme={theme} />
-				<Plant x={146} y={90} theme={theme} size={1.1} variant={1} />
 				<Plant x={99} y={88} theme={theme} size={1.2} variant={2} />
 
 				{/* greenery + coffee bar + shelf */}
 				<Plant x={10.6} y={13.4} theme={theme} variant={1} />
 				<Plant x={78} y={12.5} theme={theme} size={0.85} variant={2} />
+				<Plant x={82} y={32} theme={theme} size={0.85} variant={1} />
+				<Plant x={82} y={56} theme={theme} size={0.9} variant={2} />
 				<Plant x={88} y={60} theme={theme} />
 				<Plant x={152} y={10.6} theme={theme} size={0.9} variant={1} />
 				<CoffeeMachine x={68} y={82} theme={theme} />
 				<Bookshelf x={150} y={42} theme={theme} />
+
+				{/* support spaces */}
+				<WorkRunner x={44} y={42} w={8} h={62} theme={theme} />
+				<CollabTable x={44} y={55} theme={theme} />
+				<Lockers x={4.8} y={52} theme={theme} />
+				<PrinterStation x={82} y={71} theme={theme} />
+				<Kitchen x={150} y={80} theme={theme} />
+				<Reception x={32} y={89.5} theme={theme} />
 
 				{/* entrance */}
 				<Entrance x={17} y={84.4} theme={theme} />
@@ -408,6 +421,7 @@ export function VirtualOffice({
 			<WallClock x={57} y={-1.8} theme={theme} now={wallNow} />
 			{desks}
 			{meetingPods}
+			<GlassMeetingRooms theme={theme} />
 
 			{/* collaboration links */}
 			{floor.links.map((link) => {
@@ -452,7 +466,7 @@ export function VirtualOffice({
 				>
 					{onCoworkerClick && <title>{`${visual.name} — click to message`}</title>}
 					<CoworkerAvatar visual={visual} now={now} theme={theme} />
-					{visual.bubble && visual.bubble.until > now && (
+					{visual.bubble && visual.bubbleVisible && visual.bubble.until > now && (
 						<SpeechBubbleTag
 							text={visual.bubble.text}
 							color={visual.color}

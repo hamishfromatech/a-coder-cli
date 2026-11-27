@@ -13,13 +13,14 @@ import { abortRun } from "./lib/session-abort";
 import { triggerHaptic } from "./lib/haptics";
 import { rafCoalesce } from "./lib/raf-coalesce";
 import { applyKeepAwake, keepAwakeWanted, useKeepAwakeStore } from "./lib/keep-awake";
+import { onOpenWorkspace } from "./lib/launch";
 import { performSessionSwitch } from "./lib/session-switch";
 import { samePath } from "./lib/path-compare";
 import { useSwitchStore } from "./stores/switch-store";
 import { isAuthoritativeSession, setAuthoritativeSession } from "./lib/session-authority";
 import { useRuntimeStatusStore } from "./stores/runtime-status-store";
 import { useSessionStore, type QuestionUiRequest } from "./stores/session-store";
-import { persistCliSettings, useSettingsStore, type Skin, type Theme } from "./stores/settings-store";
+import { loadCliSettings, persistCliSettings, useSettingsStore, type Skin, type Theme } from "./stores/settings-store";
 import { useWorkspaceStore } from "./stores/workspace-store";
 import { type LeftSidebarSection } from "./stores/ui-store";
 import { clampSize, ResizeHandle } from "./components/ide/ResizeHandle";
@@ -34,7 +35,7 @@ import { useUiStore } from "./stores/ui-store";
 import { useWidgetStore } from "./stores/widget-store";
 import { useUpdateStore } from "./stores/update-store";
 import { toast } from "./stores/toast-store";
-import { applyNamedTheme, SKIN_LIST } from "./lib/themes";
+import { applyNamedTheme, normalizeSkin, SKIN_LIST } from "./lib/themes";
 import { useGlobalKeybindings } from "./hooks/useGlobalKeybindings";
 import { useClosedTabsStore } from "./stores/closed-tabs-store";
 import { useUpdateCheck } from "./hooks/useUpdateCheck";
@@ -382,6 +383,32 @@ export default function App() {
 	const setRightSidebarTab = useUiStore((state) => state.setRightSidebarTab);
 	const effectiveCwd = projectPath || FALLBACK_CWD;
 
+	// Load settings.json on boot and on project switches, not only when the
+	// settings panel mounts. Theme/skin used to stay undefined until Settings
+	// opened, so a dark desktop could sit in the light palette indefinitely.
+	useEffect(() => {
+		let cancelled = false;
+		void loadCliSettings(projectPath ?? undefined)
+			.then(({ global, project }) => {
+				if (cancelled) return;
+				const store = useSettingsStore.getState();
+				store.setCliSettings(global, project);
+				const nextTheme = global.theme;
+				if (nextTheme === "light" || nextTheme === "dark" || nextTheme === "system") {
+					store.setTheme(nextTheme);
+				}
+				if (typeof global.skin === "string" && global.skin) {
+					store.setSkin(normalizeSkin(global.skin));
+				}
+			})
+			.catch(() => {
+				// Settings are best-effort; local UI prefs still apply.
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [projectPath]);
+
 	// Apply theme class to the document root. Applies live (skin/mode changes
 	// from the settings panel) and after the engine loads cliGlobalSettings.theme,
 	// without re-running connectEngine (which would reconnect the backend).
@@ -440,6 +467,30 @@ export default function App() {
 			cancelled = true;
 		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
+
+	// A folder handed over while the app is already running: switch to it the
+	// same way the workspace picker does, so the engine reconnects there.
+	useEffect(() => {
+		let cancelled = false;
+		let unlisten: (() => void) | undefined;
+		void onOpenWorkspace((path) => {
+			// Same path as the workspace picker: trust gate, resume the latest
+			// session there, or start a new one. The ref is assigned once
+			// switchProject is defined, before any OS event can arrive.
+			switchProjectRef.current(path);
+		})
+			.then((stop) => {
+				if (cancelled) stop();
+				else unlisten = stop;
+			})
+			.catch(() => {
+				// Older core without the event: fresh launches still work.
+			});
+		return () => {
+			cancelled = true;
+			unlisten?.();
+		};
 	}, []);
 
 	// Opt-in product analytics (gated by `enableAnalytics` in settings.json).

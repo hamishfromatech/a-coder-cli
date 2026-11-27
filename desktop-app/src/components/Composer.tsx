@@ -875,7 +875,7 @@ export function Composer() {
 					</div>
 				</div>
 				<span className="shrink-0 font-mono uppercase tracking-wide opacity-70">
-					{isStreaming ? `● ${streamingVerb.toLowerCase()}` : connected ? "ready" : "offline"}
+					{isStreaming ? `● ${streamingVerb.toLowerCase()}` : connected ? null : "offline"}
 				</span>
 			</div>
 		</div>

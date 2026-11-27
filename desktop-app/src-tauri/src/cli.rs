@@ -161,9 +161,9 @@ fn build_cli_command_inner(cli_path: &Path, args: &[String]) -> Result<Command, 
 /// frontend falls back to the persisted project or the picker.
 #[tauri::command]
 pub fn get_initial_workspace() -> Option<String> {
-	std::env::var("A_CODER_DESKTOP_WORKSPACE")
-		.ok()
-		.filter(|s| !s.is_empty())
+	// Env var (a-coder-cli --desktop), a folder the OS asked us to open, or a
+	// path argument: see launch.rs.
+	crate::launch::initial()
 }
 
 /// Resolve the a-coder-cli executable from PATH, with an optional override.

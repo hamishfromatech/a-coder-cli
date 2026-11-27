@@ -36,7 +36,7 @@ pub struct GitStatus {
 	pub untracked: Vec<GitFileChange>,
 }
 
-/// Run `git status --porcelain=v2 --branch` inside `cwd` and parse the result.
+/// Run `git status --porcelain=v1 --branch` inside `cwd` and parse the result.
 /// Errors with a string if git is missing or the directory is not a repo.
 #[tauri::command]
 pub fn git_status(cwd: String) -> Result<GitStatus, String> {
@@ -48,7 +48,7 @@ pub fn git_status(cwd: String) -> Result<GitStatus, String> {
 	let output = Command::new("git")
 		.args([
 			"status",
-			"--porcelain=v2",
+			"--porcelain=v1",
 			"--branch",
 			"--untracked-files=normal",
 		])
@@ -139,43 +139,53 @@ fn parse_git_status(raw: &str) -> Result<GitStatus, String> {
 			continue;
 		}
 
-		// Branch header lines start with '#' and look like:
-		//   # branch.alias main
-		//   # branch.ab +0 -0
-		if let Some(rest) = line.strip_prefix("# ") {
-			if let Some(branch_name) = rest.strip_prefix("branch.alias ") {
-				branch = Some(GitBranch {
-					name: branch_name.trim().to_string(),
-					ahead: branch.as_ref().map(|b| b.ahead).unwrap_or(0),
-					behind: branch.as_ref().map(|b| b.behind).unwrap_or(0),
-				});
-			} else if let Some(ab) = rest.strip_prefix("branch.ab ") {
-				let mut ahead = 0u32;
-				let mut behind = 0u32;
-				for token in ab.split_whitespace() {
-					if let Some(n) = token.strip_prefix('+') {
-						ahead = n.parse().unwrap_or(0);
-					} else if let Some(n) = token.strip_prefix('-') {
-						behind = n.parse().unwrap_or(0);
+		// Porcelain v1 header: `## <branch>...<upstream> [ahead N, behind M]`.
+		if let Some(rest) = line.strip_prefix("## ") {
+			let (name, counts) = match rest.split_once('[') {
+				Some((name, counts)) => (name.trim(), Some(counts.trim_end_matches(']'))),
+				None => (rest.trim(), None),
+			};
+			let name = name
+				.split_once("...")
+				.map(|(local, _upstream)| local)
+				.unwrap_or(name)
+				.trim();
+			let name = name
+				.strip_prefix("No commits yet on ")
+				.unwrap_or(name)
+				.strip_suffix(" (no branch)")
+				.unwrap_or(name)
+				.trim();
+			let (mut ahead, mut behind) = (0u32, 0u32);
+			if let Some(counts) = counts {
+				for part in counts.split(',') {
+					let part = part.trim();
+					if let Some(value) = part.strip_prefix("ahead ") {
+						ahead = value.trim().parse().unwrap_or(0);
+					} else if let Some(value) = part.strip_prefix("behind ") {
+						behind = value.trim().parse().unwrap_or(0);
 					}
 				}
-				if let Some(b) = branch.as_mut() {
-					b.ahead = ahead;
-					b.behind = behind;
-				} else {
-					// branch line came after ab line; create a placeholder
-					branch = Some(GitBranch {
-						name: "HEAD".to_string(),
-						ahead,
-						behind,
-					});
-				}
 			}
+			branch = Some(GitBranch {
+				name: if name.is_empty() {
+					"HEAD".to_string()
+				} else {
+					name.to_string()
+				},
+				ahead,
+				behind,
+			});
 			continue;
 		}
 
-		// Untracked files use '?' prefix.
-		if let Some(rest) = line.strip_prefix("? ") {
+		// Ignored files are not part of the working tree.
+		if line.starts_with("!! ") {
+			continue;
+		}
+
+		// Untracked files use '??'.
+		if let Some(rest) = line.strip_prefix("?? ") {
 			untracked.push(GitFileChange {
 				path: rest.to_string(),
 				status: FileStatus::Untracked,
@@ -184,19 +194,21 @@ fn parse_git_status(raw: &str) -> Result<GitStatus, String> {
 			continue;
 		}
 
-		// The X/Y porcelain-v2 format: e.g. "1 M.", "2 A.", "1 .M", "1 R."
-		// X is the index status, Y is the working-tree status.
-		// We treat ' ' as "no change" and parse the rest as 2-char codes.
+		// Porcelain v1 entries are exactly `XY path`: X is index status,
+		// Y is working-tree status, and the path follows the first space.
 		if line.len() < 4 {
 			continue;
 		}
 
 		let bytes = line.as_bytes();
-		let x = bytes[1] as char;
-		let y = bytes[2] as char;
-		let path = line[3..].to_string();
+		let x = bytes[0] as char;
+		let y = bytes[1] as char;
+		let raw_path = line[3..].to_string();
+		let path = raw_path
+			.rsplit_once(" -> ")
+			.map(|(_old, new)| new.to_string())
+			.unwrap_or(raw_path);
 
-		// Index change (staged)
 		if x != ' ' && x != '?' {
 			if let Some(status) = map_status(x) {
 				staged.push(GitFileChange {
@@ -206,7 +218,6 @@ fn parse_git_status(raw: &str) -> Result<GitStatus, String> {
 				});
 			}
 		}
-		// Working-tree change (unstaged)
 		if y != ' ' && y != '?' {
 			if let Some(status) = map_status(y) {
 				unstaged.push(GitFileChange {
@@ -233,6 +244,9 @@ fn map_status(code: char) -> Option<FileStatus> {
 		'D' => Some(FileStatus::Deleted),
 		'R' => Some(FileStatus::Renamed),
 		'C' => Some(FileStatus::Added),
+		'T' => Some(FileStatus::Modified),
+		// Unmerged entries (UU/AA/DU/...) still need to surface in the panel.
+		'U' => Some(FileStatus::Modified),
 		_ => None,
 	}
 }
@@ -295,4 +309,57 @@ pub fn git_discard(cwd: String, path: String) -> Result<(), String> {
 		return Err(format!("Directory does not exist: {cwd}"));
 	}
 	run_git(cwd_path, &["checkout", "--", &path]).map(|_out| ())
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn parses_porcelain_v1_branch_and_tracked_changes() {
+		let raw = concat!(
+			"## feat/desktop-unified-release...origin/feat/desktop-unified-release [ahead 5, behind 97]\n",
+			" M desktop-app/src/App.tsx\n",
+			"M  desktop-app/src/main.ts\n",
+			"?? desktop-app/src/launch.ts\n",
+			"!! dist/generated.js\n",
+		);
+		let status = parse_git_status(raw).expect("parse status");
+		let branch = status.branch.expect("branch");
+		assert_eq!(branch.name, "feat/desktop-unified-release");
+		assert_eq!(branch.ahead, 5);
+		assert_eq!(branch.behind, 97);
+		assert_eq!(status.unstaged.len(), 1);
+		assert_eq!(status.unstaged[0].path, "desktop-app/src/App.tsx");
+		assert_eq!(status.unstaged[0].status, FileStatus::Modified);
+		assert_eq!(status.staged.len(), 1);
+		assert_eq!(status.staged[0].path, "desktop-app/src/main.ts");
+		assert_eq!(status.staged[0].status, FileStatus::Modified);
+		assert_eq!(status.untracked.len(), 1);
+		assert_eq!(status.untracked[0].path, "desktop-app/src/launch.ts");
+	}
+
+	#[test]
+	fn parses_renames_and_detached_head() {
+		let raw = concat!(
+			"## HEAD (no branch)\n",
+			"R  old/name.ts -> desktop-app/src/new-name.ts\n",
+			"?? notes.md\n",
+		);
+		let status = parse_git_status(raw).expect("parse status");
+		assert_eq!(status.branch.expect("branch").name, "HEAD");
+		assert_eq!(status.staged.len(), 1);
+		assert_eq!(status.staged[0].path, "desktop-app/src/new-name.ts");
+		assert_eq!(status.staged[0].status, FileStatus::Renamed);
+		assert_eq!(status.untracked[0].path, "notes.md");
+	}
+
+	#[test]
+	fn parses_branch_without_upstream() {
+		let status = parse_git_status("## main\n").expect("parse status");
+		let branch = status.branch.expect("branch");
+		assert_eq!(branch.name, "main");
+		assert_eq!(branch.ahead, 0);
+		assert_eq!(branch.behind, 0);
+	}
 }

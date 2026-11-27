@@ -1,284 +1,63 @@
-import {
-	ChevronDown,
-	ChevronRight,
-	FileAudio,
-	FileSpreadsheet,
-	FileText,
-	FileVideo,
-	Folder,
-	FolderOpen,
-	Image as ImageIcon,
-	Loader2,
-	Paperclip,
-	RefreshCw,
-} from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-import { listDirectory, type DirEntry } from "../../lib/rpc";
-import { getDefaultViewMode, getFileKind } from "../../lib/files";
-import { useUiStore } from "../../stores/ui-store";
+import { useCallback } from "react";
+import { ExplorerTree } from "../ide/ExplorerTree";
+import { getDefaultViewMode } from "../../lib/files";
+import { relativeToRoot } from "../../lib/explorer";
 import { triggerHaptic } from "../../lib/haptics";
-import { FILE_ATTACHMENT_MIME } from "../../lib/composer-attachments";
-
-function fileIcon(path: string) {
-	const kind = getFileKind(path);
-	switch (kind) {
-		case "image":
-			return ImageIcon;
-		case "audio":
-			return FileAudio;
-		case "video":
-			return FileVideo;
-		case "csv":
-			return FileSpreadsheet;
-		default:
-			return FileText;
-	}
-}
+import { useUiStore } from "../../stores/ui-store";
 
 interface Props {
 	projectPath: string | null;
 }
 
+/**
+ * Files panel in the right sidebar.
+ *
+ * The lazy IDE explorer already provides per-folder loading, search, keyboard
+ * navigation, git decorations, create/rename/delete and reveal. The sidebar
+ * uses the same tree with two differences: opening a file previews it in the
+ * artifact viewer instead of creating an editor tab, and files can be dragged
+ * or attached straight into the composer.
+ */
 export function FileExplorer({ projectPath }: Props) {
-	const [entries, setEntries] = useState<DirEntry[]>([]);
-	const [loading, setLoading] = useState(false);
-	const [error, setError] = useState<string | null>(null);
-	const [expanded, setExpanded] = useState<Set<string>>(new Set());
-	const { setSelectedArtifactPath, setSelectedArtifactViewMode, setRightSidebarOpen } =
-		useUiStore();
+	const setSelectedArtifactPath = useUiStore((s) => s.setSelectedArtifactPath);
+	const setSelectedArtifactViewMode = useUiStore((s) => s.setSelectedArtifactViewMode);
+	const setRightSidebarOpen = useUiStore((s) => s.setRightSidebarOpen);
 
-	const load = useCallback(async () => {
-		if (!projectPath) {
-			setEntries([]);
-			setError(null);
-			return;
-		}
-		setLoading(true);
-		setError(null);
-		try {
-			const tree = await listDirectory(projectPath);
-			setEntries(tree);
-			// Expand the top-level folders by default.
-			setExpanded((prev) => {
-				const next = new Set(prev);
-				for (const entry of tree) {
-					if (entry.is_dir) next.add(entry.path);
-				}
-				return next;
-			});
-		} catch (e) {
-			setEntries([]);
-			setError(e instanceof Error ? e.message : String(e));
-		} finally {
-			setLoading(false);
-		}
-	}, [projectPath]);
-
-	useEffect(() => {
-		void load();
-	}, [load]);
-
-	const toggle = (path: string) => {
-		triggerHaptic("selection");
-		setExpanded((prev) => {
-			const next = new Set(prev);
-			if (next.has(path)) next.delete(path);
-			else next.add(path);
-			return next;
-		});
-	};
-
-	const handleFileClick = (path: string) => {
-		triggerHaptic("selection");
-		setSelectedArtifactViewMode(getDefaultViewMode(path));
-		setSelectedArtifactPath(path);
-		// Ensure the sidebar stays open while viewing a file.
-		setRightSidebarOpen(true);
-	};
-
-	const resolvePath = useCallback(
-		(path: string) => {
-			if (!projectPath) return path;
-			if (path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path)) return path;
-			return `${projectPath.replace(/[\\/]$/, "")}/${path}`;
+	const openFile = useCallback(
+		(absolutePath: string) => {
+			if (!projectPath) return;
+			const relative = relativeToRoot(absolutePath, projectPath);
+			triggerHaptic("selection");
+			setSelectedArtifactViewMode(getDefaultViewMode(relative));
+			setSelectedArtifactPath(relative);
+			setRightSidebarOpen(true);
 		},
-		[projectPath],
+		[projectPath, setSelectedArtifactPath, setSelectedArtifactViewMode, setRightSidebarOpen],
 	);
 
-	const attachToChat = (path: string) => {
+	const attachFile = useCallback((absolutePath: string) => {
 		triggerHaptic("selection");
 		window.dispatchEvent(
-			new CustomEvent("a-coder:attach-files", {
-				detail: { paths: [resolvePath(path)] },
-			}),
+			new CustomEvent("a-coder:attach-files", { detail: { paths: [absolutePath] } }),
 		);
-	};
+	}, []);
 
 	if (!projectPath) {
 		return (
-			<div className="flex flex-1 items-center justify-center p-6 text-center text-2xs text-pi-text-faint">
+			<div className="flex h-full flex-1 items-center justify-center p-6 text-center text-2xs text-pi-text-faint">
 				No project open.
 			</div>
 		);
 	}
 
 	return (
-		<div className="flex h-full w-full min-w-0 flex-col">
-			{/* Header */}
-			<div className="flex items-center justify-between border-b border-pi-border px-3 py-2">
-				<span className="text-2xs font-semibold tracking-tight">Files</span>
-				<button
-					onClick={() => {
-					triggerHaptic("crisp");
-					void load();
-				}}
-					className="rounded p-1 text-pi-text-muted transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
-aria-label="Refresh"
-					disabled={loading}
-				>
-					{loading ? (
-						<Loader2 className="h-3 w-3 animate-spin" />
-					) : (
-						<RefreshCw className="h-3 w-3" />
-					)}
-				</button>
-			</div>
-
-			{/* Body */}
-			<div className="flex-1 min-h-0 overflow-auto p-2">
-				{error && (
-					<div className="mb-2 rounded-md bg-pi-error-soft px-3 py-2 text-2xs text-pi-error">
-						{error}
-					</div>
-				)}
-
-				{loading && entries.length === 0 && (
-					<div className="flex items-center justify-center gap-2 p-6 text-2xs text-pi-text-muted">
-						<Loader2 className="h-3 w-3 animate-spin" /> Loading files…
-					</div>
-				)}
-
-				{!loading && entries.length === 0 && !error && (
-					<div className="flex items-center justify-center p-6 text-center text-2xs text-pi-text-faint">
-						No files found.
-					</div>
-				)}
-
-				<div className="flex flex-col">
-					{entries.map((entry) => (
-						<TreeItem
-							key={entry.path}
-							entry={entry}
-							depth={0}
-							expanded={expanded}
-							toggle={toggle}
-							onFileClick={handleFileClick}
-							onAttach={attachToChat}
-							resolvePath={resolvePath}
-						/>
-					))}
-				</div>
-			</div>
-		</div>
-	);
-}
-
-interface TreeItemProps {
-	entry: DirEntry;
-	depth: number;
-	expanded: Set<string>;
-	toggle: (path: string) => void;
-	onFileClick: (path: string) => void;
-	onAttach: (path: string) => void;
-	resolvePath: (path: string) => string;
-}
-
-function TreeItem({
-	entry,
-	depth,
-	expanded,
-	toggle,
-	onFileClick,
-	onAttach,
-	resolvePath,
-}: TreeItemProps) {
-	const isExpanded = expanded.has(entry.path);
-	const paddingLeft = depth * 12 + 4;
-
-	if (entry.is_dir) {
-		return (
-			<div className="select-none">
-				<button
-					onClick={() => toggle(entry.path)}
-					className="group flex h-7 w-full items-center gap-1 rounded-md px-1.5 text-left text-xs text-pi-text-secondary transition-hover active-press hover:bg-pi-surface-raised hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
-					style={{ paddingLeft }}
-				>
-					{isExpanded ? (
-						<ChevronDown className="h-3.5 w-3.5 shrink-0 text-pi-text-muted" />
-					) : (
-						<ChevronRight className="h-3.5 w-3.5 shrink-0 text-pi-text-muted" />
-					)}
-					{isExpanded ? (
-						<FolderOpen className="h-3.5 w-3.5 shrink-0 text-pi-accent" />
-					) : (
-						<Folder className="h-3.5 w-3.5 shrink-0 text-pi-text-muted" />
-					)}
-					<span className="truncate" title={entry.name}>
-						{entry.name}
-					</span>
-				</button>
-
-				{isExpanded && entry.children.length > 0 && (
-					<div>
-						{entry.children.map((child) => (
-							<TreeItem
-								key={child.path}
-								entry={child}
-								depth={depth + 1}
-								expanded={expanded}
-								toggle={toggle}
-								onFileClick={onFileClick}
-								onAttach={onAttach}
-								resolvePath={resolvePath}
-							/>
-						))}
-					</div>
-				)}
-			</div>
-		);
-	}
-
-	const Icon = fileIcon(entry.path);
-	return (
-		<div
-			className="group flex h-7 items-center rounded-md pr-0.5 transition-hover hover:bg-pi-surface-raised"
-			style={{ paddingLeft }}
-		>
-			<button
-				onClick={() => onFileClick(entry.path)}
-				draggable
-				onDragStart={(event) => {
-					const absolute = resolvePath(entry.path);
-					event.dataTransfer.setData(FILE_ATTACHMENT_MIME, absolute);
-					event.dataTransfer.setData("text/plain", absolute);
-					event.dataTransfer.effectAllowed = "copy";
-					triggerHaptic("selection");
-				}}
-				className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md py-1 text-left text-xs text-pi-text-secondary transition-hover hover:text-pi-text focus-visible:shadow-focus focus-visible:outline-none"
-				title={`${resolvePath(entry.path)} — drag to chat or use the paperclip`}
-			>
-				<span className="w-3.5 shrink-0" />
-				<Icon className="h-3.5 w-3.5 shrink-0 text-pi-text-muted" />
-				<span className="truncate">{entry.name}</span>
-			</button>
-			<button
-				onClick={() => onAttach(entry.path)}
-				className="shrink-0 rounded p-1 text-pi-text-muted opacity-0 transition-hover group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-pi-surface-overlay hover:text-pi-text focus-visible:opacity-100 focus-visible:shadow-focus focus-visible:outline-none"
-				aria-label={`Attach ${entry.name} to chat`}
-				title="Attach to chat"
-			>
-				<Paperclip className="h-3 w-3" />
-			</button>
-		</div>
+		<ExplorerTree
+			root={projectPath}
+			title="Files"
+			onOpenFile={openFile}
+			onAttachFile={attachFile}
+			revealActivePath={false}
+			hideNoise
+		/>
 	);
 }
