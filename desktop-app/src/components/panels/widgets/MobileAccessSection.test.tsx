@@ -166,7 +166,7 @@ describe("MobileAccessSection", () => {
 
 		expect(container.textContent).toContain("Stopped");
 		expect(container.textContent).toContain("Start bridge");
-		expect(container.textContent).toContain("No device registry yet");
+		expect(container.textContent).toContain("No paired devices yet");
 		expect(container.textContent).toContain("/tmp/serve/clients.json");
 		expect(container.textContent).not.toContain("Manual code");
 	});

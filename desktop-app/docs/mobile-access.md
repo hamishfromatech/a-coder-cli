@@ -46,11 +46,20 @@ for the platform, `last_seen`/`lastConnected` for last seen, and
 `added_at`/`pairedAt`/`createdAt` for the added time. Removing an entry
 preserves every other key in the file.
 
-**Bridge dependency:** per `mobile-app/plan/04 §5.3`, write-through of
-`clients.json` and per-device revocation are bridge-side follow-ups. Until that
-lands, a fresh install shows the "No device registry yet" empty state, and
-**Remove** clears records that the bridge has written. Token rotation is the
-only operation that revokes access today (old clients receive 401 on reconnect).
+**Device identity:** the bridge writes `clients.json` on every authenticated
+upgrade that presents `x-acoder-device-id` (plus optional name/platform), the
+`device_*` query parameters, or a `{"type":"hello"}` frame. Removing a record
+writes a durable tombstone: that device’s next upgrade gets **401** (or
+`device_revoked` and close `4401` for hello-identified clients) and stays
+refused across bridge restarts until the tombstone is pruned after 30 days.
+Token rotation remains the revoke-everything path.
+
+A-Coder Mobile **v1.0.0-rc2 or later** is required: the rc1 APK opened the
+socket with only `Authorization` and did not send a device identity, so the
+bridge admitted it but wrote no registry record. If a phone is connected and
+the card still shows **No paired devices yet**, install the current APK from
+the `v1.0.0-rc2` GitHub pre-release and reconnect. The card polls the registry
+every five seconds, so a new record appears without reopening Settings.
 
 ## Manual QA
 
@@ -58,7 +67,7 @@ Run against a workspace with the CLI available:
 
 1. Open Settings → Mobile access. With no bridge running, confirm the card says
    `Stopped`, the start button is enabled, and the device card shows the
-   registry path (or "No device registry yet").
+   registry path (or "No paired devices yet").
 2. Click **Start bridge**. Confirm the status moves to `Starting…` then
    `Running`, the port/endpoint appear, and the QR + masked manual code render.
 3. Click **Reveal**: the 4×8 manual code appears. Click **Copy** and verify the
@@ -86,8 +95,8 @@ Backend verification (2026-11-04, source CLI
 - Correct token upgraded to `/rpc` (`open`).
 - Restart with `--rotate` issued a new token; the previous token got
   `unexpected-response 401` and the new token connected.
-- `serve/clients.json` is not written by the bridge yet (matching plan/04
-  §5.3), so the card shows the empty registry state.
+- `serve/clients.json` is written on the first authenticated connect that
+  presents a device identity; the card then lists the phone.
 
 Desktop checks:
 

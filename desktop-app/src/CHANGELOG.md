@@ -30,6 +30,7 @@
 
 ### Fixed
 
+- **Mobile access no longer implies the bridge is broken when a phone is invisible.** The empty state now reads **No paired devices yet** and explains that A-Coder Mobile v1.0.0-rc2 or later must send a device identity; rc1 connected without one, so the bridge wrote no `clients.json` record. The registry is already polled every five seconds, so a reconnect appears without reopening Settings.
 - **Git changes are visible again.** The desktop git bridge now requests porcelain v1 and parses v1 lines, including staged, unstaged, renamed and untracked entries. The previous v2 request was parsed as v1, so tracked edits disappeared from both source-control panels and every branch chip read `HEAD`. Branch chips now show the real branch with ahead/behind counts, the sidebar refreshes after agent writes, and untracked files preview their contents.
 - **The right-sidebar panels no longer stack two titles.** Files, Git, Office, Scheduled and Decisions render their own header; the shared rail header is now reserved for panels that need it, such as Voice.
 - **MCP credentials are masked by default** in header and environment editors, with a show/hide control. The Arguments field also stopped showing a Chrome DevTools-specific placeholder for every server.

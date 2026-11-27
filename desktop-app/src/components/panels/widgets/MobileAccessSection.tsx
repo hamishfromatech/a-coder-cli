@@ -528,8 +528,8 @@ export function MobileAccessSection() {
 					{!registry?.error && !registry?.available && (
 						<EmptyState
 							icon={Smartphone}
-							title="No device registry yet"
-							description={`Devices appear here after the bridge records a pairing in ${registry?.path || "serve/clients.json"}.`}
+							title="No paired devices yet"
+							description={`Devices appear here after the bridge records a pairing in ${registry?.path || "serve/clients.json"}. If your phone is connected and this stays empty, update A-Coder Mobile to v1.0.0-rc2 or later — older builds do not send a device identity.`}
 						/>
 					)}
 					{!registry?.error && registry?.available && deviceCount === 0 && (
