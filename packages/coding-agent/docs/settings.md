@@ -534,7 +534,9 @@ dynamic client registration. The engine binds a loopback callback at
 **Reset sign-in**). Tokens and client registration are stored in
 `~/.a-coder/cli/agent/mcp-oauth/<server>.json` with owner-only permissions, never in settings.json.
 Access tokens refresh automatically. Use **Connect** / **Reset sign-in** in the desktop MCP editor;
-the CLI/RPC surface is `mcp_oauth_start` and `mcp_oauth_disconnect`.
+in the terminal, `a-coder-cli mcp login <server>` / `mcp logout <server>` / `mcp status`, or
+`/mcp connect <server>` / `/mcp disconnect <server>` inside the TUI. Machine clients use the
+`mcp_oauth_start` and `mcp_oauth_disconnect` RPC commands.
 
 The seed is written to `~/.a-coder/cli/agent/settings.json` on first run; from then on the entries are
 ordinary — edit or remove them in the desktop app's MCP servers editor or in the file itself. Existing

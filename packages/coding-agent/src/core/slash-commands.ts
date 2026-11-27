@@ -51,7 +51,7 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "resume", description: "Resume a different session" },
 	{ name: "reload", description: "Reload keybindings, extensions, skills, prompts, and themes" },
 	{ name: "subagents", description: "Open subagent manager UI" },
-	{ name: "mcp", description: "Show MCP server connection status" },
+	{ name: "mcp", description: "Show MCP status; connect/disconnect OAuth servers" },
 	{ name: "llama", description: "Show llama.cpp server status, context, vision, and thinking capabilities" },
 	{ name: "doctor", description: "Diagnose version, config, auth, MCP, and the session store" },
 	{ name: "debug", description: "Show the current debug/status dump" },

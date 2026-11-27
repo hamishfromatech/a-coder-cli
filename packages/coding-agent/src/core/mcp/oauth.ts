@@ -86,7 +86,7 @@ export class McpOAuthRequiredError extends Error {
 
 	constructor(serverName: string, authorizationUrl?: string) {
 		super(
-			`OAuth sign-in required for MCP server "${serverName}". Use Connect in the desktop MCP settings (or the mcp_oauth_start RPC).`,
+			`OAuth sign-in required for MCP server "${serverName}". Use Connect in the desktop MCP settings, \`/mcp connect ${serverName}\` in the terminal, or the mcp_oauth_start RPC.`,
 		);
 		this.name = "McpOAuthRequiredError";
 		this.serverName = serverName;
@@ -425,6 +425,16 @@ async function runOAuthFlow(server: McpServerConfig, onEvent: (event: McpOAuthFl
 export function hasMcpOAuthCredentials(serverName: string): boolean {
 	const file = oauthPath(serverName);
 	return existsSync(file);
+}
+
+export type McpOAuthCredentialState = "signed-in" | "client-registered" | "none";
+
+/** Distinguish a completed sign-in from a registration that never got tokens. */
+export function getMcpOAuthCredentialState(serverName: string): McpOAuthCredentialState {
+	const credentials = readCredentials(serverName);
+	if (credentials.tokens) return "signed-in";
+	if (credentials.clientInformation) return "client-registered";
+	return "none";
 }
 
 /** Public callback URL, for diagnostics/docs. */

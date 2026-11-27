@@ -299,6 +299,7 @@ ${chalk.bold("Commands:")}
   ${APP_NAME} list                      List installed extensions from settings
   ${APP_NAME} config                    Open TUI to enable/disable package resources
   ${APP_NAME} doctor                    Diagnose version, config, auth, MCP, and the session store
+  ${APP_NAME} mcp status|login|logout      Manage OAuth for HTTP/SSE MCP servers
   ${APP_NAME} <command> --help          Show help for install/remove/uninstall/update/list
 
 ${chalk.bold("Options:")}

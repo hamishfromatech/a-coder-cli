@@ -103,6 +103,7 @@ import {
 	KEYLESS_LOCAL_PROVIDERS,
 } from "../../core/local-providers.ts";
 import { reconnectMcpServer } from "../../core/mcp/inline-extension.ts";
+import { clearMcpOAuth, startMcpOAuthFlow } from "../../core/mcp/oauth.ts";
 import { getMcpServerStates } from "../../core/mcp/status-store.ts";
 import { createCompactionSummaryMessage } from "../../core/messages.ts";
 import { defaultModelPerProvider, findExactModelReferenceMatch, resolveModelScope } from "../../core/model-resolver.ts";
@@ -159,6 +160,7 @@ import {
 import { copyToClipboard, readClipboardFilePaths, readClipboardText } from "../../utils/clipboard.ts";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.ts";
 import { parseGitUrl } from "../../utils/git.ts";
+import { openBrowser } from "../../utils/open-browser.ts";
 import { getCwdRelativePath } from "../../utils/paths.ts";
 import { getPiUserAgent } from "../../utils/pi-user-agent.ts";
 import { killProcessTree, killTrackedDetachedChildren } from "../../utils/shell.ts";
@@ -7983,6 +7985,14 @@ export class InteractiveMode {
 
 	private async handleMcpCommand(arg = ""): Promise<void> {
 		const trimmed = arg.trim();
+		if (trimmed === "connect" || trimmed.startsWith("connect ")) {
+			await this.handleMcpConnect(trimmed.slice("connect".length).trim());
+			return;
+		}
+		if (trimmed === "disconnect" || trimmed.startsWith("disconnect ")) {
+			await this.handleMcpDisconnect(trimmed.slice("disconnect".length).trim());
+			return;
+		}
 		if (trimmed === "reconnect" || trimmed.startsWith("reconnect ")) {
 			const name = trimmed.slice("reconnect".length).trim() || undefined;
 			this.showStatus(`Reconnecting ${name ?? "MCP servers"}…`);
@@ -8019,21 +8029,93 @@ export class InteractiveMode {
 						line = `${state.name} ${theme.fg("dim", `(disabled${state.source === "project" ? ", project" : ""})`)}`;
 						break;
 					default: {
-						marker = theme.fg("warning", "⚠");
-						const err = state.error ? `: ${state.error}` : "";
+						marker = state.authRequired ? theme.fg("warning", "🔑") : theme.fg("warning", "⚠");
 						const scope = state.source === "project" ? theme.fg("dim", " (project)") : "";
-						line = `${state.name}${scope}${theme.fg("warning", err)}`;
+						line = state.authRequired
+							? `${state.name}${scope}${theme.fg("warning", " · sign-in required")}`
+							: `${state.name}${scope}${theme.fg("warning", state.error ? `: ${state.error}` : "")}`;
 						break;
 					}
 				}
 				body += `${marker} ${line}\n`;
 			}
-			body += `\n${theme.fg("dim", "Reconnect: /mcp reconnect [server]  ·  /reload  ·  edit: settings.json")}`;
+			body += `\n${theme.fg("dim", "Connect: /mcp connect <server>  ·  Disconnect: /mcp disconnect <server>  ·  Reconnect: /mcp reconnect [server]")}`;
 		}
 
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(body, 1, 0));
 		this.ui.requestRender();
+	}
+
+	/** `/mcp connect <server>` — browser OAuth for an HTTP/SSE MCP server. */
+	private async handleMcpConnect(name: string): Promise<void> {
+		if (!name) {
+			this.printInfoBlock("Usage: /mcp connect <server>");
+			return;
+		}
+		if (this.session.isStreaming) {
+			this.showError("Wait for the current turn to finish before starting MCP OAuth.");
+			return;
+		}
+		const server = this.session.settingsManager
+			.getMcpServers()
+			.find((entry) => entry.name === name && entry.transport !== "stdio" && entry.oauth);
+		if (!server) {
+			this.showError(`No OAuth-enabled HTTP/SSE MCP server named "${name}".`);
+			return;
+		}
+		if (server.disabled) {
+			this.showError(`MCP server "${name}" is disabled. Enable it in settings.json first.`);
+			return;
+		}
+
+		this.showStatus(`Starting OAuth for ${name}…`);
+		try {
+			await startMcpOAuthFlow(server, (event) => {
+				this.printInfoBlock(
+					`${theme.bold(`Sign in to ${name}`)}\n\n${event.url}\n\n${theme.fg("dim", "The browser should open automatically. Waiting for the callback…")}`,
+				);
+				openBrowser(event.url);
+				this.showStatus(`Waiting for ${name} sign-in…`);
+			});
+			this.showStatus(`Reconnecting ${name}…`);
+			let result = await reconnectMcpServer(name);
+			if (!result.ok) {
+				await this.session.reload();
+				result = await reconnectMcpServer(name);
+			}
+			this.clearStatusIndicator();
+			if (result.ok) {
+				this.printInfoBlock(`${theme.fg("success", `Signed in to ${name}.`)}`);
+			} else {
+				this.showError(`Signed in, but ${name} did not reconnect: ${result.error ?? "unknown error"}`);
+			}
+		} catch (error) {
+			this.clearStatusIndicator();
+			this.showError(`OAuth failed for ${name}: ${error instanceof Error ? error.message : String(error)}`);
+		}
+	}
+
+	/** `/mcp disconnect <server>` — remove stored OAuth and reconnect. */
+	private async handleMcpDisconnect(name: string): Promise<void> {
+		if (!name) {
+			this.printInfoBlock("Usage: /mcp disconnect <server>");
+			return;
+		}
+		if (this.session.isStreaming) {
+			this.showError("Wait for the current turn to finish before changing MCP credentials.");
+			return;
+		}
+		clearMcpOAuth(name);
+		this.showStatus(`Removed OAuth credentials for ${name}; reloading…`);
+		try {
+			await this.session.reload();
+			this.clearStatusIndicator();
+			this.printInfoBlock(`Removed OAuth credentials for ${name}.`);
+		} catch (error) {
+			this.clearStatusIndicator();
+			this.showError(`Could not reload after sign-out: ${error instanceof Error ? error.message : String(error)}`);
+		}
 	}
 
 	/** Print an office block into the chat transcript. */
