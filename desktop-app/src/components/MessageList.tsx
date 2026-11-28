@@ -10,6 +10,7 @@ import { pickLoadingVerb } from "../lib/loading-verbs";
 import { loadOlderHistory } from "../lib/history";
 import { useSessionViewStore } from "../stores/session-view-store";
 import { useSwitchStore } from "../stores/switch-store";
+import { summarizeCompactionSummary } from "../lib/compaction-summary";
 import { messageKey } from "../lib/message-key";
 import { formatMessageTimestamp } from "../lib/message-time";
 import { inlineDataUrl, loadAttachmentDataUrl } from "../lib/attachment-cache";
@@ -401,6 +402,11 @@ function TranscriptBoundary({
 	fromId?: string;
 }) {
 	const Icon = kind === "compaction" ? Scissors : GitBranch;
+	const view = kind === "compaction" ? summarizeCompactionSummary(summary) : undefined;
+	const ledgerParts: string[] = [];
+	if (view?.constraintCount) ledgerParts.push(`${view.constraintCount} constraints`);
+	if (view?.decisionCount) ledgerParts.push(`${view.decisionCount} decisions`);
+	if (view?.failureCount) ledgerParts.push(`${view.failureCount} failed attempts`);
 	return (
 		<div className="rounded-xl border border-dashed border-pi-border bg-pi-surface/40 p-3.5">
 			<div className="flex items-center gap-2 text-3xs font-medium uppercase tracking-[0.08em] text-pi-text-faint">
@@ -412,9 +418,15 @@ function TranscriptBoundary({
 					</span>
 				)}
 			</div>
-			{summary && (
+			{view?.narrative && (
 				<div className="mt-2 text-[12px] leading-relaxed text-pi-text-secondary">
-					<MarkdownTextContent text={summary} isRunning={false} />
+					<MarkdownTextContent text={view.narrative} isRunning={false} />
+				</div>
+			)}
+			{view?.hasLedger && (
+				<div className="mt-2 text-4xs text-pi-text-faint">
+					Epoch {view.epoch ?? 1}
+					{ledgerParts.length > 0 ? ` · ${ledgerParts.join(" · ")} preserved` : ""}
 				</div>
 			)}
 			<div className="mt-2 text-4xs text-pi-text-faint">

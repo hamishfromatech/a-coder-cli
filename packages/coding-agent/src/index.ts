@@ -53,9 +53,12 @@ export {
 	generateBranchSummary,
 	generateSummary,
 	getLastAssistantUsage,
+	parseSessionLedger,
 	prepareBranchEntries,
+	type SessionLedger,
 	serializeConversation,
 	shouldCompact,
+	stripCompactionState,
 } from "./core/compaction/index.ts";
 export { createEventBus, type EventBus, type EventBusController } from "./core/event-bus.ts";
 // Extension system

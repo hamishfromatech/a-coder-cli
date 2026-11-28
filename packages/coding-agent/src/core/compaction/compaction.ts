@@ -19,6 +19,18 @@ import {
 } from "../messages.ts";
 import { buildSessionContext, type CompactionEntry, type SessionEntry } from "../session-manager.ts";
 import {
+	appendCompactionState,
+	extractLedgerCandidates,
+	mergeLedgers,
+	parseLedgerPatch,
+	parseSessionLedger,
+	readWorkspaceState,
+	type SessionLedger,
+	type SessionLedgerPatch,
+	serializeLedgerSource,
+	stripCompactionState,
+} from "./ledger.ts";
+import {
 	computeFileLists,
 	createFileOps,
 	extractFileOpsFromMessage,
@@ -49,6 +61,10 @@ function getAnthropicSummarizationFallback(model: Model<any>): { model: string }
 export interface CompactionDetails {
 	readFiles: string[];
 	modifiedFiles: string[];
+	/** Durable state preserved independently of the narrative summary. */
+	ledger?: SessionLedger;
+	/** Live git state captured at the compaction boundary. */
+	workspaceState?: string;
 }
 
 /**
@@ -506,7 +522,7 @@ Use this EXACT format:
 - [Any data, examples, or references needed to continue]
 - [Or "(none)" if not applicable]
 
-Keep each section concise. Preserve exact file paths, function names, and error messages.`;
+Keep each section concise. Preserve exact file paths, function names, and error messages. A separate deterministic ledger preserves constraints, decisions, and failed attempts; focus this summary on narrative progress, blockers, next steps, and critical context. Do not record file contents or line numbers that may go stale.`;
 
 const UPDATE_SUMMARIZATION_PROMPT = `The messages above are NEW conversation messages to incorporate into the existing summary provided in <previous-summary> tags.
 
@@ -545,7 +561,27 @@ Use this EXACT format:
 ## Critical Context
 - [Preserve important context, add new if needed]
 
-Keep each section concise. Preserve exact file paths, function names, and error messages.`;
+Keep each section concise. Preserve exact file paths, function names, and error messages. A separate deterministic ledger preserves constraints, decisions, and failed attempts; focus this summary on narrative progress, blockers, next steps, and critical context. Do not record file contents or line numbers that may go stale.`;
+
+const LEDGER_EXTRACTION_SYSTEM_PROMPT = `You extract durable session state. Return only a JSON object matching the requested schema. Do not summarize progress or repeat file contents.`;
+
+const LEDGER_EXTRACTION_PROMPT = `The messages above are about to be evicted by context compaction.
+Extract only durable, reusable facts that a later agent must not lose.
+
+Return JSON with this exact shape:
+{
+  "constraints": ["exact user constraint or preference, including negative constraints"],
+  "decisions": [{"text": "locked decision", "rationale": "why", "files": ["path"]}],
+  "failedAttempts": [{"command": "command or edit that failed", "error": "exact error signature"}]
+}
+
+Rules:
+- Preserve user constraints and corrections verbatim when possible. Include "do not", "never", and "only" rules.
+- Record locked architectural decisions and pivots, not tentative ideas.
+- Record failed commands/edits and their exact errors so they are not retried blindly.
+- Include file paths in decisions when they are explicit.
+- Do NOT include completed work, general conversation, or a narrative summary.
+- Return empty arrays when there is nothing durable to record.`;
 
 export function getSummarizationFailure(response: AssistantMessage, label: string): string | undefined {
 	if (response.stopReason === "error") {
@@ -672,6 +708,48 @@ export async function generateSummary(
 	return textContent;
 }
 
+async function extractLedgerPatch(
+	messages: AgentMessage[],
+	model: Model<any>,
+	apiKey: string | undefined,
+	headers: Record<string, string> | undefined,
+	env: Record<string, string> | undefined,
+	signal: AbortSignal | undefined,
+	thinkingLevel: ThinkingLevel | undefined,
+	streamFn: StreamFn | undefined,
+): Promise<SessionLedgerPatch | undefined> {
+	const source = serializeLedgerSource(messages);
+	if (!source) return undefined;
+	const maxTokens = Math.min(1_600, model.maxTokens > 0 ? model.maxTokens : 1_600);
+	const response = await completeSummarization(
+		model,
+		{
+			systemPrompt: LEDGER_EXTRACTION_SYSTEM_PROMPT,
+			messages: [
+				{
+					role: "user" as const,
+					content: [
+						{
+							type: "text" as const,
+							text: `<conversation>\n${source}\n</conversation>\n\n${LEDGER_EXTRACTION_PROMPT}`,
+						},
+					],
+					timestamp: Date.now(),
+				},
+			],
+		},
+		createSummarizationOptions(model, maxTokens, apiKey, headers, env, signal, thinkingLevel),
+		streamFn,
+	);
+	if (getSummarizationFailure(response, "Ledger extraction")) return undefined;
+	if (response.content.some((block) => block.type === "toolCall")) return undefined;
+	const text = response.content
+		.filter((block): block is { type: "text"; text: string } => block.type === "text")
+		.map((block) => block.text)
+		.join("\n");
+	return parseLedgerPatch(text);
+}
+
 // ============================================================================
 // Compaction Preparation (for extensions)
 // ============================================================================
@@ -688,6 +766,10 @@ export interface CompactionPreparation {
 	tokensBefore: number;
 	/** Summary from previous compaction, for iterative update */
 	previousSummary?: string;
+	/** Durable ledger parsed from the previous summary. */
+	previousLedger?: SessionLedger;
+	/** Number of compactions already on this branch (the new epoch is this + 1). */
+	compactionCount?: number;
 	/** File operations extracted from messagesToSummarize */
 	fileOps: FileOperations;
 	/** Compaction settions from settings.jsonl	*/
@@ -711,10 +793,18 @@ export function prepareCompaction(
 	}
 
 	let previousSummary: string | undefined;
+	let previousLedger: SessionLedger | undefined;
+	let compactionCount = 0;
+	for (const entry of pathEntries) {
+		if (entry.type === "compaction") compactionCount++;
+	}
 	let boundaryStart = 0;
 	if (prevCompactionIndex >= 0) {
 		const prevCompaction = pathEntries[prevCompactionIndex] as CompactionEntry;
-		previousSummary = prevCompaction.summary;
+		const previousText = prevCompaction.summary;
+		const previousDetails = prevCompaction.details as CompactionDetails | undefined;
+		previousSummary = stripCompactionState(previousText);
+		previousLedger = previousDetails?.ledger ?? parseSessionLedger(previousText, compactionCount);
 		const firstKeptEntryIndex = pathEntries.findIndex((entry) => entry.id === prevCompaction.firstKeptEntryId);
 		boundaryStart = firstKeptEntryIndex >= 0 ? firstKeptEntryIndex : prevCompactionIndex + 1;
 	}
@@ -770,6 +860,8 @@ export function prepareCompaction(
 		isSplitTurn: cutPoint.isSplitTurn,
 		tokensBefore,
 		previousSummary,
+		previousLedger,
+		compactionCount,
 		fileOps,
 		settings,
 	};
@@ -811,6 +903,7 @@ export async function compact(
 	thinkingLevel?: ThinkingLevel,
 	streamFn?: StreamFn,
 	env?: Record<string, string>,
+	cwd?: string,
 ): Promise<CompactionResult> {
 	const {
 		firstKeptEntryId,
@@ -819,9 +912,34 @@ export async function compact(
 		isSplitTurn,
 		tokensBefore,
 		previousSummary,
+		previousLedger,
+		compactionCount,
 		fileOps,
 		settings,
 	} = preparation;
+	const epoch = (compactionCount ?? 0) + 1;
+	const ledgerCandidates = extractLedgerCandidates([...messagesToSummarize, ...turnPrefixMessages]);
+	let ledger = mergeLedgers(previousLedger, ledgerCandidates, epoch);
+	if (ledgerCandidates.needsModelExtraction) {
+		try {
+			const extracted = await extractLedgerPatch(
+				[...messagesToSummarize, ...turnPrefixMessages],
+				model,
+				apiKey,
+				headers,
+				env,
+				signal,
+				thinkingLevel,
+				streamFn,
+			);
+			if (extracted) ledger = mergeLedgers(ledger, extracted, epoch);
+		} catch (error) {
+			// The deterministic candidates are still a useful safety net; a
+			// failed extraction pass must not fail the compaction itself.
+			if (signal?.aborted) throw error;
+		}
+	}
+	ledger.epoch = epoch;
 
 	// Generate summaries and merge into one
 	let summary: string;
@@ -873,9 +991,16 @@ export async function compact(
 		);
 	}
 
-	// Compute file lists and append to summary
+	// Compute file lists first so the deterministic state blocks and handover
+	// remain the final thing the next turn sees.
 	const { readFiles, modifiedFiles } = computeFileLists(fileOps);
 	summary += formatFileOperations(readFiles, modifiedFiles);
+
+	// The ledger and live workspace state are deterministic and must survive
+	// future summarization passes. Keep them out of the narrative summary text
+	// that gets fed back to the next compaction model.
+	const workspaceState = await readWorkspaceState(cwd ?? process.cwd());
+	summary = appendCompactionState(summary, ledger, workspaceState);
 
 	if (!firstKeptEntryId) {
 		throw new Error("First kept entry has no UUID - session may need migration");
@@ -885,7 +1010,12 @@ export async function compact(
 		summary,
 		firstKeptEntryId,
 		tokensBefore,
-		details: { readFiles, modifiedFiles } as CompactionDetails,
+		details: {
+			readFiles,
+			modifiedFiles,
+			ledger,
+			...(workspaceState ? { workspaceState } : {}),
+		} as CompactionDetails,
 	};
 }
 

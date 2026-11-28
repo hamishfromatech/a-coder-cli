@@ -228,7 +228,7 @@ Emitted when the user changes the thinking/reasoning level.
 Created when context is compacted. Stores a summary of earlier messages.
 
 ```json
-{"type":"compaction","id":"f6g7h8i9","parentId":"e5f6g7h8","timestamp":"2024-12-03T14:10:00.000Z","summary":"User discussed X, Y, Z...","firstKeptEntryId":"c3d4e5f6","tokensBefore":50000}
+{"type":"compaction","id":"f6g7h8i9","parentId":"e5f6g7h8","timestamp":"2024-12-03T14:10:00.000Z","summary":"User discussed X, Y, Z...","firstKeptEntryId":"c3d4e5f6","tokensBefore":50000,"details":{"readFiles":[],"modifiedFiles":["src/a.ts"],"ledger":{"version":1,"epoch":1,"constraints":[],"decisions":[],"failedAttempts":[]}}}
 ```
 
 Optional fields:

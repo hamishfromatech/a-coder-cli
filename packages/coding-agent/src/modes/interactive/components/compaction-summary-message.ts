@@ -1,4 +1,5 @@
 import { Box, Markdown, type MarkdownTheme, Spacer, Text } from "@earendil-works/pi-tui";
+import { parseSessionLedger, stripCompactionState } from "../../../core/compaction/ledger.ts";
 import type { CompactionSummaryMessage } from "../../../core/messages.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
 import { keyText } from "./keybinding-hints.ts";
@@ -38,9 +39,20 @@ export class CompactionSummaryMessageComponent extends Box {
 		this.addChild(new Spacer(1));
 
 		if (this.expanded) {
+			const ledger = parseSessionLedger(this.message.summary);
+			const ledgerParts: string[] = [];
+			if (ledger) {
+				if (ledger.constraints.length > 0) ledgerParts.push(`${ledger.constraints.length} constraints`);
+				if (ledger.decisions.length > 0) ledgerParts.push(`${ledger.decisions.length} decisions`);
+				if (ledger.failedAttempts.length > 0) ledgerParts.push(`${ledger.failedAttempts.length} failed attempts`);
+			}
+			const ledgerLine =
+				ledgerParts.length > 0
+					? `\n\n_Epoch ${ledger?.epoch ?? 1} · ${ledgerParts.join(" · ")} preserved in the pinned ledger._`
+					: "";
 			const header = `**Compacted from ${tokenStr} tokens**\n\n`;
 			this.addChild(
-				new Markdown(header + this.message.summary, 0, 0, this.markdownTheme, {
+				new Markdown(header + stripCompactionState(this.message.summary) + ledgerLine, 0, 0, this.markdownTheme, {
 					color: (text: string) => theme.fg("customMessageText", text),
 				}),
 			);

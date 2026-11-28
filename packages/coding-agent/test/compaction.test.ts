@@ -5,6 +5,7 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+	appendCompactionState,
 	type CompactionSettings,
 	calculateContextTokens,
 	compact,
@@ -12,6 +13,7 @@ import {
 	estimateContextTokens,
 	findCutPoint,
 	getLastAssistantUsage,
+	mergeLedgers,
 	prepareCompaction,
 	shouldCompact,
 } from "../src/core/compaction/index.ts";
@@ -397,6 +399,33 @@ describe("buildSessionContext", () => {
 		// summary + kept from u3 (u3, c) + after (u4, d) = 5
 		expect(loaded.messages.length).toBe(5);
 		expect((loaded.messages[0] as any).summary).toContain("Second summary");
+	});
+
+	it("should strip pinned state from the previous summary and keep its ledger", () => {
+		const u1 = createMessageEntry(createUserMessage("1"));
+		const a1 = createMessageEntry(createAssistantMessage("a"));
+		const ledger = mergeLedgers(
+			undefined,
+			{
+				constraints: ["Never use npm."],
+				decisions: [{ id: "D1", text: "Use pnpm" }],
+				failedAttempts: [],
+			},
+			1,
+		);
+		const summary = appendCompactionState("First summary", ledger);
+		const compaction = createCompactionEntry(summary, u1.id);
+		const u2 = createMessageEntry(createUserMessage("2"));
+		const a2 = createMessageEntry(createAssistantMessage("b"));
+
+		const preparation = prepareCompaction([u1, a1, compaction, u2, a2], {
+			...DEFAULT_COMPACTION_SETTINGS,
+			keepRecentTokens: 1,
+		});
+
+		expect(preparation?.previousSummary).toBe("First summary");
+		expect(preparation?.previousLedger?.constraints).toEqual(["Never use npm."]);
+		expect(preparation?.compactionCount).toBe(1);
 	});
 
 	it("should keep all messages when firstKeptEntryId is first entry", () => {

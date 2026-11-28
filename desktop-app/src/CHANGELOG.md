@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Compaction boundaries show durable memory, not raw state.** The transcript card strips the pinned ledger, workspace snapshot, and handover blocks from the narrative and shows the compaction epoch plus counts for constraints, decisions, and failed attempts. The full blocks remain in the session and model context.
+
 ### Changed
 
 - **The right-sidebar Files panel is now the lazy IDE explorer.** It loads one folder at a time instead of eagerly walking up to 5,000 entries, skips generated folders such as `node_modules`, `dist`, `target`, and `.git`, remembers expansion per workspace, and gains filtering, keyboard navigation, git decorations, create/rename/delete, reveal-in-file-manager, attach/drag-to-chat, per-folder loading/error states, auto-refresh after agent file writes, and a tree that scrolls inside the panel instead of growing past the sidebar. Path comparison now normalizes Windows separators before resolving git decorations and preview paths.

@@ -6,6 +6,7 @@ LLMs have limited context windows. When conversations grow too long, a-coder-cli
 - [`packages/coding-agent/src/core/compaction/compaction.ts`](https://github.com/earendil-works/pi-mono/blob/main/packages/coding-agent/src/core/compaction/compaction.ts) - Auto-compaction logic
 - [`packages/coding-agent/src/core/compaction/branch-summarization.ts`](https://github.com/earendil-works/pi-mono/blob/main/packages/coding-agent/src/core/compaction/branch-summarization.ts) - Branch summarization
 - [`packages/coding-agent/src/core/compaction/utils.ts`](https://github.com/earendil-works/pi-mono/blob/main/packages/coding-agent/src/core/compaction/utils.ts) - Shared utilities (file tracking, serialization)
+- [`packages/coding-agent/src/core/compaction/ledger.ts`](https://github.com/earendil-works/pi-mono/blob/main/packages/coding-agent/src/core/compaction/ledger.ts) - Durable ledger, epoch, and workspace handover
 - [`packages/coding-agent/src/core/session-manager.ts`](https://github.com/earendil-works/pi-mono/blob/main/packages/coding-agent/src/core/session-manager.ts) - Entry types (`CompactionEntry`, `BranchSummaryEntry`)
 - [`packages/coding-agent/src/core/extensions/types.ts`](https://github.com/earendil-works/pi-mono/blob/main/packages/coding-agent/src/core/extensions/types.ts) - Extension event types
 
@@ -79,6 +80,19 @@ What the LLM sees:
 ```
 
 On repeated compactions, the summarized span starts at the previous compaction's kept boundary (`firstKeptEntryId`), not at the compaction entry itself, falling back to the entry after the previous compaction if that kept entry cannot be found in the path. This preserves messages that survived the earlier compaction by including them in the next summarization pass as well. The agent also recalculates `tokensBefore` from the rebuilt session context before writing the new `CompactionEntry`, so the token count reflects the actual pre-compaction context being replaced.
+
+### Durable Session Ledger
+
+Repeated summarization loses negative constraints, locked decisions, and dead ends. Compaction therefore keeps a small deterministic ledger alongside the narrative summary:
+
+- **Before summarization**, high-signal candidates are extracted from the turns being evicted. User constraints and explicit failures are detected deterministically; when a constraint or decision cue is present, a lightweight JSON extraction pass also reads the evicted turns. A failed extraction pass never fails compaction.
+- **The ledger is pinned**: constraints, decisions, and failed attempts are rendered as `<session_ledger epoch="N">` JSON. They are stored in `CompactionEntry.summary` and in `details.ledger`, not left for the summarizer to paraphrase.
+- **Before the next compaction**, `<session_ledger>`, `<workspace_state>`, and `<compaction_handover>` blocks are stripped from the previous summary. The summarizer sees only the narrative; the ledger is merged back deterministically.
+- **After compaction**, a handover block records the epoch and tells the agent to review the ledger and re-read files before editing when exact line numbers are outside the retained window. It also carries a live `git status --short` / `git diff --stat` snapshot so stale file-operation lists do not become the source of truth.
+
+Legacy summaries without a ledger are seeded from their `## Constraints & Preferences` and `## Key Decisions` sections on the next compaction. The ledger is bounded (40 constraints, 30 decisions, 20 failures) and failures are deduplicated by error signature.
+
+The TUI compaction card shows the narrative and a ledger-count line when expanded. The raw deterministic blocks remain available in the session JSONL and to the model.
 
 ### Split Turns
 

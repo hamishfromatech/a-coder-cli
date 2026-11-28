@@ -3592,6 +3592,7 @@ export class AgentSession {
 					this.thinkingLevel,
 					this.agent.streamFn,
 					env,
+					this._cwd,
 				);
 				summary = result.summary;
 				firstKeptEntryId = result.firstKeptEntryId;
@@ -3903,6 +3904,7 @@ export class AgentSession {
 					this.thinkingLevel,
 					this.agent.streamFn,
 					env,
+					this._cwd,
 				);
 				summary = compactResult.summary;
 				firstKeptEntryId = compactResult.firstKeptEntryId;
